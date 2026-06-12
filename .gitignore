@@ -1,0 +1,8 @@
+corpus/
+target/
+spike/protocols/
+spike/bench-results/
+**/bin/
+**/obj/
+__pycache__/
+.venv/
