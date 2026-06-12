@@ -1,0 +1,20 @@
+[package]
+name = "storm-replay"
+version = "0.1.0"
+description = "Décodeur de replays Heroes of the Storm (.StormReplay) — MPQ + protocoles Blizzard"
+keywords = ["heroes-of-the-storm", "replay", "parser", "blizzard"]
+categories = ["parser-implementations", "games"]
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+nom-mpq = "2"
+serde_json = "1"
+thiserror = "2"
+
+[dev-dependencies]
+anyhow = "1"
+
+[lints]
+workspace = true
