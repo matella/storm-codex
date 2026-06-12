@@ -245,4 +245,10 @@ impl Replay {
     pub fn game_events_raw_len(&self) -> Result<usize> {
         Ok(self.stream("replay.game.events")?.len())
     }
+
+    /// `replay.server.battlelobby` brut (non décodé — utilisé pour extraire les BattleTags,
+    /// comme hots-parser).
+    pub fn battlelobby_raw(&self) -> Result<Vec<u8>> {
+        self.stream("replay.server.battlelobby")
+    }
 }
