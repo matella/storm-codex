@@ -19,7 +19,7 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 /// Fingerprint de partie (compat overlay) : SHA-256("date|map|length|toonsTriés").
-fn game_fingerprint(out: &storm_stats::Output) -> Option<String> {
+pub(crate) fn game_fingerprint(out: &storm_stats::Output) -> Option<String> {
     let m = out.match_.as_ref()?;
     let players = out.players.as_ref()?;
     let date = m.get("date").and_then(|v| v.as_str())?;

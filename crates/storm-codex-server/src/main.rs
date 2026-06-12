@@ -1,6 +1,7 @@
 //! `storm-codex-server` — serveur unique (axum + Postgres) : upload, parse, projection,
 //! WebSocket, REST. Jalon 3. Config par env (cf. `.env.example`).
 
+mod admin;
 mod config;
 pub mod project;
 mod raw;
@@ -77,6 +78,10 @@ async fn run() -> Result<(), String> {
         .route("/api/matches/{id}/raw", get(raw::get_raw))
         .route("/api/players/{toon}", get(read::get_player))
         .route("/api/heroes", get(read::list_heroes))
+        .route("/api/admin/tokens", post(admin::create_token))
+        .route("/api/admin/tokens/{id}", axum::routing::delete(admin::revoke_token))
+        .route("/api/admin/uploads", get(admin::uploads_health))
+        .route("/api/admin/reprocess", post(admin::reprocess))
         .route("/ws", any(ws::ws_handler))
         .with_state(state);
 
