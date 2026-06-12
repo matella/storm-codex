@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Storm Codex — maquette de référence</title>
+<style>
+body{background:#06070b;color:#e8eaf2;font-family:Inter,-apple-system,"Segoe UI",Roboto,sans-serif;max-width:860px;margin:0 auto;padding:24px;}
+.cap{font-size:13px;color:#9aa0b4;margin:28px 0 6px;}
+.mk{background:#0e1016;border-radius:10px;overflow:hidden;border:1px solid #232636;}
+.hd{display:flex;align-items:center;gap:13px;padding:10px 18px;border-bottom:1px solid #232636;}
+.brand{color:#e8eaf2;font-size:13px;font-weight:500;letter-spacing:.05em;white-space:nowrap;}
+.nl{color:#8d93a8;font-size:12px;}.nl.on{color:#e8eaf2;border-bottom:2px solid #7F77DD;padding-bottom:2px;}
+.live-dot{margin-left:auto;color:#5DCAA5;font-size:10px;}
+.pill{font-size:11px;color:#8d93a8;border:1px solid #232636;border-radius:12px;padding:3px 10px;display:inline-block;}
+.pill.on{color:#0e1016;background:#7F77DD;border-color:#7F77DD;}
+.av{border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-weight:500;flex-shrink:0;}
+.bdg{font-size:9px;padding:2px 7px;border-radius:4px;font-weight:600;}
+.b-win{background:#04342C;color:#5DCAA5;}.b-loss{background:#501313;color:#F7C1C1;}
+.b-buff{background:#173404;color:#C0DD97;}.b-nerf{background:#501313;color:#F7C1C1;}
+.b-live{background:#16202c;color:#85B7EB;}.b-sl{background:#26215C;color:#CECBF6;}.b-qm{background:#1a1d2a;color:#8d93a8;}
+.b-mvp{background:#2b2416;color:#FAC775;}
+.mono{font-family:"JetBrains Mono",Consolas,monospace;}
+.kick{color:#5d6275;font-size:10px;letter-spacing:.08em;margin:0 0 8px;text-transform:uppercase;}
+.up{color:#5DCAA5;}.dn{color:#F09595;}.old{color:#8d93a8;}
+.row{display:flex;align-items:center;gap:10px;padding:8px 18px;border-bottom:1px solid #1a1d2a;}
+.gauge{height:5px;background:#1a1d2a;border-radius:3px;}
+.gauge>div{height:5px;border-radius:3px;}
+h1{font-size:18px;font-weight:500;}
+p.note{font-size:12px;color:#9aa0b4;}
+table{border-collapse:collapse;width:100%;}
+th{color:#5d6275;font-size:9px;letter-spacing:.07em;text-align:right;padding:4px 8px;font-weight:600;}
+th:first-child,td:first-child{text-align:left;}
+td{color:#cfd3e0;font-size:11px;padding:4px 8px;text-align:right;border-top:1px solid #1a1d2a;}
+.tm-blue{color:#85B7EB;}.tm-red{color:#F09595;}
+.spark{display:inline-block;vertical-align:middle;}
+</style>
+</head>
+<body>
+<h1>Storm Codex — maquette de référence (spec 2026-06-12)</h1>
+<p class="note">Mêmes tokens que Nexus Codex : fond #0e1016 · surfaces #16181f · hairlines #1a1d2a/#232636 ·
+accent #7F77DD · univers Warcraft #EF9F27 / StarCraft #378ADD / Diablo #E24B4A / Overwatch #D85A30 / Nexus #AFA9EC.
+Ajouts Storm Codex : VICTOIRE #5DCAA5 · DÉFAITE #E24B4A/#F7C1C1 · équipe bleue #85B7EB · équipe rouge #F09595.
+Les avatars initiales = portraits locaux du référentiel HotsPatchNotes.</p>
+
+<p class="cap">1 · Tableau de bord — la session du soir (page d'accueil)</p>
+<div class="mk">
+  <div class="hd"><span class="brand">STORM CODEX</span><span class="nl on">Session</span><span class="nl">Matchs</span><span class="nl">Joueurs</span><span class="nl">Héros</span><span class="nl">Trends</span><span class="nl">Équipes</span><span class="nl">Cartes</span><span class="live-dot">● connecté — en attente de partie</span></div>
+  <div style="display:flex;gap:14px;padding:14px 18px;border-bottom:1px solid #1a1d2a;align-items:center;">
+    <div class="av" style="width:46px;height:46px;background:#2b2416;border:2.5px solid #EF9F27;color:#FAC775;font-size:13px;">MU</div>
+    <div>
+      <p style="margin:0;font-size:13px;font-weight:500;">Dernière partie — Muradin · Cursed Hollow <span class="bdg b-win" style="margin-left:6px;">VICTOIRE</span></p>
+      <p class="mono" style="margin:2px 0 0;font-size:11.5px;color:#cfd3e0;">2 / 1 / 18 · 21:34 · dmg soaked <span class="up">+22%</span> vs moyenne <span style="color:#5d6275;">· il y a 4 min</span></p>
+    </div>
+    <div style="margin-left:auto;text-align:right;">
+      <p class="kick" style="margin:0 0 3px;">Session du 12 juin</p>
+      <p class="mono" style="margin:0;font-size:13px;"><span class="up">3W</span> – <span class="dn">1L</span> <span style="color:#5d6275;font-size:10px;">· 1h42 · série W2</span></p>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;">
+    <div style="padding:10px 18px;border-right:1px solid #1a1d2a;"><p class="kick" style="margin:0 0 2px;">Win rate 30 j</p><p class="mono" style="margin:0;font-size:15px;">58,3%</p></div>
+    <div style="padding:10px 18px;border-right:1px solid #1a1d2a;"><p class="kick" style="margin:0 0 2px;">KDA moyen</p><p class="mono" style="margin:0;font-size:15px;">3,9</p></div>
+    <div style="padding:10px 18px;border-right:1px solid #1a1d2a;"><p class="kick" style="margin:0 0 2px;">Parties (total)</p><p class="mono" style="margin:0;font-size:15px;">3 012</p></div>
+    <div style="padding:10px 18px;"><p class="kick" style="margin:0 0 2px;">Main héros</p><p style="margin:0;font-size:13px;">Muradin <span class="mono" style="color:#5d6275;font-size:10px;">412 p · 61%</span></p></div>
+  </div>
+</div>
+
+<p class="cap">2 · Matchs — liste filtrable, mise à jour en temps réel</p>
+<div class="mk">
+  <div style="display:flex;gap:6px;padding:10px 18px;border-bottom:1px solid #232636;align-items:center;flex-wrap:wrap;">
+    <span class="pill on">Tous</span><span class="pill">Storm League</span><span class="pill">QM</span><span class="pill">ARAM</span><span class="pill">carte ▾</span><span class="pill">héros ▾</span><span class="pill">patch ▾</span><span class="pill">collection ▾</span>
+    <span style="margin-left:auto;font-size:10px;color:#5d6275;">3 012 matchs</span>
+  </div>
+  <div style="padding:6px 18px;background:#13141d;border-bottom:1px solid #1a1d2a;"><span class="mono" style="font-size:10px;color:#5DCAA5;">● nouveau replay reçu — parse 0,14 s — ajouté en tête</span></div>
+  <div class="row"><span class="mono" style="color:#8d93a8;font-size:11px;min-width:76px;">21:42</span><span class="bdg b-sl">SL</span><div class="av" style="width:24px;height:24px;background:#2b2416;border:2px solid #EF9F27;color:#FAC775;font-size:8px;">MU</div><span style="font-size:12px;">Cursed Hollow</span><span class="mono" style="color:#cfd3e0;font-size:11px;">2/1/18</span><span class="bdg b-win">V</span><span style="margin-left:auto;color:#5d6275;font-size:10px;">21:34 · 10 joueurs ›</span></div>
+  <div class="row"><span class="mono" style="color:#8d93a8;font-size:11px;min-width:76px;">21:08</span><span class="bdg b-sl">SL</span><div class="av" style="width:24px;height:24px;background:#16202c;border:2px solid #378ADD;color:#85B7EB;font-size:8px;">TY</div><span style="font-size:12px;">Braxis Holdout</span><span class="mono" style="color:#cfd3e0;font-size:11px;">5/4/11</span><span class="bdg b-loss">D</span><span style="margin-left:auto;color:#5d6275;font-size:10px;">18:51 · 10 joueurs ›</span></div>
+  <div class="row" style="border-bottom:none;"><span class="mono" style="color:#8d93a8;font-size:11px;min-width:76px;">20:31</span><span class="bdg b-qm">QM</span><div class="av" style="width:24px;height:24px;background:#2a1c1c;border:2px solid #E24B4A;color:#F09595;font-size:8px;">DI</div><span style="font-size:12px;">Sky Temple</span><span class="mono" style="color:#cfd3e0;font-size:11px;">7/2/15</span><span class="bdg b-win">V</span><span style="margin-left:auto;color:#5d6275;font-size:10px;">16:02 · 10 joueurs ›</span></div>
+</div>
+
+<p class="cap">3 · Détail de match — score, draft, timelines (la page la plus riche)</p>
+<div class="mk">
+  <div style="padding:12px 18px;border-bottom:1px solid #232636;display:flex;align-items:center;gap:10px;">
+    <span style="font-size:15px;font-weight:500;">Cursed Hollow</span><span class="bdg b-sl">STORM LEAGUE</span>
+    <span class="mono" style="color:#5d6275;font-size:10px;">2026-06-12 21:42 · 21:34 · build 96477</span>
+    <span style="margin-left:auto;color:#7F77DD;font-size:10.5px;">patch du 11 mai → Nexus Codex ↗</span>
+  </div>
+  <div style="display:flex;gap:8px;padding:9px 18px;border-bottom:1px solid #1a1d2a;align-items:center;">
+    <span class="kick" style="margin:0;">Draft</span>
+    <span class="bdg b-nerf">ban Tracer</span><span class="bdg b-nerf">ban KT</span>
+    <span class="mono" style="color:#5d6275;font-size:9px;">P1</span><div class="av" style="width:20px;height:20px;background:#2b2416;border:1.5px solid #EF9F27;color:#FAC775;font-size:7px;">MU</div>
+    <span class="mono" style="color:#5d6275;font-size:9px;">P2-3</span><div class="av" style="width:20px;height:20px;background:#16202c;border:1.5px solid #378ADD;color:#85B7EB;font-size:7px;">KE</div><div class="av" style="width:20px;height:20px;background:#221c2e;border:1.5px solid #AFA9EC;color:#CECBF6;font-size:7px;">OR</div>
+    <span style="color:#5d6275;font-size:10px;">… ordre complet des 14 actions</span>
+  </div>
+  <div style="padding:10px 18px;border-bottom:1px solid #1a1d2a;">
+    <p class="kick">Score — <span class="tm-blue">ÉQUIPE BLEUE (V)</span> vs <span class="tm-red">ROUGE</span></p>
+    <table>
+      <tr><th>Joueur</th><th>K</th><th>A</th><th>D</th><th>Dmg héros</th><th>Siège</th><th>Soins</th><th>Soaked</th><th>Award</th></tr>
+      <tr><td class="tm-blue">▲ Matella · Muradin</td><td class="mono">2</td><td class="mono">16</td><td class="mono">1</td><td class="mono">38 412</td><td class="mono">61 230</td><td class="mono">—</td><td class="mono">112 840</td><td><span class="bdg b-mvp">MVP</span></td></tr>
+      <tr><td class="tm-blue">Ally1 · Kerrigan</td><td class="mono">9</td><td class="mono">8</td><td class="mono">3</td><td class="mono">71 920</td><td class="mono">44 102</td><td class="mono">—</td><td class="mono">64 210</td><td></td></tr>
+      <tr><td class="tm-red">Enemy1 · Diablo</td><td class="mono">3</td><td class="mono">7</td><td class="mono">5</td><td class="mono">41 050</td><td class="mono">38 990</td><td class="mono">—</td><td class="mono">98 120</td><td></td></tr>
+    </table>
+    <p style="color:#5d6275;font-size:9.5px;margin:4px 0 0;">… 10 lignes, ~80 colonnes disponibles (groupes : combat · siège · survie · team fight · divers), tri/virtualisation, export CSV</p>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #1a1d2a;">
+    <div style="padding:10px 18px;border-right:1px solid #1a1d2a;">
+      <p class="kick">XP &amp; niveaux (uPlot)</p>
+      <svg class="spark" width="100%" height="56" viewBox="0 0 300 56" preserveAspectRatio="none">
+        <path d="M0,52 C40,46 70,40 110,34 C150,28 190,20 240,14 L300,8" fill="none" stroke="#85B7EB" stroke-width="2"/>
+        <path d="M0,53 C40,49 80,45 120,40 C160,35 200,30 250,26 L300,22" fill="none" stroke="#F09595" stroke-width="2"/>
+        <line x1="150" y1="0" x2="150" y2="56" stroke="#26215C" stroke-width="1"/>
+      </svg>
+      <p style="color:#5d6275;font-size:9.5px;margin:2px 0 0;">avantage de niveau bleu 12:10→fin · marqueurs team fights · zoom/brush</p>
+    </div>
+    <div style="padding:10px 18px;">
+      <p class="kick">Objectifs &amp; takedowns</p>
+      <p class="mono" style="font-size:10.5px;color:#cfd3e0;line-height:1.8;margin:0;">
+        03:12 <span style="color:#FAC775;">●</span> tribut bleu · 06:40 <span style="color:#FAC775;">●</span> tribut rouge<br>
+        08:55 <span style="color:#CECBF6;">◆</span> malédiction BLEUE → <span class="up">fort rouge bas</span><br>
+        14:21 <span style="color:#F09595;">✕</span> team fight 4v5 — <span class="tm-blue">3 kills bleus</span>
+      </p>
+    </div>
+  </div>
+  <div style="display:flex;gap:24px;padding:9px 18px;">
+    <span style="color:#8d93a8;font-size:10.5px;">Taunts/BM : <span class="mono">2 danses · 1 bstep (Enemy1, suivi d'une mort <span class="up">+1 kill bleu</span>)</span></span>
+    <span style="color:#8d93a8;font-size:10.5px;">Chat &amp; votes : repliés ⌄</span>
+    <span style="margin-left:auto;color:#7F77DD;font-size:10.5px;">JSON brut du replay ↗</span>
+  </div>
+</div>
+
+<p class="cap">3b · Détail de match — stats d'équipe &amp; talents par joueur (suite de la même page)</p>
+<div class="mk">
+  <div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #1a1d2a;">
+    <div style="padding:10px 18px;border-right:1px solid #1a1d2a;">
+      <p class="kick">Stats d'équipe</p>
+      <table>
+        <tr><th></th><th class="tm-blue">Bleue</th><th class="tm-red">Rouge</th></tr>
+        <tr><td>Takedowns</td><td class="mono tm-blue">31</td><td class="mono tm-red">14</td></tr>
+        <tr><td>Structures détruites</td><td class="mono tm-blue">9</td><td class="mono tm-red">2</td></tr>
+        <tr><td>Camps capturés</td><td class="mono tm-blue">12</td><td class="mono tm-red">7</td></tr>
+        <tr><td>Globes ramassés</td><td class="mono tm-blue">48</td><td class="mono tm-red">39</td></tr>
+        <tr><td>Temps avec avantage de niveau</td><td class="mono tm-blue">14:02</td><td class="mono tm-red">2:11</td></tr>
+        <tr><td>Team fights gagnés</td><td class="mono tm-blue">5</td><td class="mono tm-red">2</td></tr>
+      </table>
+    </div>
+    <div style="padding:10px 18px;">
+      <p class="kick">Talents — ligne joueur dépliée (Matella · Muradin)</p>
+      <p class="mono" style="font-size:10.5px;color:#cfd3e0;line-height:2;margin:0;">
+        <span style="color:#5d6275;">1</span> Troisième souffle · <span style="color:#5d6275;">4</span> Réserves solides · <span style="color:#5d6275;">7</span> Percée<br>
+        <span style="color:#5d6275;">10</span> <span style="color:#CECBF6;">Avatar</span> · <span style="color:#5d6275;">13</span> Tonnerre brûlant · <span style="color:#5d6275;">16</span> Donner l'exemple · <span style="color:#5d6275;">20</span> Inarrêtable
+      </p>
+      <p style="color:#5d6275;font-size:9.5px;margin:6px 0 0;">icônes du référentiel HotsPatchNotes · timestamp de pick au survol · chaque ligne du score se déplie ainsi</p>
+    </div>
+  </div>
+  <div style="padding:8px 18px;"><span style="color:#5d6275;font-size:10px;">Sections imprimables/exportables (parité SotS print) : score · draft · XP · objectifs · talents — sélection par cases puis Export PDF/CSV</span></div>
+</div>
+
+<p class="cap">4 · Fiche joueur — progression, hero pool, duos, awards</p>
+<div class="mk" style="display:grid;grid-template-columns:190px minmax(0,1fr);">
+  <div style="padding:14px 18px;border-right:1px solid #1a1d2a;">
+    <p style="font-size:14px;font-weight:500;margin:0;">Matella</p>
+    <p class="mono" style="color:#5d6275;font-size:9.5px;margin:2px 0 10px;">Matella#2407 · 3 012 parties</p>
+    <div style="font-size:10px;color:#8d93a8;margin-bottom:3px;">Win rate <span class="mono" style="float:right;color:#cfd3e0;">58,3%</span></div>
+    <div class="gauge" style="margin-bottom:8px;"><div style="width:58%;background:#5DCAA5;"></div></div>
+    <div style="font-size:10px;color:#8d93a8;margin-bottom:3px;">KDA <span class="mono" style="float:right;color:#cfd3e0;">3,9</span></div>
+    <div class="gauge" style="margin-bottom:8px;"><div style="width:65%;background:#7F77DD;"></div></div>
+    <div style="font-size:10px;color:#8d93a8;margin-bottom:3px;">MVP <span class="mono" style="float:right;color:#cfd3e0;">11%</span></div>
+    <div class="gauge"><div style="width:11%;background:#FAC775;"></div></div>
+    <p class="kick" style="margin:14px 0 6px;">Hero pool</p>
+    <div style="display:flex;gap:4px;flex-wrap:wrap;">
+      <div class="av" style="width:26px;height:26px;background:#2b2416;border:2px solid #EF9F27;color:#FAC775;font-size:8px;">MU</div>
+      <div class="av" style="width:26px;height:26px;background:#16202c;border:2px solid #378ADD;color:#85B7EB;font-size:8px;">TY</div>
+      <div class="av" style="width:26px;height:26px;background:#2a1c1c;border:2px solid #E24B4A;color:#F09595;font-size:8px;">DI</div>
+      <div class="av" style="width:26px;height:26px;background:#1a1d2a;border:2px dashed #232636;color:#5d6275;font-size:8px;">+21</div>
+    </div>
+  </div>
+  <div style="padding:14px 18px;">
+    <div style="display:flex;gap:6px;margin-bottom:10px;"><span class="pill on">Résumé</span><span class="pill">Progression</span><span class="pill">Par héros</span><span class="pill">Talent builds</span><span class="pill">Duos</span><span class="pill">Awards</span><span class="pill">Big tables</span></div>
+    <p class="kick">Win rate — 12 derniers mois</p>
+    <svg width="100%" height="48" viewBox="0 0 300 48" preserveAspectRatio="none">
+      <path d="M0,30 L25,28 L50,32 L75,24 L100,26 L125,20 L150,22 L175,16 L200,18 L225,14 L250,16 L275,10 L300,12" fill="none" stroke="#5DCAA5" stroke-width="2"/>
+      <line x1="0" y1="24" x2="300" y2="24" stroke="#232636" stroke-dasharray="3,3"/>
+    </svg>
+    <p class="kick" style="margin-top:10px;">Duos (avec)</p>
+    <p class="mono" style="font-size:11px;color:#cfd3e0;margin:0;">+ Ally1 <span class="up">64% sur 89 p</span> · + Ally2 <span class="up">61% sur 47 p</span> · + Rando <span class="dn">42% sur 12 p</span></p>
+  </div>
+</div>
+
+<p class="cap">4b · Fiche joueur — talent builds, award tracker, big tables (onglets dépliés)</p>
+<div class="mk">
+  <div style="padding:10px 18px;border-bottom:1px solid #1a1d2a;">
+    <p class="kick">Talent builds — Muradin (412 parties)</p>
+    <table>
+      <tr><th>Build</th><th>1</th><th>4</th><th>7</th><th>10</th><th>13</th><th>16</th><th>20</th><th>P</th><th>Win%</th></tr>
+      <tr><td class="mono" style="color:#5d6275;">#1</td><td class="mono">3e souffle</td><td class="mono">Réserves</td><td class="mono">Percée</td><td class="mono" style="color:#CECBF6;">Avatar</td><td class="mono">Tonnerre</td><td class="mono">Exemple</td><td class="mono">Inarrêt.</td><td class="mono">122</td><td class="mono up">66%</td></tr>
+      <tr><td class="mono" style="color:#5d6275;">#2</td><td class="mono">Infusion</td><td class="mono">Réserves</td><td class="mono">Skullcracker</td><td class="mono" style="color:#CECBF6;">Haymaker</td><td class="mono">Pas de géant</td><td class="mono">Exemple</td><td class="mono">Grand coup</td><td class="mono">64</td><td class="mono dn">48%</td></tr>
+    </table>
+    <p style="color:#5d6275;font-size:9.5px;margin:4px 0 0;">+ pick rate par talent et par palier (vue « talent pick ») — barres pick%/win% comme l'écran 5</p>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;">
+    <div style="padding:10px 18px;border-right:1px solid #1a1d2a;">
+      <p class="kick">Award tracker</p>
+      <p class="mono" style="font-size:10.5px;color:#cfd3e0;line-height:1.9;margin:0;">
+        <span class="bdg b-mvp">MVP</span> ×34 (11%) · Painbringer ×41 · Bulwark ×38<br>
+        Dominator ×12 · Avenger ×9 · Hat Trick ×3 <span style="color:#5d6275;">· ~40 awards suivis</span>
+      </p>
+    </div>
+    <div style="padding:10px 18px;">
+      <p class="kick">Big tables — toutes les stats, tous les matchs</p>
+      <p style="color:#8d93a8;font-size:10.5px;margin:0;">Table virtualisée plein écran : 1 ligne/match (ou par héros), ~80 colonnes au choix (groupes combat/siège/survie/TF), tri multi-colonnes, filtres en tête, export CSV — parité « player-big-tables » de SotS sans DataTables.</p>
+    </div>
+  </div>
+</div>
+
+<p class="cap">5 · Héros (collection) — stats globales, talents, builds</p>
+<div class="mk">
+  <div style="display:flex;gap:6px;padding:10px 18px;border-bottom:1px solid #232636;align-items:center;">
+    <span class="pill on">Vue globale</span><span class="pill">Par héros</span><span class="pill">Talent picks</span><span class="pill">Builds</span><span class="pill">Compos</span>
+    <span style="margin-left:auto;font-size:10px;color:#5d6275;">filtre : Storm League · patch ≥ 2026-01</span>
+  </div>
+  <div class="row"><div class="av" style="width:26px;height:26px;background:#2b2416;border:2px solid #EF9F27;color:#FAC775;font-size:8px;">MU</div><span style="font-size:12px;min-width:90px;">Muradin</span><span class="mono" style="color:#5d6275;font-size:10px;">412 picks</span><div class="gauge" style="flex:1;"><div style="width:61%;background:#5DCAA5;"></div></div><span class="mono" style="font-size:11px;" class="up">61,2%</span><span style="color:#5d6275;font-size:10px;">12 bans ›</span></div>
+  <div class="row" style="border-bottom:none;"><div class="av" style="width:26px;height:26px;background:#16202c;border:2px solid #378ADD;color:#85B7EB;font-size:8px;">TY</div><span style="font-size:12px;min-width:90px;">Tychus</span><span class="mono" style="color:#5d6275;font-size:10px;">203 picks</span><div class="gauge" style="flex:1;"><div style="width:48%;background:#E24B4A;"></div></div><span class="mono" style="font-size:11px;" class="dn">48,3%</span><span style="color:#5d6275;font-size:10px;">3 bans ›</span></div>
+  <div style="padding:9px 18px;border-top:1px solid #1a1d2a;">
+    <p class="kick">Détail héros → talents par palier (pick % / win %)</p>
+    <p class="mono" style="font-size:10.5px;color:#cfd3e0;margin:0;">Niv 1 · Troisième souffle <span class="old">62% pick</span> <span class="up">63% win</span> — barres pick/win par talent, builds populaires séquencés (1-4-7-10…)</p>
+  </div>
+</div>
+
+<p class="cap">5b · Compositions — équipes de 5, win rates (onglet « comps », héros &amp; trends)</p>
+<div class="mk">
+  <div class="row"><div style="display:flex;gap:3px;"><div class="av" style="width:22px;height:22px;background:#2b2416;border:1.5px solid #EF9F27;color:#FAC775;font-size:7px;">MU</div><div class="av" style="width:22px;height:22px;background:#16202c;border:1.5px solid #378ADD;color:#85B7EB;font-size:7px;">KE</div><div class="av" style="width:22px;height:22px;background:#221c2e;border:1.5px solid #AFA9EC;color:#CECBF6;font-size:7px;">OR</div><div class="av" style="width:22px;height:22px;background:#2b1f16;border:1.5px solid #D85A30;color:#F0997B;font-size:7px;">AN</div><div class="av" style="width:22px;height:22px;background:#2a1c1c;border:1.5px solid #E24B4A;color:#F09595;font-size:7px;">DI</div></div><span style="color:#5d6275;font-size:10px;">tank·bruiser·heal·support·assassin</span><div class="gauge" style="flex:1;"><div style="width:71%;background:#5DCAA5;"></div></div><span class="mono up" style="font-size:11px;">71%</span><span style="color:#5d6275;font-size:10px;">14 p</span></div>
+  <div class="row" style="border-bottom:none;"><div style="display:flex;gap:3px;"><div class="av" style="width:22px;height:22px;background:#16202c;border:1.5px solid #378ADD;color:#85B7EB;font-size:7px;">TY</div><div class="av" style="width:22px;height:22px;background:#2b2416;border:1.5px solid #EF9F27;color:#FAC775;font-size:7px;">JO</div><div class="av" style="width:22px;height:22px;background:#2b2416;border:1.5px solid #EF9F27;color:#FAC775;font-size:7px;">AND</div><div class="av" style="width:22px;height:22px;background:#221c2e;border:1.5px solid #AFA9EC;color:#CECBF6;font-size:7px;">QH</div><div class="av" style="width:22px;height:22px;background:#2a1c1c;border:1.5px solid #E24B4A;color:#F09595;font-size:7px;">VA</div></div><span style="color:#5d6275;font-size:10px;">double soutien</span><div class="gauge" style="flex:1;"><div style="width:43%;background:#E24B4A;"></div></div><span class="mono dn" style="font-size:11px;">43%</span><span style="color:#5d6275;font-size:10px;">7 p</span></div>
+  <div style="padding:7px 18px;border-top:1px solid #1a1d2a;"><span style="color:#5d6275;font-size:10px;">groupements : composition exacte · par rôles · par duo/trio synergique — disponible en vue héros, trends (par patch) et équipe</span></div>
+</div>
+
+<p class="cap">6 · Trends — par patch, croisé avec Nexus Codex</p>
+<div class="mk">
+  <div style="display:flex;gap:8px;padding:10px 18px;border-bottom:1px solid #232636;align-items:center;">
+    <span class="kick" style="margin:0;">Patch</span>
+    <span class="pill on mono">2026-05-11 <span class="bdg b-live" style="margin-left:4px;">LIVE</span></span>
+    <span class="pill mono">2026-04-20</span><span class="pill mono">2026-02-19</span>
+    <span style="margin-left:auto;color:#7F77DD;font-size:10.5px;">notes du patch → Nexus Codex ↗</span>
+  </div>
+  <div class="row"><span style="font-size:11px;color:#8d93a8;min-width:70px;">Top picks</span><span class="mono" style="font-size:11px;color:#cfd3e0;">Muradin 18% · Kerrigan 14% · Anduin 12%</span></div>
+  <div class="row"><span style="font-size:11px;color:#8d93a8;min-width:70px;">Top bans</span><span class="mono" style="font-size:11px;color:#cfd3e0;">Tracer 31% · KTZ 22%</span></div>
+  <div class="row" style="border-bottom:none;"><span style="font-size:11px;color:#8d93a8;min-width:70px;">Win Δ vs patch préc.</span><span class="mono" style="font-size:11px;">Muradin <span class="up">+4,2%</span> <span class="bdg b-buff">BUFF</span> · Tychus <span class="dn">−3,1%</span> <span class="bdg b-nerf">NERF</span> <span style="color:#5d6275;">← cohérence patch/perf visible d'un coup d'œil</span></span></div>
+</div>
+
+<p class="cap">7 · Équipes &amp; ligues — rosters, collections, classements</p>
+<div class="mk" style="display:grid;grid-template-columns:1fr 1fr;">
+  <div style="padding:12px 18px;border-right:1px solid #1a1d2a;">
+    <p class="kick">Équipe — Les Invocateurs <span class="bdg b-sl" style="margin-left:4px;">LIGUE AMICALE</span></p>
+    <p style="font-size:11px;color:#cfd3e0;margin:0 0 6px;">Roster : Matella · Ally1 · Ally2 · Ally3 · Ally4</p>
+    <p class="mono" style="font-size:11px;margin:0;">14W – 6L <span class="up">(70%)</span> · KDA équipe 4,1 · first objective 68%</p>
+    <p style="color:#5d6275;font-size:9.5px;margin:6px 0 0;">collection liée : « Saison 3 — ligue » (matchs taggés à l'upload ou a posteriori)</p>
+  </div>
+  <div style="padding:12px 18px;">
+    <p class="kick">Classement joueurs (ligue)</p>
+    <table>
+      <tr><th>#</th><th>Joueur</th><th>P</th><th>Win%</th><th>KDA</th><th>MVP%</th></tr>
+      <tr><td class="mono">1</td><td>Matella</td><td class="mono">20</td><td class="mono up">70%</td><td class="mono">4,6</td><td class="mono">15%</td></tr>
+      <tr><td class="mono">2</td><td>Ally2</td><td class="mono">20</td><td class="mono">65%</td><td class="mono">3,8</td><td class="mono">10%</td></tr>
+    </table>
+  </div>
+</div>
+
+<p class="cap">7b · Collections &amp; alias — gestion (parité « collections », « alias », « My ID » de SotS)</p>
+<div class="mk" style="display:grid;grid-template-columns:1fr 1fr;">
+  <div style="padding:12px 18px;border-right:1px solid #1a1d2a;">
+    <p class="kick">Collections</p>
+    <div class="row" style="padding:6px 0;"><span style="font-size:11.5px;">Saison 3 — ligue</span><span class="mono" style="color:#5d6275;font-size:10px;">20 matchs</span><span style="margin-left:auto;color:#7F77DD;font-size:10px;">filtrer ›</span></div>
+    <div class="row" style="padding:6px 0;"><span style="font-size:11.5px;">Scrims mardi</span><span class="mono" style="color:#5d6275;font-size:10px;">8 matchs</span><span style="margin-left:auto;color:#7F77DD;font-size:10px;">filtrer ›</span></div>
+    <div class="row" style="padding:6px 0;border-bottom:none;"><span style="color:#7F77DD;font-size:11px;">+ nouvelle collection</span></div>
+    <p style="color:#5d6275;font-size:9.5px;margin:8px 0 0;">affectation : à l'upload (token → collection par défaut), par filtre en masse, ou match par match — toute page est filtrable par collection</p>
+  </div>
+  <div style="padding:12px 18px;">
+    <p class="kick">Alias &amp; identité</p>
+    <p style="font-size:11px;color:#cfd3e0;margin:0 0 6px;">Matella <span class="mono" style="color:#5d6275;font-size:9.5px;">= Matella#2407 + MatellaSmurf#1190</span> <span style="color:#7F77DD;font-size:10px;">fusionner ›</span></p>
+    <p style="font-size:11px;color:#cfd3e0;margin:0 0 6px;">Mon identité (« My ID ») : <span class="mono" style="color:#FAC775;">Matella#2407</span> <span style="color:#5d6275;font-size:9.5px;">— surligné partout, base des moyennes du widget stream</span></p>
+    <p style="color:#5d6275;font-size:9.5px;margin:8px 0 0;">fusion réversible (table d'alias, pas de réécriture des données)</p>
+  </div>
+</div>
+
+<p class="cap">8 · Cartes — win rates, side, first objective</p>
+<div class="mk" style="padding:13px 18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;">
+  <div><div style="height:52px;border-radius:7px;background:#1c2433;border:1px solid #232636;"></div><p style="font-size:11.5px;font-weight:500;margin:5px 0 0;">Cursed Hollow</p><p class="mono" style="color:#5d6275;font-size:9.5px;margin:1px 0 0;"><span class="up">62%</span> · 1er obj 71% · 88 p</p></div>
+  <div><div style="height:52px;border-radius:7px;background:#16242c;border:1px solid #232636;"></div><p style="font-size:11.5px;font-weight:500;margin:5px 0 0;">Braxis Holdout</p><p class="mono" style="color:#5d6275;font-size:9.5px;margin:1px 0 0;"><span class="dn">44%</span> · 1er obj 39% · 61 p</p></div>
+  <div><div style="height:52px;border-radius:7px;background:#241c2e;border:1px solid #232636;"></div><p style="font-size:11.5px;font-weight:500;margin:5px 0 0;">Sky Temple</p><p class="mono" style="color:#5d6275;font-size:9.5px;margin:1px 0 0;"><span class="up">57%</span> · side bleu 60% · 74 p</p></div>
+</div>
+
+<p class="cap">9 · Admin / Import — backfill, tokens, re-process</p>
+<div class="mk">
+  <div style="padding:12px 18px;border-bottom:1px solid #1a1d2a;">
+    <p class="kick">Backfill en cours</p>
+    <div class="gauge" style="margin:4px 0 4px;"><div style="width:81%;background:#7F77DD;"></div></div>
+    <p class="mono" style="font-size:10.5px;color:#cfd3e0;margin:0;">2 431 / 3 012 replays · 142/min · 9 erreurs (builds alpha &lt;2015, listées) · ~4 min restantes</p>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;">
+    <div style="padding:10px 18px;border-right:1px solid #1a1d2a;">
+      <p class="kick">Tokens d'upload</p>
+      <p class="mono" style="font-size:10.5px;color:#cfd3e0;margin:0;">matella-pc <span class="up">● actif il y a 4 min</span><br>ally1-pc <span style="color:#5d6275;">jamais utilisé</span> <span style="color:#7F77DD;">+ créer</span></p>
+    </div>
+    <div style="padding:10px 18px;">
+      <p class="kick">Maintenance</p>
+      <p style="font-size:10.5px;color:#cfd3e0;margin:0;">Re-process (parser v8 → v9) : 3 012 matchs <span style="color:#7F77DD;">lancer</span><br><span style="color:#5d6275;">archive : 2,8 GB · cache raw : 1,2/5 GB · Postgres : 410 MB</span></p>
+    </div>
+  </div>
+</div>
+
+<p class="cap">10 · Widget stream (OBS) — post-game compact, ~340px, fond transparent</p>
+<div style="display:flex;gap:16px;flex-wrap:wrap;">
+  <div class="mk" style="width:340px;">
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid #1a1d2a;">
+      <div class="av" style="width:34px;height:34px;background:#2b2416;border:2.5px solid #EF9F27;color:#FAC775;font-size:10px;">MU</div>
+      <div><p style="margin:0;font-size:12px;font-weight:600;color:#5DCAA5;">VICTOIRE <span style="color:#8d93a8;font-weight:400;">· Cursed Hollow · 21:34</span></p>
+      <p class="mono" style="margin:1px 0 0;font-size:11px;color:#cfd3e0;">2 / 1 / 18 · KP 86% <span class="bdg b-mvp" style="margin-left:4px;">MVP</span></p></div>
+      <span class="mono" style="margin-left:auto;font-size:10px;color:#5DCAA5;">W2 ▲</span>
+    </div>
+    <div style="padding:7px 14px;">
+      <p class="mono" style="margin:0;font-size:10px;color:#8d93a8;">soak <span class="up">+22%</span> · dmg taken <span class="up">+15%</span> vs tes 30 derniers Muradin</p>
+      <p style="margin:5px 0 0;font-size:10px;color:#AFA9EC;font-style:italic;">« Troisième victoire de la soirée, monsieur. Le tank tient la baraque. » — Jarvis</p>
+    </div>
+  </div>
+  <div class="mk" style="width:340px;">
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid #1a1d2a;">
+      <div class="av" style="width:34px;height:34px;background:#16202c;border:2.5px solid #378ADD;color:#85B7EB;font-size:10px;">TY</div>
+      <div><p style="margin:0;font-size:12px;font-weight:600;color:#F7C1C1;">DÉFAITE <span style="color:#8d93a8;font-weight:400;">· Braxis Holdout · 18:51</span></p>
+      <p class="mono" style="margin:1px 0 0;font-size:11px;color:#cfd3e0;">5 / 4 / 11 · KP 73% <span class="bdg b-mvp" style="margin-left:4px;">PAINBRINGER</span></p></div>
+      <span class="mono" style="margin-left:auto;font-size:10px;color:#F09595;">série L1 ▼</span>
+    </div>
+    <div style="padding:7px 14px;">
+      <p class="mono" style="margin:0;font-size:10px;color:#8d93a8;">dmg héros <span class="up">+9%</span> · deaths <span class="dn">+33%</span> · 1ᵉʳ objectif perdu (39% sur cette carte)</p>
+      <p style="margin:5px 0 0;font-size:10px;color:#AFA9EC;font-style:italic;">« Le tir était là, les morts un peu trop. Braxis reste votre pire carte, monsieur. » — Jarvis</p>
+    </div>
+  </div>
+</div>
+<p class="note" style="margin-top:6px;">Le widget apparaît au push WebSocket `match.parsed`, reste ~45 s, se replie. Variante « ligne discrète » pour l'in-game (réutilise le panneau patch existant de l'overlay).</p>
+
+</body>
+</html>
