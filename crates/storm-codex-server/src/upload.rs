@@ -32,14 +32,17 @@ pub(crate) fn game_fingerprint(out: &storm_stats::Output) -> Option<String> {
     Some(sha256_hex(src.as_bytes()))
 }
 
-/// storm-stats statut ≠ 1 → classe d'erreur typée (visible en Admin).
+/// storm-stats statut ≠ 1 → classe d'erreur typée (visible en Admin). Exhaustif sur les
+/// constantes `storm_stats::status` (cf. constants.rs).
 fn reject_class(status: i64) -> &'static str {
     match status {
-        0 => "unsupported_mode", // brawl
-        -3 => "unsupported_map", // carte hors table (hors EXTRA_MAPS)
-        -4 => "computer_player",
-        -5 => "incomplete",
-        -6 => "too_old",
+        0 => "unsupported_mode",  // UNSUPPORTED — brawl / mode non géré
+        -2 => "stats_failure",    // FAILURE — échec interne du moteur de stats
+        -3 => "unsupported_map",  // carte hors table (et hors EXTRA_MAPS)
+        -4 => "computer_player",  // partie avec IA
+        -5 => "incomplete",       // replay tronqué / partie incomplète
+        -6 => "too_old",          // build trop ancien (carte absente du référentiel)
+        -7 => "unverified_build", // build trop récent / non vérifié
         _ => "parse_failed",
     }
 }
