@@ -6,3 +6,5 @@ spike/bench-dotnet/bin/
 spike/bench-dotnet/obj/
 __pycache__/
 .venv/
+tools/parity-harness/node_modules/
+
