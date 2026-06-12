@@ -76,18 +76,33 @@ ordonné + premiers objectif/fort/keep). Endpoint `/api/dim/heroes`.
 admin-protégé, `/api/teams`+`/api/collections`), **page Admin/Import** (santé uploads, création
 de tokens, gestion équipes/collections, re-process). Toutes les pages SotS ont leur équivalent.
 
-## Ce qui reste (dépendances opérateur/box)
-- **Jalon 4 (résiduel)** : ligues (au-dessus des équipes), export JSON, `dim_talents` détaillés —
-  mineurs. Le **front parité est livré et vérifié** (toutes les pages principales).
-- **Jalon 5 (intégration box)** : déployer sur le box, brancher le vrai Redis Jarvis + le
-  consommateur, valider le push Azure contre l'EBS, exécuter le runbook de décommission Node.
+## Déploiement box — FAIT (non invasif, 2026-06-12 soir)
+Empaquetage livré : `Dockerfile` multi-stage (web Vite + serveur Rust + runtime slim, migrations
+embarquées), `docker-compose.yml` prod (Postgres dédié `storm-codex-pg` + serveur ; push opt-in
+laissé vide), `.dockerignore`, `.env.example`. **Déployé sur le box** dans `~/apps/storm-codex`
+(rsync + `docker compose up -d --build`). Port hôte **5102** (8088 pris par gluetun). Vérifié :
+les 2 conteneurs **healthy** ; `/api/health` 200 (db up) ; 11 tables migrées ; **dim_heroes = 90
+héros répliqués depuis HotsPatchNotes :5001** (via `host.docker.internal`) ; SPA `/` 200 ; widget
+`/widget` 200 ; DB vide prête ; joignable du Mac via Tailscale (`192.168.129.85:5102`).
+**Non invasif** : Node overlay, Mongo et Redis Jarvis **non touchés** (REDIS_URL/AZURE_* vides) ;
+aucune décommission. Le serveur est en place, sain, en attente d'uploads du PC de jeu.
+
+## Ce qui reste (dépendances opérateur/PC de jeu)
+- **Backfill réel** : pointer `client-rs` (PC de jeu) vers `http://192.168.129.85:5102` + token
+  d'upload (créer via `POST /api/admin/tokens`, ADMIN_TOKEN dans le `.env` du box) ; lancer le
+  mode backfill de l'archive (~2 800 replays). Validé en dev jalon 3 ; à rejouer en prod.
+- **Bascule jalon 5** (le soir, partie réelle) : renseigner `REDIS_URL` (Redis Jarvis) +
+  `AZURE_PUSH_URL/TOKEN` dans le `.env` du box → `docker compose up -d` ; jouer une partie →
+  vérifier page < 5 s, widget OBS, event `hots.match.completed` sur Redis Jarvis, push Azure ;
+  puis runbook de décommission du Node (`docs/runbooks/2026-06-12-bascule-decommission-node.md`).
+- **Jalon 4 (résiduel mineur)** : ligues au-dessus des équipes, export JSON, `dim_talents`.
 - **Jalon 6 (publication)** : `cargo publish` storm-replay puis storm-stats (compte crates.io
-  opérateur) ; création des repos GitHub publics. `--dry-run` validé, LICENSE MIT en place.
+  opérateur) ; repos GitHub publics. `--dry-run` validé, LICENSE MIT en place.
 
 ## Jalons (résumé — détail et critères dans la spec)
 0 spike **GO ✅** → 1 storm-replay **✅** → 2 storm-stats **✅** (+ 2.5 cartes ARAM) →
-3 serveur+DB+backfill **✅** → 4 front parité **socle ✅** → 5 stream+Jarvis+bascule **code ✅** →
-6 publication **prêt** (publish = action opérateur).
+3 serveur+DB+backfill **✅** → 4 front parité **socle ✅** → 5 stream+Jarvis+bascule **code ✅ +
+déployé box (non invasif) ✅** → 6 publication **prêt** (publish = action opérateur).
 
 ## Décisions verrouillées (ne pas rouvrir sans l'opérateur)
 Rust (**confirmé par le spike** — repli .NET écarté) · Postgres · design Nexus Codex ·
