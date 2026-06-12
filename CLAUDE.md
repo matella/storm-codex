@@ -56,3 +56,10 @@ le soir quand le box tourne. Les jalons 0–2 n'ont pas besoin du box du tout.
 Rust 2021+, clippy strict, erreurs typées (`thiserror`), pas de `unwrap()` hors tests ;
 front React + Vite + TS + TanStack + uPlot, tokens Nexus Codex ; commits conventionnels ;
 secrets uniquement dans le .env du box, jamais commités.
+
+**Documentation à jour obligatoire — MCP Context7.** Avant d'utiliser une API de bibliothèque ou
+de framework (axum, tokio, sqlx, serde, egui, TanStack, uPlot, React, Vite…), interroger le MCP
+**Context7** (`resolve-library-id` puis `query-docs`) pour la doc actuelle — ne pas se fier à la
+mémoire du modèle (versions/API qui bougent : axum et TanStack en particulier). Vaut pour la
+syntaxe, la config, les migrations de version et le débogage spécifique à une lib. Si Context7
+n'est pas connecté dans la session, le signaler plutôt que de coder de mémoire.
