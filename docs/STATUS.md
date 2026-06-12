@@ -71,9 +71,14 @@ d'univers réels** sur les avatars ; **timeline uPlot** d'avantage de niveau sur
 match ; **export CSV** (`/api/matches.csv` + lien UI) ; détail de match **enrichi** (draft
 ordonné + premiers objectif/fort/keep). Endpoint `/api/dim/heroes`.
 
+## Jalon 4 — secondaire fait (2026-06-12)
+**Trends par patch** (winrate/durée par build, `/api/trends`), **équipes/collections** (CRUD
+admin-protégé, `/api/teams`+`/api/collections`), **page Admin/Import** (santé uploads, création
+de tokens, gestion équipes/collections, re-process). Toutes les pages SotS ont leur équivalent.
+
 ## Ce qui reste (dépendances opérateur/box)
-- **Jalon 4 (secondaire)** : trends par patch, équipes/ligues/collections (CRUD de définitions
-  manuelles + UI), admin/import UI, export JSON. Le **cœur data-backed est livré et vérifié**.
+- **Jalon 4 (résiduel)** : ligues (au-dessus des équipes), export JSON, `dim_talents` détaillés —
+  mineurs. Le **front parité est livré et vérifié** (toutes les pages principales).
 - **Jalon 5 (intégration box)** : déployer sur le box, brancher le vrai Redis Jarvis + le
   consommateur, valider le push Azure contre l'EBS, exécuter le runbook de décommission Node.
 - **Jalon 6 (publication)** : `cargo publish` storm-replay puis storm-stats (compte crates.io

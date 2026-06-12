@@ -7,6 +7,8 @@ import { Heroes } from "./pages/Heroes";
 import { Maps } from "./pages/Maps";
 import { Player } from "./pages/Player";
 import { Widget } from "./pages/Widget";
+import { Trends } from "./pages/Trends";
+import { Admin } from "./pages/Admin";
 
 export default function App() {
   return (
@@ -20,6 +22,8 @@ export default function App() {
         <Route path="player/:toon" element={<Player />} />
         <Route path="heroes" element={<Heroes />} />
         <Route path="maps" element={<Maps />} />
+        <Route path="trends" element={<Trends />} />
+        <Route path="admin" element={<Admin />} />
       </Route>
     </Routes>
   );

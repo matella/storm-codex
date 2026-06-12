@@ -6,6 +6,7 @@ mod azure;
 mod config;
 mod dim;
 mod jarvis;
+mod manage;
 pub mod project;
 mod raw;
 mod read;
@@ -94,6 +95,11 @@ async fn run() -> Result<(), String> {
         .route("/api/maps", get(read::list_maps))
         .route("/api/dim/heroes", get(read::dim_heroes))
         .route("/api/matches.csv", get(read::matches_csv))
+        .route("/api/trends", get(manage::trends))
+        .route("/api/teams", get(manage::list_teams).post(manage::create_team))
+        .route("/api/teams/{id}", axum::routing::delete(manage::delete_team))
+        .route("/api/collections", get(manage::list_collections).post(manage::create_collection))
+        .route("/api/collections/{id}", axum::routing::delete(manage::delete_collection))
         .route("/api/admin/tokens", post(admin::create_token))
         .route(
             "/api/admin/tokens/{id}",

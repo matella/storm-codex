@@ -7,6 +7,8 @@ const TABS: [string, string][] = [
   ["/matches", "Matchs"],
   ["/heroes", "Héros"],
   ["/maps", "Cartes"],
+  ["/trends", "Trends"],
+  ["/admin", "Admin"],
 ];
 
 export function Layout() {
