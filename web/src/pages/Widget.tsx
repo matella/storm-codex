@@ -1,9 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { fetchMatches, modeBadge, fmtDur, useLiveUpdates } from "../api";
+import { fetchMatches, modeBadge, fmtDur, useLiveUpdates, type MatchPlayer } from "../api";
 import { Avatar } from "../components/Avatar";
 
-/** Widget OBS (browser source) : résumé de la dernière partie, fond transparent, live via WS. */
+/**
+ * Widget OBS (browser source) : résumé de la DERNIÈRE partie du point de vue de l'opérateur,
+ * fond transparent, mise à jour live via WS. L'opérateur est désigné par `?me=<nom en jeu>`
+ * dans l'URL de la browser source (ex. /widget?me=matella) ; à défaut, le premier joueur.
+ */
 export function Widget() {
   const { data, refetch } = useQuery({ queryKey: ["widget-last"], queryFn: () => fetchMatches({ limit: 1 }) });
   useLiveUpdates(() => refetch());
@@ -14,9 +18,20 @@ export function Widget() {
 
   const m = data?.[0];
   if (!m) return <div style={{ padding: 16 }} />;
-  const p = m.players?.[0];
-  const won = m.winner === p?.team;
+
+  const players = m.players ?? [];
+  const me = pickOperator(players, new URLSearchParams(location.search).get("me"));
+  const won = me?.team != null && m.winner === me.team;
   const mb = modeBadge(m.mode);
+
+  // K/A/D du point de vue opérateur ; KP = takedowns / takedowns de l'équipe.
+  const k = me?.kills ?? 0;
+  const td = me?.takedowns ?? 0;
+  const d = me?.deaths ?? 0;
+  const a = Math.max(0, td - k);
+  const teamTd = players.filter((p) => p.team === me?.team).reduce((s, p) => s + (p.takedowns ?? 0), 0);
+  const kp = teamTd > 0 ? Math.round((td / teamTd) * 100) : null;
+
   return (
     <div style={{ padding: 14, maxWidth: 360 }}>
       <div
@@ -31,18 +46,31 @@ export function Widget() {
           boxShadow: "0 8px 30px rgba(0,0,0,.5)",
         }}
       >
-        <Avatar hero={p?.hero ?? null} size={44} />
+        <Avatar hero={me?.hero ?? null} size={44} />
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 7 }}>
-            {p?.hero ?? "?"} · {m.map}
-            <span className={`bdg ${won ? "b-win" : "b-loss"}`}>{won ? "VICTOIRE" : "DÉFAITE"}</span>
+            <span style={{ color: won ? "var(--win)" : "var(--loss)" }}>{won ? "VICTOIRE" : "DÉFAITE"}</span>
+            <span style={{ color: "var(--text-2)", fontWeight: 400 }}>· {me?.hero ?? "?"} · {m.map}</span>
           </div>
-          <div className="mono" style={{ fontSize: 11, color: "var(--text-2)", marginTop: 3 }}>
-            <span className={`bdg ${mb.cls}`}>{mb.short}</span> · {fmtDur(m.length)} · équipe{" "}
-            {m.winner === 0 ? "bleue" : "rouge"} gagne
+          <div className="mono" style={{ fontSize: 12, color: "#cfd3e0", marginTop: 3 }}>
+            {k}/{a}/{d}
+            {kp != null && <span style={{ color: "var(--text-2)" }}> · KP {kp}%</span>}
+            <span style={{ color: "var(--text-2)" }}> · </span>
+            <span className={`bdg ${mb.cls}`}>{mb.short}</span>
+            <span style={{ color: "var(--text-2)" }}> · {fmtDur(m.length)}</span>
           </div>
         </div>
       </div>
     </div>
   );
+}
+
+/** Le joueur opérateur : match par nom (insensible à la casse) ; sinon le premier joueur. */
+function pickOperator(players: MatchPlayer[], me: string | null): MatchPlayer | undefined {
+  if (me) {
+    const target = me.toLowerCase();
+    const found = players.find((p) => (p.name ?? "").toLowerCase() === target);
+    if (found) return found;
+  }
+  return players[0];
 }

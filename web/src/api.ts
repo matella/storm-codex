@@ -8,6 +8,9 @@ export interface MatchPlayer {
   hero: string | null;
   team: number | null;
   win: boolean | null;
+  kills: number | null;
+  deaths: number | null;
+  takedowns: number | null;
 }
 export interface MatchSummary {
   id: number;
