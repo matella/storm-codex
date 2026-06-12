@@ -57,18 +57,27 @@
   collections (définitions manuelles), admin/import UI, exports CSV/JSON, anneaux d'univers réels
   (`dim_heroes` depuis HotsPatchNotes :5001), timelines uPlot du détail de match.
 
-## Prochaine étape — finir le jalon 4 puis jalon 5
-- **Jalon 4 (reste)** : pages secondaires + `dim_heroes`/`dim_talents` (API HotsPatchNotes box)
-  + timelines uPlot. *Accept : checklist parité par page, p95 < 100 ms (déjà 52 ms).*
-- **Jalon 5** : widget OBS, `hots.match.completed` → Redis box, connecteur Jarvis, push
-  post-game box→Azure (extension Twitch), **décommission du serveur Node local**. **Nécessite le
-  box** (Redis Jarvis, soir) — premier jalon qui en dépend réellement pour l'intégration.
-- **Jalon 6** : publication crates.io + repos GitHub publics (storm-replay/storm-stats).
+- **Jalon 5 : code livré** (2026-06-12). Émetteur **Jarvis** (`jarvis.rs`) :
+  `hots.match.completed` → Redis avec invariants spine (testé E2E contre Redis local Docker,
+  event bien formé). **Widget OBS** (`/widget`, fond transparent, live WS). **Push Azure**
+  (`azure.rs`, POST sortant authentifié — code prêt, non testé contre l'EBS réelle).
+  **Bascule/décommission Node** : runbook `docs/runbooks/2026-06-12-bascule-decommission-node.md`
+  (étape box/opérateur, le soir). Plan : `docs/plans/2026-06-12-jalon5-stream-jarvis.md`.
+- **Jalon 6 : prêt à publier** — voir ci-dessous.
+
+## Ce qui reste (dépendances opérateur/box)
+- **Jalon 4 (compléments)** : pages secondaires (trends/équipes/ligues/collections/admin UI/
+  exports), `dim_heroes`/`dim_talents` (API HotsPatchNotes :5001 du box), timelines uPlot.
+- **Jalon 5 (intégration box)** : déployer sur le box, brancher le vrai Redis Jarvis + le
+  consommateur, valider le push Azure contre l'EBS, exécuter le runbook de décommission Node.
+- **Jalon 6 (publication)** : `cargo publish` de storm-replay puis storm-stats sur crates.io
+  (compte crates.io opérateur) ; création des repos GitHub publics. `cargo publish --dry-run`
+  validé localement. LICENSE MIT à la racine.
 
 ## Jalons (résumé — détail et critères dans la spec)
 0 spike **GO ✅** → 1 storm-replay **✅** → 2 storm-stats **✅** (+ 2.5 cartes ARAM) →
-3 serveur+DB+backfill **✅** → 4 front parité **socle ✅** → 5 stream+Jarvis+bascule →
-6 publication crates.
+3 serveur+DB+backfill **✅** → 4 front parité **socle ✅** → 5 stream+Jarvis+bascule **code ✅** →
+6 publication **prêt** (publish = action opérateur).
 
 ## Décisions verrouillées (ne pas rouvrir sans l'opérateur)
 Rust (**confirmé par le spike** — repli .NET écarté) · Postgres · design Nexus Codex ·

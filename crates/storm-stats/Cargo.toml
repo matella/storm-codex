@@ -7,7 +7,9 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-storm-replay = { path = "../storm-replay" }
+# version + path : path pour le dev local, version pour la publication crates.io (jalon 6 —
+# storm-stats se publie après storm-replay).
+storm-replay = { version = "0.1", path = "../storm-replay" }
 # preserve_order : les objets JS sont ordonnés par insertion — le `for..in` sur clés
 # non-numériques (nukes de Warhead Junction…) doit suivre cet ordre, pas l'ordre trié.
 serde_json = { version = "1", features = ["preserve_order"] }
