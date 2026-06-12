@@ -9,7 +9,9 @@ mod read;
 mod upload;
 mod ws;
 
-use axum::{extract::State, http::StatusCode, routing::any, routing::get, routing::post, Json, Router};
+use axum::{
+    extract::State, http::StatusCode, routing::any, routing::get, routing::post, Json, Router,
+};
 use config::Config;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
@@ -60,7 +62,9 @@ async fn run() -> Result<(), String> {
         .await
         .map_err(|e| format!("migrations : {e}"))?;
 
-    let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+    let cores = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
     let (events, _) = broadcast::channel(1024);
     let state = AppState {
         cfg: Arc::new(cfg),
@@ -79,7 +83,10 @@ async fn run() -> Result<(), String> {
         .route("/api/players/{toon}", get(read::get_player))
         .route("/api/heroes", get(read::list_heroes))
         .route("/api/admin/tokens", post(admin::create_token))
-        .route("/api/admin/tokens/{id}", axum::routing::delete(admin::revoke_token))
+        .route(
+            "/api/admin/tokens/{id}",
+            axum::routing::delete(admin::revoke_token),
+        )
         .route("/api/admin/uploads", get(admin::uploads_health))
         .route("/api/admin/reprocess", post(admin::reprocess))
         .route("/ws", any(ws::ws_handler))
@@ -89,12 +96,18 @@ async fn run() -> Result<(), String> {
         .await
         .map_err(|e| format!("bind {bind} : {e}"))?;
     tracing::info!("storm-codex-server à l'écoute sur {bind}");
-    axum::serve(listener, app).await.map_err(|e| format!("serve : {e}"))
+    axum::serve(listener, app)
+        .await
+        .map_err(|e| format!("serve : {e}"))
 }
 
 async fn health(State(state): State<AppState>) -> (StatusCode, Json<serde_json::Value>) {
     let db_up = sqlx::query("SELECT 1").execute(&state.db).await.is_ok();
-    let code = if db_up { StatusCode::OK } else { StatusCode::SERVICE_UNAVAILABLE };
+    let code = if db_up {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
     (
         code,
         Json(serde_json::json!({

@@ -24,8 +24,34 @@ fn gs_i(p: &J, k: &str) -> Option<i64> {
         .map(|v| v as i64)
 }
 
-/// Insère/replace le match et ses joueurs. Renvoie l'id du match.
+/// `true` si l'erreur est un deadlock (40P01) ou un échec de sérialisation (40001) — transitoire,
+/// donc re-tentable.
+fn is_retryable(e: &sqlx::Error) -> bool {
+    matches!(e, sqlx::Error::Database(db) if matches!(db.code().as_deref(), Some("40P01") | Some("40001")))
+}
+
+/// Projette le match avec reprise sur deadlock (backfill concurrent : plusieurs transactions
+/// touchent les mêmes lignes `players` / `matches`).
 pub async fn project_match(
+    db: &PgPool,
+    fingerprint: &str,
+    parser_version: i32,
+    output: &storm_stats::Output,
+) -> Result<i64, ProjectError> {
+    let mut attempt = 0;
+    loop {
+        match project_once(db, fingerprint, parser_version, output).await {
+            Err(ProjectError::Db(e)) if is_retryable(&e) && attempt < 4 => {
+                attempt += 1;
+                tokio::time::sleep(std::time::Duration::from_millis(20 * attempt)).await;
+            }
+            other => return other,
+        }
+    }
+}
+
+/// Insère/replace le match et ses joueurs (une tentative). Renvoie l'id du match.
+async fn project_once(
     db: &PgPool,
     fingerprint: &str,
     parser_version: i32,
@@ -106,26 +132,36 @@ pub async fn project_match(
         .bind(p)
         .execute(&mut *tx)
         .await?;
-
-        // référentiel joueurs : dernier nom + agrégat d'alias
-        if let Some(name) = p.get("name").and_then(J::as_str) {
-            sqlx::query(
-                "INSERT INTO players (toon_handle, last_name, names, updated_at)
-                 VALUES ($1,$2, jsonb_build_array($2::text), now())
-                 ON CONFLICT (toon_handle) DO UPDATE SET
-                    last_name = EXCLUDED.last_name,
-                    names = CASE WHEN players.names ? EXCLUDED.last_name THEN players.names
-                                 ELSE players.names || jsonb_build_array(EXCLUDED.last_name) END,
-                    updated_at = now()",
-            )
-            .bind(toon)
-            .bind(name)
-            .execute(&mut *tx)
-            .await?;
-        }
     }
 
     tx.commit().await?;
+
+    // Référentiel joueurs (agrégat dénormalisé, dérivable de match_players) : UPSERT HORS de la
+    // transaction du match, en statements autonomes. Toutes les parties partagent des joueurs
+    // (le propriétaire de l'archive est dans toutes) ; garder ces UPSERT dans la transaction
+    // sérialiserait tout le backfill sur cette ligne. En autocommit, le verrou n'est tenu qu'un
+    // instant. Best-effort : un échec ici ne défait pas le match déjà projeté.
+    let mut roster: Vec<(&String, &str)> = players
+        .iter()
+        .filter_map(|(toon, p)| p.get("name").and_then(J::as_str).map(|n| (toon, n)))
+        .collect();
+    roster.sort_unstable_by(|a, b| a.0.cmp(b.0));
+    for (toon, name) in roster {
+        let _ = sqlx::query(
+            "INSERT INTO players (toon_handle, last_name, names, updated_at)
+             VALUES ($1,$2, jsonb_build_array($2::text), now())
+             ON CONFLICT (toon_handle) DO UPDATE SET
+                last_name = EXCLUDED.last_name,
+                names = CASE WHEN players.names ? EXCLUDED.last_name THEN players.names
+                             ELSE players.names || jsonb_build_array(EXCLUDED.last_name) END,
+                updated_at = now()",
+        )
+        .bind(toon)
+        .bind(name)
+        .execute(db)
+        .await;
+    }
+
     Ok(match_id)
 }
 
@@ -145,7 +181,10 @@ mod tests {
             return;
         };
         let db = PgPoolOptions::new().connect(&url).await.expect("connexion");
-        sqlx::migrate!("./migrations").run(&db).await.expect("migrations");
+        sqlx::migrate!("./migrations")
+            .run(&db)
+            .await
+            .expect("migrations");
 
         // un replay du mini-corpus de storm-replay (committé)
         let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../storm-replay/tests/data");
@@ -159,7 +198,11 @@ mod tests {
         assert_eq!(out.status, 1, "replay de test non parsé");
 
         let fp = "test-projection-fingerprint";
-        sqlx::query("DELETE FROM matches WHERE fingerprint = $1").bind(fp).execute(&db).await.unwrap();
+        sqlx::query("DELETE FROM matches WHERE fingerprint = $1")
+            .bind(fp)
+            .execute(&db)
+            .await
+            .unwrap();
 
         let id1 = project_match(&db, fp, 1, &out).await.expect("projection 1");
         let n: i64 = sqlx::query_scalar("SELECT count(*) FROM match_players WHERE match_id = $1")
@@ -171,11 +214,12 @@ mod tests {
 
         // re-projection (re-process) : remplace, pas de doublon
         let id2 = project_match(&db, fp, 1, &out).await.expect("projection 2");
-        let matches: i64 = sqlx::query_scalar("SELECT count(*) FROM matches WHERE fingerprint = $1")
-            .bind(fp)
-            .fetch_one(&db)
-            .await
-            .unwrap();
+        let matches: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM matches WHERE fingerprint = $1")
+                .bind(fp)
+                .fetch_one(&db)
+                .await
+                .unwrap();
         assert_eq!(matches, 1, "re-process a créé un doublon");
         assert_ne!(id1, id2, "l'id devrait changer après delete+insert");
         let n2: i64 = sqlx::query_scalar("SELECT count(*) FROM match_players WHERE match_id = $1")
@@ -185,6 +229,10 @@ mod tests {
             .unwrap();
         assert_eq!(n2, 10);
 
-        sqlx::query("DELETE FROM matches WHERE fingerprint = $1").bind(fp).execute(&db).await.unwrap();
+        sqlx::query("DELETE FROM matches WHERE fingerprint = $1")
+            .bind(fp)
+            .execute(&db)
+            .await
+            .unwrap();
     }
 }

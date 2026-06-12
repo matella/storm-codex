@@ -14,7 +14,10 @@ type Resp = Result<Json<J>, (StatusCode, Json<J>)>;
 
 fn db_err(e: sqlx::Error) -> (StatusCode, Json<J>) {
     tracing::error!("lecture : {e}");
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "db"})))
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(serde_json::json!({"error": "db"})),
+    )
 }
 
 #[derive(Deserialize)]
@@ -80,7 +83,10 @@ pub async fn get_match(State(s): State<AppState>, Path(id): Path<i64>) -> Resp {
     .map_err(db_err)?;
     match v {
         Some(v) => Ok(Json(v)),
-        None => Err((StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "match inconnu"})))),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "match inconnu"})),
+        )),
     }
 }
 

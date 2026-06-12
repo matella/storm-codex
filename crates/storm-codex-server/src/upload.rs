@@ -35,8 +35,8 @@ pub(crate) fn game_fingerprint(out: &storm_stats::Output) -> Option<String> {
 /// storm-stats statut ≠ 1 → classe d'erreur typée (visible en Admin).
 fn reject_class(status: i64) -> &'static str {
     match status {
-        0 => "unsupported_mode",   // brawl
-        -3 => "unsupported_map",   // carte hors table (hors EXTRA_MAPS)
+        0 => "unsupported_mode", // brawl
+        -3 => "unsupported_map", // carte hors table (hors EXTRA_MAPS)
         -4 => "computer_player",
         -5 => "incomplete",
         -6 => "too_old",
@@ -84,35 +84,49 @@ pub async fn upload(
     let Some(token_id) = token_id else {
         return (
             StatusCode::UNAUTHORIZED,
-            Json(UploadResponse { status: "unauthorized".into(), match_id: None, error_class: None }),
+            Json(UploadResponse {
+                status: "unauthorized".into(),
+                match_id: None,
+                error_class: None,
+            }),
         );
     };
 
     // 2. dédup fichier (hash de contenu) — réponse immédiate si déjà traité
     let content_hash = sha256_hex(&bytes);
-    if let Ok(Some(st)) = sqlx::query_scalar::<_, String>(
-        "SELECT status FROM uploads WHERE fingerprint = $1",
-    )
-    .bind(&content_hash)
-    .fetch_optional(&state.db)
-    .await
+    if let Ok(Some(st)) =
+        sqlx::query_scalar::<_, String>("SELECT status FROM uploads WHERE fingerprint = $1")
+            .bind(&content_hash)
+            .fetch_optional(&state.db)
+            .await
     {
         if st == "parsed" || st == "duplicate" {
             // 409 Conflict : compat avec le handling « doublon » de client-rs
             return (
                 StatusCode::CONFLICT,
-                Json(UploadResponse { status: "duplicate".into(), match_id: None, error_class: None }),
+                Json(UploadResponse {
+                    status: "duplicate".into(),
+                    match_id: None,
+                    error_class: None,
+                }),
             );
         }
     }
 
     // 3. archive d'abord (source de vérité), puis ligne uploads(pending)
-    let archived = state.cfg.archive_dir.join(format!("{content_hash}.StormReplay"));
+    let archived = state
+        .cfg
+        .archive_dir
+        .join(format!("{content_hash}.StormReplay"));
     if let Err(e) = tokio::fs::write(&archived, &bytes).await {
         tracing::error!("archivage : {e}");
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(UploadResponse { status: "error".into(), match_id: None, error_class: Some("io".into()) }),
+            Json(UploadResponse {
+                status: "error".into(),
+                match_id: None,
+                error_class: Some("io".into()),
+            }),
         );
     }
     let upload_id: i64 = match sqlx::query_scalar(
@@ -133,7 +147,11 @@ pub async fn upload(
             tracing::error!("insert upload : {e}");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(UploadResponse { status: "error".into(), match_id: None, error_class: Some("db".into()) }),
+                Json(UploadResponse {
+                    status: "error".into(),
+                    match_id: None,
+                    error_class: Some("db".into()),
+                }),
             );
         }
     };
@@ -151,7 +169,11 @@ pub async fn upload(
             });
             return (
                 StatusCode::ACCEPTED,
-                Json(UploadResponse { status: "accepted".into(), match_id: None, error_class: None }),
+                Json(UploadResponse {
+                    status: "accepted".into(),
+                    match_id: None,
+                    error_class: None,
+                }),
             );
         }
     };
@@ -163,7 +185,11 @@ pub async fn upload(
         Ok(Ok(outcome)) => outcome.into_response(),
         _ => (
             StatusCode::ACCEPTED,
-            Json(UploadResponse { status: "accepted".into(), match_id: None, error_class: None }),
+            Json(UploadResponse {
+                status: "accepted".into(),
+                match_id: None,
+                error_class: None,
+            }),
         ),
     }
 }
@@ -204,19 +230,43 @@ async fn run_parse(
         Ok(out) => out,
         Err(_) => {
             mark_failed(&state.db, upload_id, "panic", "worker panic").await;
-            return Outcome { status: "parse_failed".into(), match_id: None, error_class: Some("panic".into()) };
+            return Outcome {
+                status: "parse_failed".into(),
+                match_id: None,
+                error_class: Some("panic".into()),
+            };
         }
     };
 
     if out.status != 1 {
         let class = reject_class(out.status);
-        mark_failed(&state.db, upload_id, class, &format!("statut storm-stats {}", out.status)).await;
-        return Outcome { status: "parse_failed".into(), match_id: None, error_class: Some(class.into()) };
+        mark_failed(
+            &state.db,
+            upload_id,
+            class,
+            &format!("statut storm-stats {}", out.status),
+        )
+        .await;
+        return Outcome {
+            status: "parse_failed".into(),
+            match_id: None,
+            error_class: Some(class.into()),
+        };
     }
 
     let Some(fp) = game_fingerprint(&out) else {
-        mark_failed(&state.db, upload_id, "no_fingerprint", "fingerprint indisponible").await;
-        return Outcome { status: "parse_failed".into(), match_id: None, error_class: Some("no_fingerprint".into()) };
+        mark_failed(
+            &state.db,
+            upload_id,
+            "no_fingerprint",
+            "fingerprint indisponible",
+        )
+        .await;
+        return Outcome {
+            status: "parse_failed".into(),
+            match_id: None,
+            error_class: Some("no_fingerprint".into()),
+        };
     };
     let build = out
         .match_
@@ -244,11 +294,19 @@ async fn run_parse(
                 "match_id": match_id,
                 "map": out.match_.as_ref().and_then(|m| m.get("map")).cloned(),
             }));
-            Outcome { status: "parsed".into(), match_id: Some(match_id), error_class: None }
+            Outcome {
+                status: "parsed".into(),
+                match_id: Some(match_id),
+                error_class: None,
+            }
         }
         Err(e) => {
             mark_failed(&state.db, upload_id, "projection", &e.to_string()).await;
-            Outcome { status: "parse_failed".into(), match_id: None, error_class: Some("projection".into()) }
+            Outcome {
+                status: "parse_failed".into(),
+                match_id: None,
+                error_class: Some("projection".into()),
+            }
         }
     }
 }
@@ -266,5 +324,8 @@ async fn mark_failed(db: &sqlx::PgPool, upload_id: i64, class: &str, msg: &str) 
 }
 
 fn filename(headers: &HeaderMap) -> Option<String> {
-    headers.get("x-filename").and_then(|v| v.to_str().ok()).map(str::to_owned)
+    headers
+        .get("x-filename")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned)
 }

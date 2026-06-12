@@ -33,23 +33,32 @@
   `tolerances.json`). Rapport : `docs/research/2026-06-12-jalon2-parite.md` · plan :
   `docs/plans/2026-06-12-jalon2-storm-stats.md`.
 
-## Prochaine étape — Jalon 3 : serveur + Postgres + backfill (plan à écrire, puis exécuter)
-1. Plan writing-plans dédié. `storm-codex-server` (axum) : `POST /api/upload` (token, fingerprint
-   anti-doublon, archive d'abord, pool de workers parse storm-replay→storm-stats, transaction
-   Postgres, événement), REST de lecture, WebSocket `match.parsed`, dump `…/raw` + cache LRU,
-   Admin (tokens, re-process idempotent piloté par `parser_version`, santé). Mode backfill
-   `client-rs`.
-2. *Accept : 100 % de l'archive archivée et tentée ; ≥ 99 % parsée (échecs listés/classés dans
-   Admin) ; fin de partie → page < 5 s.* Budgets : écriture PG + push WS < 200 ms,
-   backfill 3 ans < 5 min (workers = nb cœurs).
-3. **Box requis** (Postgres/Redis Jarvis, soir ~18h→nuit, Tailscale 192.168.129.85) — premier
-   jalon qui en dépend (jalons 0–2 étaient autosuffisants sur le PC de jeu).
-4. Acquis réutilisables : `storm-stats::process_replay`, `Replay::visit_game_events`,
-   feature `fast-alloc`, classes d'erreur typées `storm_replay::Error` (→ `uploads.error_class`).
+- **Jalon 2.5 (préalable jalon 3, décision opérateur)** : extension storm-stats aux 4 cartes
+  ARAM récentes (Silver City, Lost Cavern, Braxis Outpost, Industrial District) que hots-parser
+  7.55.7 rejette — ~30 % de l'archive. `EXTRA_MAPS`, objectif minimal, handlers gardés. Diff
+  toujours 114/114 (79 parse complet + 25 extension + 10 rejets brawls).
+- **Jalon 3 : FAIT** (2026-06-12, dev contre Postgres Docker local). `crates/storm-codex-server`
+  (axum 0.8 + sqlx 0.8) : upload (token, archive, pool de parse, sémantique ≤ 2 s/202),
+  projection Postgres idempotente, WebSocket `match.parsed`, REST (matches/match/player/heroes),
+  dump `…/raw` + cache LRU, admin (tokens/reprocess/santé). **Critères : archive 2781/2781
+  archivée+tentée ; 99,4 % parsée** (échecs classés, tous légitimes) ; **backfill 1,8 min < 5** ;
+  **fin de partie → page 1,4 s < 5** ; **API p95 52 ms < 100**. Bug de deadlock concurrent trouvé
+  par le backfill et corrigé. client-rs re-pointé (repo Hots-Overlay). Rapport :
+  `docs/research/2026-06-12-jalon3-bench.md` · plan :
+  `docs/plans/2026-06-12-jalon3-serveur-db-backfill.md`.
+
+## Prochaine étape — Jalon 4 : front parité (plan à écrire, puis exécuter)
+1. Plan writing-plans dédié. SPA React + Vite + TS + TanStack (Query/Table/Virtual) + uPlot,
+   design Nexus Codex. Toutes les pages SotS (dashboard/session, matchs, détail match, joueur,
+   héros/collection, trends par patch, classements, équipes/ligues, cartes, admin/import, exports)
+   consommant l'API REST + WS du jalon 3. Servie par le binaire serveur.
+2. Peupler `dim_heroes`/`dim_talents` depuis l'API HotsPatchNotes (:5001, box) au démarrage.
+3. *Accept : chaque fonctionnalité SotS retrouvable (checklist par page), p95 API < 100 ms.*
+4. Référence visuelle : `docs/specs/2026-06-12-storm-codex-mockup.html` (14 écrans validés).
 
 ## Jalons (résumé — détail et critères dans la spec)
-0 spike **GO ✅** → 1 storm-replay **✅** → 2 storm-stats **✅** →
-3 serveur+DB+backfill → 4 front parité → 5 stream+Jarvis+bascule (décommission Node local) →
+0 spike **GO ✅** → 1 storm-replay **✅** → 2 storm-stats **✅** (+ 2.5 cartes ARAM) →
+3 serveur+DB+backfill **✅** → 4 front parité → 5 stream+Jarvis+bascule (décommission Node local) →
 6 publication crates.
 
 ## Décisions verrouillées (ne pas rouvrir sans l'opérateur)

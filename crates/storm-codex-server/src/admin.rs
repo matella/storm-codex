@@ -21,7 +21,10 @@ fn is_admin(headers: &HeaderMap, state: &AppState) -> bool {
 }
 
 fn forbidden() -> (StatusCode, Json<J>) {
-    (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "admin token requis"})))
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(serde_json::json!({"error": "admin token requis"})),
+    )
 }
 
 #[derive(Deserialize)]
@@ -56,7 +59,10 @@ pub async fn create_token(
         ),
         Err(e) => {
             tracing::error!("create_token : {e}");
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "db"})))
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "db"})),
+            )
         }
     }
 }
@@ -78,7 +84,10 @@ pub async fn revoke_token(
 }
 
 /// GET /api/admin/uploads — santé : compte par statut + échecs par classe + derniers échecs.
-pub async fn uploads_health(State(s): State<AppState>, headers: HeaderMap) -> (StatusCode, Json<J>) {
+pub async fn uploads_health(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+) -> (StatusCode, Json<J>) {
     if !is_admin(&headers, &s) {
         return forbidden();
     }
@@ -127,17 +136,20 @@ pub async fn reprocess(State(s): State<AppState>, headers: HeaderMap) -> (Status
         }
         tracing::info!("re-process terminé ({queued} fichiers)");
     });
-    (StatusCode::ACCEPTED, Json(serde_json::json!({"queued": queued})))
+    (
+        StatusCode::ACCEPTED,
+        Json(serde_json::json!({"queued": queued})),
+    )
 }
 
 async fn reprocess_one(state: &AppState, upload_id: i64, path: &str) {
     let p = std::path::PathBuf::from(path);
     let fname = path.to_owned();
-    let out = match tokio::task::spawn_blocking(move || storm_stats::process_replay(&p, &fname)).await
-    {
-        Ok(out) => out,
-        Err(_) => return,
-    };
+    let out =
+        match tokio::task::spawn_blocking(move || storm_stats::process_replay(&p, &fname)).await {
+            Ok(out) => out,
+            Err(_) => return,
+        };
     if out.status != 1 {
         return; // l'échec reste classé tel quel
     }
@@ -155,4 +167,3 @@ async fn reprocess_one(state: &AppState, upload_id: i64, path: &str) {
         }
     }
 }
-

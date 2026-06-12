@@ -23,7 +23,13 @@ fn default_stream() -> String {
 }
 
 const STREAMS: [&str; 7] = [
-    "header", "details", "initdata", "attributes", "tracker", "game", "message",
+    "header",
+    "details",
+    "initdata",
+    "attributes",
+    "tracker",
+    "game",
+    "message",
 ];
 
 pub async fn get_raw(
@@ -32,7 +38,11 @@ pub async fn get_raw(
     Query(q): Query<RawQuery>,
 ) -> Response {
     if !STREAMS.contains(&q.stream.as_str()) {
-        return (StatusCode::BAD_REQUEST, format!("stream inconnu : {}", q.stream)).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            format!("stream inconnu : {}", q.stream),
+        )
+            .into_response();
     }
     // fichier archivé d'un upload ayant produit ce match
     let archived: Option<String> = sqlx::query_scalar(
@@ -45,7 +55,11 @@ pub async fn get_raw(
     .ok()
     .flatten();
     let Some(archived) = archived else {
-        return (StatusCode::NOT_FOUND, "match ou fichier archivé introuvable").into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            "match ou fichier archivé introuvable",
+        )
+            .into_response();
     };
 
     let cache = s.cfg.raw_cache_dir.join(format!("{id}-{}.json", q.stream));
@@ -57,10 +71,13 @@ pub async fn get_raw(
 
     // miss : décodage à la volée (CPU) hors thread runtime
     let stream = q.stream.clone();
-    let decoded = tokio::task::spawn_blocking(move || decode_stream(&PathBuf::from(archived), &stream)).await;
+    let decoded =
+        tokio::task::spawn_blocking(move || decode_stream(&PathBuf::from(archived), &stream)).await;
     let json = match decoded {
         Ok(Ok(v)) => v,
-        Ok(Err(e)) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("décodage : {e}")).into_response(),
+        Ok(Err(e)) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("décodage : {e}")).into_response()
+        }
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "panic décodage").into_response(),
     };
     let bytes = serde_json::to_vec(&json).unwrap_or_default();
@@ -83,19 +100,20 @@ fn filetime_now(path: &std::path::Path) -> std::io::Result<()> {
 async fn enforce_lru(dir: &std::path::Path, max: u64) {
     let dir = dir.to_path_buf();
     let _ = tokio::task::spawn_blocking(move || {
-        let mut files: Vec<(std::path::PathBuf, u64, std::time::SystemTime)> = std::fs::read_dir(&dir)
-            .into_iter()
-            .flatten()
-            .filter_map(|e| e.ok())
-            .filter_map(|e| {
-                let m = e.metadata().ok()?;
-                if m.is_file() {
-                    Some((e.path(), m.len(), m.modified().ok()?))
-                } else {
-                    None
-                }
-            })
-            .collect();
+        let mut files: Vec<(std::path::PathBuf, u64, std::time::SystemTime)> =
+            std::fs::read_dir(&dir)
+                .into_iter()
+                .flatten()
+                .filter_map(|e| e.ok())
+                .filter_map(|e| {
+                    let m = e.metadata().ok()?;
+                    if m.is_file() {
+                        Some((e.path(), m.len(), m.modified().ok()?))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
         let mut total: u64 = files.iter().map(|(_, n, _)| *n).sum();
         if total <= max {
             return;
@@ -149,8 +167,11 @@ fn value_to_json(v: &Value) -> J {
         Value::Array(items) => J::Array(items.iter().map(value_to_json).collect()),
         Value::BitArrayBytes { bits, .. } => serde_json::json!([bits, null]),
         Value::BitArrayInt { bits, .. } => serde_json::json!([bits, null]),
-        Value::Struct(fields) => {
-            J::Object(fields.iter().map(|(n, v)| (n.to_string(), value_to_json(v))).collect())
-        }
+        Value::Struct(fields) => J::Object(
+            fields
+                .iter()
+                .map(|(n, v)| (n.to_string(), value_to_json(v)))
+                .collect(),
+        ),
     }
 }
