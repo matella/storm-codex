@@ -12,9 +12,9 @@ pub enum Error {
     #[error("archive MPQ invalide : {0}")]
     Mpq(String),
 
-    /// Un fichier embarqué attendu manque dans l'archive (ex. replay.tracker.events).
-    #[error("stream absent de l'archive : {0}")]
-    MissingStream(&'static str),
+    /// Un fichier embarqué attendu est absent ou illisible (ex. replay.tracker.events).
+    #[error("stream {0} absent ou illisible : {1}")]
+    MissingStream(&'static str, String),
 
     /// Fin de données atteinte en plein décodage.
     #[error("données tronquées : {0}")]
