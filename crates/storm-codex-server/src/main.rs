@@ -2,6 +2,7 @@
 //! WebSocket, REST. Jalon 3. Config par env (cf. `.env.example`).
 
 mod config;
+pub mod project;
 
 use axum::{extract::State, http::StatusCode, routing::get, Json, Router};
 use config::Config;
