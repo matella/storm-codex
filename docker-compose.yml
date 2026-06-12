@@ -31,7 +31,9 @@ services:
     ports:
       - "${STORM_CODEX_PORT:-8088}:8088"
     environment:
-      DATABASE_URL: postgres://storm:${POSTGRES_PASSWORD:-storm}@postgres:5432/storm_codex
+      # nom de conteneur unique (pas l'alias 'postgres' : il entre en collision avec jarvis-postgres
+      # sur le réseau jarvis_default partagé).
+      DATABASE_URL: postgres://storm:${POSTGRES_PASSWORD:-storm}@storm-codex-pg:5432/storm_codex
       ADMIN_TOKEN: ${ADMIN_TOKEN:?ADMIN_TOKEN requis}
       # référentiel héros/talents (lecture seule) — HotsPatchNotes sur l'hôte box
       HOTSPATCHNOTES_URL: ${HOTSPATCHNOTES_URL:-http://host.docker.internal:5001}
