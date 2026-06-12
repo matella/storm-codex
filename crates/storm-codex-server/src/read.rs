@@ -144,8 +144,16 @@ pub async fn matches_csv(
     Query(f): Query<MatchFilter>,
 ) -> Result<axum::response::Response, (StatusCode, Json<J>)> {
     use std::fmt::Write;
-    let rows: Vec<(i64, Option<String>, Option<i32>, Option<chrono::DateTime<chrono::Utc>>, Option<f64>, Option<i32>, Option<i32>)> =
-        sqlx::query_as(
+    type Row = (
+        i64,
+        Option<String>,
+        Option<i32>,
+        Option<chrono::DateTime<chrono::Utc>>,
+        Option<f64>,
+        Option<i32>,
+        Option<i32>,
+    );
+    let rows: Vec<Row> = sqlx::query_as(
             "SELECT id, map, mode, played_at, length, winner, build FROM matches
              WHERE ($1::text IS NULL OR map = $1) AND ($2::int IS NULL OR mode = $2)
              ORDER BY played_at DESC NULLS LAST LIMIT $3",
