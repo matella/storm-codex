@@ -163,6 +163,30 @@ impl<'a> BitPackedDecoder<'a> {
             .ok_or_else(|| Error::Protocol(format!("typeid {typeid} hors table")))
     }
 
+    /// Delta de gameloop (`NNet.SVarUint32` = choice de `_int`) sans matérialiser de `Value`
+    /// — chemin chaud : un appel par événement game/message.
+    pub fn svaruint32_value(&mut self, typeid: usize) -> Result<i64> {
+        if let TypeInfo::Choice { lo, bits, fields } = self.typeinfo(typeid)? {
+            let (lo, bits) = (*lo, *bits);
+            let tag = self.read_int(lo, bits)?;
+            let chosen = fields
+                .get(&tag)
+                .map(|(_, t)| *t)
+                .ok_or_else(|| Error::Corrupted(format!("svaruint32 : tag inconnu {tag}")))?;
+            if let TypeInfo::Int { lo, bits } = self.typeinfo(chosen)? {
+                let (lo, bits) = (*lo, *bits);
+                return self.read_int(lo, bits);
+            }
+            return self
+                .instance(chosen)?
+                .as_int()
+                .ok_or_else(|| Error::Corrupted("svaruint32 non entier".into()));
+        }
+        self.instance(typeid)?
+            .first_field_int()
+            .ok_or_else(|| Error::Corrupted("svaruint32 invalide".into()))
+    }
+
     pub fn instance(&mut self, typeid: usize) -> Result<Value> {
         Ok(match self.typeinfo(typeid)? {
             TypeInfo::Int { lo, bits } => {
@@ -228,10 +252,10 @@ impl<'a> BitPackedDecoder<'a> {
             TypeInfo::Struct { fields } => {
                 // bitpacked : séquentiel, sans tags ni skip — tout champ se décode.
                 let n = fields.len();
-                let mut result: Vec<(String, Value)> = Vec::with_capacity(n);
+                let mut result: Vec<(std::sync::Arc<str>, Value)> = Vec::with_capacity(n);
                 for (name, ftypeid, _) in fields {
                     let v = self.instance(*ftypeid)?;
-                    if name == "__parent" {
+                    if name.as_ref() == "__parent" {
                         match v {
                             Value::Struct(parent) => result.extend(parent),
                             other if n == 1 => return Ok(other),

@@ -78,6 +78,30 @@ impl<'a> VersionedDecoder<'a> {
             .ok_or_else(|| Error::Protocol(format!("typeid {typeid} hors table")))
     }
 
+    /// Delta de gameloop (`NNet.SVarUint32` = choice de `_int`) sans matérialiser de `Value`
+    /// — chemin chaud : un appel par événement de chaque stream.
+    pub fn svaruint32_value(&mut self, typeid: usize) -> Result<i64> {
+        if let TypeInfo::Choice { fields, .. } = self.typeinfo(typeid)? {
+            self.expect_skip(3)?;
+            let tag = self.vint()?;
+            if let Some(&(_, chosen)) = fields.get(&tag).map(|(n, t)| (n, *t)).as_ref() {
+                if matches!(self.typeinfo(chosen)?, TypeInfo::Int { .. }) {
+                    self.expect_skip(9)?;
+                    return self.vint();
+                }
+                return self
+                    .instance(chosen)?
+                    .as_int()
+                    .ok_or_else(|| Error::Corrupted("svaruint32 non entier".into()));
+            }
+            self.skip_instance()?;
+            return Err(Error::Corrupted(format!("svaruint32 : tag inconnu {tag}")));
+        }
+        self.instance(typeid)?
+            .first_field_int()
+            .ok_or_else(|| Error::Corrupted("svaruint32 invalide".into()))
+    }
+
     pub fn instance(&mut self, typeid: usize) -> Result<Value> {
         Ok(match self.typeinfo(typeid)? {
             TypeInfo::Int { .. } => {
@@ -160,14 +184,14 @@ impl<'a> VersionedDecoder<'a> {
                 self.expect_skip(5)?;
                 let count = usize::try_from(self.vint()?)
                     .map_err(|_| Error::Corrupted("taille de struct négative".into()))?;
-                let mut result: Vec<(String, Value)> = Vec::with_capacity(count);
+                let mut result: Vec<(std::sync::Arc<str>, Value)> = Vec::with_capacity(count);
                 for _ in 0..count {
                     let tag = self.vint()?;
                     match fields.iter().find(|f| f.2 == tag) {
                         Some((name, ftypeid, _)) => {
                             let (name, ftypeid) = (name.clone(), *ftypeid);
                             let v = self.instance(ftypeid)?;
-                            if name == "__parent" {
+                            if name.as_ref() == "__parent" {
                                 match v {
                                     Value::Struct(parent) => result.extend(parent),
                                     other if fields.len() == 1 => return Ok(other),

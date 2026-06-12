@@ -221,4 +221,10 @@ impl Replay {
     pub fn message_events(&self) -> Result<Vec<Value>> {
         self.protocol.decode_message_events(&self.stream("replay.message.events")?)
     }
+
+    /// Taille du stream game events décompressé sans le décoder (diagnostic de perf).
+    #[doc(hidden)]
+    pub fn game_events_raw_len(&self) -> Result<usize> {
+        Ok(self.stream("replay.game.events")?.len())
+    }
 }

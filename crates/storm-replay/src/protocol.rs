@@ -14,7 +14,7 @@ mod embed {
 }
 pub use embed::LATEST_BUILD;
 
-type EventTypes = HashMap<i64, (usize, String)>;
+type EventTypes = crate::typeinfo::FastI64Map<(usize, Arc<str>)>;
 
 pub struct Protocol {
     typeinfos: Vec<TypeInfo>,
@@ -32,7 +32,7 @@ pub struct Protocol {
 }
 
 fn parse_event_types(json: &serde_json::Value, key: &str) -> Result<EventTypes> {
-    let mut out = HashMap::new();
+    let mut out = EventTypes::default();
     if let Some(map) = json.get(key).and_then(|v| v.as_object()) {
         for (k, v) in map {
             let pair = v
@@ -45,7 +45,7 @@ fn parse_event_types(json: &serde_json::Value, key: &str) -> Result<EventTypes> 
                         .and_then(|v| v.as_u64())
                         .ok_or_else(|| Error::Protocol(format!("{key} : typeid")))?
                         as usize,
-                    pair.get(1).and_then(|v| v.as_str()).unwrap_or("?").to_owned(),
+                    pair.get(1).and_then(|v| v.as_str()).unwrap_or("?").into(),
                 ),
             );
         }
@@ -105,10 +105,7 @@ impl Protocol {
         let mut events = Vec::new();
         let mut gameloop: i64 = 0;
         while !decoder.done() {
-            let delta = decoder
-                .instance(self.svaruint32_typeid)?
-                .first_field_int()
-                .ok_or_else(|| Error::Corrupted("delta svaruint32 invalide".into()))?;
+            let delta = decoder.svaruint32_value(self.svaruint32_typeid)?;
             gameloop += delta;
             let eventid = decoder
                 .instance(eventid_typeid)?
@@ -152,10 +149,7 @@ impl Protocol {
         let mut events = Vec::new();
         let mut gameloop: i64 = 0;
         while !decoder.done() {
-            let delta = decoder
-                .instance(self.svaruint32_typeid)?
-                .first_field_int()
-                .ok_or_else(|| Error::Corrupted("delta svaruint32 invalide".into()))?;
+            let delta = decoder.svaruint32_value(self.svaruint32_typeid)?;
             gameloop += delta;
             let userid = decoder.instance(self.replay_userid_typeid)?;
             let eventid = decoder
@@ -178,13 +172,18 @@ impl Protocol {
 }
 
 /// Champs `_event`/`_eventid`/`_gameloop`/`_userid` ajoutés par la référence.
-fn annotate(event: &mut Value, name: &str, eventid: i64, gameloop: i64, userid: Option<Value>) {
+/// Noms internés une fois par process — ce chemin tourne ~100 000 fois par replay.
+fn annotate(event: &mut Value, name: &Arc<str>, eventid: i64, gameloop: i64, userid: Option<Value>) {
+    static KEYS: OnceLock<[Arc<str>; 4]> = OnceLock::new();
+    let [k_event, k_eventid, k_gameloop, k_userid] = KEYS.get_or_init(|| {
+        ["_event".into(), "_eventid".into(), "_gameloop".into(), "_userid".into()]
+    });
     if let Value::Struct(fields) = event {
-        fields.push(("_event".into(), Value::Blob(name.as_bytes().to_vec())));
-        fields.push(("_eventid".into(), Value::Int(eventid)));
-        fields.push(("_gameloop".into(), Value::Int(gameloop)));
+        fields.push((Arc::clone(k_event), Value::Str(Arc::clone(name))));
+        fields.push((Arc::clone(k_eventid), Value::Int(eventid)));
+        fields.push((Arc::clone(k_gameloop), Value::Int(gameloop)));
         if let Some(u) = userid {
-            fields.push(("_userid".into(), u));
+            fields.push((Arc::clone(k_userid), u));
         }
     }
 }

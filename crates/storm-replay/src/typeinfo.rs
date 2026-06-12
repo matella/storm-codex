@@ -4,6 +4,32 @@
 
 use crate::error::{Error, Result};
 use std::collections::HashMap;
+use std::hash::{BuildHasherDefault, Hasher};
+use std::sync::Arc;
+
+/// Hasher trivial pour clés `i64` (tags de choice, eventids) — SipHash coûte cher sur le
+/// chemin chaud (~10⁶ lookups/replay), un multiply-shift suffit pour des petits entiers.
+#[derive(Default)]
+pub struct I64Hasher(u64);
+
+impl Hasher for I64Hasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.0 = (self.0 ^ u64::from(b)).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        }
+    }
+    fn write_i64(&mut self, v: i64) {
+        self.0 = (v as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    }
+    fn write_u64(&mut self, v: u64) {
+        self.0 = v.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    }
+}
+
+pub type FastI64Map<V> = HashMap<i64, V, BuildHasherDefault<I64Hasher>>;
 
 #[derive(Debug)]
 pub enum TypeInfo {
@@ -17,8 +43,8 @@ pub enum TypeInfo {
     Array { lo: i64, bits: u32, typeid: usize },
     BitArray { lo: i64, bits: u32 },
     Optional { typeid: usize },
-    Choice { lo: i64, bits: u32, fields: HashMap<i64, (String, usize)> },
-    Struct { fields: Vec<(String, usize, i64)> },
+    Choice { lo: i64, bits: u32, fields: FastI64Map<(Arc<str>, usize)> },
+    Struct { fields: Vec<(Arc<str>, usize, i64)> },
 }
 
 fn err(msg: impl Into<String>) -> Error {
@@ -93,7 +119,8 @@ pub fn parse_typeinfos(json: &serde_json::Value) -> Result<Vec<TypeInfo>> {
                     .get(1)
                     .and_then(|v| v.as_object())
                     .ok_or_else(|| err(format!("choice {i}: fields")))?;
-                let mut fields = HashMap::with_capacity(map.len());
+                let mut fields =
+                    FastI64Map::with_capacity_and_hasher(map.len(), Default::default());
                 for (tag, field) in map {
                     let f = field
                         .as_array()
@@ -104,7 +131,7 @@ pub fn parse_typeinfos(json: &serde_json::Value) -> Result<Vec<TypeInfo>> {
                             f.first()
                                 .and_then(|v| v.as_str())
                                 .ok_or_else(|| err(format!("choice {i}: nom")))?
-                                .to_owned(),
+                                .into(),
                             f.get(1)
                                 .and_then(|v| v.as_u64())
                                 .ok_or_else(|| err(format!("choice {i}: typeid")))?
@@ -128,7 +155,7 @@ pub fn parse_typeinfos(json: &serde_json::Value) -> Result<Vec<TypeInfo>> {
                         f.first()
                             .and_then(|v| v.as_str())
                             .ok_or_else(|| err(format!("struct {i}: nom")))?
-                            .to_owned(),
+                            .into(),
                         f.get(1)
                             .and_then(|v| v.as_u64())
                             .ok_or_else(|| err(format!("struct {i}: typeid")))?

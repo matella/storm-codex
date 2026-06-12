@@ -7,6 +7,8 @@ pub enum Value {
     Int(i64),
     Bool(bool),
     Blob(Vec<u8>),
+    /// Chaîne interne (annotations `_event` — évite une allocation par événement).
+    Str(std::sync::Arc<str>),
     Fourcc([u8; 4]),
     Real(f64),
     Array(Vec<Value>),
@@ -18,13 +20,15 @@ pub enum Value {
     BitArrayInt { bits: u64, value: Vec<u8> },
     /// Structs **et** choices (un choice = struct à un seul champ, comme en Python).
     /// L'ordre d'insertion est préservé.
-    Struct(Vec<(String, Value)>),
+    Struct(Vec<(std::sync::Arc<str>, Value)>),
 }
 
 impl Value {
     pub fn field(&self, name: &str) -> Option<&Value> {
         match self {
-            Value::Struct(fields) => fields.iter().find(|(n, _)| n == name).map(|(_, v)| v),
+            Value::Struct(fields) => {
+                fields.iter().find(|(n, _)| n.as_ref() == name).map(|(_, v)| v)
+            }
             _ => None,
         }
     }
@@ -45,7 +49,10 @@ impl Value {
 
     /// Blobs texte (noms, titres…) : les replays HotS sont en UTF-8.
     pub fn as_str_lossy(&self) -> Option<String> {
-        self.as_blob().map(|b| String::from_utf8_lossy(b).into_owned())
+        match self {
+            Value::Str(s) => Some(s.to_string()),
+            _ => self.as_blob().map(|b| String::from_utf8_lossy(b).into_owned()),
+        }
     }
 
     pub fn as_array(&self) -> Option<&[Value]> {

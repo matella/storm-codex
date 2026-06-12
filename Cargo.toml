@@ -12,3 +12,8 @@ repository = "https://github.com/matella/storm-codex"
 [workspace.lints.clippy]
 unwrap_used = "deny"
 expect_used = "warn"
+
+# Budgets perf = contrats (CLAUDE.md) : le décodage est le chemin chaud du serveur.
+[profile.release]
+lto = "thin"
+codegen-units = 1

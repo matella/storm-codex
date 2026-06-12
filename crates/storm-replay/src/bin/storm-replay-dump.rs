@@ -8,6 +8,10 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 use storm_replay::{Attributes, Replay, Value};
 
+#[cfg(feature = "fast-alloc")]
+#[global_allocator]
+static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 fn latin1(bytes: &[u8]) -> String {
     bytes.iter().map(|&b| char::from(b)).collect()
 }
@@ -34,12 +38,13 @@ fn to_json(v: &Value) -> serde_json::Value {
         Value::Bool(b) => json!(b),
         Value::Real(f) => json!([f]),
         Value::Blob(b) => json!(latin1(b)),
+        Value::Str(s) => json!(s.as_ref()),
         Value::Fourcc(b) => json!(latin1(b)),
         Value::Array(items) => serde_json::Value::Array(items.iter().map(to_json).collect()),
         Value::BitArrayBytes { bits, data } => json!([bits, latin1(data)]),
         Value::BitArrayInt { bits, value } => json!([bits, hex_big(value)]),
         Value::Struct(fields) => serde_json::Value::Object(
-            fields.iter().map(|(n, v)| (n.clone(), to_json(v))).collect(),
+            fields.iter().map(|(n, v)| (n.to_string(), to_json(v))).collect(),
         ),
     }
 }
@@ -106,6 +111,12 @@ fn dump(path: &Path, stream: &str) -> storm_replay::Result<()> {
         "tracker" => print_events(replay.tracker_events()?),
         "game" => print_events(replay.game_events()?),
         "message" => print_events(replay.message_events()?),
+        "game-raw" => {
+            // extraction MPQ seule (décompression sans décodage) — diagnostic de perf
+            let t0 = Instant::now();
+            let n = replay.game_events_raw_len()?;
+            eprintln!("{n} octets extraits en {:.1} ms", t0.elapsed().as_secs_f64() * 1000.0);
+        }
         other => {
             eprintln!("stream inconnu : {other}");
             std::process::exit(2);
