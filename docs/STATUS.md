@@ -63,6 +63,24 @@
   (`azure.rs`, POST sortant authentifié — code prêt, non testé contre l'EBS réelle).
   **Bascule/décommission Node** : runbook `docs/runbooks/2026-06-12-bascule-decommission-node.md`
   (étape box/opérateur, le soir). Plan : `docs/plans/2026-06-12-jalon5-stream-jarvis.md`.
+- **Jalon 5 : intégration Jarvis LIVE + vérifiée E2E** (2026-06-13). Backfill prod fait (2007
+  matchs, 97,3 %). Le bridge Jarvis est écrit, déployé et **prouvé de bout en bout sur le box** :
+  - storm-codex raccordé au réseau `jarvis_default` ; publie sur le canal pub/sub
+    `storm-codex:match_completed` (REDIS_URL=redis://redis:6379/0). Collision d'alias `postgres`
+    (jarvis-postgres) corrigée → DATABASE_URL via le nom de conteneur `storm-codex-pg`.
+  - **Bridge Jarvis** (`jarvis/ingest/hots_matches.py`, dans le repo Jarvis) : SUBSCRIBE le canal
+    → adapte en Event spine **`hots.match_completed`** (type à 1 point ; l'émetteur storm-codex
+    produisait `hots.match.completed` à 2 points, **rejeté** par le modèle Event — corrigé au
+    boundary). Gaté par `STORM_CODEX_MATCHES_ENABLED`. Worker démarré (`jarvis run … hots_matches`),
+    abonné. + 3 tests (apostrophe préservée).
+  - **Test E2E réel** : re-upload d'un replay archivé → parse → emit storm-codex → bridge →
+    event `hots.match_completed | storm-codex | info | Silver City | winner 1` **présent dans la
+    table `events` du spine Jarvis**. ✅
+  - `reject_class` rendu exhaustif (stats_failure/-2, unverified_build/-7) → admin lisible.
+  **Reste (opérateur)** : push Azure (code prêt, `azure.rs` — besoin des vrais identifiants EBS) ;
+  validation widget OBS + page < 5 s sur une **vraie partie** (uploader live) ; brief proactif
+  optionnel (l'event est dans le spine, une réaction « tu as gagné/perdu, KDA… » reste à brancher) ;
+  puis **décommission du Node** (runbook, après validation partie réelle).
 - **Jalon 6 : prêt à publier** — voir ci-dessous.
 
 ## Jalon 4 — compléments faits (2026-06-12, après le socle)
