@@ -4,8 +4,9 @@
 mod config;
 pub mod project;
 mod upload;
+mod ws;
 
-use axum::{extract::State, http::StatusCode, routing::get, routing::post, Json, Router};
+use axum::{extract::State, http::StatusCode, routing::any, routing::get, routing::post, Json, Router};
 use config::Config;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
@@ -69,6 +70,7 @@ async fn run() -> Result<(), String> {
     let app = Router::new()
         .route("/api/health", get(health))
         .route("/api/upload", post(upload::upload))
+        .route("/ws", any(ws::ws_handler))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(&bind)
