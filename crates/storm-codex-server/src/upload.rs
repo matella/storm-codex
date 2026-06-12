@@ -338,5 +338,45 @@ fn filename(headers: &HeaderMap) -> Option<String> {
     headers
         .get("x-filename")
         .and_then(|v| v.to_str().ok())
-        .map(str::to_owned)
+        .map(percent_decode)
+}
+
+/// Décode les séquences `%XX` du header X-Filename. Le client (client-rs) percent-encode les
+/// caractères non-ASCII et l'apostrophe (`'` → `%27`) pour un transport HTTP sûr ; on restitue le
+/// nom lisible (« Blackheart's Bay.StormReplay »). Octets invalides UTF-8 → on garde le brut.
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hi = (bytes[i + 1] as char).to_digit(16);
+            let lo = (bytes[i + 2] as char).to_digit(16);
+            if let (Some(h), Some(l)) = (hi, lo) {
+                out.push((h * 16 + l) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8(out).unwrap_or_else(|_| s.to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::percent_decode;
+
+    #[test]
+    fn decodes_apostrophe_map_name() {
+        assert_eq!(
+            percent_decode("2024-12-25 21.30.45 Blackheart%27s Bay.StormReplay"),
+            "2024-12-25 21.30.45 Blackheart's Bay.StormReplay"
+        );
+        // pas de séquence → inchangé
+        assert_eq!(percent_decode("Cursed Hollow.StormReplay"), "Cursed Hollow.StormReplay");
+        // % en fin de chaîne sans 2 hexa → conservé tel quel
+        assert_eq!(percent_decode("weird%2"), "weird%2");
+    }
 }
