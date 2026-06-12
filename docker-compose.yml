@@ -37,14 +37,25 @@ services:
       HOTSPATCHNOTES_URL: ${HOTSPATCHNOTES_URL:-http://host.docker.internal:5001}
       # push opt-in (vides au déploiement initial ; renseignés à la bascule)
       REDIS_URL: ${REDIS_URL:-}
-      JARVIS_CHANNEL: ${JARVIS_CHANNEL:-jarvis:events}
+      JARVIS_CHANNEL: ${JARVIS_CHANNEL:-storm-codex:match_completed}
       AZURE_PUSH_URL: ${AZURE_PUSH_URL:-}
       AZURE_PUSH_TOKEN: ${AZURE_PUSH_TOKEN:-}
       RAW_CACHE_MAX_BYTES: ${RAW_CACHE_MAX_BYTES:-5368709120}
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      # réseau de Jarvis (externe) : permet de publier l'event match sur jarvis-redis.
+      # Activé seulement si présent ; non invasif (storm-codex ne fait que PUBLISH un canal dédié).
+      - jarvis
     volumes:
       - storm-codex-data:/data
+
+networks:
+  default:
+  jarvis:
+    external: true
+    name: jarvis_default
 
 volumes:
   storm-codex-pgdata:
