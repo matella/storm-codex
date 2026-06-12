@@ -4,6 +4,7 @@
 use crate::constants::{hero_attribute, replay_types, rt_int, rt_str, status};
 use crate::convert::jval;
 use serde_json::{json, Map, Value as J};
+use std::collections::HashMap;
 use std::path::Path;
 use storm_replay::Replay;
 
@@ -16,7 +17,11 @@ pub struct Output {
 
 impl Output {
     fn rejected(status: i64) -> Output {
-        Output { status, match_: None, players: None }
+        Output {
+            status,
+            match_: None,
+            players: None,
+        }
     }
 
     pub fn to_json(&self) -> J {
@@ -52,7 +57,10 @@ type R<T> = Result<T, Abort>;
 /// `new Date(ms)` JS sérialisé par JSON.stringify : ISO 8601 UTC avec millisecondes.
 fn js_date_iso(ms: f64) -> String {
     let total_ms = ms.trunc() as i64;
-    let (mut days, mut rem) = (total_ms.div_euclid(86_400_000), total_ms.rem_euclid(86_400_000));
+    let (mut days, mut rem) = (
+        total_ms.div_euclid(86_400_000),
+        total_ms.rem_euclid(86_400_000),
+    );
     let _ = &mut days;
     let msec = rem % 1000;
     rem /= 1000;
@@ -73,6 +81,54 @@ fn js_date_iso(ms: f64) -> String {
 
 fn win_file_time_to_date(filetime: f64) -> String {
     js_date_iso(filetime / 10_000.0 - 11_644_473_600_000.0)
+}
+
+/// `Number` JS sérialisé : NaN/Infinity → null (JSON.stringify).
+fn jnum(f: f64) -> J {
+    serde_json::Number::from_f64(f).map_or(J::Null, J::Number)
+}
+
+/// `Math.max(a, b)` JS : NaN si un des arguments est NaN (≠ `f64::max` Rust).
+fn js_max(a: f64, b: f64) -> f64 {
+    if a.is_nan() || b.is_nan() {
+        f64::NAN
+    } else {
+        a.max(b)
+    }
+}
+
+/// Classe `\s` des regex JS (≠ `char::is_whitespace` Rust : pas U+0085, mais U+FEFF).
+fn is_js_ws(c: char) -> bool {
+    matches!(
+        c,
+        '\t' | '\n' | '\x0B' | '\x0C' | '\r' | ' ' | '\u{A0}' | '\u{1680}' | '\u{2000}'
+            ..='\u{200A}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202F}'
+                | '\u{205F}'
+                | '\u{3000}'
+                | '\u{FEFF}'
+    )
+}
+
+/// `key.replace(/\s+/g, '')` de parser.js:826.
+fn js_strip_ws(s: &str) -> String {
+    s.chars().filter(|c| !is_js_ws(*c)).collect()
+}
+
+/// Clé de propriété JS (`obj[v]`) pour nos cas : nombre → chiffres, null → "null",
+/// undefined → "undefined" (m_userId/m_workingSetSlotId/m_controllingPlayer : entiers ou null).
+fn js_prop(v: Option<&J>) -> String {
+    match v {
+        None => "undefined".into(),
+        Some(J::Null) => "null".into(),
+        Some(J::Bool(b)) => b.to_string(),
+        Some(J::Number(n)) => n.to_string(),
+        Some(J::String(s)) => s.clone(),
+        // jamais atteint sur nos données (arrays/objets : ToString JS différerait)
+        Some(other) => other.to_string(),
+    }
 }
 
 /// `parseInt` JS : préfixe numérique (signe + chiffres), NaN → None.
@@ -121,10 +177,16 @@ fn get_battletags(buffer: &[u8], player_list: &[J]) -> Vec<J> {
         if get_str(p, &["m_name"]) == Some(name) {
             let toon = format!(
                 "{}-{}-{}-{}",
-                get(p, &["m_toon", "m_region"]).and_then(J::as_i64).unwrap_or_default(),
+                get(p, &["m_toon", "m_region"])
+                    .and_then(J::as_i64)
+                    .unwrap_or_default(),
                 get_str(p, &["m_toon", "m_programId"]).unwrap_or_default(),
-                get(p, &["m_toon", "m_realm"]).and_then(J::as_i64).unwrap_or_default(),
-                get(p, &["m_toon", "m_id"]).and_then(J::as_i64).unwrap_or_default(),
+                get(p, &["m_toon", "m_realm"])
+                    .and_then(J::as_i64)
+                    .unwrap_or_default(),
+                get(p, &["m_toon", "m_id"])
+                    .and_then(J::as_i64)
+                    .unwrap_or_default(),
             );
             tag_map.push(json!({"tag": tag, "name": name, "full": full, "ToonHandle": toon}));
             i += 1;
@@ -141,7 +203,7 @@ pub(crate) struct Ctx {
     pub attributes: J,
     pub tracker: Vec<J>,
     pub tags: Vec<J>,
-    // game/message events décodés à la demande (gros streams) — consommé à partir du T3
+    // game/message events décodés à la demande (gros streams) — consommés à partir du T6
     #[allow(dead_code)]
     pub replay: Replay,
 }
@@ -193,7 +255,15 @@ fn load(path: &Path) -> R<Ctx> {
         .and_then(J::as_array)
         .unwrap_or(&empty);
     let tags = get_battletags(&lobby, player_list);
-    Ok(Ctx { header, details, initdata, attributes, tracker, tags, replay })
+    Ok(Ctx {
+        header,
+        details,
+        initdata,
+        attributes,
+        tracker,
+        tags,
+        replay,
+    })
 }
 
 fn process_inner(path: &Path, filename: &str) -> R<Output> {
@@ -202,18 +272,33 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
     let mut players = Map::new();
 
     // ===== Phase identité (parser.js:256-465) =====
-    match_.insert("version".into(), get(&data.header, &["m_version"]).cloned().unwrap_or(J::Null));
+    match_.insert(
+        "version".into(),
+        get(&data.header, &["m_version"])
+            .cloned()
+            .unwrap_or(J::Null),
+    );
     // (pas de check MAX_SUPPORTED_BUILD : on est toujours en overrideVerifiedBuild)
-    match_.insert("type".into(), get(&data.header, &["m_type"]).cloned().unwrap_or(J::Null));
+    match_.insert(
+        "type".into(),
+        get(&data.header, &["m_type"]).cloned().unwrap_or(J::Null),
+    );
     match_.insert(
         "loopLength".into(),
-        get(&data.header, &["m_elapsedGameLoops"]).cloned().unwrap_or(J::Null),
+        get(&data.header, &["m_elapsedGameLoops"])
+            .cloned()
+            .unwrap_or(J::Null),
     );
     match_.insert("filename".into(), J::from(filename));
 
     let mut mode = get(
         &data.initdata,
-        &["m_syncLobbyState", "m_gameDescription", "m_gameOptions", "m_ammId"],
+        &[
+            "m_syncLobbyState",
+            "m_gameDescription",
+            "m_gameOptions",
+            "m_ammId",
+        ],
     )
     .cloned()
     .unwrap_or(J::Null);
@@ -250,7 +335,9 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
     match_.insert("date".into(), J::from(win_file_time_to_date(time_utc)));
     match_.insert(
         "rawDate".into(),
-        get(&data.details, &["m_timeUTC"]).cloned().unwrap_or(J::Null),
+        get(&data.details, &["m_timeUTC"])
+            .cloned()
+            .unwrap_or(J::Null),
     );
 
     // joueurs préliminaires
@@ -267,22 +354,38 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
             hero = J::from("Lucio");
         }
         pdoc.insert("hero".into(), hero);
-        pdoc.insert("name".into(), get(pdata, &["m_name"]).cloned().unwrap_or(J::Null));
-        pdoc.insert("uuid".into(), get(pdata, &["m_toon", "m_id"]).cloned().unwrap_or(J::Null));
+        pdoc.insert(
+            "name".into(),
+            get(pdata, &["m_name"]).cloned().unwrap_or(J::Null),
+        );
+        pdoc.insert(
+            "uuid".into(),
+            get(pdata, &["m_toon", "m_id"]).cloned().unwrap_or(J::Null),
+        );
         pdoc.insert(
             "region".into(),
-            get(pdata, &["m_toon", "m_region"]).cloned().unwrap_or(J::Null),
+            get(pdata, &["m_toon", "m_region"])
+                .cloned()
+                .unwrap_or(J::Null),
         );
         pdoc.insert(
             "realm".into(),
-            get(pdata, &["m_toon", "m_realm"]).cloned().unwrap_or(J::Null),
+            get(pdata, &["m_toon", "m_realm"])
+                .cloned()
+                .unwrap_or(J::Null),
         );
         let toon = format!(
             "{}-{}-{}-{}",
-            get(pdata, &["m_toon", "m_region"]).and_then(J::as_i64).unwrap_or_default(),
+            get(pdata, &["m_toon", "m_region"])
+                .and_then(J::as_i64)
+                .unwrap_or_default(),
             get_str(pdata, &["m_toon", "m_programId"]).unwrap_or_default(),
-            get(pdata, &["m_toon", "m_realm"]).and_then(J::as_i64).unwrap_or_default(),
-            get(pdata, &["m_toon", "m_id"]).and_then(J::as_i64).unwrap_or_default(),
+            get(pdata, &["m_toon", "m_realm"])
+                .and_then(J::as_i64)
+                .unwrap_or_default(),
+            get(pdata, &["m_toon", "m_id"])
+                .and_then(J::as_i64)
+                .unwrap_or_default(),
         );
         pdoc.insert("ToonHandle".into(), J::from(toon.clone()));
 
@@ -298,9 +401,14 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
 
         match_.insert(
             "region".into(),
-            get(pdata, &["m_toon", "m_region"]).cloned().unwrap_or(J::Null),
+            get(pdata, &["m_toon", "m_region"])
+                .cloned()
+                .unwrap_or(J::Null),
         );
-        pdoc.insert("team".into(), get(pdata, &["m_teamId"]).cloned().unwrap_or(J::Null));
+        pdoc.insert(
+            "team".into(),
+            get(pdata, &["m_teamId"]).cloned().unwrap_or(J::Null),
+        );
 
         pdoc.insert("gameStats".into(), json!({"awards": []}));
         pdoc.insert("talents".into(), json!({}));
@@ -318,7 +426,9 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
         pdoc.insert("date".into(), match_["date"].clone());
         pdoc.insert(
             "build".into(),
-            get(&data.header, &["m_version", "m_build"]).cloned().unwrap_or(J::Null),
+            get(&data.header, &["m_version", "m_build"])
+                .cloned()
+                .unwrap_or(J::Null),
         );
         pdoc.insert("mode".into(), match_["mode"].clone());
         pdoc.insert("version".into(), match_["version"].clone());
@@ -384,7 +494,596 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
             );
         }
     }
-    let _ = &player_id_map; // utilisé par les phases suivantes (T3+)
+    // ===== Longueur + cosmétiques lobby (parser.js:482-536) =====
+    // match.length sera réassigné à la mort du core (parser.js:1604-1605, T4) ; la valeur
+    // posée ici (header) est celle copiée dans players.*.length (parser.js:507).
+    let length_secs = {
+        let ll = match_
+            .get("loopLength")
+            .and_then(J::as_f64)
+            .unwrap_or(f64::NAN);
+        let gs = match_
+            .get("loopGameStart")
+            .and_then(J::as_f64)
+            .unwrap_or(f64::NAN);
+        (ll - gs) / 16.0
+    };
+    match_.insert("length".into(), jnum(length_secs));
 
-    Ok(Output { status: status::OK, match_: Some(match_), players: Some(players) })
+    let slots = get(
+        &data.initdata,
+        &["m_syncLobbyState", "m_lobbyState", "m_slots"],
+    )
+    .and_then(J::as_array)
+    .ok_or_else(|| Abort::Throw("m_slots absent".into()))?
+    .clone();
+    // playerLobbyID : m_userId (clé de propriété JS) → ToonHandle
+    let mut player_lobby_id: HashMap<String, String> = HashMap::new();
+    for p in &slots {
+        let Some(id) = get_str(p, &["m_toonHandle"]).map(str::to_owned) else {
+            continue;
+        };
+        if id.is_empty() || !players.contains_key(&id) {
+            continue;
+        }
+        let pdoc = players
+            .get_mut(&id)
+            .and_then(J::as_object_mut)
+            .ok_or_else(|| Abort::Throw("joueur non-objet".into()))?;
+        // assignation JS d'un champ absent → undefined → null au stringify ≡ clé absente
+        for (src, dst) in [
+            ("m_skin", "skin"),
+            ("m_announcerPack", "announcer"),
+            ("m_mount", "mount"),
+            ("m_hasSilencePenalty", "silenced"),
+        ] {
+            if let Some(v) = get(p, &[src]) {
+                pdoc.insert(dst.into(), v.clone());
+            }
+        }
+        if let Some(v) = get(p, &["m_hasVoiceSilencePenalty"]) {
+            pdoc.insert("voiceSilenced".into(), v.clone());
+        }
+        pdoc.insert("length".into(), jnum(length_secs));
+        player_lobby_id.insert(js_prop(get(p, &["m_userId"])), id);
+    }
+
+    // playerWorkingSlotID (parser.js:510-534) — NB : 'Hero' codé en dur (pas m_programId)
+    let mut slot_to_toon: HashMap<String, String> = HashMap::new();
+    for pl in &player_details {
+        let toon_obj = get(pl, &["m_toon"]).ok_or_else(|| Abort::Throw("m_toon absent".into()))?;
+        let toon = format!(
+            "{}-Hero-{}-{}",
+            js_prop(get(toon_obj, &["m_region"])),
+            js_prop(get(toon_obj, &["m_realm"])),
+            js_prop(get(toon_obj, &["m_id"]))
+        );
+        slot_to_toon.insert(js_prop(get(pl, &["m_workingSetSlotId"])), toon);
+    }
+    if slot_to_toon.contains_key("null") {
+        // fallback : reconstruit depuis m_slots via playerLobbyID
+        slot_to_toon.clear();
+        for slot in &slots {
+            if let Some(toon) = player_lobby_id.get(&js_prop(get(slot, &["m_userId"]))) {
+                slot_to_toon.insert(js_prop(get(slot, &["m_workingSetSlotId"])), toon.clone());
+            }
+        }
+    }
+
+    // ===== Draft : bans + picks + turn (parser.js:538-691) =====
+    process_draft(&data, &mut match_, &mut players, &slot_to_toon)?;
+
+    // ===== Dispatch objectif par carte (parser.js:702-784) — partie statut seulement =====
+    // L'init des conteneurs match.objective est T5 ; mais carte absente → TooOld (parser.js:777)
+    // et carte hors liste → UnsupportedMap (parser.js:783) doivent tomber ici, avant le score.
+    match match_.get("map").and_then(J::as_str) {
+        None => return Err(Abort::Status(status::TOO_OLD)),
+        Some(map) => {
+            let known = [
+                "ControlPoints",
+                "TowersOfDoom",
+                "CursedHollow",
+                "DragonShire",
+                "HauntedWoods",
+                "HauntedMines",
+                "BattlefieldOfEternity",
+                "Shrines",
+                "Crypts",
+                "Volskaya",
+                "Warhead Junction",
+                "AlteracPass",
+                "BraxisHoldout",
+                "BlackheartsBay",
+                "Hanamura",
+            ];
+            if !known.iter().any(|k| rt_str("MapType", k) == map) {
+                return Err(Abort::Status(status::UNSUPPORTED_MAP));
+            }
+        }
+    }
+
+    // ===== Boucle tracker, partie T3 : score screen + talents + votes + globes
+    // (parser.js:794-830, 1201-1213, 2421-2458) =====
+    let score_eventid = rt_int("TrackerEvent", "Score");
+    let upvote = rt_str("StatEventType", "Upvote");
+    let regen_globe = rt_str("StatEventType", "RegenGlobePickedUp");
+    let loop_game_start = match_
+        .get("loopGameStart")
+        .and_then(J::as_f64)
+        .unwrap_or(f64::NAN);
+    for event in &data.tracker {
+        let eid = get(event, &["_eventid"]).and_then(J::as_i64);
+        if eid == Some(score_eventid) {
+            let instances = get(event, &["m_instanceList"])
+                .and_then(J::as_array)
+                .ok_or_else(|| Abort::Throw("m_instanceList absent".into()))?;
+            process_score_array(instances, &mut players, &player_id_map)?;
+        } else if eid == Some(stat_eventid) {
+            let name = get_str(event, &["m_eventName"]).unwrap_or("");
+            if name == eog_talent_choices {
+                process_talent_choices(event, &mut players, &player_id_map)?;
+            } else if name == upvote {
+                // parser.js:1201-1203 — affectation directe : le dernier événement gagne
+                let key = js_prop(get(event, &["m_intData", "0", "m_value"]));
+                let handle = player_id_map
+                    .get(&key)
+                    .and_then(J::as_str)
+                    .ok_or_else(|| Abort::Throw(format!("votes: tracker id {key} non mappé")))?
+                    .to_owned();
+                // m_intData[2] absent → undefined.m_value lève (catch JS)
+                let d2 = get(event, &["m_intData", "2"])
+                    .ok_or_else(|| Abort::Throw("votes: m_intData[2] absent".into()))?;
+                let pdoc = players
+                    .get_mut(&handle)
+                    .and_then(J::as_object_mut)
+                    .ok_or_else(|| Abort::Throw(format!("votes: joueur {handle} inconnu")))?;
+                pdoc.insert(
+                    "votes".into(),
+                    get(d2, &["m_value"]).cloned().unwrap_or(J::Null),
+                );
+            } else if name == regen_globe {
+                // parser.js:1205-1213
+                let gameloop = get(event, &["_gameloop"]);
+                let time =
+                    (gameloop.and_then(J::as_f64).unwrap_or(f64::NAN) - loop_game_start) / 16.0;
+                let globe = json!({
+                    "loop": gameloop.cloned().unwrap_or(J::Null),
+                    "time": jnum(time),
+                });
+                let key = js_prop(get(event, &["m_intData", "0", "m_value"]));
+                let handle = player_id_map
+                    .get(&key)
+                    .and_then(J::as_str)
+                    .ok_or_else(|| Abort::Throw(format!("globes: tracker id {key} non mappé")))?
+                    .to_owned();
+                let globes = players
+                    .get_mut(&handle)
+                    .and_then(J::as_object_mut)
+                    .and_then(|p| p.get_mut("globes"))
+                    .and_then(J::as_object_mut)
+                    .ok_or_else(|| Abort::Throw(format!("globes: joueur {handle} inconnu")))?;
+                let count = globes.get("count").and_then(J::as_i64).unwrap_or(0) + 1;
+                globes.insert("count".into(), J::from(count));
+                globes
+                    .get_mut("events")
+                    .and_then(J::as_array_mut)
+                    .ok_or_else(|| Abort::Throw("globes: events absent".into()))?
+                    .push(globe);
+            }
+        }
+    }
+
+    // ===== Passe finale, partie T3 (parser.js:2140-2210) =====
+    // KillParticipation, DPM/HPM/XPM et gameStats.length dépendent du match.length final
+    // (mort du core, T4) et des takedowns d'équipe (T4) — posés plus tard.
+    let order: Vec<String> = match_
+        .get("playerIDs")
+        .and_then(J::as_array)
+        .map(|a| a.iter().filter_map(J::as_str).map(str::to_owned).collect())
+        .unwrap_or_default();
+    let mut team_ids: [Vec<J>; 2] = [Vec::new(), Vec::new()];
+    let mut winner: Option<usize> = None;
+    for handle in &order {
+        let pdoc = players
+            .get_mut(handle)
+            .and_then(J::as_object_mut)
+            .ok_or_else(|| Abort::Throw("joueur absent".into()))?;
+        let team = pdoc.get("team").and_then(J::as_i64);
+        let win = matches!(pdoc.get("win"), Some(J::Bool(true)));
+        let gs = pdoc
+            .get_mut("gameStats")
+            .and_then(J::as_object_mut)
+            .ok_or_else(|| Abort::Throw("gameStats absent".into()))?;
+        let num = |k: &str| gs.get(k).and_then(J::as_f64).unwrap_or(f64::NAN);
+        let (takedowns, deaths) = (num("Takedowns"), num("Deaths"));
+        let (hero_damage, damage_taken) = (num("HeroDamage"), num("DamageTaken"));
+        let healing = num("Healing") + num("SelfHealing") + num("ProtectionGivenToAllies");
+        gs.insert("KDA".into(), jnum(takedowns / js_max(deaths, 1.0)));
+        gs.insert(
+            "damageDonePerDeath".into(),
+            jnum(hero_damage / js_max(1.0, deaths)),
+        );
+        gs.insert(
+            "damageTakenPerDeath".into(),
+            jnum(damage_taken / js_max(1.0, deaths)),
+        );
+        gs.insert(
+            "healingDonePerDeath".into(),
+            jnum(healing / js_max(1.0, deaths)),
+        );
+        if team == Some(rt_int("TeamType", "Blue")) {
+            team_ids[0].push(J::from(handle.as_str()));
+            if win {
+                winner = Some(0);
+            }
+        } else if team == Some(rt_int("TeamType", "Red")) {
+            team_ids[1].push(J::from(handle.as_str()));
+            if win {
+                winner = Some(1);
+            }
+        }
+    }
+    // match sans vainqueur = incomplet (parser.js:2205-2208)
+    let Some(w) = winner else {
+        return Err(Abort::Status(status::INCOMPLETE));
+    };
+    match_.insert("winner".into(), J::from(w as i64));
+    match_.insert("winningPlayers".into(), J::Array(team_ids[w].clone()));
+
+    // firstPickWin (parser.js:2397-2403) : picks.first === winner ; pas de draft (QM) → false.
+    // (firstObjective/firstFort/firstKeep & co : T4/T5.)
+    let first_pick_win = match match_.get("picks") {
+        Some(p) => get(p, &["first"]).and_then(J::as_i64) == Some(w as i64),
+        None => false,
+    };
+    match_.insert("firstPickWin".into(), J::from(first_pick_win));
+
+    Ok(Output {
+        status: status::OK,
+        match_: Some(match_),
+        players: Some(players),
+    })
+}
+
+/// Élément du tableau `selections` du draft (parser.js:650-683) : `indexOf` y est un `===` JS —
+/// un objet ban ne peut jamais égaler un nom de héros, undefined === undefined est vrai.
+#[derive(PartialEq)]
+enum Sel {
+    Undef,
+    Val(J),
+    Ban,
+}
+
+fn to_sel(v: Option<&J>) -> Sel {
+    match v {
+        // J::Null représente l'undefined JS dans notre port (heroAttribute manquant, etc.)
+        None | Some(J::Null) => Sel::Undef,
+        Some(x) => Sel::Val(x.clone()),
+    }
+}
+
+/// Draft : `match.bans`, `match.picks` (+ `first`), `players.*.turn` (parser.js:538-691).
+fn process_draft(
+    data: &Ctx,
+    match_: &mut Map<String, J>,
+    players: &mut Map<String, J>,
+    slot_to_toon: &HashMap<String, String>,
+) -> R<()> {
+    let mode = match_.get("mode").and_then(J::as_i64);
+    let draft = [
+        "UnrankedDraft",
+        "HeroLeague",
+        "TeamLeague",
+        "StormLeague",
+        "Custom",
+    ]
+    .iter()
+    .any(|m| mode == Some(rt_int("GameMode", m)));
+    if !draft {
+        return Ok(());
+    }
+
+    let mut bans: [Vec<J>; 2] = [Vec::new(), Vec::new()];
+    // comparaisons JS `build < 66292` : NaN → false des deux côtés dans la collecte des bans
+    let build = match_
+        .get("version")
+        .and_then(|v| get(v, &["m_build"]))
+        .and_then(J::as_f64)
+        .unwrap_or(f64::NAN);
+    let ban = |hero: &J, order: i64, absolute: i64| json!({"hero": hero, "order": order, "absolute": absolute});
+    if let Some(attr) = get(&data.attributes, &["scopes", "16"]).and_then(J::as_object) {
+        // for..in JS : clés entières en ordre numérique croissant
+        let mut keys: Vec<&String> = attr.keys().collect();
+        keys.sort_by_key(|k| k.parse::<u64>().unwrap_or(u64::MAX));
+        for k in keys {
+            let obj = get(&attr[k.as_str()], &["0"])
+                .ok_or_else(|| Abort::Throw("attribut scope 16 vide".into()))?;
+            let attrid = get(obj, &["attrid"]).and_then(J::as_i64);
+            let hero = get(obj, &["value"]).cloned().unwrap_or(J::Null);
+            // premiers bans
+            if attrid == Some(4023) {
+                bans[0].push(ban(&hero, 1, 1));
+            } else if attrid == Some(4028) {
+                bans[1].push(ban(&hero, 1, 1));
+            }
+            // deuxièmes bans (ordre différent avant/après le build 66292)
+            if build < 66292.0 {
+                if attrid == Some(4025) {
+                    bans[0].push(ban(&hero, 2, 2));
+                } else if attrid == Some(4030) {
+                    bans[1].push(ban(&hero, 2, 2));
+                }
+            } else if build >= 66292.0 {
+                if attrid == Some(4025) {
+                    bans[0].push(ban(&hero, 1, 2));
+                } else if attrid == Some(4030) {
+                    bans[1].push(ban(&hero, 1, 2));
+                }
+            }
+            // troisièmes bans
+            if attrid == Some(4043) {
+                bans[0].push(ban(&hero, 2, 3));
+            } else if attrid == Some(4045) {
+                bans[1].push(ban(&hero, 2, 3));
+            }
+        }
+    }
+
+    // picks (parser.js:594-639) — pickOrder : (héros, clé m_controllingPlayer)
+    let mut pick_order: [Vec<(Option<String>, String)>; 2] = [Vec::new(), Vec::new()];
+    let mut picks_first: Option<J> = None;
+    // try/catch interne : toute exception vide pickOrder, mais picks.first déjà posé survit
+    if collect_pick_order(
+        data,
+        players,
+        slot_to_toon,
+        &mut pick_order,
+        &mut picks_first,
+    )
+    .is_err()
+    {
+        pick_order[0].clear();
+        pick_order[1].clear();
+    }
+
+    // map vers les noms de héros (try/catch : un échec laisse les [] initiaux)
+    let map_picks = |po: &[(Option<String>, String)]| -> R<Vec<J>> {
+        po.iter()
+            .map(|(_, id)| {
+                let pl = slot_to_toon
+                    .get(id)
+                    .and_then(|t| players.get(t))
+                    .ok_or_else(|| Abort::Throw("picks: joueur inconnu".into()))?;
+                Ok(get(pl, &["hero"]).cloned().unwrap_or(J::Null))
+            })
+            .collect()
+    };
+    let mut picks_arr: [Vec<J>; 2] = [Vec::new(), Vec::new()];
+    if let Ok(v0) = map_picks(&pick_order[0]) {
+        picks_arr[0] = v0;
+        if let Ok(v1) = map_picks(&pick_order[1]) {
+            picks_arr[1] = v1;
+        }
+    }
+
+    // sélections en ordre de draft (parser.js:641-683)
+    let (mut a, mut b) = (1usize, 0usize);
+    if picks_first.as_ref().and_then(J::as_i64) == Some(0) {
+        (a, b) = (b, a);
+    }
+    let ban_sel = |t: usize, i: usize| {
+        if bans[t].get(i).is_some() {
+            Sel::Ban
+        } else {
+            Sel::Undef
+        }
+    };
+    let pick_sel = |t: usize, i: usize| to_sel(picks_arr[t].get(i));
+    let mut selections: Vec<Sel> = Vec::new();
+    selections.push(ban_sel(a, 0));
+    selections.push(ban_sel(b, 0));
+    if build < 66292.0 {
+        // NB : `else` simple ici (≠ else-if de la collecte des bans) — un build NaN
+        // (`NaN < 66292` faux) tombe donc dans la branche bans, comme en JS.
+        selections.push(Sel::Val(J::from("N/A")));
+        selections.push(Sel::Val(J::from("N/A")));
+    } else {
+        selections.push(ban_sel(a, 1));
+        selections.push(ban_sel(b, 1));
+    }
+    selections.push(pick_sel(a, 0));
+    selections.push(pick_sel(b, 0));
+    selections.push(pick_sel(b, 1));
+    selections.push(pick_sel(a, 1));
+    selections.push(pick_sel(a, 2));
+    if build < 66292.0 {
+        selections.push(ban_sel(b, 1));
+        selections.push(ban_sel(a, 1));
+    } else {
+        selections.push(ban_sel(b, 2));
+        selections.push(ban_sel(a, 2));
+    }
+    selections.push(pick_sel(b, 2));
+    selections.push(pick_sel(b, 3));
+    selections.push(pick_sel(a, 3));
+    selections.push(pick_sel(a, 4));
+    selections.push(pick_sel(b, 4));
+
+    // turn = selections.indexOf(player.hero) pour chaque joueur (parser.js:686-688)
+    for pdoc in players.values_mut() {
+        let hero_sel = to_sel(pdoc.get("hero"));
+        let turn = selections
+            .iter()
+            .position(|s| *s == hero_sel)
+            .map_or(-1, |i| i as i64);
+        if let Some(o) = pdoc.as_object_mut() {
+            o.insert("turn".into(), J::from(turn));
+        }
+    }
+
+    let mut picks_obj = Map::new();
+    picks_obj.insert("0".into(), J::Array(picks_arr[0].clone()));
+    picks_obj.insert("1".into(), J::Array(picks_arr[1].clone()));
+    if let Some(f) = picks_first {
+        picks_obj.insert("first".into(), f);
+    }
+    match_.insert("bans".into(), json!({"0": bans[0], "1": bans[1]}));
+    match_.insert("picks".into(), J::Object(picks_obj));
+    Ok(())
+}
+
+/// Boucle SHeroPickedEvent/SHeroSwappedEvent (parser.js:596-622) — corps du try interne.
+fn collect_pick_order(
+    data: &Ctx,
+    players: &Map<String, J>,
+    slot_to_toon: &HashMap<String, String>,
+    pick_order: &mut [Vec<(Option<String>, String)>; 2],
+    picks_first: &mut Option<J>,
+) -> R<()> {
+    for msg in &data.tracker {
+        let ev = get_str(msg, &["_event"]);
+        if ev == Some("NNet.Replay.Tracker.SHeroPickedEvent") {
+            let key = js_prop(get(msg, &["m_controllingPlayer"]));
+            // players[playerWorkingSlotID[id]] undefined → player.team lève (catch JS)
+            let player = slot_to_toon
+                .get(&key)
+                .and_then(|t| players.get(t))
+                .ok_or_else(|| Abort::Throw("pick: joueur inconnu".into()))?;
+            let team = get(player, &["team"]);
+            if picks_first.is_none() {
+                *picks_first = Some(team.cloned().unwrap_or(J::Null));
+            }
+            // pickOrder[team] inexistant → .push lève
+            let ti = team
+                .and_then(J::as_i64)
+                .filter(|t| *t == 0 || *t == 1)
+                .ok_or_else(|| Abort::Throw("pick: équipe invalide".into()))?
+                as usize;
+            pick_order[ti].push((get_str(msg, &["m_hero"]).map(str::to_owned), key));
+        } else if ev == Some("NNet.Replay.Tracker.SHeroSwappedEvent") {
+            let key = js_prop(get(msg, &["m_newControllingPlayer"]));
+            let player = slot_to_toon
+                .get(&key)
+                .and_then(|t| players.get(t))
+                .ok_or_else(|| Abort::Throw("swap: joueur inconnu".into()))?;
+            let ti = get(player, &["team"])
+                .and_then(J::as_i64)
+                .filter(|t| *t == 0 || *t == 1)
+                .ok_or_else(|| Abort::Throw("swap: équipe invalide".into()))?
+                as usize;
+            let hero = get_str(msg, &["m_hero"]).map(str::to_owned);
+            // findIndex → -1 : pickOrder[team][-1].id lève (catch JS)
+            let idx = pick_order[ti]
+                .iter()
+                .position(|(h, _)| *h == hero)
+                .ok_or_else(|| Abort::Throw("swap: héros introuvable".into()))?;
+            pick_order[ti][idx].1 = key;
+        }
+    }
+    Ok(())
+}
+
+/// `processScoreArray` (parser.js:2421-2458) : SScoreResultEvent → gameStats + awards.
+fn process_score_array(
+    instances: &[J],
+    players: &mut Map<String, J>,
+    player_id_map: &Map<String, J>,
+) -> R<()> {
+    for inst in instances {
+        let name = get_str(inst, &["m_name"])
+            .ok_or_else(|| Abort::Throw("score: m_name absent".into()))?
+            .to_owned();
+        let values = get(inst, &["m_values"])
+            .and_then(J::as_array)
+            .ok_or_else(|| Abort::Throw("score: m_values absent".into()))?
+            .clone();
+        let is_award = name.starts_with("EndOfMatchAward");
+        let mut real_index = 0i64;
+        for v in &values {
+            if v.is_null() {
+                return Err(Abort::Throw("score: entrée null".into()));
+            }
+            let len = v.as_array().map_or(0, Vec::len);
+            if len == 0 {
+                continue;
+            }
+            let player_id = real_index + 1;
+            let m_value = get(v, &["0", "m_value"]);
+            // l'accès players[playerIDMap[id]].gameStats (qui peut lever) n'a lieu côté award
+            // que si la valeur vaut 1 (parser.js:2448)
+            if !is_award || m_value.and_then(J::as_f64) == Some(1.0) {
+                let handle = player_id_map
+                    .get(&player_id.to_string())
+                    .and_then(J::as_str)
+                    .ok_or_else(|| Abort::Throw(format!("score: joueur {player_id} non mappé")))?
+                    .to_owned();
+                let gs = players
+                    .get_mut(&handle)
+                    .and_then(J::as_object_mut)
+                    .and_then(|p| p.get_mut("gameStats"))
+                    .and_then(J::as_object_mut)
+                    .ok_or_else(|| Abort::Throw(format!("score: joueur {handle} inconnu")))?;
+                if is_award {
+                    if let Some(awards) = gs.get_mut("awards").and_then(J::as_array_mut) {
+                        awards.push(J::from(name.as_str()));
+                    }
+                } else {
+                    gs.insert(name.clone(), m_value.cloned().unwrap_or(J::Null));
+                }
+            }
+            real_index += 1;
+        }
+    }
+    Ok(())
+}
+
+/// EndOfGameTalentChoices (parser.js:801-830) : win, internalHeroName, talents Tier*.
+fn process_talent_choices(
+    event: &J,
+    players: &mut Map<String, J>,
+    player_id_map: &Map<String, J>,
+) -> R<()> {
+    // event.m_intData[0].m_value : absence → exception JS quelque part avant l'écriture
+    let key = js_prop(get(event, &["m_intData", "0", "m_value"]));
+    let handle = player_id_map
+        .get(&key)
+        .and_then(J::as_str)
+        .ok_or_else(|| Abort::Throw(format!("talents: tracker id {key} non mappé")))?
+        .to_owned();
+    let sd = get(event, &["m_stringData"])
+        .and_then(J::as_array)
+        .ok_or_else(|| Abort::Throw("talents: m_stringData absent".into()))?
+        .clone();
+    let sd1 = sd
+        .get(1)
+        .ok_or_else(|| Abort::Throw("talents: m_stringData[1] absent".into()))?;
+    let win = get_str(sd1, &["m_value"]) == Some("Win");
+    let sd0 = sd
+        .first()
+        .ok_or_else(|| Abort::Throw("talents: m_stringData[0] absent".into()))?;
+    let internal = get(sd0, &["m_value"]).cloned();
+    let pdoc = players
+        .get_mut(&handle)
+        .and_then(J::as_object_mut)
+        .ok_or_else(|| Abort::Throw(format!("talents: joueur {handle} inconnu")))?;
+    pdoc.insert("win".into(), J::from(win));
+    if let Some(v) = internal {
+        pdoc.insert("internalHeroName".into(), v);
+    }
+    let talents = pdoc
+        .get_mut("talents")
+        .and_then(J::as_object_mut)
+        .ok_or_else(|| Abort::Throw("talents: objet absent".into()))?;
+    for item in &sd {
+        // m_key absent → undefined.startsWith lève
+        let k = get_str(item, &["m_key"])
+            .ok_or_else(|| Abort::Throw("talents: m_key absent".into()))?;
+        if k.starts_with("Tier") {
+            // legacyTalentKeys=false (défaut) : clé sans espaces
+            if let Some(v) = get(item, &["m_value"]) {
+                talents.insert(js_strip_ws(k), v.clone());
+            }
+        }
+    }
+    Ok(())
 }
