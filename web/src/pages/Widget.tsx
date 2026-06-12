@@ -29,8 +29,12 @@ export function Widget() {
   const td = me?.takedowns ?? 0;
   const d = me?.deaths ?? 0;
   const a = Math.max(0, td - k);
-  const teamTd = players.filter((p) => p.team === me?.team).reduce((s, p) => s + (p.takedowns ?? 0), 0);
-  const kp = teamTd > 0 ? Math.round((td / teamTd) * 100) : null;
+  // KP = takedowns / kills de l'équipe (= morts de l'équipe adverse). Sommer les takedowns
+  // surcompte (chaque participant en gagne un), d'où un KP faussement bas.
+  const teamKills = players
+    .filter((p) => me?.team != null && p.team != null && p.team !== me.team)
+    .reduce((s, p) => s + (p.deaths ?? 0), 0);
+  const kp = teamKills > 0 ? Math.min(100, Math.round((td / teamKills) * 100)) : null;
 
   return (
     <div style={{ padding: 14, maxWidth: 360 }}>
