@@ -8,3 +8,8 @@ __pycache__/
 .venv/
 tools/parity-harness/node_modules/
 
+
+# jalon 3 serveur
+.archive/
+.raw-cache/
+.env

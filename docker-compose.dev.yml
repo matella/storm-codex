@@ -1,0 +1,22 @@
+# Postgres de développement pour storm-codex-server (jalon 3).
+# Port 5433 (5432 peut déjà être pris). `docker compose -f docker-compose.dev.yml up -d`.
+services:
+  postgres:
+    image: postgres:17
+    container_name: storm-codex-pg
+    environment:
+      POSTGRES_USER: storm
+      POSTGRES_PASSWORD: storm
+      POSTGRES_DB: storm_codex
+    ports:
+      - "5433:5432"
+    volumes:
+      - storm-codex-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U storm -d storm_codex"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  storm-codex-pgdata:
