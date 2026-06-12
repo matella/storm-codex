@@ -3,6 +3,7 @@
 
 mod admin;
 mod config;
+mod jarvis;
 pub mod project;
 mod raw;
 mod read;

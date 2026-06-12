@@ -12,6 +12,9 @@ pub struct Config {
     pub admin_token: String,
     /// Dossier du front buildé (web/dist) servi sur `/` ; vide = ne sert que l'API.
     pub web_dir: Option<PathBuf>,
+    /// Redis Jarvis (option) ; absent = pas d'émission d'événements.
+    pub redis_url: Option<String>,
+    pub jarvis_channel: String,
 }
 
 impl Config {
@@ -35,6 +38,9 @@ impl Config {
                 .ok()
                 .map(PathBuf::from)
                 .filter(|p| p.is_dir()),
+            redis_url: std::env::var("REDIS_URL").ok().filter(|s| !s.is_empty()),
+            jarvis_channel: std::env::var("JARVIS_CHANNEL")
+                .unwrap_or_else(|_| "jarvis:events".into()),
         })
     }
 }

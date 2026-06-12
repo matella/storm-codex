@@ -18,5 +18,11 @@ services:
       timeout: 3s
       retries: 10
 
+  redis:
+    image: redis:7
+    container_name: storm-codex-redis
+    ports:
+      - "6380:6379"
+
 volumes:
   storm-codex-pgdata:

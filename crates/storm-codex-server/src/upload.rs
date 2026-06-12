@@ -294,6 +294,12 @@ async fn run_parse(
                 "match_id": match_id,
                 "map": out.match_.as_ref().and_then(|m| m.get("map")).cloned(),
             }));
+            // événement Jarvis (jalon 5) — best-effort, n'affecte pas la réponse
+            if let Some(url) = &state.cfg.redis_url {
+                let event = crate::jarvis::match_completed_event(match_id, &out);
+                let (url, chan) = (url.clone(), state.cfg.jarvis_channel.clone());
+                tokio::spawn(async move { crate::jarvis::publish(&url, &chan, &event).await });
+            }
             Outcome {
                 status: "parsed".into(),
                 match_id: Some(match_id),
