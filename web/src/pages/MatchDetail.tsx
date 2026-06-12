@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "react-router-dom";
 import { fetchMatch, modeBadge, fmtTime, fmtDur } from "../api";
 import { Avatar } from "../components/Avatar";
+import { LevelChart } from "../components/LevelChart";
 
 const num = (v: any): number => (typeof v === "number" ? v : 0);
 
@@ -84,6 +85,13 @@ export function MatchDetail() {
 
       <ScoreTable players={players} team={0} label="Équipe bleue" cls="tm-blue" />
       <ScoreTable players={players} team={1} label="Équipe rouge" cls="tm-red" />
+
+      {Array.isArray(m.levelAdvTimeline) && m.levelAdvTimeline.length > 1 && (
+        <>
+          <p className="cap">Avantage de niveau (bleue +, rouge −)</p>
+          <div className="card"><LevelChart timeline={m.levelAdvTimeline} /></div>
+        </>
+      )}
 
       <p className="cap">Données complètes</p>
       <div className="card">

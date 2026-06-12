@@ -18,6 +18,8 @@ pub struct Config {
     /// Push post-game vers l'EBS Twitch Azure (option).
     pub azure_push_url: Option<String>,
     pub azure_push_token: Option<String>,
+    /// API HotsPatchNotes (référentiel héros/talents) — répliquée dans `dim_*` au démarrage.
+    pub hotspatchnotes_url: Option<String>,
 }
 
 impl Config {
@@ -46,6 +48,7 @@ impl Config {
                 .unwrap_or_else(|_| "jarvis:events".into()),
             azure_push_url: std::env::var("AZURE_PUSH_URL").ok().filter(|s| !s.is_empty()),
             azure_push_token: std::env::var("AZURE_PUSH_TOKEN").ok().filter(|s| !s.is_empty()),
+            hotspatchnotes_url: std::env::var("HOTSPATCHNOTES_URL").ok().filter(|s| !s.is_empty()),
         })
     }
 }

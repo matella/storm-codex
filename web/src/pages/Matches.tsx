@@ -36,9 +36,14 @@ export function Matches() {
               {label}
             </span>
           ))}
-          <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--kicker)" }}>
-            {data?.length ?? 0} matchs
-          </span>
+          <a
+            href={`/api/matches.csv${mode != null ? `?mode=${mode}` : ""}`}
+            className="pill"
+            style={{ marginLeft: "auto" }}
+          >
+            export CSV ↓
+          </a>
+          <span style={{ fontSize: 10, color: "var(--kicker)" }}>{data?.length ?? 0} matchs</span>
         </div>
         {isLoading && <div className="empty">chargement…</div>}
         {data?.length === 0 && <div className="empty">aucun match</div>}

@@ -4,6 +4,7 @@
 mod admin;
 mod azure;
 mod config;
+mod dim;
 mod jarvis;
 pub mod project;
 mod raw;
@@ -64,6 +65,12 @@ async fn run() -> Result<(), String> {
         .await
         .map_err(|e| format!("migrations : {e}"))?;
 
+    // référentiel héros depuis HotsPatchNotes (best-effort, n'empêche pas le démarrage)
+    if let Some(url) = cfg.hotspatchnotes_url.clone() {
+        let db2 = db.clone();
+        tokio::spawn(async move { dim::sync_heroes(&db2, &url).await });
+    }
+
     let cores = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4);
@@ -85,6 +92,8 @@ async fn run() -> Result<(), String> {
         .route("/api/players/{toon}", get(read::get_player))
         .route("/api/heroes", get(read::list_heroes))
         .route("/api/maps", get(read::list_maps))
+        .route("/api/dim/heroes", get(read::dim_heroes))
+        .route("/api/matches.csv", get(read::matches_csv))
         .route("/api/admin/tokens", post(admin::create_token))
         .route(
             "/api/admin/tokens/{id}",

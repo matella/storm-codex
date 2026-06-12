@@ -1,6 +1,6 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useState } from "react";
-import { useLiveUpdates } from "../api";
+import { useLiveUpdates, useDimHeroes } from "../api";
 
 const TABS: [string, string][] = [
   ["/", "Session"],
@@ -12,6 +12,7 @@ const TABS: [string, string][] = [
 export function Layout() {
   const [live, setLive] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  useDimHeroes(); // peuple le référentiel héros (anneaux d'univers)
   useLiveUpdates((ev) => {
     setLive(true);
     setFlash(`● nouveau replay reçu — ${ev.map ?? "match"} ajouté`);

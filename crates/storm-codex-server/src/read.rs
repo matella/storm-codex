@@ -5,6 +5,7 @@ use crate::AppState;
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
+    response::IntoResponse,
     Json,
 };
 use serde::Deserialize;
@@ -122,6 +123,60 @@ pub async fn list_heroes(State(s): State<AppState>) -> Resp {
     .await
     .map_err(db_err)?;
     Ok(Json(v))
+}
+
+/// GET /api/dim/heroes — référentiel héros (nom → univers/rôle/icône) pour les anneaux d'univers.
+pub async fn dim_heroes(State(s): State<AppState>) -> Resp {
+    let v: J = sqlx::query_scalar(
+        "SELECT COALESCE(jsonb_object_agg(name, jsonb_build_object(
+            'universe', universe, 'role', role, 'icon', data->'icon')), '{}'::jsonb)
+         FROM dim_heroes",
+    )
+    .fetch_one(&s.db)
+    .await
+    .map_err(db_err)?;
+    Ok(Json(v))
+}
+
+/// GET /api/matches.csv — export CSV des matchs (filtres identiques à /api/matches).
+pub async fn matches_csv(
+    State(s): State<AppState>,
+    Query(f): Query<MatchFilter>,
+) -> Result<axum::response::Response, (StatusCode, Json<J>)> {
+    use std::fmt::Write;
+    let rows: Vec<(i64, Option<String>, Option<i32>, Option<chrono::DateTime<chrono::Utc>>, Option<f64>, Option<i32>, Option<i32>)> =
+        sqlx::query_as(
+            "SELECT id, map, mode, played_at, length, winner, build FROM matches
+             WHERE ($1::text IS NULL OR map = $1) AND ($2::int IS NULL OR mode = $2)
+             ORDER BY played_at DESC NULLS LAST LIMIT $3",
+        )
+        .bind(f.map)
+        .bind(f.mode)
+        .bind(f.limit.unwrap_or(5000).clamp(1, 50000))
+        .fetch_all(&s.db)
+        .await
+        .map_err(db_err)?;
+    let mut csv = String::from("id,map,mode,played_at,length,winner,build\n");
+    for (id, map, mode, played, length, winner, build) in rows {
+        let _ = writeln!(
+            csv,
+            "{id},{},{},{},{},{},{}",
+            map.unwrap_or_default().replace(',', " "),
+            mode.map(|v| v.to_string()).unwrap_or_default(),
+            played.map(|d| d.to_rfc3339()).unwrap_or_default(),
+            length.map(|v| format!("{v:.1}")).unwrap_or_default(),
+            winner.map(|v| v.to_string()).unwrap_or_default(),
+            build.map(|v| v.to_string()).unwrap_or_default(),
+        );
+    }
+    Ok((
+        [
+            (axum::http::header::CONTENT_TYPE, "text/csv; charset=utf-8"),
+            (axum::http::header::CONTENT_DISPOSITION, "attachment; filename=\"matches.csv\""),
+        ],
+        csv,
+    )
+        .into_response())
 }
 
 /// GET /api/maps — parties par carte + winrate équipe bleue.

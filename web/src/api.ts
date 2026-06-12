@@ -1,6 +1,6 @@
 // Couche API typée vers storm-codex-server + hook WebSocket temps réel.
 import { useEffect } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 export interface MatchPlayer {
   toon: string;
@@ -110,10 +110,28 @@ export function modeBadge(mode: number | null): { short: string; cls: string } {
   return (mode != null && MODE_LABEL[mode]) || { short: "—", cls: "b-qm" };
 }
 
-// univers par héros (sous-ensemble ; fallback Nexus). Étendra dim_heroes au besoin.
-const UNIVERSE: Record<string, string> = {};
-export function universeColor(_hero: string | null): string {
-  return "var(--u-nexus)";
+// ── référentiel héros (dim_heroes depuis HotsPatchNotes) → anneaux d'univers ──
+export interface DimHero { universe: string | null; role: string | null; icon: string | null }
+export type DimHeroes = Record<string, DimHero>;
+
+const UNIVERSE_COLOR: Record<string, string> = {
+  Warcraft: "var(--u-warcraft)",
+  StarCraft: "var(--u-starcraft)",
+  Diablo: "var(--u-diablo)",
+  Overwatch: "var(--u-overwatch)",
+  Nexus: "var(--u-nexus)",
+};
+
+/** Cache module-level peuplé par useDimHeroes — universeColor est synchrone (appelé par Avatar). */
+let DIM: DimHeroes = {};
+export function useDimHeroes() {
+  const q = useQuery({ queryKey: ["dim-heroes"], queryFn: () => get<DimHeroes>("/api/dim/heroes"), staleTime: Infinity });
+  if (q.data) DIM = q.data;
+  return q.data;
+}
+export function universeColor(hero: string | null): string {
+  const u = hero ? DIM[hero]?.universe : null;
+  return (u && UNIVERSE_COLOR[u]) || "var(--u-nexus)";
 }
 export function initials(name: string | null): string {
   if (!name) return "··";
@@ -130,4 +148,3 @@ export function fmtDur(seconds: number | null): string {
   const s = Math.floor(seconds % 60);
   return `${m}:${String(s).padStart(2, "0")}`;
 }
-export { UNIVERSE };
