@@ -228,12 +228,13 @@ async fn run_parse(
     match project::project_match(&state.db, &fp, PARSER_VERSION, &out).await {
         Ok(match_id) => {
             let _ = sqlx::query(
-                "UPDATE uploads SET status='parsed', parser_version=$2, build=$3,
+                "UPDATE uploads SET status='parsed', parser_version=$2, build=$3, match_id=$4,
                  error_class=NULL, error_msg=NULL, parsed_at=now() WHERE id=$1",
             )
             .bind(upload_id)
             .bind(PARSER_VERSION)
             .bind(build)
+            .bind(match_id)
             .execute(&state.db)
             .await;
             // push temps réel (jalon 3 T5)

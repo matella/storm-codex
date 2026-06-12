@@ -3,6 +3,7 @@
 
 mod config;
 pub mod project;
+mod raw;
 mod read;
 mod upload;
 mod ws;
@@ -73,6 +74,7 @@ async fn run() -> Result<(), String> {
         .route("/api/upload", post(upload::upload))
         .route("/api/matches", get(read::list_matches))
         .route("/api/matches/{id}", get(read::get_match))
+        .route("/api/matches/{id}/raw", get(raw::get_raw))
         .route("/api/players/{toon}", get(read::get_player))
         .route("/api/heroes", get(read::list_heroes))
         .route("/ws", any(ws::ws_handler))
