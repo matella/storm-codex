@@ -234,6 +234,13 @@ impl Replay {
             .decode_game_events(&self.stream("replay.game.events")?)
     }
 
+    /// Visite chaque game event (possédé) sans matérialiser de `Vec` — pour les consommateurs
+    /// (storm-stats, serveur) qui ne gardent qu'une poignée des ~100 000 events.
+    pub fn visit_game_events<F: FnMut(Value)>(&self, f: F) -> Result<()> {
+        self.protocol
+            .visit_game_events(&self.stream("replay.game.events")?, f)
+    }
+
     /// `replay.message.events` — chat et pings.
     pub fn message_events(&self) -> Result<Vec<Value>> {
         self.protocol

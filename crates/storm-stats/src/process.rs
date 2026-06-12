@@ -1962,74 +1962,90 @@ fn process_messages_and_bm(
     let taunt_abil_link: f64 = if build < 68740.0 { 19.0 } else { 22.0 };
     const BSTEP_FRAME_THRESHOLD: f64 = 8.0;
 
-    let game_events = data.replay.game_events().map_err(Abort::from)?;
+    // On visite les game events au niveau storm_replay::Value (~100 000/replay) SANS les
+    // matérialiser en Vec ni les convertir en JSON : seuls les `SCmdEvent` (eventid 27) avec
+    // m_abil pertinent sont traités. `srv_int` lit les champs typés directement.
+    fn srv_int(v: &storm_replay::Value, f: &str) -> Option<i64> {
+        v.field(f).and_then(storm_replay::Value::as_int)
+    }
     // playerBSeq : handle → séquences de (gameloop, m_sequence)
     let mut player_bseq: HashMap<String, Vec<Vec<(f64, f64)>>> = HashMap::new();
-    for ev in &game_events {
-        let e = jval(ev);
-        if get(&e, &["_eventid"]).and_then(J::as_i64) != Some(27) {
-            continue;
-        }
-        let Some(abil) = get(&e, &["m_abil"]) else {
-            continue;
-        };
-        if abil.is_null() {
-            continue;
-        }
-        let abil_link = js_number(get(abil, &["m_abilLink"]));
-        let user_key = js_prop(get(&e, &["_userid", "m_userId"]));
-        let gameloop = js_number(get(&e, &["_gameloop"]));
-        if abil_link == b_abil_link {
-            // chaîne de « b » : id = playerLobbyID[playerID] (undefined → clé "undefined")
-            let id = player_lobby_id
-                .get(&user_key)
-                .cloned()
-                .unwrap_or_else(|| "undefined".into());
-            let seq = js_number(get(&e, &["m_sequence"]));
-            let seqs = player_bseq.entry(id).or_default();
-            if seqs.is_empty() {
-                seqs.push(vec![(gameloop, seq)]);
-            } else {
-                let cur_seq = seqs.len() - 1;
-                let (cur_loop, cur_sequence) = *seqs[cur_seq]
-                    .last()
-                    .ok_or_else(|| Abort::Throw("bseq: séquence vide".into()))?;
-                if (cur_loop - gameloop).abs() <= BSTEP_FRAME_THRESHOLD
-                    && (cur_sequence - seq).abs() > 1.0
-                {
-                    seqs[cur_seq].push((gameloop, seq));
+    // une « exception JS » dans la visite est capturée ici (la closure ne peut pas `?`)
+    let mut abort: Option<Abort> = None;
+    data.replay
+        .visit_game_events(|ev| {
+            if abort.is_some() || srv_int(&ev, "_eventid") != Some(27) {
+                return;
+            }
+            let Some(abil) = ev.field("m_abil") else {
+                return;
+            };
+            if matches!(abil, storm_replay::Value::Null) {
+                return;
+            }
+            // m_abilLink absent → pas de correspondance (comme undefined === N en JS)
+            let Some(abil_link) = srv_int(abil, "m_abilLink").map(|v| v as f64) else {
+                return;
+            };
+            let user_id = ev.field("_userid").and_then(|u| srv_int(u, "m_userId"));
+            let user_key = user_id.map_or_else(|| "undefined".into(), |v| v.to_string());
+            let gameloop = srv_int(&ev, "_gameloop").map_or(f64::NAN, |v| v as f64);
+            if abil_link == b_abil_link {
+                // chaîne de « b » : id = playerLobbyID[playerID] (undefined → clé "undefined")
+                let id = player_lobby_id
+                    .get(&user_key)
+                    .cloned()
+                    .unwrap_or_else(|| "undefined".into());
+                let seq = srv_int(&ev, "m_sequence").map_or(f64::NAN, |v| v as f64);
+                let seqs = player_bseq.entry(id).or_default();
+                if let Some(&(cur_loop, cur_sequence)) = seqs.last().and_then(|s| s.last()) {
+                    if (cur_loop - gameloop).abs() <= BSTEP_FRAME_THRESHOLD
+                        && (cur_sequence - seq).abs() > 1.0
+                    {
+                        let last = seqs.len() - 1;
+                        seqs[last].push((gameloop, seq));
+                    } else {
+                        seqs.push(vec![(gameloop, seq)]);
+                    }
                 } else {
                     seqs.push(vec![(gameloop, seq)]);
                 }
+            } else if abil_link == taunt_abil_link {
+                // taunt (abilCmdIndex 4) ou dance (3) — players[id] undefined → throw (catch JS)
+                let Some(id) = player_lobby_id.get(&user_key).cloned() else {
+                    abort = Some(Abort::Throw("taunt/dance: joueur non mappé".into()));
+                    return;
+                };
+                let cmd = srv_int(abil, "m_abilCmdIndex").map_or(f64::NAN, |v| v as f64);
+                let field = if cmd == 4.0 {
+                    Some("taunts")
+                } else if cmd == 3.0 {
+                    Some("dances")
+                } else {
+                    None
+                };
+                if let Some(field) = field {
+                    let obj = json!({
+                        "loop": jnum(gameloop), "time": jnum(loop_to_sec(gameloop)),
+                        "kills": 0, "deaths": 0,
+                    });
+                    match players
+                        .get_mut(&id)
+                        .and_then(J::as_object_mut)
+                        .and_then(|p| p.get_mut(field))
+                        .and_then(J::as_array_mut)
+                    {
+                        Some(a) => a.push(obj),
+                        None => {
+                            abort = Some(Abort::Throw(format!("taunt/dance: joueur {id} inconnu")))
+                        }
+                    }
+                }
             }
-        } else if abil_link == taunt_abil_link {
-            // taunt (abilCmdIndex 4) ou dance (3) — players[id] undefined → throw (catch JS)
-            let id = player_lobby_id
-                .get(&user_key)
-                .ok_or_else(|| Abort::Throw("taunt/dance: joueur non mappé".into()))?
-                .clone();
-            let cmd = js_number(get(abil, &["m_abilCmdIndex"]));
-            let field = if cmd == 4.0 {
-                Some("taunts")
-            } else if cmd == 3.0 {
-                Some("dances")
-            } else {
-                None
-            };
-            if let Some(field) = field {
-                let obj = json!({
-                    "loop": jnum(gameloop), "time": jnum(loop_to_sec(gameloop)),
-                    "kills": 0, "deaths": 0,
-                });
-                players
-                    .get_mut(&id)
-                    .and_then(J::as_object_mut)
-                    .and_then(|p| p.get_mut(field))
-                    .and_then(J::as_array_mut)
-                    .ok_or_else(|| Abort::Throw(format!("taunt/dance: joueur {id} inconnu")))?
-                    .push(obj);
-            }
-        }
+        })
+        .map_err(Abort::from)?;
+    if let Some(a) = abort {
+        return Err(a);
     }
     process_taunt_data(match_, players, &player_bseq)?;
     Ok(())

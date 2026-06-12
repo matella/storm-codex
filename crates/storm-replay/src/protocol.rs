@@ -141,14 +141,38 @@ impl Protocol {
         )
     }
 
+    /// Décode le flux et passe chaque événement (possédé) à `f` sans matérialiser de `Vec` —
+    /// pour les consommateurs qui ne gardent qu'une fraction des ~100 000 game events.
+    pub fn visit_game_events<F: FnMut(Value)>(&self, content: &[u8], f: F) -> Result<()> {
+        self.bitpacked_event_stream_visit(
+            content,
+            self.game_eventid_typeid,
+            &self.game_event_types,
+            f,
+        )
+    }
+
     fn bitpacked_event_stream(
         &self,
         content: &[u8],
         eventid_typeid: usize,
         event_types: &EventTypes,
     ) -> Result<Vec<Value>> {
-        let mut decoder = BitPackedDecoder::new(content, &self.typeinfos);
         let mut events = Vec::new();
+        self.bitpacked_event_stream_visit(content, eventid_typeid, event_types, |e| {
+            events.push(e)
+        })?;
+        Ok(events)
+    }
+
+    fn bitpacked_event_stream_visit<F: FnMut(Value)>(
+        &self,
+        content: &[u8],
+        eventid_typeid: usize,
+        event_types: &EventTypes,
+        mut f: F,
+    ) -> Result<()> {
+        let mut decoder = BitPackedDecoder::new(content, &self.typeinfos);
         let mut gameloop: i64 = 0;
         while !decoder.done() {
             let delta = decoder.svaruint32_value(self.svaruint32_typeid)?;
@@ -166,10 +190,10 @@ impl Protocol {
             })?;
             let mut event = decoder.instance(*typeid)?;
             annotate(&mut event, name, eventid, gameloop, Some(userid));
-            events.push(event);
+            f(event);
             decoder.byte_align(); // l'événement suivant est aligné sur l'octet
         }
-        Ok(events)
+        Ok(())
     }
 }
 
