@@ -87,10 +87,21 @@ héros répliqués depuis HotsPatchNotes :5001** (via `host.docker.internal`) ; 
 **Non invasif** : Node overlay, Mongo et Redis Jarvis **non touchés** (REDIS_URL/AZURE_* vides) ;
 aucune décommission. Le serveur est en place, sain, en attente d'uploads du PC de jeu.
 
+## Compat uploader client-rs — FAIT (2026-06-12)
+Le client `client-rs` (Hots-Overlay v1.1.2) poste sur **`/api/upload-raw`** (octets bruts,
+header `X-Filename`, `Bearer`). storm-codex n'exposait que `/api/upload` → **alias ajouté**
+(`/api/upload-raw` → même handler). Bout-en-bout prouvé sur le box : token créé via admin,
+upload octets → auth → archive → parse → statut classé, 401 sans token, santé admin OK. Le
+client marche donc en re-pointant juste `SERVER_URL` (pas de changement de code client).
+Token d'upload **matella-pc** créé (valeur donnée en chat ; recréable via `POST /api/admin/tokens`
+avec le champ `name` + `ADMIN_TOKEN` du `.env` box). Base + archive remises à vide.
+
 ## Ce qui reste (dépendances opérateur/PC de jeu)
-- **Backfill réel** : pointer `client-rs` (PC de jeu) vers `http://192.168.129.85:5102` + token
-  d'upload (créer via `POST /api/admin/tokens`, ADMIN_TOKEN dans le `.env` du box) ; lancer le
-  mode backfill de l'archive (~2 800 replays). Validé en dev jalon 3 ; à rejouer en prod.
+- **Brancher l'uploader (PC de jeu)** : dans `Hots-Overlay`, créer `.env` racine avec
+  `SERVER_URL=http://192.168.129.85:5102` + `AUTH_TOKEN=<token matella-pc>`, puis
+  `cd client-rs && cargo build --release` (run direct) ou builder l'installeur Inno Setup
+  (`installer.iss` → `installer-output/HotSReplayClient-1.1.2-setup.exe`). Lancer le **backfill**
+  de l'archive (~2 800 replays). Pipeline validé en dev jalon 3 ; à rejouer en prod.
 - **Bascule jalon 5** (le soir, partie réelle) : renseigner `REDIS_URL` (Redis Jarvis) +
   `AZURE_PUSH_URL/TOKEN` dans le `.env` du box → `docker compose up -d` ; jouer une partie →
   vérifier page < 5 s, widget OBS, event `hots.match.completed` sur Redis Jarvis, push Azure ;
