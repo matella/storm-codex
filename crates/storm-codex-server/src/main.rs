@@ -87,6 +87,9 @@ async fn run() -> Result<(), String> {
     let app = Router::new()
         .route("/api/health", get(health))
         .route("/api/upload", post(upload::upload))
+        // alias compat client-rs (Hots-Overlay) : il poste sur /api/upload-raw (octets bruts,
+        // header X-Filename, Bearer) — même handler, mêmes garanties.
+        .route("/api/upload-raw", post(upload::upload))
         .route("/api/matches", get(read::list_matches))
         .route("/api/matches/{id}", get(read::get_match))
         .route("/api/matches/{id}/raw", get(raw::get_raw))
