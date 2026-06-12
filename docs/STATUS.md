@@ -23,17 +23,32 @@
   Parité **bit-exacte** prouvée vs heroprotocol (deep-compare 7 streams × 4 replays,
   `tools/crosscheck_streams.py`). Plan : `docs/plans/2026-06-12-jalon1-storm-replay.md`.
 
-## Prochaine étape — Jalon 2 : crate `storm-stats` (plan à écrire, puis exécuter)
-1. Plan writing-plans dédié. Port complet de la logique hots-parser (3 360 lignes JS analysées —
-   dossier de recherche) : replay décodé → `MatchStats` typé (score screen ~80 stats/joueur,
-   draft, takedowns enrichis, timeline d'objectifs par carte ×16, team fights, XP/niveaux,
-   taunts/BM, messages/votes/globes/camps, awards).
-2. **Livrable obligatoire : harnais de diff vs hots-parser (Node)** sur corpus de référence.
-   *Accept : diff vert champ par champ (tolérances documentées).* Cloner ebshimizu/hots-parser.
-3. Budget : décode (102 ms méd.) + stats < 150 ms → storm-stats a ~40 ms de marge en médiane.
+- **Jalon 2 : FAIT** (2026-06-12). Crate `crates/storm-stats` : port fidèle de hots-parser
+  (3 360 lignes JS) → `{match, players, status}`. **Critère : diff automatique champ par champ
+  vs hots-parser 7.55.7 (Node) — 114/114 verts** (79 parse complet identique, 35 rejets
+  identiques sur cartes absentes de la `MapType` de la référence). 1 tolérance documentée et
+  favorable (coordonnées de ping : storm-stats plus correct que la référence). Bench parse
+  complet **133 ms médiane** (échantillon représentatif, < 150 budget ; à-budget 151 ms sur le
+  pire cas, décodage-dominé). Harnais : `tools/parity-harness/` (`dump.js`, `diff.py`,
+  `tolerances.json`). Rapport : `docs/research/2026-06-12-jalon2-parite.md` · plan :
+  `docs/plans/2026-06-12-jalon2-storm-stats.md`.
+
+## Prochaine étape — Jalon 3 : serveur + Postgres + backfill (plan à écrire, puis exécuter)
+1. Plan writing-plans dédié. `storm-codex-server` (axum) : `POST /api/upload` (token, fingerprint
+   anti-doublon, archive d'abord, pool de workers parse storm-replay→storm-stats, transaction
+   Postgres, événement), REST de lecture, WebSocket `match.parsed`, dump `…/raw` + cache LRU,
+   Admin (tokens, re-process idempotent piloté par `parser_version`, santé). Mode backfill
+   `client-rs`.
+2. *Accept : 100 % de l'archive archivée et tentée ; ≥ 99 % parsée (échecs listés/classés dans
+   Admin) ; fin de partie → page < 5 s.* Budgets : écriture PG + push WS < 200 ms,
+   backfill 3 ans < 5 min (workers = nb cœurs).
+3. **Box requis** (Postgres/Redis Jarvis, soir ~18h→nuit, Tailscale 192.168.129.85) — premier
+   jalon qui en dépend (jalons 0–2 étaient autosuffisants sur le PC de jeu).
+4. Acquis réutilisables : `storm-stats::process_replay`, `Replay::visit_game_events`,
+   feature `fast-alloc`, classes d'erreur typées `storm_replay::Error` (→ `uploads.error_class`).
 
 ## Jalons (résumé — détail et critères dans la spec)
-0 spike **GO ✅** → 1 storm-replay **✅** → 2 storm-stats (diff vs hots-parser) →
+0 spike **GO ✅** → 1 storm-replay **✅** → 2 storm-stats **✅** →
 3 serveur+DB+backfill → 4 front parité → 5 stream+Jarvis+bascule (décommission Node local) →
 6 publication crates.
 
