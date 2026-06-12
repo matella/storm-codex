@@ -1,0 +1,10 @@
+[package]
+name = "storm-decode"
+version = "0.1.0"
+edition = "2021"
+description = "Jalon 0 — spike de décodage .StormReplay (MPQ + format versioned Blizzard)"
+
+[dependencies]
+nom-mpq = "2"
+serde_json = "1"
+anyhow = "1"
