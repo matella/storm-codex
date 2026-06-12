@@ -123,3 +123,18 @@ pub async fn list_heroes(State(s): State<AppState>) -> Resp {
     .map_err(db_err)?;
     Ok(Json(v))
 }
+
+/// GET /api/maps — parties par carte + winrate équipe bleue.
+pub async fn list_maps(State(s): State<AppState>) -> Resp {
+    let v: J = sqlx::query_scalar(
+        "SELECT COALESCE(jsonb_agg(t ORDER BY t.games DESC), '[]'::jsonb) FROM (
+            SELECT map, count(*) AS games,
+                   count(*) FILTER (WHERE winner = 0) AS blue_wins,
+                   round(avg(length)::numeric, 0) AS avg_length
+            FROM matches WHERE map IS NOT NULL GROUP BY map) t",
+    )
+    .fetch_one(&s.db)
+    .await
+    .map_err(db_err)?;
+    Ok(Json(v))
+}

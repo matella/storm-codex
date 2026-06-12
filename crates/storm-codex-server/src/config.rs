@@ -10,6 +10,8 @@ pub struct Config {
     pub raw_cache_dir: PathBuf,
     pub raw_cache_max_bytes: u64,
     pub admin_token: String,
+    /// Dossier du front buildé (web/dist) servi sur `/` ; vide = ne sert que l'API.
+    pub web_dir: Option<PathBuf>,
 }
 
 impl Config {
@@ -29,6 +31,10 @@ impl Config {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(5 * 1024 * 1024 * 1024),
             admin_token: std::env::var("ADMIN_TOKEN").unwrap_or_else(|_| "dev-admin-token".into()),
+            web_dir: std::env::var("WEB_DIR")
+                .ok()
+                .map(PathBuf::from)
+                .filter(|p| p.is_dir()),
         })
     }
 }

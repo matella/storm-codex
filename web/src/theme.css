@@ -1,0 +1,99 @@
+/* Design system Nexus Codex — tokens de la maquette validée (2026-06-12-storm-codex-mockup.html) */
+:root {
+  --bg: #06070b;
+  --surface: #0e1016;
+  --surface-2: #13141d;
+  --hairline: #1a1d2a;
+  --hairline-strong: #232636;
+  --text: #e8eaf2;
+  --text-2: #cfd3e0;
+  --muted: #9aa0b4;
+  --muted-2: #8d93a8;
+  --kicker: #5d6275;
+  --accent: #7f77dd;
+  --win: #5dcaa5;
+  --loss: #e24b4a;
+  --loss-soft: #f7c1c1;
+  --tm-blue: #85b7eb;
+  --tm-red: #f09595;
+  /* anneaux d'univers */
+  --u-warcraft: #ef9f27;
+  --u-starcraft: #378add;
+  --u-diablo: #e24b4a;
+  --u-overwatch: #d85a30;
+  --u-nexus: #afa9ec;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+}
+a { color: inherit; text-decoration: none; }
+.mono { font-family: "JetBrains Mono", Consolas, monospace; }
+
+/* layout */
+.shell { max-width: 1100px; margin: 0 auto; padding: 0 18px 60px; }
+.topbar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 12px 18px; border-bottom: 1px solid var(--hairline-strong);
+  position: sticky; top: 0; background: var(--bg); z-index: 10;
+}
+.brand { font-size: 13px; font-weight: 600; letter-spacing: .07em; }
+.nav { display: flex; gap: 14px; }
+.nav a { color: var(--muted-2); font-size: 12px; padding-bottom: 3px; }
+.nav a.on { color: var(--text); border-bottom: 2px solid var(--accent); }
+.live { margin-left: auto; font-size: 10px; color: var(--win); display: flex; align-items: center; gap: 5px; }
+.live.off { color: var(--kicker); }
+
+/* surfaces */
+.card { background: var(--surface); border: 1px solid var(--hairline-strong); border-radius: 10px; overflow: hidden; margin: 16px 0; }
+.card-hd { display: flex; align-items: center; gap: 12px; padding: 11px 18px; border-bottom: 1px solid var(--hairline-strong); }
+.cap { font-size: 13px; color: var(--muted); margin: 24px 0 6px; }
+.kick { color: var(--kicker); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 6px; }
+.row { display: flex; align-items: center; gap: 10px; padding: 8px 18px; border-bottom: 1px solid var(--hairline); }
+.row:last-child { border-bottom: none; }
+.row.link { cursor: pointer; }
+.row.link:hover { background: var(--surface-2); }
+
+/* badges */
+.bdg { font-size: 9px; padding: 2px 7px; border-radius: 4px; font-weight: 600; display: inline-block; }
+.b-win { background: #04342c; color: var(--win); }
+.b-loss { background: #501313; color: var(--loss-soft); }
+.b-sl { background: #26215c; color: #cecbf6; }
+.b-qm { background: #1a1d2a; color: var(--muted-2); }
+.b-live { background: #16202c; color: var(--tm-blue); }
+.b-mvp { background: #2b2416; color: #fac775; }
+
+.pill { font-size: 11px; color: var(--muted-2); border: 1px solid var(--hairline-strong); border-radius: 12px; padding: 3px 10px; cursor: pointer; user-select: none; }
+.pill.on { color: var(--surface); background: var(--accent); border-color: var(--accent); }
+
+/* avatar à anneau d'univers */
+.av { border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; flex-shrink: 0; }
+
+.up { color: var(--win); }
+.dn { color: var(--tm-red); }
+.tm-blue { color: var(--tm-blue); }
+.tm-red { color: var(--tm-red); }
+.muted { color: var(--muted-2); }
+
+/* tables */
+table { border-collapse: collapse; width: 100%; }
+th { color: var(--kicker); font-size: 9px; letter-spacing: .07em; text-align: right; padding: 6px 10px; font-weight: 600; cursor: pointer; }
+th:first-child, td:first-child { text-align: left; }
+td { color: var(--text-2); font-size: 11px; padding: 6px 10px; text-align: right; border-top: 1px solid var(--hairline); }
+tbody tr.link { cursor: pointer; }
+tbody tr.link:hover { background: var(--surface-2); }
+
+.gauge { height: 5px; background: var(--hairline); border-radius: 3px; overflow: hidden; }
+.gauge > div { height: 5px; border-radius: 3px; background: var(--accent); }
+
+h1 { font-size: 18px; font-weight: 500; margin: 18px 0 4px; }
+h2 { font-size: 14px; font-weight: 500; margin: 0; }
+.note { font-size: 12px; color: var(--muted); }
+.empty { padding: 28px 18px; color: var(--muted-2); font-size: 12px; text-align: center; }
+.toast { padding: 6px 18px; background: var(--surface-2); border-bottom: 1px solid var(--hairline); font-size: 10px; color: var(--win); }

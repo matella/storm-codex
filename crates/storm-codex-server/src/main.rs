@@ -82,6 +82,7 @@ async fn run() -> Result<(), String> {
         .route("/api/matches/{id}/raw", get(raw::get_raw))
         .route("/api/players/{toon}", get(read::get_player))
         .route("/api/heroes", get(read::list_heroes))
+        .route("/api/maps", get(read::list_maps))
         .route("/api/admin/tokens", post(admin::create_token))
         .route(
             "/api/admin/tokens/{id}",
@@ -89,8 +90,22 @@ async fn run() -> Result<(), String> {
         )
         .route("/api/admin/uploads", get(admin::uploads_health))
         .route("/api/admin/reprocess", post(admin::reprocess))
-        .route("/ws", any(ws::ws_handler))
-        .with_state(state);
+        .route("/ws", any(ws::ws_handler));
+
+    // Front buildé (SPA) : ServeDir sert les assets ; toute route inconnue renvoie index.html
+    // (statut 200) pour que le routing client React fonctionne sur les liens profonds.
+    let app = match &state.cfg.web_dir {
+        Some(dir) => {
+            let index = std::fs::read_to_string(dir.join("index.html")).unwrap_or_default();
+            let spa = axum::routing::get(move || {
+                let index = index.clone();
+                async move { axum::response::Html(index) }
+            });
+            app.fallback_service(tower_http::services::ServeDir::new(dir).fallback(spa))
+        }
+        None => app,
+    }
+    .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(&bind)
         .await

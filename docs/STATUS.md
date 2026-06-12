@@ -47,18 +47,27 @@
   `docs/research/2026-06-12-jalon3-bench.md` · plan :
   `docs/plans/2026-06-12-jalon3-serveur-db-backfill.md`.
 
-## Prochaine étape — Jalon 4 : front parité (plan à écrire, puis exécuter)
-1. Plan writing-plans dédié. SPA React + Vite + TS + TanStack (Query/Table/Virtual) + uPlot,
-   design Nexus Codex. Toutes les pages SotS (dashboard/session, matchs, détail match, joueur,
-   héros/collection, trends par patch, classements, équipes/ligues, cartes, admin/import, exports)
-   consommant l'API REST + WS du jalon 3. Servie par le binaire serveur.
-2. Peupler `dim_heroes`/`dim_talents` depuis l'API HotsPatchNotes (:5001, box) au démarrage.
-3. *Accept : chaque fonctionnalité SotS retrouvable (checklist par page), p95 API < 100 ms.*
-4. Référence visuelle : `docs/specs/2026-06-12-storm-codex-mockup.html` (14 écrans validés).
+- **Jalon 4 : socle livré** (2026-06-12). SPA `web/` (Vite + React + TS + TanStack Query),
+  design Nexus Codex (tokens de la maquette), servie par le binaire (`WEB_DIR` → ServeDir +
+  fallback index.html pour le routing SPA). Pages data-backed vérifiées contre la DB backfillée
+  (capture à l'appui) : **Session/dashboard, Matchs (filtrable, WS temps réel), Détail de match
+  (score 10 joueurs ×2 équipes, draft), Héros (agrégat triable), Cartes, Joueur (hero pool)**.
+  Nouvel endpoint `/api/maps`. Plan : `docs/plans/2026-06-12-jalon4-front-parite.md`.
+  **Reste à compléter pour la parité 1:1** : trends par patch, classements, équipes/ligues/
+  collections (définitions manuelles), admin/import UI, exports CSV/JSON, anneaux d'univers réels
+  (`dim_heroes` depuis HotsPatchNotes :5001), timelines uPlot du détail de match.
+
+## Prochaine étape — finir le jalon 4 puis jalon 5
+- **Jalon 4 (reste)** : pages secondaires + `dim_heroes`/`dim_talents` (API HotsPatchNotes box)
+  + timelines uPlot. *Accept : checklist parité par page, p95 < 100 ms (déjà 52 ms).*
+- **Jalon 5** : widget OBS, `hots.match.completed` → Redis box, connecteur Jarvis, push
+  post-game box→Azure (extension Twitch), **décommission du serveur Node local**. **Nécessite le
+  box** (Redis Jarvis, soir) — premier jalon qui en dépend réellement pour l'intégration.
+- **Jalon 6** : publication crates.io + repos GitHub publics (storm-replay/storm-stats).
 
 ## Jalons (résumé — détail et critères dans la spec)
 0 spike **GO ✅** → 1 storm-replay **✅** → 2 storm-stats **✅** (+ 2.5 cartes ARAM) →
-3 serveur+DB+backfill **✅** → 4 front parité → 5 stream+Jarvis+bascule (décommission Node local) →
+3 serveur+DB+backfill **✅** → 4 front parité **socle ✅** → 5 stream+Jarvis+bascule →
 6 publication crates.
 
 ## Décisions verrouillées (ne pas rouvrir sans l'opérateur)
