@@ -96,12 +96,22 @@ client marche donc en re-pointant juste `SERVER_URL` (pas de changement de code 
 Token d'upload **matella-pc** créé (valeur donnée en chat ; recréable via `POST /api/admin/tokens`
 avec le champ `name` + `ADMIN_TOKEN` du `.env` box). Base + archive remises à vide.
 
+## Deux correctifs (2026-06-12, retours opérateur)
+- **Backfill réellement complet** (repo Hots-Overlay, `client-rs`) : le commit PC d3efb77 annonçait
+  « scan complet » mais `candidates.truncate(INITIAL_UPLOAD_LIMIT=10)` était resté → seuls les 10
+  plus récents partaient. Corrigé : `scan_and_upload` envoie **tout** le non-uploadé (oldest-first,
+  historique chronologique), idempotent (set persisté + 409 serveur). Cap supprimé.
+- **Apostrophe dans le nom de carte** (Blackheart's Bay) : le nom **parsé** en base était déjà sûr
+  (sqlx bind, jamais d'interpolation ; front via URLSearchParams + échappement React). Restait le
+  header `X-Filename` stocké percent-encodé (`Blackheart%27s Bay`) → **décodé côté serveur** + test ;
+  vérifié de bout en bout sur le box (`… Blackheart's Bay.StormReplay` stocké proprement).
+
 ## Ce qui reste (dépendances opérateur/PC de jeu)
-- **Brancher l'uploader (PC de jeu)** : dans `Hots-Overlay`, créer `.env` racine avec
-  `SERVER_URL=http://192.168.129.85:5102` + `AUTH_TOKEN=<token matella-pc>`, puis
-  `cd client-rs && cargo build --release` (run direct) ou builder l'installeur Inno Setup
-  (`installer.iss` → `installer-output/HotSReplayClient-1.1.2-setup.exe`). Lancer le **backfill**
-  de l'archive (~2 800 replays). Pipeline validé en dev jalon 3 ; à rejouer en prod.
+- **Brancher l'uploader (PC de jeu)** : dans `Hots-Overlay` (faire `git pull` pour le fix backfill),
+  créer `.env` racine avec `SERVER_URL=http://192.168.129.85:5102` + `AUTH_TOKEN=<token matella-pc>`,
+  puis `cd client-rs && cargo build --release` (run direct) ou builder l'installeur Inno Setup
+  (`installer.iss` → `installer-output/HotSReplayClient-1.1.2-setup.exe`). Au lancement (box
+  connecté), il **backfill toute l'archive** (~2 800 replays) automatiquement.
 - **Bascule jalon 5** (le soir, partie réelle) : renseigner `REDIS_URL` (Redis Jarvis) +
   `AZURE_PUSH_URL/TOKEN` dans le `.env` du box → `docker compose up -d` ; jouer une partie →
   vérifier page < 5 s, widget OBS, event `hots.match.completed` sur Redis Jarvis, push Azure ;
