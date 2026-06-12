@@ -295,10 +295,15 @@ async fn run_parse(
                 "map": out.match_.as_ref().and_then(|m| m.get("map")).cloned(),
             }));
             // événement Jarvis (jalon 5) — best-effort, n'affecte pas la réponse
+            let event = crate::jarvis::match_completed_event(match_id, &out);
             if let Some(url) = &state.cfg.redis_url {
-                let event = crate::jarvis::match_completed_event(match_id, &out);
                 let (url, chan) = (url.clone(), state.cfg.jarvis_channel.clone());
-                tokio::spawn(async move { crate::jarvis::publish(&url, &chan, &event).await });
+                let ev = event.clone();
+                tokio::spawn(async move { crate::jarvis::publish(&url, &chan, &ev).await });
+            }
+            // push post-game box→Azure (extension Twitch) — optionnel
+            if let Some(url) = &state.cfg.azure_push_url {
+                crate::azure::push(url.clone(), state.cfg.azure_push_token.clone(), event);
             }
             Outcome {
                 status: "parsed".into(),

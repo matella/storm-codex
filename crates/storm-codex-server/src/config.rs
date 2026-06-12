@@ -15,6 +15,9 @@ pub struct Config {
     /// Redis Jarvis (option) ; absent = pas d'émission d'événements.
     pub redis_url: Option<String>,
     pub jarvis_channel: String,
+    /// Push post-game vers l'EBS Twitch Azure (option).
+    pub azure_push_url: Option<String>,
+    pub azure_push_token: Option<String>,
 }
 
 impl Config {
@@ -41,6 +44,8 @@ impl Config {
             redis_url: std::env::var("REDIS_URL").ok().filter(|s| !s.is_empty()),
             jarvis_channel: std::env::var("JARVIS_CHANNEL")
                 .unwrap_or_else(|_| "jarvis:events".into()),
+            azure_push_url: std::env::var("AZURE_PUSH_URL").ok().filter(|s| !s.is_empty()),
+            azure_push_token: std::env::var("AZURE_PUSH_TOKEN").ok().filter(|s| !s.is_empty()),
         })
     }
 }

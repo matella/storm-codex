@@ -2,6 +2,7 @@
 //! WebSocket, REST. Jalon 3. Config par env (cf. `.env.example`).
 
 mod admin;
+mod azure;
 mod config;
 mod jarvis;
 pub mod project;
