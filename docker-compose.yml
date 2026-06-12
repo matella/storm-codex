@@ -1,0 +1,51 @@
+# Déploiement de prod storm-codex (box). Postgres dédié + le serveur (front inclus).
+# Déploiement non invasif : ports neufs, lit HotsPatchNotes en lecture seule, NE TOUCHE PAS au
+# Redis Jarvis ni à l'overlay tant que `REDIS_URL`/`AZURE_*` ne sont pas renseignés (push = opt-in,
+# best-effort, absent = pas d'émission). La bascule réelle (cf. runbook) renseigne ces variables.
+#
+# Box : rsync du repo → `docker compose up -d --build`. Secrets dans le .env du box (jamais commité).
+services:
+  postgres:
+    image: postgres:17
+    container_name: storm-codex-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: storm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-storm}
+      POSTGRES_DB: storm_codex
+    volumes:
+      - storm-codex-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U storm -d storm_codex"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  server:
+    build: .
+    container_name: storm-codex-server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8088:8088"
+    environment:
+      DATABASE_URL: postgres://storm:${POSTGRES_PASSWORD:-storm}@postgres:5432/storm_codex
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?ADMIN_TOKEN requis}
+      # référentiel héros/talents (lecture seule) — HotsPatchNotes sur l'hôte box
+      HOTSPATCHNOTES_URL: ${HOTSPATCHNOTES_URL:-http://host.docker.internal:5001}
+      # push opt-in (vides au déploiement initial ; renseignés à la bascule)
+      REDIS_URL: ${REDIS_URL:-}
+      JARVIS_CHANNEL: ${JARVIS_CHANNEL:-jarvis:events}
+      AZURE_PUSH_URL: ${AZURE_PUSH_URL:-}
+      AZURE_PUSH_TOKEN: ${AZURE_PUSH_TOKEN:-}
+      RAW_CACHE_MAX_BYTES: ${RAW_CACHE_MAX_BYTES:-5368709120}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - storm-codex-data:/data
+
+volumes:
+  storm-codex-pgdata:
+  storm-codex-data:

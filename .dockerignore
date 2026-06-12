@@ -1,0 +1,14 @@
+# Contexte de build minimal : pas d'artefacts lourds ni de secrets.
+target/
+**/node_modules/
+web/dist/
+.git/
+corpus/
+spike/
+tools/
+docs/
+.archive/
+.raw-cache/
+.env
+**/.env
+*.md
