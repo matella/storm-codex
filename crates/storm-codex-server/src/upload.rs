@@ -98,8 +98,9 @@ pub async fn upload(
     .await
     {
         if st == "parsed" || st == "duplicate" {
+            // 409 Conflict : compat avec le handling « doublon » de client-rs
             return (
-                StatusCode::OK,
+                StatusCode::CONFLICT,
                 Json(UploadResponse { status: "duplicate".into(), match_id: None, error_class: None }),
             );
         }
