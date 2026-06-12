@@ -35,6 +35,23 @@ Jarvis (événements Redis) et uploader `client-rs` existant (repo Hots-Overlay)
   (~3 000 fichiers, 2–3 GB) ; uploader = `client-rs` (repo Hots-Overlay).
 - Corpus de tests : NAS/box + script `fetch-corpus` ; mini-corpus committé pour CI publique.
 
+## Repos externes — quoi cloner, où, et quand
+Ce repo est **autosuffisant pour les jalons 0→2** (spike, storm-replay, storm-stats) : aucune
+dépendance locale aux autres projets. Le jalon 0 se fait idéalement **sur le PC de jeu Windows**
+(les replays y sont ; toolchains Rust/.NET/Python s'installent là-bas).
+
+| Repo | Où | Nécessaire pour |
+|---|---|---|
+| ebshimizu/hots-parser | GitHub public (npm) | jalon 2 — harnais de diff de parité (cloner n'importe où) |
+| ebshimizu/stats-of-the-storm | GitHub public | référence fonctionnelle (déjà résumé dans docs/research) |
+| Blizzard/heroprotocol | GitHub public | génération des tables de protocole (jalons 0–1) |
+| matella Hots-Overlay | GitHub (privé) | jalon 3 — adapter `client-rs` (mode backfill, re-pointage) |
+| matella HeroesOfTheStormPatchNotes | GitHub (privé) | jalon 4 — référentiel consommé **via l'API du box** (:5001, Tailscale) ; le clone n'est utile que pour lire le code |
+| Jarvis | **pas sur GitHub** (remote box uniquement) | jalon 5 — le connecteur s'écrit depuis le Mac/box ; rien à cloner sur le PC |
+
+Accès box depuis n'importe où : Tailscale (route subnet active) → 192.168.129.85 (SSH + APIs),
+le soir quand le box tourne. Les jalons 0–2 n'ont pas besoin du box du tout.
+
 ## Conventions
 Rust 2021+, clippy strict, erreurs typées (`thiserror`), pas de `unwrap()` hors tests ;
 front React + Vite + TS + TanStack + uPlot, tokens Nexus Codex ; commits conventionnels ;
