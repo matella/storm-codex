@@ -36,8 +36,9 @@ impl Output {
 enum Abort {
     /// `return { status: X }` explicite de parser.js.
     Status(i64),
-    /// Exception JS (accès indéfini, etc.) → catch → Failure.
-    Throw(String),
+    /// Exception JS (accès indéfini, etc.) → catch → Failure. Le message ne sert qu'au
+    /// débogage local (hots-parser ne le sort pas non plus).
+    Throw(#[allow(dead_code)] String),
 }
 
 impl From<storm_replay::Error> for Abort {
@@ -140,7 +141,9 @@ pub(crate) struct Ctx {
     pub attributes: J,
     pub tracker: Vec<J>,
     pub tags: Vec<J>,
-    pub replay: Replay, // game/message events décodés à la demande (gros streams)
+    // game/message events décodés à la demande (gros streams) — consommé à partir du T3
+    #[allow(dead_code)]
+    pub replay: Replay,
 }
 
 fn attributes_json(a: &storm_replay::Attributes) -> J {
