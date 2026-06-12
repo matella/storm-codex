@@ -3,12 +3,14 @@
 
 mod config;
 pub mod project;
+mod upload;
 
-use axum::{extract::State, http::StatusCode, routing::get, Json, Router};
+use axum::{extract::State, http::StatusCode, routing::get, routing::post, Json, Router};
 use config::Config;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use std::sync::Arc;
+use tokio::sync::{broadcast, Semaphore};
 
 /// Version du projecteur — bumper quand la projection change ; pilote le re-process idempotent.
 pub const PARSER_VERSION: i32 = 1;
@@ -17,6 +19,10 @@ pub const PARSER_VERSION: i32 = 1;
 pub struct AppState {
     pub cfg: Arc<Config>,
     pub db: PgPool,
+    /// Limite les parses CPU concurrents (= nb de cœurs).
+    pub parse_sem: Arc<Semaphore>,
+    /// Diffusion temps réel (WS) — `match.parsed`, progression backfill.
+    pub events: broadcast::Sender<serde_json::Value>,
 }
 
 #[tokio::main]
@@ -50,11 +56,19 @@ async fn run() -> Result<(), String> {
         .await
         .map_err(|e| format!("migrations : {e}"))?;
 
-    let state = AppState { cfg: Arc::new(cfg), db };
+    let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+    let (events, _) = broadcast::channel(1024);
+    let state = AppState {
+        cfg: Arc::new(cfg),
+        db,
+        parse_sem: Arc::new(Semaphore::new(cores)),
+        events,
+    };
     let bind = state.cfg.bind_addr.clone();
 
     let app = Router::new()
         .route("/api/health", get(health))
+        .route("/api/upload", post(upload::upload))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(&bind)
