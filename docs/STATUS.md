@@ -77,10 +77,21 @@
     event `hots.match_completed | storm-codex | info | Silver City | winner 1` **présent dans la
     table `events` du spine Jarvis**. ✅
   - `reject_class` rendu exhaustif (stats_failure/-2, unverified_build/-7) → admin lisible.
-  **Reste (opérateur)** : push Azure (code prêt, `azure.rs` — besoin des vrais identifiants EBS) ;
-  validation widget OBS + page < 5 s sur une **vraie partie** (uploader live) ; brief proactif
-  optionnel (l'event est dans le spine, une réaction « tu as gagné/perdu, KDA… » reste à brancher) ;
-  puis **décommission du Node** (runbook, après validation partie réelle).
+  - **Brief proactif FR : LIVE + prouvé** (2026-06-13). Worker spine `jarvis/notify/hots_brief.py`
+    (3e consumer-group, start `$`) : `hots.match_completed` → notif FR du point de vue de
+    l'opérateur (identifié par `HOTS_PLAYER_NAME=matella`, auto-déduit = présent dans 2001/2007
+    matchs). Ex. prouvé sur vrai upload : `🏆 HotS — Victoire — Tyrande sur Silver City — 6/8/3`
+    (défaite = priorité haute). Délivré via le canal notify (`send`/ntfy). **Câblage ntfy complété**
+    au passage : `NTFY_URL` était vide (oubli onboarding) → `http://ntfy:80` ; ça réactive aussi les
+    autres notifs Jarvis (reminders…). Gaté `HOTS_BRIEF_ENABLED`. + 5 tests.
+  **Reste (opérateur)** :
+  - **S'abonner au topic ntfy** `jarvis-62a7e8eba161` (app ntfy / web) pour *recevoir* les briefs
+    (le serveur a 0 abonné ; la publication est prouvée par son compteur). Sinon : option « phrase
+    dans le widget OBS » (round-trip Jarvis→storm-codex) si tu préfères en-stream au téléphone.
+  - **Push Azure** (extension Twitch) : code prêt (`azure.rs`), besoin des vrais identifiants EBS.
+    Inutile si l'overlay OBS te suffit (le widget `/widget` ne dépend pas d'Azure).
+  - Validation **widget OBS + page < 5 s** sur une vraie partie (uploader live).
+  - **Décommission du Node** (runbook, après validation partie réelle).
 - **Jalon 6 : prêt à publier** — voir ci-dessous.
 
 ## Jalon 4 — compléments faits (2026-06-12, après le socle)
