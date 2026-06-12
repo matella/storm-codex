@@ -92,8 +92,7 @@ impl Replay {
     }
 
     pub fn from_bytes(bytes: Vec<u8>) -> Result<Replay> {
-        let (_, mpq) =
-            nom_mpq::parser::parse(&bytes).map_err(|e| Error::Mpq(format!("{e:?}")))?;
+        let (_, mpq) = nom_mpq::parser::parse(&bytes).map_err(|e| Error::Mpq(format!("{e:?}")))?;
         let user_data = mpq
             .user_data
             .as_ref()
@@ -128,7 +127,14 @@ impl Replay {
 
         let (protocol, used_fallback) = protocol::protocol_for_build(base_build)?;
         let fallback = used_fallback.then_some((base_build, LATEST_BUILD));
-        Ok(Replay { bytes, mpq, header_raw, header, protocol, fallback })
+        Ok(Replay {
+            bytes,
+            mpq,
+            header_raw,
+            header,
+            protocol,
+            fallback,
+        })
     }
 
     /// `Some((build demandé, build utilisé))` si le build du replay n'a pas de table exacte
@@ -147,7 +153,8 @@ impl Replay {
 
     /// `replay.details` brut (tout `m_playerList`, handles de cache…).
     pub fn details_raw(&self) -> Result<Value> {
-        self.protocol.decode_details(&self.stream("replay.details")?)
+        self.protocol
+            .decode_details(&self.stream("replay.details")?)
     }
 
     /// Vue typée de `replay.details`.
@@ -175,20 +182,27 @@ impl Replay {
                     })
                     .unwrap_or_default();
                 players.push(PlayerDetails {
-                    name: p.field("m_name").and_then(Value::as_str_lossy).unwrap_or_default(),
-                    hero: p.field("m_hero").and_then(Value::as_str_lossy).unwrap_or_default(),
+                    name: p
+                        .field("m_name")
+                        .and_then(Value::as_str_lossy)
+                        .unwrap_or_default(),
+                    hero: p
+                        .field("m_hero")
+                        .and_then(Value::as_str_lossy)
+                        .unwrap_or_default(),
                     team_id: int(p, "m_teamId"),
                     result: int(p, "m_result"),
-                    working_set_slot_id: p
-                        .field("m_workingSetSlotId")
-                        .and_then(Value::as_int),
+                    working_set_slot_id: p.field("m_workingSetSlotId").and_then(Value::as_int),
                     toon_handle,
                 });
             }
         }
         Ok(ReplayDetails {
             title,
-            time_utc: raw.field("m_timeUTC").and_then(Value::as_int).unwrap_or_default(),
+            time_utc: raw
+                .field("m_timeUTC")
+                .and_then(Value::as_int)
+                .unwrap_or_default(),
             time_local_offset: raw
                 .field("m_timeLocalOffset")
                 .and_then(Value::as_int)
@@ -199,7 +213,8 @@ impl Replay {
 
     /// `replay.initData` brut (lobby complet — bitpacked).
     pub fn initdata_raw(&self) -> Result<Value> {
-        self.protocol.decode_initdata(&self.stream("replay.initData")?)
+        self.protocol
+            .decode_initdata(&self.stream("replay.initData")?)
     }
 
     /// `replay.attributes.events` (mode de jeu, difficulté, compositions de lobby…).
@@ -209,17 +224,20 @@ impl Replay {
 
     /// `replay.tracker.events` — stats, unités, score de fin de partie.
     pub fn tracker_events(&self) -> Result<Vec<Value>> {
-        self.protocol.decode_tracker_events(&self.stream("replay.tracker.events")?)
+        self.protocol
+            .decode_tracker_events(&self.stream("replay.tracker.events")?)
     }
 
     /// `replay.game.events` — entrées joueur (ordres, sélections, talents…).
     pub fn game_events(&self) -> Result<Vec<Value>> {
-        self.protocol.decode_game_events(&self.stream("replay.game.events")?)
+        self.protocol
+            .decode_game_events(&self.stream("replay.game.events")?)
     }
 
     /// `replay.message.events` — chat et pings.
     pub fn message_events(&self) -> Result<Vec<Value>> {
-        self.protocol.decode_message_events(&self.stream("replay.message.events")?)
+        self.protocol
+            .decode_message_events(&self.stream("replay.message.events")?)
     }
 
     /// Taille du stream game events décompressé sans le décoder (diagnostic de perf).

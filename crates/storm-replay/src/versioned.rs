@@ -14,7 +14,11 @@ pub struct VersionedDecoder<'a> {
 
 impl<'a> VersionedDecoder<'a> {
     pub fn new(data: &'a [u8], typeinfos: &'a [TypeInfo]) -> Self {
-        VersionedDecoder { data, pos: 0, typeinfos }
+        VersionedDecoder {
+            data,
+            pos: 0,
+            typeinfos,
+        }
     }
 
     pub fn done(&self) -> bool {

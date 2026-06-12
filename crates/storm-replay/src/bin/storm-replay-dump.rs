@@ -44,7 +44,10 @@ fn to_json(v: &Value) -> serde_json::Value {
         Value::BitArrayBytes { bits, data } => json!([bits, latin1(data)]),
         Value::BitArrayInt { bits, value } => json!([bits, hex_big(value)]),
         Value::Struct(fields) => serde_json::Value::Object(
-            fields.iter().map(|(n, v)| (n.to_string(), to_json(v))).collect(),
+            fields
+                .iter()
+                .map(|(n, v)| (n.to_string(), to_json(v)))
+                .collect(),
         ),
     }
 }
@@ -115,7 +118,10 @@ fn dump(path: &Path, stream: &str) -> storm_replay::Result<()> {
             // extraction MPQ seule (décompression sans décodage) — diagnostic de perf
             let t0 = Instant::now();
             let n = replay.game_events_raw_len()?;
-            eprintln!("{n} octets extraits en {:.1} ms", t0.elapsed().as_secs_f64() * 1000.0);
+            eprintln!(
+                "{n} octets extraits en {:.1} ms",
+                t0.elapsed().as_secs_f64() * 1000.0
+            );
         }
         other => {
             eprintln!("stream inconnu : {other}");
@@ -150,7 +156,11 @@ fn bench(dir: &Path) -> storm_replay::Result<()> {
     let mut times = Vec::new();
     let mut fails = 0;
     for f in &files {
-        let name = f.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        let name = f
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
         let t0 = Instant::now();
         let res = decode_all_streams(f);
         let ms = t0.elapsed().as_secs_f64() * 1000.0;
@@ -166,7 +176,10 @@ fn bench(dir: &Path) -> storm_replay::Result<()> {
             }
         }
     }
-    let out = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../spike/bench-results"));
+    let out = PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../spike/bench-results"
+    ));
     std::fs::create_dir_all(&out)?;
     std::fs::write(out.join("rust-jalon1.csv"), rows.join("\n") + "\n")?;
 

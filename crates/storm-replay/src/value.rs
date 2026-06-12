@@ -13,11 +13,17 @@ pub enum Value {
     Real(f64),
     Array(Vec<Value>),
     /// `_bitarray` du décodeur **versioned** : octets alignés (référence : `(longueur, bytes)`).
-    BitArrayBytes { bits: u64, data: Vec<u8> },
+    BitArrayBytes {
+        bits: u64,
+        data: Vec<u8>,
+    },
     /// `_bitarray` du décodeur **bitpacked** : entier de `bits` bits (référence :
     /// `(longueur, int)`). Stocké en octets big-endian alignés à droite car il peut
     /// dépasser 64 bits (longueur encodée sur 8 bits → jusqu'à 255 bits).
-    BitArrayInt { bits: u64, value: Vec<u8> },
+    BitArrayInt {
+        bits: u64,
+        value: Vec<u8>,
+    },
     /// Structs **et** choices (un choice = struct à un seul champ, comme en Python).
     /// L'ordre d'insertion est préservé.
     Struct(Vec<(std::sync::Arc<str>, Value)>),
@@ -26,9 +32,10 @@ pub enum Value {
 impl Value {
     pub fn field(&self, name: &str) -> Option<&Value> {
         match self {
-            Value::Struct(fields) => {
-                fields.iter().find(|(n, _)| n.as_ref() == name).map(|(_, v)| v)
-            }
+            Value::Struct(fields) => fields
+                .iter()
+                .find(|(n, _)| n.as_ref() == name)
+                .map(|(_, v)| v),
             _ => None,
         }
     }
@@ -51,7 +58,9 @@ impl Value {
     pub fn as_str_lossy(&self) -> Option<String> {
         match self {
             Value::Str(s) => Some(s.to_string()),
-            _ => self.as_blob().map(|b| String::from_utf8_lossy(b).into_owned()),
+            _ => self
+                .as_blob()
+                .map(|b| String::from_utf8_lossy(b).into_owned()),
         }
     }
 

@@ -33,18 +33,39 @@ pub type FastI64Map<V> = HashMap<i64, V, BuildHasherDefault<I64Hasher>>;
 
 #[derive(Debug)]
 pub enum TypeInfo {
-    Int { lo: i64, bits: u32 },
-    Blob { lo: i64, bits: u32 },
+    Int {
+        lo: i64,
+        bits: u32,
+    },
+    Blob {
+        lo: i64,
+        bits: u32,
+    },
     Bool,
     Fourcc,
     Real32,
     Real64,
     Null,
-    Array { lo: i64, bits: u32, typeid: usize },
-    BitArray { lo: i64, bits: u32 },
-    Optional { typeid: usize },
-    Choice { lo: i64, bits: u32, fields: FastI64Map<(Arc<str>, usize)> },
-    Struct { fields: Vec<(Arc<str>, usize, i64)> },
+    Array {
+        lo: i64,
+        bits: u32,
+        typeid: usize,
+    },
+    BitArray {
+        lo: i64,
+        bits: u32,
+    },
+    Optional {
+        typeid: usize,
+    },
+    Choice {
+        lo: i64,
+        bits: u32,
+        fields: FastI64Map<(Arc<str>, usize)>,
+    },
+    Struct {
+        fields: Vec<(Arc<str>, usize, i64)>,
+    },
 }
 
 fn err(msg: impl Into<String>) -> Error {
@@ -57,17 +78,24 @@ fn bounds(args: &[serde_json::Value], i: usize) -> Result<(i64, u32)> {
         .and_then(|v| v.as_array())
         .ok_or_else(|| err(format!("typeinfo {i}: bounds absents")))?;
     Ok((
-        b.first().and_then(|v| v.as_i64()).ok_or_else(|| err(format!("typeinfo {i}: lo")))?,
-        b.get(1).and_then(|v| v.as_u64()).ok_or_else(|| err(format!("typeinfo {i}: bits")))?
-            as u32,
+        b.first()
+            .and_then(|v| v.as_i64())
+            .ok_or_else(|| err(format!("typeinfo {i}: lo")))?,
+        b.get(1)
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| err(format!("typeinfo {i}: bits")))? as u32,
     ))
 }
 
 pub fn parse_typeinfos(json: &serde_json::Value) -> Result<Vec<TypeInfo>> {
-    let list = json.as_array().ok_or_else(|| err("typeinfos : pas un tableau"))?;
+    let list = json
+        .as_array()
+        .ok_or_else(|| err("typeinfos : pas un tableau"))?;
     let mut out = Vec::with_capacity(list.len());
     for (i, entry) in list.iter().enumerate() {
-        let pair = entry.as_array().ok_or_else(|| err(format!("typeinfo {i} invalide")))?;
+        let pair = entry
+            .as_array()
+            .ok_or_else(|| err(format!("typeinfo {i} invalide")))?;
         let method = pair
             .first()
             .and_then(|v| v.as_str())
@@ -126,7 +154,8 @@ pub fn parse_typeinfos(json: &serde_json::Value) -> Result<Vec<TypeInfo>> {
                         .as_array()
                         .ok_or_else(|| err(format!("choice {i}: field")))?;
                     fields.insert(
-                        tag.parse::<i64>().map_err(|_| err(format!("choice {i}: tag {tag}")))?,
+                        tag.parse::<i64>()
+                            .map_err(|_| err(format!("choice {i}: tag {tag}")))?,
                         (
                             f.first()
                                 .and_then(|v| v.as_str())

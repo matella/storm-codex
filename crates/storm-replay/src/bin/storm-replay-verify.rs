@@ -27,7 +27,10 @@ fn decode_all(path: &Path) -> storm_replay::Result<(u32, bool)> {
     replay.tracker_events()?;
     replay.game_events()?;
     replay.message_events()?;
-    Ok((replay.header.base_build, replay.protocol_fallback().is_some()))
+    Ok((
+        replay.header.base_build,
+        replay.protocol_fallback().is_some(),
+    ))
 }
 
 fn error_class(e: &Error) -> &'static str {
@@ -67,7 +70,11 @@ fn main() {
     let mut fallbacks = 0usize;
     let mut ok = 0usize;
     for (i, f) in files.iter().enumerate() {
-        let name = f.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        let name = f
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
         match decode_all(f) {
             Ok((build, fallback)) => {
                 ok += 1;

@@ -39,7 +39,8 @@ fn parse_event_types(json: &serde_json::Value, key: &str) -> Result<EventTypes> 
                 .as_array()
                 .ok_or_else(|| Error::Protocol(format!("{key} : entrée invalide")))?;
             out.insert(
-                k.parse::<i64>().map_err(|_| Error::Protocol(format!("{key} : id {k}")))?,
+                k.parse::<i64>()
+                    .map_err(|_| Error::Protocol(format!("{key} : id {k}")))?,
                 (
                     pair.first()
                         .and_then(|v| v.as_u64())
@@ -65,7 +66,8 @@ impl Protocol {
         };
         Ok(Protocol {
             typeinfos: parse_typeinfos(
-                json.get("typeinfos").ok_or_else(|| Error::Protocol("typeinfos absentes".into()))?,
+                json.get("typeinfos")
+                    .ok_or_else(|| Error::Protocol("typeinfos absentes".into()))?,
             )?,
             replay_header_typeid: req("replay_header_typeid")?,
             game_details_typeid: req("game_details_typeid")?,
@@ -173,10 +175,21 @@ impl Protocol {
 
 /// Champs `_event`/`_eventid`/`_gameloop`/`_userid` ajoutés par la référence.
 /// Noms internés une fois par process — ce chemin tourne ~100 000 fois par replay.
-fn annotate(event: &mut Value, name: &Arc<str>, eventid: i64, gameloop: i64, userid: Option<Value>) {
+fn annotate(
+    event: &mut Value,
+    name: &Arc<str>,
+    eventid: i64,
+    gameloop: i64,
+    userid: Option<Value>,
+) {
     static KEYS: OnceLock<[Arc<str>; 4]> = OnceLock::new();
     let [k_event, k_eventid, k_gameloop, k_userid] = KEYS.get_or_init(|| {
-        ["_event".into(), "_eventid".into(), "_gameloop".into(), "_userid".into()]
+        [
+            "_event".into(),
+            "_eventid".into(),
+            "_gameloop".into(),
+            "_userid".into(),
+        ]
     });
     if let Value::Struct(fields) = event {
         fields.push((Arc::clone(k_event), Value::Str(Arc::clone(name))));
@@ -213,7 +226,9 @@ fn latest_hash() -> Result<&'static str> {
 fn protocol_for_hash(hash: &'static str) -> Result<Arc<Protocol>> {
     static CACHE: OnceLock<Mutex<HashMap<&'static str, Arc<Protocol>>>> = OnceLock::new();
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut guard = cache.lock().map_err(|_| Error::Protocol("cache empoisonné".into()))?;
+    let mut guard = cache
+        .lock()
+        .map_err(|_| Error::Protocol("cache empoisonné".into()))?;
     if let Some(p) = guard.get(hash) {
         return Ok(Arc::clone(p));
     }

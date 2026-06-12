@@ -15,20 +15,27 @@
   → rapport : `docs/research/2026-06-12-jalon0-bench.md` · plan exécuté :
   `docs/plans/2026-06-12-jalon0-spike-decode.md`.
 
-## Prochaine étape — Jalon 1 : crate `storm-replay` (plan à écrire, puis exécuter)
-1. Plan writing-plans dédié (comme pour le jalon 0).
-2. Périmètre spec : décodage des 7 streams, `protocol-gen` **depuis le clone GitHub de
-   Blizzard/heroprotocol** (PyPI est en retard et cassé sur Python ≥ 3.12 — voir rapport),
-   tests corpus multi-builds (NAS/box + mini-corpus libre pour CI), erreurs typées `thiserror`.
-3. *Accept : 100 % du corpus décodé, bench < 150 ms hors stats* (le spike fait déjà 12 ms
-   en interprétant les tables JSON — protocol-gen est une amélioration, pas un risque).
-4. Acquis réutilisables du spike : port `VersionedDecoder` (`spike/storm-decode/src/versioned.rs`),
-   `nom-mpq` validé, export typeinfos (`spike/export_protocols.py`), corpus 50 replays
-   (`spike/sample_corpus.ps1`).
+- **Jalon 1 : FAIT** (2026-06-12). Crate `crates/storm-replay` : 7 streams décodés (versioned +
+  bitpacked + attributes), tables protocol-gen embarquées (390 builds → 32 dédupliquées),
+  fallback builds inconnus signalé, erreurs typées. **Critères : archive réelle 2 821/2 821
+  décodés (100 %, 22 builds 2024→2026) ; bench 7 streams médiane 102 ms < 150** (p95 205 ms,
+  dont ~50–115 ms de plancher décompression bzip2 incompressible — point signalé à l'opérateur).
+  Parité **bit-exacte** prouvée vs heroprotocol (deep-compare 7 streams × 4 replays,
+  `tools/crosscheck_streams.py`). Plan : `docs/plans/2026-06-12-jalon1-storm-replay.md`.
+
+## Prochaine étape — Jalon 2 : crate `storm-stats` (plan à écrire, puis exécuter)
+1. Plan writing-plans dédié. Port complet de la logique hots-parser (3 360 lignes JS analysées —
+   dossier de recherche) : replay décodé → `MatchStats` typé (score screen ~80 stats/joueur,
+   draft, takedowns enrichis, timeline d'objectifs par carte ×16, team fights, XP/niveaux,
+   taunts/BM, messages/votes/globes/camps, awards).
+2. **Livrable obligatoire : harnais de diff vs hots-parser (Node)** sur corpus de référence.
+   *Accept : diff vert champ par champ (tolérances documentées).* Cloner ebshimizu/hots-parser.
+3. Budget : décode (102 ms méd.) + stats < 150 ms → storm-stats a ~40 ms de marge en médiane.
 
 ## Jalons (résumé — détail et critères dans la spec)
-0 spike **GO ✅** → 1 storm-replay → 2 storm-stats (diff vs hots-parser) → 3 serveur+DB+backfill →
-4 front parité → 5 stream+Jarvis+bascule (décommission Node local) → 6 publication crates.
+0 spike **GO ✅** → 1 storm-replay **✅** → 2 storm-stats (diff vs hots-parser) →
+3 serveur+DB+backfill → 4 front parité → 5 stream+Jarvis+bascule (décommission Node local) →
+6 publication crates.
 
 ## Décisions verrouillées (ne pas rouvrir sans l'opérateur)
 Rust (**confirmé par le spike** — repli .NET écarté) · Postgres · design Nexus Codex ·

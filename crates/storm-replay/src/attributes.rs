@@ -46,7 +46,11 @@ pub fn decode_attributes(content: &[u8]) -> Result<Attributes> {
             .or_default()
             .entry(attrid)
             .or_default()
-            .push(AttributeValue { namespace, attrid, value });
+            .push(AttributeValue {
+                namespace,
+                attrid,
+                value,
+            });
     }
     Ok(attrs)
 }

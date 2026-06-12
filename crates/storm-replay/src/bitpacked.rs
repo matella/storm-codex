@@ -23,7 +23,13 @@ pub struct BitReader<'a> {
 
 impl<'a> BitReader<'a> {
     pub fn new(data: &'a [u8], endian: Endian) -> Self {
-        BitReader { data, used: 0, next: 0, nextbits: 0, big_endian: endian == Endian::Big }
+        BitReader {
+            data,
+            used: 0,
+            next: 0,
+            nextbits: 0,
+            big_endian: endian == Endian::Big,
+        }
     }
 
     pub fn done(&self) -> bool {
@@ -105,7 +111,11 @@ impl<'a> BitReader<'a> {
             }
             let copybits = u64::from(self.nextbits).min(bits - resultbits);
             let copy = self.next & (((1u16 << copybits) - 1) as u8);
-            let shift = if self.big_endian { bits - resultbits - copybits } else { resultbits };
+            let shift = if self.big_endian {
+                bits - resultbits - copybits
+            } else {
+                resultbits
+            };
             for i in 0..copybits {
                 if (copy >> i) & 1 != 0 {
                     let pos = shift + i;
@@ -132,7 +142,10 @@ pub struct BitPackedDecoder<'a> {
 
 impl<'a> BitPackedDecoder<'a> {
     pub fn new(data: &'a [u8], typeinfos: &'a [TypeInfo]) -> Self {
-        BitPackedDecoder { buffer: BitReader::new(data, Endian::Big), typeinfos }
+        BitPackedDecoder {
+            buffer: BitReader::new(data, Endian::Big),
+            typeinfos,
+        }
     }
 
     pub fn done(&self) -> bool {
@@ -149,7 +162,9 @@ impl<'a> BitPackedDecoder<'a> {
         // seul (0, 64) avec une valeur > i64::MAX déborderait — jamais vu en pratique.
         let signed = i64::try_from(v).or_else(|_| {
             if lo == 0 {
-                Err(Error::Corrupted(format!("entier {bits} bits hors plage i64 : {v}")))
+                Err(Error::Corrupted(format!(
+                    "entier {bits} bits hors plage i64 : {v}"
+                )))
             } else {
                 Ok(v as i64) // lo = -2^63 : wrapping = arithmétique two's complement exacte
             }
@@ -210,8 +225,9 @@ impl<'a> BitPackedDecoder<'a> {
             }
             TypeInfo::Real64 => {
                 let b = self.buffer.read_unaligned_bytes(8)?;
-                let arr: [u8; 8] =
-                    b.try_into().map_err(|_| Error::Truncated("real64".into()))?;
+                let arr: [u8; 8] = b
+                    .try_into()
+                    .map_err(|_| Error::Truncated("real64".into()))?;
                 Value::Real(f64::from_be_bytes(arr))
             }
             TypeInfo::Null => Value::Null,
@@ -229,7 +245,10 @@ impl<'a> BitPackedDecoder<'a> {
                 let (lo, bits) = (*lo, *bits);
                 let len = u64::try_from(self.read_int(lo, bits)?)
                     .map_err(|_| Error::Corrupted("longueur de bitarray négative".into()))?;
-                Value::BitArrayInt { bits: len, value: self.buffer.read_bits_big(len)? }
+                Value::BitArrayInt {
+                    bits: len,
+                    value: self.buffer.read_bits_big(len)?,
+                }
             }
             TypeInfo::Optional { typeid } => {
                 let typeid = *typeid;
