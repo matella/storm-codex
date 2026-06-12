@@ -65,14 +65,19 @@
   (étape box/opérateur, le soir). Plan : `docs/plans/2026-06-12-jalon5-stream-jarvis.md`.
 - **Jalon 6 : prêt à publier** — voir ci-dessous.
 
+## Jalon 4 — compléments faits (2026-06-12, après le socle)
+`dim_heroes` répliqué depuis HotsPatchNotes au démarrage (90 héros/6 univers) → **anneaux
+d'univers réels** sur les avatars ; **timeline uPlot** d'avantage de niveau sur le détail de
+match ; **export CSV** (`/api/matches.csv` + lien UI) ; détail de match **enrichi** (draft
+ordonné + premiers objectif/fort/keep). Endpoint `/api/dim/heroes`.
+
 ## Ce qui reste (dépendances opérateur/box)
-- **Jalon 4 (compléments)** : pages secondaires (trends/équipes/ligues/collections/admin UI/
-  exports), `dim_heroes`/`dim_talents` (API HotsPatchNotes :5001 du box), timelines uPlot.
+- **Jalon 4 (secondaire)** : trends par patch, équipes/ligues/collections (CRUD de définitions
+  manuelles + UI), admin/import UI, export JSON. Le **cœur data-backed est livré et vérifié**.
 - **Jalon 5 (intégration box)** : déployer sur le box, brancher le vrai Redis Jarvis + le
   consommateur, valider le push Azure contre l'EBS, exécuter le runbook de décommission Node.
-- **Jalon 6 (publication)** : `cargo publish` de storm-replay puis storm-stats sur crates.io
-  (compte crates.io opérateur) ; création des repos GitHub publics. `cargo publish --dry-run`
-  validé localement. LICENSE MIT à la racine.
+- **Jalon 6 (publication)** : `cargo publish` storm-replay puis storm-stats (compte crates.io
+  opérateur) ; création des repos GitHub publics. `--dry-run` validé, LICENSE MIT en place.
 
 ## Jalons (résumé — détail et critères dans la spec)
 0 spike **GO ✅** → 1 storm-replay **✅** → 2 storm-stats **✅** (+ 2.5 cartes ARAM) →
