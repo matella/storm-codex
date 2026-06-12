@@ -1,1 +1,10 @@
-[]
+[
+  {
+    "path": "match.messages.*.point.x",
+    "reason": "Coordonnée de ping. hots-parser utilise le port heroprotocol de GaryIrick (npm), qui interprète ce champ _int 33 bits avec un `lo` décalé de -2^32 -> valeur negative aberrante (ex. -4294411307). storm-stats suit le port Blizzard (tables protocol-gen), qui donne la coordonnee correcte (ex. 555989 ~ 135 unites carte). storm-stats est plus correct que la reference sur ce champ cosmetique."
+  },
+  {
+    "path": "match.messages.*.point.y",
+    "reason": "Idem point.x : divergence de decodeur heroprotocol (GaryIrick -2^32 vs Blizzard). storm-stats donne la coordonnee correcte."
+  }
+]
