@@ -2,7 +2,7 @@ corpus/
 target/
 spike/protocols/
 spike/bench-results/
-**/bin/
-**/obj/
+spike/bench-dotnet/bin/
+spike/bench-dotnet/obj/
 __pycache__/
 .venv/
