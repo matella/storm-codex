@@ -80,6 +80,38 @@ export function MatchDetail() {
               </span>
             )}
           </div>
+          {m.picks && [0, 1].map((t) => (
+            <div key={t} className="row">
+              <span className={t === 0 ? "tm-blue" : "tm-red"} style={{ minWidth: 70, fontSize: 11 }}>
+                équipe {t === 0 ? "bleue" : "rouge"}{m.picks.first === t && <span className="bdg b-mvp" style={{ marginLeft: 5 }}>1er pick</span>}
+              </span>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {(m.picks[t] ?? []).map((h: string, i: number) => (
+                  <span key={i} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <Avatar hero={h} size={20} /><span style={{ fontSize: 11 }}>{h}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {(m.firstObjective != null || m.firstFort != null) && (
+        <div className="card">
+          <div className="card-hd"><span className="kick" style={{ margin: 0 }}>Faits marquants</span></div>
+          {[
+            ["Premier objectif", m.firstObjective],
+            ["Premier fort", m.firstFort],
+            ["Premier keep", m.firstKeep],
+          ].map(([label, v]) => (
+            <div key={label as string} className="row">
+              <span className="muted">{label}</span>
+              <span style={{ marginLeft: "auto" }} className={v === 0 ? "tm-blue" : v === 1 ? "tm-red" : "muted"}>
+                {v === 0 ? "équipe bleue" : v === 1 ? "équipe rouge" : "—"}
+              </span>
+            </div>
+          ))}
         </div>
       )}
 
