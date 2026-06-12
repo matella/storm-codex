@@ -27,12 +27,19 @@ harnais : `tools/parity-harness/`.
   (~80 stats/joueur), talents, draft (bans/picks ordonnés), takedowns enrichis, objectifs des
   16 cartes, team fights/uptime, XP/niveaux, taunts/BM (bsteps/danses/sprays/voicelines),
   messages, votes/globes, awards, stats d'équipe.
-- **35/114** rejetés **identiquement** (même statut `-2`) : cartes récentes (Silver City,
-  Industrial District, Lost Cavern, Braxis Outpost…) **absentes de la table `MapType` de
-  hots-parser 7.55.7**. storm-stats reproduit fidèlement le throw de `parser.js:312`. C'est une
-  limitation **de la référence** que l'on hérite par construction (on consomme sa `constants.js`
-  exportée). La lever — pour produire des stats sur ces cartes dans notre propre pipeline — sera
-  une divergence assumée **post-parité** (extension de la table de cartes), hors jalon 2.
+- **25/114 extension carte** : cartes ARAM récentes (Silver City, Lost Cavern, Braxis Outpost,
+  Industrial District) que hots-parser 7.55.7 **rejette** (absentes de sa `MapType`). Sur
+  décision opérateur (2026-06-12), **storm-stats les supporte** : `EXTRA_MAPS` dans
+  `process.rs` résout la carte, l'objectif est minimal (`{type}` — ces cartes n'ont pas
+  d'objectif PvE) et les handlers d'objectifs no-op. Tous les autres champs (identité, score,
+  draft, takedowns, talents, BM, équipes) passent par les chemins universels déjà prouvés en
+  parité. Pas de baseline Node (la référence les rejette) → validés par invariant structurel
+  (10 joueurs, 5 vainqueurs, score présent ; test `tests/extended_maps.rs`). **Enjeu** : ces
+  4 cartes pèsent ~30 % de l'archive — sans cette extension, le jalon 3 (« ≥ 99 % parsé »)
+  serait impossible (~70 %).
+- **10/114** rejetés **identiquement** (même statut) : brawls/sandbox/heroic
+  (`GameMode.Brawl` → `Unsupported`, et sandbox) — non supportés par hots-parser **ni** par
+  storm-stats, par conception (hors scope V1).
 
 ## Tolérances documentées (`tools/parity-harness/tolerances.json`)
 Une seule, sur deux champs cosmétiques :

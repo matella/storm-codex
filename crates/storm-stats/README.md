@@ -30,10 +30,14 @@ punishers, Braxis avec force de vague, temples, trônes, mines, graines, gemmes,
 mercs/structures · XP périodique + level advantage · team fights/uptime · taunts/BM
 (bsteps, danses, sprays, voicelines) · messages/pings · votes · globes · stats d'équipe.
 
-## Tolérance documentée
-`match.messages.*.point.x/y` (coordonnées de ping) : hots-parser utilise le port heroprotocol
-de GaryIrick qui décode mal ce champ (overflow signé) ; storm-stats suit le port Blizzard et
-donne la valeur correcte. Voir `tools/parity-harness/tolerances.json`.
+## Divergences assumées (storm-stats > hots-parser)
+- **Coordonnées de ping** `match.messages.*.point.x/y` : hots-parser utilise le port
+  heroprotocol de GaryIrick qui décode mal ce champ (overflow signé) ; storm-stats suit le port
+  Blizzard et donne la valeur correcte (`tools/parity-harness/tolerances.json`).
+- **Cartes ARAM récentes** (`EXTRA_MAPS` : Silver City, Lost Cavern, Braxis Outpost, Industrial
+  District) : absentes de la `MapType` de hots-parser 7.55.7, qui les rejette. storm-stats les
+  parse (objectif minimal, le reste via les chemins universels) — ~30 % de l'archive sinon
+  perdue. Validé par invariant structurel (`tests/extended_maps.rs`), pas de baseline Node.
 
 ## Performance
 Parse complet (decode + stats), Ryzen 7 7800X3D mono-thread, feature `fast-alloc` :

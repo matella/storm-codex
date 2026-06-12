@@ -282,6 +282,34 @@ fn get_str<'a>(v: &'a J, path: &[&str]) -> Option<&'a str> {
     get(v, path).and_then(J::as_str)
 }
 
+/// Extension storm-stats au-delà de hots-parser 7.55.7 : les cartes ARAM (voie unique) récentes,
+/// absentes de la `MapType` de la référence (qui les rejette). Décision opérateur 2026-06-12
+/// (cf. docs/research/2026-06-12-jalon2-parite.md) : on les supporte pour couvrir ~30 % de
+/// l'archive. Ces cartes n'ont PAS d'objectifs PvE → `match.objective = {type}` et les handlers
+/// d'objectifs no-op (gardés par `objective_less_map`). Identité/score/draft/takedowns/talents/
+/// BM/équipes utilisent les chemins universels déjà prouvés en parité sur les cartes classiques.
+const EXTRA_MAPS: [(&str, &str); 4] = [
+    ("SilverCity", "Silver City"),
+    ("LostCavern", "Lost Cavern"),
+    ("BraxisOutpost", "Braxis Outpost"),
+    ("IndustrialDistrict", "Industrial District"),
+];
+
+fn extra_map_pretty(internal: &str) -> Option<&'static str> {
+    EXTRA_MAPS
+        .iter()
+        .find(|(i, _)| *i == internal)
+        .map(|(_, p)| *p)
+}
+
+/// `match.map` est une carte ARAM étendue (sans objectifs) → les handlers d'objectifs no-op.
+fn objective_less_map(match_: &Map<String, J>) -> bool {
+    match_
+        .get("map")
+        .and_then(J::as_str)
+        .is_some_and(|m| EXTRA_MAPS.iter().any(|(_, p)| *p == m))
+}
+
 /// `getBattletags(buffer, playerList)` — regex sur le battlelobby brut.
 fn get_battletags(buffer: &[u8], player_list: &[J]) -> Vec<J> {
     // XRegExp('(\\p{L}|\\d){3,24}#\\d{4,10}[zØ]?', 'g') sur buffer.toString()
@@ -450,8 +478,14 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
                 Some(pretty) => {
                     match_.insert("map".into(), pretty.clone());
                 }
-                // BUG parser.js:312 reproduit : `ReplayStats` (indéfini) → throw → Failure
-                None => return Err(Abort::Throw(format!("carte interne inconnue {internal}"))),
+                // Extension storm-stats : cartes ARAM récentes (hors MapType de hots-parser).
+                None => match extra_map_pretty(internal) {
+                    Some(pretty) => {
+                        match_.insert("map".into(), J::from(pretty));
+                    }
+                    // BUG parser.js:312 reproduit : `ReplayStats` (indéfini) → throw → Failure
+                    None => return Err(Abort::Throw(format!("carte interne inconnue {internal}"))),
+                },
             }
             break;
         }
@@ -793,6 +827,9 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
             // match.objective réassigné en entier : pas de champ `type` (parser.js:776)
             obj = Map::new();
             obj.insert("events".into(), json!([]));
+        } else if objective_less_map(&match_) {
+            // Extension : cartes ARAM sans objectif PvE → objectif minimal `{type}` (obj garde
+            // son champ `type` déjà inséré ; aucun handler d'objectif ne s'exécutera).
         } else if match_.get("map").is_none() {
             return Err(Abort::Status(status::TOO_OLD));
         } else {
@@ -2652,6 +2689,9 @@ fn obj_stat_event(
     st: &mut ObjState,
     loop_game_start: f64,
 ) -> R<()> {
+    if objective_less_map(match_) {
+        return Ok(()); // cartes ARAM étendues : pas d'objectif (cf. EXTRA_MAPS)
+    }
     let s = |k: &str| rt_str("StatEventType", k);
     let gameloop_j = get(event, &["_gameloop"]).cloned().unwrap_or(J::Null);
     let gameloop = js_number(get(event, &["_gameloop"]));
@@ -2845,6 +2885,9 @@ fn obj_unit_born(
     player_id_map: &Map<String, J>,
     loop_game_start: f64,
 ) -> R<()> {
+    if objective_less_map(match_) {
+        return Ok(()); // cartes ARAM étendues : pas d'objectif (cf. EXTRA_MAPS)
+    }
     let u = |k: &str| rt_str("UnitType", k);
     let t = get_str(event, &["m_unitTypeName"]).unwrap_or("");
     let gameloop_j = get(event, &["_gameloop"]).cloned().unwrap_or(J::Null);
@@ -3092,6 +3135,9 @@ fn obj_unit_died(
     st: &mut ObjState,
     loop_game_start: f64,
 ) -> R<()> {
+    if objective_less_map(match_) {
+        return Ok(()); // cartes ARAM étendues : pas d'objectif (cf. EXTRA_MAPS)
+    }
     let tag = get(event, &["m_unitTagIndex"]);
     let rtag = get(event, &["m_unitTagRecycle"]);
     let uid = unit_uid(event);
@@ -3409,6 +3455,9 @@ fn obj_unit_owner_change(
     player_id_map: &Map<String, J>,
     loop_game_start: f64,
 ) -> R<()> {
+    if objective_less_map(match_) {
+        return Ok(()); // cartes ARAM étendues : pas d'objectif (cf. EXTRA_MAPS)
+    }
     let tag = get(event, &["m_unitTagIndex"]);
     let rtag = get(event, &["m_unitTagRecycle"]);
     let gameloop_j = get(event, &["_gameloop"]).cloned().unwrap_or(J::Null);
@@ -3522,6 +3571,9 @@ fn obj_unit_owner_change(
 
 /// Cleanups post-boucle des objectifs par carte (parser.js:1982-2109).
 fn obj_cleanup(match_: &mut Map<String, J>, st: &mut ObjState, loop_game_start: f64) -> R<()> {
+    if objective_less_map(match_) {
+        return Ok(()); // cartes ARAM étendues : pas d'objectif (cf. EXTRA_MAPS)
+    }
     let loop_length = js_number(match_.get("loopLength"));
     let loop_length_j = match_.get("loopLength").cloned().unwrap_or(J::Null);
     let end_secs = loops_to_seconds(loop_length - loop_game_start);
@@ -3709,6 +3761,9 @@ fn obj_cleanup(match_: &mut Map<String, J>, st: &mut ObjState, loop_game_start: 
 
 /// `getFirstObjectiveTeam(match)` (parser.js:3116-3302) — try/catch → null, ne lève jamais.
 fn get_first_objective_team(match_: &Map<String, J>) -> J {
+    if objective_less_map(match_) {
+        return J::Null; // cartes ARAM étendues : pas d'objectif (cf. EXTRA_MAPS)
+    }
     first_objective_inner(match_).unwrap_or(J::Null)
 }
 

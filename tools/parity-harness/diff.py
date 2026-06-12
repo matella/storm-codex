@@ -12,6 +12,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
 NODE_DUMP = Path(__file__).parent / "dump.js"
+
+# Cartes ARAM récentes supportées par storm-stats au-delà de hots-parser 7.55.7 (divergence
+# assumée, cf. EXTRA_MAPS dans crates/storm-stats/src/process.rs). hots-parser les rejette ;
+# storm-stats les parse → pas de baseline Node, on valide juste l'invariant structurel.
+EXTENDED_MAPS = {"Silver City", "Lost Cavern", "Braxis Outpost", "Industrial District"}
 RUST_DUMP = ROOT / "target" / "release" / "storm-stats-dump.exe"
 TOLERANCES = Path(__file__).parent / "tolerances.json"
 
@@ -141,10 +146,22 @@ def main():
             continue
         act = rust_dump(f, tmp)
         if ref.get("status") != 1:
-            # hots-parser rejette : storm-stats doit rejeter avec le même statut
             if act.get("status") == ref.get("status"):
                 ok += 1
                 print(f"OK   {f.name} (rejet identique, statut {ref.get('status')})")
+            elif act.get("status") == 1 and act.get("match", {}).get("map") in EXTENDED_MAPS:
+                # divergence ASSUMÉE : storm-stats supporte les cartes ARAM récentes que
+                # hots-parser 7.55.7 rejette (carte absente de sa MapType). Pas de baseline
+                # Node → pas de comparaison de champs ; on valide l'invariant structurel.
+                m = act.get("match", {})
+                pl = act.get("players", {})
+                ok_struct = len(pl) == 10 and sum(1 for p in pl.values() if p.get("win")) == 5
+                if ok_struct:
+                    ok += 1
+                    print(f"OK   {f.name} (extension carte {m.get('map')}, Node rejette)")
+                else:
+                    fail += 1
+                    print(f"DIFF {f.name} : extension carte mais structure invalide")
             else:
                 fail += 1
                 print(f"DIFF {f.name} : statut {ref.get('status')} vs {act.get('status')}")
