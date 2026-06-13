@@ -62,14 +62,28 @@ export interface MatchListParams {
   mode?: number;
   hero?: string;
   player?: string;
+  account?: string;            // compte opérateur précis
+  result?: "win" | "loss";     // perspective opérateur
+  mvp?: boolean;               // opérateur MVP uniquement
+  from?: string;               // date ISO (inclus)
+  to?: string;                 // date ISO (exclu)
   limit?: number;
 }
-export function matchesUrl(p: MatchListParams): string {
+export function matchesParams(p: MatchListParams): URLSearchParams {
   const q = new URLSearchParams();
   if (p.map) q.set("map", p.map);
   if (p.mode != null) q.set("mode", String(p.mode));
   if (p.hero) q.set("hero", p.hero);
   if (p.player) q.set("player", p.player);
+  if (p.account) q.set("account", p.account);
+  if (p.result) q.set("result", p.result);
+  if (p.mvp) q.set("mvp", "true");
+  if (p.from) q.set("from", p.from);
+  if (p.to) q.set("to", p.to);
+  return q;
+}
+export function matchesUrl(p: MatchListParams): string {
+  const q = matchesParams(p);
   q.set("limit", String(p.limit ?? 50));
   return `/api/matches?${q.toString()}`;
 }

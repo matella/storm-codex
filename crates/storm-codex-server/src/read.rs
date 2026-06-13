@@ -27,18 +27,33 @@ pub struct MatchFilter {
     mode: Option<i32>,
     hero: Option<String>,
     player: Option<String>,
+    /// compte opérateur précis (sinon : n'importe lequel des operator_names)
+    account: Option<String>,
+    /// "win" | "loss" — perspective opérateur
+    result: Option<String>,
+    /// true = uniquement les parties où l'opérateur fut MVP
+    #[serde(default)]
+    mvp: bool,
+    /// plage de dates (ISO) sur played_at : `from` inclus, `to` exclu
+    from: Option<String>,
+    to: Option<String>,
     #[serde(default)]
     limit: Option<i64>,
     #[serde(default)]
     offset: Option<i64>,
 }
 
-/// GET /api/matches — liste filtrable (carte/mode/héros/joueur), paginée, récents d'abord.
+/// GET /api/matches — liste filtrable, paginée, récents d'abord. Filtres : carte, mode, héros (tout
+/// joueur), joueur (toon), + perspective opérateur (compte, résultat V/D, MVP, plage de dates).
 pub async fn list_matches(State(s): State<AppState>, Query(f): Query<MatchFilter>) -> Resp {
     let limit = f.limit.unwrap_or(50).clamp(1, 200);
     let offset = f.offset.unwrap_or(0).max(0);
     let v: J = sqlx::query_scalar(
-        "SELECT COALESCE(jsonb_agg(t ORDER BY t.played_at DESC NULLS LAST), '[]'::jsonb)
+        "WITH ops AS (
+            SELECT lower(jsonb_array_elements_text(value)) AS name
+            FROM app_settings WHERE key = 'operator_names'
+         )
+         SELECT COALESCE(jsonb_agg(t ORDER BY t.played_at DESC NULLS LAST), '[]'::jsonb)
          FROM (
            SELECT m.id, m.map, m.mode, m.played_at, m.length, m.winner, m.build,
              (SELECT jsonb_agg(jsonb_build_object(
@@ -49,12 +64,27 @@ pub async fn list_matches(State(s): State<AppState>, Query(f): Query<MatchFilter
                  ORDER BY mp.team, mp.id)
               FROM match_players mp WHERE mp.match_id = m.id) AS players
            FROM matches m
+           -- ligne de l'opérateur dans ce match : compte précis ($7) sinon n'importe quel
+           -- operator_name. Sert aux filtres résultat / MVP / compte.
+           LEFT JOIN LATERAL (
+             SELECT p.win, p.name, (p.data #>> '{gameStats,awards,0}') AS award
+             FROM match_players p
+             WHERE p.match_id = m.id
+               AND (($7::text IS NOT NULL AND lower(p.name) = lower($7))
+                 OR ($7::text IS NULL     AND lower(p.name) IN (SELECT name FROM ops)))
+             LIMIT 1
+           ) me ON true
            WHERE ($1::text IS NULL OR m.map = $1)
              AND ($2::int  IS NULL OR m.mode = $2)
              AND ($3::text IS NULL OR EXISTS (SELECT 1 FROM match_players h
                                               WHERE h.match_id = m.id AND h.hero = $3))
              AND ($4::text IS NULL OR EXISTS (SELECT 1 FROM match_players p
                                               WHERE p.match_id = m.id AND p.toon_handle = $4))
+             AND ($7::text  IS NULL OR me.name IS NOT NULL)
+             AND ($8::text  IS NULL OR me.win = ($8 = 'win'))
+             AND (NOT $9::bool OR me.award = 'EndOfMatchAwardMVPBoolean')
+             AND ($10::timestamptz IS NULL OR m.played_at >= $10::timestamptz)
+             AND ($11::timestamptz IS NULL OR m.played_at <  $11::timestamptz)
            ORDER BY m.played_at DESC NULLS LAST
            LIMIT $5 OFFSET $6
          ) t",
@@ -65,6 +95,11 @@ pub async fn list_matches(State(s): State<AppState>, Query(f): Query<MatchFilter
     .bind(f.player)
     .bind(limit)
     .bind(offset)
+    .bind(f.account)
+    .bind(f.result)
+    .bind(f.mvp)
+    .bind(f.from)
+    .bind(f.to)
     .fetch_one(&s.db)
     .await
     .map_err(db_err)?;
@@ -171,13 +206,40 @@ pub async fn matches_csv(
         Option<i32>,
     );
     let rows: Vec<Row> = sqlx::query_as(
-            "SELECT id, map, mode, played_at, length, winner, build FROM matches
-             WHERE ($1::text IS NULL OR map = $1) AND ($2::int IS NULL OR mode = $2)
-             ORDER BY played_at DESC NULLS LAST LIMIT $3",
+            "WITH ops AS (
+                SELECT lower(jsonb_array_elements_text(value)) AS name
+                FROM app_settings WHERE key = 'operator_names'
+             )
+             SELECT m.id, m.map, m.mode, m.played_at, m.length, m.winner, m.build
+             FROM matches m
+             LEFT JOIN LATERAL (
+               SELECT p.win, p.name, (p.data #>> '{gameStats,awards,0}') AS award
+               FROM match_players p
+               WHERE p.match_id = m.id
+                 AND (($4::text IS NOT NULL AND lower(p.name) = lower($4))
+                   OR ($4::text IS NULL     AND lower(p.name) IN (SELECT name FROM ops)))
+               LIMIT 1
+             ) me ON true
+             WHERE ($1::text IS NULL OR m.map = $1)
+               AND ($2::int  IS NULL OR m.mode = $2)
+               AND ($5::text IS NULL OR EXISTS (SELECT 1 FROM match_players h
+                                                WHERE h.match_id = m.id AND h.hero = $5))
+               AND ($4::text IS NULL OR me.name IS NOT NULL)
+               AND ($6::text IS NULL OR me.win = ($6 = 'win'))
+               AND (NOT $7::bool OR me.award = 'EndOfMatchAwardMVPBoolean')
+               AND ($8::timestamptz  IS NULL OR m.played_at >= $8::timestamptz)
+               AND ($9::timestamptz  IS NULL OR m.played_at <  $9::timestamptz)
+             ORDER BY m.played_at DESC NULLS LAST LIMIT $3",
         )
         .bind(f.map)
         .bind(f.mode)
         .bind(f.limit.unwrap_or(5000).clamp(1, 50000))
+        .bind(f.account)
+        .bind(f.hero)
+        .bind(f.result)
+        .bind(f.mvp)
+        .bind(f.from)
+        .bind(f.to)
         .fetch_all(&s.db)
         .await
         .map_err(db_err)?;
