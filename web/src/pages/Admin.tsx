@@ -30,13 +30,22 @@ export function Admin() {
   const [tokenName, setTokenName] = useState("");
   const [newToken, setNewToken] = useState<string | null>(null);
   const [opNames, setOpNames] = useState<string | null>(null);
+  const [opMsg, setOpMsg] = useState<string | null>(null);
   // valeur éditable : la saisie locale si touchée, sinon les réglages chargés
   const opValue: string =
     opNames ?? ((settings?.operator_names as string[] | undefined) ?? []).join(", ");
   const saveOperator = async () => {
+    // l'échec le plus courant : pas de token admin (stocké par navigateur) → on le dit clairement
+    // plutôt que d'échouer en silence.
+    if (!token) { setOpMsg("⚠ enter the admin token above first"); return; }
     const names = opValue.split(",").map((s) => s.trim()).filter(Boolean);
-    const r = await adminFetch("/api/admin/settings", token, { method: "PUT", body: JSON.stringify({ operator_names: names }) });
-    if (r.ok) qc.invalidateQueries({ queryKey: ["settings"] });
+    try {
+      const r = await adminFetch("/api/admin/settings", token, { method: "PUT", body: JSON.stringify({ operator_names: names }) });
+      if (r.ok) { setOpMsg("✓ saved"); qc.invalidateQueries({ queryKey: ["settings"] }); }
+      else if (r.status === 401 || r.status === 403) setOpMsg("✗ unauthorized — check the admin token");
+      else setOpMsg(`✗ save failed (HTTP ${r.status})`);
+    } catch { setOpMsg("✗ network error — server unreachable"); }
+    setTimeout(() => setOpMsg(null), 5000);
   };
   const [teamName, setTeamName] = useState("");
   const [teamLeague, setTeamLeague] = useState("");
@@ -83,9 +92,13 @@ export function Admin() {
             onChange={(e) => setOpNames(e.target.value)}
           />
           <span className="pill on" onClick={saveOperator}>save</span>
+          {opMsg && (
+            <span className="mono" style={{ fontSize: 11, color: opMsg.startsWith("✓") ? "var(--win)" : "var(--loss)" }}>{opMsg}</span>
+          )}
         </div>
         <div className="row"><span className="muted" style={{ fontSize: 10 }}>
-          Used everywhere (session, matches, widget) to show YOUR stats, and by the Jarvis brief.
+          Multiple accounts? Comma-separate them (e.g. matella, матella). Cyrillic / any UTF-8 is fine.
+          Used everywhere (session, matches, widget) and by the Jarvis brief.
         </span></div>
       </div>
 
