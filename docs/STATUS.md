@@ -84,14 +84,25 @@
     (défaite = priorité haute). Délivré via le canal notify (`send`/ntfy). **Câblage ntfy complété**
     au passage : `NTFY_URL` était vide (oubli onboarding) → `http://ntfy:80` ; ça réactive aussi les
     autres notifs Jarvis (reminders…). Gaté `HOTS_BRIEF_ENABLED`. + 5 tests.
+  - **Widget OBS local conforme maquette (écran 10)** (2026-06-13). Corrigé : il affichait
+    `players[0]` + « équipe X gagne » générique → désormais **perspective opérateur** via
+    `?me=<nom>` (browser source : `http://192.168.129.85:5102/widget?me=matella`). Montre
+    V/D + héros + carte + **K/A/D + KP** (KP = takedowns / morts adverses ; la somme des
+    takedowns surcomptait). Vérifié live : « VICTOIRE · Chen · Dragon Shire · 3/17/2 · KP 67% ».
+    Fond transparent OK pour OBS. `kills/deaths/takedowns` ajoutés à `/api/matches`.
+  **Décision scope (opérateur 2026-06-13)** : **on abandonne l'extension Twitch cloud / Azure**.
+  Le seul overlay sera le **widget OBS local** (`/widget`, déjà servi par storm-codex, zéro Azure).
+  `azure.rs` reste en dormance (non câblé). → plus de dépendance à des identifiants EBS.
   **Reste (opérateur)** :
-  - **S'abonner au topic ntfy** `jarvis-62a7e8eba161` (app ntfy / web) pour *recevoir* les briefs
-    (le serveur a 0 abonné ; la publication est prouvée par son compteur). Sinon : option « phrase
-    dans le widget OBS » (round-trip Jarvis→storm-codex) si tu préfères en-stream au téléphone.
-  - **Push Azure** (extension Twitch) : code prêt (`azure.rs`), besoin des vrais identifiants EBS.
-    Inutile si l'overlay OBS te suffit (le widget `/widget` ne dépend pas d'Azure).
-  - Validation **widget OBS + page < 5 s** sur une vraie partie (uploader live).
+  - **S'abonner au topic ntfy** `jarvis-62a7e8eba161` pour *recevoir* les briefs (0 abonné ;
+    publication prouvée). Option alternative/complément : injecter la phrase Jarvis dans le widget.
+  - Ajouter le widget dans OBS (browser source, URL ci-dessus) + valider sur une **vraie partie**.
   - **Décommission du Node** (runbook, après validation partie réelle).
+
+  ⚠️ **Piège déploiement** : `rsync --delete` vers `~/apps/storm-codex` **supprime le `.env` du box**
+  (gitignoré, absent côté source). TOUJOURS `--exclude .env`. Secrets récupérables depuis le
+  conteneur vivant (`docker inspect storm-codex-server --format '{{range .Config.Env}}…'`) —
+  surtout `POSTGRES_PASSWORD` (le volume est initialisé avec).
 - **Jalon 6 : prêt à publier** — voir ci-dessous.
 
 ## Jalon 4 — compléments faits (2026-06-12, après le socle)
