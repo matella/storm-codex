@@ -17,7 +17,7 @@ function ScoreTable({ players, team, label, cls }: { players: any[]; team: numbe
       <table>
         <thead>
           <tr>
-            <th>Joueur</th><th>K</th><th>D</th><th>A</th><th>Héros dmg</th><th>Soin</th><th>XP</th><th>Niv</th>
+            <th>Player</th><th>K</th><th>D</th><th>A</th><th>Hero dmg</th><th>Healing</th><th>XP</th><th>Lvl</th>
           </tr>
         </thead>
         <tbody>
@@ -52,8 +52,8 @@ export function MatchDetail() {
   const { id } = useParams();
   const { data, isLoading } = useQuery({ queryKey: ["match", id], queryFn: () => fetchMatch(id!) });
 
-  if (isLoading) return <div className="empty">chargement…</div>;
-  if (!data) return <div className="empty">match introuvable</div>;
+  if (isLoading) return <div className="empty">loading…</div>;
+  if (!data) return <div className="empty">match not found</div>;
   const m = data.match;
   const players = Object.values(data.players ?? {});
   const mb = modeBadge(m.mode);
@@ -83,7 +83,7 @@ export function MatchDetail() {
           {m.picks && [0, 1].map((t) => (
             <div key={t} className="row">
               <span className={t === 0 ? "tm-blue" : "tm-red"} style={{ minWidth: 70, fontSize: 11 }}>
-                équipe {t === 0 ? "bleue" : "rouge"}{m.picks.first === t && <span className="bdg b-mvp" style={{ marginLeft: 5 }}>1er pick</span>}
+                équipe {t === 0 ? "bleue" : "rouge"}{m.picks.first === t && <span className="bdg b-mvp" style={{ marginLeft: 5 }}>1st pick</span>}
               </span>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {(m.picks[t] ?? []).map((h: string, i: number) => (
@@ -99,7 +99,7 @@ export function MatchDetail() {
 
       {(m.firstObjective != null || m.firstFort != null) && (
         <div className="card">
-          <div className="card-hd"><span className="kick" style={{ margin: 0 }}>Faits marquants</span></div>
+          <div className="card-hd"><span className="kick" style={{ margin: 0 }}>Highlights</span></div>
           {[
             ["Premier objectif", m.firstObjective],
             ["Premier fort", m.firstFort],
@@ -108,27 +108,27 @@ export function MatchDetail() {
             <div key={label as string} className="row">
               <span className="muted">{label}</span>
               <span style={{ marginLeft: "auto" }} className={v === 0 ? "tm-blue" : v === 1 ? "tm-red" : "muted"}>
-                {v === 0 ? "équipe bleue" : v === 1 ? "équipe rouge" : "—"}
+                {v === 0 ? "blue team" : v === 1 ? "red team" : "—"}
               </span>
             </div>
           ))}
         </div>
       )}
 
-      <ScoreTable players={players} team={0} label="Équipe bleue" cls="tm-blue" />
-      <ScoreTable players={players} team={1} label="Équipe rouge" cls="tm-red" />
+      <ScoreTable players={players} team={0} label="Blue team" cls="tm-blue" />
+      <ScoreTable players={players} team={1} label="Red team" cls="tm-red" />
 
       {Array.isArray(m.levelAdvTimeline) && m.levelAdvTimeline.length > 1 && (
         <>
-          <p className="cap">Avantage de niveau (bleue +, rouge −)</p>
+          <p className="cap">Level advantage (blue +, red −)</p>
           <div className="card"><LevelChart timeline={m.levelAdvTimeline} /></div>
         </>
       )}
 
-      <p className="cap">Données complètes</p>
+      <p className="cap">Full data</p>
       <div className="card">
         <div className="row">
-          <span className="muted">Vainqueur</span>
+          <span className="muted">Winner</span>
           <span style={{ marginLeft: "auto" }} className={m.winner === 0 ? "tm-blue" : "tm-red"}>
             équipe {m.winner === 0 ? "bleue" : "rouge"}
           </span>
@@ -138,7 +138,7 @@ export function MatchDetail() {
           <span style={{ marginLeft: "auto" }} className="mono">{(m.takedowns ?? []).length}</span>
         </div>
         <div className="row">
-          <span className="muted">Dump décodé brut</span>
+          <span className="muted">Raw decoded dump</span>
           <a style={{ marginLeft: "auto", color: "var(--accent)" }} href={`/api/matches/${data.id}/raw?stream=tracker`} target="_blank" rel="noreferrer">
             tracker events ›
           </a>

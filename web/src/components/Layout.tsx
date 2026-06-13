@@ -4,9 +4,9 @@ import { useLiveUpdates, useDimHeroes, useSettings } from "../api";
 
 const TABS: [string, string][] = [
   ["/", "Session"],
-  ["/matches", "Matchs"],
-  ["/heroes", "Héros"],
-  ["/maps", "Cartes"],
+  ["/matches", "Matches"],
+  ["/heroes", "Heroes"],
+  ["/maps", "Maps"],
   ["/trends", "Trends"],
   ["/admin", "Admin"],
 ];
@@ -18,7 +18,7 @@ export function Layout() {
   useSettings(); // peuple operator_names (perspective opérateur partout)
   useLiveUpdates((ev) => {
     setLive(true);
-    setFlash(`● nouveau replay reçu — ${ev.map ?? "match"} ajouté`);
+    setFlash(`● new replay — ${ev.map ?? "match"} added`);
     setTimeout(() => setFlash(null), 6000);
   });
   return (
@@ -33,7 +33,7 @@ export function Layout() {
           ))}
         </nav>
         <span className={live ? "live" : "live off"}>
-          ● {live ? "connecté" : "hors ligne"}
+          ● {live ? "online" : "offline"}
         </span>
       </div>
       <div className="shell">

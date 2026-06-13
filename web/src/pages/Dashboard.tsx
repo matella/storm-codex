@@ -31,7 +31,7 @@ export function Dashboard() {
   return (
     <>
       <h1>Session</h1>
-      <p className="note">Tableau de bord — ta dernière partie et tes stats (perspective opérateur).</p>
+      <p className="note">Dashboard — your latest game and your stats (operator perspective).</p>
 
       <div className="card">
         {last && (
@@ -39,7 +39,7 @@ export function Dashboard() {
             <Avatar hero={lastMe?.hero ?? null} size={42} />
             <div>
               <div style={{ fontSize: 13, fontWeight: 500 }}>
-                Dernière partie — {lastMe?.hero ?? "?"} · {last.map}{" "}
+                Last game — {lastMe?.hero ?? "?"} · {last.map}{" "}
                 <span className={`bdg ${modeBadge(last.mode).cls}`} style={{ marginLeft: 6 }}>
                   {modeBadge(last.mode).short}
                 </span>
@@ -48,13 +48,13 @@ export function Dashboard() {
                     className={`bdg ${lastMe.team === last.winner ? "b-win" : "b-loss"}`}
                     style={{ marginLeft: 6 }}
                   >
-                    {lastMe.team === last.winner ? "V" : "D"}
+                    {lastMe.team === last.winner ? "W" : "L"}
                   </span>
                 )}
               </div>
               <div className="mono" style={{ fontSize: 11.5, color: "var(--text-2)", marginTop: 2 }}>
                 {fmtTime(last.played_at)} · {fmtDur(last.length)} ·{" "}
-                <Link to={`/match/${last.id}`} style={{ color: "var(--accent)" }}>détail ›</Link>
+                <Link to={`/match/${last.id}`} style={{ color: "var(--accent)" }}>details ›</Link>
               </div>
             </div>
           </div>
@@ -62,9 +62,9 @@ export function Dashboard() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)" }}>
           {[
             ["Win rate", `${wr}%`],
-            ["Mes parties", String(games)],
-            ["Héros joués", String(distinct)],
-            ["Main héros", mainHero],
+            ["My games", String(games)],
+            ["Heroes played", String(distinct)],
+            ["Main hero", mainHero],
           ].map(([k, v], idx) => (
             <div key={k} style={{ padding: "12px 18px", borderRight: idx < 3 ? "1px solid var(--hairline)" : undefined }}>
               <p className="kick" style={{ margin: "0 0 3px" }}>{k}</p>
@@ -74,7 +74,7 @@ export function Dashboard() {
         </div>
       </div>
 
-      <p className="cap">Derniers matchs</p>
+      <p className="cap">Recent matches</p>
       <div className="card">
         {matches?.slice(0, 6).map((m) => {
           const me = pickOperator(m.players ?? []);
@@ -86,7 +86,7 @@ export function Dashboard() {
               <span style={{ fontSize: 12 }}>{m.map}</span>
               {me?.team != null && m.winner != null && (
                 <span className={`bdg ${me.team === m.winner ? "b-win" : "b-loss"}`}>
-                  {me.team === m.winner ? "V" : "D"}
+                  {me.team === m.winner ? "W" : "L"}
                 </span>
               )}
               <span style={{ marginLeft: "auto", color: "var(--kicker)", fontSize: 10 }}>{fmtDur(m.length)} ›</span>

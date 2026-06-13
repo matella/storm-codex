@@ -7,7 +7,7 @@ import { Avatar } from "../components/Avatar";
 // Codes officiels (storm-stats GameMode). Brawls/IA sont rejetés au parse → on liste les modes réels.
 // Modes réellement présents dans l'archive en tête (SL 50091, ARAM 50101, Custom -1).
 const MODE_FILTERS: [string, number | undefined][] = [
-  ["Tous", undefined],
+  ["All", undefined],
   ["Storm League", 50091],
   ["ARAM", 50101],
   ["Custom", -1],
@@ -49,7 +49,7 @@ export function Matches() {
 
   return (
     <>
-      <h1>Matchs</h1>
+      <h1>Matches</h1>
       <div className="card">
         <div className="card-hd" style={{ flexWrap: "wrap", gap: 6 }}>
           {MODE_FILTERS.map(([label, m]) => (
@@ -58,13 +58,13 @@ export function Matches() {
             </span>
           ))}
           <select className="filter-select" value={map} onChange={(e) => setMap(e.target.value)}>
-            <option value="">Toutes les cartes</option>
+            <option value="">All maps</option>
             {maps?.slice().sort((a, b) => a.map.localeCompare(b.map)).map((mp) => (
               <option key={mp.map} value={mp.map}>{mp.map}</option>
             ))}
           </select>
           <select className="filter-select" value={hero} onChange={(e) => setHero(e.target.value)}>
-            <option value="">Tous les héros</option>
+            <option value="">All heroes</option>
             {heroes?.slice().sort((a, b) => a.hero.localeCompare(b.hero)).map((h) => (
               <option key={h.hero} value={h.hero}>{h.hero}</option>
             ))}
@@ -83,10 +83,10 @@ export function Matches() {
           >
             export JSON ↓
           </a>
-          <span style={{ fontSize: 10, color: "var(--kicker)" }}>{data?.length ?? 0} matchs</span>
+          <span style={{ fontSize: 10, color: "var(--kicker)" }}>{data?.length ?? 0} matches</span>
         </div>
-        {isLoading && <div className="empty">chargement…</div>}
-        {data?.length === 0 && <div className="empty">aucun match pour ce filtre</div>}
+        {isLoading && <div className="empty">loading…</div>}
+        {data?.length === 0 && <div className="empty">no matches for this filter</div>}
         {data?.map((m) => {
           const mb = modeBadge(m.mode);
           const o = ownHero(m);
@@ -113,9 +113,9 @@ export function Matches() {
               <span className={`bdg ${mb.cls}`}>{mb.short}</span>
               <Avatar hero={o.hero} />
               <span style={{ fontSize: 12 }}>{m.map ?? "—"}</span>
-              {o.win != null && <span className={`bdg ${o.win ? "b-win" : "b-loss"}`}>{o.win ? "V" : "D"}</span>}
+              {o.win != null && <span className={`bdg ${o.win ? "b-win" : "b-loss"}`}>{o.win ? "W" : "L"}</span>}
               <span style={{ marginLeft: "auto", color: "var(--kicker)", fontSize: 10 }}>
-                {fmtDur(m.length)} · équipe {winner === 0 ? "bleue" : winner === 1 ? "rouge" : "?"} gagne ›
+                {fmtDur(m.length)} · {winner === 0 ? "blue" : winner === 1 ? "red" : "?"} team wins ›
               </span>
             </div>
           );

@@ -61,76 +61,76 @@ export function Admin() {
     <>
       <h1>Admin / Import</h1>
       <div className="card">
-        <div className="card-hd"><span className="kick" style={{ margin: 0 }}>Jeton admin</span></div>
+        <div className="card-hd"><span className="kick" style={{ margin: 0 }}>Admin token</span></div>
         <div className="row">
           <input style={{ ...inp, flex: 1 }} type="password" placeholder="ADMIN_TOKEN" value={token} onChange={(e) => setToken(e.target.value)} />
-          <span className="muted" style={{ fontSize: 10 }}>{token ? "configuré" : "requis pour les actions"}</span>
+          <span className="muted" style={{ fontSize: 10 }}>{token ? "configured" : "required for actions"}</span>
         </div>
       </div>
 
-      <p className="cap">Mon identité (perspective opérateur)</p>
+      <p className="cap">My identity (operator perspective)</p>
       <div className="card">
         <div className="row">
           <input
             style={{ ...inp, flex: 1 }}
-            placeholder="mes noms en jeu, séparés par des virgules (ex. matella, MatellaSmurf)"
+            placeholder="my in-game names, comma-separated (e.g. matella, MatellaSmurf)"
             value={opValue}
             onChange={(e) => setOpNames(e.target.value)}
           />
-          <span className="pill on" onClick={saveOperator}>enregistrer</span>
+          <span className="pill on" onClick={saveOperator}>save</span>
         </div>
         <div className="row"><span className="muted" style={{ fontSize: 10 }}>
-          Utilisé partout (session, matchs, widget) pour afficher TES stats, et par le brief Jarvis.
+          Used everywhere (session, matches, widget) to show YOUR stats, and by the Jarvis brief.
         </span></div>
       </div>
 
       {health && (
         <>
-          <p className="cap">Santé des uploads</p>
+          <p className="cap">Upload health</p>
           <div className="card">
-            <div className="row"><span className="muted">Par statut</span><span className="mono" style={{ marginLeft: "auto" }}>{JSON.stringify(health.by_status)}</span></div>
-            <div className="row"><span className="muted">Échecs par classe</span><span className="mono" style={{ marginLeft: "auto" }}>{JSON.stringify(health.by_error_class)}</span></div>
+            <div className="row"><span className="muted">By status</span><span className="mono" style={{ marginLeft: "auto" }}>{JSON.stringify(health.by_status)}</span></div>
+            <div className="row"><span className="muted">Failures by class</span><span className="mono" style={{ marginLeft: "auto" }}>{JSON.stringify(health.by_error_class)}</span></div>
             <div className="row"><span className="muted">parser_version</span><span className="mono" style={{ marginLeft: "auto" }}>{health.parser_version}</span></div>
-            <div className="row link" onClick={reprocess}><span style={{ color: "var(--accent)" }}>Re-process (parser_version périmé) ›</span></div>
+            <div className="row link" onClick={reprocess}><span style={{ color: "var(--accent)" }}>Re-process (stale parser_version) ›</span></div>
           </div>
         </>
       )}
 
-      <p className="cap">Tokens d'upload</p>
+      <p className="cap">Upload tokens</p>
       <div className="card">
         <div className="row">
-          <input style={inp} placeholder="nom (ex. matella)" value={tokenName} onChange={(e) => setTokenName(e.target.value)} />
-          <span className="pill on" onClick={createToken}>créer</span>
+          <input style={inp} placeholder="name (e.g. matella)" value={tokenName} onChange={(e) => setTokenName(e.target.value)} />
+          <span className="pill on" onClick={createToken}>create</span>
         </div>
-        {newToken && <div className="row"><span className="muted">nouveau token (copier maintenant)</span><span className="mono" style={{ marginLeft: "auto", color: "var(--win)" }}>{newToken}</span></div>}
+        {newToken && <div className="row"><span className="muted">new token (copy now)</span><span className="mono" style={{ marginLeft: "auto", color: "var(--win)" }}>{newToken}</span></div>}
       </div>
 
-      <p className="cap">Équipes</p>
+      <p className="cap">Teams</p>
       <div className="card">
         <div className="row">
-          <input style={inp} placeholder="nom d'équipe" value={teamName} onChange={(e) => setTeamName(e.target.value)} />
-          <span className="pill on" onClick={createTeam}>ajouter</span>
+          <input style={inp} placeholder="team name" value={teamName} onChange={(e) => setTeamName(e.target.value)} />
+          <span className="pill on" onClick={createTeam}>add</span>
         </div>
         {(teams ?? []).map((t: any) => (
-          <div key={t.id} className="row"><span>{t.name}</span><span className="muted" style={{ marginLeft: "auto", fontSize: 10 }}>{(t.roster ?? []).length} membres</span>
-            <span className="pill" onClick={async () => { await adminFetch(`/api/teams/${t.id}`, token, { method: "DELETE" }); qc.invalidateQueries({ queryKey: ["teams"] }); }}>suppr.</span>
+          <div key={t.id} className="row"><span>{t.name}</span><span className="muted" style={{ marginLeft: "auto", fontSize: 10 }}>{(t.roster ?? []).length} members</span>
+            <span className="pill" onClick={async () => { await adminFetch(`/api/teams/${t.id}`, token, { method: "DELETE" }); qc.invalidateQueries({ queryKey: ["teams"] }); }}>del.</span>
           </div>
         ))}
-        {(teams ?? []).length === 0 && <div className="empty">aucune équipe</div>}
+        {(teams ?? []).length === 0 && <div className="empty">no teams</div>}
       </div>
 
       <p className="cap">Collections</p>
       <div className="card">
         <div className="row">
-          <input style={inp} placeholder="nom de collection" value={collName} onChange={(e) => setCollName(e.target.value)} />
-          <span className="pill on" onClick={createColl}>ajouter</span>
+          <input style={inp} placeholder="collection name" value={collName} onChange={(e) => setCollName(e.target.value)} />
+          <span className="pill on" onClick={createColl}>add</span>
         </div>
         {(collections ?? []).map((c: any) => (
-          <div key={c.id} className="row"><span>{c.name}</span><span className="muted" style={{ marginLeft: "auto", fontSize: 10 }}>{c.count} matchs</span>
-            <span className="pill" onClick={async () => { await adminFetch(`/api/collections/${c.id}`, token, { method: "DELETE" }); qc.invalidateQueries({ queryKey: ["collections"] }); }}>suppr.</span>
+          <div key={c.id} className="row"><span>{c.name}</span><span className="muted" style={{ marginLeft: "auto", fontSize: 10 }}>{c.count} matches</span>
+            <span className="pill" onClick={async () => { await adminFetch(`/api/collections/${c.id}`, token, { method: "DELETE" }); qc.invalidateQueries({ queryKey: ["collections"] }); }}>del.</span>
           </div>
         ))}
-        {(collections ?? []).length === 0 && <div className="empty">aucune collection</div>}
+        {(collections ?? []).length === 0 && <div className="empty">no collections</div>}
       </div>
     </>
   );

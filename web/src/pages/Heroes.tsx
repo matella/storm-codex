@@ -18,17 +18,17 @@ export function Heroes() {
 
   return (
     <>
-      <h1>Héros</h1>
+      <h1>Heroes</h1>
       <p className="note">Statistiques agrégées sur la base backfillée — {data?.length ?? 0} héros joués.</p>
       <div className="card">
-        {isLoading && <div className="empty">chargement…</div>}
+        {isLoading && <div className="empty">loading…</div>}
         {data && (
           <table>
             <thead>
               <tr>
-                <th>Héros</th>
-                <th onClick={() => setSort("games")} style={{ color: sort === "games" ? "var(--accent)" : undefined }}>Parties</th>
-                <th>Victoires</th>
+                <th>Heroes</th>
+                <th onClick={() => setSort("games")} style={{ color: sort === "games" ? "var(--accent)" : undefined }}>Games</th>
+                <th>Wins</th>
                 <th onClick={() => setSort("winrate")} style={{ color: sort === "winrate" ? "var(--accent)" : undefined }}>Win rate</th>
                 <th></th>
               </tr>

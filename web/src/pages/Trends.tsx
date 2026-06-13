@@ -10,13 +10,13 @@ export function Trends() {
   });
   return (
     <>
-      <h1>Trends par patch</h1>
-      <p className="note">Évolution par build (proxy de patch) — parties, winrate équipe bleue, durée moyenne.</p>
+      <h1>Trends by patch</h1>
+      <p className="note">By build (patch proxy) — games, blue-team win rate, average duration.</p>
       <div className="card">
-        {isLoading && <div className="empty">chargement…</div>}
+        {isLoading && <div className="empty">loading…</div>}
         {data && (
           <table>
-            <thead><tr><th>Build</th><th>Parties</th><th>Win bleue</th><th>Durée moy.</th><th></th></tr></thead>
+            <thead><tr><th>Build</th><th>Games</th><th>Blue win</th><th>Avg. duration</th><th></th></tr></thead>
             <tbody>
               {data.map((t) => {
                 const wr = t.games ? (100 * t.blue_wins) / t.games : 0;

@@ -12,12 +12,12 @@ export function Maps() {
   });
   return (
     <>
-      <h1>Cartes</h1>
+      <h1>Maps</h1>
       <div className="card">
-        {isLoading && <div className="empty">chargement…</div>}
+        {isLoading && <div className="empty">loading…</div>}
         {data && (
           <table>
-            <thead><tr><th>Carte</th><th>Parties</th><th>Win équipe bleue</th><th>Durée moy.</th></tr></thead>
+            <thead><tr><th>Map</th><th>Games</th><th>Blue team win</th><th>Avg. duration</th></tr></thead>
             <tbody>
               {data.map((m) => {
                 const wr = m.games ? (100 * m.blue_wins) / m.games : 0;

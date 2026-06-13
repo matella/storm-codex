@@ -6,8 +6,8 @@ import { Avatar } from "../components/Avatar";
 export function Player() {
   const { toon } = useParams();
   const { data, isLoading } = useQuery({ queryKey: ["player", toon], queryFn: () => fetchPlayer(toon!) });
-  if (isLoading) return <div className="empty">chargement…</div>;
-  if (!data) return <div className="empty">joueur introuvable</div>;
+  if (isLoading) return <div className="empty">loading…</div>;
+  if (!data) return <div className="empty">player not found</div>;
   const wr = data.matches ? ((100 * data.wins) / data.matches).toFixed(1) : "—";
   return (
     <>
@@ -15,7 +15,7 @@ export function Player() {
       <p className="note mono">{data.toon} · alias : {data.names.join(", ") || "—"}</p>
       <div className="card">
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)" }}>
-          {[["Parties", String(data.matches)], ["Victoires", String(data.wins)], ["Win rate", `${wr}%`]].map(([k, v], i) => (
+          {[["Games", String(data.matches)], ["Wins", String(data.wins)], ["Win rate", `${wr}%`]].map(([k, v], i) => (
             <div key={k} style={{ padding: "12px 18px", borderRight: i < 2 ? "1px solid var(--hairline)" : undefined }}>
               <p className="kick" style={{ margin: "0 0 3px" }}>{k}</p>
               <p className="mono" style={{ margin: 0, fontSize: 15 }}>{v}</p>
@@ -26,7 +26,7 @@ export function Player() {
       <p className="cap">Hero pool</p>
       <div className="card">
         <table>
-          <thead><tr><th>Héros</th><th>Parties</th><th>Victoires</th><th>Win rate</th></tr></thead>
+          <thead><tr><th>Heroes</th><th>Games</th><th>Wins</th><th>Win rate</th></tr></thead>
           <tbody>
             {data.heroes.map((h) => {
               const r = h.games ? (100 * h.wins) / h.games : 0;
