@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   fetchMatches, modeBadge, useLiveUpdates, useDimHeroes, useSettings,
@@ -21,6 +22,12 @@ export function Queue() {
     queryFn: () => fetch("/api/now-playing").then((r) => r.json()),
     refetchInterval: 5000,
   });
+  // source OBS : fond transparent (laisse passer les sources cam/game placées sous /queue).
+  useEffect(() => {
+    document.body.style.background = "transparent";
+    document.body.style.margin = "0";
+    return () => { document.body.style.background = ""; document.body.style.margin = ""; };
+  }, []);
 
   const matches = data ?? [];
   // Parties de l'opérateur (tous comptes configurés via operator_names), les plus récentes
@@ -69,7 +76,7 @@ export function Queue() {
   chrono.forEach((g, i) => { if (g.won) w++; wrSeries.push((100 * w) / (i + 1)); });
 
   return (
-    <div style={{ height: "100vh", display: "grid", gridTemplateColumns: "minmax(0,1.5fr) minmax(0,1fr)", gap: 18, padding: 24, boxSizing: "border-box" }}>
+    <div style={{ width: 1920, height: 1080, display: "grid", gridTemplateColumns: "minmax(0,1.5fr) minmax(0,1fr)", gap: 18, padding: 24, boxSizing: "border-box" }}>
       <div style={{ background: "rgba(14,16,22,.92)", border: "1px solid var(--hairline-strong)", borderRadius: 16, padding: "22px 26px", boxShadow: "0 8px 30px rgba(0,0,0,.5)", height: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {/* header */}
         <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>

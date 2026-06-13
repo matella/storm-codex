@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
 import { fetchMatches, modeBadge, fmtDur, mapImage, useLiveUpdates, useDimHeroes, useSettings, pickOperator, jarvisPhrase } from "../api";
 import { Avatar } from "../components/Avatar";
+import { OverlayFrame } from "../components/OverlayFrame";
 
 /**
  * Widget OBS (browser source) : résumé de la DERNIÈRE partie du point de vue de l'opérateur,
@@ -13,13 +13,9 @@ export function Widget() {
   useSettings(); // operator_names (perspective par défaut sans ?me=)
   const { data, refetch } = useQuery({ queryKey: ["widget-last"], queryFn: () => fetchMatches({ limit: 1 }) });
   useLiveUpdates(() => refetch());
-  useEffect(() => {
-    document.body.style.background = "transparent";
-    return () => { document.body.style.background = ""; };
-  }, []);
 
   const m = data?.[0];
-  if (!m) return <div style={{ padding: 16 }} />;
+  if (!m) return <OverlayFrame anchor="top-left"><div /></OverlayFrame>;
 
   const players = m.players ?? [];
   const me = pickOperator(players, new URLSearchParams(location.search).get("me"));
@@ -40,9 +36,10 @@ export function Widget() {
   const mapBg = mapImage(m.map);
 
   return (
-    <div style={{ padding: 14, maxWidth: 360 }}>
+    <OverlayFrame anchor="top-left">
       <div
         style={{
+          maxWidth: 360,
           // image de carte en fond, fortement voilée (texte lisible) ; fallback couleur si absente
           backgroundColor: "rgba(14,16,22,.92)",
           backgroundImage: mapBg
@@ -77,6 +74,6 @@ export function Widget() {
           </div>
         </div>
       </div>
-    </div>
+    </OverlayFrame>
   );
 }

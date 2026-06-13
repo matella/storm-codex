@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
 import { fetchMatches, matchOperator, useLiveUpdates, useDimHeroes, useSettings } from "../api";
 import { Avatar } from "../components/Avatar";
+import { OverlayFrame } from "../components/OverlayFrame";
 
 /**
  * Overlay IN-GAME (browser source OBS) : pastille de coin ultra-compacte avec ton récap de session
@@ -14,10 +14,6 @@ export function Ticker() {
   useSettings();
   const { data, refetch } = useQuery({ queryKey: ["ticker"], queryFn: () => fetchMatches({ limit: 200 }) });
   useLiveUpdates(() => refetch());
-  useEffect(() => {
-    document.body.style.background = "transparent";
-    return () => { document.body.style.background = ""; };
-  }, []);
 
   const matches = data ?? [];
   // parties de l'opérateur (tous comptes), récentes d'abord
@@ -32,7 +28,7 @@ export function Ticker() {
   const todays = opGames.filter((g) => g.day === today);
   const games = todays.length ? todays : opGames[0] ? opGames.filter((g) => g.day === opGames[0].day) : [];
 
-  if (!games.length) return <div style={{ padding: 10 }} />;
+  if (!games.length) return <OverlayFrame anchor="top-left"><div /></OverlayFrame>;
 
   const wins = games.filter((g) => g.won).length;
   const losses = games.length - wins;
@@ -40,7 +36,7 @@ export function Ticker() {
   const last = games[0];
 
   return (
-    <div style={{ padding: 10 }}>
+    <OverlayFrame anchor="top-left">
       <div
         style={{
           display: "inline-flex",
@@ -66,7 +62,7 @@ export function Ticker() {
           </span>
         )}
       </div>
-    </div>
+    </OverlayFrame>
   );
 }
 

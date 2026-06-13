@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
 import { parseTrack } from "../api";
+import { OverlayFrame } from "../components/OverlayFrame";
 
 /**
  * Persistent "now playing" music widget (OBS browser source) — reads Orpheus via the storm-codex
@@ -13,17 +13,14 @@ export function NowPlaying() {
     queryFn: () => fetch("/api/now-playing").then((r) => r.json()),
     refetchInterval: 5000, // léger polling (la musique change lentement)
   });
-  useEffect(() => {
-    document.body.style.background = "transparent";
-    return () => { document.body.style.background = ""; };
-  }, []);
 
   const t = parseTrack(data);
 
   return (
-    <div style={{ padding: 12, maxWidth: 340 }}>
+    <OverlayFrame anchor="bottom-left">
       <div
         style={{
+          maxWidth: 340,
           background: "rgba(14,16,22,.92)",
           border: "1px solid var(--hairline-strong)",
           borderRadius: 12,
@@ -59,6 +56,6 @@ export function NowPlaying() {
         </div>
         <span className="kick" style={{ fontSize: 9 }}>ORPHEUS</span>
       </div>
-    </div>
+    </OverlayFrame>
   );
 }
