@@ -34,7 +34,8 @@ services:
       # nom de conteneur unique (pas l'alias 'postgres' : il entre en collision avec jarvis-postgres
       # sur le réseau jarvis_default partagé).
       DATABASE_URL: postgres://storm:${POSTGRES_PASSWORD:-storm}@storm-codex-pg:5432/storm_codex
-      ADMIN_TOKEN: ${ADMIN_TOKEN:?ADMIN_TOKEN requis}
+      # vide/absent = mode ouvert (auto-hébergement local) ; défini = auth admin par Bearer.
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
       # référentiel héros/talents (lecture seule) — HotsPatchNotes sur l'hôte box
       HOTSPATCHNOTES_URL: ${HOTSPATCHNOTES_URL:-http://host.docker.internal:5001}
       # push opt-in (vides au déploiement initial ; renseignés à la bascule)
