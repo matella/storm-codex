@@ -153,7 +153,11 @@ async fn run() -> Result<(), String> {
         }
         None => app,
     }
-    .with_state(state);
+    .with_state(state)
+    // Limite de corps de requête : le défaut axum (2 Mo) rejetait en 413 — AVANT le handler, donc
+    // sans trace ni ligne uploads — les replays de longues parties (un Braxis Holdout 5v5 dépasse
+    // 2 Mo), faisant boucler l'uploader. 64 Mo couvre largement (replays < ~10 Mo).
+    .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024));
 
     let listener = tokio::net::TcpListener::bind(&bind)
         .await
