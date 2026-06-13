@@ -70,6 +70,19 @@ export function Matches() {
             ))}
           </select>
           <a href={csv} className="pill" style={{ marginLeft: "auto" }}>export CSV ↓</a>
+          <a
+            href={`/api/matches?${new URLSearchParams({
+              ...(mode != null ? { mode: String(mode) } : {}),
+              ...(map ? { map } : {}),
+              ...(hero ? { hero } : {}),
+              limit: "1000",
+            })}`}
+            className="pill"
+            target="_blank"
+            rel="noreferrer"
+          >
+            export JSON ↓
+          </a>
           <span style={{ fontSize: 10, color: "var(--kicker)" }}>{data?.length ?? 0} matchs</span>
         </div>
         {isLoading && <div className="empty">chargement…</div>}
