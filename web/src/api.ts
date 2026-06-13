@@ -251,7 +251,15 @@ export function jarvisPhrase(
 
 // ── musique (proxy Orpheus /api/now-playing) ─────────────────────────────────
 export interface NowPlayingResp { authenticated?: boolean; current?: Record<string, unknown> }
-export interface Track { playing: boolean; title?: string; artist?: string; art?: string }
+export interface Track {
+  playing: boolean;
+  title?: string;
+  artist?: string;
+  art?: string;
+  album?: string;
+  durationMs?: number;
+  progressMs?: number;
+}
 /** Le proxy enveloppe la réponse Orpheus dans `current`. Deux shapes possibles :
  *  - `/api/playback/now` (Spotify live) : `{ isPlaying, track:{ name, artists:[{name}], album:{images:[{url}]} } }`
  *  - ancien engine : `{ current:{ name, artist, albumArtUrl }, isPlaying }`
@@ -266,12 +274,17 @@ export function parseTrack(np: NowPlayingResp | undefined): Track {
     ? (t.artists as Array<Record<string, unknown>>).map((a) => str(a?.name)).filter(Boolean).join(", ") || undefined
     : str(t.artist) ?? str(t.artists) ?? str(t.author);
   // pochette : album.images[0].url (Spotify) sinon albumArtUrl (engine)
-  const images = (t.album as Record<string, unknown> | undefined)?.images;
+  const albumObj = t.album as Record<string, unknown> | undefined;
+  const images = albumObj?.images;
   const art =
     (Array.isArray(images) ? str((images[0] as Record<string, unknown>)?.url) : undefined) ??
     str(t.albumArtUrl) ?? str(t.albumArt) ?? str(t.image);
+  const num = (v: unknown) => (typeof v === "number" ? v : undefined);
+  const album = str(albumObj?.name) ?? str(t.album);
+  const durationMs = num(t.durationMs) ?? num(t.duration);
+  const progressMs = num(o.progressMs);
   const isPlaying = o.isPlaying !== false; // absent → on suppose en lecture
-  return { playing: !!(np?.authenticated && title && isPlaying), title, artist, art };
+  return { playing: !!(np?.authenticated && title && isPlaying), title, artist, art, album, durationMs, progressMs };
 }
 
 export function initials(name: string | null): string {
