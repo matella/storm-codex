@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { fetchMatches, modeBadge, fmtDur, useLiveUpdates, type MatchPlayer } from "../api";
+import { fetchMatches, modeBadge, fmtDur, mapImage, useLiveUpdates, type MatchPlayer } from "../api";
 import { Avatar } from "../components/Avatar";
 
 /**
@@ -35,12 +35,19 @@ export function Widget() {
     .filter((p) => me?.team != null && p.team != null && p.team !== me.team)
     .reduce((s, p) => s + (p.deaths ?? 0), 0);
   const kp = teamKills > 0 ? Math.min(100, Math.round((td / teamKills) * 100)) : null;
+  const mapBg = mapImage(m.map);
 
   return (
     <div style={{ padding: 14, maxWidth: 360 }}>
       <div
         style={{
-          background: "rgba(14,16,22,.92)",
+          // image de carte en fond, fortement voilée (texte lisible) ; fallback couleur si absente
+          backgroundColor: "rgba(14,16,22,.92)",
+          backgroundImage: mapBg
+            ? `linear-gradient(90deg, rgba(14,16,22,.96) 0%, rgba(14,16,22,.86) 55%, rgba(14,16,22,.68) 100%), url(${mapBg})`
+            : undefined,
+          backgroundSize: "cover",
+          backgroundPosition: "center 30%",
           border: `1px solid ${won ? "var(--win)" : "var(--loss)"}`,
           borderRadius: 12,
           padding: "12px 14px",

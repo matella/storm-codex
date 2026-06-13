@@ -66,10 +66,14 @@ async fn run() -> Result<(), String> {
         .await
         .map_err(|e| format!("migrations : {e}"))?;
 
-    // référentiel héros depuis HotsPatchNotes (best-effort, n'empêche pas le démarrage)
+    // référentiel héros + vendorisation des images depuis HotsPatchNotes (best-effort)
     if let Some(url) = cfg.hotspatchnotes_url.clone() {
         let db2 = db.clone();
-        tokio::spawn(async move { dim::sync_heroes(&db2, &url).await });
+        let images_dir = cfg.images_dir.clone();
+        tokio::spawn(async move {
+            dim::sync_heroes(&db2, &url).await;
+            dim::vendor_images(&images_dir, &url).await;
+        });
     }
 
     let cores = std::thread::available_parallelism()
@@ -110,7 +114,12 @@ async fn run() -> Result<(), String> {
         )
         .route("/api/admin/uploads", get(admin::uploads_health))
         .route("/api/admin/reprocess", post(admin::reprocess))
-        .route("/ws", any(ws::ws_handler));
+        .route("/ws", any(ws::ws_handler))
+        // portraits héros + images de cartes vendorisés (servis depuis images_dir)
+        .nest_service(
+            "/images",
+            tower_http::services::ServeDir::new(&state.cfg.images_dir),
+        );
 
     // Front buildé (SPA) : ServeDir sert les assets ; toute route inconnue renvoie index.html
     // (statut 200) pour que le routing client React fonctionne sur les liens profonds.

@@ -141,6 +141,17 @@ export function universeColor(hero: string | null): string {
   const u = hero ? DIM[hero]?.universe : null;
   return (u && UNIVERSE_COLOR[u]) || "var(--u-nexus)";
 }
+/** Portrait du héros (vendorisé, servi sur /images) — null si inconnu (→ fallback initiales). */
+export function heroIcon(hero: string | null): string | null {
+  return (hero && DIM[hero]?.icon) || null;
+}
+/** Image de carte : slug = nom en minuscules, apostrophes retirées, espaces → tirets.
+ *  Les cartes ARAM peuvent ne pas avoir d'image (404) → le consommateur prévoit un fallback. */
+export function mapImage(map: string | null): string | null {
+  if (!map) return null;
+  const slug = map.toLowerCase().replace(/['']/g, "").replace(/\s+/g, "-");
+  return `/images/battlegrounds/${slug}.png`;
+}
 export function initials(name: string | null): string {
   if (!name) return "··";
   return name.slice(0, 2).toUpperCase();

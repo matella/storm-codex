@@ -20,6 +20,9 @@ pub struct Config {
     pub azure_push_token: Option<String>,
     /// API HotsPatchNotes (référentiel héros/talents) — répliquée dans `dim_*` au démarrage.
     pub hotspatchnotes_url: Option<String>,
+    /// Portraits héros + images de cartes vendorisés ici au démarrage (auto-suffisant,
+    /// déterministe — pas de dépendance runtime à HotsPatchNotes), servis sur `/images`.
+    pub images_dir: PathBuf,
 }
 
 impl Config {
@@ -49,6 +52,9 @@ impl Config {
             azure_push_url: std::env::var("AZURE_PUSH_URL").ok().filter(|s| !s.is_empty()),
             azure_push_token: std::env::var("AZURE_PUSH_TOKEN").ok().filter(|s| !s.is_empty()),
             hotspatchnotes_url: std::env::var("HOTSPATCHNOTES_URL").ok().filter(|s| !s.is_empty()),
+            images_dir: PathBuf::from(
+                std::env::var("IMAGES_DIR").unwrap_or_else(|_| "./.images".into()),
+            ),
         })
     }
 }

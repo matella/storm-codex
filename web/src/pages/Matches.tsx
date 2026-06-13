@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { fetchMatches, fetchHeroes, modeBadge, fmtTime, fmtDur, type MatchSummary } from "../api";
+import { fetchMatches, fetchHeroes, modeBadge, fmtTime, fmtDur, mapImage, type MatchSummary } from "../api";
 import { Avatar } from "../components/Avatar";
 
 // Codes officiels (storm-stats GameMode). Brawls/IA sont rejetés au parse → on liste les modes réels.
@@ -78,8 +78,24 @@ export function Matches() {
           const mb = modeBadge(m.mode);
           const o = ownHero(m);
           const winner = m.winner;
+          const bg = mapImage(m.map);
           return (
-            <div key={m.id} className="row link" onClick={() => nav(`/match/${m.id}`)}>
+            <div
+              key={m.id}
+              className="row link"
+              onClick={() => nav(`/match/${m.id}`)}
+              style={
+                bg
+                  ? {
+                      // image de carte en fond, voilée pour garder le texte lisible (fallback
+                      // silencieux si la carte n'a pas d'image, ex. ARAM)
+                      backgroundImage: `linear-gradient(90deg, var(--surface) 0%, rgba(14,16,22,.82) 45%, rgba(14,16,22,.62) 100%), url(${bg})`,
+                      backgroundSize: "cover",
+                      backgroundPosition: "center 30%",
+                    }
+                  : undefined
+              }
+            >
               <span className="mono muted" style={{ minWidth: 92, fontSize: 11 }}>{fmtTime(m.played_at)}</span>
               <span className={`bdg ${mb.cls}`}>{mb.short}</span>
               <Avatar hero={o.hero} />
