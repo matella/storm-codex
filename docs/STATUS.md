@@ -180,19 +180,30 @@ avec le champ `name` + `ADMIN_TOKEN` du `.env` box). Base + archive remises à v
   header `X-Filename` stocké percent-encodé (`Blackheart%27s Bay`) → **décodé côté serveur** + test ;
   vérifié de bout en bout sur le box (`… Blackheart's Bay.StormReplay` stocké proprement).
 
-## Ce qui reste (dépendances opérateur/PC de jeu)
-- **Brancher l'uploader (PC de jeu)** : dans `Hots-Overlay` (faire `git pull` pour le fix backfill),
-  créer `.env` racine avec `SERVER_URL=http://192.168.129.85:5102` + `AUTH_TOKEN=<token matella-pc>`,
-  puis `cd client-rs && cargo build --release` (run direct) ou builder l'installeur Inno Setup
-  (`installer.iss` → `installer-output/HotSReplayClient-1.1.2-setup.exe`). Au lancement (box
-  connecté), il **backfill toute l'archive** (~2 800 replays) automatiquement.
-- **Bascule jalon 5** (le soir, partie réelle) : renseigner `REDIS_URL` (Redis Jarvis) +
-  `AZURE_PUSH_URL/TOKEN` dans le `.env` du box → `docker compose up -d` ; jouer une partie →
-  vérifier page < 5 s, widget OBS, event `hots.match.completed` sur Redis Jarvis, push Azure ;
-  puis runbook de décommission du Node (`docs/runbooks/2026-06-12-bascule-decommission-node.md`).
-- **Jalon 4 (résiduel mineur)** : ligues au-dessus des équipes, export JSON, `dim_talents`.
-- **Jalon 6 (publication)** : `cargo publish` storm-replay puis storm-stats (compte crates.io
-  opérateur) ; repos GitHub publics. `--dry-run` validé, LICENSE MIT en place.
+## Ce qui reste (état réel au 2026-06-13)
+Le développement est essentiellement terminé (jalons 0→5 livrés + vérifiés ; backfill prod fait :
+2007 matchs ; Redis Jarvis câblé + brief E2E ; images vendorisées ; widget/filtres). Reste :
+
+**A. Actions opérateur (pas du code)**
+- **S'abonner au topic ntfy** `jarvis-62a7e8eba161` (appli ntfy, serveur `http://192.168.129.85:8093`)
+  pour *recevoir* les briefs (publication déjà prouvée ; 0 abonné aujourd'hui).
+- **Ajouter le widget dans OBS** : browser source `http://192.168.129.85:5102/widget?me=matella`.
+- (optionnel) **Reverse proxy NPM** pour un nom propre + TLS — runbook
+  `docs/runbooks/2026-06-13-reverse-proxy-et-ntfy.md`.
+
+**B. Bascule finale jalon 5 (ensemble, le soir, sur une vraie partie)**
+- Jouer une partie → valider widget OBS + page < 5 s en conditions réelles (le reste est prouvé).
+- **Décommissionner le serveur Node** de l'overlay — runbook
+  `docs/runbooks/2026-06-12-bascule-decommission-node.md`. (Azure/extension Twitch **abandonné** —
+  décision opérateur : overlay local uniquement.)
+
+**C. Jalon 6 — publication (action crates.io opérateur)**
+- `cargo publish` storm-replay puis storm-stats ; repos GitHub publics. `--dry-run` validé, MIT en place.
+
+**D. Refinements optionnels (qualité, non bloquants)**
+- Identité opérateur globale (Session/Héros montrent `players[0]`/agrégat, pas toi — le widget a `?me=`).
+- Phrase Jarvis dans le widget OBS ; deltas vs moyenne dans le widget.
+- Résiduels jalon 4 : ligues au-dessus des équipes, export JSON, `dim_talents` détaillés.
 
 ## Jalons (résumé — détail et critères dans la spec)
 0 spike **GO ✅** → 1 storm-replay **✅** → 2 storm-stats **✅** (+ 2.5 cartes ARAM) →
