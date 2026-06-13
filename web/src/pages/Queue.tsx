@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   fetchMatches, modeBadge, useLiveUpdates, useDimHeroes, useSettings,
-  matchOperator, operatorNames, jarvisPhrase, parseTrack, fmtDur,
+  matchOperator, operatorNames, jarvisPhrase, parseTrack, fmtDur, awardLabel,
   type MatchSummary, type MatchPlayer, type NowPlayingResp,
 } from "../api";
 import { Avatar } from "../components/Avatar";
@@ -135,6 +135,15 @@ export function Queue() {
                   <span className="muted" style={{ fontSize: 11, marginLeft: 8 }}>· {g.me.name}</span>
                 )}
               </span>
+              {(() => {
+                const aw = awardLabel(g.me.award);
+                if (!aw) return null;
+                return aw.mvp ? (
+                  <span title="MVP" style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 999, color: "#1a1500", background: "linear-gradient(90deg,#f5c542,#e0a818)" }}>👑 MVP</span>
+                ) : (
+                  <span title={aw.label} style={{ fontSize: 13 }}>🏅</span>
+                );
+              })()}
               <span className={`bdg ${g.won ? "b-win" : "b-loss"}`}>{g.won ? "W" : "L"}</span>
               <span className="mono" style={{ color: "#cfd3e0" }}>{k}/{Math.max(0, td - k)}/{d}</span>
             </div>

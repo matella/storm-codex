@@ -44,7 +44,8 @@ pub async fn list_matches(State(s): State<AppState>, Query(f): Query<MatchFilter
              (SELECT jsonb_agg(jsonb_build_object(
                  'toon', mp.toon_handle, 'name', mp.name, 'hero', mp.hero,
                  'team', mp.team, 'win', mp.win,
-                 'kills', mp.kills, 'deaths', mp.deaths, 'takedowns', mp.takedowns)
+                 'kills', mp.kills, 'deaths', mp.deaths, 'takedowns', mp.takedowns,
+                 'award', mp.data #>> '{gameStats,awards,0}')
                  ORDER BY mp.team, mp.id)
               FROM match_players mp WHERE mp.match_id = m.id) AS players
            FROM matches m

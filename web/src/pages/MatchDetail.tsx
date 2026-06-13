@@ -1,7 +1,7 @@
 import { Fragment } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "react-router-dom";
-import { fetchMatch, modeBadge, fmtTime, fmtDur, useDimTalents, talentInfo } from "../api";
+import { fetchMatch, modeBadge, fmtTime, fmtDur, useDimTalents, talentInfo, awardLabel } from "../api";
 import { Avatar } from "../components/Avatar";
 import { LevelChart } from "../components/LevelChart";
 
@@ -57,6 +57,15 @@ function ScoreTable({ players, team, label, cls }: { players: any[]; team: numbe
                       <Avatar hero={p.hero} size={20} />
                       <span>{p.hero}</span>
                       <span className="muted" style={{ fontSize: 10 }}>{p.name}</span>
+                      {(() => {
+                        const aw = awardLabel((g.awards ?? [])[0]);
+                        if (!aw) return null;
+                        return aw.mvp ? (
+                          <span title="MVP" style={{ fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 999, color: "#1a1500", background: "linear-gradient(90deg,#f5c542,#e0a818)" }}>MVP</span>
+                        ) : (
+                          <span className="muted" title={aw.label} style={{ fontSize: 9 }}>🏅 {aw.label}</span>
+                        );
+                      })()}
                     </Link>
                   </td>
                   <td className="mono">{num(g.SoloKill)}</td>

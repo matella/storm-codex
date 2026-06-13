@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { fetchMatches, modeBadge, fmtDur, mapImage, useLiveUpdates, useDimHeroes, useSettings, pickOperator, jarvisPhrase } from "../api";
+import { fetchMatches, modeBadge, fmtDur, mapImage, useLiveUpdates, useDimHeroes, useSettings, pickOperator, jarvisPhrase, awardLabel } from "../api";
 import { Avatar } from "../components/Avatar";
 import { OverlayFrame } from "../components/OverlayFrame";
 
@@ -61,6 +61,27 @@ export function Widget() {
           <div style={{ fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 7 }}>
             <span style={{ color: won ? "var(--win)" : "var(--loss)" }}>{won ? "VICTORY" : "DEFEAT"}</span>
             <span style={{ color: "var(--text-2)", fontWeight: 400 }}>· {me?.hero ?? "?"} · {m.map}</span>
+            {(() => {
+              const aw = awardLabel(me?.award);
+              if (!aw) return null;
+              return (
+                <span
+                  style={{
+                    marginLeft: "auto",
+                    fontSize: 10.5,
+                    fontWeight: 700,
+                    padding: "2px 7px",
+                    borderRadius: 999,
+                    color: aw.mvp ? "#1a1500" : "var(--text)",
+                    background: aw.mvp ? "linear-gradient(90deg,#f5c542,#e0a818)" : "rgba(255,255,255,.1)",
+                    boxShadow: aw.mvp ? "0 0 10px rgba(245,197,66,.5)" : "none",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {aw.mvp ? "👑 MVP" : `🏅 ${aw.label}`}
+                </span>
+              );
+            })()}
           </div>
           <div className="mono" style={{ fontSize: 12, color: "#cfd3e0", marginTop: 3 }}>
             {k}/{a}/{d}

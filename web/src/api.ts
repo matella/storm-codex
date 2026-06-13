@@ -11,6 +11,21 @@ export interface MatchPlayer {
   kills: number | null;
   deaths: number | null;
   takedowns: number | null;
+  award?: string | null; // ex. "EndOfMatchAwardMVPBoolean"
+}
+
+/** Award de fin de partie d'un joueur → libellé court + drapeau MVP. `null` si aucun award.
+ *  HotS attribue UN award par joueur : MVP au meilleur, sinon une catégorie (Most Hero Damage…). */
+export function awardLabel(raw: string | null | undefined): { label: string; mvp: boolean } | null {
+  if (!raw) return null;
+  const core = raw.replace(/^EndOfMatchAward/, "").replace(/Boolean$/, "");
+  if (core === "MVP") return { label: "MVP", mvp: true };
+  // décamelise + raccourcit les libellés verbeux
+  const label = core
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/^Most /, "")
+    .replace(/ Done$/, "");
+  return { label, mvp: false };
 }
 export interface MatchSummary {
   id: number;
