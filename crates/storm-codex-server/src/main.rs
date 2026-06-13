@@ -117,11 +117,25 @@ async fn run() -> Result<(), String> {
     let app = match &state.cfg.web_dir {
         Some(dir) => {
             let index = std::fs::read_to_string(dir.join("index.html")).unwrap_or_default();
+            // index.html en `no-cache` : non fingerprinté, il doit toujours être revalidé sinon
+            // un redeploy (nouveau hash de bundle) laisse le navigateur sur un bundle 404 → page
+            // blanche. Les assets (fingerprintés) restent cachables par ServeDir.
             let spa = axum::routing::get(move || {
                 let index = index.clone();
-                async move { axum::response::Html(index) }
+                async move {
+                    (
+                        [(axum::http::header::CACHE_CONTROL, "no-cache")],
+                        axum::response::Html(index),
+                    )
+                }
             });
-            app.fallback_service(tower_http::services::ServeDir::new(dir).fallback(spa))
+            // `append_index_html_on_directories(false)` → "/" tombe sur le handler SPA (no-cache)
+            // au lieu d'être servi par ServeDir sans en-tête de cache.
+            app.fallback_service(
+                tower_http::services::ServeDir::new(dir)
+                    .append_index_html_on_directories(false)
+                    .fallback(spa),
+            )
         }
         None => app,
     }
