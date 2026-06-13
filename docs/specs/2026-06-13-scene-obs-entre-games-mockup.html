@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Storm Codex — scène OBS « entre les games » (maquette)</title>
+<style>
+  body { background:#06070b; color:#e8eaf2; font-family:Inter,-apple-system,"Segoe UI",Roboto,sans-serif; margin:0; padding:24px; }
+  h1 { font-size:18px; font-weight:500; }
+  p.note { font-size:12px; color:#9aa0b4; max-width:880px; }
+  .cap { font-size:13px; color:#9aa0b4; margin:24px 0 8px; }
+  .mono { font-family:"JetBrains Mono",Consolas,monospace; }
+  .kick { color:#5d6275; font-size:10px; letter-spacing:.09em; text-transform:uppercase; }
+  .bdg { font-size:9px; padding:2px 7px; border-radius:4px; font-weight:600; }
+  .b-sl{background:#26215C;color:#CECBF6;} .b-aram{background:#1a1d2a;color:#85B7EB;}
+  .b-custom{background:#2b2416;color:#FAC775;} .b-win{background:#04342C;color:#5DCAA5;} .b-loss{background:#501313;color:#F7C1C1;}
+  .av{border-radius:50%;border:2px solid;display:inline-block;vertical-align:middle;}
+
+  /* scène 16:9 */
+  .scene { width:880px; aspect-ratio:16/9; background:#0b0d12; border:1px solid #232636; border-radius:10px;
+           position:relative; overflow:hidden; display:grid; grid-template-columns:1fr 320px; grid-template-rows:1fr 1fr; gap:10px; padding:10px; }
+  .zone { border-radius:8px; display:flex; align-items:center; justify-content:center; text-align:center; }
+  .game { grid-column:1; grid-row:1; background:linear-gradient(135deg,#16202c,#241c2e); border:1px dashed #3a4256; color:#8d93a8; }
+  .cam  { grid-column:1; grid-row:2; background:linear-gradient(135deg,#1c2433,#11131a); border:1px dashed #3a4256; color:#8d93a8; }
+  .panel{ grid-column:2; grid-row:1 / span 2; background:#0e1016; border:1px solid #232636; border-radius:8px; padding:11px 12px; text-align:left; overflow:hidden; }
+  .zlabel{ font-size:12px; } .zsub{ font-size:10px; color:#5d6275; margin-top:3px; }
+
+  .prow { display:flex; align-items:center; gap:7px; padding:5px 0; border-bottom:1px solid #14161e; font-size:11px; }
+  .gauge{height:5px;background:#1a1d2a;border-radius:3px;} .gauge>div{height:5px;border-radius:3px;background:#5DCAA5;}
+</style>
+</head>
+<body>
+<h1>Scène OBS « entre les games » — pour Heroes of the Storm</h1>
+<p class="note">
+Objectif : pendant que tu es <b>en queue</b>, garder le jeu à l'écran (preuve que tu attends une partie) +
+ta caméra + un <b>panneau Storm Codex</b> (browser source servie sur <span class="mono">/queue</span>) qui résume ta soirée.
+Tout est <b>déterministe</b> (lu depuis storm-codex, perspective opérateur, live via WS). Zones grises = sources OBS
+(game capture, webcam) ; le panneau de droite est la page web qu'on construira.
+</p>
+
+<p class="cap">Composition (16:9) — game capture (haut-gauche) · caméra (bas-gauche) · panneau session (droite)</p>
+<div class="scene">
+  <div class="zone game">
+    <div><div class="zlabel">🎮 GAME CAPTURE</div><div class="zsub">menu / file d'attente — « je suis en queue »</div></div>
+  </div>
+  <div class="zone cam">
+    <div><div class="zlabel">📷 CAMÉRA</div><div class="zsub">ta webcam (slot réservé)</div></div>
+  </div>
+
+  <!-- PANNEAU storm-codex /queue -->
+  <div class="panel">
+    <div style="display:flex;align-items:baseline;gap:8px;">
+      <span style="font-size:13px;font-weight:600;letter-spacing:.04em;">SESSION DU SOIR</span>
+      <span class="mono" style="margin-left:auto;font-size:13px;"><span style="color:#5DCAA5;">4 V</span> – <span style="color:#F7C1C1;">2 D</span></span>
+    </div>
+    <div class="mono" style="font-size:10px;color:#8d93a8;margin-top:2px;">série W2 ▲ · 2h08 · 6 parties · WR soir 67%</div>
+
+    <div class="kick" style="margin:11px 0 4px;">Objectif du soir</div>
+    <div class="gauge"><div style="width:80%;"></div></div>
+    <div class="mono" style="font-size:10px;color:#8d93a8;margin-top:3px;">4 / 5 victoires</div>
+
+    <div class="kick" style="margin:12px 0 4px;">Historique</div>
+    <div class="prow"><span class="mono" style="color:#8d93a8;">21:42</span><span class="bdg b-sl">SL</span><span class="av" style="width:18px;height:18px;border-color:#EF9F27;background:#2b2416;"></span><span>Cursed Hollow</span><span class="bdg b-win" style="margin-left:auto;">V</span><span class="mono" style="color:#cfd3e0;">2/18/1</span></div>
+    <div class="prow"><span class="mono" style="color:#8d93a8;">21:08</span><span class="bdg b-aram">ARAM</span><span class="av" style="width:18px;height:18px;border-color:#378ADD;background:#16202c;"></span><span>Silver City</span><span class="bdg b-win" style="margin-left:auto;">V</span><span class="mono" style="color:#cfd3e0;">9/12/4</span></div>
+    <div class="prow"><span class="mono" style="color:#8d93a8;">20:31</span><span class="bdg b-custom">CUST</span><span class="av" style="width:18px;height:18px;border-color:#E24B4A;background:#2a1c1c;"></span><span>Tomb</span><span class="bdg b-loss" style="margin-left:auto;">D</span><span class="mono" style="color:#cfd3e0;">5/8/6</span></div>
+    <div class="prow" style="border-bottom:none;"><span class="mono" style="color:#8d93a8;">19:58</span><span class="bdg b-sl">SL</span><span class="av" style="width:18px;height:18px;border-color:#EF9F27;background:#2b2416;"></span><span>Alterac</span><span class="bdg b-win" style="margin-left:auto;">V</span><span class="mono" style="color:#cfd3e0;">7/14/3</span></div>
+
+    <div class="kick" style="margin:11px 0 4px;">Meilleure partie</div>
+    <div class="mono" style="font-size:10.5px;color:#cfd3e0;">Muradin · Cursed Hollow · 2/18/1 <span class="bdg b-custom" style="margin-left:4px;">MVP</span></div>
+
+    <div class="kick" style="margin:11px 0 4px;">Patch en cours (Nexus Codex)</div>
+    <div class="mono" style="font-size:10.5px;color:#cfd3e0;">11 mai · <span style="color:#C0DD97;">Muradin BUFF</span> · <span style="color:#F09595;">Tychus NERF</span></div>
+
+    <div style="margin-top:11px;font-size:10.5px;color:#AFA9EC;font-style:italic;border-top:1px solid #14161e;padding-top:8px;">
+      « Et de quatre, monsieur. La soirée vous appartient. » — Jarvis
+    </div>
+  </div>
+</div>
+
+<p class="cap">Ce que contient le panneau (tout depuis storm-codex, perspective opérateur)</p>
+<p class="note">
+1. <b>Score de la soirée</b> : V–D du jour, série en cours, durée, WR du soir.<br>
+2. <b>Objectif du soir</b> (réglable) : barre « 4/5 victoires » — petit moteur d'engagement.<br>
+3. <b>Historique</b> des dernières parties : heure, <b>badge de mode</b> (SL / ARAM / CUSTOM / QM…), portrait du héros, carte, V/D, KDA.<br>
+4. <b>Meilleure partie</b> de la session (meilleur KDA / MVP).<br>
+5. <b>Patch en cours</b> tiré de <b>Nexus Codex</b> (buffs/nerfs du moment — touche HotS unique, déjà dans nos données).<br>
+6. <b>Phrase Jarvis</b> (déterministe, voix FR) en pied.<br>
+<b>Autres idées possibles</b> (à activer si tu veux) : héros joués ce soir avec leur W-L · carte la plus jouée du soir ·
+compteur de takedowns/soin cumulés de la session · mini-graphe d'évolution du WR · bandeau « !commands » / réseaux.
+</p>
+</body>
+</html>
