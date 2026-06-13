@@ -231,6 +231,32 @@ mod tests {
     use sqlx::postgres::PgPoolOptions;
     use std::path::PathBuf;
 
+    #[test]
+    fn talent_hero_vote_majoritaire() {
+        let lut: HashMap<String, String> = [
+            ("CrusaderPassiveDivineFortress", "Johanna"),
+            ("CrusaderBlessedHammer", "Johanna"),
+            ("GenericMountTalent", "Autre"), // talent ambigu (partagé) → minoritaire
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+
+        // 2 talents Johanna + 1 ambigu → Johanna l'emporte (immunisé au shuffle ARAM).
+        let p = serde_json::json!({"talents": {
+            "Tier1Choice": "CrusaderPassiveDivineFortress",
+            "Tier2Choice": "GenericMountTalent",
+            "Tier3Choice": "CrusaderBlessedHammer",
+        }});
+        assert_eq!(talent_hero(&p, &lut).as_deref(), Some("Johanna"));
+
+        // aucun talent résoluble → None (l'appelant garde le héros du parser).
+        let p2 = serde_json::json!({"talents": {"Tier1Choice": "Inconnu"}});
+        assert_eq!(talent_hero(&p2, &lut), None);
+        // pas de talents du tout → None.
+        assert_eq!(talent_hero(&serde_json::json!({}), &lut), None);
+    }
+
     /// Test d'intégration : projette un replay et vérifie l'idempotence. Ignoré si DATABASE_URL
     /// absent (CI sans DB) — lancer avec le Postgres Docker du dev.
     #[tokio::test]

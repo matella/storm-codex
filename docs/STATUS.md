@@ -249,6 +249,12 @@ Le développement est essentiellement terminé (jalons 0→5 livrés + vérifié
 - ✅ Portraits héros + fonds de carte vendorisés ; UI **entièrement en anglais**.
 - ✅ Scène OBS `/queue` (1920×1080, panneau session + slots cam/game encadrés + musique intégrée) ;
   widget musique `/now-playing` (proxy Orpheus, pochette d'album, forme imbriquée gérée).
+- ✅ **Bug héros ARAM corrigé** : le shuffle ARAM (3 choix) fait que l'attribut 4002 du replay
+  capte parfois un héros *proposé*, pas joué (ex. stocké « D.Va » au lieu de Johanna). Le
+  projecteur dérive désormais le héros joué par **vote majoritaire des talents** via `dim_talents`
+  (locale-indépendant, immunisé au shuffle), avec `hero_id` aligné sur le nom canonique parser
+  (`attributeId`→`attr.json`) pour ne pas créer de faux diffs de format (Li-Ming, E.T.C.…).
+  Backfill : **5557 lignes corrigées, 0 divergence restante** ; trace dans `heroCorrectedFrom`.
 
 ## Jalons (résumé — détail et critères dans la spec)
 0 spike **GO ✅** → 1 storm-replay **✅** → 2 storm-stats **✅** (+ 2.5 cartes ARAM) →
