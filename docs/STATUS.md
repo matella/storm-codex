@@ -105,6 +105,19 @@
   surtout `POSTGRES_PASSWORD` (le volume est initialisé avec).
 - **Jalon 6 : prêt à publier** — voir ci-dessous.
 
+## Images : portraits héros + fonds de carte (2026-06-13, vérifié live)
+- **Vendorisation déterministe** : au démarrage, `dim::vendor_images` télécharge les portraits
+  héros (90) + images de cartes standard (15) depuis HotsPatchNotes dans `/data/images`
+  (idempotent), servis par storm-codex sur `/images`. **Auto-suffisant** : aucune dépendance
+  runtime à HotsPatchNotes (le téléchargement échoue en silence → fallback front). `IMAGES_DIR`.
+- **Avatar = portrait réel** (cerclé couleur d'univers), fallback initiales si inconnu/erreur.
+  `heroIcon()` lit `dim_heroes.icon`. ⚠️ le widget appelle `useDimHeroes()` lui-même (il est hors
+  Layout, sinon DIM vide → initiales + anneau par défaut).
+- **Fond de carte** sur les lignes Matchs + le widget : `mapImage()` (slug = nom min., sans
+  apostrophe, espaces→tirets) en `background-image` voilé (gradient → texte lisible). Cartes ARAM
+  sans image (Silver City, Industrial District, Lost Cavern, Braxis Outpost) → fond uni (fallback
+  CSS silencieux, déterministe).
+
 ## Widget + front : passe du 2026-06-13 (vérifié live)
 - **Widget OBS = perspective opérateur** : `?me=<nom>` (ex. `/widget?me=matella`) → V/D depuis
   ta team, KDA k/a/d, KP, mode, durée (avant : `players[0]` + « équipe X gagne » générique).
