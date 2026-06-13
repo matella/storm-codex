@@ -56,6 +56,16 @@ export function Queue() {
   const wr = games.length ? Math.round((100 * wins) / games.length) : 0;
   const streak = currentStreak(games);
 
+  // ventilation W-L par mode — affichée seulement si la session mélange ≥2 modes (sinon =global).
+  const byMode = new Map<number, { w: number; l: number }>();
+  for (const g of games) {
+    const k = g.m.mode ?? -999;
+    const e = byMode.get(k) ?? { w: 0, l: 0 };
+    g.won ? e.w++ : e.l++;
+    byMode.set(k, e);
+  }
+  const modeBreakdown = [...byMode.entries()].sort((a, b) => b[1].w + b[1].l - (a[1].w + a[1].l));
+
   // heroes played tonight, W-L
   const byHero = new Map<string, { w: number; l: number }>();
   for (const g of games) {
@@ -96,6 +106,21 @@ export function Queue() {
         <div className="mono" style={{ fontSize: 13, color: "var(--text-2)", marginTop: 4 }}>
           {streakLabel(streak)} · {games.length} games · {wr}% win rate
         </div>
+        {modeBreakdown.length >= 2 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 8 }}>
+            {modeBreakdown.map(([mode, r]) => {
+              const mb = modeBadge(mode);
+              return (
+                <span key={mode} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 14 }}>
+                  <span className={`bdg ${mb.cls}`}>{mb.short}</span>
+                  <span className="mono">
+                    <span style={{ color: "var(--win)" }}>{r.w}</span>–<span style={{ color: "var(--loss)" }}>{r.l}</span>
+                  </span>
+                </span>
+              );
+            })}
+          </div>
+        )}
 
         {/* rangée de pastilles W/L (chronologique → on voit la série/le momentum d'un coup d'œil) */}
         {chrono.length > 0 && (
