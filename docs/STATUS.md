@@ -105,6 +105,27 @@
   surtout `POSTGRES_PASSWORD` (le volume est initialisé avec).
 - **Jalon 6 : prêt à publier** — voir ci-dessous.
 
+## Widget + front : passe du 2026-06-13 (vérifié live)
+- **Widget OBS = perspective opérateur** : `?me=<nom>` (ex. `/widget?me=matella`) → V/D depuis
+  ta team, KDA k/a/d, KP, mode, durée (avant : `players[0]` + « équipe X gagne » générique).
+  KDA ajouté à `/api/matches`. Conforme maquette écran 10.
+- **Codes de mode corrigés** (bug réel) : la table front était décalée (Storm League affichait
+  « HL », QM « — »). Vérifié sur l'archive : **50091=SL, 50101=ARAM, -1=Custom** dominent.
+  Plus de badge « — ».
+- **Filtres façon SotS** sur Matchs : pills mode + dropdowns **carte** (20) + **héros** (91),
+  tri `played_at DESC` (déjà en place). Export CSV suit les filtres.
+- **Fix cache SPA (cause racine)** : `index.html` était servi **sans `no-cache`** → après chaque
+  redeploy le navigateur restait sur un bundle périmé = **page blanche**. Corrigé (ServeDir ne
+  sert plus l'index ; handler SPA en `no-cache`). Même classe de bug que HotsPatchNotes.
+  ⚠️ Process : un échec `tsc` faisait échouer `npm run build` **silencieusement** (l'ancien
+  bundle restait) — toujours vérifier `✓ built` au déploiement.
+- **Reverse proxy + ntfy** : runbook `docs/runbooks/2026-06-13-reverse-proxy-et-ntfy.md`
+  (le box utilise **Nginx Proxy Manager**, pas nginx-fichiers ; ntfy `:8093`). Reste opérateur :
+  s'abonner au topic ntfy pour recevoir les briefs.
+- **Connu / refinements** : identité opérateur globale (Session/Matchs/Héros montrent encore
+  `players[0]`/agrégat, pas toi — le widget a `?me=`) ; phrase Jarvis dans le widget ; deltas vs
+  moyenne. + résiduels jalon 4 (ligues, export JSON, dim_talents).
+
 ## Jalon 4 — compléments faits (2026-06-12, après le socle)
 `dim_heroes` répliqué depuis HotsPatchNotes au démarrage (90 héros/6 univers) → **anneaux
 d'univers réels** sur les avatars ; **timeline uPlot** d'avantage de niveau sur le détail de
