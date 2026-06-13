@@ -8,6 +8,7 @@ import { Maps } from "./pages/Maps";
 import { Player } from "./pages/Player";
 import { Widget } from "./pages/Widget";
 import { Queue } from "./pages/Queue";
+import { Ticker } from "./pages/Ticker";
 import { NowPlaying } from "./pages/NowPlaying";
 import { Trends } from "./pages/Trends";
 import { Leagues } from "./pages/Leagues";
@@ -19,6 +20,7 @@ export default function App() {
       {/* sources OBS standalone (fond transparent, sans topbar) */}
       <Route path="widget" element={<Widget />} />
       <Route path="queue" element={<Queue />} />
+      <Route path="ticker" element={<Ticker />} />
       <Route path="now-playing" element={<NowPlaying />} />
       <Route element={<Layout />}>
         <Route index element={<Dashboard />} />
