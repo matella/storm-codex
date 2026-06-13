@@ -1,30 +1,51 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { fetchMatches, modeBadge, fmtTime, fmtDur, type MatchSummary } from "../api";
+import { fetchMatches, fetchHeroes, modeBadge, fmtTime, fmtDur, type MatchSummary } from "../api";
 import { Avatar } from "../components/Avatar";
 
+// Codes officiels (storm-stats GameMode). Brawls/IA sont rejetés au parse → on liste les modes réels.
 const MODE_FILTERS: [string, number | undefined][] = [
   ["Tous", undefined],
-  ["Storm League", 50111],
-  ["Hero League", 50091],
-  ["QM", 50051],
-  ["ARAM", 50101],
+  ["Storm League", 50091],
+  ["Hero League", 50061],
+  ["Unranked", 50051],
+  ["Team League", 50071],
+  ["QM", 50001],
 ];
 
-function ownHero(m: MatchSummary): { hero: string | null; win: boolean | null; kda: string } {
-  // heuristique : 1er joueur (l'archive est nominative — affinable via le toon propriétaire)
+interface MapStat { map: string; games: number }
+interface HeroStat { hero: string; games: number }
+
+function ownHero(m: MatchSummary): { hero: string | null; win: boolean | null } {
+  // heuristique : 1er joueur (l'archive est nominative — affinable via l'identité opérateur)
   const p = m.players?.[0];
-  return { hero: p?.hero ?? null, win: p?.win ?? null, kda: "" };
+  return { hero: p?.hero ?? null, win: p?.win ?? null };
 }
 
 export function Matches() {
   const [mode, setMode] = useState<number | undefined>(undefined);
+  const [map, setMap] = useState<string>("");
+  const [hero, setHero] = useState<string>("");
   const nav = useNavigate();
+
   const { data, isLoading } = useQuery({
-    queryKey: ["matches", { mode }],
-    queryFn: () => fetchMatches({ mode, limit: 100 }),
+    queryKey: ["matches", { mode, map, hero }],
+    queryFn: () => fetchMatches({ mode, map: map || undefined, hero: hero || undefined, limit: 200 }),
   });
+  // dropdowns peuplés depuis les agrégats (triés par fréquence)
+  const { data: maps } = useQuery({
+    queryKey: ["maps-filter"],
+    queryFn: async () => (await fetch("/api/maps")).json() as Promise<MapStat[]>,
+    staleTime: Infinity,
+  });
+  const { data: heroes } = useQuery({ queryKey: ["heroes-filter"], queryFn: fetchHeroes, staleTime: Infinity });
+
+  const csv = `/api/matches.csv?${new URLSearchParams({
+    ...(mode != null ? { mode: String(mode) } : {}),
+    ...(map ? { map } : {}),
+    ...(hero ? { hero } : {}),
+  })}`;
 
   return (
     <>
@@ -36,17 +57,23 @@ export function Matches() {
               {label}
             </span>
           ))}
-          <a
-            href={`/api/matches.csv${mode != null ? `?mode=${mode}` : ""}`}
-            className="pill"
-            style={{ marginLeft: "auto" }}
-          >
-            export CSV ↓
-          </a>
+          <select className="filter-select" value={map} onChange={(e) => setMap(e.target.value)}>
+            <option value="">Toutes les cartes</option>
+            {maps?.slice().sort((a, b) => a.map.localeCompare(b.map)).map((mp) => (
+              <option key={mp.map} value={mp.map}>{mp.map}</option>
+            ))}
+          </select>
+          <select className="filter-select" value={hero} onChange={(e) => setHero(e.target.value)}>
+            <option value="">Tous les héros</option>
+            {heroes?.slice().sort((a, b) => a.hero.localeCompare(b.hero)).map((h) => (
+              <option key={h.hero} value={h.hero}>{h.hero}</option>
+            ))}
+          </select>
+          <a href={csv} className="pill" style={{ marginLeft: "auto" }}>export CSV ↓</a>
           <span style={{ fontSize: 10, color: "var(--kicker)" }}>{data?.length ?? 0} matchs</span>
         </div>
         {isLoading && <div className="empty">chargement…</div>}
-        {data?.length === 0 && <div className="empty">aucun match</div>}
+        {data?.length === 0 && <div className="empty">aucun match pour ce filtre</div>}
         {data?.map((m) => {
           const mb = modeBadge(m.mode);
           const o = ownHero(m);

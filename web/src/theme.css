@@ -71,6 +71,10 @@ a { color: inherit; text-decoration: none; }
 
 .pill { font-size: 11px; color: var(--muted-2); border: 1px solid var(--hairline-strong); border-radius: 12px; padding: 3px 10px; cursor: pointer; user-select: none; }
 .pill.on { color: var(--surface); background: var(--accent); border-color: var(--accent); }
+.filter-select { font-size: 11px; color: var(--muted-2); background: var(--surface);
+  border: 1px solid var(--hairline-strong); border-radius: 12px; padding: 3px 8px;
+  font-family: inherit; cursor: pointer; }
+.filter-select:focus { outline: none; border-color: var(--accent); color: var(--text); }
 
 /* avatar à anneau d'univers */
 .av { border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; flex-shrink: 0; }
