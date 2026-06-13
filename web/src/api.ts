@@ -103,6 +103,7 @@ export function useLiveUpdates(onMatch?: (m: { match_id: number; map?: string })
 // Codes officiels (storm-stats constants.json → GameMode). Les anciennes valeurs étaient
 // décalées (Storm League affichait "HL", QM "—"…).
 const MODE_LABEL: Record<number, { short: string; cls: string }> = {
+  [-1]: { short: "CUSTOM", cls: "b-qm" },
   50001: { short: "QM", cls: "b-qm" },
   50021: { short: "VS IA", cls: "b-qm" },
   50031: { short: "BRAWL", cls: "b-qm" },
@@ -111,6 +112,7 @@ const MODE_LABEL: Record<number, { short: string; cls: string }> = {
   50061: { short: "HL", cls: "b-sl" },
   50071: { short: "TL", cls: "b-sl" },
   50091: { short: "SL", cls: "b-sl" },
+  50101: { short: "ARAM", cls: "b-qm" },
 };
 export function modeBadge(mode: number | null): { short: string; cls: string } {
   return (mode != null && MODE_LABEL[mode]) || { short: "—", cls: "b-qm" };

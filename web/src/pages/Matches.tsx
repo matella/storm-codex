@@ -5,12 +5,13 @@ import { fetchMatches, fetchHeroes, modeBadge, fmtTime, fmtDur, type MatchSummar
 import { Avatar } from "../components/Avatar";
 
 // Codes officiels (storm-stats GameMode). Brawls/IA sont rejetés au parse → on liste les modes réels.
+// Modes réellement présents dans l'archive en tête (SL 50091, ARAM 50101, Custom -1).
 const MODE_FILTERS: [string, number | undefined][] = [
   ["Tous", undefined],
   ["Storm League", 50091],
+  ["ARAM", 50101],
+  ["Custom", -1],
   ["Hero League", 50061],
-  ["Unranked", 50051],
-  ["Team League", 50071],
   ["QM", 50001],
 ];
 
