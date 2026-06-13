@@ -15,7 +15,7 @@ export function Widget() {
   useLiveUpdates(() => refetch());
 
   const m = data?.[0];
-  if (!m) return <OverlayFrame anchor="top-left"><div /></OverlayFrame>;
+  if (!m) return <OverlayFrame anchor="top-right" top={250}><div /></OverlayFrame>;
 
   const players = m.players ?? [];
   const me = pickOperator(players, new URLSearchParams(location.search).get("me"));
@@ -36,7 +36,7 @@ export function Widget() {
   const mapBg = mapImage(m.map);
 
   return (
-    <OverlayFrame anchor="top-left">
+    <OverlayFrame anchor="top-right" top={250}>
       <div
         style={{
           maxWidth: 360,

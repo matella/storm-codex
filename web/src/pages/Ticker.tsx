@@ -28,7 +28,7 @@ export function Ticker() {
   const todays = opGames.filter((g) => g.day === today);
   const games = todays.length ? todays : opGames[0] ? opGames.filter((g) => g.day === opGames[0].day) : [];
 
-  if (!games.length) return <OverlayFrame anchor="top-left"><div /></OverlayFrame>;
+  if (!games.length) return <OverlayFrame anchor="top-right" top={250}><div /></OverlayFrame>;
 
   const wins = games.filter((g) => g.won).length;
   const losses = games.length - wins;
@@ -36,7 +36,7 @@ export function Ticker() {
   const last = games[0];
 
   return (
-    <OverlayFrame anchor="top-left">
+    <OverlayFrame anchor="top-right" top={250}>
       <div
         style={{
           display: "inline-flex",
