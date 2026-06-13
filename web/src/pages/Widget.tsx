@@ -62,7 +62,7 @@ export function Widget() {
         <Avatar hero={me?.hero ?? null} size={44} />
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 7 }}>
-            <span style={{ color: won ? "var(--win)" : "var(--loss)" }}>{won ? "VICTOIRE" : "DÉFAITE"}</span>
+            <span style={{ color: won ? "var(--win)" : "var(--loss)" }}>{won ? "VICTORY" : "DEFEAT"}</span>
             <span style={{ color: "var(--text-2)", fontWeight: 400 }}>· {me?.hero ?? "?"} · {m.map}</span>
           </div>
           <div className="mono" style={{ fontSize: 12, color: "#cfd3e0", marginTop: 3 }}>
