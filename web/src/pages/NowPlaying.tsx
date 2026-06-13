@@ -33,6 +33,10 @@ export function NowPlaying() {
 
   const pct = t.durationMs ? Math.min(100, (prog / t.durationMs) * 100) : 0;
 
+  // Caché quand rien ne joue OU en pause (t.playing = authentifié && piste && isPlaying) : on rend
+  // un cadre vide → la source OBS devient invisible plutôt que d'afficher « Music — off ».
+  if (!t.playing) return <OverlayFrame anchor="bottom-right" pad={36}><span /></OverlayFrame>;
+
   return (
     <OverlayFrame anchor="bottom-right" pad={36}>
       <style>{`@keyframes eq{0%,100%{height:3px}50%{height:13px}}`}</style>
@@ -59,47 +63,35 @@ export function NowPlaying() {
         <div style={{ flex: 1, minWidth: 0 }}>
           {/* entête : NOW PLAYING + égaliseur */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-            <span className="kick" style={{ fontSize: 10, color: "var(--accent)" }}>
-              {t.playing ? "NOW PLAYING" : data?.authenticated ? "PAUSED" : "MUSIC"}
+            <span className="kick" style={{ fontSize: 10, color: "var(--accent)" }}>NOW PLAYING</span>
+            <span style={{ display: "inline-flex", alignItems: "flex-end", gap: 2, height: 13 }}>
+              {[0, 1, 2, 3].map((i) => (
+                <span key={i} style={{ width: 3, background: "var(--accent)", borderRadius: 1, animation: `eq .9s ease-in-out ${i * 0.18}s infinite` }} />
+              ))}
             </span>
-            {t.playing && (
-              <span style={{ display: "inline-flex", alignItems: "flex-end", gap: 2, height: 13 }}>
-                {[0, 1, 2, 3].map((i) => (
-                  <span key={i} style={{ width: 3, background: "var(--accent)", borderRadius: 1, animation: `eq .9s ease-in-out ${i * 0.18}s infinite` }} />
-                ))}
-              </span>
-            )}
             <span className="kick" style={{ fontSize: 9, marginLeft: "auto" }}>ORPHEUS</span>
           </div>
 
-          {t.playing || t.title ? (
-            <>
-              <div style={{ fontSize: 17, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: 1.25 }}>{t.title}</div>
-              {t.artist && (
-                <div style={{ fontSize: 13.5, color: "var(--text-2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 1 }}>{t.artist}</div>
-              )}
-              {t.album && (
-                <div style={{ fontSize: 11, color: "var(--text-3, #7c8194)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 1 }}>{t.album}</div>
-              )}
-
-              {/* barre de progression */}
-              {t.durationMs ? (
-                <div style={{ marginTop: 10 }}>
-                  <div style={{ height: 4, borderRadius: 2, background: "rgba(255,255,255,.12)", overflow: "hidden" }}>
-                    <div style={{ width: `${pct}%`, height: "100%", background: "var(--accent)", borderRadius: 2, transition: "width .5s linear" }} />
-                  </div>
-                  <div className="mono" style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-2)", marginTop: 4 }}>
-                    <span>{fmt(prog)}</span>
-                    <span>{fmt(t.durationMs)}</span>
-                  </div>
-                </div>
-              ) : null}
-            </>
-          ) : (
-            <div style={{ fontSize: 14, color: "var(--text-2)" }}>
-              {data?.authenticated ? "Nothing playing" : "Music — off"}
-            </div>
+          <div style={{ fontSize: 17, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: 1.25 }}>{t.title}</div>
+          {t.artist && (
+            <div style={{ fontSize: 13.5, color: "var(--text-2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 1 }}>{t.artist}</div>
           )}
+          {t.album && (
+            <div style={{ fontSize: 11, color: "var(--text-3, #7c8194)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 1 }}>{t.album}</div>
+          )}
+
+          {/* barre de progression */}
+          {t.durationMs ? (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ height: 4, borderRadius: 2, background: "rgba(255,255,255,.12)", overflow: "hidden" }}>
+                <div style={{ width: `${pct}%`, height: "100%", background: "var(--accent)", borderRadius: 2, transition: "width .5s linear" }} />
+              </div>
+              <div className="mono" style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-2)", marginTop: 4 }}>
+                <span>{fmt(prog)}</span>
+                <span>{fmt(t.durationMs)}</span>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </OverlayFrame>
