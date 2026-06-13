@@ -103,6 +103,8 @@ async fn run() -> Result<(), String> {
         .route("/api/dim/heroes", get(read::dim_heroes))
         .route("/api/matches.csv", get(read::matches_csv))
         .route("/api/trends", get(manage::trends))
+        .route("/api/settings", get(manage::get_settings))
+        .route("/api/admin/settings", axum::routing::put(manage::put_settings))
         .route("/api/teams", get(manage::list_teams).post(manage::create_team))
         .route("/api/teams/{id}", axum::routing::delete(manage::delete_team))
         .route("/api/collections", get(manage::list_collections).post(manage::create_collection))

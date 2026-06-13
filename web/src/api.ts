@@ -152,6 +152,41 @@ export function mapImage(map: string | null): string | null {
   const slug = map.toLowerCase().replace(/['']/g, "").replace(/\s+/g, "-");
   return `/images/battlegrounds/${slug}.png`;
 }
+// ── identité opérateur (réglage app_settings.operator_names) ──────────────────
+let OPERATOR_NAMES: string[] = [];
+export function useSettings() {
+  const q = useQuery({
+    queryKey: ["settings"],
+    queryFn: () => get<{ operator_names?: string[] }>("/api/settings"),
+    staleTime: Infinity,
+  });
+  if (q.data?.operator_names) OPERATOR_NAMES = q.data.operator_names;
+  return q.data;
+}
+export function operatorNames(): string[] {
+  return OPERATOR_NAMES;
+}
+/** Le joueur opérateur dans une partie : `override` (?me=) prioritaire, sinon n'importe lequel
+ *  des noms configurés, sinon le 1er joueur (fallback). Insensible à la casse. */
+export function pickOperator<T extends { name: string | null }>(
+  players: T[],
+  override?: string | null,
+): T | undefined {
+  const candidates = [override, ...OPERATOR_NAMES].filter(Boolean).map((n) => n!.toLowerCase());
+  for (const c of candidates) {
+    const found = players.find((p) => (p.name ?? "").toLowerCase() === c);
+    if (found) return found;
+  }
+  return players[0];
+}
+
+/** Strict : le joueur opérateur si l'un des noms configurés matche, sinon undefined (pas de
+ *  fallback) — pour COMPTER les parties de l'opérateur sans polluer avec un joueur quelconque. */
+export function matchOperator<T extends { name: string | null }>(players: T[]): T | undefined {
+  const names = OPERATOR_NAMES.map((n) => n.toLowerCase());
+  return players.find((p) => names.includes((p.name ?? "").toLowerCase()));
+}
+
 export function initials(name: string | null): string {
   if (!name) return "··";
   return name.slice(0, 2).toUpperCase();

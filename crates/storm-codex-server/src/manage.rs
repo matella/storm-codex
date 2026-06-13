@@ -25,6 +25,57 @@ fn db_err(e: sqlx::Error) -> (StatusCode, Json<J>) {
     (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "db"})))
 }
 
+// ── Réglages (operator_names…) ───────────────────────────────────────────────
+/// GET /api/settings — réglages publics (lecture). Aujourd'hui : `operator_names`.
+pub async fn get_settings(State(s): State<AppState>) -> Result<Json<J>, (StatusCode, Json<J>)> {
+    let v: J = sqlx::query_scalar(
+        "SELECT COALESCE(jsonb_object_agg(key, value), '{}'::jsonb) FROM app_settings",
+    )
+    .fetch_one(&s.db)
+    .await
+    .map_err(db_err)?;
+    Ok(Json(v))
+}
+
+#[derive(Deserialize)]
+pub struct SettingsPatch {
+    operator_names: Vec<String>,
+}
+
+/// PUT /api/admin/settings (admin) — met à jour la liste des noms opérateur.
+pub async fn put_settings(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Json(b): Json<SettingsPatch>,
+) -> (StatusCode, Json<J>) {
+    if !is_admin(&headers, &s) {
+        return forbidden();
+    }
+    // normalise : trim, non vides, dédup en préservant l'ordre
+    let mut names: Vec<String> = Vec::new();
+    for n in b.operator_names {
+        let n = n.trim().to_string();
+        if !n.is_empty() && !names.contains(&n) {
+            names.push(n);
+        }
+    }
+    let value = serde_json::to_value(&names).unwrap_or_else(|_| serde_json::json!([]));
+    match sqlx::query(
+        "INSERT INTO app_settings (key, value) VALUES ('operator_names', $1)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+    )
+    .bind(&value)
+    .execute(&s.db)
+    .await
+    {
+        Ok(_) => (StatusCode::OK, Json(serde_json::json!({"operator_names": names}))),
+        Err(e) => {
+            let (c, j) = db_err(e);
+            (c, j)
+        }
+    }
+}
+
 #[derive(Deserialize)]
 pub struct NewTeam {
     name: String,

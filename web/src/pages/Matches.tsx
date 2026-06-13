@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { fetchMatches, fetchHeroes, modeBadge, fmtTime, fmtDur, mapImage, type MatchSummary } from "../api";
+import { fetchMatches, fetchHeroes, modeBadge, fmtTime, fmtDur, mapImage, pickOperator, type MatchSummary } from "../api";
 import { Avatar } from "../components/Avatar";
 
 // Codes officiels (storm-stats GameMode). Brawls/IA sont rejetés au parse → on liste les modes réels.
@@ -18,8 +18,8 @@ const MODE_FILTERS: [string, number | undefined][] = [
 interface MapStat { map: string; games: number }
 
 function ownHero(m: MatchSummary): { hero: string | null; win: boolean | null } {
-  // heuristique : 1er joueur (l'archive est nominative — affinable via l'identité opérateur)
-  const p = m.players?.[0];
+  // perspective opérateur (operator_names) ; fallback 1er joueur si aucun match
+  const p = pickOperator(m.players ?? []);
   return { hero: p?.hero ?? null, win: p?.win ?? null };
 }
 

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { fetchMatches, modeBadge, fmtDur, mapImage, useLiveUpdates, useDimHeroes, type MatchPlayer } from "../api";
+import { fetchMatches, modeBadge, fmtDur, mapImage, useLiveUpdates, useDimHeroes, useSettings, pickOperator } from "../api";
 import { Avatar } from "../components/Avatar";
 
 /**
@@ -9,7 +9,8 @@ import { Avatar } from "../components/Avatar";
  * dans l'URL de la browser source (ex. /widget?me=matella) ; à défaut, le premier joueur.
  */
 export function Widget() {
-  useDimHeroes(); // peuple le référentiel (portraits + anneaux) — le widget est hors Layout
+  useDimHeroes(); // référentiel portraits + anneaux (widget hors Layout)
+  useSettings(); // operator_names (perspective par défaut sans ?me=)
   const { data, refetch } = useQuery({ queryKey: ["widget-last"], queryFn: () => fetchMatches({ limit: 1 }) });
   useLiveUpdates(() => refetch());
   useEffect(() => {
@@ -75,14 +76,4 @@ export function Widget() {
       </div>
     </div>
   );
-}
-
-/** Le joueur opérateur : match par nom (insensible à la casse) ; sinon le premier joueur. */
-function pickOperator(players: MatchPlayer[], me: string | null): MatchPlayer | undefined {
-  if (me) {
-    const target = me.toLowerCase();
-    const found = players.find((p) => (p.name ?? "").toLowerCase() === target);
-    if (found) return found;
-  }
-  return players[0];
 }

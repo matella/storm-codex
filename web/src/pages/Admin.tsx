@@ -23,11 +23,21 @@ export function Admin() {
     queryFn: async () => (token ? (await adminFetch("/api/admin/uploads", token)).json() : null),
     enabled: !!token,
   });
+  const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: async () => (await fetch("/api/settings")).json() });
   const { data: teams } = useQuery({ queryKey: ["teams"], queryFn: async () => (await fetch("/api/teams")).json() });
   const { data: collections } = useQuery({ queryKey: ["collections"], queryFn: async () => (await fetch("/api/collections")).json() });
 
   const [tokenName, setTokenName] = useState("");
   const [newToken, setNewToken] = useState<string | null>(null);
+  const [opNames, setOpNames] = useState<string | null>(null);
+  // valeur éditable : la saisie locale si touchée, sinon les réglages chargés
+  const opValue: string =
+    opNames ?? ((settings?.operator_names as string[] | undefined) ?? []).join(", ");
+  const saveOperator = async () => {
+    const names = opValue.split(",").map((s) => s.trim()).filter(Boolean);
+    const r = await adminFetch("/api/admin/settings", token, { method: "PUT", body: JSON.stringify({ operator_names: names }) });
+    if (r.ok) qc.invalidateQueries({ queryKey: ["settings"] });
+  };
   const [teamName, setTeamName] = useState("");
   const [collName, setCollName] = useState("");
 
@@ -56,6 +66,22 @@ export function Admin() {
           <input style={{ ...inp, flex: 1 }} type="password" placeholder="ADMIN_TOKEN" value={token} onChange={(e) => setToken(e.target.value)} />
           <span className="muted" style={{ fontSize: 10 }}>{token ? "configuré" : "requis pour les actions"}</span>
         </div>
+      </div>
+
+      <p className="cap">Mon identité (perspective opérateur)</p>
+      <div className="card">
+        <div className="row">
+          <input
+            style={{ ...inp, flex: 1 }}
+            placeholder="mes noms en jeu, séparés par des virgules (ex. matella, MatellaSmurf)"
+            value={opValue}
+            onChange={(e) => setOpNames(e.target.value)}
+          />
+          <span className="pill on" onClick={saveOperator}>enregistrer</span>
+        </div>
+        <div className="row"><span className="muted" style={{ fontSize: 10 }}>
+          Utilisé partout (session, matchs, widget) pour afficher TES stats, et par le brief Jarvis.
+        </span></div>
       </div>
 
       {health && (
