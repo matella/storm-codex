@@ -105,6 +105,20 @@
   surtout `POSTGRES_PASSWORD` (le volume est initialisé avec).
 - **Jalon 6 : prêt à publier** — voir ci-dessous.
 
+## D3 — ligues + export JSON (2026-06-13)
+- **Export JSON** des matchs (suit les filtres) ✅.
+- **Ligues** : regroupement au-dessus des équipes (colonne `teams.league`, migration 0004) ;
+  `GET /api/teams` renvoie la ligue, `PUT /api/teams/{id}` (ré)assigne ; page **Leagues** (nav)
+  groupe les équipes par ligue ; création + assignation dans l'Admin. ✅
+- **Reste** : `dim_talents` (réf. talents depuis HotsPatchNotes → affichage des talents par joueur
+  dans le détail de match) — prochain item.
+
+## Orpheus (musique) — configuré, OAuth en attente (opérateur)
+Creds Spotify en place (`.env` box), Orpheus redémarré, `/api/auth/login` redirige bien vers
+Spotify (PKCE, redirect 127.0.0.1:3010). Reste : l'opérateur autorise via tunnel SSH
+`-L 3010:127.0.0.1:3010` → `http://127.0.0.1:3010/api/auth/login` → Agree. Puis le widget musique
+(intégré au `/queue` + page `/now-playing`) affiche la piste.
+
 ## Scène OBS « entre les games » (2026-06-13, vérifié live)
 - **`/queue`** (browser source, fond transparent, EN) : TONIGHT'S SESSION (W-L, streak, WR),
   sparkline WR, recent games (badges mode + portraits + W/L + KDA), heroes tonight (W-L),
