@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   fetchMatches, modeBadge, useLiveUpdates, useDimHeroes, useSettings,
-  matchOperator, operatorNames, jarvisPhrase, parseTrack,
+  matchOperator, operatorNames, jarvisPhrase, parseTrack, fmtDur,
   type MatchSummary, type MatchPlayer, type NowPlayingResp,
 } from "../api";
 import { Avatar } from "../components/Avatar";
@@ -66,14 +66,19 @@ export function Queue() {
   }
   const heroesTonight = [...byHero.entries()].sort((a, b) => b[1].w + b[1].l - (a[1].w + a[1].l)).slice(0, 4);
 
-  // best game = highest takedowns
-  const best = [...games].sort((a, b) => (b.me.takedowns ?? 0) - (a.me.takedowns ?? 0))[0];
-
-  // win-rate sparkline (cumulative, oldest→newest)
+  // séquence chronologique (oldest→newest) pour la rangée de pastilles W/L
   const chrono = [...games].reverse();
-  const wrSeries: number[] = [];
-  let w = 0;
-  chrono.forEach((g, i) => { if (g.won) w++; wrSeries.push((100 * w) / (i + 1)); });
+
+  // agrégats de session (perspective opérateur) pour le bloc "Session"
+  const n = games.length || 1;
+  const sum = (f: (g: Game) => number) => games.reduce((s, g) => s + f(g), 0);
+  const tK = sum((g) => g.me.kills ?? 0);
+  const tD = sum((g) => g.me.deaths ?? 0);
+  const tTd = sum((g) => g.me.takedowns ?? 0);
+  const tA = Math.max(0, tTd - tK);
+  const kda = tD ? (tK + tA) / tD : tK + tA;
+  const lengths = games.map((g) => g.m.length).filter((x): x is number => x != null);
+  const avgLen = lengths.length ? lengths.reduce((a, b) => a + b, 0) / lengths.length : null;
 
   return (
     <div style={{ width: 1920, height: 1080, display: "grid", gridTemplateColumns: "minmax(0,1.5fr) minmax(0,1fr)", gap: 18, padding: 24, boxSizing: "border-box" }}>
@@ -92,15 +97,27 @@ export function Queue() {
           {streakLabel(streak)} · {games.length} games · {wr}% win rate
         </div>
 
-        {/* win-rate sparkline */}
-        {wrSeries.length >= 2 && (
-          <svg width="100%" height="46" viewBox={`0 0 100 46`} preserveAspectRatio="none" style={{ marginTop: 14 }}>
-            <line x1="0" y1="23" x2="100" y2="23" stroke="var(--hairline)" strokeDasharray="2,2" />
-            <polyline
-              points={wrSeries.map((v, i) => `${(i / (wrSeries.length - 1)) * 100},${46 - (v / 100) * 46}`).join(" ")}
-              fill="none" stroke="var(--win)" strokeWidth="1.5" vectorEffect="non-scaling-stroke"
-            />
-          </svg>
+        {/* rangée de pastilles W/L (chronologique → on voit la série/le momentum d'un coup d'œil) */}
+        {chrono.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 16 }}>
+            {chrono.map((g, i) => {
+              const last = i === chrono.length - 1;
+              return (
+                <span
+                  key={g.m.id}
+                  title={`${g.won ? "W" : "L"} · ${g.m.map}`}
+                  style={{
+                    width: 17,
+                    height: 17,
+                    borderRadius: 5,
+                    background: g.won ? "var(--win)" : "var(--loss)",
+                    opacity: last ? 1 : 0.82,
+                    boxShadow: last ? "0 0 0 2px rgba(255,255,255,.35)" : "none",
+                  }}
+                />
+              );
+            })}
+          </div>
         )}
 
         {/* recent games */}
@@ -140,15 +157,16 @@ export function Queue() {
             ))}
             {heroesTonight.length === 0 && <span style={{ fontSize: 13, color: "var(--text-2)" }}>—</span>}
           </div>
-          {best && (
+          {games.length > 0 && (
             <div style={{ flex: 1 }}>
-              <div className="kick" style={{ margin: "0 0 8px", fontSize: 12 }}>Best game</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                <Avatar hero={best.me.hero} size={32} />
-                <div className="mono" style={{ fontSize: 14, color: "#cfd3e0" }}>
-                  {best.me.hero}<br />
-                  {best.me.kills ?? 0}/{Math.max(0, (best.me.takedowns ?? 0) - (best.me.kills ?? 0))}/{best.me.deaths ?? 0}
-                </div>
+              <div className="kick" style={{ margin: "0 0 8px", fontSize: 12 }}>Session</div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                <span className="mono" style={{ fontSize: 28, fontWeight: 700, color: kda >= 3 ? "var(--win)" : "#cfd3e0" }}>{kda.toFixed(1)}</span>
+                <span className="muted" style={{ fontSize: 12 }}>KDA ratio</span>
+              </div>
+              <div className="mono" style={{ fontSize: 13, color: "var(--text-2)", marginTop: 8, lineHeight: 1.8 }}>
+                <div>avg <span style={{ color: "#cfd3e0" }}>{(tK / n).toFixed(1)}/{(tA / n).toFixed(1)}/{(tD / n).toFixed(1)}</span> per game</div>
+                <div>{tTd} takedowns{avgLen != null && <> · avg {fmtDur(avgLen)}</>}</div>
               </div>
             </div>
           )}

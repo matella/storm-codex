@@ -130,20 +130,41 @@ const UNIVERSE_COLOR: Record<string, string> = {
   Nexus: "var(--u-nexus)",
 };
 
-/** Cache module-level peuplé par useDimHeroes — universeColor est synchrone (appelé par Avatar). */
+/** Clé de jointure tolérante héros : HotsPatchNotes nomme sans ponctuation et inconstamment sur
+ *  « The » (`ETC`, `LiMing`, `LostVikings`, `TheButcher`), alors que le parser garde `E.T.C.`,
+ *  `Li-Ming`, `The Lost Vikings`… On normalise les deux : sans accents, alphanumérique seul,
+ *  « the » initial retiré. Ainsi tous les héros composés retrouvent leur portrait/univers. */
+export function heroKey(s: string): string {
+  return s
+    .normalize("NFD").replace(/[̀-ͯ]/g, "") // accents
+    .toLowerCase().replace(/[^a-z0-9]/g, "")          // ponctuation/espaces
+    .replace(/^the/, "");                             // article initial inconstant
+}
+
+/** Caches module-level peuplés par useDimHeroes — universeColor/heroIcon sont synchrones (Avatar).
+ *  DIM_IDX indexe par clé normalisée pour résoudre les noms composés. */
 let DIM: DimHeroes = {};
+let DIM_IDX: DimHeroes = {};
 export function useDimHeroes() {
   const q = useQuery({ queryKey: ["dim-heroes"], queryFn: () => get<DimHeroes>("/api/dim/heroes"), staleTime: Infinity });
-  if (q.data) DIM = q.data;
+  if (q.data && q.data !== DIM) {
+    DIM = q.data;
+    DIM_IDX = {};
+    for (const [name, h] of Object.entries(DIM)) DIM_IDX[heroKey(name)] = h;
+  }
   return q.data;
 }
+function dimHero(hero: string | null): DimHero | undefined {
+  if (!hero) return undefined;
+  return DIM[hero] ?? DIM_IDX[heroKey(hero)];
+}
 export function universeColor(hero: string | null): string {
-  const u = hero ? DIM[hero]?.universe : null;
+  const u = dimHero(hero)?.universe;
   return (u && UNIVERSE_COLOR[u]) || "var(--u-nexus)";
 }
 /** Portrait du héros (vendorisé, servi sur /images) — null si inconnu (→ fallback initiales). */
 export function heroIcon(hero: string | null): string | null {
-  return (hero && DIM[hero]?.icon) || null;
+  return dimHero(hero)?.icon || null;
 }
 
 // ── référentiel talents (dim_talents) : talentTreeId → nom/tier/héros ─────────
