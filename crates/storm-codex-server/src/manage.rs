@@ -223,12 +223,32 @@ pub async fn delete_collection(
 
 /// GET /api/trends — winrate & parties agrégés par build (proxy de patch), récents d'abord.
 pub async fn trends(State(s): State<AppState>) -> Result<Json<J>, (StatusCode, Json<J>)> {
+    // Par build HotS (= patch) : période jouée (first/last_seen), total parties, durée moyenne,
+    // et la perspective opérateur (mes parties + mes victoires) via app_settings.operator_names.
     let v: J = sqlx::query_scalar(
-        "SELECT COALESCE(jsonb_agg(t ORDER BY t.build DESC), '[]'::jsonb) FROM (
-            SELECT build, count(*) AS games,
-                   count(*) FILTER (WHERE winner = 0) AS blue_wins,
-                   round(avg(length)::numeric, 0) AS avg_length
-            FROM matches WHERE build IS NOT NULL GROUP BY build) t",
+        "WITH ops AS (
+            SELECT lower(jsonb_array_elements_text(value)) AS name
+            FROM app_settings WHERE key = 'operator_names'
+         )
+         SELECT COALESCE(jsonb_agg(t ORDER BY t.last_seen DESC NULLS LAST, t.build DESC), '[]'::jsonb)
+         FROM (
+            SELECT m.build,
+                   count(*) AS games,
+                   count(*) FILTER (WHERE m.winner = 0) AS blue_wins,
+                   round(avg(m.length)::numeric, 0) AS avg_length,
+                   min(m.played_at) AS first_seen,
+                   max(m.played_at) AS last_seen,
+                   count(mp.win) AS my_games,
+                   count(*) FILTER (WHERE mp.win) AS my_wins
+            FROM matches m
+            LEFT JOIN LATERAL (
+                SELECT p.win FROM match_players p
+                WHERE p.match_id = m.id AND lower(p.name) IN (SELECT name FROM ops)
+                LIMIT 1
+            ) mp ON true
+            WHERE m.build IS NOT NULL
+            GROUP BY m.build
+         ) t",
     )
     .fetch_one(&s.db)
     .await
