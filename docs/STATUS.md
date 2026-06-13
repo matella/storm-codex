@@ -239,10 +239,16 @@ Le développement est essentiellement terminé (jalons 0→5 livrés + vérifié
 **C. Jalon 6 — publication (action crates.io opérateur)**
 - `cargo publish` storm-replay puis storm-stats ; repos GitHub publics. `--dry-run` validé, MIT en place.
 
-**D. Refinements optionnels (qualité, non bloquants)**
-- Identité opérateur globale (Session/Héros montrent `players[0]`/agrégat, pas toi — le widget a `?me=`).
-- Phrase Jarvis dans le widget OBS ; deltas vs moyenne dans le widget.
-- Résiduels jalon 4 : ligues au-dessus des équipes, export JSON, `dim_talents` détaillés.
+**D. Refinements — ✅ LIVRÉS (2026-06-13)**
+- ✅ Identité opérateur globale (réglage `operator_names` multi-comptes + `pickOperator`/`matchOperator`
+  partout : Session, Matches, widget, brief Jarvis).
+- ✅ Phrase Jarvis dans le widget OBS (répertoire déterministe FR, voix majordome).
+- ✅ Résiduels jalon 4 : **ligues** (page /leagues + assignation Admin), **export CSV/JSON**,
+  **`dim_talents`** (référentiel 1918 talents synchronisé depuis HotsPatchNotes → builds nommés
+  par joueur dans la fiche de match ; icônes non servies par HotsPatchNotes → texte en V1).
+- ✅ Portraits héros + fonds de carte vendorisés ; UI **entièrement en anglais**.
+- ✅ Scène OBS `/queue` (1920×1080, panneau session + slots cam/game encadrés + musique intégrée) ;
+  widget musique `/now-playing` (proxy Orpheus, pochette d'album, forme imbriquée gérée).
 
 ## Jalons (résumé — détail et critères dans la spec)
 0 spike **GO ✅** → 1 storm-replay **✅** → 2 storm-stats **✅** (+ 2.5 cartes ARAM) →
