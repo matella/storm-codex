@@ -48,31 +48,46 @@ Tout est <b>déterministe</b> (lu depuis storm-codex, perspective opérateur, li
   <div class="zone game">
     <div><div class="zlabel">🎮 GAME CAPTURE</div><div class="zsub">menu / queue — « je suis en queue »</div></div>
   </div>
-  <div class="rfill"></div>
+  <!-- bas-droite : widget musique Orpheus (/now-playing), source persistante toutes scènes -->
+  <div class="rfill" style="display:flex;align-items:flex-end;">
+    <div style="width:100%;background:#0e1016;border:1px solid #232636;border-radius:8px;padding:8px 10px;display:flex;align-items:center;gap:8px;">
+      <span style="font-size:14px;">♪</span>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Now playing — track title</div>
+        <div style="font-size:9.5px;color:#8d93a8;">artist · Orpheus</div>
+      </div>
+    </div>
+  </div>
 
   <!-- PANNEAU storm-codex /queue -->
   <div class="panel">
     <div style="display:flex;align-items:baseline;gap:10px;">
-      <span style="font-size:16px;font-weight:600;letter-spacing:.04em;">SESSION DU SOIR</span>
-      <span class="mono" style="margin-left:auto;font-size:17px;"><span style="color:#5DCAA5;">4 V</span> – <span style="color:#F7C1C1;">2 D</span></span>
+      <span style="font-size:16px;font-weight:600;letter-spacing:.04em;">TONIGHT'S SESSION</span>
+      <span class="mono" style="margin-left:auto;font-size:17px;"><span style="color:#5DCAA5;">4W</span> – <span style="color:#F7C1C1;">2L</span></span>
     </div>
-    <div class="mono" style="font-size:11px;color:#8d93a8;margin-top:3px;">série W2 ▲ · 2h08 de jeu · 6 parties · WR soir 67%</div>
+    <div class="mono" style="font-size:11px;color:#8d93a8;margin-top:3px;">W2 streak ▲ · 2h08 played · 6 games · 67% win rate</div>
 
-    <div class="kick" style="margin:16px 0 6px;">Historique</div>
-    <div class="prow" style="font-size:12.5px;"><span class="mono" style="color:#8d93a8;">21:42</span><span class="bdg b-sl">SL</span><span class="av" style="width:22px;height:22px;border-color:#EF9F27;background:#2b2416;"></span><span style="flex:1;">Cursed Hollow</span><span class="bdg b-win">V</span><span class="mono" style="color:#cfd3e0;">2/18/1</span></div>
-    <div class="prow" style="font-size:12.5px;"><span class="mono" style="color:#8d93a8;">21:08</span><span class="bdg b-aram">ARAM</span><span class="av" style="width:22px;height:22px;border-color:#378ADD;background:#16202c;"></span><span style="flex:1;">Silver City</span><span class="bdg b-win">V</span><span class="mono" style="color:#cfd3e0;">9/12/4</span></div>
-    <div class="prow" style="font-size:12.5px;"><span class="mono" style="color:#8d93a8;">20:31</span><span class="bdg b-custom">CUST</span><span class="av" style="width:22px;height:22px;border-color:#E24B4A;background:#2a1c1c;"></span><span style="flex:1;">Tomb of the Spider Queen</span><span class="bdg b-loss">D</span><span class="mono" style="color:#cfd3e0;">5/8/6</span></div>
-    <div class="prow" style="font-size:12.5px;"><span class="mono" style="color:#8d93a8;">19:58</span><span class="bdg b-sl">SL</span><span class="av" style="width:22px;height:22px;border-color:#EF9F27;background:#2b2416;"></span><span style="flex:1;">Alterac Pass</span><span class="bdg b-win">V</span><span class="mono" style="color:#cfd3e0;">7/14/3</span></div>
-    <div class="prow" style="font-size:12.5px;border-bottom:none;"><span class="mono" style="color:#8d93a8;">19:30</span><span class="bdg b-aram">ARAM</span><span class="av" style="width:22px;height:22px;border-color:#D85A30;background:#2b1f16;"></span><span style="flex:1;">Industrial District</span><span class="bdg b-loss">D</span><span class="mono" style="color:#cfd3e0;">11/9/7</span></div>
+    <div class="kick" style="margin:14px 0 4px;">Win rate</div>
+    <svg width="100%" height="26" viewBox="0 0 100 26" preserveAspectRatio="none" style="display:block;">
+      <line x1="0" y1="13" x2="100" y2="13" stroke="#14161e" stroke-dasharray="2,2"/>
+      <polyline points="0,18 20,16 40,20 60,12 80,9 100,7" fill="none" stroke="#5DCAA5" stroke-width="1.5" vector-effect="non-scaling-stroke"/>
+    </svg>
+
+    <div class="kick" style="margin:14px 0 6px;">Recent games</div>
+    <div class="prow" style="font-size:12.5px;"><span class="mono" style="color:#8d93a8;">21:42</span><span class="bdg b-sl">SL</span><span class="av" style="width:22px;height:22px;border-color:#EF9F27;background:#2b2416;"></span><span style="flex:1;">Cursed Hollow</span><span class="bdg b-win">W</span><span class="mono" style="color:#cfd3e0;">2/18/1</span></div>
+    <div class="prow" style="font-size:12.5px;"><span class="mono" style="color:#8d93a8;">21:08</span><span class="bdg b-aram">ARAM</span><span class="av" style="width:22px;height:22px;border-color:#378ADD;background:#16202c;"></span><span style="flex:1;">Silver City</span><span class="bdg b-win">W</span><span class="mono" style="color:#cfd3e0;">9/12/4</span></div>
+    <div class="prow" style="font-size:12.5px;"><span class="mono" style="color:#8d93a8;">20:31</span><span class="bdg b-custom">CUST</span><span class="av" style="width:22px;height:22px;border-color:#E24B4A;background:#2a1c1c;"></span><span style="flex:1;">Tomb of the Spider Queen</span><span class="bdg b-loss">L</span><span class="mono" style="color:#cfd3e0;">5/8/6</span></div>
+    <div class="prow" style="font-size:12.5px;"><span class="mono" style="color:#8d93a8;">19:58</span><span class="bdg b-sl">SL</span><span class="av" style="width:22px;height:22px;border-color:#EF9F27;background:#2b2416;"></span><span style="flex:1;">Alterac Pass</span><span class="bdg b-win">W</span><span class="mono" style="color:#cfd3e0;">7/14/3</span></div>
+    <div class="prow" style="font-size:12.5px;border-bottom:none;"><span class="mono" style="color:#8d93a8;">19:30</span><span class="bdg b-aram">ARAM</span><span class="av" style="width:22px;height:22px;border-color:#D85A30;background:#2b1f16;"></span><span style="flex:1;">Industrial District</span><span class="bdg b-loss">L</span><span class="mono" style="color:#cfd3e0;">11/9/7</span></div>
 
     <div style="display:flex;gap:24px;margin-top:16px;">
       <div style="flex:1;">
-        <div class="kick" style="margin:0 0 5px;">Meilleure partie</div>
+        <div class="kick" style="margin:0 0 5px;">Best game</div>
         <div class="mono" style="font-size:12px;color:#cfd3e0;">Muradin · Cursed Hollow<br>2/18/1 <span class="bdg b-custom" style="margin-left:4px;">MVP</span></div>
       </div>
       <div style="flex:1;">
-        <div class="kick" style="margin:0 0 5px;">Patch en cours · Nexus Codex</div>
-        <div class="mono" style="font-size:12px;color:#cfd3e0;">11 mai<br><span style="color:#C0DD97;">Muradin BUFF</span> · <span style="color:#F09595;">Tychus NERF</span></div>
+        <div class="kick" style="margin:0 0 5px;">Current patch · Nexus Codex</div>
+        <div class="mono" style="font-size:12px;color:#cfd3e0;">May 11<br><span style="color:#C0DD97;">Muradin BUFF</span> · <span style="color:#F09595;">Tychus NERF</span></div>
       </div>
     </div>
 
@@ -86,7 +101,7 @@ Tout est <b>déterministe</b> (lu depuis storm-codex, perspective opérateur, li
 <p class="note">
 1. <b>Score de la soirée</b> : V–D du jour, série en cours, durée, WR du soir.<br>
 2. <b>Historique</b> des dernières parties : heure, <b>badge de mode</b> (SL / ARAM / CUSTOM / QM…), portrait du héros, carte, V/D, KDA.<br>
-3. <b>Meilleure partie</b> de la session (meilleur KDA / MVP).<br>
+3. <b>Best game</b> de la session (meilleur KDA / MVP).<br>
 4. <b>Patch en cours</b> tiré de <b>Nexus Codex</b> (buffs/nerfs du moment — touche HotS unique, déjà dans nos données).<br>
 5. <b>Phrase Jarvis</b> (déterministe, voix FR) en pied.<br>
 <b>Autres idées possibles</b> (à activer si tu veux) : héros joués ce soir avec leur W-L · carte la plus jouée du soir ·
