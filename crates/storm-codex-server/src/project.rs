@@ -5,6 +5,7 @@
 use chrono::{DateTime, Utc};
 use serde_json::{Map, Value as J};
 use sqlx::PgPool;
+use std::collections::HashMap;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
@@ -22,6 +23,23 @@ fn gs_i(p: &J, k: &str) -> Option<i64> {
         .and_then(|g| g.get(k))
         .and_then(J::as_f64)
         .map(|v| v as i64)
+}
+
+/// Héros réellement joué, dérivé des talents via `dim_talents`. Locale-indépendant et immunisé au
+/// shuffle ARAM (où l'attribut 4002 lu par le parser peut être un des héros *proposés*, pas celui
+/// joué — cf. talents de Johanna stockés alors que `hero`="D.Va"). Vote majoritaire : un talent
+/// générique ambigu ne peut pas l'emporter sur les talents spécifiques du héros. `None` si aucun
+/// talent n'est résoluble (joueur sans talent, ou référentiel `dim_talents` vide/incomplet) →
+/// l'appelant garde alors le `hero` du parser.
+fn talent_hero(p: &J, lut: &HashMap<String, String>) -> Option<String> {
+    let talents = p.get("talents").and_then(J::as_object)?;
+    let mut tally: HashMap<&str, u32> = HashMap::new();
+    for tid in talents.values().filter_map(J::as_str) {
+        if let Some(h) = lut.get(tid) {
+            *tally.entry(h.as_str()).or_default() += 1;
+        }
+    }
+    tally.into_iter().max_by_key(|(_, n)| *n).map(|(h, _)| h.to_string())
 }
 
 /// `true` si l'erreur est un deadlock (40P01) ou un échec de sérialisation (40001) — transitoire,
@@ -110,7 +128,48 @@ async fn project_once(
     .fetch_one(&mut *tx)
     .await?;
 
+    // Correction héros (cf. talent_hero) : on résout le héros joué via dim_talents pour tous les
+    // talents du match en une requête. Best-effort — référentiel vide → LUT vide → on garde le
+    // héros du parser.
+    let talent_ids: Vec<String> = players
+        .values()
+        .filter_map(|p| p.get("talents").and_then(J::as_object))
+        .flat_map(|t| t.values().filter_map(J::as_str).map(str::to_owned))
+        .collect();
+    let talent_lut: HashMap<String, String> = if talent_ids.is_empty() {
+        HashMap::new()
+    } else {
+        sqlx::query_as::<_, (String, String)>(
+            "SELECT tree_id, hero_id FROM dim_talents WHERE tree_id = ANY($1)",
+        )
+        .bind(&talent_ids)
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .collect()
+    };
+
     for (toon, p) in players {
+        // héros joué (talents) prioritaire ; sinon le héros du parser.
+        let parser_hero = p.get("hero").and_then(J::as_str);
+        let played = talent_hero(p, &talent_lut);
+        let hero: Option<&str> = played.as_deref().or(parser_hero);
+        // si la correction diffère, on réécrit `hero` dans l'objet stocké (data) pour que la fiche
+        // de match — qui relit `data` — concorde avec la colonne ; trace l'original corrigé.
+        let fixed;
+        let p_stored: &J = match &played {
+            Some(h) if Some(h.as_str()) != parser_hero => {
+                let mut c = p.clone();
+                if let Some(obj) = c.as_object_mut() {
+                    obj.insert("heroCorrectedFrom".into(), p.get("hero").cloned().unwrap_or(J::Null));
+                    obj.insert("hero".into(), J::from(h.clone()));
+                }
+                fixed = c;
+                &fixed
+            }
+            _ => p,
+        };
         sqlx::query(
             "INSERT INTO match_players (match_id, toon_handle, name, hero, team, win, hero_level,
                 kills, takedowns, deaths, hero_damage, healing, experience, data)
@@ -119,7 +178,7 @@ async fn project_once(
         .bind(match_id)
         .bind(toon)
         .bind(p.get("name").and_then(J::as_str))
-        .bind(p.get("hero").and_then(J::as_str))
+        .bind(hero)
         .bind(p.get("team").and_then(J::as_i64).map(|v| v as i32))
         .bind(p.get("win").and_then(J::as_bool))
         .bind(p.get("heroLevel").and_then(J::as_i64).map(|v| v as i32))
@@ -129,7 +188,7 @@ async fn project_once(
         .bind(gs_i(p, "HeroDamage"))
         .bind(gs_i(p, "Healing"))
         .bind(gs_i(p, "ExperienceContribution"))
-        .bind(p)
+        .bind(p_stored)
         .execute(&mut *tx)
         .await?;
     }
