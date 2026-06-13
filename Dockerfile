@@ -34,6 +34,7 @@ COPY --from=web /web/dist /app/web
 ENV WEB_DIR=/app/web \
     ARCHIVE_DIR=/data/archive \
     RAW_CACHE_DIR=/data/raw-cache \
+    IMAGES_DIR=/data/images \
     BIND_ADDR=0.0.0.0:8088
 EXPOSE 8088
 # health : /api/health renvoie 200 si la DB répond
