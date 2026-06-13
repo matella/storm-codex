@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { fetchMatches, modeBadge, fmtDur, mapImage, useLiveUpdates, type MatchPlayer } from "../api";
+import { fetchMatches, modeBadge, fmtDur, mapImage, useLiveUpdates, useDimHeroes, type MatchPlayer } from "../api";
 import { Avatar } from "../components/Avatar";
 
 /**
@@ -9,6 +9,7 @@ import { Avatar } from "../components/Avatar";
  * dans l'URL de la browser source (ex. /widget?me=matella) ; à défaut, le premier joueur.
  */
 export function Widget() {
+  useDimHeroes(); // peuple le référentiel (portraits + anneaux) — le widget est hors Layout
   const { data, refetch } = useQuery({ queryKey: ["widget-last"], queryFn: () => fetchMatches({ limit: 1 }) });
   useLiveUpdates(() => refetch());
   useEffect(() => {
