@@ -107,7 +107,7 @@ async fn run() -> Result<(), String> {
         .route("/api/settings", get(manage::get_settings))
         .route("/api/admin/settings", axum::routing::put(manage::put_settings))
         .route("/api/teams", get(manage::list_teams).post(manage::create_team))
-        .route("/api/teams/{id}", axum::routing::delete(manage::delete_team))
+        .route("/api/teams/{id}", axum::routing::delete(manage::delete_team).put(manage::update_team))
         .route("/api/collections", get(manage::list_collections).post(manage::create_collection))
         .route("/api/collections/{id}", axum::routing::delete(manage::delete_collection))
         .route("/api/admin/tokens", post(admin::create_token))

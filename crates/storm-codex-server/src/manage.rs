@@ -81,13 +81,15 @@ pub struct NewTeam {
     name: String,
     #[serde(default)]
     roster: Vec<String>,
+    #[serde(default)]
+    league: Option<String>,
 }
 
-/// GET /api/teams
+/// GET /api/teams — inclut la ligue (regroupement).
 pub async fn list_teams(State(s): State<AppState>) -> Result<Json<J>, (StatusCode, Json<J>)> {
     let v: J = sqlx::query_scalar(
-        "SELECT COALESCE(jsonb_agg(jsonb_build_object('id',id,'name',name,'roster',roster)
-         ORDER BY name), '[]'::jsonb) FROM teams",
+        "SELECT COALESCE(jsonb_agg(jsonb_build_object('id',id,'name',name,'roster',roster,
+         'league',league) ORDER BY league NULLS LAST, name), '[]'::jsonb) FROM teams",
     )
     .fetch_one(&s.db)
     .await
@@ -105,17 +107,43 @@ pub async fn create_team(
         return forbidden();
     }
     let roster = serde_json::to_value(&b.roster).unwrap_or_else(|_| serde_json::json!([]));
+    let league = b.league.as_deref().map(str::trim).filter(|s| !s.is_empty());
     match sqlx::query_scalar::<_, i64>(
-        "INSERT INTO teams (name, roster) VALUES ($1, $2) RETURNING id",
+        "INSERT INTO teams (name, roster, league) VALUES ($1, $2, $3) RETURNING id",
     )
     .bind(&b.name)
     .bind(&roster)
+    .bind(league)
     .fetch_one(&s.db)
     .await
     {
         Ok(id) => (StatusCode::CREATED, Json(serde_json::json!({"id": id}))),
         Err(e) => db_err(e),
     }
+}
+
+#[derive(Deserialize)]
+pub struct TeamPatch {
+    league: Option<String>,
+}
+
+/// PUT /api/teams/{id} (admin) — (ré)assigne la ligue d'une équipe.
+pub async fn update_team(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+    Json(b): Json<TeamPatch>,
+) -> (StatusCode, Json<J>) {
+    if !is_admin(&headers, &s) {
+        return forbidden();
+    }
+    let league = b.league.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let _ = sqlx::query("UPDATE teams SET league = $2 WHERE id = $1")
+        .bind(id)
+        .bind(league)
+        .execute(&s.db)
+        .await;
+    (StatusCode::OK, Json(serde_json::json!({"updated": id})))
 }
 
 /// DELETE /api/teams/{id} (admin)

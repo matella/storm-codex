@@ -39,6 +39,7 @@ export function Admin() {
     if (r.ok) qc.invalidateQueries({ queryKey: ["settings"] });
   };
   const [teamName, setTeamName] = useState("");
+  const [teamLeague, setTeamLeague] = useState("");
   const [collName, setCollName] = useState("");
 
   const createToken = async () => {
@@ -46,8 +47,12 @@ export function Admin() {
     if (r.ok) { setNewToken((await r.json()).token); setTokenName(""); }
   };
   const createTeam = async () => {
-    await adminFetch("/api/teams", token, { method: "POST", body: JSON.stringify({ name: teamName, roster: [] }) });
-    setTeamName(""); qc.invalidateQueries({ queryKey: ["teams"] });
+    await adminFetch("/api/teams", token, { method: "POST", body: JSON.stringify({ name: teamName, roster: [], league: teamLeague || null }) });
+    setTeamName(""); setTeamLeague(""); qc.invalidateQueries({ queryKey: ["teams"] });
+  };
+  const setLeague = async (id: number, league: string) => {
+    await adminFetch(`/api/teams/${id}`, token, { method: "PUT", body: JSON.stringify({ league: league || null }) });
+    qc.invalidateQueries({ queryKey: ["teams"] });
   };
   const createColl = async () => {
     await adminFetch("/api/collections", token, { method: "POST", body: JSON.stringify({ name: collName, match_ids: [] }) });
@@ -109,10 +114,14 @@ export function Admin() {
       <div className="card">
         <div className="row">
           <input style={inp} placeholder="team name" value={teamName} onChange={(e) => setTeamName(e.target.value)} />
+          <input style={inp} placeholder="league (optional)" value={teamLeague} onChange={(e) => setTeamLeague(e.target.value)} />
           <span className="pill on" onClick={createTeam}>add</span>
         </div>
         {(teams ?? []).map((t: any) => (
-          <div key={t.id} className="row"><span>{t.name}</span><span className="muted" style={{ marginLeft: "auto", fontSize: 10 }}>{(t.roster ?? []).length} members</span>
+          <div key={t.id} className="row"><span>{t.name}</span>
+            <input style={{ ...inp, marginLeft: "auto", fontSize: 11, width: 120 }} placeholder="league"
+                   defaultValue={t.league ?? ""} onBlur={(e) => setLeague(t.id, e.target.value)} />
+            <span className="muted" style={{ fontSize: 10 }}>{(t.roster ?? []).length} members</span>
             <span className="pill" onClick={async () => { await adminFetch(`/api/teams/${t.id}`, token, { method: "DELETE" }); qc.invalidateQueries({ queryKey: ["teams"] }); }}>del.</span>
           </div>
         ))}

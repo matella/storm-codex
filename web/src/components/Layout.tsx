@@ -8,6 +8,7 @@ const TABS: [string, string][] = [
   ["/heroes", "Heroes"],
   ["/maps", "Maps"],
   ["/trends", "Trends"],
+  ["/leagues", "Leagues"],
   ["/admin", "Admin"],
 ];
 

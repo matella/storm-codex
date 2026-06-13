@@ -10,6 +10,7 @@ import { Widget } from "./pages/Widget";
 import { Queue } from "./pages/Queue";
 import { NowPlaying } from "./pages/NowPlaying";
 import { Trends } from "./pages/Trends";
+import { Leagues } from "./pages/Leagues";
 import { Admin } from "./pages/Admin";
 
 export default function App() {
@@ -27,6 +28,7 @@ export default function App() {
         <Route path="heroes" element={<Heroes />} />
         <Route path="maps" element={<Maps />} />
         <Route path="trends" element={<Trends />} />
+        <Route path="leagues" element={<Leagues />} />
         <Route path="admin" element={<Admin />} />
       </Route>
     </Routes>
