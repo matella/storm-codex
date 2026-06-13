@@ -114,8 +114,10 @@
 - **Widget `/widget`** passé en anglais (VICTORY/DEFEAT) — cohérent. Voix Jarvis reste FR (persona).
 - Maquette : `docs/specs/2026-06-13-scene-obs-entre-games-mockup.html` (panneau gauche, cam+jeu
   modestes à droite, musique bas-droite persistante).
-- **Langue** : pages stream en EN ; l'app interne (Session/Matchs/Admin…) reste FR → reste à faire :
-  un réglage `lang` (en/fr) app-wide OU bascule EN complète (décision opérateur).
+- **Langue : tout en anglais** (décision opérateur — option B). Toutes les pages + nav + Admin +
+  match detail traduits ; la **voix de Jarvis reste FR** (persona). Vérifié live.
+- **Orpheus (musique)** : pour que `/now-playing` affiche la piste, il reste à configurer Spotify
+  côté Orpheus (Premium + app dev + `cargo`/auth) — voir le récap dans le chat / `Orpheus/SETUP.md`.
 
 ## D1 — identité opérateur multi-comptes (2026-06-13, vérifié live)
 Réglage **operator_names** (liste, multi-comptes) source unique de « qui suis-je » :
