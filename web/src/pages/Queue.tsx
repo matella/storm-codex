@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   fetchMatches, modeBadge, useLiveUpdates, useDimHeroes, useSettings,
-  matchOperator, jarvisPhrase, parseTrack,
+  matchOperator, operatorNames, jarvisPhrase, parseTrack,
   type MatchSummary, type MatchPlayer, type NowPlayingResp,
 } from "../api";
 import { Avatar } from "../components/Avatar";
@@ -40,6 +40,9 @@ export function Queue() {
   const sessionDay = isToday ? todayKey : opGames[0]?.day;
   const games: Game[] = sessionDay ? opGames.filter((g) => g.day === sessionDay) : [];
   const sessionLabel = isToday || games.length === 0 ? "TODAY'S SESSION" : "LAST SESSION";
+  // Quand plusieurs comptes opérateur sont configurés, on indique sur quel compte chaque partie a
+  // été jouée (sinon l'info est redondante → on l'omet).
+  const multiAccount = operatorNames().length > 1;
 
   const wins = games.filter((g) => g.won).length;
   const losses = games.length - wins;
@@ -102,7 +105,12 @@ export function Queue() {
             <div key={g.m.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: "1px solid var(--hairline)", fontSize: 15 }}>
               <span className={`bdg ${mb.cls}`}>{mb.short}</span>
               <Avatar hero={g.me.hero} size={28} />
-              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.m.map}</span>
+              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {g.m.map}
+                {multiAccount && g.me.name && (
+                  <span className="muted" style={{ fontSize: 11, marginLeft: 8 }}>· {g.me.name}</span>
+                )}
+              </span>
               <span className={`bdg ${g.won ? "b-win" : "b-loss"}`}>{g.won ? "W" : "L"}</span>
               <span className="mono" style={{ color: "#cfd3e0" }}>{k}/{Math.max(0, td - k)}/{d}</span>
             </div>
