@@ -23,6 +23,8 @@ pub struct Config {
     /// Portraits héros + images de cartes vendorisés ici au démarrage (auto-suffisant,
     /// déterministe — pas de dépendance runtime à HotsPatchNotes), servis sur `/images`.
     pub images_dir: PathBuf,
+    /// API Orpheus (musique) — proxifiée par `/api/now-playing` pour le widget musique OBS.
+    pub orpheus_url: Option<String>,
 }
 
 impl Config {
@@ -55,6 +57,7 @@ impl Config {
             images_dir: PathBuf::from(
                 std::env::var("IMAGES_DIR").unwrap_or_else(|_| "./.images".into()),
             ),
+            orpheus_url: std::env::var("ORPHEUS_URL").ok().filter(|s| !s.is_empty()),
         })
     }
 }

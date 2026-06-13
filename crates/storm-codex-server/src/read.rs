@@ -203,3 +203,31 @@ pub async fn list_maps(State(s): State<AppState>) -> Resp {
     .map_err(db_err)?;
     Ok(Json(v))
 }
+
+/// GET /api/now-playing — proxifie Orpheus (`/api/playback/current` + `/api/auth/status`) pour le
+/// widget musique OBS. Best-effort : Orpheus absent/non authentifié → `{authenticated:false}`
+/// (le widget affiche « music off »). Évite CORS et garde l'URL Orpheus côté serveur.
+pub async fn now_playing(State(s): State<AppState>) -> Json<J> {
+    let Some(base) = s.cfg.orpheus_url.clone() else {
+        return Json(serde_json::json!({ "authenticated": false }));
+    };
+    let base = base.trim_end_matches('/').to_string();
+    let res = tokio::task::spawn_blocking(move || -> J {
+        let get = |path: &str| -> Option<J> {
+            ureq::get(&format!("{base}{path}"))
+                .call()
+                .ok()?
+                .body_mut()
+                .read_json()
+                .ok()
+        };
+        let auth = get("/api/auth/status")
+            .and_then(|v| v.get("authenticated").and_then(J::as_bool))
+            .unwrap_or(false);
+        let current = get("/api/playback/current").unwrap_or(J::Null);
+        serde_json::json!({ "authenticated": auth, "current": current })
+    })
+    .await
+    .unwrap_or_else(|_| serde_json::json!({ "authenticated": false }));
+    Json(res)
+}

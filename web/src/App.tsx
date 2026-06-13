@@ -7,14 +7,18 @@ import { Heroes } from "./pages/Heroes";
 import { Maps } from "./pages/Maps";
 import { Player } from "./pages/Player";
 import { Widget } from "./pages/Widget";
+import { Queue } from "./pages/Queue";
+import { NowPlaying } from "./pages/NowPlaying";
 import { Trends } from "./pages/Trends";
 import { Admin } from "./pages/Admin";
 
 export default function App() {
   return (
     <Routes>
-      {/* widget OBS : standalone (fond transparent, sans topbar) */}
+      {/* sources OBS standalone (fond transparent, sans topbar) */}
       <Route path="widget" element={<Widget />} />
+      <Route path="queue" element={<Queue />} />
+      <Route path="now-playing" element={<NowPlaying />} />
       <Route element={<Layout />}>
         <Route index element={<Dashboard />} />
         <Route path="matches" element={<Matches />} />
