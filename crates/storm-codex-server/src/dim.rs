@@ -107,14 +107,36 @@ pub async fn sync_talents(db: &PgPool, base_url: &str) {
 }
 
 /// Collecte bloquante : liste héros → détail par `shortName` → talents aplatis.
-/// Tuple = (hero_id=name, tier=niveau, name, tree_id=talentTreeId, data{icon,type,description}).
+/// Tuple = (hero_id, tier=niveau, name, tree_id=talentTreeId, data{icon,type,description}).
+/// `hero_id` = **nom canonique du parser** (via `attributeId` HotsPatchNotes → `attr.json` de
+/// storm-stats), pas le nom HotsPatchNotes : ils diffèrent en ponctuation/articles (« Li-Ming » vs
+/// « LiMing », « The Lost Vikings » vs « LostVikings »). L'aligner sur le parser évite de fausses
+/// corrections lors de la résolution du héros joué (cf. project.rs::talent_hero).
 fn collect_talents(base: &str) -> Vec<(String, i32, String, String, serde_json::Value)> {
     let mut out = Vec::new();
+    // code attribut (4 lettres) → nom canonique parser (table figée de hots-parser).
+    let code_to_name: std::collections::HashMap<String, String> =
+        storm_stats::constants::hero_attribute()
+            .as_object()
+            .map(|o| {
+                o.iter()
+                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                    .collect()
+            })
+            .unwrap_or_default();
     let Ok(list) = fetch_array(&format!("{base}/api/heroes")) else { return out };
     for h in &list {
         let Some(short) = h.get("shortName").and_then(|v| v.as_str()) else { continue };
-        let Some(hero_name) = h.get("name").and_then(|v| v.as_str()) else { continue };
+        let Some(hp_name) = h.get("name").and_then(|v| v.as_str()) else { continue };
         let Ok(detail) = fetch_json(&format!("{base}/api/heroes/{short}")) else { continue };
+        // attributeId HotsPatchNotes == code attr.json (ex. Johanna="Crus", E.T.C.="L90E") →
+        // nom canonique parser ; fallback sur le nom HotsPatchNotes si absent/non mappé.
+        let hero_name = detail
+            .get("attributeId")
+            .and_then(|v| v.as_str())
+            .and_then(|a| code_to_name.get(a))
+            .map(String::as_str)
+            .unwrap_or(hp_name);
         let Some(talents) = detail.get("talents").and_then(|v| v.as_object()) else { continue };
         for (level_key, arr) in talents {
             let tier: i32 = level_key.parse().unwrap_or(0);
