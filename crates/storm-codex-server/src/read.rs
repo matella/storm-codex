@@ -218,9 +218,10 @@ pub async fn list_maps(State(s): State<AppState>) -> Resp {
     Ok(Json(v))
 }
 
-/// GET /api/now-playing — proxifie Orpheus (`/api/playback/current` + `/api/auth/status`) pour le
-/// widget musique OBS. Best-effort : Orpheus absent/non authentifié → `{authenticated:false}`
-/// (le widget affiche « music off »). Évite CORS et garde l'URL Orpheus côté serveur.
+/// GET /api/now-playing — proxifie Orpheus (`/api/playback/now` = lecture Spotify LIVE +
+/// `/api/auth/status`) pour le widget musique OBS. `/now` reflète ce qui joue réellement sur
+/// Spotify (indépendant de l'engine DJ). Best-effort : Orpheus absent/non authentifié →
+/// `{authenticated:false}` (le widget affiche « music off »). Évite CORS, garde l'URL côté serveur.
 pub async fn now_playing(State(s): State<AppState>) -> Json<J> {
     let Some(base) = s.cfg.orpheus_url.clone() else {
         return Json(serde_json::json!({ "authenticated": false }));
@@ -238,7 +239,7 @@ pub async fn now_playing(State(s): State<AppState>) -> Json<J> {
         let auth = get("/api/auth/status")
             .and_then(|v| v.get("authenticated").and_then(J::as_bool))
             .unwrap_or(false);
-        let current = get("/api/playback/current").unwrap_or(J::Null);
+        let current = get("/api/playback/now").unwrap_or(J::Null);
         serde_json::json!({ "authenticated": auth, "current": current })
     })
     .await

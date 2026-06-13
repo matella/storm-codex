@@ -252,15 +252,24 @@ export function jarvisPhrase(
 // ── musique (proxy Orpheus /api/now-playing) ─────────────────────────────────
 export interface NowPlayingResp { authenticated?: boolean; current?: Record<string, unknown> }
 export interface Track { playing: boolean; title?: string; artist?: string; art?: string }
-/** Orpheus renvoie `{current:{...piste}, isPlaying,…}` ; le proxy l'enveloppe dans `current`.
- *  Ce parseur gère l'imbrication + variantes de noms de champs. */
+/** Le proxy enveloppe la réponse Orpheus dans `current`. Deux shapes possibles :
+ *  - `/api/playback/now` (Spotify live) : `{ isPlaying, track:{ name, artists:[{name}], album:{images:[{url}]} } }`
+ *  - ancien engine : `{ current:{ name, artist, albumArtUrl }, isPlaying }`
+ *  Ce parseur gère les deux + variantes de champs. */
 export function parseTrack(np: NowPlayingResp | undefined): Track {
   const o = (np?.current ?? {}) as Record<string, unknown>;
-  const track = ((o.current as Record<string, unknown>) ?? o) as Record<string, unknown>;
-  const str = (k: string) => (typeof track[k] === "string" ? (track[k] as string) : undefined);
-  const title = str("name") ?? str("title") ?? str("track");
-  const artist = str("artist") ?? str("artists") ?? str("author");
-  const art = str("albumArtUrl") ?? str("albumArt") ?? str("image");
+  const t = ((o.track as Record<string, unknown>) ?? (o.current as Record<string, unknown>) ?? o) as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+  const title = str(t.name) ?? str(t.title) ?? str(t.track);
+  // artiste : tableau Spotify [{name}] → joint, sinon string directe
+  const artist = Array.isArray(t.artists)
+    ? (t.artists as Array<Record<string, unknown>>).map((a) => str(a?.name)).filter(Boolean).join(", ") || undefined
+    : str(t.artist) ?? str(t.artists) ?? str(t.author);
+  // pochette : album.images[0].url (Spotify) sinon albumArtUrl (engine)
+  const images = (t.album as Record<string, unknown> | undefined)?.images;
+  const art =
+    (Array.isArray(images) ? str((images[0] as Record<string, unknown>)?.url) : undefined) ??
+    str(t.albumArtUrl) ?? str(t.albumArt) ?? str(t.image);
   const isPlaying = o.isPlaying !== false; // absent → on suppose en lecture
   return { playing: !!(np?.authenticated && title && isPlaying), title, artist, art };
 }
