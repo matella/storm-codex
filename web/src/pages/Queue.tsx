@@ -15,6 +15,11 @@ export function Queue() {
   useSettings();
   const { data, refetch } = useQuery({ queryKey: ["queue-matches"], queryFn: () => fetchMatches({ limit: 200 }) });
   useLiveUpdates(() => refetch());
+  const { data: np } = useQuery({
+    queryKey: ["now-playing"],
+    queryFn: () => fetch("/api/now-playing").then((r) => r.json()),
+    refetchInterval: 5000,
+  });
 
   const matches = data ?? [];
   // "Session" = every game on the same calendar day as the most recent one (works on historical
@@ -55,8 +60,8 @@ export function Queue() {
   chrono.forEach((g, i) => { if (g.won) w++; wrSeries.push((100 * w) / (i + 1)); });
 
   return (
-    <div style={{ padding: 28, height: "100vh", width: "min(1180px, 62vw)", boxSizing: "border-box" }}>
-      <div style={{ background: "rgba(14,16,22,.92)", border: "1px solid var(--hairline-strong)", borderRadius: 16, padding: "22px 26px", boxShadow: "0 8px 30px rgba(0,0,0,.5)", height: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column" }}>
+    <div style={{ height: "100vh", display: "grid", gridTemplateColumns: "minmax(0,1.5fr) minmax(0,1fr)", gap: 18, padding: 24, boxSizing: "border-box" }}>
+      <div style={{ background: "rgba(14,16,22,.92)", border: "1px solid var(--hairline-strong)", borderRadius: 16, padding: "22px 26px", boxShadow: "0 8px 30px rgba(0,0,0,.5)", height: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {/* header */}
         <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
           <span style={{ fontSize: 22, fontWeight: 600, letterSpacing: ".04em" }}>TODAY'S SESSION</span>
@@ -135,6 +140,47 @@ export function Queue() {
           </div>
         )}
       </div>
+
+      {/* Right column = the rest of the scene. Camera + Game are framed slots: drop your OBS
+          sources into them (put this /queue source UNDER them, or align on top). Music is built in. */}
+      <div style={{ display: "grid", gridTemplateRows: "1fr 1fr auto", gap: 18, height: "100%", minHeight: 0, boxSizing: "border-box" }}>
+        <Frame label="CAMERA" />
+        <Frame label="GAME · IN QUEUE" />
+        <MusicCard np={np} />
+      </div>
+    </div>
+  );
+}
+
+/** Bordered placeholder zone — align the matching OBS source (camera / game capture) inside it. */
+function Frame({ label }: { label: string }) {
+  return (
+    <div style={{ position: "relative", border: "1.5px dashed var(--hairline-strong)", borderRadius: 12, minHeight: 0 }}>
+      <span className="kick" style={{ position: "absolute", top: 10, left: 14, fontSize: 11, opacity: 0.55 }}>{label}</span>
+    </div>
+  );
+}
+
+/** Built-in "now playing" (Orpheus) so this scene is a single self-contained source. */
+function MusicCard({ np }: { np: { authenticated?: boolean; current?: Record<string, unknown> } | undefined }) {
+  const cur = (np?.current ?? {}) as Record<string, string | undefined>;
+  const title = cur.title ?? cur.name ?? cur.track ?? cur.song;
+  const artist = cur.artist ?? cur.artists ?? cur.author;
+  const playing = np?.authenticated && !!title;
+  return (
+    <div style={{ background: "rgba(14,16,22,.92)", border: "1px solid var(--hairline-strong)", borderRadius: 12, padding: "10px 14px", display: "flex", alignItems: "center", gap: 11 }}>
+      <span style={{ fontSize: 18 }}>{playing ? "♪" : "♫"}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {playing ? (
+          <>
+            <div style={{ fontSize: 14, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</div>
+            {artist && <div style={{ fontSize: 12, color: "var(--text-2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{artist}</div>}
+          </>
+        ) : (
+          <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>{np?.authenticated ? "Nothing playing" : "Music — off"}</div>
+        )}
+      </div>
+      <span className="kick" style={{ fontSize: 9 }}>ORPHEUS</span>
     </div>
   );
 }
