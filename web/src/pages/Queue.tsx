@@ -55,68 +55,68 @@ export function Queue() {
   chrono.forEach((g, i) => { if (g.won) w++; wrSeries.push((100 * w) / (i + 1)); });
 
   return (
-    <div style={{ padding: 16, maxWidth: 560 }}>
-      <div style={{ background: "rgba(14,16,22,.92)", border: "1px solid var(--hairline-strong)", borderRadius: 14, padding: "16px 18px", boxShadow: "0 8px 30px rgba(0,0,0,.5)" }}>
+    <div style={{ padding: 28, height: "100vh", width: "min(1180px, 62vw)", boxSizing: "border-box" }}>
+      <div style={{ background: "rgba(14,16,22,.92)", border: "1px solid var(--hairline-strong)", borderRadius: 16, padding: "22px 26px", boxShadow: "0 8px 30px rgba(0,0,0,.5)", height: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column" }}>
         {/* header */}
         <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-          <span style={{ fontSize: 16, fontWeight: 600, letterSpacing: ".04em" }}>TODAY'S SESSION</span>
-          <span className="mono" style={{ marginLeft: "auto", fontSize: 18 }}>
+          <span style={{ fontSize: 22, fontWeight: 600, letterSpacing: ".04em" }}>TODAY'S SESSION</span>
+          <span className="mono" style={{ marginLeft: "auto", fontSize: 24 }}>
             <span style={{ color: "var(--win)" }}>{wins}W</span> – <span style={{ color: "var(--loss)" }}>{losses}L</span>
           </span>
         </div>
-        <div className="mono" style={{ fontSize: 11, color: "var(--text-2)", marginTop: 3 }}>
+        <div className="mono" style={{ fontSize: 13, color: "var(--text-2)", marginTop: 4 }}>
           {streakLabel(streak)} · {games.length} games · {wr}% win rate
         </div>
 
         {/* win-rate sparkline */}
         {wrSeries.length >= 2 && (
-          <svg width="100%" height="34" viewBox={`0 0 100 34`} preserveAspectRatio="none" style={{ marginTop: 10 }}>
-            <line x1="0" y1="17" x2="100" y2="17" stroke="var(--hairline)" strokeDasharray="2,2" />
+          <svg width="100%" height="46" viewBox={`0 0 100 46`} preserveAspectRatio="none" style={{ marginTop: 14 }}>
+            <line x1="0" y1="23" x2="100" y2="23" stroke="var(--hairline)" strokeDasharray="2,2" />
             <polyline
-              points={wrSeries.map((v, i) => `${(i / (wrSeries.length - 1)) * 100},${34 - (v / 100) * 34}`).join(" ")}
+              points={wrSeries.map((v, i) => `${(i / (wrSeries.length - 1)) * 100},${46 - (v / 100) * 46}`).join(" ")}
               fill="none" stroke="var(--win)" strokeWidth="1.5" vectorEffect="non-scaling-stroke"
             />
           </svg>
         )}
 
         {/* recent games */}
-        <div className="kick" style={{ margin: "14px 0 5px" }}>Recent games</div>
-        {games.slice(0, 6).map((g) => {
+        <div className="kick" style={{ margin: "18px 0 6px", fontSize: 12 }}>Recent games</div>
+        {games.slice(0, 8).map((g) => {
           const mb = modeBadge(g.m.mode);
           const td = g.me.takedowns ?? 0, k = g.me.kills ?? 0, d = g.me.deaths ?? 0;
           return (
-            <div key={g.m.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderBottom: "1px solid var(--hairline)", fontSize: 12.5 }}>
+            <div key={g.m.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: "1px solid var(--hairline)", fontSize: 15 }}>
               <span className={`bdg ${mb.cls}`}>{mb.short}</span>
-              <Avatar hero={g.me.hero} size={22} />
+              <Avatar hero={g.me.hero} size={28} />
               <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.m.map}</span>
               <span className={`bdg ${g.won ? "b-win" : "b-loss"}`}>{g.won ? "W" : "L"}</span>
               <span className="mono" style={{ color: "#cfd3e0" }}>{k}/{Math.max(0, td - k)}/{d}</span>
             </div>
           );
         })}
-        {games.length === 0 && <div style={{ fontSize: 12, color: "var(--text-2)" }}>No games yet today.</div>}
+        {games.length === 0 && <div style={{ fontSize: 14, color: "var(--text-2)" }}>No games yet today.</div>}
 
-        {/* heroes tonight + best game */}
-        <div style={{ display: "flex", gap: 22, marginTop: 14 }}>
+        {/* heroes today + best game */}
+        <div style={{ display: "flex", gap: 28, marginTop: 20 }}>
           <div style={{ flex: 1 }}>
-            <div className="kick" style={{ margin: "0 0 6px" }}>Heroes tonight</div>
+            <div className="kick" style={{ margin: "0 0 8px", fontSize: 12 }}>Heroes today</div>
             {heroesTonight.map(([h, r]) => (
-              <div key={h} style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4, fontSize: 12 }}>
-                <Avatar hero={h} size={20} />
+              <div key={h} style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 6, fontSize: 14 }}>
+                <Avatar hero={h} size={24} />
                 <span style={{ flex: 1 }}>{h}</span>
                 <span className="mono" style={{ color: "#cfd3e0" }}>
                   <span style={{ color: "var(--win)" }}>{r.w}</span>-<span style={{ color: "var(--loss)" }}>{r.l}</span>
                 </span>
               </div>
             ))}
-            {heroesTonight.length === 0 && <span style={{ fontSize: 11, color: "var(--text-2)" }}>—</span>}
+            {heroesTonight.length === 0 && <span style={{ fontSize: 13, color: "var(--text-2)" }}>—</span>}
           </div>
           {best && (
             <div style={{ flex: 1 }}>
-              <div className="kick" style={{ margin: "0 0 6px" }}>Best game</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                <Avatar hero={best.me.hero} size={26} />
-                <div className="mono" style={{ fontSize: 11.5, color: "#cfd3e0" }}>
+              <div className="kick" style={{ margin: "0 0 8px", fontSize: 12 }}>Best game</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                <Avatar hero={best.me.hero} size={32} />
+                <div className="mono" style={{ fontSize: 14, color: "#cfd3e0" }}>
                   {best.me.hero}<br />
                   {best.me.kills ?? 0}/{Math.max(0, (best.me.takedowns ?? 0) - (best.me.kills ?? 0))}/{best.me.deaths ?? 0}
                 </div>
@@ -125,9 +125,12 @@ export function Queue() {
           )}
         </div>
 
+        {/* spacer pushes the Jarvis line to the bottom of the full-height panel */}
+        <div style={{ flex: 1, minHeight: 16 }} />
+
         {/* Jarvis line */}
         {games[0] && (
-          <div style={{ marginTop: 16, fontSize: 13, color: "var(--u-nexus)", fontStyle: "italic", borderTop: "1px solid var(--hairline)", paddingTop: 12 }}>
+          <div style={{ fontSize: 16, color: "var(--u-nexus)", fontStyle: "italic", borderTop: "1px solid var(--hairline)", paddingTop: 14 }}>
             « {jarvisPhrase({ won: games[0].won, hero: games[0].me.hero, deaths: games[0].me.deaths ?? 0, takedowns: games[0].me.takedowns ?? 0, streak })} » — Jarvis
           </div>
         )}
