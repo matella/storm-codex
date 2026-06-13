@@ -105,6 +105,18 @@
   surtout `POSTGRES_PASSWORD` (le volume est initialisé avec).
 - **Jalon 6 : prêt à publier** — voir ci-dessous.
 
+## Scène OBS « entre les games » (2026-06-13, vérifié live)
+- **`/queue`** (browser source, fond transparent, EN) : TONIGHT'S SESSION (W-L, streak, WR),
+  sparkline WR, recent games (badges mode + portraits + W/L + KDA), heroes tonight (W-L),
+  best game, phrase Jarvis. Session = parties du même jour calendaire que la dernière.
+- **`/now-playing`** (source persistante, EN) : widget musique lisant **Orpheus** via proxy
+  `/api/now-playing` (config `ORPHEUS_URL`). Affiche « Music — off » tant que Spotify dormant.
+- **Widget `/widget`** passé en anglais (VICTORY/DEFEAT) — cohérent. Voix Jarvis reste FR (persona).
+- Maquette : `docs/specs/2026-06-13-scene-obs-entre-games-mockup.html` (panneau gauche, cam+jeu
+  modestes à droite, musique bas-droite persistante).
+- **Langue** : pages stream en EN ; l'app interne (Session/Matchs/Admin…) reste FR → reste à faire :
+  un réglage `lang` (en/fr) app-wide OU bascule EN complète (décision opérateur).
+
 ## D1 — identité opérateur multi-comptes (2026-06-13, vérifié live)
 Réglage **operator_names** (liste, multi-comptes) source unique de « qui suis-je » :
 - Serveur : table `app_settings` (migration 0003), `GET /api/settings`, `PUT /api/admin/settings`.
