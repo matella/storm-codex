@@ -15,7 +15,6 @@ const MODE_FILTERS: [string, number | undefined][] = [
 ];
 
 interface MapStat { map: string; games: number }
-interface HeroStat { hero: string; games: number }
 
 function ownHero(m: MatchSummary): { hero: string | null; win: boolean | null } {
   // heuristique : 1er joueur (l'archive est nominative — affinable via l'identité opérateur)
