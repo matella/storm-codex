@@ -23,18 +23,23 @@ export function Queue() {
   });
 
   const matches = data ?? [];
-  // "Session" = every game on the same calendar day as the most recent one (works on historical
-  // data too). Each match reduced to the operator's perspective.
-  type Game = { m: MatchSummary; me: MatchPlayer; won: boolean };
-  const games: Game[] = [];
-  if (matches.length) {
-    const day = (matches[0].played_at ?? "").slice(0, 10);
-    for (const m of matches) {
-      if ((m.played_at ?? "").slice(0, 10) !== day) break;
-      const me = matchOperator(m.players ?? []);
-      if (me) games.push({ m, me, won: me.team != null && m.winner === me.team });
-    }
-  }
+  // Parties de l'opérateur (tous comptes configurés via operator_names), les plus récentes
+  // d'abord. matchOperator est strict : une partie sans aucun compte opérateur est ignorée.
+  type Game = { m: MatchSummary; me: MatchPlayer; won: boolean; day: string };
+  const opGames: Game[] = matches.flatMap((m) => {
+    const me = matchOperator(m.players ?? []);
+    return me && m.played_at
+      ? [{ m, me, won: me.team != null && m.winner === me.team, day: localDay(m.played_at) }]
+      : [];
+  });
+  // "Session" = les parties d'AUJOURD'HUI (date locale). Si aucune partie aujourd'hui, on retombe
+  // sur la dernière session jouée (le jour le plus récent) plutôt qu'un panneau vide.
+  const todayKey = localDay(new Date());
+  const todays = opGames.filter((g) => g.day === todayKey);
+  const isToday = todays.length > 0;
+  const sessionDay = isToday ? todayKey : opGames[0]?.day;
+  const games: Game[] = sessionDay ? opGames.filter((g) => g.day === sessionDay) : [];
+  const sessionLabel = isToday || games.length === 0 ? "TODAY'S SESSION" : "LAST SESSION";
 
   const wins = games.filter((g) => g.won).length;
   const losses = games.length - wins;
@@ -65,7 +70,10 @@ export function Queue() {
       <div style={{ background: "rgba(14,16,22,.92)", border: "1px solid var(--hairline-strong)", borderRadius: 16, padding: "22px 26px", boxShadow: "0 8px 30px rgba(0,0,0,.5)", height: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {/* header */}
         <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-          <span style={{ fontSize: 22, fontWeight: 600, letterSpacing: ".04em" }}>TODAY'S SESSION</span>
+          <span style={{ fontSize: 22, fontWeight: 600, letterSpacing: ".04em" }}>{sessionLabel}</span>
+          {sessionLabel === "LAST SESSION" && sessionDay && (
+            <span className="mono" style={{ fontSize: 13, color: "var(--text-2)" }}>{fmtDay(sessionDay)}</span>
+          )}
           <span className="mono" style={{ marginLeft: "auto", fontSize: 24 }}>
             <span style={{ color: "var(--win)" }}>{wins}W</span> – <span style={{ color: "var(--loss)" }}>{losses}L</span>
           </span>
@@ -185,6 +193,18 @@ function MusicCard({ np }: { np: NowPlayingResp | undefined }) {
       <span className="kick" style={{ fontSize: 9 }}>ORPHEUS</span>
     </div>
   );
+}
+
+/** Clé jour en heure LOCALE (YYYY-MM-DD) — pas l'UTC : une partie jouée le soir (Belgique) reste
+ *  attribuée au bon jour calendaire local. Accepte une date ISO ou un objet Date. */
+function localDay(d: string | Date): string {
+  const x = typeof d === "string" ? new Date(d) : d;
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+}
+/** Affiche une clé jour (YYYY-MM-DD) en libellé court lisible. */
+function fmtDay(key: string): string {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" });
 }
 
 function currentStreak(games: { won: boolean }[]): number {
