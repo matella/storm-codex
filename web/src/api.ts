@@ -145,6 +145,21 @@ export function universeColor(hero: string | null): string {
 export function heroIcon(hero: string | null): string | null {
   return (hero && DIM[hero]?.icon) || null;
 }
+
+// ── référentiel talents (dim_talents) : talentTreeId → nom/tier/héros ─────────
+export interface DimTalent { name: string; tier: number; hero: string | null; icon: string | null }
+export type DimTalents = Record<string, DimTalent>;
+let DIMT: DimTalents = {};
+export function useDimTalents() {
+  const q = useQuery({ queryKey: ["dim-talents"], queryFn: () => get<DimTalents>("/api/dim/talents"), staleTime: Infinity });
+  if (q.data) DIMT = q.data;
+  return q.data;
+}
+/** Résout le `talentTreeId` stocké par le parser → nom lisible (+ tier). null si inconnu :
+ *  le consommateur retombe sur l'id « décamelisé ». */
+export function talentInfo(treeId: string | null): DimTalent | null {
+  return (treeId && DIMT[treeId]) || null;
+}
 /** Image de carte : slug = nom en minuscules, apostrophes retirées, espaces → tirets.
  *  Les cartes ARAM peuvent ne pas avoir d'image (404) → le consommateur prévoit un fallback. */
 export function mapImage(map: string | null): string | null {

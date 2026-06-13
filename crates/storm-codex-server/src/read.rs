@@ -140,6 +140,20 @@ pub async fn dim_heroes(State(s): State<AppState>) -> Resp {
     Ok(Json(v))
 }
 
+/// GET /api/dim/talents — référentiel talents (`talentTreeId` → nom/tier/héros/icône) pour
+/// afficher les builds dans la fiche de match. Clé = la valeur stockée par le parser.
+pub async fn dim_talents(State(s): State<AppState>) -> Resp {
+    let v: J = sqlx::query_scalar(
+        "SELECT COALESCE(jsonb_object_agg(tree_id, jsonb_build_object(
+            'name', name, 'tier', tier, 'hero', hero_id, 'icon', data->'icon')), '{}'::jsonb)
+         FROM dim_talents WHERE tree_id IS NOT NULL",
+    )
+    .fetch_one(&s.db)
+    .await
+    .map_err(db_err)?;
+    Ok(Json(v))
+}
+
 /// GET /api/matches.csv — export CSV des matchs (filtres identiques à /api/matches).
 pub async fn matches_csv(
     State(s): State<AppState>,

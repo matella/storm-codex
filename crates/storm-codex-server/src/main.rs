@@ -72,6 +72,7 @@ async fn run() -> Result<(), String> {
         let images_dir = cfg.images_dir.clone();
         tokio::spawn(async move {
             dim::sync_heroes(&db2, &url).await;
+            dim::sync_talents(&db2, &url).await;
             dim::vendor_images(&images_dir, &url).await;
         });
     }
@@ -101,6 +102,7 @@ async fn run() -> Result<(), String> {
         .route("/api/heroes", get(read::list_heroes))
         .route("/api/maps", get(read::list_maps))
         .route("/api/dim/heroes", get(read::dim_heroes))
+        .route("/api/dim/talents", get(read::dim_talents))
         .route("/api/matches.csv", get(read::matches_csv))
         .route("/api/trends", get(manage::trends))
         .route("/api/now-playing", get(read::now_playing))

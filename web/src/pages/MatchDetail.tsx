@@ -1,10 +1,36 @@
+import { Fragment } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "react-router-dom";
-import { fetchMatch, modeBadge, fmtTime, fmtDur } from "../api";
+import { fetchMatch, modeBadge, fmtTime, fmtDur, useDimTalents, talentInfo } from "../api";
 import { Avatar } from "../components/Avatar";
 import { LevelChart } from "../components/LevelChart";
 
 const num = (v: any): number => (typeof v === "number" ? v : 0);
+const tierNum = (k: string): number => parseInt(k.match(/\d+/)?.[0] ?? "0", 10);
+const decamel = (s: string): string => s.replace(/([a-z])([A-Z])/g, "$1 $2");
+
+/** Build de talents d'un joueur : `talents` = `{TierNChoice: talentTreeId}` (écrit par le parser).
+ *  Affiché en chips, dans l'ordre des tiers. Nom résolu via dim_talents, sinon id décamelisé. */
+function TalentStrip({ talents }: { talents: Record<string, string> | undefined }) {
+  if (!talents) return null;
+  const picks = Object.entries(talents)
+    .filter(([k]) => /^Tier\d/.test(k))
+    .sort((a, b) => tierNum(a[0]) - tierNum(b[0]))
+    .map(([, treeId]) => treeId);
+  if (!picks.length) return null;
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, padding: "2px 0 4px" }}>
+      {picks.map((tid, i) => {
+        const info = talentInfo(tid);
+        return (
+          <span key={i} className="bdg b-qm" title={`Tier ${i + 1}${info ? ` · ${info.name}` : ""}`} style={{ fontSize: 10 }}>
+            {info?.name ?? decamel(tid)}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
 
 function ScoreTable({ players, team, label, cls }: { players: any[]; team: number; label: string; cls: string }) {
   const rows = players.filter((p) => p.team === team);
@@ -24,22 +50,29 @@ function ScoreTable({ players, team, label, cls }: { players: any[]; team: numbe
           {rows.map((p) => {
             const g = p.gameStats ?? {};
             return (
-              <tr key={p.ToonHandle} className="link">
-                <td>
-                  <Link to={`/player/${encodeURIComponent(p.ToonHandle)}`} style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                    <Avatar hero={p.hero} size={20} />
-                    <span>{p.hero}</span>
-                    <span className="muted" style={{ fontSize: 10 }}>{p.name}</span>
-                  </Link>
-                </td>
-                <td className="mono">{num(g.SoloKill)}</td>
-                <td className="mono">{num(g.Deaths)}</td>
-                <td className="mono">{num(g.Assists ?? g.Takedowns)}</td>
-                <td className="mono">{num(g.HeroDamage).toLocaleString("fr-FR")}</td>
-                <td className="mono">{num(g.Healing).toLocaleString("fr-FR")}</td>
-                <td className="mono">{num(g.ExperienceContribution).toLocaleString("fr-FR")}</td>
-                <td className="mono">{num(g.Level)}</td>
-              </tr>
+              <Fragment key={p.ToonHandle}>
+                <tr className="link">
+                  <td>
+                    <Link to={`/player/${encodeURIComponent(p.ToonHandle)}`} style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                      <Avatar hero={p.hero} size={20} />
+                      <span>{p.hero}</span>
+                      <span className="muted" style={{ fontSize: 10 }}>{p.name}</span>
+                    </Link>
+                  </td>
+                  <td className="mono">{num(g.SoloKill)}</td>
+                  <td className="mono">{num(g.Deaths)}</td>
+                  <td className="mono">{num(g.Assists ?? g.Takedowns)}</td>
+                  <td className="mono">{num(g.HeroDamage).toLocaleString("fr-FR")}</td>
+                  <td className="mono">{num(g.Healing).toLocaleString("fr-FR")}</td>
+                  <td className="mono">{num(g.ExperienceContribution).toLocaleString("fr-FR")}</td>
+                  <td className="mono">{num(g.Level)}</td>
+                </tr>
+                {p.talents && (
+                  <tr>
+                    <td colSpan={8} style={{ paddingTop: 0 }}><TalentStrip talents={p.talents} /></td>
+                  </tr>
+                )}
+              </Fragment>
             );
           })}
         </tbody>
@@ -50,6 +83,7 @@ function ScoreTable({ players, team, label, cls }: { players: any[]; team: numbe
 
 export function MatchDetail() {
   const { id } = useParams();
+  useDimTalents(); // peuple le référentiel talents (talentTreeId → nom)
   const { data, isLoading } = useQuery({ queryKey: ["match", id], queryFn: () => fetchMatch(id!) });
 
   if (isLoading) return <div className="empty">loading…</div>;

@@ -57,6 +57,85 @@ pub async fn sync_heroes(db: &PgPool, base_url: &str) {
     tracing::info!("dim_heroes synchronisé : {n} héros depuis HotsPatchNotes");
 }
 
+/// Réplique les talents par héros depuis `<base>/api/heroes/{shortName}` dans `dim_talents`.
+/// Clé de jointure `tree_id` = `talentTreeId`, qui matche `player.talents[TierNChoice]` écrit par
+/// le parser. ~90 requêtes séquentielles (bloquant), lancé en tâche de fond ; refresh complet
+/// (DELETE + INSERT en transaction). Best-effort : une indispo n'empêche rien (front a un fallback
+/// texte sur l'id brut). `tier` = niveau héros (1,4,7,10,13,16,20), `hero_id` = nom (métadonnée).
+pub async fn sync_talents(db: &PgPool, base_url: &str) {
+    let base = base_url.trim_end_matches('/').to_string();
+    let rows = match tokio::task::spawn_blocking(move || collect_talents(&base)).await {
+        Ok(r) if !r.is_empty() => r,
+        Ok(_) => {
+            tracing::warn!("dim_talents : aucun talent collecté (HotsPatchNotes indispo ?)");
+            return;
+        }
+        Err(_) => return, // join error
+    };
+
+    let mut tx = match db.begin().await {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::warn!("dim_talents : begin échoué ({e})");
+            return;
+        }
+    };
+    if sqlx::query("DELETE FROM dim_talents").execute(&mut *tx).await.is_err() {
+        return;
+    }
+    let mut n = 0;
+    for (hero_id, tier, name, tree_id, data) in &rows {
+        let r = sqlx::query(
+            "INSERT INTO dim_talents (hero_id, tier, name, tree_id, data)
+             VALUES ($1,$2,$3,$4,$5)
+             ON CONFLICT (hero_id, tier, name) DO NOTHING",
+        )
+        .bind(hero_id)
+        .bind(tier)
+        .bind(name)
+        .bind(tree_id)
+        .bind(data)
+        .execute(&mut *tx)
+        .await;
+        if r.is_ok() {
+            n += 1;
+        }
+    }
+    if tx.commit().await.is_ok() {
+        tracing::info!("dim_talents synchronisé : {n} talents depuis HotsPatchNotes");
+    }
+}
+
+/// Collecte bloquante : liste héros → détail par `shortName` → talents aplatis.
+/// Tuple = (hero_id=name, tier=niveau, name, tree_id=talentTreeId, data{icon,type,description}).
+fn collect_talents(base: &str) -> Vec<(String, i32, String, String, serde_json::Value)> {
+    let mut out = Vec::new();
+    let Ok(list) = fetch_array(&format!("{base}/api/heroes")) else { return out };
+    for h in &list {
+        let Some(short) = h.get("shortName").and_then(|v| v.as_str()) else { continue };
+        let Some(hero_name) = h.get("name").and_then(|v| v.as_str()) else { continue };
+        let Ok(detail) = fetch_json(&format!("{base}/api/heroes/{short}")) else { continue };
+        let Some(talents) = detail.get("talents").and_then(|v| v.as_object()) else { continue };
+        for (level_key, arr) in talents {
+            let tier: i32 = level_key.parse().unwrap_or(0);
+            let Some(arr) = arr.as_array() else { continue };
+            for t in arr {
+                let Some(tree_id) = t.get("talentTreeId").and_then(|v| v.as_str()) else { continue };
+                let name = t.get("name").and_then(|v| v.as_str()).unwrap_or(tree_id);
+                let data = serde_json::json!({
+                    "icon": t.get("icon"),
+                    "type": t.get("type"),
+                    "description": t.get("description"),
+                    "sort": t.get("sort"),
+                    "isQuest": t.get("isQuest"),
+                });
+                out.push((hero_name.to_string(), tier, name.to_string(), tree_id.to_string(), data));
+            }
+        }
+    }
+    out
+}
+
 /// Vendorise (une fois) les portraits héros + images de cartes depuis HotsPatchNotes dans
 /// `images_dir` (servi sur `/images`). Idempotent : saute les fichiers déjà présents. Best-effort
 /// — une indispo n'empêche rien (le front a un fallback). Rend storm-codex auto-suffisant.
@@ -89,6 +168,16 @@ fn fetch_array(url: &str) -> Result<Vec<serde_json::Value>, String> {
         Ok(serde_json::Value::Array(a)) => Ok(a),
         _ => Err("réponse non-array".into()),
     }
+}
+
+fn fetch_json(url: &str) -> Result<serde_json::Value, String> {
+    let body = ureq::get(url)
+        .call()
+        .map_err(|e| e.to_string())?
+        .body_mut()
+        .read_to_string()
+        .map_err(|e| e.to_string())?;
+    serde_json::from_str(&body).map_err(|e| e.to_string())
 }
 
 /// Pour chaque objet, lit `field` (chemin `/images/...`), télécharge `<base><path>` vers
