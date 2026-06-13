@@ -105,6 +105,17 @@
   surtout `POSTGRES_PASSWORD` (le volume est initialisé avec).
 - **Jalon 6 : prêt à publier** — voir ci-dessous.
 
+## D1 — identité opérateur multi-comptes (2026-06-13, vérifié live)
+Réglage **operator_names** (liste, multi-comptes) source unique de « qui suis-je » :
+- Serveur : table `app_settings` (migration 0003), `GET /api/settings`, `PUT /api/admin/settings`.
+- Front : `useSettings` + `pickOperator`/`matchOperator` → **widget par défaut sans `?me=`**,
+  lignes Matchs (V/D + ton héros), **Session = TES stats** (win rate 53,5 % réel vs 50 % global,
+  mes parties, héros joués, main héros). UI Admin « Mon identité » pour éditer.
+- Jarvis : `HOTS_PLAYER_NAME` accepte une **liste** (le brief matche n'importe lequel de tes noms).
+- Export **JSON** des matchs ajouté (suit les filtres), à côté du CSV. ✅
+**Reste de D** : D2 phrase Jarvis dans le widget (round-trip) ; ligues (au-dessus des équipes) ;
+`dim_talents` détaillés.
+
 ## Images : portraits héros + fonds de carte (2026-06-13, vérifié live)
 - **Vendorisation déterministe** : au démarrage, `dim::vendor_images` télécharge les portraits
   héros (90) + images de cartes standard (15) depuis HotsPatchNotes dans `/data/images`
