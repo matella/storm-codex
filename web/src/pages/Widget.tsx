@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { fetchMatches, modeBadge, fmtDur, mapImage, useLiveUpdates, useDimHeroes, useSettings, pickOperator } from "../api";
+import { fetchMatches, modeBadge, fmtDur, mapImage, useLiveUpdates, useDimHeroes, useSettings, pickOperator, jarvisPhrase } from "../api";
 import { Avatar } from "../components/Avatar";
 
 /**
@@ -71,6 +71,9 @@ export function Widget() {
             <span style={{ color: "var(--text-2)" }}> · </span>
             <span className={`bdg ${mb.cls}`}>{mb.short}</span>
             <span style={{ color: "var(--text-2)" }}> · {fmtDur(m.length)}</span>
+          </div>
+          <div style={{ fontSize: 11, color: "var(--u-nexus)", fontStyle: "italic", marginTop: 5 }}>
+            « {jarvisPhrase({ won, hero: me?.hero ?? null, deaths: d, takedowns: td })} » — Jarvis
           </div>
         </div>
       </div>

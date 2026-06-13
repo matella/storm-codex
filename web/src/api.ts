@@ -187,6 +187,53 @@ export function matchOperator<T extends { name: string | null }>(players: T[]): 
   return players.find((p) => names.includes((p.name ?? "").toLowerCase()));
 }
 
+/**
+ * Phrase « Jarvis » déterministe (voix de majordome FR), choisie dans un répertoire selon le
+ * contexte de la partie. Déterministe : la variante dépend de `match_id` (pas de scintillement).
+ * `streak` (optionnel, +n victoires / -n défaites d'affilée) enrichit le ton.
+ */
+export function jarvisPhrase(
+  opts: { won: boolean; hero: string | null; deaths: number; takedowns: number; streak?: number },
+): string {
+  const { won, hero, deaths, takedowns, streak = 0, seed = takedowns + deaths } =
+    opts as typeof opts & { seed?: number };
+  const pick = (arr: string[]) => arr[Math.abs(seed) % arr.length];
+  const h = hero ?? "ce héros";
+  if (won) {
+    if (streak >= 3) return pick([
+      `Et de ${streak}, monsieur. La soirée vous appartient.`,
+      `Série de ${streak}. Difficile de faire mieux.`,
+      `${streak} d'affilée — je note la domination.`,
+    ]);
+    if (deaths === 0) return pick([
+      `Aucune mort. Une partie de maître, monsieur.`,
+      `Zéro mort — proprement exécuté.`,
+    ]);
+    if (takedowns >= 15) return pick([
+      `Démonstration. ${h} était intenable.`,
+      `${takedowns} participations — la carte vous a appartenu.`,
+    ]);
+    return pick([
+      `Victoire nette. ${h} a fait le travail.`,
+      `Bien joué, monsieur. On enchaîne ?`,
+      `Une de plus au compteur.`,
+    ]);
+  }
+  if (streak <= -3) return pick([
+    `Série difficile, monsieur. Gardons la tête froide.`,
+    `${Math.abs(streak)} revers d'affilée — une pause, peut-être ?`,
+  ]);
+  if (deaths >= 8) return pick([
+    `Trop de morts, monsieur. On respire au prochain.`,
+    `${deaths} morts — la prudence paiera la prochaine fois.`,
+  ]);
+  return pick([
+    `Défaite serrée. ${h} méritait mieux.`,
+    `On rebondit à la prochaine, monsieur.`,
+    `Pas cette fois — mais la nuit est jeune.`,
+  ]);
+}
+
 export function initials(name: string | null): string {
   if (!name) return "··";
   return name.slice(0, 2).toUpperCase();
