@@ -74,7 +74,7 @@ export function Queue() {
     g.won ? e.w++ : e.l++;
     byHero.set(h, e);
   }
-  const heroesTonight = [...byHero.entries()].sort((a, b) => b[1].w + b[1].l - (a[1].w + a[1].l)).slice(0, 4);
+  const heroesTonight = [...byHero.entries()].sort((a, b) => b[1].w + b[1].l - (a[1].w + a[1].l)).slice(0, 10);
 
   // séquence chronologique (oldest→newest) pour la rangée de pastilles W/L
   const chrono = [...games].reverse();
