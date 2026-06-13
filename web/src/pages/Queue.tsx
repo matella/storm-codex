@@ -59,7 +59,7 @@ export function Queue() {
       <div style={{ background: "rgba(14,16,22,.92)", border: "1px solid var(--hairline-strong)", borderRadius: 14, padding: "16px 18px", boxShadow: "0 8px 30px rgba(0,0,0,.5)" }}>
         {/* header */}
         <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-          <span style={{ fontSize: 16, fontWeight: 600, letterSpacing: ".04em" }}>TONIGHT'S SESSION</span>
+          <span style={{ fontSize: 16, fontWeight: 600, letterSpacing: ".04em" }}>TODAY'S SESSION</span>
           <span className="mono" style={{ marginLeft: "auto", fontSize: 18 }}>
             <span style={{ color: "var(--win)" }}>{wins}W</span> – <span style={{ color: "var(--loss)" }}>{losses}L</span>
           </span>
