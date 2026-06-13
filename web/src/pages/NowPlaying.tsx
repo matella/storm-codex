@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
+import { parseTrack } from "../api";
 
 /**
  * Persistent "now playing" music widget (OBS browser source) — reads Orpheus via the storm-codex
@@ -17,11 +18,7 @@ export function NowPlaying() {
     return () => { document.body.style.background = ""; };
   }, []);
 
-  // tolérant sur la forme renvoyée par Orpheus (title/artist/name/track…)
-  const cur = data?.current ?? {};
-  const title: string | undefined = cur.title ?? cur.name ?? cur.track ?? cur.song;
-  const artist: string | undefined = cur.artist ?? cur.artists ?? cur.author;
-  const playing = data?.authenticated && !!title;
+  const t = parseTrack(data);
 
   return (
     <div style={{ padding: 12, maxWidth: 340 }}>
@@ -37,16 +34,20 @@ export function NowPlaying() {
           boxShadow: "0 8px 30px rgba(0,0,0,.5)",
         }}
       >
-        <span style={{ fontSize: 16 }}>{playing ? "♪" : "♫"}</span>
+        {t.playing && t.art ? (
+          <img src={t.art} alt="" style={{ width: 34, height: 34, borderRadius: 6, objectFit: "cover" }} />
+        ) : (
+          <span style={{ fontSize: 16 }}>{t.playing ? "♪" : "♫"}</span>
+        )}
         <div style={{ flex: 1, minWidth: 0 }}>
-          {playing ? (
+          {t.playing ? (
             <>
               <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {title}
+                {t.title}
               </div>
-              {artist && (
+              {t.artist && (
                 <div style={{ fontSize: 11, color: "var(--text-2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {artist}
+                  {t.artist}
                 </div>
               )}
             </>

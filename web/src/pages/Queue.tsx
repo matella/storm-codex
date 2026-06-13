@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   fetchMatches, modeBadge, useLiveUpdates, useDimHeroes, useSettings,
-  matchOperator, jarvisPhrase, type MatchSummary, type MatchPlayer,
+  matchOperator, jarvisPhrase, parseTrack,
+  type MatchSummary, type MatchPlayer, type NowPlayingResp,
 } from "../api";
 import { Avatar } from "../components/Avatar";
 
@@ -162,19 +163,20 @@ function Frame({ label }: { label: string }) {
 }
 
 /** Built-in "now playing" (Orpheus) so this scene is a single self-contained source. */
-function MusicCard({ np }: { np: { authenticated?: boolean; current?: Record<string, unknown> } | undefined }) {
-  const cur = (np?.current ?? {}) as Record<string, string | undefined>;
-  const title = cur.title ?? cur.name ?? cur.track ?? cur.song;
-  const artist = cur.artist ?? cur.artists ?? cur.author;
-  const playing = np?.authenticated && !!title;
+function MusicCard({ np }: { np: NowPlayingResp | undefined }) {
+  const t = parseTrack(np);
   return (
     <div style={{ background: "rgba(14,16,22,.92)", border: "1px solid var(--hairline-strong)", borderRadius: 12, padding: "10px 14px", display: "flex", alignItems: "center", gap: 11 }}>
-      <span style={{ fontSize: 18 }}>{playing ? "♪" : "♫"}</span>
+      {t.playing && t.art ? (
+        <img src={t.art} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: "cover" }} />
+      ) : (
+        <span style={{ fontSize: 18 }}>{t.playing ? "♪" : "♫"}</span>
+      )}
       <div style={{ flex: 1, minWidth: 0 }}>
-        {playing ? (
+        {t.playing ? (
           <>
-            <div style={{ fontSize: 14, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</div>
-            {artist && <div style={{ fontSize: 12, color: "var(--text-2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{artist}</div>}
+            <div style={{ fontSize: 14, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.title}</div>
+            {t.artist && <div style={{ fontSize: 12, color: "var(--text-2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.artist}</div>}
           </>
         ) : (
           <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>{np?.authenticated ? "Nothing playing" : "Music — off"}</div>

@@ -234,6 +234,22 @@ export function jarvisPhrase(
   ]);
 }
 
+// ── musique (proxy Orpheus /api/now-playing) ─────────────────────────────────
+export interface NowPlayingResp { authenticated?: boolean; current?: Record<string, unknown> }
+export interface Track { playing: boolean; title?: string; artist?: string; art?: string }
+/** Orpheus renvoie `{current:{...piste}, isPlaying,…}` ; le proxy l'enveloppe dans `current`.
+ *  Ce parseur gère l'imbrication + variantes de noms de champs. */
+export function parseTrack(np: NowPlayingResp | undefined): Track {
+  const o = (np?.current ?? {}) as Record<string, unknown>;
+  const track = ((o.current as Record<string, unknown>) ?? o) as Record<string, unknown>;
+  const str = (k: string) => (typeof track[k] === "string" ? (track[k] as string) : undefined);
+  const title = str("name") ?? str("title") ?? str("track");
+  const artist = str("artist") ?? str("artists") ?? str("author");
+  const art = str("albumArtUrl") ?? str("albumArt") ?? str("image");
+  const isPlaying = o.isPlaying !== false; // absent → on suppose en lecture
+  return { playing: !!(np?.authenticated && title && isPlaying), title, artist, art };
+}
+
 export function initials(name: string | null): string {
   if (!name) return "··";
   return name.slice(0, 2).toUpperCase();
