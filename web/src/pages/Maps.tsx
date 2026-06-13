@@ -1,19 +1,24 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { fmtDur } from "../api";
+import { fmtDur, aggParams, type AggFilter } from "../api";
+import { AggFilterBar } from "../components/AggFilterBar";
 
 interface MapStat { map: string; games: number; blue_wins: number; avg_length: number }
 
 export function Maps() {
   const nav = useNavigate();
+  const [filter, setFilter] = useState<AggFilter>({});
   const { data, isLoading } = useQuery({
-    queryKey: ["maps"],
-    queryFn: async () => (await fetch("/api/maps")).json() as Promise<MapStat[]>,
+    queryKey: ["maps", filter],
+    queryFn: async () => (await fetch(`/api/maps?${aggParams(filter)}`)).json() as Promise<MapStat[]>,
   });
   return (
     <>
       <h1>Maps</h1>
+      <p className="note">Map stats over the filtered set — {data?.length ?? 0} maps. "My games" restricts to games you played.</p>
       <div className="card">
+        <AggFilterBar value={filter} onChange={setFilter} mineLabel="My games" />
         {isLoading && <div className="empty">loading…</div>}
         {data && (
           <table>

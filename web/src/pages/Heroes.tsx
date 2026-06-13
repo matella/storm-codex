@@ -1,15 +1,17 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { fetchHeroes, type HeroStat } from "../api";
+import { fetchHeroes, type HeroStat, type AggFilter } from "../api";
 import { Avatar } from "../components/Avatar";
+import { AggFilterBar } from "../components/AggFilterBar";
 
 type SortKey = "games" | "winrate";
 
 export function Heroes() {
   const [sort, setSort] = useState<SortKey>("games");
+  const [filter, setFilter] = useState<AggFilter>({});
   const nav = useNavigate();
-  const { data, isLoading } = useQuery({ queryKey: ["heroes"], queryFn: fetchHeroes });
+  const { data, isLoading } = useQuery({ queryKey: ["heroes", filter], queryFn: () => fetchHeroes(filter) });
 
   const wr = (h: HeroStat) => (h.games ? h.wins / h.games : 0);
   const rows = [...(data ?? [])].sort((a, b) =>
@@ -19,8 +21,9 @@ export function Heroes() {
   return (
     <>
       <h1>Heroes</h1>
-      <p className="note">Statistiques agrégées sur la base backfillée — {data?.length ?? 0} héros joués.</p>
+      <p className="note">Hero stats over the filtered set — {data?.length ?? 0} heroes. "My heroes" restricts to your accounts.</p>
       <div className="card">
+        <AggFilterBar value={filter} onChange={setFilter} mineLabel="My heroes" />
         {isLoading && <div className="empty">loading…</div>}
         {data && (
           <table>

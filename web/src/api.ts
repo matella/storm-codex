@@ -89,10 +89,24 @@ export function matchesUrl(p: MatchListParams): string {
 }
 
 export const fetchMatches = (p: MatchListParams) => get<MatchSummary[]>(matchesUrl(p));
+
+// ── filtres d'agrégats (Heroes/Maps) ─────────────────────────────────────────
+export interface AggFilter { mode?: number; mine?: boolean; account?: string; from?: string; to?: string }
+/** Construit la query string d'un agrégat filtré. `from`/`to` sont des dates locales YYYY-MM-DD ;
+ *  `to` est rendu inclusif (borne serveur exclusive → +1 jour). */
+export function aggParams(f: AggFilter): string {
+  const q = new URLSearchParams();
+  if (f.mode != null) q.set("mode", String(f.mode));
+  if (f.mine) q.set("mine", "true");
+  if (f.account) q.set("account", f.account);
+  if (f.from) q.set("from", new Date(f.from + "T00:00:00").toISOString());
+  if (f.to) { const d = new Date(f.to + "T00:00:00"); d.setDate(d.getDate() + 1); q.set("to", d.toISOString()); }
+  return q.toString();
+}
 export const fetchMatch = (id: number | string) =>
   get<{ id: number; match: any; players: Record<string, any> }>(`/api/matches/${id}`);
 export const fetchPlayer = (toon: string) => get<PlayerSummary>(`/api/players/${encodeURIComponent(toon)}`);
-export const fetchHeroes = () => get<HeroStat[]>("/api/heroes");
+export const fetchHeroes = (f: AggFilter = {}) => get<HeroStat[]>(`/api/heroes?${aggParams(f)}`);
 
 /** WS `/ws` : à chaque `match.parsed`, invalide les listes de matchs (temps réel). */
 export function useLiveUpdates(onMatch?: (m: { match_id: number; map?: string }) => void) {

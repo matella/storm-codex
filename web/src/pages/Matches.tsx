@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   fetchMatches, fetchHeroes, modeBadge, fmtTime, fmtDur, mapImage, pickOperator,
   matchesParams, useSettings, operatorNames, awardLabel, type MatchSummary, type MatchListParams,
@@ -31,9 +31,10 @@ const dayPlus1 = (d: string) => { const x = new Date(d + "T00:00:00"); x.setDate
 export function Matches() {
   useSettings();
   const accounts = operatorNames();
-  const [mode, setMode] = useState<number | undefined>(undefined);
-  const [map, setMap] = useState("");
-  const [hero, setHero] = useState("");
+  const [sp] = useSearchParams(); // drill-down depuis Heroes/Maps : /matches?hero=… / ?map=…
+  const [mode, setMode] = useState<number | undefined>(sp.get("mode") ? Number(sp.get("mode")) : undefined);
+  const [map, setMap] = useState(sp.get("map") ?? "");
+  const [hero, setHero] = useState(sp.get("hero") ?? "");
   const [account, setAccount] = useState("");
   const [result, setResult] = useState<"" | "win" | "loss">("");
   const [mvp, setMvp] = useState(false);
@@ -60,7 +61,7 @@ export function Matches() {
     queryFn: async () => (await fetch("/api/maps")).json() as Promise<MapStat[]>,
     staleTime: Infinity,
   });
-  const { data: heroes } = useQuery({ queryKey: ["heroes-filter"], queryFn: fetchHeroes, staleTime: Infinity });
+  const { data: heroes } = useQuery({ queryKey: ["heroes-filter"], queryFn: () => fetchHeroes(), staleTime: Infinity });
 
   const active = mode != null || map || hero || account || result || mvp || from || to;
   const reset = () => { setMode(undefined); setMap(""); setHero(""); setAccount(""); setResult(""); setMvp(false); setFrom(""); setTo(""); };

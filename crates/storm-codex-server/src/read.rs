@@ -34,6 +34,9 @@ pub struct MatchFilter {
     /// true = uniquement les parties où l'opérateur fut MVP
     #[serde(default)]
     mvp: bool,
+    /// true = restreint aux lignes/parties de l'opérateur (operator_names) — agrégats Heroes/Maps
+    #[serde(default)]
+    mine: bool,
     /// plage de dates (ISO) sur played_at : `from` inclus, `to` exclu
     from: Option<String>,
     to: Option<String>,
@@ -151,12 +154,28 @@ pub async fn get_player(State(s): State<AppState>, Path(toon): Path<String>) -> 
 }
 
 /// GET /api/heroes — stats agrégées par héros (games/wins).
-pub async fn list_heroes(State(s): State<AppState>) -> Resp {
+pub async fn list_heroes(State(s): State<AppState>, Query(f): Query<MatchFilter>) -> Resp {
     let v: J = sqlx::query_scalar(
-        "SELECT COALESCE(jsonb_agg(h ORDER BY h.games DESC), '[]'::jsonb) FROM (
-            SELECT hero, count(*) AS games, count(*) FILTER (WHERE win) AS wins
-            FROM match_players WHERE hero IS NOT NULL GROUP BY hero) h",
+        "WITH ops AS (
+            SELECT lower(jsonb_array_elements_text(value)) AS name
+            FROM app_settings WHERE key = 'operator_names'
+         )
+         SELECT COALESCE(jsonb_agg(h ORDER BY h.games DESC), '[]'::jsonb) FROM (
+            SELECT mp.hero, count(*) AS games, count(*) FILTER (WHERE mp.win) AS wins
+            FROM match_players mp JOIN matches m ON m.id = mp.match_id
+            WHERE mp.hero IS NOT NULL
+              AND ($1::int IS NULL OR m.mode = $1)
+              AND ($2::timestamptz IS NULL OR m.played_at >= $2::timestamptz)
+              AND ($3::timestamptz IS NULL OR m.played_at <  $3::timestamptz)
+              AND (NOT $4::bool OR lower(mp.name) IN (SELECT name FROM ops))
+              AND ($5::text IS NULL OR lower(mp.name) = lower($5))
+            GROUP BY mp.hero) h",
     )
+    .bind(f.mode)
+    .bind(f.from)
+    .bind(f.to)
+    .bind(f.mine)
+    .bind(f.account)
     .fetch_one(&s.db)
     .await
     .map_err(db_err)?;
@@ -267,14 +286,32 @@ pub async fn matches_csv(
 }
 
 /// GET /api/maps — parties par carte + winrate équipe bleue.
-pub async fn list_maps(State(s): State<AppState>) -> Resp {
+pub async fn list_maps(State(s): State<AppState>, Query(f): Query<MatchFilter>) -> Resp {
     let v: J = sqlx::query_scalar(
-        "SELECT COALESCE(jsonb_agg(t ORDER BY t.games DESC), '[]'::jsonb) FROM (
-            SELECT map, count(*) AS games,
-                   count(*) FILTER (WHERE winner = 0) AS blue_wins,
-                   round(avg(length)::numeric, 0) AS avg_length
-            FROM matches WHERE map IS NOT NULL GROUP BY map) t",
+        "WITH ops AS (
+            SELECT lower(jsonb_array_elements_text(value)) AS name
+            FROM app_settings WHERE key = 'operator_names'
+         )
+         SELECT COALESCE(jsonb_agg(t ORDER BY t.games DESC), '[]'::jsonb) FROM (
+            SELECT m.map, count(*) AS games,
+                   count(*) FILTER (WHERE m.winner = 0) AS blue_wins,
+                   round(avg(m.length)::numeric, 0) AS avg_length
+            FROM matches m
+            WHERE m.map IS NOT NULL
+              AND ($1::int IS NULL OR m.mode = $1)
+              AND ($2::timestamptz IS NULL OR m.played_at >= $2::timestamptz)
+              AND ($3::timestamptz IS NULL OR m.played_at <  $3::timestamptz)
+              AND (NOT ($4::bool OR $5::text IS NOT NULL)
+                   OR EXISTS (SELECT 1 FROM match_players p WHERE p.match_id = m.id
+                              AND (($5::text IS NOT NULL AND lower(p.name) = lower($5))
+                                OR ($5::text IS NULL     AND lower(p.name) IN (SELECT name FROM ops)))))
+            GROUP BY m.map) t",
     )
+    .bind(f.mode)
+    .bind(f.from)
+    .bind(f.to)
+    .bind(f.mine)
+    .bind(f.account)
     .fetch_one(&s.db)
     .await
     .map_err(db_err)?;

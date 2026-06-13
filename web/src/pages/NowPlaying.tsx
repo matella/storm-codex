@@ -34,7 +34,7 @@ export function NowPlaying() {
   const pct = t.durationMs ? Math.min(100, (prog / t.durationMs) * 100) : 0;
 
   return (
-    <OverlayFrame anchor="bottom-right" pad={0}>
+    <OverlayFrame anchor="bottom-right" pad={36}>
       <style>{`@keyframes eq{0%,100%{height:3px}50%{height:13px}}`}</style>
       <div
         style={{
