@@ -9,7 +9,10 @@ pub struct Config {
     pub archive_dir: PathBuf,
     pub raw_cache_dir: PathBuf,
     pub raw_cache_max_bytes: u64,
-    pub admin_token: String,
+    /// Token admin (Bearer) protégeant les écritures. `None` (ADMIN_TOKEN absent/vide) = **mode
+    /// ouvert** : aucune auth admin requise — destiné à l'auto-hébergement local (LAN/Tailscale,
+    /// un seul opérateur). Le définir réactive l'auth (recommandé si exposé via reverse proxy).
+    pub admin_token: Option<String>,
     /// Dossier du front buildé (web/dist) servi sur `/` ; vide = ne sert que l'API.
     pub web_dir: Option<PathBuf>,
     /// Redis Jarvis (option) ; absent = pas d'émission d'événements.
@@ -43,7 +46,7 @@ impl Config {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(5 * 1024 * 1024 * 1024),
-            admin_token: std::env::var("ADMIN_TOKEN").unwrap_or_else(|_| "dev-admin-token".into()),
+            admin_token: std::env::var("ADMIN_TOKEN").ok().filter(|s| !s.is_empty()),
             web_dir: std::env::var("WEB_DIR")
                 .ok()
                 .map(PathBuf::from)

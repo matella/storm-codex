@@ -18,12 +18,14 @@ async function adminFetch(url: string, token: string, opts: RequestInit = {}) {
 export function Admin() {
   const [token, setToken] = useAdminToken();
   const qc = useQueryClient();
-  const { data: health } = useQuery({
-    queryKey: ["admin-uploads", token],
-    queryFn: async () => (token ? (await adminFetch("/api/admin/uploads", token)).json() : null),
-    enabled: !!token,
-  });
   const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: async () => (await fetch("/api/settings")).json() });
+  // mode ouvert : aucun ADMIN_TOKEN configuré côté serveur (auto-hébergement local) → pas d'auth.
+  const adminOpen: boolean = (settings as { admin_open?: boolean } | undefined)?.admin_open === true;
+  const { data: health } = useQuery({
+    queryKey: ["admin-uploads", token, adminOpen],
+    queryFn: async () => (await adminFetch("/api/admin/uploads", token)).json(),
+    enabled: !!token || adminOpen,
+  });
   const { data: teams } = useQuery({ queryKey: ["teams"], queryFn: async () => (await fetch("/api/teams")).json() });
   const { data: collections } = useQuery({ queryKey: ["collections"], queryFn: async () => (await fetch("/api/collections")).json() });
 
@@ -37,7 +39,7 @@ export function Admin() {
   const saveOperator = async () => {
     // l'échec le plus courant : pas de token admin (stocké par navigateur) → on le dit clairement
     // plutôt que d'échouer en silence.
-    if (!token) { setOpMsg("⚠ enter the admin token above first"); return; }
+    if (!token && !adminOpen) { setOpMsg("⚠ enter the admin token above first"); return; }
     const names = opValue.split(",").map((s) => s.trim()).filter(Boolean);
     try {
       const r = await adminFetch("/api/admin/settings", token, { method: "PUT", body: JSON.stringify({ operator_names: names }) });
@@ -74,13 +76,22 @@ export function Admin() {
   return (
     <>
       <h1>Admin / Import</h1>
-      <div className="card">
-        <div className="card-hd"><span className="kick" style={{ margin: 0 }}>Admin token</span></div>
-        <div className="row">
-          <input style={{ ...inp, flex: 1 }} type="password" placeholder="ADMIN_TOKEN" value={token} onChange={(e) => setToken(e.target.value)} />
-          <span className="muted" style={{ fontSize: 10 }}>{token ? "configured" : "required for actions"}</span>
+      {adminOpen ? (
+        <div className="card">
+          <div className="row"><span className="muted" style={{ fontSize: 11 }}>
+            🔓 Local mode — no admin token required (server has no ADMIN_TOKEN set).
+            Set ADMIN_TOKEN in the server env to re-enable auth (recommended if exposed publicly).
+          </span></div>
         </div>
-      </div>
+      ) : (
+        <div className="card">
+          <div className="card-hd"><span className="kick" style={{ margin: 0 }}>Admin token</span></div>
+          <div className="row">
+            <input style={{ ...inp, flex: 1 }} type="password" placeholder="ADMIN_TOKEN" value={token} onChange={(e) => setToken(e.target.value)} />
+            <span className="muted" style={{ fontSize: 10 }}>{token ? "configured" : "required for actions"}</span>
+          </div>
+        </div>
+      )}
 
       <p className="cap">My identity (operator perspective)</p>
       <div className="card">

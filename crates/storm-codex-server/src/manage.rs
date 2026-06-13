@@ -11,11 +11,13 @@ use serde::Deserialize;
 use serde_json::Value as J;
 
 fn is_admin(h: &HeaderMap, s: &AppState) -> bool {
+    // Mode ouvert : pas de token configuré → écritures autorisées (auto-hébergement local).
+    let Some(token) = s.cfg.admin_token.as_deref() else { return true };
     h.get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .map(str::trim)
-        == Some(s.cfg.admin_token.as_str())
+        == Some(token)
 }
 fn forbidden() -> (StatusCode, Json<J>) {
     (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "admin token requis"})))
@@ -28,12 +30,17 @@ fn db_err(e: sqlx::Error) -> (StatusCode, Json<J>) {
 // ── Réglages (operator_names…) ───────────────────────────────────────────────
 /// GET /api/settings — réglages publics (lecture). Aujourd'hui : `operator_names`.
 pub async fn get_settings(State(s): State<AppState>) -> Result<Json<J>, (StatusCode, Json<J>)> {
-    let v: J = sqlx::query_scalar(
+    let mut v: J = sqlx::query_scalar(
         "SELECT COALESCE(jsonb_object_agg(key, value), '{}'::jsonb) FROM app_settings",
     )
     .fetch_one(&s.db)
     .await
     .map_err(db_err)?;
+    // `admin_open` : true = aucune auth admin requise (ADMIN_TOKEN absent) → le front masque le
+    // champ token et envoie ses écritures sans Bearer.
+    if let Some(obj) = v.as_object_mut() {
+        obj.insert("admin_open".into(), J::Bool(s.cfg.admin_token.is_none()));
+    }
     Ok(Json(v))
 }
 

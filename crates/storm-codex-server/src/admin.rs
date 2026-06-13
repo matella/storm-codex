@@ -12,12 +12,14 @@ use serde::Deserialize;
 use serde_json::Value as J;
 
 fn is_admin(headers: &HeaderMap, state: &AppState) -> bool {
+    // Mode ouvert : pas de token configuré → toute écriture est autorisée (auto-hébergement local).
+    let Some(token) = state.cfg.admin_token.as_deref() else { return true };
     headers
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.strip_prefix("Bearer "))
         .map(str::trim)
-        == Some(state.cfg.admin_token.as_str())
+        == Some(token)
 }
 
 fn forbidden() -> (StatusCode, Json<J>) {
