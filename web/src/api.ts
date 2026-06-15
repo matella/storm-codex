@@ -14,18 +14,60 @@ export interface MatchPlayer {
   award?: string | null; // ex. "EndOfMatchAwardMVPBoolean"
 }
 
-/** Award de fin de partie d'un joueur → libellé court + drapeau MVP. `null` si aucun award.
- *  HotS attribue UN award par joueur : MVP au meilleur, sinon une catégorie (Most Hero Damage…). */
-export function awardLabel(raw: string | null | undefined): { label: string; mvp: boolean } | null {
+/** Emoji par type d'award HotS (clé = nom « core », sans EndOfMatchAward…Boolean). Couvre les
+ *  types réellement présents dans la base ; fallback 🏅 pour un type inconnu. */
+const AWARD_ICON: Record<string, string> = {
+  MVP: "👑",
+  MostHeroDamageDone: "🗡️",
+  MostTeamfightHeroDamageDone: "⚔️",
+  MostSiegeDamageDone: "🏰",
+  MostHealing: "💚",
+  MostTeamfightHealingDone: "💗",
+  ClutchHealer: "🚑",
+  MostDamageTaken: "🛡️",
+  MostTeamfightDamageTaken: "🧱",
+  MostMercCampsCaptured: "🏕️",
+  HighestKillStreak: "🔥",
+  HatTrick: "🎩",
+  MostKills: "💀",
+  MostStuns: "💫",
+  MostSilences: "🤐",
+  MostRoots: "🌿",
+  MostXPContribution: "📈",
+  MostDamageDoneToZerg: "🐛",
+  MostAltarDamageDone: "⛩️",
+  MostImmortalDamage: "👹",
+  MostCurseDamageDone: "☠️",
+  MostGemsTurnedIn: "💎",
+  MostTimeOnPoint: "📍",
+  MostDamageToMinions: "🧟",
+  MostEscapes: "🏃",
+  MostDaredevilEscapes: "🪂",
+  MostDragonShrinesCaptured: "🐉",
+  MostTimeInTemple: "🛕",
+  MostVengeancesPerformed: "😤",
+  MostProtection: "🤝",
+  "0OutnumberedDeaths": "🧊",
+  "0Deaths": "😇",
+  MostInterruptedCageUnlocks: "🔓",
+  MostCoinsPaid: "🪙",
+  MostNukeDamageDone: "☢️",
+  MostSeedsCollected: "🌱",
+};
+
+/** Award de fin de partie d'un joueur → libellé court + emoji par type + drapeau MVP. `null` si
+ *  aucun award. HotS attribue UN award par joueur : MVP au meilleur, sinon une catégorie. */
+export function awardLabel(raw: string | null | undefined): { label: string; icon: string; mvp: boolean } | null {
   if (!raw) return null;
   const core = raw.replace(/^EndOfMatchAward/, "").replace(/Boolean$/, "");
-  if (core === "MVP") return { label: "MVP", mvp: true };
-  // décamelise + raccourcit les libellés verbeux
+  const icon = AWARD_ICON[core] ?? "🏅";
+  if (core === "MVP") return { label: "MVP", icon, mvp: true };
+  // décamelise + raccourcit les libellés verbeux pour le tooltip
   const label = core
     .replace(/([a-z])([A-Z])/g, "$1 $2")
     .replace(/^Most /, "")
     .replace(/ Done$/, "");
-  return { label, mvp: false };
+  return { label, icon, mvp: false };
 }
 export interface MatchSummary {
   id: number;

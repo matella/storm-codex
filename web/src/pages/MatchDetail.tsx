@@ -63,7 +63,7 @@ function ScoreTable({ players, team, label, cls }: { players: any[]; team: numbe
                         return aw.mvp ? (
                           <span title="MVP" style={{ fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 999, color: "#1a1500", background: "linear-gradient(90deg,#f5c542,#e0a818)" }}>MVP</span>
                         ) : (
-                          <span className="muted" title={aw.label} style={{ fontSize: 9 }}>🏅 {aw.label}</span>
+                          <span className="muted" title={aw.label} style={{ fontSize: 9 }}>{aw.icon} {aw.label}</span>
                         );
                       })()}
                     </Link>

@@ -78,7 +78,7 @@ export function Widget() {
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {aw.mvp ? "👑 MVP" : `🏅 ${aw.label}`}
+                  {aw.mvp ? "👑 MVP" : `${aw.icon} ${aw.label}`}
                 </span>
               );
             })()}
