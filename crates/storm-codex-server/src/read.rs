@@ -435,8 +435,23 @@ pub async fn patches_list(State(s): State<AppState>) -> Json<J> {
     Json(v)
 }
 
-/// GET /api/patches/{id} — détail d'un patch (clé = `internalId`, pas l'id numérique).
+/// GET /api/patches/{id} — détail d'un patch (clé = `internalId`, pas l'id numérique). En mode
+/// bundle (snapshot), le détail est stocké hors-ligne dans `dim_patches.data.detail` ; sinon on
+/// proxyfie HotsPatchNotes live.
 pub async fn patch_detail(State(s): State<AppState>, Path(id): Path<String>) -> Json<J> {
+    let stored: Option<J> = sqlx::query_scalar("SELECT data FROM dim_patches WHERE internal_id=$1")
+        .bind(&id)
+        .fetch_optional(&s.db)
+        .await
+        .ok()
+        .flatten();
+    if let Some(detail) = stored
+        .as_ref()
+        .and_then(|d| d.get("detail"))
+        .filter(|v| !v.is_null())
+    {
+        return Json(detail.clone());
+    }
     hpn_proxy(&s, format!("/api/patches/{id}"), J::Null).await
 }
 

@@ -25,6 +25,8 @@ rand = "0.8"
 redis = { version = "0.27", features = ["tokio-comp"] }
 uuid = { version = "1", features = ["v4"] }
 ureq = { version = "3", features = ["json"] }
+flate2 = "1"
+tar = "0.4"
 
 [lints]
 workspace = true

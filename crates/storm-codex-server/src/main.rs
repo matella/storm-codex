@@ -77,18 +77,27 @@ async fn run() -> Result<(), String> {
         events,
     };
 
-    // Référentiel depuis HotsPatchNotes (best-effort) : héros/talents/images une fois au démarrage,
-    // puis patch notes maintenant + toutes les 24 h. Chaque nouveau patch → notif WS in-app +
-    // webhook sortant optionnel.
-    if state.cfg.hotspatchnotes_url.is_some() {
+    // Référentiel héros/talents/patches + images (best-effort, refresh 24 h ; chaque nouveau patch →
+    // notif WS in-app + webhook optionnel). Deux sources mutuellement exclusives :
+    //  - REFERENTIAL_URL  : snapshot publié (`referential.tar.gz`) → bundle autonome, sans HPN live.
+    //  - HOTSPATCHNOTES_URL : API HotsPatchNotes live (setup mainteneur).
+    // Le snapshot est prioritaire quand les deux sont définis.
+    if state.cfg.referential_url.is_some() || state.cfg.hotspatchnotes_url.is_some() {
         let st = state.clone();
         tokio::spawn(async move {
-            let url = st.cfg.hotspatchnotes_url.clone().unwrap();
-            dim::sync_heroes(&st.db, &url).await;
-            dim::sync_talents(&st.db, &url).await;
-            dim::vendor_images(&st.cfg.images_dir, &url).await;
             loop {
-                for (iid, name) in dim::sync_patches(&st.db, &url).await {
+                let new_patches = if let Some(url) = st.cfg.referential_url.clone() {
+                    dim::ingest_snapshot(&st.db, &st.cfg.images_dir, &url).await
+                } else if let Some(url) = st.cfg.hotspatchnotes_url.clone() {
+                    // sync une-fois des héros/talents/images au 1er tour (idempotent ensuite).
+                    dim::sync_heroes(&st.db, &url).await;
+                    dim::sync_talents(&st.db, &url).await;
+                    dim::vendor_images(&st.cfg.images_dir, &url).await;
+                    dim::sync_patches(&st.db, &url).await
+                } else {
+                    Vec::new()
+                };
+                for (iid, name) in new_patches {
                     let _ = st.events.send(serde_json::json!({
                         "type": "patch.new", "internalId": iid, "name": name,
                     }));

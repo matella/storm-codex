@@ -224,6 +224,214 @@ pub async fn vendor_images(images_dir: &Path, base_url: &str) {
     .await;
 }
 
+/// Ingestion du **snapshot référentiel** (mode bundle autonome) : télécharge `referential.tar.gz`
+/// (`REFERENTIAL_URL`), le décompresse, et peuple `dim_heroes` / `dim_talents` / `dim_patches`
+/// (+ détail patch fusionné dans `data.detail` pour lecture offline) puis vendorise les images dans
+/// `images_dir`. Aucune dépendance runtime à HotsPatchNotes. Retourne les patches NOUVEAUX (pour
+/// notif), comme `sync_patches` ; aucun « nouveau » au premier seed (table vide). Best-effort.
+pub async fn ingest_snapshot(db: &PgPool, images_dir: &Path, url: &str) -> Vec<(String, String)> {
+    let url = url.to_string();
+    let dir = images_dir.to_path_buf();
+    let tmp = std::env::temp_dir().join("storm-codex-referential");
+
+    // Téléchargement + décompression (bloquant : réseau + tar/gzip).
+    let prep = tokio::task::spawn_blocking({
+        let tmp = tmp.clone();
+        move || -> Result<(), String> {
+            let bytes = ureq::get(&url)
+                .call()
+                .map_err(|e| e.to_string())?
+                .body_mut()
+                .read_to_vec()
+                .map_err(|e| e.to_string())?;
+            let _ = std::fs::remove_dir_all(&tmp);
+            std::fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
+            let gz = flate2::read::GzDecoder::new(&bytes[..]);
+            tar::Archive::new(gz).unpack(&tmp).map_err(|e| e.to_string())?;
+            Ok(())
+        }
+    })
+    .await;
+    match prep {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => {
+            tracing::warn!("référentiel : snapshot indispo ({e}) — anneaux d'univers en fallback");
+            return Vec::new();
+        }
+        Err(_) => return Vec::new(),
+    }
+
+    let read = |name: &str| -> Option<serde_json::Value> {
+        std::fs::read_to_string(tmp.join(name))
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+    };
+
+    // dim_heroes (même schéma que sync_heroes : id = name).
+    if let Some(serde_json::Value::Array(heroes)) = read("heroes.json") {
+        let mut n = 0;
+        for h in &heroes {
+            let Some(name) = h.get("name").and_then(|v| v.as_str()) else { continue };
+            let _ = sqlx::query(
+                "INSERT INTO dim_heroes (id, name, role, universe, data)
+                 VALUES ($1,$2,$3,$4,$5)
+                 ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, role=EXCLUDED.role,
+                    universe=EXCLUDED.universe, data=EXCLUDED.data",
+            )
+            .bind(name)
+            .bind(name)
+            .bind(h.get("role").and_then(|v| v.as_str()))
+            .bind(h.get("universe").and_then(|v| v.as_str()))
+            .bind(h)
+            .execute(db)
+            .await;
+            n += 1;
+        }
+        tracing::info!("dim_heroes (snapshot) : {n} héros");
+    }
+
+    // dim_talents depuis hero-details.json ({shortName: détail}). Même mapping canonique que
+    // collect_talents : attributeId HotsPatchNotes → nom parser (attr.json) ; fallback nom HPN.
+    if let Some(serde_json::Value::Object(details)) = read("hero-details.json") {
+        let code_to_name: std::collections::HashMap<String, String> =
+            storm_stats::constants::hero_attribute()
+                .as_object()
+                .map(|o| {
+                    o.iter()
+                        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                        .collect()
+                })
+                .unwrap_or_default();
+        if let Ok(mut tx) = db.begin().await {
+            if sqlx::query("DELETE FROM dim_talents").execute(&mut *tx).await.is_ok() {
+                let mut n = 0;
+                for detail in details.values() {
+                    let hp_name = detail.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    let hero_name = detail
+                        .get("attributeId")
+                        .and_then(|v| v.as_str())
+                        .and_then(|a| code_to_name.get(a))
+                        .map(String::as_str)
+                        .unwrap_or(hp_name);
+                    let Some(talents) = detail.get("talents").and_then(|v| v.as_object()) else { continue };
+                    for (level_key, arr) in talents {
+                        let tier: i32 = level_key.parse().unwrap_or(0);
+                        let Some(arr) = arr.as_array() else { continue };
+                        for t in arr {
+                            let Some(tree_id) = t.get("talentTreeId").and_then(|v| v.as_str()) else { continue };
+                            let name = t.get("name").and_then(|v| v.as_str()).unwrap_or(tree_id);
+                            let data = serde_json::json!({
+                                "icon": t.get("icon"), "type": t.get("type"),
+                                "description": t.get("description"), "sort": t.get("sort"),
+                                "isQuest": t.get("isQuest"),
+                            });
+                            let r = sqlx::query(
+                                "INSERT INTO dim_talents (hero_id, tier, name, tree_id, data)
+                                 VALUES ($1,$2,$3,$4,$5)
+                                 ON CONFLICT (hero_id, tier, name) DO NOTHING",
+                            )
+                            .bind(hero_name)
+                            .bind(tier)
+                            .bind(name)
+                            .bind(tree_id)
+                            .bind(&data)
+                            .execute(&mut *tx)
+                            .await;
+                            if r.is_ok() {
+                                n += 1;
+                            }
+                        }
+                    }
+                }
+                if tx.commit().await.is_ok() {
+                    tracing::info!("dim_talents (snapshot) : {n} talents");
+                }
+            }
+        }
+    }
+
+    // dim_patches : items + détail fusionné (data.detail) pour le rendu offline du patch.
+    let mut new_patches: Vec<(String, String)> = Vec::new();
+    if let Some(items) = read("patches.json")
+        .and_then(|v| v.get("items").and_then(|i| i.as_array()).cloned())
+    {
+        let pdetails = read("patch-details.json").unwrap_or(serde_json::Value::Null);
+        let was_empty: i64 = sqlx::query_scalar("SELECT count(*) FROM dim_patches")
+            .fetch_one(db)
+            .await
+            .unwrap_or(0);
+        for it in &items {
+            let Some(iid) = it.get("internalId").and_then(|v| v.as_str()) else { continue };
+            let name = it.get("patchName").and_then(|v| v.as_str()).unwrap_or(iid);
+            let mut data = it.clone();
+            if let Some(d) = pdetails.get(iid) {
+                data["detail"] = d.clone();
+            }
+            let inserted: Option<bool> = sqlx::query_scalar(
+                "INSERT INTO dim_patches (internal_id, name, type, live_date, hero_count, map_count, data)
+                 VALUES ($1,$2,$3,$4::timestamptz,$5,$6,$7)
+                 ON CONFLICT (internal_id) DO UPDATE SET name=EXCLUDED.name, type=EXCLUDED.type,
+                    live_date=EXCLUDED.live_date, hero_count=EXCLUDED.hero_count,
+                    map_count=EXCLUDED.map_count, data=EXCLUDED.data
+                 RETURNING (xmax = 0)",
+            )
+            .bind(iid)
+            .bind(name)
+            .bind(it.get("patchType").and_then(|v| v.as_str()))
+            .bind(it.get("liveDate").and_then(|v| v.as_str()))
+            .bind(it.get("heroCount").and_then(|v| v.as_i64()).map(|v| v as i32))
+            .bind(it.get("mapCount").and_then(|v| v.as_i64()).map(|v| v as i32))
+            .bind(&data)
+            .fetch_optional(db)
+            .await
+            .ok()
+            .flatten();
+            if inserted == Some(true) {
+                new_patches.push((iid.to_string(), name.to_string()));
+            }
+        }
+        tracing::info!("dim_patches (snapshot) : {} patches ({} nouveaux)", items.len(), new_patches.len());
+        if was_empty == 0 {
+            new_patches.clear(); // seed initial → pas de notif
+        }
+    }
+
+    // Images : copie images/** du snapshot vers images_dir (idempotent, saute l'existant).
+    let img_src = tmp.join("images");
+    let _ = tokio::task::spawn_blocking(move || {
+        let got = copy_tree(&img_src, &dir);
+        let _ = std::fs::remove_dir_all(&tmp);
+        tracing::info!("images (snapshot) : {got} fichiers copiés vers {dir:?}");
+    })
+    .await;
+
+    new_patches
+}
+
+/// Copie récursive `src` → `dst` (crée les dossiers, saute les fichiers déjà présents). Retourne le
+/// nombre de fichiers écrits. Best-effort (les erreurs par fichier sont ignorées).
+fn copy_tree(src: &Path, dst: &Path) -> u32 {
+    let mut n = 0;
+    let Ok(entries) = std::fs::read_dir(src) else { return 0 };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name() else { continue };
+        let target = dst.join(name);
+        if path.is_dir() {
+            let _ = std::fs::create_dir_all(&target);
+            n += copy_tree(&path, &target);
+        } else if !target.exists() {
+            if let Some(parent) = target.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if std::fs::copy(&path, &target).is_ok() {
+                n += 1;
+            }
+        }
+    }
+    n
+}
+
 fn fetch_array(url: &str) -> Result<Vec<serde_json::Value>, String> {
     let body = ureq::get(url)
         .call()
