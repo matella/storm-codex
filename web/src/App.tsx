@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Routes, Route } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { Dashboard } from "./pages/Dashboard";
@@ -6,6 +7,9 @@ import { MatchDetail } from "./pages/MatchDetail";
 import { Heroes } from "./pages/Heroes";
 import { Hero } from "./pages/Hero";
 import { Synergies } from "./pages/Synergies";
+import { Patches } from "./pages/Patches";
+// détail patch lazy : isole react-markdown (~300 kB) hors du bundle principal (overlays légers)
+const Patch = lazy(() => import("./pages/Patch").then((m) => ({ default: m.Patch })));
 import { Maps } from "./pages/Maps";
 import { Player } from "./pages/Player";
 import { Widget } from "./pages/Widget";
@@ -32,6 +36,8 @@ export default function App() {
         <Route path="heroes" element={<Heroes />} />
         <Route path="hero/:name" element={<Hero />} />
         <Route path="synergies" element={<Synergies />} />
+        <Route path="patches" element={<Patches />} />
+        <Route path="patch/:id" element={<Suspense fallback={<div className="empty">loading…</div>}><Patch /></Suspense>} />
         <Route path="maps" element={<Maps />} />
         <Route path="trends" element={<Trends />} />
         <Route path="leagues" element={<Leagues />} />

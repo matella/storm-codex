@@ -175,6 +175,19 @@ export interface Synergies {
 }
 export const fetchSynergies = () => get<Synergies>("/api/synergies");
 
+// ── patch notes (proxy HotsPatchNotes) ───────────────────────────────────────
+export interface PatchItem {
+  id: number; internalId: string; patchName: string; patchType: string;
+  liveDate: string | null; heroCount: number; mapCount: number;
+  officialLink: string | null; hasContent: boolean;
+}
+export interface PatchDetail {
+  internalId: string; patchName: string; patchType: string;
+  liveDate: string | null; officialLink: string | null; content: string | null;
+}
+export const fetchPatches = () => get<{ items: PatchItem[] }>("/api/patches");
+export const fetchPatch = (id: string) => get<PatchDetail>(`/api/patches/${encodeURIComponent(id)}`);
+
 /** WS `/ws` : à chaque `match.parsed`, invalide les listes de matchs (temps réel). */
 export function useLiveUpdates(onMatch?: (m: { match_id: number; map?: string }) => void) {
   const qc = useQueryClient();

@@ -404,6 +404,31 @@ pub async fn list_maps(State(s): State<AppState>, Query(f): Query<MatchFilter>) 
     Ok(Json(v))
 }
 
+/// Proxy GET best-effort vers HotsPatchNotes (`hotspatchnotes_url`) ; `fallback` si indispo/non
+/// configuré. Même mécanique que `now_playing` (ureq + spawn_blocking, jamais sur le thread HTTP).
+async fn hpn_proxy(s: &AppState, path: String, fallback: J) -> Json<J> {
+    let Some(base) = s.cfg.hotspatchnotes_url.clone() else { return Json(fallback) };
+    let url = format!("{}{}", base.trim_end_matches('/'), path);
+    let res = tokio::task::spawn_blocking(move || -> Option<J> {
+        ureq::get(&url).call().ok()?.body_mut().read_json().ok()
+    })
+    .await
+    .ok()
+    .flatten();
+    Json(res.unwrap_or(fallback))
+}
+
+/// GET /api/patches — liste des patch notes (proxy HotsPatchNotes, paginée côté amont ; on demande
+/// une grande page → la page filtre/affiche côté client).
+pub async fn patches_list(State(s): State<AppState>) -> Json<J> {
+    hpn_proxy(&s, "/api/patches?page=1&pageSize=200".into(), serde_json::json!({ "items": [] })).await
+}
+
+/// GET /api/patches/{id} — détail d'un patch (clé = `internalId`, pas l'id numérique).
+pub async fn patch_detail(State(s): State<AppState>, Path(id): Path<String>) -> Json<J> {
+    hpn_proxy(&s, format!("/api/patches/{id}"), J::Null).await
+}
+
 /// GET /api/now-playing — proxifie Orpheus (`/api/playback/now` = lecture Spotify LIVE +
 /// `/api/auth/status`) pour le widget musique OBS. `/now` reflète ce qui joue réellement sur
 /// Spotify (indépendant de l'engine DJ). Best-effort : Orpheus absent/non authentifié →
