@@ -66,17 +66,6 @@ async fn run() -> Result<(), String> {
         .await
         .map_err(|e| format!("migrations : {e}"))?;
 
-    // référentiel héros + vendorisation des images depuis HotsPatchNotes (best-effort)
-    if let Some(url) = cfg.hotspatchnotes_url.clone() {
-        let db2 = db.clone();
-        let images_dir = cfg.images_dir.clone();
-        tokio::spawn(async move {
-            dim::sync_heroes(&db2, &url).await;
-            dim::sync_talents(&db2, &url).await;
-            dim::vendor_images(&images_dir, &url).await;
-        });
-    }
-
     let cores = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4);
@@ -87,6 +76,37 @@ async fn run() -> Result<(), String> {
         parse_sem: Arc::new(Semaphore::new(cores)),
         events,
     };
+
+    // Référentiel depuis HotsPatchNotes (best-effort) : héros/talents/images une fois au démarrage,
+    // puis patch notes maintenant + toutes les 24 h. Chaque nouveau patch → notif WS in-app +
+    // webhook sortant optionnel.
+    if state.cfg.hotspatchnotes_url.is_some() {
+        let st = state.clone();
+        tokio::spawn(async move {
+            let url = st.cfg.hotspatchnotes_url.clone().unwrap();
+            dim::sync_heroes(&st.db, &url).await;
+            dim::sync_talents(&st.db, &url).await;
+            dim::vendor_images(&st.cfg.images_dir, &url).await;
+            loop {
+                for (iid, name) in dim::sync_patches(&st.db, &url).await {
+                    let _ = st.events.send(serde_json::json!({
+                        "type": "patch.new", "internalId": iid, "name": name,
+                    }));
+                    if let Some(hook) = st.cfg.patch_webhook_url.clone() {
+                        let body = serde_json::json!({
+                            "content": format!("🆕 New HotS patch: {name}"),
+                            "patchName": name, "internalId": iid,
+                        });
+                        let _ = tokio::task::spawn_blocking(move || {
+                            let _ = ureq::post(&hook).send_json(body);
+                        })
+                        .await;
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(24 * 3600)).await;
+            }
+        });
+    }
     let bind = state.cfg.bind_addr.clone();
 
     let app = Router::new()

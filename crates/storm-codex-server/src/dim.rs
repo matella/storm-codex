@@ -57,6 +57,51 @@ pub async fn sync_heroes(db: &PgPool, base_url: &str) {
     tracing::info!("dim_heroes synchronisé : {n} héros depuis HotsPatchNotes");
 }
 
+/// Réplique la LISTE des patch notes depuis `<base>/api/patches` dans `dim_patches` (storm-codex en
+/// devient propriétaire). Retourne les patches NOUVEAUX (absents avant) → l'appelant les notifie.
+/// Aucun « nouveau » au tout premier seed (table vide) pour éviter 200 notifications. Best-effort.
+pub async fn sync_patches(db: &PgPool, base_url: &str) -> Vec<(String, String)> {
+    let url = format!("{}/api/patches?page=1&pageSize=200", base_url.trim_end_matches('/'));
+    let items = match tokio::task::spawn_blocking(move || fetch_json(&url)).await {
+        Ok(Ok(v)) => v.get("items").and_then(|i| i.as_array()).cloned().unwrap_or_default(),
+        _ => {
+            tracing::warn!("dim_patches : HotsPatchNotes indispo");
+            return Vec::new();
+        }
+    };
+    let was_empty: i64 = sqlx::query_scalar("SELECT count(*) FROM dim_patches")
+        .fetch_one(db).await.unwrap_or(0);
+    let mut new_patches: Vec<(String, String)> = Vec::new();
+    for it in &items {
+        let Some(iid) = it.get("internalId").and_then(|v| v.as_str()) else { continue };
+        let name = it.get("patchName").and_then(|v| v.as_str()).unwrap_or(iid);
+        let inserted: Option<bool> = sqlx::query_scalar(
+            "INSERT INTO dim_patches (internal_id, name, type, live_date, hero_count, map_count, data)
+             VALUES ($1,$2,$3,$4::timestamptz,$5,$6,$7)
+             ON CONFLICT (internal_id) DO UPDATE SET name=EXCLUDED.name, type=EXCLUDED.type,
+                live_date=EXCLUDED.live_date, hero_count=EXCLUDED.hero_count,
+                map_count=EXCLUDED.map_count, data=EXCLUDED.data
+             RETURNING (xmax = 0)",
+        )
+        .bind(iid)
+        .bind(name)
+        .bind(it.get("patchType").and_then(|v| v.as_str()))
+        .bind(it.get("liveDate").and_then(|v| v.as_str()))
+        .bind(it.get("heroCount").and_then(|v| v.as_i64()).map(|v| v as i32))
+        .bind(it.get("mapCount").and_then(|v| v.as_i64()).map(|v| v as i32))
+        .bind(it)
+        .fetch_optional(db)
+        .await
+        .ok()
+        .flatten();
+        if inserted == Some(true) {
+            new_patches.push((iid.to_string(), name.to_string()));
+        }
+    }
+    tracing::info!("dim_patches synchronisé : {} patches ({} nouveaux)", items.len(), new_patches.len());
+    if was_empty == 0 { Vec::new() } else { new_patches } // seed initial → pas de notif
+}
+
 /// Réplique les talents par héros depuis `<base>/api/heroes/{shortName}` dans `dim_talents`.
 /// Clé de jointure `tree_id` = `talentTreeId`, qui matche `player.talents[TierNChoice]` écrit par
 /// le parser. ~90 requêtes séquentielles (bloquant), lancé en tâche de fond ; refresh complet

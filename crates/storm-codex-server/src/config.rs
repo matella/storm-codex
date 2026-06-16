@@ -28,6 +28,8 @@ pub struct Config {
     pub images_dir: PathBuf,
     /// API Orpheus (musique) — proxifiée par `/api/now-playing` pour le widget musique OBS.
     pub orpheus_url: Option<String>,
+    /// Webhook sortant (Discord/ntfy/générique) notifié à chaque nouveau patch. Absent = pas de notif.
+    pub patch_webhook_url: Option<String>,
 }
 
 impl Config {
@@ -61,6 +63,7 @@ impl Config {
                 std::env::var("IMAGES_DIR").unwrap_or_else(|_| "./.images".into()),
             ),
             orpheus_url: std::env::var("ORPHEUS_URL").ok().filter(|s| !s.is_empty()),
+            patch_webhook_url: std::env::var("PATCH_WEBHOOK_URL").ok().filter(|s| !s.is_empty()),
         })
     }
 }

@@ -418,10 +418,21 @@ async fn hpn_proxy(s: &AppState, path: String, fallback: J) -> Json<J> {
     Json(res.unwrap_or(fallback))
 }
 
-/// GET /api/patches — liste des patch notes (proxy HotsPatchNotes, paginée côté amont ; on demande
-/// une grande page → la page filtre/affiche côté client).
+/// GET /api/patches — liste des patch notes depuis `dim_patches` (storm-codex propriétaire ; peuplée
+/// au démarrage par dim::sync_patches). Forme `{items:[…]}` (compat front).
 pub async fn patches_list(State(s): State<AppState>) -> Json<J> {
-    hpn_proxy(&s, "/api/patches?page=1&pageSize=200".into(), serde_json::json!({ "items": [] })).await
+    let v: J = sqlx::query_scalar(
+        "SELECT jsonb_build_object('items', COALESCE(jsonb_agg(jsonb_build_object(
+            'internalId', internal_id, 'patchName', name, 'patchType', type, 'liveDate', live_date,
+            'heroCount', hero_count, 'mapCount', map_count,
+            'officialLink', data->>'officialLink', 'hasContent', data->'hasContent'
+         ) ORDER BY live_date DESC NULLS LAST), '[]'::jsonb))
+         FROM dim_patches",
+    )
+    .fetch_one(&s.db)
+    .await
+    .unwrap_or_else(|_| serde_json::json!({ "items": [] }));
+    Json(v)
 }
 
 /// GET /api/patches/{id} — détail d'un patch (clé = `internalId`, pas l'id numérique).

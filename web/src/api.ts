@@ -188,8 +188,9 @@ export interface PatchDetail {
 export const fetchPatches = () => get<{ items: PatchItem[] }>("/api/patches");
 export const fetchPatch = (id: string) => get<PatchDetail>(`/api/patches/${encodeURIComponent(id)}`);
 
-/** WS `/ws` : à chaque `match.parsed`, invalide les listes de matchs (temps réel). */
-export function useLiveUpdates(onMatch?: (m: { match_id: number; map?: string }) => void) {
+/** WS `/ws` : `match.parsed` invalide les listes de matchs ; `patch.new` invalide les patches. Le
+ *  callback reçoit l'événement brut (avec `.type`) pour piloter les toasts. */
+export function useLiveUpdates(onEvent?: (ev: { type?: string; match_id?: number; map?: string; name?: string; internalId?: string }) => void) {
   const qc = useQueryClient();
   useEffect(() => {
     const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -203,7 +204,10 @@ export function useLiveUpdates(onMatch?: (m: { match_id: number; map?: string })
           if (ev.type === "match.parsed") {
             qc.invalidateQueries({ queryKey: ["matches"] });
             qc.invalidateQueries({ queryKey: ["heroes"] });
-            onMatch?.(ev);
+            onEvent?.(ev);
+          } else if (ev.type === "patch.new") {
+            qc.invalidateQueries({ queryKey: ["patches"] });
+            onEvent?.(ev);
           }
         } catch {
           /* ignore */
