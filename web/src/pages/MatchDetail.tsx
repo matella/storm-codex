@@ -1,4 +1,4 @@
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "react-router-dom";
 import { fetchMatch, modeBadge, fmtTime, fmtDur, useDimTalents, talentInfo, awardLabel } from "../api";
@@ -32,8 +32,28 @@ function TalentStrip({ talents }: { talents: Record<string, string> | undefined 
   );
 }
 
-function ScoreTable({ players, team, label, cls }: { players: any[]; team: number; label: string; cls: string }) {
+const fmtN = (n: number) => n.toLocaleString("fr-FR");
+/** Colonnes du tableau de score. `adv` = colonnes étendues (parité SotS, masquées par défaut) ;
+ *  `total` = sommée dans la ligne « Team total ». Les ~112 stats parsées sont toutes dispo ici. */
+const COLS: { label: string; get: (g: any) => number; adv?: boolean; total?: boolean }[] = [
+  { label: "K", get: (g) => num(g.SoloKill), total: true },
+  { label: "D", get: (g) => num(g.Deaths), total: true },
+  { label: "A", get: (g) => num(g.Assists ?? g.Takedowns), total: true },
+  { label: "Hero dmg", get: (g) => num(g.HeroDamage), total: true },
+  { label: "Healing", get: (g) => num(g.Healing), total: true },
+  { label: "XP", get: (g) => num(g.ExperienceContribution), total: true },
+  { label: "Lvl", get: (g) => num(g.Level) },
+  { label: "Siege", get: (g) => num(g.SiegeDamage), adv: true, total: true },
+  { label: "Spell", get: (g) => num(g.SpellDamage), adv: true, total: true },
+  { label: "Taken", get: (g) => num(g.DamageTaken), adv: true, total: true },
+  { label: "Self-heal", get: (g) => num(g.SelfHealing), adv: true, total: true },
+  { label: "CC s", get: (g) => num(g.TimeCCdEnemyHeroes), adv: true, total: true },
+  { label: "Mercs", get: (g) => num(g.MercCampCaptures), adv: true, total: true },
+];
+
+function ScoreTable({ players, team, label, cls, adv }: { players: any[]; team: number; label: string; cls: string; adv: boolean }) {
   const rows = players.filter((p) => p.team === team);
+  const cols = COLS.filter((c) => !c.adv || adv);
   return (
     <div className="card">
       <div className="card-hd">
@@ -42,9 +62,7 @@ function ScoreTable({ players, team, label, cls }: { players: any[]; team: numbe
       </div>
       <table>
         <thead>
-          <tr>
-            <th>Player</th><th>K</th><th>D</th><th>A</th><th>Hero dmg</th><th>Healing</th><th>XP</th><th>Lvl</th>
-          </tr>
+          <tr><th>Player</th>{cols.map((c) => <th key={c.label}>{c.label}</th>)}</tr>
         </thead>
         <tbody>
           {rows.map((p) => {
@@ -68,22 +86,22 @@ function ScoreTable({ players, team, label, cls }: { players: any[]; team: numbe
                       })()}
                     </Link>
                   </td>
-                  <td className="mono">{num(g.SoloKill)}</td>
-                  <td className="mono">{num(g.Deaths)}</td>
-                  <td className="mono">{num(g.Assists ?? g.Takedowns)}</td>
-                  <td className="mono">{num(g.HeroDamage).toLocaleString("fr-FR")}</td>
-                  <td className="mono">{num(g.Healing).toLocaleString("fr-FR")}</td>
-                  <td className="mono">{num(g.ExperienceContribution).toLocaleString("fr-FR")}</td>
-                  <td className="mono">{num(g.Level)}</td>
+                  {cols.map((c) => <td key={c.label} className="mono">{fmtN(c.get(g))}</td>)}
                 </tr>
                 {p.talents && (
                   <tr>
-                    <td colSpan={8} style={{ paddingTop: 0 }}><TalentStrip talents={p.talents} /></td>
+                    <td colSpan={cols.length + 1} style={{ paddingTop: 0 }}><TalentStrip talents={p.talents} /></td>
                   </tr>
                 )}
               </Fragment>
             );
           })}
+          <tr style={{ fontWeight: 700, borderTop: "1px solid var(--hairline-strong)" }}>
+            <td className="muted">Team total</td>
+            {cols.map((c) => (
+              <td key={c.label} className="mono">{c.total ? fmtN(rows.reduce((s, p) => s + c.get(p.gameStats ?? {}), 0)) : ""}</td>
+            ))}
+          </tr>
         </tbody>
       </table>
     </div>
@@ -190,8 +208,60 @@ function MatchTimeline({ m, players }: { m: any; players: Record<string, any> })
   );
 }
 
+/** Courbe d'XP par équipe dans le temps (somme du `breakdown` par échantillon, hors champs temps),
+ *  reconstruite de `match.XPBreakdown`. Deux lignes (bleu/rouge). */
+function XPCurve({ data }: { data: any[] }) {
+  if (!Array.isArray(data) || data.length < 2) return null;
+  const sumXP = (b: any) =>
+    Object.entries(b || {}).reduce((s, [k, v]) => (typeof v === "number" && !/Time/i.test(k) ? s + v : s), 0);
+  const series: Record<number, { t: number; xp: number }[]> = { 0: [], 1: [] };
+  for (const d of data) series[d.team === 0 ? 0 : 1].push({ t: d.time ?? 0, xp: sumXP(d.breakdown) });
+  [0, 1].forEach((t) => series[t].sort((a, b) => a.t - b.t));
+  const maxXP = Math.max(1, ...data.map((d) => sumXP(d.breakdown)));
+  const maxT = Math.max(1, ...data.map((d) => d.time ?? 0));
+  const line = (pts: { t: number; xp: number }[]) =>
+    pts.map((p) => `${(p.t / maxT) * 100},${100 - (p.xp / maxXP) * 100}`).join(" ");
+  return (
+    <svg width="100%" height="120" viewBox="0 0 100 100" preserveAspectRatio="none">
+      <polyline points={line(series[0])} fill="none" stroke="var(--tm-blue)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+      <polyline points={line(series[1])} fill="none" stroke="var(--tm-red)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+
+/** Table BM (taunts/dances/sprays/voiceLines) + pings (depuis `match.messages`) par joueur. */
+function BMTable({ players, messages }: { players: any[]; messages: any[] }) {
+  const pings = (toon: string) => (messages || []).filter((x) => x.player === toon).length;
+  const cnt = (a: any) => (Array.isArray(a) ? a.length : 0);
+  const any = players.some((p) => cnt(p.taunts) + cnt(p.dances) + cnt(p.sprays) + cnt(p.voiceLines) + pings(p.ToonHandle) > 0);
+  if (!any) return null;
+  return (
+    <>
+      <p className="cap">Taunts / BM &amp; pings</p>
+      <div className="card">
+        <table>
+          <thead><tr><th>Player</th><th>Taunts</th><th>Dances</th><th>Sprays</th><th>Voice</th><th>Pings</th></tr></thead>
+          <tbody>
+            {players.map((p) => (
+              <tr key={p.ToonHandle}>
+                <td><span style={{ display: "flex", alignItems: "center", gap: 7 }}><Avatar hero={p.hero} size={18} /> {p.hero}</span></td>
+                <td className="mono">{cnt(p.taunts)}</td>
+                <td className="mono">{cnt(p.dances)}</td>
+                <td className="mono">{cnt(p.sprays)}</td>
+                <td className="mono">{cnt(p.voiceLines)}</td>
+                <td className="mono">{pings(p.ToonHandle)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
 export function MatchDetail() {
   const { id } = useParams();
+  const [adv, setAdv] = useState(false);
   useDimTalents(); // peuple le référentiel talents (talentTreeId → nom)
   const { data, isLoading } = useQuery({ queryKey: ["match", id], queryFn: () => fetchMatch(id!) });
 
@@ -258,8 +328,11 @@ export function MatchDetail() {
         </div>
       )}
 
-      <ScoreTable players={players} team={0} label="Blue team" cls="tm-blue" />
-      <ScoreTable players={players} team={1} label="Red team" cls="tm-red" />
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: -8 }}>
+        <span className={adv ? "pill on" : "pill"} onClick={() => setAdv(!adv)}>{adv ? "− basic stats" : "+ advanced stats"}</span>
+      </div>
+      <ScoreTable players={players} team={0} label="Blue team" cls="tm-blue" adv={adv} />
+      <ScoreTable players={players} team={1} label="Red team" cls="tm-red" adv={adv} />
 
       {Array.isArray(m.levelAdvTimeline) && m.levelAdvTimeline.length > 1 && (
         <>
@@ -268,7 +341,16 @@ export function MatchDetail() {
         </>
       )}
 
+      {Array.isArray(m.XPBreakdown) && m.XPBreakdown.length > 1 && (
+        <>
+          <p className="cap">Team XP over time (blue / red)</p>
+          <div className="card"><XPCurve data={m.XPBreakdown} /></div>
+        </>
+      )}
+
       <MatchTimeline m={m} players={data.players ?? {}} />
+
+      <BMTable players={players} messages={m.messages ?? []} />
 
       <p className="cap">Full data</p>
       <div className="card">
