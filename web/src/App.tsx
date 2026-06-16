@@ -4,6 +4,8 @@ import { Dashboard } from "./pages/Dashboard";
 import { Matches } from "./pages/Matches";
 import { MatchDetail } from "./pages/MatchDetail";
 import { Heroes } from "./pages/Heroes";
+import { Hero } from "./pages/Hero";
+import { Synergies } from "./pages/Synergies";
 import { Maps } from "./pages/Maps";
 import { Player } from "./pages/Player";
 import { Widget } from "./pages/Widget";
@@ -28,6 +30,8 @@ export default function App() {
         <Route path="match/:id" element={<MatchDetail />} />
         <Route path="player/:toon" element={<Player />} />
         <Route path="heroes" element={<Heroes />} />
+        <Route path="hero/:name" element={<Hero />} />
+        <Route path="synergies" element={<Synergies />} />
         <Route path="maps" element={<Maps />} />
         <Route path="trends" element={<Trends />} />
         <Route path="leagues" element={<Leagues />} />

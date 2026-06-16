@@ -150,6 +150,24 @@ export const fetchMatch = (id: number | string) =>
 export const fetchPlayer = (toon: string) => get<PlayerSummary>(`/api/players/${encodeURIComponent(toon)}`);
 export const fetchHeroes = (f: AggFilter = {}) => get<HeroStat[]>(`/api/heroes?${aggParams(f)}`);
 
+export interface HeroDetail {
+  hero: string;
+  games: number;
+  wins: number;
+  avg_kills: number | null;
+  avg_deaths: number | null;
+  avg_takedowns: number | null;
+  by_map: { map: string; games: number; wins: number }[];
+  builds: { talents: Record<string, string>; games: number; wins: number }[];
+}
+export const fetchHeroDetail = (hero: string) => get<HeroDetail>(`/api/hero/${encodeURIComponent(hero)}`);
+
+export interface Synergies {
+  teammates: { name: string; games: number; wins: number }[];
+  enemies: { hero: string; games: number; wins: number }[];
+}
+export const fetchSynergies = () => get<Synergies>("/api/synergies");
+
 /** WS `/ws` : à chaque `match.parsed`, invalide les listes de matchs (temps réel). */
 export function useLiveUpdates(onMatch?: (m: { match_id: number; map?: string }) => void) {
   const qc = useQueryClient();

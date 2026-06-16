@@ -182,6 +182,71 @@ pub async fn list_heroes(State(s): State<AppState>, Query(f): Query<MatchFilter>
     Ok(Json(v))
 }
 
+/// GET /api/hero/{hero} — fiche héros du point de vue opérateur : volume + WR + KDA moyen, WR par
+/// carte, et builds de talents les plus joués (avec WR) pour ce héros.
+pub async fn hero_detail(State(s): State<AppState>, Path(hero): Path<String>) -> Resp {
+    let v: J = sqlx::query_scalar(
+        "WITH ops AS (
+            SELECT lower(jsonb_array_elements_text(value)) AS name FROM app_settings WHERE key='operator_names'
+         ),
+         mine AS (
+            SELECT mp.win, mp.kills, mp.deaths, mp.takedowns, m.map, mp.data->'talents' AS talents
+            FROM match_players mp JOIN matches m ON m.id = mp.match_id
+            WHERE mp.hero = $1 AND lower(mp.name) IN (SELECT name FROM ops)
+         )
+         SELECT jsonb_build_object(
+            'hero', $1::text,
+            'games', count(*),
+            'wins', count(*) FILTER (WHERE win),
+            'avg_kills', round(avg(kills)::numeric, 1),
+            'avg_deaths', round(avg(deaths)::numeric, 1),
+            'avg_takedowns', round(avg(takedowns)::numeric, 1),
+            'by_map', (SELECT COALESCE(jsonb_agg(x ORDER BY x.games DESC), '[]'::jsonb) FROM (
+                SELECT map, count(*) AS games, count(*) FILTER (WHERE win) AS wins
+                FROM mine GROUP BY map) x),
+            'builds', (SELECT COALESCE(jsonb_agg(b ORDER BY b.games DESC), '[]'::jsonb) FROM (
+                SELECT talents, count(*) AS games, count(*) FILTER (WHERE win) AS wins
+                FROM mine WHERE talents IS NOT NULL AND talents <> '{}'::jsonb
+                GROUP BY talents ORDER BY count(*) DESC LIMIT 6) b)
+         ) FROM mine",
+    )
+    .bind(hero)
+    .fetch_one(&s.db)
+    .await
+    .map_err(db_err)?;
+    Ok(Json(v))
+}
+
+/// GET /api/synergies — perspective opérateur : alliés avec qui tu gagnes le plus (≥3 parties
+/// ensemble) et héros adverses rencontrés (≥3 fois) avec ton WR contre eux.
+pub async fn synergies(State(s): State<AppState>) -> Resp {
+    let v: J = sqlx::query_scalar(
+        "WITH ops AS (
+            SELECT lower(jsonb_array_elements_text(value)) AS name FROM app_settings WHERE key='operator_names'
+         ),
+         me AS (
+            SELECT mp.match_id, mp.team, mp.win FROM match_players mp
+            WHERE lower(mp.name) IN (SELECT name FROM ops)
+         )
+         SELECT jsonb_build_object(
+            'teammates', (SELECT COALESCE(jsonb_agg(t ORDER BY t.games DESC), '[]'::jsonb) FROM (
+                SELECT tm.name, count(*) AS games, count(*) FILTER (WHERE me.win) AS wins
+                FROM me JOIN match_players tm ON tm.match_id = me.match_id AND tm.team = me.team
+                WHERE tm.name IS NOT NULL AND lower(tm.name) NOT IN (SELECT name FROM ops)
+                GROUP BY tm.name HAVING count(*) >= 3) t),
+            'enemies', (SELECT COALESCE(jsonb_agg(e ORDER BY e.games DESC), '[]'::jsonb) FROM (
+                SELECT en.hero, count(*) AS games, count(*) FILTER (WHERE me.win) AS wins
+                FROM me JOIN match_players en ON en.match_id = me.match_id AND en.team <> me.team
+                WHERE en.hero IS NOT NULL
+                GROUP BY en.hero HAVING count(*) >= 3) e)
+         )",
+    )
+    .fetch_one(&s.db)
+    .await
+    .map_err(db_err)?;
+    Ok(Json(v))
+}
+
 /// GET /api/dim/heroes — référentiel héros (nom → univers/rôle/icône) pour les anneaux d'univers.
 pub async fn dim_heroes(State(s): State<AppState>) -> Resp {
     let v: J = sqlx::query_scalar(
@@ -295,16 +360,23 @@ pub async fn list_maps(State(s): State<AppState>, Query(f): Query<MatchFilter>) 
          SELECT COALESCE(jsonb_agg(t ORDER BY t.games DESC), '[]'::jsonb) FROM (
             SELECT m.map, count(*) AS games,
                    count(*) FILTER (WHERE m.winner = 0) AS blue_wins,
-                   round(avg(m.length)::numeric, 0) AS avg_length
+                   round(avg(m.length)::numeric, 0) AS avg_length,
+                   count(me.win) AS my_games,
+                   count(*) FILTER (WHERE me.win) AS my_wins
             FROM matches m
+            -- ligne de l'opérateur (compte précis $5 sinon operator_names) : pour le WR perso/carte
+            LEFT JOIN LATERAL (
+              SELECT p.win FROM match_players p
+              WHERE p.match_id = m.id
+                AND (($5::text IS NOT NULL AND lower(p.name) = lower($5))
+                  OR ($5::text IS NULL     AND lower(p.name) IN (SELECT name FROM ops)))
+              LIMIT 1
+            ) me ON true
             WHERE m.map IS NOT NULL
               AND ($1::int IS NULL OR m.mode = $1)
               AND ($2::timestamptz IS NULL OR m.played_at >= $2::timestamptz)
               AND ($3::timestamptz IS NULL OR m.played_at <  $3::timestamptz)
-              AND (NOT ($4::bool OR $5::text IS NOT NULL)
-                   OR EXISTS (SELECT 1 FROM match_players p WHERE p.match_id = m.id
-                              AND (($5::text IS NOT NULL AND lower(p.name) = lower($5))
-                                OR ($5::text IS NULL     AND lower(p.name) IN (SELECT name FROM ops)))))
+              AND (NOT ($4::bool OR $5::text IS NOT NULL) OR me.win IS NOT NULL)
             GROUP BY m.map) t",
     )
     .bind(f.mode)

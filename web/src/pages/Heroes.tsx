@@ -40,7 +40,7 @@ export function Heroes() {
               {rows.map((h) => {
                 const rate = (100 * wr(h)).toFixed(1);
                 return (
-                  <tr key={h.hero} className="link" onClick={() => nav(`/matches?hero=${encodeURIComponent(h.hero)}`)}>
+                  <tr key={h.hero} className="link" onClick={() => nav(`/hero/${encodeURIComponent(h.hero)}`)}>
                     <td>
                       <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <Avatar hero={h.hero} size={20} /> {h.hero}

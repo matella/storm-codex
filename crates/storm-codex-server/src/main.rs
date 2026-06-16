@@ -100,6 +100,8 @@ async fn run() -> Result<(), String> {
         .route("/api/matches/{id}/raw", get(raw::get_raw))
         .route("/api/players/{toon}", get(read::get_player))
         .route("/api/heroes", get(read::list_heroes))
+        .route("/api/hero/{hero}", get(read::hero_detail))
+        .route("/api/synergies", get(read::synergies))
         .route("/api/maps", get(read::list_maps))
         .route("/api/dim/heroes", get(read::dim_heroes))
         .route("/api/dim/talents", get(read::dim_talents))
