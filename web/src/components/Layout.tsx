@@ -1,6 +1,8 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useLiveUpdates, useDimHeroes, useSettings } from "../api";
+import { WhatsNew } from "./WhatsNew";
+import { Onboarding } from "./Onboarding";
 
 const TABS: [string, string][] = [
   ["/", "Session"],
@@ -18,6 +20,7 @@ export function Layout() {
   const [live, setLive] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
   const [newPatch, setNewPatch] = useState(false); // pastille sur l'onglet Patch Notes
+  const [help, setHelp] = useState<null | "tour" | "whatsnew">(null);
   const loc = useLocation();
   useDimHeroes(); // peuple le référentiel héros (anneaux d'univers)
   useSettings(); // peuple operator_names (perspective opérateur partout)
@@ -45,7 +48,8 @@ export function Layout() {
             </NavLink>
           ))}
         </nav>
-        <span className={live ? "live" : "live off"}>
+        <span className="pill" title="Help / what's new" style={{ marginLeft: "auto", cursor: "pointer" }} onClick={() => setHelp("tour")}>?</span>
+        <span className={live ? "live" : "live off"} style={{ marginLeft: 10 }}>
           ● {live ? "online" : "offline"}
         </span>
       </div>
@@ -53,6 +57,8 @@ export function Layout() {
         {flash && <div className="toast mono">{flash}</div>}
         <Outlet />
       </div>
+      <Onboarding force={help === "tour"} onClose={() => setHelp(null)} />
+      <WhatsNew force={help === "whatsnew"} onClose={() => setHelp(null)} />
     </>
   );
 }
