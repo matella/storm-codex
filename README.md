@@ -1,3 +1,5 @@
+**English** · [Français](README.fr.md)
+
 # Storm Codex
 
 A ground-up renovation of [Stats of the Storm](https://github.com/ebshimizu/stats-of-the-storm) —
@@ -15,7 +17,9 @@ a Heroes of the Storm replay stat tracker — rebuilt as:
   detail, players, heroes, talent builds, compositions, trends by patch, teams & leagues,
   collections, maps, rankings — plus an OBS stream widget for post-game summaries.
 
-Status: **design phase complete** — implementation starts with a go/no-go decode spike (jalon 0).
+Status: **built and running** — full Stats-of-the-Storm feature parity, integrated patch notes,
+OBS overlays, deployed via Docker. For the all-in-one self-hosted bundle (one `docker compose up`,
+pre-seeded referential), see **[storm-codex-suite](https://github.com/matella/storm-codex-suite)**.
 
 ## Documentation (start here)
 
