@@ -233,7 +233,8 @@ pub async fn synergies(State(s): State<AppState>) -> Resp {
                 SELECT tm.name, count(*) AS games, count(*) FILTER (WHERE me.win) AS wins
                 FROM me JOIN match_players tm ON tm.match_id = me.match_id AND tm.team = me.team
                 WHERE tm.name IS NOT NULL AND lower(tm.name) NOT IN (SELECT name FROM ops)
-                GROUP BY tm.name HAVING count(*) >= 3) t),
+                GROUP BY tm.name HAVING count(*) >= 3
+                ORDER BY count(*) DESC LIMIT 50) t),
             'enemies', (SELECT COALESCE(jsonb_agg(e ORDER BY e.games DESC), '[]'::jsonb) FROM (
                 SELECT en.hero, count(*) AS games, count(*) FILTER (WHERE me.win) AS wins
                 FROM me JOIN match_players en ON en.match_id = me.match_id AND en.team <> me.team
