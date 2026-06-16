@@ -1,11 +1,20 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "react-router-dom";
-import ReactMarkdown from "react-markdown";
-import rehypeRaw from "rehype-raw";
-import rehypeSanitize from "rehype-sanitize";
+import DOMPurify from "dompurify";
 import { fetchPatch, fmtTime } from "../api";
 
-/** Détail d'un patch : entête + contenu (markdown + HTML embarqué, rendu sanitizé). */
+/** Le contenu HotsPatchNotes est de l'HTML pré-rendu (listes/gras en balises), mais pandoc laisse
+ *  les TITRES en markdown (`## Section {#anchor}`). On retire les ancres, on convertit ces titres
+ *  résiduels en vrais `<hN>`, puis on sanitize et on injecte. Surtout PAS via un parseur markdown :
+ *  CommonMark casse les blocs HTML sur les lignes vides → les balises `<ul>/<li>` fuient en texte. */
+function renderPatch(raw: string): string {
+  const html = raw
+    .replace(/\s*\{#[^}]+\}/g, "") // ancres pandoc `{#slug}`
+    .replace(/^(#{1,6})\s+(.+)$/gm, (_, h: string, t: string) => `<h${h.length}>${t.trim()}</h${h.length}>`);
+  return DOMPurify.sanitize(html);
+}
+
+/** Détail d'un patch : entête + contenu HTML sanitizé. */
 export function Patch() {
   const { id } = useParams();
   const { data, isLoading } = useQuery({ queryKey: ["patch", id], queryFn: () => fetchPatch(id!) });
@@ -26,9 +35,7 @@ export function Patch() {
       )}
       <div className="card patch-content" style={{ padding: "18px 22px", lineHeight: 1.55 }}>
         {data.content ? (
-          <ReactMarkdown rehypePlugins={[rehypeRaw, rehypeSanitize]}>
-            {data.content.replace(/\s*\{#[^}]+\}/g, "")}
-          </ReactMarkdown>
+          <div dangerouslySetInnerHTML={{ __html: renderPatch(data.content) }} />
         ) : (
           <div className="empty">no content for this patch</div>
         )}
