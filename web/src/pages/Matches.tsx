@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -6,6 +5,7 @@ import {
   matchesParams, useSettings, operatorNames, awardLabel, type MatchSummary, type MatchListParams,
 } from "../api";
 import { Avatar } from "../components/Avatar";
+import { SearchSelect } from "../components/SearchSelect";
 
 // Codes officiels (storm-stats GameMode). Brawls/IA rejetés au parse → on liste les modes réels.
 const MODE_FILTERS: [string, number | undefined][] = [
@@ -31,23 +31,26 @@ const dayPlus1 = (d: string) => { const x = new Date(d + "T00:00:00"); x.setDate
 export function Matches() {
   useSettings();
   const accounts = operatorNames();
-  const [sp] = useSearchParams(); // drill-down depuis Heroes/Maps : /matches?hero=… / ?map=…
-  const [mode, setMode] = useState<number | undefined>(sp.get("mode") ? Number(sp.get("mode")) : undefined);
-  const [map, setMap] = useState(sp.get("map") ?? "");
-  const [hero, setHero] = useState(sp.get("hero") ?? "");
-  const [account, setAccount] = useState("");
-  const [result, setResult] = useState<"" | "win" | "loss">("");
-  const [mvp, setMvp] = useState(false);
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
   const nav = useNavigate();
+  // Filtres pilotés par l'URL (query string) : ils PERSISTENT au retour navigateur (recherche →
+  // clic dans une partie → retour restaure l'état). `replace` pour ne pas polluer l'historique.
+  const [sp, setSp] = useSearchParams();
+  const get = (k: string) => sp.get(k) ?? "";
+  const setParam = (k: string, v: string) =>
+    setSp((prev) => { const n = new URLSearchParams(prev); v ? n.set(k, v) : n.delete(k); return n; }, { replace: true });
+
+  const mode = sp.get("mode") ? Number(sp.get("mode")) : undefined;
+  const map = get("map"), hero = get("hero"), account = get("account");
+  const result = get("result"); // "" | "win" | "loss"
+  const mvp = sp.get("mvp") === "true";
+  const from = get("from"), to = get("to"); // YYYY-MM-DD bruts (lisibles dans l'URL)
 
   const params: MatchListParams = {
     mode,
     map: map || undefined,
     hero: hero || undefined,
     account: account || undefined,
-    result: result || undefined,
+    result: (result as "win" | "loss") || undefined,
     mvp: mvp || undefined,
     from: from ? new Date(from + "T00:00:00").toISOString() : undefined,
     to: to ? dayPlus1(to) : undefined,
@@ -63,8 +66,8 @@ export function Matches() {
   });
   const { data: heroes } = useQuery({ queryKey: ["heroes-filter"], queryFn: () => fetchHeroes(), staleTime: Infinity });
 
-  const active = mode != null || map || hero || account || result || mvp || from || to;
-  const reset = () => { setMode(undefined); setMap(""); setHero(""); setAccount(""); setResult(""); setMvp(false); setFrom(""); setTo(""); };
+  const active = [...sp.keys()].length > 0;
+  const reset = () => setSp({}, { replace: true });
   const exportQ = (extra: Record<string, string>) => { const q = matchesParams(params); Object.entries(extra).forEach(([k, v]) => q.set(k, v)); return q.toString(); };
 
   return (
@@ -74,34 +77,40 @@ export function Matches() {
         {/* ligne 1 : modes + résultat + MVP */}
         <div className="card-hd" style={{ flexWrap: "wrap", gap: 6 }}>
           {MODE_FILTERS.map(([label, m]) => (
-            <span key={label} className={mode === m ? "pill on" : "pill"} onClick={() => setMode(m)}>{label}</span>
+            <span key={label} className={mode === m ? "pill on" : "pill"} onClick={() => setParam("mode", m != null ? String(m) : "")}>{label}</span>
           ))}
           <span style={{ width: 1, alignSelf: "stretch", background: "var(--hairline)", margin: "0 4px" }} />
           {(["", "win", "loss"] as const).map((r) => (
-            <span key={r || "all"} className={result === r ? "pill on" : "pill"} onClick={() => setResult(r)}>
+            <span key={r || "all"} className={result === r ? "pill on" : "pill"} onClick={() => setParam("result", r)}>
               {r === "" ? "W+L" : r === "win" ? "Wins" : "Losses"}
             </span>
           ))}
-          <span className={mvp ? "pill on" : "pill"} onClick={() => setMvp(!mvp)}>👑 MVP</span>
+          <span className={mvp ? "pill on" : "pill"} onClick={() => setParam("mvp", mvp ? "" : "true")}>👑 MVP</span>
         </div>
-        {/* ligne 2 : carte / héros / compte / dates / reset / export */}
+        {/* ligne 2 : carte / héros (recherche textuelle) / compte / dates / reset / export */}
         <div className="row" style={{ flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-          <select style={inp} value={map} onChange={(e) => setMap(e.target.value)}>
-            <option value="">All maps</option>
-            {maps?.slice().sort((a, b) => a.map.localeCompare(b.map)).map((mp) => <option key={mp.map} value={mp.map}>{mp.map}</option>)}
-          </select>
-          <select style={inp} value={hero} onChange={(e) => setHero(e.target.value)}>
-            <option value="">All heroes</option>
-            {heroes?.slice().sort((a, b) => a.hero.localeCompare(b.hero)).map((h) => <option key={h.hero} value={h.hero}>{h.hero}</option>)}
-          </select>
+          <SearchSelect
+            style={{ ...inp, width: 150 }}
+            placeholder="search map…"
+            value={map}
+            onChange={(v) => setParam("map", v)}
+            options={(maps ?? []).map((m) => m.map).sort((a, b) => a.localeCompare(b))}
+          />
+          <SearchSelect
+            style={{ ...inp, width: 150 }}
+            placeholder="search hero…"
+            value={hero}
+            onChange={(v) => setParam("hero", v)}
+            options={(heroes ?? []).map((h) => h.hero).sort((a, b) => a.localeCompare(b))}
+          />
           {accounts.length > 1 && (
-            <select style={inp} value={account} onChange={(e) => setAccount(e.target.value)}>
+            <select style={inp} value={account} onChange={(e) => setParam("account", e.target.value)}>
               <option value="">All my accounts</option>
               {accounts.map((a) => <option key={a} value={a}>{a}</option>)}
             </select>
           )}
-          <label style={{ fontSize: 10, color: "var(--text-2)" }}>from <input type="date" style={inp} value={from} onChange={(e) => setFrom(e.target.value)} /></label>
-          <label style={{ fontSize: 10, color: "var(--text-2)" }}>to <input type="date" style={inp} value={to} onChange={(e) => setTo(e.target.value)} /></label>
+          <label style={{ fontSize: 10, color: "var(--text-2)" }}>from <input type="date" style={inp} value={from} onChange={(e) => setParam("from", e.target.value)} /></label>
+          <label style={{ fontSize: 10, color: "var(--text-2)" }}>to <input type="date" style={inp} value={to} onChange={(e) => setParam("to", e.target.value)} /></label>
           {active && <span className="pill" onClick={reset}>✕ reset</span>}
           <a href={`/api/matches.csv?${exportQ({ limit: "5000" })}`} className="pill" style={{ marginLeft: "auto" }}>CSV ↓</a>
           <a href={`/api/matches?${exportQ({ limit: "5000" })}`} className="pill" target="_blank" rel="noreferrer">JSON ↓</a>
