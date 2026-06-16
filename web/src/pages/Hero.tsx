@@ -1,9 +1,13 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "react-router-dom";
 import { fetchHeroDetail, useDimTalents, talentInfo } from "../api";
 import { Avatar } from "../components/Avatar";
 
 const tierNum = (k: string) => parseInt(k.match(/\d+/)?.[0] ?? "0", 10);
+const MODES: [string, number | undefined][] = [
+  ["All", undefined], ["Storm League", 50091], ["ARAM", 50101], ["Custom", -1], ["Hero League", 50061], ["QM", 50001],
+];
 
 /** Build de talents (TierNChoice → treeId) → chips ordonnés par tier, nom résolu via dim_talents. */
 function Build({ talents }: { talents: Record<string, string> }) {
@@ -24,22 +28,34 @@ function Build({ talents }: { talents: Record<string, string> }) {
 
 export function Hero() {
   const { name } = useParams();
+  const [mode, setMode] = useState<number | undefined>(undefined);
   useDimTalents();
-  const { data, isLoading } = useQuery({ queryKey: ["hero", name], queryFn: () => fetchHeroDetail(name!) });
+  const { data, isLoading } = useQuery({ queryKey: ["hero", name, mode], queryFn: () => fetchHeroDetail(name!, mode) });
 
   if (isLoading) return <div className="empty">loading…</div>;
-  if (!data || !data.games) return <div className="empty">no games on {name} (as operator)</div>;
-  const wr = data.games ? (100 * data.wins) / data.games : 0;
-  const kda = (data.avg_takedowns ?? 0) / Math.max(1, data.avg_deaths ?? 0);
+  const wr = data && data.games ? (100 * data.wins) / data.games : 0;
+  const kda = (data?.avg_takedowns ?? 0) / Math.max(1, data?.avg_deaths ?? 0);
 
   return (
     <>
       <h1 style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <Avatar hero={data.hero} size={40} /> {data.hero}
-        <Link to={`/matches?hero=${encodeURIComponent(data.hero)}`} className="pill" style={{ fontSize: 11, marginLeft: "auto" }}>see games ›</Link>
+        <Avatar hero={name ?? null} size={40} /> {name}
+        <Link to={`/matches?hero=${encodeURIComponent(name ?? "")}`} className="pill" style={{ fontSize: 11, marginLeft: "auto" }}>see games ›</Link>
       </h1>
       <p className="note">Your stats on this hero across all your accounts.</p>
 
+      <div className="card">
+        <div className="card-hd" style={{ flexWrap: "wrap", gap: 6 }}>
+          {MODES.map(([label, m]) => (
+            <span key={label} className={mode === m ? "pill on" : "pill"} onClick={() => setMode(m)}>{label}</span>
+          ))}
+        </div>
+      </div>
+
+      {!data || !data.games ? (
+        <div className="empty">no games on {name} for this filter</div>
+      ) : (
+      <>
       <div className="card">
         <div className="row" style={{ gap: 28, flexWrap: "wrap" }}>
           <Stat label="games" value={String(data.games)} />
@@ -88,6 +104,8 @@ export function Hero() {
             })}
           </div>
         </>
+      )}
+      </>
       )}
     </>
   );

@@ -184,7 +184,7 @@ pub async fn list_heroes(State(s): State<AppState>, Query(f): Query<MatchFilter>
 
 /// GET /api/hero/{hero} — fiche héros du point de vue opérateur : volume + WR + KDA moyen, WR par
 /// carte, et builds de talents les plus joués (avec WR) pour ce héros.
-pub async fn hero_detail(State(s): State<AppState>, Path(hero): Path<String>) -> Resp {
+pub async fn hero_detail(State(s): State<AppState>, Path(hero): Path<String>, Query(f): Query<MatchFilter>) -> Resp {
     let v: J = sqlx::query_scalar(
         "WITH ops AS (
             SELECT lower(jsonb_array_elements_text(value)) AS name FROM app_settings WHERE key='operator_names'
@@ -193,6 +193,7 @@ pub async fn hero_detail(State(s): State<AppState>, Path(hero): Path<String>) ->
             SELECT mp.win, mp.kills, mp.deaths, mp.takedowns, m.map, mp.data->'talents' AS talents
             FROM match_players mp JOIN matches m ON m.id = mp.match_id
             WHERE mp.hero = $1 AND lower(mp.name) IN (SELECT name FROM ops)
+              AND ($2::int IS NULL OR m.mode = $2)
          )
          SELECT jsonb_build_object(
             'hero', $1::text,
@@ -211,6 +212,7 @@ pub async fn hero_detail(State(s): State<AppState>, Path(hero): Path<String>) ->
          ) FROM mine",
     )
     .bind(hero)
+    .bind(f.mode)
     .fetch_one(&s.db)
     .await
     .map_err(db_err)?;

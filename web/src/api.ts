@@ -160,7 +160,8 @@ export interface HeroDetail {
   by_map: { map: string; games: number; wins: number }[];
   builds: { talents: Record<string, string>; games: number; wins: number }[];
 }
-export const fetchHeroDetail = (hero: string) => get<HeroDetail>(`/api/hero/${encodeURIComponent(hero)}`);
+export const fetchHeroDetail = (hero: string, mode?: number) =>
+  get<HeroDetail>(`/api/hero/${encodeURIComponent(hero)}${mode != null ? `?mode=${mode}` : ""}`);
 
 export interface Synergies {
   teammates: { name: string; games: number; wins: number }[];

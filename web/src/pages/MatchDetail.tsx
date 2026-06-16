@@ -147,9 +147,34 @@ function MatchTimeline({ m, players }: { m: any; players: Record<string, any> })
   for (const o of objectiveEvents(m)) evs.push({ t: o.t, kind: "obj", team: o.team, label: o.label });
   evs.sort((a, b) => a.t - b.t);
   if (!evs.length) return null;
+  const maxT = Math.max(m.length || 0, ...evs.map((e) => e.t)) || 1;
+  const col = (team: number) => (team === 0 ? "var(--tm-blue)" : "var(--tm-red)");
   return (
     <>
       <p className="cap">Timeline — {evs.length} events</p>
+      {/* Piste de pins : kills en ticks fins (bas), structures 🏰 et objectifs 🎯 en pins marqués
+          (haut), positionnés par leur temps. Vue d'ensemble ; le détail est dans la liste dessous. */}
+      <div className="card" style={{ padding: "12px 14px" }}>
+        <div style={{ position: "relative", height: 34 }}>
+          <div style={{ position: "absolute", top: 26, left: 0, right: 0, height: 1, background: "var(--hairline)" }} />
+          {evs.map((e, i) => {
+            const left = `${(e.t / maxT) * 100}%`;
+            if (e.kind === "kill")
+              return <span key={i} title={`${fmtDur(e.t)} · ${e.label}`} style={{ position: "absolute", bottom: 0, left, width: 2, height: 8, background: col(e.team), opacity: 0.5, transform: "translateX(-1px)" }} />;
+            const top = e.kind === "obj" ? 0 : 11;
+            return (
+              <span key={i} title={`${fmtDur(e.t)} · ${e.label}`}
+                style={{ position: "absolute", top, left, transform: "translateX(-50%)", fontSize: 11, lineHeight: 1, cursor: "default",
+                         filter: e.team === 0 ? "none" : "none" }}>
+                <span style={{ display: "inline-block", borderBottom: `2px solid ${col(e.team)}`, paddingBottom: 1 }}>{e.kind === "obj" ? "🎯" : "🏰"}</span>
+              </span>
+            );
+          })}
+        </div>
+        <div className="mono muted" style={{ display: "flex", justifyContent: "space-between", fontSize: 9, marginTop: 4 }}>
+          <span>0:00</span><span>{fmtDur(maxT)}</span>
+        </div>
+      </div>
       <div className="card" style={{ maxHeight: 440, overflowY: "auto" }}>
         {evs.map((e, i) => (
           <div key={i} className="row" style={{ gap: 9, borderLeft: `3px solid ${e.team === 0 ? "var(--tm-blue)" : "var(--tm-red)"}`, paddingLeft: 10 }}>
