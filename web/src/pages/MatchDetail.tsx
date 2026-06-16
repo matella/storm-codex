@@ -90,6 +90,45 @@ function ScoreTable({ players, team, label, cls }: { players: any[]; team: numbe
   );
 }
 
+/** Timeline chronologique des événements du match (kills + structures détruites), reconstruite des
+ *  données déjà stockées (`match.takedowns` horodatés + `match.structures.destroyed`). Couleur =
+ *  équipe qui MARQUE (opposée à la victime / au propriétaire de la structure). */
+function MatchTimeline({ m, players }: { m: any; players: Record<string, any> }) {
+  const teamOf = (toon: string | undefined): number | undefined => (toon ? players[toon]?.team : undefined);
+  type Ev = { t: number; kind: "kill" | "struct"; team: number; label: string; hero?: string | null };
+  const evs: Ev[] = [];
+  for (const td of (m.takedowns ?? []) as any[]) {
+    const vt = teamOf(td?.victim?.player);
+    const n = td?.killers?.length ?? 0;
+    evs.push({
+      t: td.time ?? 0, kind: "kill", team: vt === 0 ? 1 : 0, hero: td?.victim?.hero ?? null,
+      label: `${td?.victim?.hero ?? "?"} killed${n > 1 ? ` ×${n}` : ""}`,
+    });
+  }
+  for (const s of Object.values(m.structures ?? {}) as any[]) {
+    if (s?.destroyed == null) continue;
+    evs.push({ t: s.destroyed, kind: "struct", team: s.team === 0 ? 1 : 0, label: `${s.name} destroyed` });
+  }
+  evs.sort((a, b) => a.t - b.t);
+  if (!evs.length) return null;
+  return (
+    <>
+      <p className="cap">Timeline — {evs.length} events</p>
+      <div className="card" style={{ maxHeight: 440, overflowY: "auto" }}>
+        {evs.map((e, i) => (
+          <div key={i} className="row" style={{ gap: 9, borderLeft: `3px solid ${e.team === 0 ? "var(--tm-blue)" : "var(--tm-red)"}`, paddingLeft: 10 }}>
+            <span className="mono muted" style={{ minWidth: 42, fontSize: 11 }}>{fmtDur(e.t)}</span>
+            <span style={{ fontSize: 13 }}>{e.kind === "kill" ? "⚔️" : "🏰"}</span>
+            {e.kind === "kill" && <Avatar hero={e.hero ?? null} size={18} />}
+            <span style={{ fontSize: 12 }}>{e.label}</span>
+            <span className={e.team === 0 ? "tm-blue" : "tm-red"} style={{ marginLeft: "auto", fontSize: 10 }}>{e.team === 0 ? "blue" : "red"}</span>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 export function MatchDetail() {
   const { id } = useParams();
   useDimTalents(); // peuple le référentiel talents (talentTreeId → nom)
@@ -167,6 +206,8 @@ export function MatchDetail() {
           <div className="card"><LevelChart timeline={m.levelAdvTimeline} /></div>
         </>
       )}
+
+      <MatchTimeline m={m} players={data.players ?? {}} />
 
       <p className="cap">Full data</p>
       <div className="card">
