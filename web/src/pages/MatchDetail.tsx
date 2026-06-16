@@ -90,12 +90,47 @@ function ScoreTable({ players, team, label, cls }: { players: any[]; team: numbe
   );
 }
 
-/** Timeline chronologique des événements du match (kills + structures détruites), reconstruite des
- *  données déjà stockées (`match.takedowns` horodatés + `match.structures.destroyed`). Couleur =
- *  équipe qui MARQUE (opposée à la victime / au propriétaire de la structure). */
+/** Nom d'objectif par type de carte (le champ `objective.type` = nom de la carte). */
+const OBJ_NOUN: Record<string, string> = {
+  "Dragon Shire": "Dragon Knight",
+  "Garden of Terror": "Garden Terror",
+  "Cursed Hollow": "Curse",
+  "Battlefield of Eternity": "Immortal",
+  "Tomb of the Spider Queen": "Webweaver",
+  "Sky Temple": "Temple",
+  "Towers of Doom": "Altar",
+  "Braxis Holdout": "Zerg wave",
+  "Volskaya Foundry": "Triglav",
+  "Infernal Shrines": "Punisher",
+  "Hanamura Temple": "Payload",
+  "Blackheart's Bay": "Cannons",
+  "Alterac Pass": "Cavalry",
+};
+
+/** Événements d'objectif (horodatés, par équipe) extraits du champ `objective` map-spécifique :
+ *  `results` (Battlefield) ou buckets `0`/`1`.events (Dragon Shire, Garden…). Générique. */
+function objectiveEvents(m: any): { t: number; team: number; label: string }[] {
+  const o = m.objective;
+  if (!o || typeof o !== "object") return [];
+  const noun = OBJ_NOUN[o.type] ?? "Objective";
+  const out: { t: number; team: number; label: string }[] = [];
+  for (const r of (o.results ?? []) as any[]) {
+    if (r?.time != null && (r.winner === 0 || r.winner === 1)) out.push({ t: r.time, team: r.winner, label: noun });
+  }
+  for (const k of ["0", "1"]) {
+    for (const e of (o[k]?.events ?? []) as any[]) {
+      if (e?.time != null) out.push({ t: e.time, team: Number(k), label: noun });
+    }
+  }
+  return out;
+}
+
+/** Timeline chronologique des événements du match (kills + structures détruites + objectifs),
+ *  reconstruite des données déjà stockées (horodatées). Couleur = équipe qui MARQUE (opposée à la
+ *  victime / au propriétaire de la structure ; équipe qui prend l'objectif). */
 function MatchTimeline({ m, players }: { m: any; players: Record<string, any> }) {
   const teamOf = (toon: string | undefined): number | undefined => (toon ? players[toon]?.team : undefined);
-  type Ev = { t: number; kind: "kill" | "struct"; team: number; label: string; hero?: string | null };
+  type Ev = { t: number; kind: "kill" | "struct" | "obj"; team: number; label: string; hero?: string | null };
   const evs: Ev[] = [];
   for (const td of (m.takedowns ?? []) as any[]) {
     const vt = teamOf(td?.victim?.player);
@@ -109,6 +144,7 @@ function MatchTimeline({ m, players }: { m: any; players: Record<string, any> })
     if (s?.destroyed == null) continue;
     evs.push({ t: s.destroyed, kind: "struct", team: s.team === 0 ? 1 : 0, label: `${s.name} destroyed` });
   }
+  for (const o of objectiveEvents(m)) evs.push({ t: o.t, kind: "obj", team: o.team, label: o.label });
   evs.sort((a, b) => a.t - b.t);
   if (!evs.length) return null;
   return (
@@ -118,7 +154,7 @@ function MatchTimeline({ m, players }: { m: any; players: Record<string, any> })
         {evs.map((e, i) => (
           <div key={i} className="row" style={{ gap: 9, borderLeft: `3px solid ${e.team === 0 ? "var(--tm-blue)" : "var(--tm-red)"}`, paddingLeft: 10 }}>
             <span className="mono muted" style={{ minWidth: 42, fontSize: 11 }}>{fmtDur(e.t)}</span>
-            <span style={{ fontSize: 13 }}>{e.kind === "kill" ? "⚔️" : "🏰"}</span>
+            <span style={{ fontSize: 13 }}>{e.kind === "kill" ? "⚔️" : e.kind === "struct" ? "🏰" : "🎯"}</span>
             {e.kind === "kill" && <Avatar hero={e.hero ?? null} size={18} />}
             <span style={{ fontSize: 12 }}>{e.label}</span>
             <span className={e.team === 0 ? "tm-blue" : "tm-red"} style={{ marginLeft: "auto", fontSize: 10 }}>{e.team === 0 ? "blue" : "red"}</span>
