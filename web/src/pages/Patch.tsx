@@ -26,7 +26,9 @@ export function Patch() {
       )}
       <div className="card patch-content" style={{ padding: "18px 22px", lineHeight: 1.55 }}>
         {data.content ? (
-          <ReactMarkdown rehypePlugins={[rehypeRaw, rehypeSanitize]}>{data.content}</ReactMarkdown>
+          <ReactMarkdown rehypePlugins={[rehypeRaw, rehypeSanitize]}>
+            {data.content.replace(/\s*\{#[^}]+\}/g, "")}
+          </ReactMarkdown>
         ) : (
           <div className="empty">no content for this patch</div>
         )}
