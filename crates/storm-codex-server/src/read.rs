@@ -141,10 +141,21 @@ pub async fn get_player(State(s): State<AppState>, Path(toon): Path<String>) -> 
             'names', COALESCE((SELECT names FROM players WHERE toon_handle = $1), '[]'::jsonb),
             'matches', (SELECT count(*) FROM match_players WHERE toon_handle = $1),
             'wins', (SELECT count(*) FROM match_players WHERE toon_handle = $1 AND win),
+            'avg_kills', (SELECT round(avg(kills)::numeric, 1) FROM match_players WHERE toon_handle = $1),
+            'avg_deaths', (SELECT round(avg(deaths)::numeric, 1) FROM match_players WHERE toon_handle = $1),
+            'avg_takedowns', (SELECT round(avg(takedowns)::numeric, 1) FROM match_players WHERE toon_handle = $1),
             'heroes', COALESCE((SELECT jsonb_agg(h ORDER BY h.games DESC) FROM (
-                SELECT hero, count(*) AS games, count(*) FILTER (WHERE win) AS wins
+                SELECT hero, count(*) AS games, count(*) FILTER (WHERE win) AS wins,
+                       round(avg(kills)::numeric, 1) AS avg_kills,
+                       round(avg(deaths)::numeric, 1) AS avg_deaths,
+                       round(avg(takedowns)::numeric, 1) AS avg_takedowns
                 FROM match_players WHERE toon_handle = $1 AND hero IS NOT NULL
-                GROUP BY hero) h), '[]'::jsonb))",
+                GROUP BY hero) h), '[]'::jsonb),
+            'recent', COALESCE((SELECT jsonb_agg(r ORDER BY r.played_at DESC NULLS LAST) FROM (
+                SELECT mp.match_id, mp.hero, m.map, m.mode, mp.win, mp.kills, mp.deaths, mp.takedowns,
+                       m.played_at, mp.data #>> '{gameStats,awards,0}' AS award
+                FROM match_players mp JOIN matches m ON m.id = mp.match_id
+                WHERE mp.toon_handle = $1 ORDER BY m.played_at DESC NULLS LAST LIMIT 20) r), '[]'::jsonb))",
     )
     .bind(toon)
     .fetch_one(&s.db)

@@ -84,13 +84,19 @@ export interface HeroStat {
   games: number;
   wins: number;
 }
+export interface PlayerHero { hero: string; games: number; wins: number; avg_kills: number | null; avg_deaths: number | null; avg_takedowns: number | null }
+export interface PlayerGame { match_id: number; hero: string | null; map: string | null; mode: number | null; win: boolean | null; kills: number | null; deaths: number | null; takedowns: number | null; played_at: string | null; award: string | null }
 export interface PlayerSummary {
   toon: string;
   name: string | null;
   names: string[];
   matches: number;
   wins: number;
-  heroes: HeroStat[];
+  avg_kills: number | null;
+  avg_deaths: number | null;
+  avg_takedowns: number | null;
+  heroes: PlayerHero[];
+  recent: PlayerGame[];
 }
 
 async function get<T>(path: string): Promise<T> {
