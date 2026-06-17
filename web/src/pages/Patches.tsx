@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { fetchPatches, fmtTime, type PatchItem } from "../api";
 
 /** Liste des patch notes HotS (proxy HotsPatchNotes). Filtre par type côté client. */
@@ -14,8 +14,11 @@ export function Patches() {
 
   return (
     <>
-      <h1>Patch Notes</h1>
-      <p className="note">Official HotS patch notes — {items.length} patches. Click one for details.</p>
+      <h1 style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        Patch Notes
+        <Link to="/hero-changes" className="pill" style={{ fontSize: 11, marginLeft: "auto" }}>By hero ›</Link>
+      </h1>
+      <p className="note">Official HotS patch notes — {items.length} patches. Click one for details, or browse <Link to="/hero-changes" style={{ color: "var(--accent)" }}>changes by hero</Link>.</p>
       <div className="card">
         <div className="card-hd" style={{ flexWrap: "wrap", gap: 6 }}>
           <span className={type === "" ? "pill on" : "pill"} onClick={() => setType("")}>All</span>

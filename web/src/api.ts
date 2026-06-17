@@ -222,6 +222,18 @@ export interface HeroPatchSection {
 export const fetchHeroPatches = (hero: string) =>
   get<HeroPatchSection[]>(`/api/hero/${encodeURIComponent(hero)}/patches`);
 
+/** Fil global des changements héros (vue « par héros » des patch notes), filtrable + paginé. */
+export interface HeroChangesParams { hero?: string; klass?: string; patch?: string; limit?: number; offset?: number }
+export function fetchHeroChanges(p: HeroChangesParams = {}): Promise<HeroPatchSection[]> {
+  const q = new URLSearchParams();
+  if (p.hero) q.set("hero", p.hero);
+  if (p.klass) q.set("class", p.klass);
+  if (p.patch) q.set("patch", p.patch);
+  if (p.limit != null) q.set("limit", String(p.limit));
+  if (p.offset != null) q.set("offset", String(p.offset));
+  return get<HeroPatchSection[]>(`/api/hero-changes?${q.toString()}`);
+}
+
 /** WS `/ws` : `match.parsed` invalide les listes de matchs ; `patch.new` invalide les patches. Le
  *  callback reçoit l'événement brut (avec `.type`) pour piloter les toasts. */
 export function useLiveUpdates(onEvent?: (ev: { type?: string; match_id?: number; map?: string; name?: string; internalId?: string }) => void) {

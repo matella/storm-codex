@@ -8,6 +8,7 @@ import { Heroes } from "./pages/Heroes";
 import { Hero } from "./pages/Hero";
 import { Synergies } from "./pages/Synergies";
 import { Patches } from "./pages/Patches";
+import { HeroChanges } from "./pages/HeroChanges";
 // détail patch lazy : isole DOMPurify hors du bundle principal (overlays légers)
 const Patch = lazy(() => import("./pages/Patch").then((m) => ({ default: m.Patch })));
 import { Maps } from "./pages/Maps";
@@ -37,6 +38,7 @@ export default function App() {
         <Route path="hero/:name" element={<Hero />} />
         <Route path="synergies" element={<Synergies />} />
         <Route path="patches" element={<Patches />} />
+        <Route path="hero-changes" element={<HeroChanges />} />
         <Route path="patch/:id" element={<Suspense fallback={<div className="empty">loading…</div>}><Patch /></Suspense>} />
         <Route path="maps" element={<Maps />} />
         <Route path="trends" element={<Trends />} />

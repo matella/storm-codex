@@ -465,6 +465,47 @@ pub async fn patch_detail(State(s): State<AppState>, Path(id): Path<String>) -> 
     hpn_proxy(&s, format!("/api/patches/{id}"), J::Null).await
 }
 
+#[derive(Deserialize)]
+pub struct HeroChangesFilter {
+    hero: Option<String>,
+    class: Option<String>, // BUFF | NERF | REWORK | MIXED | NEW
+    patch: Option<String>, // patch_internal_id
+    limit: Option<i64>,
+    offset: Option<i64>,
+}
+
+/// GET /api/hero-changes — fil global des ajustements héros (toutes sections de type Hero), récents
+/// d'abord, filtrable par héros / classification / patch + paginé. Alimente la vue « par héros ».
+pub async fn hero_changes(State(s): State<AppState>, Query(f): Query<HeroChangesFilter>) -> Json<J> {
+    let limit = f.limit.unwrap_or(60).clamp(1, 300);
+    let offset = f.offset.unwrap_or(0).max(0);
+    let hkey = f.hero.as_deref().filter(|h| !h.is_empty()).map(crate::dim::hero_key);
+    let v: J = sqlx::query_scalar(
+        "SELECT COALESCE(jsonb_agg(jsonb_build_object(
+            'patchInternalId', patch_internal_id, 'patchName', patch_name, 'patchType', patch_type,
+            'liveDate', live_date, 'anchor', anchor, 'heroName', hero_name,
+            'classification', classification, 'shortSummary', short_summary, 'content', content
+         ) ORDER BY live_date DESC NULLS LAST, hero_name), '[]'::jsonb)
+         FROM (
+            SELECT * FROM patch_hero_sections
+            WHERE ($1::text IS NULL OR hero_key = $1)
+              AND ($2::text IS NULL OR upper(classification) = upper($2))
+              AND ($3::text IS NULL OR patch_internal_id = $3)
+            ORDER BY live_date DESC NULLS LAST, hero_name
+            LIMIT $4 OFFSET $5
+         ) ph",
+    )
+    .bind(hkey)
+    .bind(f.class.filter(|c| !c.is_empty()))
+    .bind(f.patch.filter(|p| !p.is_empty()))
+    .bind(limit)
+    .bind(offset)
+    .fetch_one(&s.db)
+    .await
+    .unwrap_or_else(|_| serde_json::json!([]));
+    Json(v)
+}
+
 /// GET /api/hero/{hero}/patches — sections de patch notes concernant ce héros (sens héros → patch),
 /// les plus récentes d'abord. Jointure tolérante via la clé normalisée (cf. `dim::hero_key`).
 pub async fn hero_patches(State(s): State<AppState>, Path(hero): Path<String>) -> Json<J> {
