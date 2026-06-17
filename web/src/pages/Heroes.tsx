@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { fetchHeroes, type HeroStat, type AggFilter } from "../api";
+import { fetchHeroes, aggToSearch, type HeroStat, type AggFilter } from "../api";
 import { Avatar } from "../components/Avatar";
 import { AggFilterBar } from "../components/AggFilterBar";
 
@@ -40,7 +40,7 @@ export function Heroes() {
               {rows.map((h) => {
                 const rate = (100 * wr(h)).toFixed(1);
                 return (
-                  <tr key={h.hero} className="link" onClick={() => nav(`/hero/${encodeURIComponent(h.hero)}`)}>
+                  <tr key={h.hero} className="link" onClick={() => { const q = aggToSearch(filter).toString(); nav(`/hero/${encodeURIComponent(h.hero)}${q ? `?${q}` : ""}`); }}>
                     <td>
                       <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <Avatar hero={h.hero} size={20} /> {h.hero}

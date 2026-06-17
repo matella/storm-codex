@@ -196,15 +196,21 @@ pub async fn list_heroes(State(s): State<AppState>, Query(f): Query<MatchFilter>
 /// GET /api/hero/{hero} — fiche héros du point de vue opérateur : volume + WR + KDA moyen, WR par
 /// carte, et builds de talents les plus joués (avec WR) pour ce héros.
 pub async fn hero_detail(State(s): State<AppState>, Path(hero): Path<String>, Query(f): Query<MatchFilter>) -> Resp {
+    // Mêmes filtres que /api/heroes (mode/from/to/mine/account) → cohérence liste ↔ fiche.
+    // Défaut (mine=false, account absent) = tous les joueurs, comme la liste.
     let v: J = sqlx::query_scalar(
         "WITH ops AS (
             SELECT lower(jsonb_array_elements_text(value)) AS name FROM app_settings WHERE key='operator_names'
          ),
-         mine AS (
+         g AS (
             SELECT mp.win, mp.kills, mp.deaths, mp.takedowns, m.map, mp.data->'talents' AS talents
             FROM match_players mp JOIN matches m ON m.id = mp.match_id
-            WHERE mp.hero = $1 AND lower(mp.name) IN (SELECT name FROM ops)
+            WHERE mp.hero = $1
               AND ($2::int IS NULL OR m.mode = $2)
+              AND ($3::timestamptz IS NULL OR m.played_at >= $3::timestamptz)
+              AND ($4::timestamptz IS NULL OR m.played_at <  $4::timestamptz)
+              AND (NOT $5::bool OR lower(mp.name) IN (SELECT name FROM ops))
+              AND ($6::text IS NULL OR lower(mp.name) = lower($6))
          )
          SELECT jsonb_build_object(
             'hero', $1::text,
@@ -215,15 +221,19 @@ pub async fn hero_detail(State(s): State<AppState>, Path(hero): Path<String>, Qu
             'avg_takedowns', round(avg(takedowns)::numeric, 1),
             'by_map', (SELECT COALESCE(jsonb_agg(x ORDER BY x.games DESC), '[]'::jsonb) FROM (
                 SELECT map, count(*) AS games, count(*) FILTER (WHERE win) AS wins
-                FROM mine GROUP BY map) x),
+                FROM g GROUP BY map) x),
             'builds', (SELECT COALESCE(jsonb_agg(b ORDER BY b.games DESC), '[]'::jsonb) FROM (
                 SELECT talents, count(*) AS games, count(*) FILTER (WHERE win) AS wins
-                FROM mine WHERE talents IS NOT NULL AND talents <> '{}'::jsonb
+                FROM g WHERE talents IS NOT NULL AND talents <> '{}'::jsonb
                 GROUP BY talents ORDER BY count(*) DESC LIMIT 6) b)
-         ) FROM mine",
+         ) FROM g",
     )
     .bind(hero)
     .bind(f.mode)
+    .bind(f.from)
+    .bind(f.to)
+    .bind(f.mine)
+    .bind(f.account)
     .fetch_one(&s.db)
     .await
     .map_err(db_err)?;

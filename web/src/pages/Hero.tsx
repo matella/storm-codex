@@ -1,14 +1,11 @@
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useSearchParams } from "react-router-dom";
 import DOMPurify from "dompurify";
-import { fetchHeroDetail, fetchHeroPatches, useDimTalents, talentInfo, classBadge, fmtTime } from "../api";
+import { fetchHeroDetail, fetchHeroPatches, useDimTalents, talentInfo, classBadge, fmtTime, searchToAgg, aggToSearch, type AggFilter } from "../api";
 import { Avatar } from "../components/Avatar";
+import { AggFilterBar } from "../components/AggFilterBar";
 
 const tierNum = (k: string) => parseInt(k.match(/\d+/)?.[0] ?? "0", 10);
-const MODES: [string, number | undefined][] = [
-  ["All", undefined], ["Storm League", 50091], ["ARAM", 50101], ["Custom", -1], ["Hero League", 50061], ["QM", 50001],
-];
 
 /** Build de talents (TierNChoice → treeId) → chips ordonnés par tier, nom résolu via dim_talents. */
 function Build({ talents }: { talents: Record<string, string> }) {
@@ -29,9 +26,11 @@ function Build({ talents }: { talents: Record<string, string> }) {
 
 export function Hero() {
   const { name } = useParams();
-  const [mode, setMode] = useState<number | undefined>(undefined);
+  const [params, setParams] = useSearchParams();
+  const filter: AggFilter = searchToAgg(params);
   useDimTalents();
-  const { data, isLoading } = useQuery({ queryKey: ["hero", name, mode], queryFn: () => fetchHeroDetail(name!, mode) });
+  const { data, isLoading } = useQuery({ queryKey: ["hero", name, params.toString()], queryFn: () => fetchHeroDetail(name!, filter) });
+  const setFilter = (f: AggFilter) => setParams(aggToSearch(f), { replace: true });
 
   if (isLoading) return <div className="empty">loading…</div>;
   const wr = data && data.games ? (100 * data.wins) / data.games : 0;
@@ -43,14 +42,10 @@ export function Hero() {
         <Avatar hero={name ?? null} size={40} /> {name}
         <Link to={`/matches?hero=${encodeURIComponent(name ?? "")}`} className="pill" style={{ fontSize: 11, marginLeft: "auto" }}>see games ›</Link>
       </h1>
-      <p className="note">Your stats on this hero across all your accounts.</p>
+      <p className="note">Hero stats over the filtered set — all players by default. "My games" restricts to your accounts.</p>
 
       <div className="card">
-        <div className="card-hd" style={{ flexWrap: "wrap", gap: 6 }}>
-          {MODES.map(([label, m]) => (
-            <span key={label} className={mode === m ? "pill on" : "pill"} onClick={() => setMode(m)}>{label}</span>
-          ))}
-        </div>
+        <AggFilterBar value={filter} onChange={setFilter} mineLabel="My games" />
       </div>
 
       {!data || !data.games ? (

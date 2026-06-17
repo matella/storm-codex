@@ -166,8 +166,30 @@ export interface HeroDetail {
   by_map: { map: string; games: number; wins: number }[];
   builds: { talents: Record<string, string>; games: number; wins: number }[];
 }
-export const fetchHeroDetail = (hero: string, mode?: number) =>
-  get<HeroDetail>(`/api/hero/${encodeURIComponent(hero)}${mode != null ? `?mode=${mode}` : ""}`);
+export const fetchHeroDetail = (hero: string, f: AggFilter = {}) =>
+  get<HeroDetail>(`/api/hero/${encodeURIComponent(hero)}?${aggParams(f)}`);
+
+/** (dé)sérialise un AggFilter en params d'URL BRUTS (dates en YYYY-MM-DD, pas ISO) pour transporter
+ *  le périmètre liste → fiche. Distinct de `aggParams` (lui convertit les dates en ISO pour l'API). */
+export function aggToSearch(f: AggFilter): URLSearchParams {
+  const q = new URLSearchParams();
+  if (f.mode != null) q.set("mode", String(f.mode));
+  if (f.mine) q.set("mine", "1");
+  if (f.account) q.set("account", f.account);
+  if (f.from) q.set("from", f.from);
+  if (f.to) q.set("to", f.to);
+  return q;
+}
+export function searchToAgg(p: URLSearchParams): AggFilter {
+  const f: AggFilter = {};
+  const mode = p.get("mode");
+  if (mode != null && mode !== "") f.mode = Number(mode);
+  if (p.get("mine") === "1") f.mine = true;
+  const acc = p.get("account"); if (acc) f.account = acc;
+  const from = p.get("from"); if (from) f.from = from;
+  const to = p.get("to"); if (to) f.to = to;
+  return f;
+}
 
 export interface Synergies {
   teammates: { name: string; games: number; wins: number }[];
