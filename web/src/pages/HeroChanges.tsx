@@ -64,6 +64,9 @@ export function HeroChanges() {
                   {p.shortSummary && <span className="muted" style={{ fontSize: 12 }}>{p.shortSummary}</span>}
                 </summary>
                 {p.content && <div className="patch-content" style={{ marginTop: 6, lineHeight: 1.5 }} dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(p.content) }} />}
+                <div style={{ marginTop: 6 }}>
+                  <Link to={`/patch/${encodeURIComponent(p.patchInternalId)}#${p.anchor}`} style={{ color: "var(--accent)", fontSize: 11, textDecoration: "none" }}>Open full patch notes ›</Link>
+                </div>
               </details>
             );
           })}
