@@ -8,7 +8,7 @@ import { Heroes } from "./pages/Heroes";
 import { Hero } from "./pages/Hero";
 import { Synergies } from "./pages/Synergies";
 import { Patches } from "./pages/Patches";
-// détail patch lazy : isole react-markdown (~300 kB) hors du bundle principal (overlays légers)
+// détail patch lazy : isole DOMPurify hors du bundle principal (overlays légers)
 const Patch = lazy(() => import("./pages/Patch").then((m) => ({ default: m.Patch })));
 import { Maps } from "./pages/Maps";
 import { Player } from "./pages/Player";

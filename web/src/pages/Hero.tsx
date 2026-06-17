@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "react-router-dom";
-import { fetchHeroDetail, useDimTalents, talentInfo } from "../api";
+import DOMPurify from "dompurify";
+import { fetchHeroDetail, fetchHeroPatches, useDimTalents, talentInfo, classBadge, fmtTime } from "../api";
 import { Avatar } from "../components/Avatar";
 
 const tierNum = (k: string) => parseInt(k.match(/\d+/)?.[0] ?? "0", 10);
@@ -107,6 +108,38 @@ export function Hero() {
       )}
       </>
       )}
+
+      {name && <HeroPatches hero={name} />}
+    </>
+  );
+}
+
+/** Sens héros → patch : ajustements de ce héros à travers les patch notes (récent d'abord).
+ *  Visible même sans parties jouées. Chaque entrée lie vers la section du patch concerné. */
+function HeroPatches({ hero }: { hero: string }) {
+  const { data } = useQuery({ queryKey: ["hero-patches", hero], queryFn: () => fetchHeroPatches(hero) });
+  if (!data || data.length === 0) return null;
+  return (
+    <>
+      <p className="cap">Patch changes</p>
+      <div className="card" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {data.map((p) => {
+          const badge = classBadge(p.classification);
+          return (
+            <details key={p.patchInternalId + p.anchor} style={{ borderBottom: "1px solid var(--border, rgba(255,255,255,.08))", paddingBottom: 8 }}>
+              <summary style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <Link to={`/patch/${encodeURIComponent(p.patchInternalId)}#${p.anchor}`} onClick={(e) => e.stopPropagation()} style={{ color: "var(--accent)", textDecoration: "none", fontWeight: 600 }}>{p.patchName}</Link>
+                <span className="mono muted" style={{ fontSize: 11 }}>{fmtTime(p.liveDate)}</span>
+                {badge && <span style={{ fontSize: 9, fontWeight: 700, padding: "0 5px", borderRadius: 4, background: badge.bg, color: badge.fg }}>{badge.label}</span>}
+                {p.shortSummary && <span className="muted" style={{ fontSize: 12 }}>{p.shortSummary}</span>}
+              </summary>
+              {p.content && (
+                <div className="patch-content" style={{ marginTop: 6, lineHeight: 1.5 }} dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(p.content) }} />
+              )}
+            </details>
+          );
+        })}
+      </div>
     </>
   );
 }

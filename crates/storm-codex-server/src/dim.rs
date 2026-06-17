@@ -389,6 +389,16 @@ pub async fn ingest_snapshot(db: &PgPool, images_dir: &Path, url: &str) -> Vec<(
             if inserted == Some(true) {
                 new_patches.push((iid.to_string(), name.to_string()));
             }
+            // Projection des sections héros (sens héros ↔ patch) — le détail est déjà en main.
+            if let Some(detail) = pdetails.get(iid) {
+                project_patch_sections(
+                    db, iid, name,
+                    it.get("patchType").and_then(|v| v.as_str()),
+                    it.get("liveDate").and_then(|v| v.as_str()),
+                    detail,
+                )
+                .await;
+            }
         }
         tracing::info!("dim_patches (snapshot) : {} patches ({} nouveaux)", items.len(), new_patches.len());
         if was_empty == 0 {
@@ -430,6 +440,105 @@ fn copy_tree(src: &Path, dst: &Path) -> u32 {
         }
     }
     n
+}
+
+/// Normalise un nom de héros pour la jointure (miroir de `heroKey()` côté front) : repli des accents,
+/// minuscule, alphanumérique seul, « the » initial retiré. Self-consistant (insert + requête côté Rust).
+pub fn hero_key(s: &str) -> String {
+    let folded: String = s.chars().map(fold_accent).collect();
+    let k: String = folded
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect();
+    k.strip_prefix("the").map(|r| r.to_string()).unwrap_or(k)
+}
+
+fn fold_accent(c: char) -> char {
+    match c {
+        'à' | 'á' | 'â' | 'ä' | 'ã' => 'a',
+        'è' | 'é' | 'ê' | 'ë' => 'e',
+        'ì' | 'í' | 'î' | 'ï' => 'i',
+        'ò' | 'ó' | 'ô' | 'ö' | 'õ' => 'o',
+        'ù' | 'ú' | 'û' | 'ü' => 'u',
+        'ñ' => 'n',
+        'ç' => 'c',
+        other => other,
+    }
+}
+
+/// Projette les sections de type `Hero` d'un patch dans `patch_hero_sections` (sens héros ↔ patch).
+/// Refresh complet pour ce patch (DELETE + INSERT). Best-effort. `detail` = réponse `/api/patches/{id}`.
+pub async fn project_patch_sections(
+    db: &PgPool,
+    internal_id: &str,
+    patch_name: &str,
+    patch_type: Option<&str>,
+    live_date: Option<&str>,
+    detail: &serde_json::Value,
+) {
+    let Some(sections) = detail.get("sections").and_then(|v| v.as_array()) else { return };
+    let _ = sqlx::query("DELETE FROM patch_hero_sections WHERE patch_internal_id=$1")
+        .bind(internal_id)
+        .execute(db)
+        .await;
+    for s in sections {
+        if s.get("sectionType").and_then(|v| v.as_str()) != Some("Hero") {
+            continue;
+        }
+        let Some(entity) = s.get("entityName").and_then(|v| v.as_str()).filter(|e| !e.is_empty()) else { continue };
+        let Some(anchor) = s.get("anchor").and_then(|v| v.as_str()) else { continue };
+        let _ = sqlx::query(
+            "INSERT INTO patch_hero_sections
+               (patch_internal_id, anchor, hero_short_name, hero_name, hero_key,
+                classification, short_summary, content, patch_name, patch_type, live_date)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::timestamptz)
+             ON CONFLICT (patch_internal_id, anchor) DO UPDATE SET
+                hero_short_name=EXCLUDED.hero_short_name, hero_name=EXCLUDED.hero_name,
+                hero_key=EXCLUDED.hero_key, classification=EXCLUDED.classification,
+                short_summary=EXCLUDED.short_summary, content=EXCLUDED.content,
+                patch_name=EXCLUDED.patch_name, patch_type=EXCLUDED.patch_type, live_date=EXCLUDED.live_date",
+        )
+        .bind(internal_id)
+        .bind(anchor)
+        .bind(s.get("heroShortName").and_then(|v| v.as_str()))
+        .bind(entity)
+        .bind(hero_key(entity))
+        .bind(s.get("classification").and_then(|v| v.as_str()))
+        .bind(s.get("shortSummary").and_then(|v| v.as_str()))
+        .bind(s.get("content").and_then(|v| v.as_str()))
+        .bind(patch_name)
+        .bind(patch_type)
+        .bind(live_date)
+        .execute(db)
+        .await;
+    }
+}
+
+/// Backfill (live HPN) : pour chaque patch de `dim_patches` sans sections héros projetées, récupère
+/// le détail depuis HotsPatchNotes et projette. HPN est local → rapide ; idempotent, best-effort.
+pub async fn backfill_hero_sections(db: &PgPool, base_url: &str) {
+    let base = base_url.trim_end_matches('/').to_string();
+    let pending: Vec<(String, String, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT internal_id, name, type, live_date::text FROM dim_patches d
+         WHERE NOT EXISTS (SELECT 1 FROM patch_hero_sections p WHERE p.patch_internal_id = d.internal_id)",
+    )
+    .fetch_all(db)
+    .await
+    .unwrap_or_default();
+    if pending.is_empty() {
+        return;
+    }
+    let mut done = 0;
+    for (iid, name, ptype, ldate) in &pending {
+        let url = format!("{base}/api/patches/{iid}");
+        let detail = tokio::task::spawn_blocking(move || fetch_json(&url)).await;
+        if let Ok(Ok(detail)) = detail {
+            project_patch_sections(db, iid, name, ptype.as_deref(), ldate.as_deref(), &detail).await;
+            done += 1;
+        }
+    }
+    tracing::info!("patch_hero_sections : backfill de {done}/{} patch(s)", pending.len());
 }
 
 fn fetch_array(url: &str) -> Result<Vec<serde_json::Value>, String> {

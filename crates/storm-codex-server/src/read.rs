@@ -455,6 +455,25 @@ pub async fn patch_detail(State(s): State<AppState>, Path(id): Path<String>) -> 
     hpn_proxy(&s, format!("/api/patches/{id}"), J::Null).await
 }
 
+/// GET /api/hero/{hero}/patches — sections de patch notes concernant ce héros (sens héros → patch),
+/// les plus récentes d'abord. Jointure tolérante via la clé normalisée (cf. `dim::hero_key`).
+pub async fn hero_patches(State(s): State<AppState>, Path(hero): Path<String>) -> Json<J> {
+    let key = crate::dim::hero_key(&hero);
+    let v: J = sqlx::query_scalar(
+        "SELECT COALESCE(jsonb_agg(jsonb_build_object(
+            'patchInternalId', patch_internal_id, 'patchName', patch_name, 'patchType', patch_type,
+            'liveDate', live_date, 'anchor', anchor, 'heroName', hero_name,
+            'classification', classification, 'shortSummary', short_summary, 'content', content
+         ) ORDER BY live_date DESC NULLS LAST), '[]'::jsonb)
+         FROM patch_hero_sections WHERE hero_key = $1",
+    )
+    .bind(&key)
+    .fetch_one(&s.db)
+    .await
+    .unwrap_or_else(|_| serde_json::json!([]));
+    Json(v)
+}
+
 /// GET /api/now-playing — proxifie Orpheus (`/api/playback/now` = lecture Spotify LIVE +
 /// `/api/auth/status`) pour le widget musique OBS. `/now` reflète ce qui joue réellement sur
 /// Spotify (indépendant de l'engine DJ). Best-effort : Orpheus absent/non authentifié →

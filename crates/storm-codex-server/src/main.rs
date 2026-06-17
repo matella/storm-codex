@@ -93,7 +93,9 @@ async fn run() -> Result<(), String> {
                     dim::sync_heroes(&st.db, &url).await;
                     dim::sync_talents(&st.db, &url).await;
                     dim::vendor_images(&st.cfg.images_dir, &url).await;
-                    dim::sync_patches(&st.db, &url).await
+                    let np = dim::sync_patches(&st.db, &url).await;
+                    dim::backfill_hero_sections(&st.db, &url).await; // projette les sections héros (live)
+                    np
                 } else {
                     Vec::new()
                 };
@@ -130,6 +132,7 @@ async fn run() -> Result<(), String> {
         .route("/api/players/{toon}", get(read::get_player))
         .route("/api/heroes", get(read::list_heroes))
         .route("/api/hero/{hero}", get(read::hero_detail))
+        .route("/api/hero/{hero}/patches", get(read::hero_patches))
         .route("/api/synergies", get(read::synergies))
         .route("/api/patches", get(read::patches_list))
         .route("/api/patches/{id}", get(read::patch_detail))

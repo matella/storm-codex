@@ -181,12 +181,24 @@ export interface PatchItem {
   liveDate: string | null; heroCount: number; mapCount: number;
   officialLink: string | null; hasContent: boolean;
 }
+export interface TocEntry { order: number; headingLevel: number; title: string; anchor: string; sectionType: string }
+export interface PatchSection { sectionType: string; entityName: string; anchor: string; classification: string; heroShortName: string | null }
 export interface PatchDetail {
   internalId: string; patchName: string; patchType: string;
   liveDate: string | null; officialLink: string | null; content: string | null;
+  tableOfContents?: TocEntry[]; sections?: PatchSection[];
 }
 export const fetchPatches = () => get<{ items: PatchItem[] }>("/api/patches");
 export const fetchPatch = (id: string) => get<PatchDetail>(`/api/patches/${encodeURIComponent(id)}`);
+
+/** Sens héros → patch : sections de patch notes concernant un héros (récent d'abord). */
+export interface HeroPatchSection {
+  patchInternalId: string; patchName: string | null; patchType: string | null;
+  liveDate: string | null; anchor: string; heroName: string;
+  classification: string | null; shortSummary: string | null; content: string | null;
+}
+export const fetchHeroPatches = (hero: string) =>
+  get<HeroPatchSection[]>(`/api/hero/${encodeURIComponent(hero)}/patches`);
 
 /** WS `/ws` : `match.parsed` invalide les listes de matchs ; `patch.new` invalide les patches. Le
  *  callback reçoit l'événement brut (avec `.type`) pour piloter les toasts. */
@@ -433,6 +445,18 @@ export function parseTrack(np: NowPlayingResp | undefined): Track {
   const progressMs = num(o.progressMs);
   const isPlaying = o.isPlaying !== false; // absent → on suppose en lecture
   return { playing: !!(np?.authenticated && title && isPlaying), title, artist, art, album, durationMs, progressMs };
+}
+
+/** Badge BUFF / NERF / MIXED d'une section de patch (vert / rouge / ambre). null si inconnu. */
+export function classBadge(c: string | null | undefined): { label: string; bg: string; fg: string } | null {
+  switch ((c || "").toUpperCase()) {
+    case "BUFF": return { label: "BUFF", bg: "rgba(63,185,80,.16)", fg: "#3fb950" };
+    case "NERF": return { label: "NERF", bg: "rgba(248,81,73,.16)", fg: "#f85149" };
+    case "MIXED": return { label: "MIXED", bg: "rgba(210,153,34,.16)", fg: "#d29922" };
+    case "REWORK": return { label: "REWORK", bg: "rgba(126,151,255,.16)", fg: "#7e97ff" };
+    case "NEW": return { label: "NEW", bg: "rgba(126,151,255,.16)", fg: "#7e97ff" };
+    default: return null;
+  }
 }
 
 export function initials(name: string | null): string {
