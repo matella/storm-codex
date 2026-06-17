@@ -134,6 +134,7 @@ async fn run() -> Result<(), String> {
         .route("/api/hero/{hero}", get(read::hero_detail))
         .route("/api/hero/{hero}/patches", get(read::hero_patches))
         .route("/api/hero-changes", get(read::hero_changes))
+        .route("/api/hero-changes/heroes", get(read::hero_changes_heroes))
         .route("/api/synergies", get(read::synergies))
         .route("/api/patches", get(read::patches_list))
         .route("/api/patches/{id}", get(read::patch_detail))

@@ -222,7 +222,16 @@ export interface HeroPatchSection {
 export const fetchHeroPatches = (hero: string) =>
   get<HeroPatchSection[]>(`/api/hero/${encodeURIComponent(hero)}/patches`);
 
-/** Fil global des changements héros (vue « par héros » des patch notes), filtrable + paginé. */
+/** Vue groupée « par héros » : un héros = une ligne (nb de changements + dernier). */
+export interface HeroChangeSummary { heroName: string; count: number; latestDate: string | null; latestClass: string | null; latestPatch: string | null }
+export function fetchHeroChangeHeroes(p: { klass?: string; patch?: string } = {}): Promise<HeroChangeSummary[]> {
+  const q = new URLSearchParams();
+  if (p.klass) q.set("class", p.klass);
+  if (p.patch) q.set("patch", p.patch);
+  return get<HeroChangeSummary[]>(`/api/hero-changes/heroes?${q.toString()}`);
+}
+
+/** Fil global des changements héros (vue « timeline » chronologique), filtrable + paginé. */
 export interface HeroChangesParams { hero?: string; klass?: string; patch?: string; limit?: number; offset?: number }
 export function fetchHeroChanges(p: HeroChangesParams = {}): Promise<HeroPatchSection[]> {
   const q = new URLSearchParams();

@@ -506,6 +506,32 @@ pub async fn hero_changes(State(s): State<AppState>, Query(f): Query<HeroChanges
     Json(v)
 }
 
+/// GET /api/hero-changes/heroes — un héros = une ligne : nombre de changements, dernier patch/date/
+/// classification. Pour la vue « par héros » (groupée). Filtrable par classification / patch.
+pub async fn hero_changes_heroes(State(s): State<AppState>, Query(f): Query<HeroChangesFilter>) -> Json<J> {
+    let v: J = sqlx::query_scalar(
+        "SELECT COALESCE(jsonb_agg(jsonb_build_object(
+            'heroName', hero_name, 'count', cnt, 'latestDate', latest,
+            'latestClass', latest_class, 'latestPatch', latest_patch
+         ) ORDER BY latest DESC NULLS LAST, hero_name), '[]'::jsonb)
+         FROM (
+            SELECT hero_name, count(*) AS cnt, max(live_date) AS latest,
+                   (array_agg(classification ORDER BY live_date DESC NULLS LAST))[1] AS latest_class,
+                   (array_agg(patch_name    ORDER BY live_date DESC NULLS LAST))[1] AS latest_patch
+            FROM patch_hero_sections
+            WHERE ($1::text IS NULL OR upper(classification) = upper($1))
+              AND ($2::text IS NULL OR patch_internal_id = $2)
+            GROUP BY hero_name
+         ) h",
+    )
+    .bind(f.class.filter(|c| !c.is_empty()))
+    .bind(f.patch.filter(|p| !p.is_empty()))
+    .fetch_one(&s.db)
+    .await
+    .unwrap_or_else(|_| serde_json::json!([]));
+    Json(v)
+}
+
 /// GET /api/hero/{hero}/patches — sections de patch notes concernant ce héros (sens héros → patch),
 /// les plus récentes d'abord. Jointure tolérante via la clé normalisée (cf. `dim::hero_key`).
 pub async fn hero_patches(State(s): State<AppState>, Path(hero): Path<String>) -> Json<J> {
