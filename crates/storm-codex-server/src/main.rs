@@ -5,6 +5,7 @@ mod admin;
 mod azure;
 mod config;
 mod dim;
+mod draft;
 mod jarvis;
 mod manage;
 pub mod project;
