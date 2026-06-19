@@ -32,32 +32,36 @@ DraftFormat = { id, label, steps: Step[], prebans: bool, fearless: bool }
 Chaque format n'est qu'une `steps[]` différente. Corriger l'ordre exact = éditer une liste,
 jamais le moteur. Les séquences vivent dans un module de constantes éditable.
 
-### Séquences proposées (À CONFIRMER par l'opérateur — il est l'expert HotS)
+### Séquences (Standard confirmée par l'opérateur)
 
-**Standard** (séquence tournoi des captures : 3 bans/équipe, 2 phases de bans, picks 1-2-2-…-1-2-1) :
+Étapes écrites en **rôle d'ordre** : F = équipe first-pick, S = seconde. (Découplé du côté
+blue/red — cf. plus bas.) **Standard** (HotS) :
 
-| # | Équipe | Action | | # | Équipe | Action |
-|---|--------|--------|---|---|--------|--------|
-| 1 | T1 | Ban | | 9 | T1 | Pick |
-| 2 | T2 | Ban | | 10 | T2 | Pick |
-| 3 | T1 | Ban | | 11 | T1 | **Ban** (2e phase) |
-| 4 | T2 | Ban | | 12 | T2 | **Ban** (2e phase) |
-| 5 | T1 | Pick | | 13 | T2 | Pick |
-| 6 | T2 | Pick | | 14 | T1 | Pick |
-| 7 | T2 | Pick | | 15 | T1 | Pick |
-| 8 | T1 | Pick | | 16 | T2 | Pick |
+| # | Rôle | Action | | # | Rôle | Action |
+|---|------|--------|---|---|------|--------|
+| 1 | F | Ban | | 9 | F | Pick |
+| 2 | S | Ban | | 10 | S | **Ban** (2e phase) |
+| 3 | F | Ban | | 11 | F | **Ban** (2e phase) |
+| 4 | S | Ban | | 12 | S | Pick |
+| 5 | F | Pick | | 13 | S | Pick |
+| 6 | S | Pick | | 14 | F | Pick |
+| 7 | S | Pick | | 15 | F | Pick |
+| 8 | F | Pick | | 16 | S | Pick |
 
-→ T1 : 3 bans + 5 picks. T2 : 3 bans + 5 picks. Total 6 bans / 10 picks.
+→ soit, côté blue first-pick : ban B·R·B·R · pick B · pick R×2 · pick B×2 · ban R · ban B ·
+pick R×2 · pick B×2 · pick R. 3 bans + 5 picks par équipe (6 bans / 10 picks).
 
-**Normal** = Standard **sans les étapes de ban** (steps 1-4, 11-12 retirées) → pur ordre de pick
-1-2-2-…-1-2-1, aucun ban. *(« pas de préban » = pas de bans du tout ; à confirmer.)*
+**Normal** = Standard **sans les étapes de ban** → pur ordre de pick, aucun ban.
 
 **Fearless** = séquence Standard, mais l'ensemble « indisponible » est **pré-rempli** avec tous
-les héros pické aux parties **précédentes** de la série courante. Les bans/picks de la partie en
-cours s'ajoutent normalement.
+les héros pické aux parties **précédentes** de la série courante.
 
-T1 = équipe « first pick » ; l'opérateur choisit quelle équipe (bleue) est first-pick et peut
-inverser les côtés.
+### First-pick ≠ side (réglages indépendants)
+
+Comme en lobby HotS : **qui a le first-pick** et **qui est blue/red side** sont deux réglages
+distincts. Le side fixe la couleur/position (overlay) ; `first_pick` (un côté) fixe seulement qui
+joue le rôle F. Le moteur résout rôle→côté via `first_pick` ; l'opérateur règle les deux
+séparément dans la console.
 
 ## Architecture (storm-codex : axum + sqlx + Postgres + WS `/ws` existant)
 

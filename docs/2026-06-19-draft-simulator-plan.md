@@ -42,17 +42,24 @@ use std::collections::BTreeSet;
 
 pub const SCHEMA_VERSION: i32 = 1;
 
+// Côté visuel (couleur/position) — INDÉPENDANT de l'ordre de draft.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum Team { Blue, Red }
-impl Team { pub fn other(self) -> Team { match self { Team::Blue => Team::Red, Team::Red => Team::Blue } } }
+pub enum Side { Blue, Red }
+impl Side { pub fn other(self) -> Side { match self { Side::Blue => Side::Red, Side::Red => Side::Blue } } }
+
+// Rôle d'ordre — qui draft en premier. Le réglage `first_pick: Side` mappe First→un côté.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Order { First, Second }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Action { Ban, Pick }
 
+// Une étape est définie en rôle d'ordre (pas en couleur) : c'est ce qui décorrèle first-pick et side.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
-pub struct Step { pub team: Team, pub action: Action }
+pub struct Step { pub order: Order, pub action: Action }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -72,50 +79,56 @@ pub enum DraftError { Unavailable, Complete, NothingToUndo }
 - Create: `crates/storm-codex-server/src/draft/formats.rs`
 - Modify: `crates/storm-codex-server/src/draft/mod.rs` (`mod formats; pub use formats::steps_for;`)
 
-> ⚠️ La séquence Standard ci-dessous est **à confirmer par l'opérateur** (joueur expert). Elle est
-> en data : la corriger = éditer cette liste, jamais le moteur. Étapes écrites pour first-pick = Blue ;
-> `steps_for` les miroite si first-pick = Red.
+> Séquence Standard **confirmée par l'opérateur** (HotS, first-pick = First). Elle est en data : la
+> corriger = éditer cette liste. Écrite en **rôle d'ordre** (First/Second), donc indépendante du
+> côté : `first_pick: Side` mappe First→un côté au moment du rendu (cf. Task 3).
 
-- [ ] **Step 1 : Test des longueurs/compositions** (inline dans `formats.rs`) :
+- [ ] **Step 1 : Test de la séquence** (inline dans `formats.rs`) :
 
 ```rust
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::draft::{Action, Format, Team};
+    use crate::draft::{Action, Format, Order, Step};
 
-    fn counts(steps: &[crate::draft::Step]) -> (usize, usize, usize, usize) {
-        let bans_b = steps.iter().filter(|s| s.action==Action::Ban && s.team==Team::Blue).count();
-        let bans_r = steps.iter().filter(|s| s.action==Action::Ban && s.team==Team::Red).count();
-        let picks_b = steps.iter().filter(|s| s.action==Action::Pick && s.team==Team::Blue).count();
-        let picks_r = steps.iter().filter(|s| s.action==Action::Pick && s.team==Team::Red).count();
-        (bans_b, bans_r, picks_b, picks_r)
+    fn counts(steps: &[Step]) -> (usize, usize, usize, usize) {
+        let bf = steps.iter().filter(|s| s.action==Action::Ban  && s.order==Order::First ).count();
+        let bs = steps.iter().filter(|s| s.action==Action::Ban  && s.order==Order::Second).count();
+        let pf = steps.iter().filter(|s| s.action==Action::Pick && s.order==Order::First ).count();
+        let ps = steps.iter().filter(|s| s.action==Action::Pick && s.order==Order::Second).count();
+        (bf, bs, pf, ps)
     }
 
     #[test]
-    fn standard_is_3_bans_5_picks_each() {
-        let s = steps_for(Format::Standard, Team::Blue);
+    fn standard_is_3_bans_5_picks_per_role_len_16() {
+        let s = steps_for(Format::Standard);
         assert_eq!(counts(&s), (3, 3, 5, 5));
         assert_eq!(s.len(), 16);
     }
 
     #[test]
+    fn standard_exact_order() {
+        use Action::*; use Order::*;
+        let s = steps_for(Format::Standard);
+        let got: Vec<(Order, Action)> = s.iter().map(|x| (x.order, x.action)).collect();
+        assert_eq!(got, vec![
+            (First,Ban),(Second,Ban),(First,Ban),(Second,Ban),
+            (First,Pick),(Second,Pick),(Second,Pick),(First,Pick),(First,Pick),
+            (Second,Ban),(First,Ban),
+            (Second,Pick),(Second,Pick),(First,Pick),(First,Pick),(Second,Pick),
+        ]);
+    }
+
+    #[test]
     fn normal_has_no_bans_10_picks() {
-        let s = steps_for(Format::Normal, Team::Blue);
+        let s = steps_for(Format::Normal);
         assert_eq!(counts(&s), (0, 0, 5, 5));
         assert_eq!(s.len(), 10);
     }
 
     #[test]
     fn fearless_sequence_equals_standard() {
-        assert_eq!(steps_for(Format::Fearless, Team::Blue), steps_for(Format::Standard, Team::Blue));
-    }
-
-    #[test]
-    fn red_first_pick_mirrors_teams() {
-        let blue = steps_for(Format::Standard, Team::Blue);
-        let red = steps_for(Format::Standard, Team::Red);
-        assert!(blue.iter().zip(&red).all(|(b, r)| b.team == r.team.other() && b.action == r.action));
+        assert_eq!(steps_for(Format::Fearless), steps_for(Format::Standard));
     }
 }
 ```
@@ -125,26 +138,24 @@ mod tests {
 - [ ] **Step 3 : Implémenter** `formats.rs` :
 
 ```rust
-use crate::draft::{Action, Format, Step, Team};
+use crate::draft::{Action, Format, Order, Step};
 use Action::{Ban, Pick};
+use Order::{First, Second};
 
-// Séquence Standard (first-pick = Blue) : 4 bans (B,R,B,R) · picks 1-2-2-1 · 2 bans milieu (B,R) · picks.
-const STANDARD: [(Team, Action); 16] = [
-    (Team::Blue, Ban), (Team::Red, Ban), (Team::Blue, Ban), (Team::Red, Ban),
-    (Team::Blue, Pick), (Team::Red, Pick), (Team::Red, Pick), (Team::Blue, Pick),
-    (Team::Blue, Pick), (Team::Red, Pick),
-    (Team::Blue, Ban), (Team::Red, Ban),
-    (Team::Red, Pick), (Team::Blue, Pick), (Team::Blue, Pick), (Team::Red, Pick),
+// Séquence Standard HotS (confirmée). En rôle d'ordre ; First = équipe first-pick.
+// 1 ban F · 1 ban S · 1 ban F · 1 ban S · 1 pick F · 2 pick S · 2 pick F ·
+// 1 ban S · 1 ban F · 2 pick S · 2 pick F · 1 pick S.
+const STANDARD: [(Order, Action); 16] = [
+    (First, Ban), (Second, Ban), (First, Ban), (Second, Ban),
+    (First, Pick), (Second, Pick), (Second, Pick), (First, Pick), (First, Pick),
+    (Second, Ban), (First, Ban),
+    (Second, Pick), (Second, Pick), (First, Pick), (First, Pick), (Second, Pick),
 ];
 
-pub fn steps_for(format: Format, first_pick: Team) -> Vec<Step> {
-    let mirror = first_pick == Team::Red;
+pub fn steps_for(format: Format) -> Vec<Step> {
     STANDARD.iter()
         .filter(|(_, a)| format != Format::Normal || *a == Pick)
-        .map(|&(team, action)| Step {
-            team: if mirror { team.other() } else { team },
-            action,
-        })
+        .map(|&(order, action)| Step { order, action })
         .collect()
 }
 ```
@@ -166,7 +177,7 @@ mod tests {
     use super::*;
 
     fn new_standard() -> DraftState {
-        DraftState::new(Format::Standard, Team::Blue, "Sky Temple".into())
+        DraftState::new(Format::Standard, Side::Blue, "Sky Temple".into())
     }
 
     #[test]
@@ -195,7 +206,7 @@ mod tests {
 
     #[test]
     fn fearless_seed_blocks_series_heroes() {
-        let mut d = DraftState::new(Format::Fearless, Team::Blue, "Sky Temple".into());
+        let mut d = DraftState::new(Format::Fearless, Side::Blue, "Sky Temple".into());
         d.seed_series(&["Jaina".into()]);
         assert_eq!(d.apply("Jaina"), Err(DraftError::Unavailable));
     }
@@ -210,10 +221,20 @@ mod tests {
     }
 
     #[test]
-    fn current_phase_groups_consecutive_same_team() {
+    fn first_pick_is_independent_of_side() {
+        // first_pick = Red : le rôle First est joué par le CÔTÉ rouge (la 1re étape est « côté rouge »).
+        let d = DraftState::new(Format::Standard, Side::Red, "Sky Temple".into());
+        assert_eq!(d.active_side(), Some(Side::Red));
+        let d2 = DraftState::new(Format::Standard, Side::Blue, "Sky Temple".into());
+        assert_eq!(d2.active_side(), Some(Side::Blue));
+    }
+
+    #[test]
+    fn current_phase_len_groups_consecutive_same_order() {
         let mut d = new_standard();
-        for _ in 0..4 { d.apply("x").err(); } // bans B,R,B,R individuels → phases de 1
-        // au pick 1-2-2-1 : après le 1er pick Blue, la main passe Red pour 2 picks
+        assert_eq!(d.current_phase_len(), 1); // étape 1 = ban First, isolée
+        for i in 0..5 { d.apply(&format!("h{i}")).unwrap(); } // curseur = 5
+        assert_eq!(d.current_phase_len(), 2); // étapes 6-7 = 2 picks Second consécutifs
     }
 }
 ```
@@ -226,17 +247,20 @@ mod tests {
 mod formats;
 pub use formats::steps_for;
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct TeamInfo { pub name: String, pub players: [String; 5] }
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DraftState {
     pub schema_version: i32,
     pub format: Format,
-    pub first_pick: Team,
+    pub first_pick: Side,                 // quel CÔTÉ joue le rôle First — réglage INDÉPENDANT du nommage
     pub map: String,
-    pub team_names: [String; 2],          // [blue, red]
-    pub player_names: [[String; 5]; 2],
-    pub score: [u8; 2],
+    pub blue: TeamInfo,                    // équipe côté bleu (couleur/position fixes)
+    pub red: TeamInfo,                     // équipe côté rouge
+    pub score: [u8; 2],                   // [blue, red]
     pub bo: u8,
-    pub steps: Vec<Step>,
+    pub steps: Vec<Step>,                 // en rôle d'ordre (First/Second), indépendant du side
     pub cursor: usize,
     pub assignments: Vec<Option<String>>, // parallèle à steps : héros assigné à l'étape i
     pub manual_unavailable: BTreeSet<String>,
@@ -244,13 +268,13 @@ pub struct DraftState {
 }
 
 impl DraftState {
-    pub fn new(format: Format, first_pick: Team, map: String) -> Self {
-        let steps = steps_for(format, first_pick);
+    pub fn new(format: Format, first_pick: Side, map: String) -> Self {
+        let steps = steps_for(format);
         let n = steps.len();
         Self {
             schema_version: SCHEMA_VERSION, format, first_pick, map,
-            team_names: ["Blue".into(), "Red".into()],
-            player_names: Default::default(),
+            blue: TeamInfo { name: "Blue".into(), players: Default::default() },
+            red:  TeamInfo { name: "Red".into(),  players: Default::default() },
             score: [0, 0], bo: 5, steps, cursor: 0,
             assignments: vec![None; n],
             manual_unavailable: BTreeSet::new(),
@@ -258,8 +282,12 @@ impl DraftState {
         }
     }
 
+    /// Résout un rôle d'ordre en côté visuel selon le réglage `first_pick` (le découplage).
+    pub fn side_of(&self, order: Order) -> Side {
+        if order == Order::First { self.first_pick } else { self.first_pick.other() }
+    }
     pub fn current_step(&self) -> Option<Step> { self.steps.get(self.cursor).copied() }
-    pub fn active_team(&self) -> Option<Team> { self.current_step().map(|s| s.team) }
+    pub fn active_side(&self) -> Option<Side> { self.current_step().map(|s| self.side_of(s.order)) }
     pub fn is_complete(&self) -> bool { self.cursor >= self.steps.len() }
 
     fn is_used(&self, hero: &str) -> bool {
@@ -293,10 +321,11 @@ impl DraftState {
     pub fn seed_series(&mut self, heroes: &[String]) {
         self.series_bans = heroes.iter().cloned().collect();
     }
-    /// Bloc d'étapes consécutives de l'équipe active à partir du curseur (pour le timer/affichage).
+    /// Longueur du bloc d'étapes consécutives du même rôle d'ordre (= même côté) à partir du curseur,
+    /// pour le timer **par phase** (le compte à rebours couvre tout le bloc, pas chaque pick).
     pub fn current_phase_len(&self) -> usize {
-        let Some(team) = self.active_team() else { return 0 };
-        self.steps[self.cursor..].iter().take_while(|s| s.team == team).count()
+        let Some(step) = self.current_step() else { return 0 };
+        self.steps[self.cursor..].iter().take_while(|s| s.order == step.order).count()
     }
 }
 ```
@@ -362,7 +391,7 @@ CREATE TABLE draft_series (
 
 Routes (toutes muent l'état sous write-lock, persistent via `store::save`, puis `state.events.send(json!({"type":"draft.updated"}))`) :
 - `GET  /api/draft` → l'état courant (JSON).
-- `POST /api/draft/config` `{format, map, first_pick, team_names, player_names, bo}` → recrée l'état (reset).
+- `POST /api/draft/config` `{format, map, first_pick (side "blue"|"red"), blue:{name,players[5]}, red:{name,players[5]}, bo}` → recrée l'état. `first_pick` est **indépendant** du nommage blue/red.
 - `POST /api/draft/action` `{hero}` → `apply` ; 409 si `Unavailable`/`Complete`.
 - `POST /api/draft/undo`, `POST /api/draft/reset`.
 - `POST /api/draft/unavailable` `{hero, value}` → `set_unavailable`.
