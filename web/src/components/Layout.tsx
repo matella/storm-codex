@@ -13,6 +13,7 @@ const TABS: [string, string][] = [
   ["/patches", "Patch Notes"],
   ["/trends", "Trends"],
   ["/leagues", "Leagues"],
+  ["/draft", "Draft"],
   ["/admin", "Admin"],
 ];
 
