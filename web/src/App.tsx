@@ -21,6 +21,7 @@ import { Trends } from "./pages/Trends";
 import { Leagues } from "./pages/Leagues";
 import { Admin } from "./pages/Admin";
 import { Draft } from "./pages/Draft";
+import { DraftOverlay } from "./pages/DraftOverlay";
 
 export default function App() {
   return (
@@ -30,6 +31,7 @@ export default function App() {
       <Route path="queue" element={<Queue />} />
       <Route path="ticker" element={<Ticker />} />
       <Route path="now-playing" element={<NowPlaying />} />
+      <Route path="draft/overlay" element={<DraftOverlay />} />
       <Route element={<Layout />}>
         <Route index element={<Dashboard />} />
         <Route path="matches" element={<Matches />} />

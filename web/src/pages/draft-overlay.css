@@ -1,0 +1,74 @@
+@import url("https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=JetBrains+Mono:wght@700&family=Cinzel:wght@700;800&display=swap");
+
+/* Overlay de draft OBS — vue Timeline. Fond transparent ; data-skin sur .draft-overlay.
+   Porté de docs/draft-aesthetics.html (skins nexus/glass/tactical/mono). */
+.draft-overlay { position: fixed; inset: 0; overflow: hidden; color: #eef2fc;
+  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+  --blue:#2f6df6; --red:#e0414b; --blue-soft:#7fa6ff; --red-soft:#ff8088; --gold:#e8c66a;
+  --bg:radial-gradient(125% 95% at 50% 35%,#211a44 0%,#120e26 46%,#06060f 100%);
+  --cardbd:#2a3052; --radius:12px; --clip:none;
+  --label-ff:"Inter",sans-serif; --label-tr:.06em; --num-ff:"Inter",sans-serif; }
+.draft-overlay[data-skin=glass]{ --bg:linear-gradient(115deg,#0a1326 0%,#0b0e1c 42%,#1a0c14 100%);
+  --cardbd:rgba(255,255,255,.14); --radius:13px; --gold:#d8c089; --label-tr:.12em; }
+.draft-overlay[data-skin=tactical]{ --blue:#2ee6d6; --red:#ff4655; --blue-soft:#7ff0e6; --red-soft:#ff7a85; --gold:#ffd36b;
+  --bg:linear-gradient(180deg,#0c0f14 0%,#070a0e 100%); --cardbd:#243038; --radius:0;
+  --clip:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%);
+  --label-ff:"Oswald","Arial Narrow",sans-serif; --label-tr:.16em; --num-ff:"JetBrains Mono",ui-monospace,monospace; }
+.draft-overlay[data-skin=nexus]{ --bg:radial-gradient(130% 100% at 50% 30%,#2a1d5c 0%,#160f30 45%,#070512 100%);
+  --cardbd:#5a4aa0; --gold:#f0d27a; --radius:10px; --label-ff:"Cinzel","Trajan Pro",serif; --label-tr:.1em; }
+.draft-overlay[data-skin=mono]{ --blue:#6ea8ff; --red:#ff7a85; --blue-soft:#9cc4ff; --red-soft:#ffa0a8; --gold:#cdd3e2;
+  --bg:linear-gradient(180deg,#0e1016 0%,#0a0b10 100%); --cardbd:rgba(255,255,255,.1); --radius:8px; --label-tr:.2em; }
+
+.draft-overlay .stage{ position:absolute; inset:0; }
+.draft-overlay .stage::before{ content:""; position:absolute; inset:0; background:var(--bg); }
+.draft-overlay .stars{ position:absolute; inset:0; opacity:.5; background-image:
+  radial-gradient(1px 1px at 18% 28%,#fff8,transparent),radial-gradient(1px 1px at 68% 58%,#fff6,transparent),
+  radial-gradient(1px 1px at 44% 78%,#fff7,transparent),radial-gradient(1px 1px at 86% 18%,#fff5,transparent); }
+.draft-overlay[data-skin=tactical] .stars,.draft-overlay[data-skin=mono] .stars{ opacity:.12;
+  background-image:linear-gradient(#ffffff08 1px,transparent 1px),linear-gradient(90deg,#ffffff08 1px,transparent 1px);background-size:38px 38px; }
+
+@keyframes pulse{0%,100%{box-shadow:0 0 0 2px var(--gold)}50%{box-shadow:0 0 0 2px var(--gold),0 0 24px var(--gold)}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+.draft-overlay .num{font-family:var(--num-ff)}
+
+.draft-overlay .tl-head{position:absolute;top:2.2%;left:0;right:0;text-align:center;z-index:2}
+.draft-overlay .tl-head .map{font-family:var(--label-ff);letter-spacing:.22em;text-transform:uppercase;font-size:1.05vw;color:#cfe0ff;opacity:.85}
+.draft-overlay .tl-head .teams{margin-top:.5%;font-family:var(--label-ff);font-weight:800;font-size:1.6vw;letter-spacing:.05em}
+.draft-overlay .tl-head .teams .b{color:var(--blue-soft)} .draft-overlay .tl-head .teams .r{color:var(--red-soft)}
+.draft-overlay .tl-head .teams .s{font-family:var(--num-ff);color:#fff;margin:0 1vw}
+.draft-overlay .tl-head .teams .dot{display:inline-block;width:.8vw;height:.8vw;border-radius:50%;margin:0 .6vw;vertical-align:middle;animation:blink 1.2s ease-in-out infinite}
+.draft-overlay .tl-head .teams .b .dot{background:var(--blue)} .draft-overlay .tl-head .teams .r .dot{background:var(--red)}
+.draft-overlay .tl-timer{width:20vw;height:.4vw;margin:1% auto 0;background:#ffffff26;border-radius:3px;overflow:hidden}
+.draft-overlay .tl-timer span{display:block;height:100%;background:var(--gold);border-radius:3px;transition:width 1s linear}
+.draft-overlay[data-skin=tactical] .tl-timer span{background:var(--blue);border-radius:0}
+
+.draft-overlay .tl-series{position:absolute;top:20%;left:5%;right:5%;text-align:center;z-index:2}
+.draft-overlay .tl-series .lab{font-family:var(--label-ff);letter-spacing:.18em;text-transform:uppercase;font-size:.75vw;color:#9098b6;margin-bottom:.5%}
+.draft-overlay .tl-series .pool{display:flex;flex-wrap:wrap;justify-content:center;gap:4px}
+.draft-overlay .si{width:1.7vw;height:1.7vw;border-radius:5px;overflow:hidden;clip-path:var(--clip);filter:grayscale(.78) brightness(.5);border:1px solid #ffffff10}
+.draft-overlay .si img,.draft-overlay .si span{width:100%!important;height:100%!important}
+
+.draft-overlay .tl-stack{position:absolute;left:3%;right:3%;top:30%;bottom:6%;display:flex;flex-direction:column;justify-content:center;gap:1.4%;z-index:2}
+.draft-overlay .tl-picks{display:grid;grid-template-columns:repeat(10,1fr);gap:.6%}
+.draft-overlay .pk{position:relative;width:100%;aspect-ratio:1/1.4;border-radius:var(--radius);clip-path:var(--clip);overflow:hidden;
+  background:#0e1320;border:1px solid #ffffff1c}
+.draft-overlay .pk.ghost{visibility:hidden}
+.draft-overlay .tl-picks.b .pk{box-shadow:inset 0 3px 0 var(--blue)} .draft-overlay .tl-picks.r .pk{box-shadow:inset 0 -3px 0 var(--red)}
+.draft-overlay .pk img,.draft-overlay .pk .avwrap span{position:absolute;inset:0;width:100%!important;height:100%!important;border-radius:0!important}
+.draft-overlay .pk .nm{position:absolute;left:0;right:0;bottom:0;padding:13px 3px 5px;text-align:center;background:linear-gradient(0deg,#000f 30%,transparent);z-index:2}
+.draft-overlay .pk .nm b{display:block;font-size:.78vw;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.draft-overlay .pk .nm i{display:block;font-style:normal;font-size:.62vw;font-weight:600;color:#c4cdea;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.draft-overlay .pk.empty{border:1px dashed #2a3148}
+.draft-overlay .pk.empty .nm{background:none} .draft-overlay .pk.empty .nm b{color:#7c8aa8}
+.draft-overlay .pk.active{border-color:var(--gold);animation:pulse 1.4s ease-in-out infinite}
+.draft-overlay .tl-bans{display:flex;justify-content:center;align-items:center;gap:.5vw}
+.draft-overlay .tl-bans .sep{width:1vw}
+.draft-overlay .bn{position:relative;width:2.2vw;height:2.2vw;border-radius:calc(var(--radius) - 4px);overflow:hidden;clip-path:var(--clip);
+  background:#12162200;filter:grayscale(.7) brightness(.6);border:1px solid #ffffff12}
+.draft-overlay .bn.b{outline:2px solid color-mix(in srgb,var(--blue) 55%,transparent);outline-offset:-2px}
+.draft-overlay .bn.r{outline:2px solid color-mix(in srgb,var(--red) 55%,transparent);outline-offset:-2px}
+.draft-overlay .bn img,.draft-overlay .bn span{width:100%!important;height:100%!important;border-radius:0!important}
+.draft-overlay .bn::after{content:"";position:absolute;inset:0;background:linear-gradient(135deg,transparent 45%,#ff3b46 46%,#ff3b46 54%,transparent 55%);opacity:.9;z-index:2}
+.draft-overlay .bn.active{outline-color:var(--gold);animation:pulse 1.4s ease-in-out infinite}
+.draft-overlay .bn.empty{filter:none;background:#0e1320;border:1px dashed #2a3148}
+.draft-overlay .bn.empty::after{display:none}
