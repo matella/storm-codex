@@ -173,6 +173,7 @@ async fn run() -> Result<(), String> {
         .route("/api/draft/reset", post(draft::api::reset))
         .route("/api/draft/unavailable", post(draft::api::unavailable))
         .route("/api/draft/score", post(draft::api::score))
+        .route("/api/draft/teams", post(draft::api::teams))
         .route("/api/draft/series/next", post(draft::api::series_next))
         .route("/api/draft/series/new", post(draft::api::series_new))
         .route("/ws", any(ws::ws_handler))

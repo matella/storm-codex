@@ -20,6 +20,7 @@ import { NowPlaying } from "./pages/NowPlaying";
 import { Trends } from "./pages/Trends";
 import { Leagues } from "./pages/Leagues";
 import { Admin } from "./pages/Admin";
+import { Draft } from "./pages/Draft";
 
 export default function App() {
   return (
@@ -43,6 +44,7 @@ export default function App() {
         <Route path="maps" element={<Maps />} />
         <Route path="trends" element={<Trends />} />
         <Route path="leagues" element={<Leagues />} />
+        <Route path="draft" element={<Draft />} />
         <Route path="admin" element={<Admin />} />
       </Route>
     </Routes>

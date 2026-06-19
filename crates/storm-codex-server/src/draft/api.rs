@@ -115,6 +115,23 @@ pub async fn score(State(s): State<AppState>, Json(b): Json<ScoreBody>) -> Json<
     get_draft(State(s)).await
 }
 
+#[derive(Deserialize)]
+pub struct TeamsBody {
+    blue: TeamInfo,
+    red: TeamInfo,
+}
+
+/// POST /api/draft/teams — met à jour noms + pseudos SANS réinitialiser le draft en cours.
+pub async fn teams(State(s): State<AppState>, Json(b): Json<TeamsBody>) -> Json<DraftState> {
+    {
+        let mut d = s.draft.write().await;
+        d.blue = b.blue;
+        d.red = b.red;
+    }
+    persist(&s).await;
+    get_draft(State(s)).await
+}
+
 /// POST /api/draft/series/next — clôt la partie courante, cumule les bans fearless, repart.
 pub async fn series_next(State(s): State<AppState>) -> Json<DraftState> {
     s.draft.write().await.start_next_game();

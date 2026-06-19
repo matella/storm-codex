@@ -517,3 +517,75 @@ export function fmtDur(seconds: number | null): string {
   const s = Math.floor(seconds % 60);
   return `${m}:${String(s).padStart(2, "0")}`;
 }
+
+// ── simulateur de draft ───────────────────────────────────────────────────────
+export type Side = "blue" | "red";
+export type DraftOrder = "first" | "second";
+export type DraftStepAction = "ban" | "pick";
+export type DraftFormat = "standard" | "normal" | "fearless";
+export interface DraftStep { order: DraftOrder; action: DraftStepAction }
+export interface TeamInfo { name: string; players: string[] }
+export interface DraftState {
+  schema_version: number;
+  format: DraftFormat;
+  first_pick: Side;          // quel CÔTÉ joue le rôle « first » — indépendant du nommage blue/red
+  map: string;
+  blue: TeamInfo;
+  red: TeamInfo;
+  score: [number, number];   // [blue, red]
+  bo: number;
+  steps: DraftStep[];
+  cursor: number;
+  assignments: (string | null)[]; // parallèle à steps : héros assigné (null = pas encore)
+  manual_unavailable: string[];
+  series_bans: string[];
+  series_games: string[][];
+}
+
+async function post<T>(path: string, body?: unknown): Promise<T> {
+  const r = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  if (!r.ok) throw new Error(`${path} → ${r.status}`);
+  return r.json() as Promise<T>;
+}
+
+export const fetchDraft = () => get<DraftState>("/api/draft");
+export const draftAction = (hero: string) => post("/api/draft/action", { hero });
+export const draftUndo = () => post("/api/draft/undo");
+export const draftReset = () => post<DraftState>("/api/draft/reset");
+export const draftUnavailable = (hero: string, value: boolean) =>
+  post<DraftState>("/api/draft/unavailable", { hero, value });
+export const draftScore = (blue: number, red: number) =>
+  post<DraftState>("/api/draft/score", { blue, red });
+export const draftTeams = (blue: TeamInfo, red: TeamInfo) =>
+  post<DraftState>("/api/draft/teams", { blue, red });
+export const draftSeriesNext = () => post<DraftState>("/api/draft/series/next");
+export const draftSeriesNew = () => post<DraftState>("/api/draft/series/new");
+export interface DraftConfig {
+  format: DraftFormat;
+  map: string;
+  first_pick: Side;
+  blue?: TeamInfo;
+  red?: TeamInfo;
+  bo?: number;
+}
+export const draftConfig = (cfg: DraftConfig) => post<DraftState>("/api/draft/config", cfg);
+
+/** État du draft, rafraîchi en direct via le WS (`draft.updated`). */
+export function useDraft() {
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ["draft"], queryFn: fetchDraft });
+  useLiveUpdates((ev) => {
+    if (ev.type === "draft.updated") qc.invalidateQueries({ queryKey: ["draft"] });
+  });
+  return q;
+}
+
+/** Côté visuel d'une étape (résout le rôle d'ordre via first_pick) — pour colorer/positionner. */
+export function sideOfStep(d: DraftState, step: DraftStep): Side {
+  if (step.order === "first") return d.first_pick;
+  return d.first_pick === "blue" ? "red" : "blue";
+}
