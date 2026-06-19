@@ -1,11 +1,14 @@
-//! Moteur de draft HotS — pur (aucune I/O). Un format = une liste ordonnée d'étapes (rôle d'ordre
-//! + action) ; la machine d'état « marche » dessus. Le côté visuel (blue/red) est découplé de
-//! l'ordre : `first_pick` (un côté) dit qui joue le rôle First. Sérialisable (persistance + WS).
+//! Moteur de draft HotS — pur (aucune I/O). Un format = une liste ordonnée d'étapes (chaque étape =
+//! rôle d'ordre et action) ; la machine d'état « marche » dessus. Le côté visuel (blue/red) est
+//! découplé de l'ordre : `first_pick` dit quel côté joue le rôle First. Sérialisable (persistance, WS).
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 mod formats;
 pub use formats::steps_for;
+
+pub mod api;
+pub mod store;
 
 pub const SCHEMA_VERSION: i32 = 1;
 
@@ -86,8 +89,11 @@ pub struct DraftState {
     /// Parallèle à `steps` : héros assigné à l'étape i (None si pas encore joué).
     pub assignments: Vec<Option<String>>,
     pub manual_unavailable: BTreeSet<String>,
-    /// Fearless : héros pické aux parties précédentes de la série.
+    /// Fearless : héros pické aux parties précédentes de la série (dérivé de `series_games`).
     pub series_bans: BTreeSet<String>,
+    /// Historique de série (fearless) : picks de chaque partie terminée.
+    #[serde(default)]
+    pub series_games: Vec<Vec<String>>,
 }
 
 impl DraftState {
@@ -108,6 +114,7 @@ impl DraftState {
             assignments: vec![None; n],
             manual_unavailable: BTreeSet::new(),
             series_bans: BTreeSet::new(),
+            series_games: Vec::new(),
         }
     }
 
@@ -168,6 +175,20 @@ impl DraftState {
     }
     pub fn seed_series(&mut self, heroes: &[String]) {
         self.series_bans = heroes.iter().cloned().collect();
+    }
+    /// Clôt la partie courante : archive ses picks et démarre une nouvelle partie dont les series
+    /// bans (fearless) cumulent tous les picks des parties précédentes. Garde la config + le score.
+    pub fn start_next_game(&mut self) {
+        self.series_games.push(self.picked_heroes());
+        let seed: BTreeSet<String> = self.series_games.iter().flatten().cloned().collect();
+        self.reset();
+        self.series_bans = seed;
+    }
+    /// Repart sur une série vierge (vide l'historique + les series bans).
+    pub fn new_series(&mut self) {
+        self.series_games.clear();
+        self.series_bans.clear();
+        self.reset();
     }
     /// Héros pické dans la partie courante (pour alimenter l'historique de série fearless).
     pub fn picked_heroes(&self) -> Vec<String> {
@@ -272,6 +293,25 @@ mod tests {
             d.apply(&format!("h{i}")).unwrap();
         }
         assert_eq!(d.current_phase_len(), 2); // étapes 6-7 = 2 picks Second consécutifs
+    }
+
+    #[test]
+    fn start_next_game_accumulates_fearless_bans() {
+        let mut d = DraftState::new(Format::Fearless, Side::Blue, "Sky Temple".into());
+        for i in 0..16 {
+            d.apply(&format!("h{i}")).unwrap();
+        }
+        let picks = d.picked_heroes(); // 10 picks de la partie 1
+        d.start_next_game();
+        assert_eq!(d.cursor, 0);
+        assert_eq!(d.series_games.len(), 1);
+        // chaque héros pické en partie 1 est désormais indisponible en partie 2
+        for h in &picks {
+            assert!(d.is_unavailable(h), "{h} devrait être banni (fearless)");
+        }
+        d.new_series();
+        assert!(d.series_games.is_empty());
+        assert!(!d.is_unavailable(&picks[0]));
     }
 
     #[test]

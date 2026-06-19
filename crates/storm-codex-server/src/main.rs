@@ -21,7 +21,7 @@ use config::Config;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use std::sync::Arc;
-use tokio::sync::{broadcast, Semaphore};
+use tokio::sync::{broadcast, RwLock, Semaphore};
 
 /// Version du projecteur — bumper quand la projection change ; pilote le re-process idempotent.
 pub const PARSER_VERSION: i32 = 1;
@@ -32,8 +32,10 @@ pub struct AppState {
     pub db: PgPool,
     /// Limite les parses CPU concurrents (= nb de cœurs).
     pub parse_sem: Arc<Semaphore>,
-    /// Diffusion temps réel (WS) — `match.parsed`, progression backfill.
+    /// Diffusion temps réel (WS) — `match.parsed`, progression backfill, `draft.updated`.
     pub events: broadcast::Sender<serde_json::Value>,
+    /// État autoritatif du simulateur de draft (singleton, persisté dans `draft_live`).
+    pub draft: Arc<RwLock<draft::DraftState>>,
 }
 
 #[tokio::main]
@@ -71,11 +73,16 @@ async fn run() -> Result<(), String> {
         .map(|n| n.get())
         .unwrap_or(4);
     let (events, _) = broadcast::channel(1024);
+    // État de draft : repris du disque si présent, sinon neuf (Standard, blue first-pick, Sky Temple).
+    let draft = draft::store::load(&db).await.unwrap_or_else(|| {
+        draft::DraftState::new(draft::Format::Standard, draft::Side::Blue, "Sky Temple".into())
+    });
     let state = AppState {
         cfg: Arc::new(cfg),
         db,
         parse_sem: Arc::new(Semaphore::new(cores)),
         events,
+        draft: Arc::new(RwLock::new(draft)),
     };
 
     // Référentiel héros/talents/patches + images (best-effort, refresh 24 h ; chaque nouveau patch →
@@ -158,6 +165,16 @@ async fn run() -> Result<(), String> {
         )
         .route("/api/admin/uploads", get(admin::uploads_health))
         .route("/api/admin/reprocess", post(admin::reprocess))
+        // Simulateur de draft (état autoritatif serveur + broadcast WS draft.updated)
+        .route("/api/draft", get(draft::api::get_draft))
+        .route("/api/draft/config", post(draft::api::config))
+        .route("/api/draft/action", post(draft::api::action))
+        .route("/api/draft/undo", post(draft::api::undo))
+        .route("/api/draft/reset", post(draft::api::reset))
+        .route("/api/draft/unavailable", post(draft::api::unavailable))
+        .route("/api/draft/score", post(draft::api::score))
+        .route("/api/draft/series/next", post(draft::api::series_next))
+        .route("/api/draft/series/new", post(draft::api::series_new))
         .route("/ws", any(ws::ws_handler))
         // portraits héros + images de cartes vendorisés (servis depuis images_dir)
         .nest_service(
