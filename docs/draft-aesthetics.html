@@ -1,0 +1,353 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Draft — explorateur d'esthétiques</title>
+<!--
+  Explorateur d'esthétiques pour les overlays de draft. TRACE D'INTENTION (placeholders).
+  4 skins swappables × 2 vues. Caster = fond image de map + grandes cartes héros (nom héros + joueur).
+  Portraits/map = dégradés teintés (en prod : splash /images/heroes/* + /images/battlegrounds/*).
+-->
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#070810;color:#e9edf7;font-family:"Inter","Segoe UI",system-ui,sans-serif}
+  .bar{display:flex;flex-wrap:wrap;gap:18px;align-items:center;padding:14px 18px;border-bottom:1px solid #1b1f30;
+    position:sticky;top:0;background:#070810ee;backdrop-filter:blur(6px);z-index:5}
+  .grp{display:flex;gap:6px;align-items:center}
+  .grp b{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#6f7794;margin-right:4px}
+  .bar button{background:#121424;color:#aeb6cf;border:1px solid #262b40;border-radius:8px;padding:7px 13px;
+    font:600 12.5px/1 inherit;cursor:pointer;transition:.15s}
+  .bar button:hover{border-color:#48507a;color:#e9edf7}
+  .bar button.on{background:#2f6df6;border-color:#2f6df6;color:#fff;box-shadow:0 0 16px #2f6df655}
+  .skinname{margin-left:auto;font-size:12px;color:#6f7794}
+  .skinname code{color:#9fb0ff}
+  .frame{padding:22px;display:flex;justify-content:center}
+  .stage{position:relative;width:100%;max-width:1180px;aspect-ratio:16/9;border-radius:16px;overflow:hidden;
+    border:1px solid #1c2132;box-shadow:0 24px 70px #000a}
+
+  /* ════════ TOKENS PAR SKIN ════════ */
+  .stage{
+    --blue:#2f6df6; --red:#e0414b; --blue-soft:#7fa6ff; --red-soft:#ff8088;
+    --ink:#eef2fc; --dim:#aab4d2; --gold:#e8c66a;
+    --bg:radial-gradient(125% 95% at 50% 35%,#211a44 0%,#120e26 46%,#06060f 100%);
+    --card:linear-gradient(180deg,rgba(22,28,52,.55),rgba(8,11,22,.35));
+    --cardbd:#2a3052; --radius:12px; --clip:none; --hexclip:none;
+    --label-ff:"Inter",sans-serif; --label-tr:.06em; --num-ff:"Inter",sans-serif;
+  }
+  .stage[data-skin=glass]{
+    --bg:linear-gradient(115deg,#0a1326 0%,#0b0e1c 42%,#1a0c14 100%);
+    --card:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.015));
+    --cardbd:rgba(255,255,255,.14); --radius:13px; --gold:#d8c089; --label-tr:.12em;
+  }
+  .stage[data-skin=tactical]{
+    --blue:#2ee6d6; --red:#ff4655; --blue-soft:#7ff0e6; --red-soft:#ff7a85; --gold:#ffd36b;
+    --bg:linear-gradient(180deg,#0c0f14 0%,#070a0e 100%);
+    --card:linear-gradient(180deg,rgba(20,28,34,.7),rgba(8,12,16,.5));
+    --cardbd:#243038; --radius:0; --clip:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%);
+    --label-ff:"Oswald","Arial Narrow",sans-serif; --label-tr:.16em; --num-ff:"JetBrains Mono",ui-monospace,monospace;
+  }
+  .stage[data-skin=nexus]{
+    --bg:radial-gradient(130% 100% at 50% 30%,#2a1d5c 0%,#160f30 45%,#070512 100%);
+    --card:linear-gradient(180deg,rgba(40,30,80,.5),rgba(12,9,26,.4));
+    --cardbd:#5a4aa0; --gold:#f0d27a; --radius:10px;
+    --hexclip:polygon(8% 0,92% 0,100% 50%,92% 100%,8% 100%,0 50%);
+    --label-ff:"Cinzel","Trajan Pro",serif; --label-tr:.1em;
+  }
+  .stage[data-skin=mono]{
+    --blue:#6ea8ff; --red:#ff7a85; --blue-soft:#9cc4ff; --red-soft:#ffa0a8; --gold:#cdd3e2;
+    --bg:linear-gradient(180deg,#0e1016 0%,#0a0b10 100%);
+    --card:rgba(255,255,255,.03); --cardbd:rgba(255,255,255,.1); --radius:8px; --label-tr:.2em;
+  }
+  .stage::before{content:"";position:absolute;inset:0;background:var(--bg)}
+  .stars{position:absolute;inset:0;opacity:.5;background-image:
+    radial-gradient(1px 1px at 18% 28%,#fff8,transparent),radial-gradient(1px 1px at 68% 58%,#fff6,transparent),
+    radial-gradient(1px 1px at 44% 78%,#fff7,transparent),radial-gradient(1px 1px at 86% 18%,#fff5,transparent)}
+  .stage[data-view=caster] .stars{display:none}
+
+  .label{font-family:var(--label-ff);letter-spacing:var(--label-tr);text-transform:uppercase;font-weight:700}
+  .num{font-family:var(--num-ff)}
+  /* indicateur de phase courante (qui pick/banne) + pulse de la tuile active */
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 2px var(--gold)}50%{box-shadow:0 0 0 2px var(--gold),0 0 24px var(--gold)}}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+  .phase{display:inline-flex;align-items:center;gap:7px;font-family:var(--label-ff);font-weight:800;font-size:11px;
+    letter-spacing:.12em;text-transform:uppercase;padding:5px 13px;border-radius:999px;border:1px solid var(--cardbd);
+    background:#0b0e18cc;backdrop-filter:blur(4px)}
+  .phase .dot{width:8px;height:8px;border-radius:50%;animation:blink 1.2s ease-in-out infinite}
+  .phase.b{color:var(--blue-soft)} .phase.b .dot{background:var(--blue)}
+  .phase.r{color:var(--red-soft)} .phase.r .dot{background:var(--red)}
+  .ban{width:40px;height:40px;border-radius:calc(var(--radius) - 4px);clip-path:var(--clip);position:relative;
+    background:linear-gradient(160deg,hsl(var(--h) 30% 24%),hsl(var(--h) 30% 8%));filter:grayscale(.7) brightness(.6);
+    border:1px solid #ffffff12}
+  .ban::after{content:"";position:absolute;inset:0;background:linear-gradient(135deg,transparent 45%,#ff3b46 46%,#ff3b46 54%,transparent 55%);opacity:.9}
+
+  /* ════════ VUE CASTER — fond map + grandes cartes ════════ */
+  .caster{position:absolute;inset:0;display:none}
+  .stage[data-view=caster] .caster{display:block}
+  /* image de map (placeholder dégradé « Sky Temple ») + scrim de lisibilité */
+  .c-bg{position:absolute;inset:0;background:
+    radial-gradient(55% 42% at 50% 82%,#7a6630aa,transparent 70%),
+    radial-gradient(80% 60% at 50% 26%,#3c5286,transparent 72%),
+    linear-gradient(180deg,#24314f 0%,#141d33 55%,#070b16 100%)}
+  .c-scrim{position:absolute;inset:0;background:
+    linear-gradient(180deg,#05060cc4 0%,#05060c30 26%,#05060c12 50%,#05060cdd 100%),
+    radial-gradient(120% 80% at 50% 50%,transparent 55%,#04050acc 100%)}
+
+  .c-top{position:absolute;top:18px;left:50%;transform:translateX(-50%);width:420px;text-align:center;z-index:2}
+  .c-mapname{font-family:var(--label-ff);letter-spacing:.24em;text-transform:uppercase;font-size:12.5px;
+    color:#cfe0ff;opacity:.9;margin-bottom:9px;text-shadow:0 1px 8px #000}
+  .c-score{display:flex;align-items:stretch;justify-content:center;border-radius:var(--radius);overflow:hidden;
+    clip-path:var(--clip);border:1px solid var(--cardbd);box-shadow:0 8px 26px #000a}
+  .c-score .t{flex:1;display:flex;align-items:center;gap:10px;padding:9px 16px;font-size:15px;backdrop-filter:blur(4px)}
+  .c-score .t.b{background:linear-gradient(90deg,color-mix(in srgb,var(--blue) 46%,#0b1224ee),#0b1224ee);justify-content:flex-start}
+  .c-score .t.r{background:linear-gradient(270deg,color-mix(in srgb,var(--red) 46%,#1a0b0eee),#1a0b0eee);justify-content:flex-end}
+  .c-score .n{font-family:var(--num-ff);font-size:24px;font-weight:800;color:#fff}
+  .c-score .vs{display:flex;align-items:center;padding:0 12px;background:#05060cf2;color:var(--gold);
+    font-family:var(--label-ff);font-weight:800;font-size:12px;letter-spacing:.1em}
+  .c-bans{display:flex;justify-content:center;gap:18px;margin-top:11px}
+  .c-bans .side{display:flex;gap:5px}
+  .c-bans .ban{width:34px;height:34px}
+  /* timer = barre blanche qui se vide (entre bans et picks) */
+  .c-timer{width:230px;height:5px;margin:11px auto 0;background:#ffffff26;border-radius:3px;overflow:hidden}
+  .c-timer span{display:block;height:100%;width:100%;background:#fff;border-radius:3px;animation:tick 22s linear infinite}
+  .stage[data-skin=tactical] .c-timer span{background:var(--blue);border-radius:0}
+  .stage[data-skin=nexus] .c-timer span{background:var(--gold)}
+  @keyframes tick{from{width:100%}to{width:0}}
+
+  /* strip de picks : cartes modérées, nom du joueur sur une plaque SOUS la carte */
+  .c-teams{position:absolute;left:0;right:0;bottom:16px;display:flex;align-items:flex-end;
+    justify-content:space-between;padding:0 22px;z-index:2}
+  .c-team{display:flex;gap:2px;width:42%}
+  .c-team.r{flex-direction:row-reverse}
+  .pc{flex:1;min-width:0;display:flex;flex-direction:column}
+  .pc .por{position:relative;width:100%;aspect-ratio:1/1.18;border-radius:var(--radius) var(--radius) 0 0;
+    clip-path:var(--clip);overflow:hidden;background:linear-gradient(165deg,hsl(var(--h) 54% 33%),hsl(var(--h) 60% 10%));
+    border:1px solid #ffffff1c;border-bottom:none}
+  .pc .fig{position:absolute;inset:0;background:radial-gradient(64% 50% at 50% 32%,#ffffff26,transparent 66%)}
+  .pc .plate{padding:4px 3px;text-align:center;font-size:10.5px;font-weight:700;color:#fff;letter-spacing:.01em;
+    background:#0b0e18f2;border:1px solid #ffffff14;border-radius:0 0 var(--radius) var(--radius);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .c-team.b .pc .plate{border-top:2px solid var(--blue)} .c-team.r .pc .plate{border-top:2px solid var(--red)}
+  .pc.empty .por{background:#0e1320;border:1px dashed #2a3148;border-bottom:none}
+  .pc.empty .plate{color:#7c87a8}
+  .pc.active .por{border-color:var(--gold);animation:pulse 1.4s ease-in-out infinite}
+  .c-phase{margin-top:11px}
+
+  /* ════════ VUE JOUEUR (colonnes verticales façon in-game) ════════ */
+  .player{position:absolute;inset:0;display:none}
+  .stage[data-view=player] .player{display:block}
+  .p-col{position:absolute;top:8%;display:flex;flex-direction:column;gap:1.6%;width:16%}
+  .p-col.l{left:1.4%} .p-col.r{right:1.4%}
+  .p-slot{display:flex;align-items:center;gap:8px;padding:5px;border-radius:var(--radius);clip-path:var(--clip);
+    background:var(--card);border:1px solid var(--cardbd);height:62px;backdrop-filter:blur(3px)}
+  .p-col.r .p-slot{flex-direction:row-reverse;text-align:right}
+  .p-col.l .p-slot.active{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue),0 0 18px var(--blue)}
+  .p-col.r .p-slot.active{border-color:var(--red);box-shadow:0 0 0 1px var(--red),0 0 18px var(--red)}
+  .p-av{width:48px;height:48px;border-radius:calc(var(--radius) - 2px);clip-path:var(--hexclip,none);flex-shrink:0;
+    background:linear-gradient(160deg,hsl(var(--h) 52% 32%),hsl(var(--h) 58% 10%));border:2px solid #ffffff22}
+  .stage[data-skin=nexus] .p-av{border:none;box-shadow:0 0 0 1.5px var(--gold)}
+  .p-meta{min-width:0;flex:1;overflow:hidden}
+  .p-hero{font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .p-pl{font-size:10.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .p-empty .p-meta{color:#586;font-style:italic;font-size:11px}
+  .p-bans{position:absolute;top:2.6%;display:flex;gap:6px}
+  .p-bans.l{left:19%} .p-bans.r{right:19%;flex-direction:row-reverse}
+  .p-center{position:absolute;top:3%;left:50%;transform:translateX(-50%);text-align:center}
+  .p-map{font-family:var(--label-ff);letter-spacing:.18em;text-transform:uppercase;font-size:17px;font-weight:800;color:#cfe0ff}
+  .p-timer{margin:9px auto 0;width:58px;height:58px;border-radius:50%;border:3px solid var(--gold);display:flex;
+    align-items:center;justify-content:center;font-family:var(--num-ff);font-size:25px;font-weight:800;color:var(--gold);
+    background:radial-gradient(circle,#1a1530,#0c0a1c)}
+  .p-pick{position:absolute;top:48%;left:50%;transform:translate(-50%,-50%);text-align:center}
+  .p-pick .ring{width:64px;height:64px;border-radius:50%;margin:0 auto 8px;border:2px solid var(--blue);
+    background:conic-gradient(from 0deg,var(--blue),var(--blue-soft),var(--blue));opacity:.85}
+  .p-pick b{display:block;font-size:18px;color:#cfe0ff} .p-pick span{font-size:13px;color:var(--blue-soft);font-weight:700}
+
+  /* ════════ VUE TIMELINE — picks/bans dans l'ordre du draft, carrés, sans axe ════════ */
+  .timeline{position:absolute;inset:0;display:none}
+  .stage[data-view=timeline] .timeline{display:block}
+  .tl-bg{position:absolute;inset:0;background:
+    radial-gradient(60% 45% at 50% 30%,#3c5286,transparent 72%),linear-gradient(180deg,#1a2138,#070b16)}
+  .tl-scrim{position:absolute;inset:0;background:linear-gradient(180deg,#05060cc8,#05060c55 35%,#05060cdd)}
+  .tl-head{position:absolute;top:16px;left:0;right:0;text-align:center;z-index:2}
+  .tl-head .map{font-family:var(--label-ff);letter-spacing:.22em;text-transform:uppercase;font-size:12px;color:#cfe0ff;opacity:.85}
+  .tl-head .teams{margin-top:6px;font-family:var(--label-ff);font-weight:800;font-size:18px;letter-spacing:.05em}
+  .tl-head .teams .b{color:var(--blue-soft)} .tl-head .teams .r{color:var(--red-soft)}
+  .tl-head .teams .s{font-family:var(--num-ff);color:#fff;margin:0 12px}
+  .tl-head .teams .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin:0 7px;vertical-align:middle;
+    animation:blink 1.2s ease-in-out infinite}
+  .tl-head .teams .b .dot{background:var(--blue)} .tl-head .teams .r .dot{background:var(--red)}
+  .tl-timer{width:230px;height:5px;margin:11px auto 0;background:#ffffff26;border-radius:3px;overflow:hidden}
+  .tl-timer span{display:block;height:100%;width:100%;background:var(--gold);border-radius:3px;animation:tick 22s linear infinite}
+  /* 3 rangées : picks bleus (haut) · bande de bans sur la ligne invisible · picks rouges (bas).
+     Chaque équipe n'a que ses 5 picks → tuiles héros bien plus grandes ; bans petits, en chrono. */
+  /* bande SERIES BANS (fearless) : pool de héros indispo, petites icônes barrées */
+  .tl-series{position:absolute;top:20%;left:5%;right:5%;text-align:center;z-index:2}
+  .tl-series .lab{font-family:var(--label-ff);letter-spacing:.18em;text-transform:uppercase;font-size:9.5px;
+    color:#9098b6;margin-bottom:5px}
+  .tl-series .pool{display:flex;flex-wrap:wrap;justify-content:center;gap:4px}
+  .si{width:25px;height:25px;border-radius:5px;clip-path:var(--clip);position:relative;border:1px solid #ffffff10;
+    background:linear-gradient(160deg,hsl(var(--h) 26% 24%),hsl(var(--h) 26% 9%));filter:grayscale(.78) brightness(.5)}
+  .si::after{content:"";position:absolute;inset:0;background:linear-gradient(135deg,transparent 44%,#cf3b46 46%,#cf3b46 54%,transparent 56%);opacity:.75}
+
+  .tl-stack{position:absolute;left:3%;right:3%;top:30%;bottom:6%;display:flex;flex-direction:column;
+    justify-content:center;gap:11px;z-index:2}
+  .tl-picks{display:grid;grid-template-columns:repeat(10,1fr);gap:8px}
+  .pk{position:relative;width:100%;aspect-ratio:1/1.4;border-radius:var(--radius);clip-path:var(--clip);
+    overflow:hidden;background:linear-gradient(165deg,hsl(var(--h) 54% 33%),hsl(var(--h) 60% 10%));border:1px solid #ffffff1c}
+  .pk.ghost{visibility:hidden}
+  .tl-picks.b .pk{box-shadow:inset 0 3px 0 var(--blue)} .tl-picks.r .pk{box-shadow:inset 0 -3px 0 var(--red)}
+  .pk .fig{position:absolute;inset:0;background:radial-gradient(64% 50% at 50% 30%,#ffffff26,transparent 66%)}
+  .pk .nm{position:absolute;left:0;right:0;bottom:0;padding:13px 3px 5px;text-align:center;background:linear-gradient(0deg,#000f 30%,transparent)}
+  .pk .nm b{display:block;font-size:11px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pk .nm i{display:block;font-style:normal;font-size:9px;font-weight:600;color:#c4cdea;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pk.empty{background:#0e1320;border:1px dashed #2a3148} .pk.empty .nm{color:#7c87a8;background:none}
+  .pk.active{border-color:var(--gold);animation:pulse 1.4s ease-in-out infinite}
+  .tl-bans{display:flex;justify-content:center;align-items:center;gap:6px}
+  .tl-bans .sep{width:16px}
+  .bn{position:relative;width:32px;height:32px;border-radius:calc(var(--radius) - 4px);clip-path:var(--clip);
+    background:linear-gradient(160deg,hsl(var(--h) 28% 22%),hsl(var(--h) 28% 8%));filter:grayscale(.7) brightness(.6);border:1px solid #ffffff12}
+  .bn.b{outline:2px solid color-mix(in srgb,var(--blue) 55%,transparent);outline-offset:-2px}
+  .bn.r{outline:2px solid color-mix(in srgb,var(--red) 55%,transparent);outline-offset:-2px}
+  .bn::after{content:"";position:absolute;inset:0;background:linear-gradient(135deg,transparent 45%,#ff3b46 46%,#ff3b46 54%,transparent 55%);opacity:.9}
+</style>
+
+<div class="bar">
+  <div class="grp"><b>Esthétique</b>
+    <button data-skin="glass">Broadcast Glass</button>
+    <button data-skin="tactical">Tactical Edge</button>
+    <button data-skin="nexus" class="on">Nexus Premium</button>
+    <button data-skin="mono">Minimal Mono</button>
+  </div>
+  <div class="grp"><b>Vue</b>
+    <button data-view="timeline" class="on">Timeline</button>
+    <button data-view="caster">Caster (réf.)</button>
+  </div>
+  <span class="skinname"><code id="lbl">nexus · timeline</code></span>
+</div>
+
+<div class="frame">
+  <div class="stage" id="stage" data-skin="nexus" data-view="timeline">
+    <div class="stars"></div>
+
+    <!-- ───── CASTER ───── -->
+    <div class="caster">
+      <div class="c-bg"></div>
+      <div class="c-scrim"></div>
+      <div class="c-top">
+        <div class="c-mapname">Sky Temple — Bo5</div>
+        <div class="c-score">
+          <div class="t b"><span class="label">Germany</span><span class="n">1</span></div>
+          <div class="vs">VS</div>
+          <div class="t r"><span class="n">2</span><span class="label">France</span></div>
+        </div>
+        <div class="c-bans">
+          <div class="side"><span class="ban" style="--h:265"></span><span class="ban" style="--h:210"></span><span class="ban" style="--h:48"></span></div>
+          <div class="side"><span class="ban" style="--h:200"></span><span class="ban" style="--h:18"></span><span class="ban" style="--h:120"></span></div>
+        </div>
+        <div class="c-timer"><span></span></div>
+        <div class="c-phase"><span class="phase b"><span class="dot"></span>Germany — Pick</span></div>
+      </div>
+      <div class="c-teams">
+        <div class="c-team b">
+          <div class="pc" style="--h:150"><div class="por"><span class="fig"></span></div><div class="plate">HunterOrc</div></div>
+          <div class="pc" style="--h:30"><div class="por"><span class="fig"></span></div><div class="plate">Blodcool</div></div>
+          <div class="pc" style="--h:0"><div class="por"><span class="fig"></span></div><div class="plate">Dynouh</div></div>
+          <div class="pc active" style="--h:210"><div class="por"><span class="fig"></span></div><div class="plate">TLHasuObs</div></div>
+          <div class="pc empty"><div class="por"></div><div class="plate">CMSkogh</div></div>
+        </div>
+        <div class="c-team r">
+          <div class="pc" style="--h:0"><div class="por"><span class="fig"></span></div><div class="plate">Ubi</div></div>
+          <div class="pc" style="--h:48"><div class="por"><span class="fig"></span></div><div class="plate">Krankle123</div></div>
+          <div class="pc" style="--h:200"><div class="por"><span class="fig"></span></div><div class="plate">Vacilisco</div></div>
+          <div class="pc" style="--h:280"><div class="por"><span class="fig"></span></div><div class="plate">DDXHlopakA</div></div>
+          <div class="pc empty"><div class="por"></div><div class="plate">Gwo</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ───── JOUEUR ───── -->
+    <div class="player">
+      <div class="p-bans l"><span class="ban" style="--h:265"></span><span class="ban" style="--h:210"></span><span class="ban" style="--h:48"></span></div>
+      <div class="p-bans r"><span class="ban" style="--h:200"></span><span class="ban" style="--h:18"></span><span class="ban" style="--h:120"></span></div>
+      <div class="p-center"><div class="p-map">Sky Temple</div><div class="p-timer num">6</div></div>
+      <div class="p-pick"><div class="ring"></div><b>Your Team</b><span>Picking</span></div>
+      <div class="p-col l">
+        <div class="p-slot"><span class="p-av" style="--h:150"></span><div class="p-meta"><div class="p-hero">Tyrande</div><div class="p-pl">HunterOrc</div></div></div>
+        <div class="p-slot"><span class="p-av" style="--h:30"></span><div class="p-meta"><div class="p-hero">Hogger</div><div class="p-pl">Blodcool</div></div></div>
+        <div class="p-slot active"><span class="p-av" style="--h:0"></span><div class="p-meta"><div class="p-hero">Valla</div><div class="p-pl">Dynouh</div></div></div>
+        <div class="p-slot"><span class="p-av" style="--h:210"></span><div class="p-meta"><div class="p-hero">Lost Vikings</div><div class="p-pl">TLHasuObs</div></div></div>
+        <div class="p-slot p-empty"><div class="p-meta">— en attente —</div></div>
+      </div>
+      <div class="p-col r">
+        <div class="p-slot"><span class="p-av" style="--h:0"></span><div class="p-meta"><div class="p-hero">Malthael</div><div class="p-pl">Ubi</div></div></div>
+        <div class="p-slot"><span class="p-av" style="--h:48"></span><div class="p-meta"><div class="p-hero">Tyrael</div><div class="p-pl">Krankle123</div></div></div>
+        <div class="p-slot"><span class="p-av" style="--h:200"></span><div class="p-meta"><div class="p-hero">Rehgar</div><div class="p-pl">Vacilisco</div></div></div>
+        <div class="p-slot"><span class="p-av" style="--h:280"></span><div class="p-meta"><div class="p-hero">Sylvanas</div><div class="p-pl">DDXHlopakA</div></div></div>
+        <div class="p-slot p-empty"><div class="p-meta">— en attente —</div></div>
+      </div>
+    </div>
+
+    <!-- ───── TIMELINE (ordre chrono du draft) ───── -->
+    <div class="timeline">
+      <div class="tl-bg"></div><div class="tl-scrim"></div>
+      <div class="tl-head">
+        <div class="map">Sky Temple — Bo5</div>
+        <div class="teams"><span class="b"><span class="dot"></span>Germany</span><span class="s">1 — 2</span><span class="r">France</span></div>
+        <div class="tl-timer"><span></span></div>
+      </div>
+      <div class="tl-series">
+        <div class="lab">Series bans · indisponibles (fearless) · 18</div>
+        <div class="pool">
+          <span class="si" style="--h:265"></span><span class="si" style="--h:200"></span><span class="si" style="--h:30"></span>
+          <span class="si" style="--h:120"></span><span class="si" style="--h:48"></span><span class="si" style="--h:300"></span>
+          <span class="si" style="--h:18"></span><span class="si" style="--h:160"></span><span class="si" style="--h:90"></span>
+          <span class="si" style="--h:340"></span><span class="si" style="--h:210"></span><span class="si" style="--h:60"></span>
+          <span class="si" style="--h:280"></span><span class="si" style="--h:0"></span><span class="si" style="--h:140"></span>
+          <span class="si" style="--h:240"></span><span class="si" style="--h:75"></span><span class="si" style="--h:180"></span>
+        </div>
+      </div>
+      <div class="tl-stack">
+        <div class="tl-picks b">
+          <div class="pk" style="--h:150"><span class="fig"></span><span class="nm"><b>Tyrande</b><i>HunterOrc</i></span></div>
+          <div class="pk ghost"></div>
+          <div class="pk ghost"></div>
+          <div class="pk" style="--h:30"><span class="fig"></span><span class="nm"><b>Hogger</b><i>Blodcool</i></span></div>
+          <div class="pk" style="--h:0"><span class="fig"></span><span class="nm"><b>Valla</b><i>Dynouh</i></span></div>
+          <div class="pk ghost"></div>
+          <div class="pk ghost"></div>
+          <div class="pk" style="--h:210"><span class="fig"></span><span class="nm"><b>L. Vikings</b><i>TLHasuObs</i></span></div>
+          <div class="pk active empty"><span class="nm"><b>picking…</b><i>CMSkogh</i></span></div>
+          <div class="pk ghost"></div>
+        </div>
+        <div class="tl-bans">
+          <span class="bn b" style="--h:265"></span><span class="bn r" style="--h:200"></span>
+          <span class="bn b" style="--h:210"></span><span class="bn r" style="--h:18"></span>
+          <span class="sep"></span>
+          <span class="bn b" style="--h:48"></span><span class="bn r" style="--h:120"></span>
+        </div>
+        <div class="tl-picks r">
+          <div class="pk ghost"></div>
+          <div class="pk" style="--h:0"><span class="fig"></span><span class="nm"><b>Malthael</b><i>Ubi</i></span></div>
+          <div class="pk" style="--h:48"><span class="fig"></span><span class="nm"><b>Tyrael</b><i>Krankle123</i></span></div>
+          <div class="pk ghost"></div>
+          <div class="pk ghost"></div>
+          <div class="pk" style="--h:200"><span class="fig"></span><span class="nm"><b>Rehgar</b><i>Vacilisco</i></span></div>
+          <div class="pk" style="--h:280"><span class="fig"></span><span class="nm"><b>Sylvanas</b><i>DDXHlopakA</i></span></div>
+          <div class="pk ghost"></div>
+          <div class="pk ghost"></div>
+          <div class="pk empty"><span class="nm"><b>—</b><i>Gwo</i></span></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  const stage = document.getElementById('stage'), lbl = document.getElementById('lbl');
+  const sync = () => lbl.textContent = stage.dataset.skin + ' · ' + stage.dataset.view;
+  document.querySelectorAll('.bar button').forEach(b => b.addEventListener('click', () => {
+    const k = b.dataset.skin ? 'skin' : 'view';
+    stage.dataset[k] = b.dataset.skin || b.dataset.view;
+    b.parentElement.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+    sync();
+  }));
+  sync();
+</script>

@@ -1,0 +1,167 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Draft — mockups (vue joueur + vue caster)</title>
+<!--
+  Mockups overlays de draft HotS — TRACE D'INTENTION, pas le rendu réel.
+  Deux browser sources OBS 1920×1080, fond transparent en prod (ici fond espace pour lisibilité).
+  Portraits = pastilles avec initiales (placeholder) ; en prod = /images/heroes/<slug>.png cerclé univers.
+-->
+<style>
+  :root{
+    --blue:#2f6df6; --red:#e0414b; --gold:#e8c66a; --ink:#e8ecf6; --dim:#9aa6c2;
+    --warcraft:#3fa7ff; --starcraft:#46e0c8; --diablo:#e0414b; --overwatch:#f59f3f; --nexus:#b48cff;
+  }
+  body{margin:0;background:#0a0b12;color:var(--ink);font:14px/1.4 "Segoe UI",system-ui,sans-serif}
+  h2{font-weight:700;letter-spacing:.04em;margin:28px 0 10px;color:var(--dim);text-transform:uppercase;font-size:13px}
+  .wrap{max-width:1320px;margin:0 auto;padding:24px}
+  .note{color:var(--dim);font-size:12.5px;margin:0 0 18px}
+
+  /* canevas 16:9 façon OBS, mis à l'échelle */
+  .stage{position:relative;width:100%;aspect-ratio:16/9;border-radius:14px;overflow:hidden;
+    background:radial-gradient(120% 90% at 50% 38%, #20183f 0%, #120e26 45%, #07060f 100%);
+    box-shadow:0 18px 50px rgba(0,0,0,.6);border:1px solid #20243a}
+  .stars{position:absolute;inset:0;background-image:
+    radial-gradient(1px 1px at 20% 30%, #fff7, transparent),
+    radial-gradient(1px 1px at 70% 60%, #fff5, transparent),
+    radial-gradient(1px 1px at 45% 80%, #fff6, transparent),
+    radial-gradient(1px 1px at 85% 20%, #fff4, transparent);opacity:.5}
+
+  /* colonnes d'équipe latérales */
+  .col{position:absolute;top:9%;display:flex;flex-direction:column;gap:1.4%;width:15%}
+  .col.left{left:1.2%} .col.right{right:1.2%}
+  .slot{display:flex;align-items:center;gap:8px;background:linear-gradient(90deg,rgba(20,40,90,.6),rgba(10,16,32,.35));
+    border:1px solid #2a3050;border-radius:9px;padding:6px;height:11%;backdrop-filter:blur(2px)}
+  .col.right .slot{flex-direction:row-reverse;background:linear-gradient(270deg,rgba(90,20,30,.55),rgba(10,16,32,.35));border-color:#4a2630;text-align:right}
+  .col.left .slot.active{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue),0 0 16px rgba(47,109,246,.5)}
+  .col.right .slot.active{border-color:var(--red);box-shadow:0 0 0 1px var(--red),0 0 16px rgba(224,65,75,.5)}
+  .av{width:34px;height:34px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+    font-weight:800;font-size:12px;color:#08101f;border:2px solid var(--nexus);background:#1a2238}
+  .meta{min-width:0;flex:1;overflow:hidden}
+  .hero{font-weight:700;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .player{font-size:10.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .empty{opacity:.4;font-style:italic;color:var(--dim);font-size:11px}
+
+  /* bans en haut */
+  .bans{position:absolute;top:2.5%;display:flex;gap:6px}
+  .bans.left{left:18%} .bans.right{right:18%;flex-direction:row-reverse}
+  .ban{width:38px;height:38px;border-radius:8px;background:#16182a;border:1px solid #33384f;
+    display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#6b7290;position:relative;filter:grayscale(.6) brightness(.8)}
+  .ban::after{content:"";position:absolute;inset:0;background:linear-gradient(135deg,transparent 44%,#e0414bcc 46%,#e0414bcc 54%,transparent 56%)}
+
+  /* timer / titre centre */
+  .center{position:absolute;top:3%;left:50%;transform:translateX(-50%);text-align:center}
+  .map{font-size:18px;font-weight:800;letter-spacing:.12em;color:#cfe0ff;text-shadow:0 0 12px #3a5cff80}
+  .timer{margin:8px auto 0;width:56px;height:56px;border-radius:50%;border:3px solid var(--gold);
+    display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800;color:var(--gold);
+    background:radial-gradient(circle,#1a1530,#0c0a1c);box-shadow:0 0 22px #e8c66a55}
+  .picking{position:absolute;top:46%;left:50%;transform:translate(-50%,-50%);text-align:center}
+  .picking .ico{width:60px;height:60px;border-radius:50%;margin:0 auto 8px;border:2px solid #4a6cff;
+    background:conic-gradient(from 0deg,#2f6df6,#7e97ff,#2f6df6);opacity:.85}
+  .picking b{display:block;font-size:18px;color:#cfe0ff} .picking span{font-size:13px;color:var(--blue);font-weight:700}
+
+  /* bandeau caster score */
+  .score{position:absolute;top:3%;left:50%;transform:translateX(-50%);display:flex;align-items:stretch;
+    border-radius:8px;overflow:hidden;box-shadow:0 6px 20px #0008;font-weight:800}
+  .score .tm{display:flex;align-items:center;gap:14px;padding:8px 18px;font-size:18px;letter-spacing:.05em}
+  .score .tm.b{background:linear-gradient(90deg,#1c3a86,#264a9e);color:#eaf0ff}
+  .score .tm.r{background:linear-gradient(270deg,#8e2230,#a82a38);color:#ffecee;flex-direction:row-reverse}
+  .score .num{font-size:26px;color:#fff} .score .clock{background:#0c1020;color:var(--gold);padding:8px 14px;font-size:20px;display:flex;align-items:center}
+
+  .twocol{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:900px){.twocol{grid-template-columns:1fr}}
+</style>
+
+<div class="wrap">
+  <h1 style="margin:0 0 4px">Simulateur de draft — overlays</h1>
+  <p class="note">Trace d'intention (placeholders). En prod : portraits <code>/images/heroes/*</code> cerclés
+  par univers, fond transparent, données live via WebSocket <code>draft.updated</code>.</p>
+
+  <div class="twocol">
+    <!-- ───────────── VUE JOUEUR ───────────── -->
+    <div>
+      <h2>Vue joueur — /draft/overlay</h2>
+      <div class="stage">
+        <div class="stars"></div>
+
+        <div class="bans left">
+          <div class="ban" style="--u:var(--warcraft)">TY</div>
+          <div class="ban">HO</div>
+          <div class="ban">VA</div>
+        </div>
+        <div class="bans right">
+          <div class="ban">MA</div>
+          <div class="ban">LI</div>
+          <div class="ban">RE</div>
+        </div>
+
+        <div class="center">
+          <div class="map">SKY TEMPLE</div>
+          <div class="timer">6</div>
+        </div>
+
+        <div class="picking">
+          <div class="ico"></div><b>Your Team</b><span>Picking</span>
+        </div>
+
+        <div class="col left">
+          <div class="slot"><div class="av" style="border-color:var(--warcraft)">TY</div><div class="meta"><div class="hero">Tyrande</div><div class="player">HunterOrc</div></div></div>
+          <div class="slot"><div class="av" style="border-color:var(--warcraft)">HO</div><div class="meta"><div class="hero">Hogger</div><div class="player">Blodcool</div></div></div>
+          <div class="slot active"><div class="av" style="border-color:var(--diablo)">VA</div><div class="meta"><div class="hero">Valla</div><div class="player">Dynouh</div></div></div>
+          <div class="slot"><div class="av" style="border-color:var(--warcraft)">LV</div><div class="meta"><div class="hero">Lost Vikings</div><div class="player">TLHasuObs</div></div></div>
+          <div class="slot"><div class="meta"><div class="empty">— en attente —</div></div></div>
+        </div>
+
+        <div class="col right">
+          <div class="slot"><div class="av" style="border-color:var(--diablo)">MA</div><div class="meta"><div class="hero">Malthael</div><div class="player">Ubi</div></div></div>
+          <div class="slot"><div class="av" style="border-color:var(--diablo)">TY</div><div class="meta"><div class="hero">Tyrael</div><div class="player">Krankle123</div></div></div>
+          <div class="slot"><div class="av" style="border-color:var(--warcraft)">RE</div><div class="meta"><div class="hero">Rehgar</div><div class="player">Vacilisco</div></div></div>
+          <div class="slot"><div class="av" style="border-color:var(--warcraft)">SY</div><div class="meta"><div class="hero">Sylvanas</div><div class="player">DDXHlopakA</div></div></div>
+          <div class="slot"><div class="meta"><div class="empty">— en attente —</div></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ───────────── VUE CASTER ───────────── -->
+    <div>
+      <h2>Vue caster — /draft/caster</h2>
+      <div class="stage">
+        <div class="stars"></div>
+
+        <div class="bans left">
+          <div class="ban">DI</div><div class="ban">JO</div><div class="ban">KT</div>
+        </div>
+        <div class="bans right">
+          <div class="ban">FA</div><div class="ban">GA</div><div class="ban">ZU</div>
+        </div>
+
+        <div class="score">
+          <div class="tm b"><span>Germany</span><span class="num">0</span></div>
+          <div class="clock">18</div>
+          <div class="tm r"><span>France</span><span class="num">0</span></div>
+        </div>
+
+        <div class="picking" style="top:48%"><div class="ico"></div><b>Blue Team</b><span>Picking</span></div>
+
+        <div class="col left">
+          <div class="slot"><div class="av" style="border-color:var(--diablo)">LM</div><div class="meta"><div class="hero">Li-Ming</div><div class="player">WAHUltralisk</div></div></div>
+          <div class="slot active"><div class="av" style="border-color:var(--warcraft)">YR</div><div class="meta"><div class="hero">Yrel</div><div class="player">TLHasuObs</div></div></div>
+          <div class="slot"><div class="meta"><div class="empty">PICKING — TheDarkWolf</div></div></div>
+          <div class="slot"><div class="meta"><div class="empty">PICKING — Deathknight</div></div></div>
+          <div class="slot"><div class="meta"><div class="empty">—</div></div></div>
+        </div>
+
+        <div class="col right">
+          <div class="slot"><div class="av" style="border-color:var(--warcraft)">CH</div><div class="meta"><div class="hero">Chromie</div><div class="player">0XGyasu</div></div></div>
+          <div class="slot"><div class="av" style="border-color:var(--diablo)">AN</div><div class="meta"><div class="hero">Anub'arak</div><div class="player">CMMascarade</div></div></div>
+          <div class="slot"><div class="av" style="border-color:var(--overwatch)">LU</div><div class="meta"><div class="hero">Lúcio</div><div class="player">CMBananaH</div></div></div>
+          <div class="slot"><div class="meta"><div class="empty">— CMDaykwaza —</div></div></div>
+          <div class="slot"><div class="meta"><div class="empty">— Gwo —</div></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="note" style="margin-top:22px">La <b>console de contrôle /draft</b> (non maquettée ici) : sélecteur
+  format/map/first-pick/Bo, grille de héros filtrable (clic = assigne à l'étape courante), undo/reset,
+  édition noms+score, boutons partie suivante / nouvelle série.</p>
+</div>
