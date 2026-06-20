@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
-import { useDraft, sideOfStep, type DraftState, type Side } from "../api";
-import { Avatar } from "../components/Avatar";
+import { useDraft, useDimHeroes, sideOfStep, heroIcon, initials, type DraftState, type Side } from "../api";
 import "./draft-overlay.css";
+
+/** Portrait héros qui remplit son conteneur (splash) ; repli sur les initiales si pas d'image. */
+function Portrait({ hero }: { hero: string }) {
+  const icon = heroIcon(hero);
+  if (icon) return <div className="por" style={{ backgroundImage: `url(${icon})` }} />;
+  return <div className="por none">{initials(hero)}</div>;
+}
 
 const SKINS = ["nexus", "glass", "tactical", "mono"];
 const PHASE_SECONDS = 45;
@@ -9,6 +15,7 @@ const PHASE_SECONDS = 45;
 /** Overlay OBS du draft (vue Timeline). Reflète l'état serveur en direct (WS). Skin via ?skin=. */
 export function DraftOverlay() {
   const { data: d } = useDraft();
+  useDimHeroes(); // peuple le cache portraits/univers (l'overlay est hors du Layout qui le fait normalement)
   const skinParam = new URLSearchParams(window.location.search).get("skin") ?? "nexus";
   const skin = SKINS.includes(skinParam) ? skinParam : "nexus";
 
@@ -64,7 +71,7 @@ function Timeline({ d }: { d: DraftState }) {
       const player = (side === "blue" ? d.blue : d.red).players[m.ordinal] ?? "";
       return (
         <div key={k} className={`pk ${hero ? "" : "empty"} ${m.i === d.cursor ? "active" : ""}`}>
-          {hero && <Avatar hero={hero} size={64} />}
+          {hero && <Portrait hero={hero} />}
           <span className="nm"><b>{hero ?? (m.i === d.cursor ? "…" : "—")}</b>{player && <i>{player}</i>}</span>
         </div>
       );
@@ -79,7 +86,7 @@ function Timeline({ d }: { d: DraftState }) {
     const side = sideOfStep(d, s);
     bans.push(
       <span key={i} className={`bn ${side} ${hero ? "" : "empty"} ${i === d.cursor ? "active" : ""}`}>
-        {hero && <Avatar hero={hero} size={32} />}
+        {hero && <Portrait hero={hero} />}
       </span>
     );
   });
@@ -101,7 +108,7 @@ function Timeline({ d }: { d: DraftState }) {
       {fearless && (
         <div className="tl-series">
           <div className="lab">Series bans · {d.series_bans.length}</div>
-          <div className="pool">{d.series_bans.map((h) => <span key={h} className="si"><Avatar hero={h} size={24} /></span>)}</div>
+          <div className="pool">{d.series_bans.map((h) => <span key={h} className="si"><Portrait hero={h} /></span>)}</div>
         </div>
       )}
 

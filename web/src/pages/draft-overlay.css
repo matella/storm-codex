@@ -30,6 +30,8 @@
 @keyframes pulse{0%,100%{box-shadow:0 0 0 2px var(--gold)}50%{box-shadow:0 0 0 2px var(--gold),0 0 24px var(--gold)}}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
 .draft-overlay .num{font-family:var(--num-ff)}
+.draft-overlay .por{position:absolute;inset:0;background-size:cover;background-position:50% 16%;background-color:#141a2a;z-index:1}
+.draft-overlay .por.none{display:flex;align-items:center;justify-content:center;font-weight:800;color:#aeb6d6;font-size:1vw}
 
 .draft-overlay .tl-head{position:absolute;top:2.2%;left:0;right:0;text-align:center;z-index:2}
 .draft-overlay .tl-head .map{font-family:var(--label-ff);letter-spacing:.22em;text-transform:uppercase;font-size:1.05vw;color:#cfe0ff;opacity:.85}
@@ -45,8 +47,7 @@
 .draft-overlay .tl-series{position:absolute;top:20%;left:5%;right:5%;text-align:center;z-index:2}
 .draft-overlay .tl-series .lab{font-family:var(--label-ff);letter-spacing:.18em;text-transform:uppercase;font-size:.75vw;color:#9098b6;margin-bottom:.5%}
 .draft-overlay .tl-series .pool{display:flex;flex-wrap:wrap;justify-content:center;gap:4px}
-.draft-overlay .si{width:1.7vw;height:1.7vw;border-radius:5px;overflow:hidden;clip-path:var(--clip);filter:grayscale(.78) brightness(.5);border:1px solid #ffffff10}
-.draft-overlay .si img,.draft-overlay .si span{width:100%!important;height:100%!important}
+.draft-overlay .si{position:relative;width:1.7vw;height:1.7vw;border-radius:5px;overflow:hidden;clip-path:var(--clip);filter:grayscale(.78) brightness(.5);border:1px solid #ffffff10}
 
 .draft-overlay .tl-stack{position:absolute;left:3%;right:3%;top:30%;bottom:6%;display:flex;flex-direction:column;justify-content:center;gap:1.4%;z-index:2}
 .draft-overlay .tl-picks{display:grid;grid-template-columns:repeat(10,1fr);gap:.6%}
@@ -54,7 +55,6 @@
   background:#0e1320;border:1px solid #ffffff1c}
 .draft-overlay .pk.ghost{visibility:hidden}
 .draft-overlay .tl-picks.b .pk{box-shadow:inset 0 3px 0 var(--blue)} .draft-overlay .tl-picks.r .pk{box-shadow:inset 0 -3px 0 var(--red)}
-.draft-overlay .pk img,.draft-overlay .pk .avwrap span{position:absolute;inset:0;width:100%!important;height:100%!important;border-radius:0!important}
 .draft-overlay .pk .nm{position:absolute;left:0;right:0;bottom:0;padding:13px 3px 5px;text-align:center;background:linear-gradient(0deg,#000f 30%,transparent);z-index:2}
 .draft-overlay .pk .nm b{display:block;font-size:.78vw;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .draft-overlay .pk .nm i{display:block;font-style:normal;font-size:.62vw;font-weight:600;color:#c4cdea;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -67,7 +67,6 @@
   background:#12162200;filter:grayscale(.7) brightness(.6);border:1px solid #ffffff12}
 .draft-overlay .bn.b{outline:2px solid color-mix(in srgb,var(--blue) 55%,transparent);outline-offset:-2px}
 .draft-overlay .bn.r{outline:2px solid color-mix(in srgb,var(--red) 55%,transparent);outline-offset:-2px}
-.draft-overlay .bn img,.draft-overlay .bn span{width:100%!important;height:100%!important;border-radius:0!important}
 .draft-overlay .bn::after{content:"";position:absolute;inset:0;background:linear-gradient(135deg,transparent 45%,#ff3b46 46%,#ff3b46 54%,transparent 55%);opacity:.9;z-index:2}
 .draft-overlay .bn.active{outline-color:var(--gold);animation:pulse 1.4s ease-in-out infinite}
 .draft-overlay .bn.empty{filter:none;background:#0e1320;border:1px dashed #2a3148}
