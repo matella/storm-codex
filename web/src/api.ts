@@ -263,6 +263,9 @@ export function useLiveUpdates(onEvent?: (ev: { type?: string; match_id?: number
           } else if (ev.type === "patch.new") {
             qc.invalidateQueries({ queryKey: ["patches"] });
             onEvent?.(ev);
+          } else if (ev.type === "draft.updated") {
+            qc.invalidateQueries({ queryKey: ["draft"] });
+            onEvent?.(ev);
           }
         } catch {
           /* ignore */
