@@ -47,7 +47,13 @@ function DraftInner({ d, dim, role, setRole, search, setSearch }: {
     .filter((h) => h.name.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  const pick = (name: string) => { if (!used.has(name) && d.cursor < d.steps.length) draftAction(name); };
+  // mode Pick (assigne à l'étape courante) vs Préban (toggle dispo manuelle — compétition / game manquée)
+  const [mode, setMode] = useState<"pick" | "preban">("pick");
+  const onHero = (name: string) => {
+    if (mode === "preban") { draftUnavailable(name, !d.manual_unavailable.includes(name)); return; }
+    if (!used.has(name) && d.cursor < d.steps.length) draftAction(name);
+  };
+  const overlayUrl = `${window.location.origin}/draft/overlay?skin=nexus`;
 
   return (
     <div className="draftc">
@@ -92,6 +98,12 @@ function DraftInner({ d, dim, role, setRole, search, setSearch }: {
         <button className="btn primary" onClick={() => { if (confirm("Nouvelle série ? (vide l'historique fearless)")) draftSeriesNew(); }}>Nouvelle série</button>
       </div>
 
+      <div className="olink">
+        <b>Overlay OBS</b> (browser source 1920×1080, fond transparent) :
+        <a href={overlayUrl} target="_blank" rel="noreferrer"> {overlayUrl} </a>
+        · skins : <code>nexus · glass · tactical · mono</code>
+      </div>
+
       <div className="phase">
         {curSide ? <>
           <span className={`dot ${curSide}`} />
@@ -100,9 +112,22 @@ function DraftInner({ d, dim, role, setRole, search, setSearch }: {
         </> : <b>Draft terminé</b>}
       </div>
 
+      <div className="series">
+        <div className="lab">Prébans manuels (compétition / partie manquée) · {d.manual_unavailable.length}
+          &nbsp;— passe le picker en mode <b>Préban</b> et clique des héros, ou clique une vignette ici pour la retirer</div>
+        <div className="pool">
+          {d.manual_unavailable.length === 0 && <span className="dim" style={{ fontSize: 12 }}>aucun</span>}
+          {d.manual_unavailable.map((h) => (
+            <button key={h} className="si rm" title={`retirer ${h}`} onClick={() => draftUnavailable(h, false)}>
+              <Avatar hero={h} size={26} />
+            </button>
+          ))}
+        </div>
+      </div>
+
       {d.format === "fearless" && d.series_bans.length > 0 && (
         <div className="series">
-          <div className="lab">Series bans (fearless) · {d.series_bans.length}</div>
+          <div className="lab">Series bans — fearless (auto, parties précédentes) · {d.series_bans.length}</div>
           <div className="pool">{d.series_bans.map((h) => <span key={h} className="si"><Avatar hero={h} size={26} /></span>)}</div>
         </div>
       )}
@@ -110,20 +135,28 @@ function DraftInner({ d, dim, role, setRole, search, setSearch }: {
       <div className="body">
         <TeamColumn d={d} side="blue" />
         <div className="picker">
-          <input type="text" placeholder="Rechercher un héros…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <div className="ptop">
+            <input type="text" placeholder="Rechercher un héros…" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <div className="seg" title="Pick = assigner à l'étape · Préban = (dé)bannir manuellement">
+              <button className={mode === "pick" ? "on" : ""} onClick={() => setMode("pick")}>Pick</button>
+              <button className={mode === "preban" ? "on red" : ""} onClick={() => setMode("preban")}>Préban</button>
+            </div>
+          </div>
           <div className="tabs">
             {roles.map((r) => <button key={r} className={role === r ? "on" : ""} onClick={() => setRole(r)}>{r}</button>)}
           </div>
           <div className="grid">
             {filtered.map((h) => (
-              <button key={h.name} className={`hx ${used.has(h.name) ? "out" : ""}`} disabled={used.has(h.name)} title={h.name} onClick={() => pick(h.name)}
+              <button key={h.name}
+                className={`hx ${used.has(h.name) ? "out" : ""} ${mode === "preban" && d.manual_unavailable.includes(h.name) ? "banned" : ""}`}
+                disabled={mode === "pick" && used.has(h.name)} title={h.name} onClick={() => onHero(h.name)}
                 onContextMenu={(e) => { e.preventDefault(); draftUnavailable(h.name, !d.manual_unavailable.includes(h.name)); }}>
                 <Avatar hero={h.name} size={40} />
                 <span className="nm">{h.name}</span>
               </button>
             ))}
           </div>
-          <p className="hint dim">Clic = assigner à l'étape courante · clic droit = (in)disponible manuellement</p>
+          <p className="hint dim">Mode <b>Pick</b> : clic = assigner à l'étape courante. Mode <b>Préban</b> : clic = (dé)bannir manuellement. (clic droit = toggle rapide dans les deux modes)</p>
         </div>
         <TeamColumn d={d} side="red" />
       </div>
@@ -148,7 +181,8 @@ function TeamColumn({ d, side }: { d: DraftState; side: Side }) {
 
   return (
     <div className={`team ${side}`}>
-      <input className="tn" value={name} onChange={(e) => setName(e.target.value)} onBlur={() => push(name, players)} />
+      <input className="tn" value={name} placeholder="Nom de l'équipe" title="Nom d'équipe (éditable)"
+        onChange={(e) => setName(e.target.value)} onBlur={() => push(name, players)} />
       <div className="bans">
         {bans.map(({ i }, k) => {
           const hero = d.assignments[i];
@@ -211,7 +245,7 @@ const CSS = `
 .draftc .body{display:grid;grid-template-columns:260px 1fr 260px;gap:14px;align-items:start}
 .draftc .team{background:#12151d;border:1px solid #222838;border-radius:12px;padding:12px}
 .draftc .team.blue{border-top:3px solid #2f6df6}.draftc .team.red{border-top:3px solid #e0414b}
-.draftc .team .tn{width:100%;font-weight:700;font-size:15px;margin-bottom:8px}
+.draftc .team .tn{width:100%;font-weight:700;font-size:15px;margin-bottom:8px;background:#10131c;border:1px solid #2a3142;border-radius:8px;padding:7px 10px}
 .draftc .bans{display:flex;gap:6px;margin-bottom:10px}
 .draftc .bn{width:34px;height:34px;border-radius:7px;background:#0c0e13;border:1px solid #2a3142;display:flex;align-items:center;justify-content:center;font-size:9px;color:#5a6275}
 .draftc .bn.cur{border-color:#e8c66a;box-shadow:0 0 0 1px #e8c66a}
@@ -224,7 +258,12 @@ const CSS = `
 .draftc .slot .hero.none{color:#69728c;font-style:italic;font-weight:500}
 .draftc .slot .pl{width:100%;background:transparent;border:none;border-bottom:1px solid #232a3a;border-radius:0;padding:2px 0;font-size:11.5px;color:#aab2ca}
 .draftc .picker{background:#12151d;border:1px solid #222838;border-radius:12px;padding:12px}
-.draftc .picker>input{width:100%;margin-bottom:10px}
+.draftc .ptop{display:flex;gap:8px;margin-bottom:10px}
+.draftc .ptop>input{flex:1}
+.draftc .olink{font-size:12.5px;color:#9aa3bd;margin:-2px 0 12px;padding:0 2px}
+.draftc .olink a{color:#7e97ff} .draftc .olink code{color:#cdd4e6}
+.draftc .si.rm{cursor:pointer;background:none;border:1px solid #2a3142;border-radius:6px;padding:0;line-height:0;display:inline-flex}
+.draftc .si.rm:hover{border-color:#e0414b}
 .draftc .tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
 .draftc .tabs button{background:#10131c;border:1px solid #2a3142;border-radius:999px;padding:6px 12px;color:#9aa3bd;cursor:pointer;font-size:12.5px}
 .draftc .tabs button.on{background:#7e97ff;border-color:#7e97ff;color:#0c0e13;font-weight:700}
@@ -233,5 +272,6 @@ const CSS = `
 .draftc .hx:hover:not(:disabled){border-color:#7e97ff}
 .draftc .hx .nm{font-size:10px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .draftc .hx.out{opacity:.35;cursor:not-allowed;filter:grayscale(.8)}
+.draftc .hx.banned{opacity:1;cursor:pointer;filter:none;outline:2px solid #e0414b;outline-offset:-2px}
 .draftc .hint{font-size:11px;margin:10px 0 0}
 `;

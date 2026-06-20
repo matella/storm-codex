@@ -33,18 +33,19 @@ pub struct ConfigBody {
     bo: Option<u8>,
 }
 
-/// POST /api/draft/config — (re)configure et réinitialise le draft (nouvelle série).
+/// POST /api/draft/config — (re)configure la partie courante. PRÉSERVE le contexte de série
+/// (fearless), les prébans manuels, le score et les équipes : changer la map/format ne doit pas
+/// effacer les prébans ni le score. Seuls format/map/first_pick/bo + picks de la game sont remis.
 pub async fn config(State(s): State<AppState>, Json(b): Json<ConfigBody>) -> Json<DraftState> {
+    let prev = { s.draft.read().await.clone() };
     let mut d = DraftState::new(b.format, b.first_pick, b.map);
-    if let Some(t) = b.blue {
-        d.blue = t;
-    }
-    if let Some(t) = b.red {
-        d.red = t;
-    }
-    if let Some(bo) = b.bo {
-        d.bo = bo;
-    }
+    d.blue = b.blue.unwrap_or(prev.blue);
+    d.red = b.red.unwrap_or(prev.red);
+    d.bo = b.bo.unwrap_or(prev.bo);
+    d.score = prev.score;
+    d.series_games = prev.series_games;
+    d.series_bans = prev.series_bans;
+    d.manual_unavailable = prev.manual_unavailable;
     *s.draft.write().await = d;
     persist(&s).await;
     get_draft(State(s)).await
