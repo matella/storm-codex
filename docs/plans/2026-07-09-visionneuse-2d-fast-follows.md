@@ -33,7 +33,7 @@
 - [ ] **Step 2** : `npm run test` → FAIL.
 - [ ] **Step 3 — implémenter** `web/src/usePlayback.ts` : `advance()` pure + un hook `usePlayback(duration, {onTick})` qui utilise `requestAnimationFrame` (delta réel via un timestamp passé en argument au callback pour rester testable ; le hook mesure le delta lui-même via `performance.now`). NB : `performance.now` est autorisé côté navigateur (ce n'est pas le sandbox Rust). Le hook ne détient PAS `t` : il appelle `onTick(dt)` et le composant applique `advance`.
 - [ ] **Step 4** : `npm run test` → PASS.
-- [ ] **Step 5 — brancher dans Replay2D.tsx** : bouton ▶/⏸, sélecteur de vitesse (0.5, 1, 2, 4, 8), câblés au scrub existant (`setT(t => advance(...).t)`). Le scrub manuel met en pause. `aria-label` sur les contrôles.
+- [ ] **Step 5 — brancher dans Replay2D.tsx** : bouton ▶/⏸, sélecteur de vitesse (0.5, 1, 2, 4, 8), câblés au scrub existant (`setT(t => advance(...).t)`). Le scrub manuel met en pause. `aria-label` sur les contrôles. **Arrêt de boucle** : quand `advance` renvoie `playing:false` (fin atteinte), le composant doit repasser le hook en pause (appeler `toggle`/`setPlaying(false)`) pour que la boucle `requestAnimationFrame` cesse de tourner à vide après la fin du clip.
 - [ ] **Step 6** : `npm run build` → `✓ built`. Commit `feat(web): lecture animée play/pause + vitesse (US-11)`.
 
 ---
@@ -71,12 +71,17 @@
 
 **Fichiers :** Modifier `crates/storm-replay-viewer/src/{model.rs,extract.rs}` ; `web/src/replay2d.ts` + `Replay2D.tsx` ; test crate.
 
-- [ ] **Step 1 — modèle** : `events: Vec<FeedEvent>` où `FeedEvent { t: f64, kind: String, team: Option<i64>, text: String }`. `kind ∈ {"takedown","structure","camp","objective"}`. **Bump `VIEWER_VERSION` → 3.**
+- [ ] **Step 1 — modèle** : `events: Vec<FeedEvent>` où **le crate émet des champs STRUCTURÉS, pas de texte lisible** (le front compose le libellé avec les vrais noms) :
+  `FeedEvent { t: f64, kind: String, team: Option<i64>, victim_player_id: Option<i64>, killer_player_id: Option<i64>, structure_kind: Option<String> }` (camelCase en JSON). `kind ∈ {"takedown","structure","camp","objective"}`. `structure_kind` réutilise l'énum de Chunk 2 (`core/fort/tower/wall/gate/well/other`). **Bump `VIEWER_VERSION` → 3.**
 - [ ] **Step 2 — test (échoue)** : `feed_events_sorted_nonempty` : `events` non vide, triés par `t` croissant, chaque `t ∈ [0,durationSec]`, au moins un `kind=="takedown"`.
 - [ ] **Step 3** : FAIL.
-- [ ] **Step 4 — extraction** : takedowns = depuis `deaths` (texte « <victimHero?> slain » — mais le crate n'a pas les noms héros ; garder `text` générique côté crate : `"Player {victim} killed by {killer}"` avec playerId, le FRONT réécrit avec les vrais noms via `players[]`). Alternative plus propre : le crate émet `events` **sans texte lisible** mais avec des champs structurés (`victimPlayerId`, etc.) et le FRONT compose le libellé. → Choisir : `FeedEvent { t, kind, team, victimPlayerId: Option, killerPlayerId: Option, structureKind: Option }` et le front génère le texte. Structure deaths = depuis `structures` (destroyedAt) → event `structure`. Camps = `SStatGameEvent{JungleCampCapture}` (a `m_intData`/`m_stringData` pour le camp + équipe). Trier par t.
+- [ ] **Step 4 — extraction** : construire `events` avec les champs structurés définis en Step 1 (aucun texte côté crate).
+  - **takedowns** : un `FeedEvent{kind:"takedown", t, victim_player_id, killer_player_id, team=équipe de la victime}` par mort de héros (réutiliser la logique/les données de `deaths`).
+  - **structure** : `FeedEvent{kind:"structure", t=destroyed_at, team, structure_kind}` pour chaque `Structure` de Chunk 2 dont `destroyed_at != None`.
+  - **camp** : `SStatGameEvent{JungleCampCapture}` → `FeedEvent{kind:"camp", t, team}` (équipe depuis `m_intData`/player→team si présent, sinon `team=None`).
+  - Trier par `t` croissant.
 - [ ] **Step 5** : golden + tests + clippy PASS.
-- [ ] **Step 6 — front** : panneau liste à droite (sous la légende ou onglet) : chaque event = icône (💀/🏰/🏕️) + libellé (noms via `players[]`/`heroIcon`) + timecode `mm:ss`, couleur d'équipe, **clic → setT(event.t)** + pause. Surligner l'event le plus proche de `t`. Scroll auto vers l'event courant.
+- [ ] **Step 6 — front** : panneau liste à droite (sous la légende ou onglet) : chaque event = icône (💀/🏰/🏕️) + libellé (noms via `players[]`/`heroIcon`) + timecode `mm:ss`, couleur d'équipe, **clic → setT(event.t)** + pause. Surligner l'event le plus proche de `t`. Scroll auto vers l'event courant. Rangs cliquables = `<button>` (ou `role="button"` + `aria-label` décrivant l'event et son timecode) pour l'accessibilité clavier.
 - [ ] **Step 7** : `npm run build` ✓. Commit `feat(viewer): clickable kill-feed event log (US-20)`.
 
 ---
@@ -106,7 +111,7 @@
 - [ ] **Step 1 — modèle** : `HeroTrack.talents: Vec<TalentPick>` où `TalentPick { t: f64, tier: i64, talent_id: Option<String> }` ; `levels: Vec<LevelTick>` (au niveau `ViewerModel`) où `LevelTick { t, team, level }` (ARAM = XP partagé par équipe). **Bump `VIEWER_VERSION` → 5.**
 - [ ] **Step 2 — test (échoue)** : `talents_and_levels` : au moins un héros a des `talents` non vides, `tier` croissant par héros ; `levels` non vide, `level` croissant par équipe.
 - [ ] **Step 3** : FAIL.
-- [ ] **Step 4 — extraction** : talents depuis `SHeroTalentTreeSelectedEvent` (ordre des picks par joueur = tier 1,2,3… → mapper aux niveaux 1,4,7,10,13,16,20) ; `talent_id` : le crate ne connaît pas le référentiel → laisser `talent_id=None` en V1 (le FRONT résout via `dim_talents` + le build `match_players.talents` déjà stocké). **Ou** capturer `SStatGameEvent{TalentChosen}` qui porte l'id de talent dans `m_stringData` → `talent_id`. Niveaux : `SStatGameEvent{LevelUp}` (équipe via `m_intData`/player→team) → `levels`.
+- [ ] **Step 4 — extraction** : talents depuis `SHeroTalentTreeSelectedEvent` (ordre des picks par joueur = tier 1,2,3… → `tier` = rang du pick ; mapper aux niveaux 1,4,7,10,13,16,20 pour info). **Décision V1 : `talent_id = None`** — le crate reste pur (pas de référentiel, cf. Notes transverses) ; le FRONT résout le nom via `dim_talents` + le build `match_players.talents` déjà stocké (indexé par tier). Ne PAS lire `TalentChosen.m_stringData` en V1. Niveaux : `SStatGameEvent{LevelUp}` (équipe via `m_intData`/player→team) → `levels`.
 - [ ] **Step 5** : golden + tests + clippy.
 - [ ] **Step 6 — front marqueur** : sur la pastille, petit badge « ⬆ » ou halo quand `talents[i].t` proche de `t` (≤ 3 s). Résoudre le nom via `talentInfo()`/`dim_talents` (déjà côté front) en tooltip.
 - [ ] **Step 7 — bande talents (US-27)** : sous le scrub, une grille 10 lignes (héros) × tiers ; case remplie quand le tier est pris à `t` (couleur d'équipe), vide sinon ; hover = nom du talent. Niveau d'équipe affiché.
@@ -125,6 +130,7 @@
 - [ ] **Step 3 — test (échoue)** : `objectives_framework` : pour un replay Braxis (ou à défaut, silver-city → `objectives` vide + pas de warning erroné), la fonction ne panique pas et respecte l'invariant (t ∈ [0,dur]). Pour une carte à trou (monter un cas), un warning est présent. (Utiliser les replays dispo ; si Braxis absent du corpus local, tester au moins le routage `generic` + le warning sur un nom de carte-trou simulé via un test unitaire de `maps::objectives`.)
 - [ ] **Step 4** : FAIL.
 - [ ] **Step 5 — implémenter** : `braxis.rs` (US-21) : inférer la force/timing des vagues depuis les morts d'`Ultralisk`/unités zerg (`SUnitDiedEvent` unit types zerg) → `Objective{kind:"zerg_wave"}`. `generic.rs` : mapper les `SStatGameEvent` d'objectif communs si présents. Cartes-trou → warnings. Brancher dans `build`.
+  ⚠️ **Corpus** : aucun replay Braxis/Blackheart/Volskaya n'est committé (seul silver-city ARAM + Industrial District). Tenter d'en récupérer un (`fetch-corpus`/NAS/box read-only) pour valider `braxis.rs` ; **à défaut, marquer l'inférence de vagues comme « non validée sur données réelles / best-effort » dans le message de commit ET dans STATUS.md** — ne pas la présenter comme testée alors que seuls le routage + le warning le sont.
 - [ ] **Step 6** : golden + tests + clippy.
 - [ ] **Step 7 — front** : afficher les `objectives` dans le kill-feed (kind `objective`) + un bandeau « objective data unavailable » quand `warnings` non vide.
 - [ ] **Step 8** : `npm run build` ✓. Commit `feat(viewer): per-map objectives framework + gap warnings + Braxis waves (US-21..24)`.
@@ -140,9 +146,9 @@
 - [ ] **Step 1 — modèle** : `minions: Vec<MinionSample>` où `MinionSample { t, x, y, team }` (positions non-héros damage-gated). **Bump `VIEWER_VERSION` → 7.** ⚠️ Volume : quantifier + dédup agressif (grille), plafonner (log si tronqué — pas de cap silencieux).
 - [ ] **Step 2 — test (échoue)** : `minions_bounded` : coords ∈ [0,1] ; nombre borné (< 20000) ; team ∈ {0,1} ou -1 (neutre).
 - [ ] **Step 3** : FAIL.
-- [ ] **Step 4 — extraction** : depuis `SUnitPositionsEvent`, pour les tags **non-héros** connus (via `unit_player` : unité non `isHero`, ou owner 11/12), pousser des `MinionSample` (team depuis owner : 11/12→0/1, autre→-1). Dédup par cellule de grille + temps. Trier par t.
+- [ ] **Step 4 — extraction** : depuis `SUnitPositionsEvent`, pour les tags **non-héros** connus (via `unit_player` : unité non `isHero`, ou owner 11/12), pousser des `MinionSample` (team depuis owner : 11/12→0/1, autre→-1). Dédup par cellule de grille (~1/64) + fenêtre temporelle. Trier par t. **Plafond dur `const MINION_CAP: usize = 15000;`** : si dépassé, tronquer **et** `log::warn!("minions truncated: {kept}/{seen}")` — jamais de cap silencieux (le test Step 2 vérifie `< 20000`).
 - [ ] **Step 5** : golden + tests + clippy.
-- [ ] **Step 6 — front** : case à cocher « minions/camps » (défaut OFF) ; si ON, dessiner de petits points ternes (couleur d'équipe atténuée) à `sampleAt`-like nearest (pas d'interpolation — trop épars, afficher le sample le plus proche dans une fenêtre ~5 s).
+- [ ] **Step 6 — front** : case à cocher « minions/camps » (défaut OFF, avec `aria-label`) ; si ON, dessiner de petits points ternes (couleur d'équipe atténuée) à `sampleAt`-like nearest (pas d'interpolation — trop épars, afficher le sample le plus proche dans une fenêtre ~5 s).
 - [ ] **Step 7** : `npm run build` ✓. Commit `feat(viewer): minion/camp visibility toggle (US-26)`.
 
 ---
@@ -157,7 +163,7 @@
 - [ ] **Step 2** : FAIL.
 - [ ] **Step 3 — implémenter** `clipExport.ts` : `clipFrames()` + `recordClip(canvas, {start, end, fps, speed, onFrame})` utilisant `canvas.captureStream(fps)` + `MediaRecorder` (webm/vp9, fallback vp8) ; boucle interne qui pilote `onFrame(t)` de start→end à `1000/fps` ms et `stop()` à la fin → `Blob` → `URL.createObjectURL` → download `match-<id>-<start>-<end>.webm`. NB : MediaRecorder est une API navigateur standard.
 - [ ] **Step 4** : `npm run test` PASS (la partie pure ; l'enregistrement réel = vérif E2E).
-- [ ] **Step 5 — UI** : deux poignées « clip start/end » (ou boutons « set in/out » sur le scrub) + bouton « Export clip » → `recordClip` en pilotant le rendu du canvas existant. Désactivé si `start>=end`. Indicateur d'enregistrement.
+- [ ] **Step 5 — UI** : deux poignées « clip start/end » (ou boutons « set in/out » sur le scrub) + bouton « Export clip » → `recordClip` en pilotant le rendu du canvas existant. Désactivé si `start>=end`. Indicateur d'enregistrement. `aria-label` sur les boutons in/out/export.
 - [ ] **Step 6** : `npm run build` ✓. Commit `feat(web): clip export to webm (US-25)`.
 
 ---
