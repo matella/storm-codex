@@ -139,11 +139,17 @@ fn golden_json_stable() {
     // exclure viewerVersion du comparé (bump volontaire → régénérer le golden)
     let mut v = serde_json::to_value(&m).unwrap();
     v["meta"]["viewerVersion"] = serde_json::json!("<ignored>");
-    let got = serde_json::to_string_pretty(&v).unwrap();
     let path = "tests/data/silver-city-aram.golden.json";
     if std::env::var("UPDATE_GOLDEN").is_ok() {
-        std::fs::write(path, &got).unwrap();
+        // Écrit joliment pour la lecture humaine. L'ORDRE des clés dépend des features serde_json
+        // (voir plus bas) — on ne s'y fie donc pas pour la comparaison.
+        std::fs::write(path, serde_json::to_string_pretty(&v).unwrap()).unwrap();
     }
-    let want = std::fs::read_to_string(path).expect("golden manquant — lancer UPDATE_GOLDEN=1");
-    assert_eq!(got.trim(), want.trim());
+    let want_str = std::fs::read_to_string(path).expect("golden manquant — lancer UPDATE_GOLDEN=1");
+    let want: serde_json::Value = serde_json::from_str(&want_str).expect("golden JSON invalide");
+    // Comparaison SÉMANTIQUE (indépendante de l'ordre des clés), pas une égalité de String :
+    // sous `cargo test --workspace`, l'unification des features Cargo active
+    // `serde_json/preserve_order` (demandé par storm-stats) → clés en ordre d'insertion ; sinon
+    // ordre alphabétique (BTreeMap). Comparer des `Value` immunise le test contre ce basculement.
+    assert_eq!(v, want);
 }
