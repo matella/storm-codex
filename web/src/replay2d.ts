@@ -20,9 +20,14 @@ export interface FeedEvent {
 }
 // US-19 : passage de niveau d'équipe (ARAM = XP partagée, toute l'équipe monte ensemble).
 export interface LevelTick { t: number; team: number; level: number }
+// US-21..24 : objectif de carte STRUCTURÉ (pas de texte — le crate reste UI-free, cf.
+// crates/storm-replay-viewer/src/model.rs). Le FRONT compose le libellé affiché à partir de
+// `kind`/`value`/`team`. V1 : seul Braxis ("zerg_wave") alimente cette liste ; les autres cartes
+// renvoient un tableau vide (éventuellement accompagné d'un warning, cf. `warnings`).
+export interface Objective { t: number; kind: string; team: number | null; value: number | null }
 export interface Replay2D {
   meta: { mapName: string; mapSize: [number, number]; durationSec: number; loopOffset: number; viewerVersion: number };
-  players: PlayerMeta[]; heroes: HeroTrack[]; deaths: Death[]; structures: Structure[]; events: FeedEvent[]; levels: LevelTick[]; warnings: string[];
+  players: PlayerMeta[]; heroes: HeroTrack[]; deaths: Death[]; structures: Structure[]; events: FeedEvent[]; levels: LevelTick[]; objectives: Objective[]; warnings: string[];
 }
 
 const aliveAt = (life: Interval[], t: number) => life.some((iv) => t >= iv.from && t <= iv.to);

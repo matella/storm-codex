@@ -39,7 +39,7 @@ fn all_coords_normalized() {
 fn duration_and_meta_sane() {
     let m = model();
     assert!(m.meta.duration_sec > 60.0, "durée trop courte");
-    assert_eq!(m.meta.viewer_version, 5);
+    assert_eq!(m.meta.viewer_version, 6);
     assert!(m.meta.map_size[0] > 0.0 && m.meta.map_size[1] > 0.0);
 }
 
@@ -255,6 +255,24 @@ fn talents_and_levels() {
             lv.windows(2).all(|w| w[0].level <= w[1].level),
             "team {team} : levels non non-décroissants: {:?}",
             lv.iter().map(|l| l.level).collect::<Vec<_>>()
+        );
+    }
+}
+
+// US-21..24 : silver-city est un ARAM (pas Braxis, pas une gap map connue) → aucun objectif,
+// aucun warning. Le contrat de bornage [0, duration] est vérifié même si la liste est vide (elle
+// l'est ici), pour documenter l'invariant attendu dès qu'une autre carte l'alimentera.
+#[test]
+fn objectives_framework() {
+    let m = model();
+    assert!(m.objectives.is_empty(), "silver-city (ARAM) ne doit produire aucun objectif");
+    assert!(m.warnings.is_empty(), "silver-city n'est pas une gap map connue");
+    for o in &m.objectives {
+        assert!(
+            (0.0..=m.meta.duration_sec).contains(&o.t),
+            "objective t hors bornes: {} (duration {})",
+            o.t,
+            m.meta.duration_sec
         );
     }
 }

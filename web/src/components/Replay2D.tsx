@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchReplay2d, fetchMatch, mapImage, universeColor, heroIcon, initials, useDimTalents, talentInfo } from "../api";
-import { sampleAt, deathsNear, castFlash, type FeedEvent } from "../replay2d";
+import { sampleAt, deathsNear, castFlash, type FeedEvent, type Objective } from "../replay2d";
 import { advance, usePlayback } from "../usePlayback";
 import { Avatar } from "./Avatar";
 import { TalentStrip2D } from "./TalentStrip2D";
@@ -54,6 +54,29 @@ function feedAriaLabel(e: FeedEvent, heroFor: (playerId: number | null) => strin
   if (e.kind === "camp") return `Jungle camp captured at ${time}`;
   return `${e.kind} at ${time}`;
 }
+
+// US-21..24 : `Objective` est structuré côté crate (pas de texte) — c'est ICI qu'on compose le
+// libellé affiché. V1 : seul "zerg_wave" (Braxis) a un libellé dédié ; toute autre `kind` retombe
+// sur un rendu générique plutôt que de planter/rien afficher (une future carte objectif dégrade
+// proprement sans changement front).
+function objectiveLabel(o: Objective): string {
+  if (o.kind === "zerg_wave") return `⚡ Zerg wave${o.value !== null ? ` (${o.value} units)` : ""}`;
+  return `📌 ${o.kind}`;
+}
+
+function objectiveAriaLabel(o: Objective): string {
+  const time = fmtClock(o.t);
+  if (o.kind === "zerg_wave") {
+    const units = o.value !== null ? ` (${o.value} units)` : "";
+    return `Zerg wave${units} at ${time}`;
+  }
+  return `${o.kind} at ${time}`;
+}
+
+/** Réunion event/objectif triée par t — une seule liste de feed, un seul rendu. */
+type FeedRow =
+  | { source: "event"; t: number; event: FeedEvent }
+  | { source: "objective"; t: number; objective: Objective };
 
 /** Résout une valeur `var(--x)` en couleur calculée (le canvas ne comprend pas les custom properties
  *  CSS) ; passe au travers si `v` est déjà une couleur littérale. */
@@ -139,16 +162,26 @@ export function Replay2D({ id }: { id: string }) {
     return m;
   }, [data]);
 
-  // Index de l'event le plus proche de (et ≤) t courant, pour le surlignage du kill-feed.
+  // US-21..24 : events + objectifs fusionnés en une seule liste de feed, triée par t — un
+  // objectif (ex. vague zerg Braxis) apparaît chronologiquement parmi les takedowns/structures.
+  const feedRows = useMemo((): FeedRow[] => {
+    const rows: FeedRow[] = [
+      ...(data?.events ?? []).map((event): FeedRow => ({ source: "event", t: event.t, event })),
+      ...(data?.objectives ?? []).map((objective): FeedRow => ({ source: "objective", t: objective.t, objective })),
+    ];
+    rows.sort((a, b) => a.t - b.t);
+    return rows;
+  }, [data]);
+
+  // Index de la ligne la plus proche de (et ≤) t courant, pour le surlignage du kill-feed.
   const highlightIdx = useMemo(() => {
-    const evs = data?.events ?? [];
     let idx = -1;
-    for (let i = 0; i < evs.length; i++) {
-      if (evs[i].t <= t) idx = i;
+    for (let i = 0; i < feedRows.length; i++) {
+      if (feedRows[i].t <= t) idx = i;
       else break;
     }
     return idx;
-  }, [data, t]);
+  }, [feedRows, t]);
 
   const feedRowRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const feedListRef = useRef<HTMLDivElement>(null);
@@ -169,8 +202,13 @@ export function Replay2D({ id }: { id: string }) {
     playerId === null ? null : playerByPlayerId.get(playerId)?.hero ?? null;
 
   /** Couleur d'équipe d'une ligne du kill-feed : victime pour un takedown, équipe propriétaire
-   *  pour une structure ; neutre (muted) pour un camp / cas team inconnu. */
-  const feedRowColor = (e: FeedEvent): string => {
+   *  pour une structure/objectif ; neutre (muted) pour un camp / team inconnue. */
+  const feedRowColor = (row: FeedRow): string => {
+    if (row.source === "objective") {
+      const team = row.objective.team;
+      return team === 1 ? teamColor[1] : team === 0 ? teamColor[0] : "var(--muted-2)";
+    }
+    const e = row.event;
     if (e.kind === "takedown") {
       const team = playerByPlayerId.get(e.victimPlayerId ?? -1)?.team;
       return team === 1 ? teamColor[1] : team === 0 ? teamColor[0] : "var(--muted-2)";
@@ -329,6 +367,25 @@ export function Replay2D({ id }: { id: string }) {
 
   return (
     <div className="card" style={{ padding: 14 }}>
+      {data.warnings.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          {data.warnings.map((w, i) => (
+            <div
+              key={i}
+              style={{
+                fontSize: 11,
+                color: "var(--muted-2)",
+                background: "var(--hairline-strong)",
+                borderRadius: 6,
+                padding: "5px 8px",
+                marginBottom: 4,
+              }}
+            >
+              ⚠️ {w}
+            </div>
+          ))}
+        </div>
+      )}
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
         <div
           style={{
@@ -385,13 +442,17 @@ export function Replay2D({ id }: { id: string }) {
               gap: 2,
             }}
           >
-            {data.events.map((e, i) => (
+            {feedRows.map((row, i) => (
               <button
                 key={i}
                 type="button"
                 ref={(el) => { feedRowRefs.current[i] = el; }}
-                aria-label={feedAriaLabel(e, heroForPlayer)}
-                onClick={() => { pb.pause(); setT(e.t); }}
+                aria-label={
+                  row.source === "objective"
+                    ? objectiveAriaLabel(row.objective)
+                    : feedAriaLabel(row.event, heroForPlayer)
+                }
+                onClick={() => { pb.pause(); setT(row.t); }}
                 style={{
                   display: "flex",
                   justifyContent: "space-between",
@@ -403,14 +464,16 @@ export function Replay2D({ id }: { id: string }) {
                   padding: "4px 6px",
                   borderRadius: 6,
                   border: "1px solid transparent",
-                  borderColor: i === highlightIdx ? feedRowColor(e) : "transparent",
+                  borderColor: i === highlightIdx ? feedRowColor(row) : "transparent",
                   background: i === highlightIdx ? "var(--hairline-strong)" : "transparent",
                   color: "inherit",
                   cursor: "pointer",
                 }}
               >
-                <span style={{ color: feedRowColor(e) }}>{feedLabel(e, heroForPlayer)}</span>
-                <span className="mono muted" style={{ fontSize: 10, flexShrink: 0 }}>{fmtClock(e.t)}</span>
+                <span style={{ color: feedRowColor(row) }}>
+                  {row.source === "objective" ? objectiveLabel(row.objective) : feedLabel(row.event, heroForPlayer)}
+                </span>
+                <span className="mono muted" style={{ fontSize: 10, flexShrink: 0 }}>{fmtClock(row.t)}</span>
               </button>
             ))}
           </div>

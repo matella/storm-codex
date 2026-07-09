@@ -5,7 +5,7 @@ use storm_replay::{Replay, Value};
 
 const EPS: f64 = 0.004;
 
-fn loop_to_sec(gameloop: i64) -> f64 {
+pub(crate) fn loop_to_sec(gameloop: i64) -> f64 {
     (gameloop as f64 - LOOP_OFFSET as f64) / LOOPS_PER_SEC
 }
 
@@ -482,9 +482,18 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
     // Départage par (team, level) après t.
     levels.sort_by(|a, b| a.t.total_cmp(&b.t).then(a.team.cmp(&b.team)).then(a.level.cmp(&b.level)));
 
+    // 12) objectifs par carte (US-21..24) : routage + extraction isolés dans `crate::maps` — cette
+    //     fonction `build` ne connaît AUCUNE logique spécifique à une carte. Cartes "gap" connues →
+    //     un warning explicite plutôt qu'un silence trompeur.
+    let map_name = details.title.clone();
+    let (mut objectives, obj_warnings) = crate::maps::objectives(&map_name, &tracker);
+    objectives.sort_by(|a, b| a.t.total_cmp(&b.t));
+    let mut warnings: Vec<String> = Vec::new();
+    warnings.extend(obj_warnings);
+
     Ok(ViewerModel {
         meta: Meta {
-            map_name: details.title.clone(),
+            map_name,
             map_size: [map_w, map_h],
             duration_sec,
             loop_offset: LOOP_OFFSET,
@@ -495,17 +504,18 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
         structures,
         events,
         levels,
-        warnings: Vec::new(),
+        objectives,
+        warnings,
     })
 }
 
-fn event_name(e: &Value) -> String {
+pub(crate) fn event_name(e: &Value) -> String {
     e.field("_event")
         .and_then(Value::as_str_lossy)
         .and_then(|s| s.rsplit('.').next().map(str::to_string))
         .unwrap_or_default()
 }
-fn field_int(e: &Value, k: &str) -> Option<i64> {
+pub(crate) fn field_int(e: &Value, k: &str) -> Option<i64> {
     e.field(k).and_then(Value::as_int)
 }
 

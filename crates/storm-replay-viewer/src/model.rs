@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-pub const VIEWER_VERSION: u32 = 5;
+pub const VIEWER_VERSION: u32 = 6;
 pub const LOOP_OFFSET: i64 = 610;
 pub const LOOPS_PER_SEC: f64 = 16.0;
 pub const FIXED: f64 = 4096.0;
@@ -14,6 +14,7 @@ pub struct ViewerModel {
     pub structures: Vec<Structure>,
     pub events: Vec<FeedEvent>,
     pub levels: Vec<LevelTick>,
+    pub objectives: Vec<Objective>,
     pub warnings: Vec<String>,
 }
 
@@ -99,4 +100,18 @@ pub struct FeedEvent {
     pub victim_player_id: Option<i64>,
     pub killer_player_id: Option<i64>,
     pub structure_kind: Option<String>, // réutilise l'enum Structure.kind
+}
+
+// US-21..24 : objectif de carte STRUCTURÉ (pas de texte humain ici — mirroir de la décision
+// FeedEvent : le crate reste référentiel/UI-free, le FRONT compose le texte affiché). Routage et
+// extraction par carte vivent dans `crate::maps` (US-24) ; V1 ne couvre que Braxis (vagues zerg,
+// best-effort — US-21) ; les autres cartes renvoient un vec vide (+ un warning pour les cartes
+// "gap" connues, cf. US-7/22/23).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Objective {
+    pub t: f64,
+    pub kind: String, // ex. "zerg_wave" (Braxis)
+    pub team: Option<i64>,
+    pub value: Option<i64>, // ex. nombre d'unités zerg dans la vague
 }
