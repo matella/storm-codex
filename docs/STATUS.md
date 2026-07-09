@@ -1,14 +1,27 @@
 # STATUS — lire d'abord, mettre à jour en dernier
 
-## Visionneuse 2D — fast-follows (Phases 2–5) EN COURS (branche `feat/replay2d-fastfollows`, 2026-07-09)
-Plan : `docs/plans/2026-07-09-visionneuse-2d-fast-follows.md` (9 lots, revu 2×). Livrés + revus (spec+qualité) :
-lecture animée (US-11), structures vivant/détruit (US-16), kill-feed cliquable (US-20), flashes de sorts
-(US-18), talents/niveaux + bande talents (US-19/US-27), objectifs par carte (US-21→24). Reste : toggle
-minions (US-26), export clip (US-25), vérif E2E globale. **Section complète à écrire au lot 9.**
-- ⚠️ **Braxis US-21 : inférence de vagues zerg best-effort, NON couverte par un test automatisé** — le
-  corpus committé n'a pas de replay Braxis. Validée manuellement UNE fois sur un vrai replay du box
-  (read-only) : 4 vagues à 229/663/937/1385 s (comptes 51/61/63/13), plausible. Framework par-carte
-  isolé (`src/maps/`), cartes-trou (Blackheart's Bay, Volskaya) → warning « objective data unavailable ».
+## Visionneuse 2D — fast-follows (Phases 2–5) : LIVRÉ + VÉRIFIÉ E2E (branche `feat/replay2d-fastfollows`, 2026-07-09)
+Plan : `docs/plans/2026-07-09-visionneuse-2d-fast-follows.md` (9 lots, revu 2×). **8 lots de feature livrés,
+chacun revu spec+qualité (findings repliés)** : lecture animée play/pause+vitesse (US-11) ; structures
+vivant/détruit (US-16) ; kill-feed cliquable → seek (US-20) ; flashes de sorts (US-18) ; talents/niveaux +
+bande de tiers (US-19/US-27) ; objectifs par carte + framework isolé + warnings cartes-trou + vagues Braxis
+(US-21→24) ; toggle minions/camps (US-26) ; export clip webm (US-25). `VIEWER_VERSION` 1→7 (schéma étendu,
+rétro-compat : le front ignore les champs inconnus ; `minions` exclu du golden pour ne pas le gonfler).
+Tout reste **seek 100 % client**, aucune requête réseau par scrub. Crate `storm-replay-viewer` toujours pur
+(géométrie/temps, zéro référentiel ; noms héros/talents résolus côté front via `players[]`+`dim_*`).
+- **Bugs réels attrapés en route** : déterminisme `levels` (tri (t,team,level) — sinon golden flaky sous
+  `--workspace`, même classe que serde_json/preserve_order) ; mislabel talent en ARAM miroir (clé par nom de
+  joueur, pas par héros) ; fuite MediaRecorder au démontage ; clamp coords minions ; typage zerg via Born
+  (SUnitDiedEvent ne porte pas `m_unitTypeName`).
+- **Vérif E2E locale (2026-07-09, read-only box)** : PG dev + serveur (nouveau crate) + images réelles +
+  replays Cursed Hollow & Braxis. Prouvé via preview navigateur : lecture animée (dots bougent), structures
+  sur la carte + destructions dans le feed, **kill-feed cliquable (seek à 9:56 confirmé)**, bande de talents
+  (« Blue lvl 11 · Red lvl 10 », cases par tier), toggle minions (dots ternes), **objectifs Braxis dans le
+  feed** (⚡ Zerg wave 51/61/63/13 à 3:49/11:03/15:36/23:05), export-clip UI (Set in/out/Export), 0 erreur
+  console. Endpoints v7 OK (Braxis : 4 zerg_wave, 0 warning ; Cursed Hollow : 94 structs, 58 events).
+- ⚠️ **Restes honnêtes** : Braxis US-21 = inférence best-effort **non couverte par un test auto** (pas de
+  replay Braxis committé ; validée sur 1 vrai replay). Export clip = enregistrement réel non exercé en
+  headless (UI + logique testées ; MediaRecorder = navigateur). `generic.rs` inline (pas de fichier séparé).
 
 
 ## Visionneuse 2D de replay — MVP-1 : livré + VÉRIFIÉ (calage confirmé) + mergé sur main (2026-07-09)
