@@ -20,9 +20,11 @@ mieux calée. Deux gains d'un coup.
 Les minimaps propres **ne sont PAS téléchargeables publiquement**. HeroesDataParser (écosystème
 `heroes-images`, celui de HotsPatchNotes) ne publie que `loadingscreens` et `replaypreviews` — les deux
 sont l'**art peint** (vérifié : `replayspreviewimage_cursedhollow.png` = la scène violette, pas une
-minimap). Les vraies textures de minimap sont des `.dds`/`.tga` **dans les fichiers du jeu**
-(`base.stormassets/Assets/Textures/`, et/ou `Minimap.tga` baké dans chaque archive de carte).
-→ **Il faut les extraire de l'installation HotS** (sur le PC de jeu).
+minimap). Le repo `jamiephan/HeroesOfTheStorm_Gamedata` (nommé au MVP-1 comme source potentielle) ne
+contient **que du XML/data, aucune image** — également écarté comme source d'images (mais ses
+`CameraBounds` XML restent utiles pour la calibration, voir Lot 3). Les vraies textures de minimap sont
+des `.dds`/`.tga` **dans les fichiers du jeu** (`base.stormassets/Assets/Textures/`, et/ou `Minimap.tga`
+baké dans chaque archive de carte). → **Il faut les extraire de l'installation HotS** (sur le PC de jeu).
 
 ## Décisions verrouillées
 1. **Fond = vraie minimap in-game** (full schématique, pas juste un contour ; on ne dessine pas notre
@@ -44,22 +46,30 @@ minimap). Les vraies textures de minimap sont des `.dds`/`.tga` **dans les fichi
   TGA/DDS → **PNG**.
 - **Nommage de sortie** : `<slug>.png` où `slug` = **même convention que `mapImage()`** (min., apostrophes
   supprimées, espaces→tirets ; ex. `cursed-hollow.png`, `braxis-holdout.png`).
-- **Livraison** : l'opérateur dépose les PNG (sur le box `~/apps/storm-codex/…/minimaps` ou dans le repo).
-- **Repli si `Minimap.tga` trop plat** : texture dédiée, ou version wiki pour cette carte précise
-  (au cas par cas, non systématique).
+- **Livraison = COMMIT au repo** (décision verrouillée, pas un dossier box ad hoc). Les minimaps
+  extraites n'ont **aucune source de re-fetch runtime** (contrairement à l'art vendorisé depuis
+  HotsPatchNotes) : les laisser dans un dossier box non committé les exposerait à une perte silencieuse
+  (rsync/rebuild — cf. incident `.env` de STATUS). → Les PNG sont **committés dans le repo** (ex.
+  `assets/minimaps/<slug>.png`) et **bakés dans l'image** (voir Lot 2). L'opérateur les transfère du PC
+  vers le repo (scp/partage) ; l'agent les commit.
+- **Repli par carte, sans bloquer le batch** : si le `Minimap.tga` d'une carte est trop plat/inutilisable,
+  cette carte retombe sur son art peint (fallback) — l'échec d'une carte **n'invalide pas le batch**. Repli
+  optionnel au cas par cas : texture dédiée ou version wiki pour cette carte précise (non systématique).
 - **Runbook détaillé** à écrire dans `docs/runbooks/` (étapes CascView exactes + conversion + slugs).
 
 ## Lot 2 — Vendoring + service (agent, box)
-- Nouveau dossier servi `/images/minimaps/<slug>.png` (`IMAGES_DIR/minimaps`), servi comme `/images`
-  existant (ServeDir).
-- **Bakés dans l'image / vendorisés** : les PNG extraits sont livrés avec le produit (commit ou baked
-  layer), **pas de fetch runtime** (cohérent suite-design). Si un futur `dim::vendor_*` doit les rafraîchir,
-  ce sera depuis un snapshot produit, pas un scrape.
+- Les minimaps committées (`assets/minimaps/<slug>.png`) sont **bakées dans l'image** (COPY au build) et
+  **copiées dans `IMAGES_DIR/minimaps` au démarrage** (idempotent, comme un fallback baké) — ainsi elles
+  survivent aux redeploys (rsync apporte le repo, l'image les contient, le startup les pose dans le volume),
+  **pas de fetch runtime** (cohérent suite-design). Servi sur `/images/minimaps/<slug>.png` (ServeDir sur
+  `IMAGES_DIR`, aucun nouveau route).
 - **Pas de changement du pipeline HotsPatchNotes** (il continue de fournir l'art peint = fallback).
 
 ## Lot 3 — Front swap + calibration + vérif E2E (agent)
 - **Front** : nouveau `minimapImage(map)` → `/images/minimaps/<slug>.png` ; `Replay2D.tsx` l'utilise en
-  fond **prioritaire**, chaîne de fallback **minimap → art peint (`mapImage`) → dégradé**. Voile
+  fond **prioritaire**, chaîne de fallback **minimap → art peint (`mapImage`) → dégradé**. NB : le fallback
+  actuel n'a qu'un booléen `mapBroken` (1 niveau) → prévoir **deux états `onError` indépendants**
+  (minimap cassée → tenter l'art peint ; art peint cassé → dégradé), pas juste un tweak d'une ligne. Voile
   **allégé** (la minimap est déjà sombre/schématique) — juste un léger assombrissement pour que les
   pastilles ressortent.
 - **Calibration** : la minimap ≈ camera bounds. Ré-vérifier la transform `MapSize`-normalisée **par
