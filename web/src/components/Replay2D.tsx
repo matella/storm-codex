@@ -93,18 +93,22 @@ export function Replay2D({ id }: { id: string }) {
     queryFn: () => fetchMatch(id),
     staleTime: Infinity,
   });
-  const talentsByHero = useMemo(() => {
+  // Clé par NOM de joueur (battletag), PAS par héros : un match ARAM peut avoir deux fois le même
+  // héros (miroir) → une clé héros afficherait les talents de l'autre joueur. Le nom est unique
+  // par match ; replay2d `players[]` porte le même `name`, donc la jointure est sûre. Si un nom
+  // ne matche pas, dégradation gracieuse (Tier N / pas de nom) comme avant.
+  const talentsByName = useMemo(() => {
     const m = new Map<string, Record<string, string>>();
     const players = matchData?.players;
     if (players)
       for (const p of Object.values(players) as any[]) {
-        if (p?.hero && p?.talents) m.set(p.hero, p.talents as Record<string, string>);
+        if (p?.name && p?.talents) m.set(p.name, p.talents as Record<string, string>);
       }
     return m;
   }, [matchData]);
-  const talentNameFor = (hero: string | null, tier: number): string | null => {
-    if (!hero) return null;
-    const treeId = talentsByHero.get(hero)?.[`Tier${tier}Choice`];
+  const talentNameFor = (name: string | null, tier: number): string | null => {
+    if (!name) return null;
+    const treeId = talentsByName.get(name)?.[`Tier${tier}Choice`];
     return treeId ? talentInfo(treeId)?.name ?? null : null;
   };
   const [t, setT] = useState(0);
@@ -281,8 +285,13 @@ export function Replay2D({ id }: { id: string }) {
       }
 
       // US-19 : badge de pick de talent récent (fenêtre fixe, pas de fondu — juste "un pick a eu
-      // lieu près de maintenant"). Timing du pick = le contrat ; le nom est résolu à part (bande).
-      const recentTalent = track.talents.find((tp) => Math.abs(t - tp.t) <= TALENT_MARKER_WINDOW_SEC);
+      // lieu près de maintenant"). Fenêtre UNILATÉRALE : uniquement APRÈS le pick (0 ≤ dt ≤ 3s),
+      // pas avant — plus intuitif en lecture/scrub avant. Le timing = le contrat ; le nom est
+      // résolu à part (bande).
+      const recentTalent = track.talents.find((tp) => {
+        const dt = t - tp.t;
+        return dt >= 0 && dt <= TALENT_MARKER_WINDOW_SEC;
+      });
       if (recentTalent) {
         const bx = cx + HERO_R + 2, by = cy - HERO_R - 2;
         ctx.beginPath();

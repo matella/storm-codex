@@ -21,8 +21,9 @@ export function TalentStrip2D({
   players: PlayerMeta[];
   levels: LevelTick[];
   t: number;
-  /** Nom de talent résolu (ou null si non résolvable — le composant retombe sur "Tier N"). */
-  talentNameFor: (hero: string | null, tier: number) => string | null;
+  /** Nom de talent résolu depuis le NOM de joueur (battletag, unique par match — évite la
+   *  collision de héros miroir) ; null si non résolvable → le composant retombe sur "Tier N". */
+  talentNameFor: (playerName: string | null, tier: number) => string | null;
 }) {
   if (!heroes.length) return null;
   const byPlayer = new Map(players.map((p) => [p.playerId, p]));
@@ -72,7 +73,7 @@ export function TalentStrip2D({
               {TIER_LEVELS.map((lvl, i) => {
                 const tier = i + 1;
                 const taken = h.talents.some((tp) => tp.tier === tier && tp.t <= t);
-                const name = taken ? talentNameFor(p?.hero ?? null, tier) : null;
+                const name = taken ? talentNameFor(p?.name ?? null, tier) : null;
                 const label = taken ? (name ?? `Tier ${tier}`) : `Tier ${tier} not taken yet (level ${lvl})`;
                 return (
                   <div
