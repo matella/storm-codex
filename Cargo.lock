@@ -2019,6 +2019,7 @@ dependencies = [
  "sha2",
  "sqlx",
  "storm-replay",
+ "storm-replay-viewer",
  "storm-stats",
  "tar",
  "thiserror",
@@ -2038,6 +2039,16 @@ dependencies = [
  "mimalloc",
  "nom-mpq",
  "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "storm-replay-viewer"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "storm-replay",
  "thiserror",
 ]
 

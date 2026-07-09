@@ -4,6 +4,7 @@ import { useParams, Link } from "react-router-dom";
 import { fetchMatch, modeBadge, fmtTime, fmtDur, useDimTalents, talentInfo, awardLabel } from "../api";
 import { Avatar } from "../components/Avatar";
 import { LevelChart } from "../components/LevelChart";
+import { Replay2D } from "../components/Replay2D";
 
 const num = (v: any): number => (typeof v === "number" ? v : 0);
 const tierNum = (k: string): number => parseInt(k.match(/\d+/)?.[0] ?? "0", 10);
@@ -262,6 +263,7 @@ function BMTable({ players, messages }: { players: any[]; messages: any[] }) {
 export function MatchDetail() {
   const { id } = useParams();
   const [adv, setAdv] = useState(false);
+  const [tab, setTab] = useState<"score" | "replay2d">("score");
   useDimTalents(); // peuple le référentiel talents (talentTreeId → nom)
   const { data, isLoading } = useQuery({ queryKey: ["match", id], queryFn: () => fetchMatch(id!) });
 
@@ -281,6 +283,14 @@ export function MatchDetail() {
         </span>
       </h1>
 
+      <div style={{ display: "flex", gap: 8, margin: "8px 0 14px" }}>
+        <span className={tab === "score" ? "pill on" : "pill"} onClick={() => setTab("score")}>Score</span>
+        <span className={tab === "replay2d" ? "pill on" : "pill"} onClick={() => setTab("replay2d")}>Replay 2D</span>
+      </div>
+
+      {tab === "replay2d" && (id ? <Replay2D id={id} /> : <div className="empty">invalid match</div>)}
+
+      {tab === "score" && (<>
       {(m.picks || bans[0] || bans[1]) && (
         <div className="card">
           <div className="card-hd"><span className="kick" style={{ margin: 0 }}>Draft</span>
@@ -371,6 +381,7 @@ export function MatchDetail() {
           </a>
         </div>
       </div>
+      </>)}
     </>
   );
 }

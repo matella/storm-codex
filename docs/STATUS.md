@@ -1,5 +1,31 @@
 # STATUS — lire d'abord, mettre à jour en dernier
 
+## Visionneuse 2D de replay — MVP-1 : code livré + smoke local OK, calage box en attente (2026-07-09)
+Nouvelle feature (hors jalons 0→6) : onglet **« Replay 2D »** dans le détail de match — rejoue les
+positions des héros sur la minimap avec scrub à seek instantané (état vivant/mort + marqueurs de
+mort ; **pas d'HP/mana** — donnée absente du replay ; pas d'animation play/pause). Branche
+**`feat/replay2d`** (non mergée).
+- **Spec** : `docs/specs/2026-07-09-visionneuse-2d-replay-design.md` (validée, revue). **Plan** :
+  `docs/plans/2026-07-09-visionneuse-2d-replay.md` (revu 2 passes).
+- **Code livré (3 lots, revue spec+qualité chacun)** : ① crate `crates/storm-replay-viewer`
+  (extraction événements→modèle JSON normalisé `[0,1]`, mapping joueur autoritaire via
+  `SPlayerSetupEvent`, golden test) ; ② endpoint `GET /api/matches/{id}/replay2d` (décodage à la
+  demande + cache disque, réutilise le chemin `raw.rs`, méta joueurs jointes depuis Postgres) ;
+  ③ onglet front canvas (`web/src/components/Replay2D.tsx` + `web/src/replay2d.ts` seek pur testé
+  vitest).
+- **Bugs réels attrapés en route** : seed `m_firstUnitIndex` des `SUnitPositionsEvent` ; repaint des
+  portraits au chargement ; **golden test fragile à `serde_json/preserve_order`** (échouait sous
+  `cargo test --workspace` via unification de features — corrigé en comparaison sémantique de `Value`).
+- **Smoke local E2E OK (2026-07-09)** : Postgres dev + serveur + upload du replay `silver-city-aram`
+  → parse → `/replay2d` (HTTP 200, 499 Ko, 10 héros + samples + 21 morts + 10 joueurs nommés, coords
+  toutes ∈ [0,1], cache écrit). Front : onglet rend 10 pastilles colorées par équipe + légende noms
+  réels, **scrub repositionne les héros**, **0 requête réseau par seek** (seek 100 % client prouvé),
+  fallback dégradé sur carte sans image OK, aucune erreur console.
+- **Reste (calage box)** : la smoke ne pouvait pas juger le **calage carte-relatif** (Silver City ARAM
+  n'a pas d'image ; HotsPatchNotes non branché en local → portraits en initiales). → Runbook
+  `docs/runbooks/2026-07-09-visionneuse-2d-verif-box.md` : vérifier sur le box un match d'une **carte
+  imagée** (orientation/flip-Y/recadrage + portraits réels), puis finaliser la branche.
+
 ## Où on en est (2026-06-12)
 - **Recherche terminée** : anatomie SotS + hots-parser, verdicts dépendances, comparatif moteurs,
   écosystème (HeroesProfile vivant, HeroesMatchTracker archivé). → `docs/research/`.

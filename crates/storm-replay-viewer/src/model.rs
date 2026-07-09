@@ -1,0 +1,57 @@
+use serde::Serialize;
+
+pub const VIEWER_VERSION: u32 = 1;
+pub const LOOP_OFFSET: i64 = 610;
+pub const LOOPS_PER_SEC: f64 = 16.0;
+pub const FIXED: f64 = 4096.0;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ViewerModel {
+    pub meta: Meta,
+    pub heroes: Vec<HeroTrack>,
+    pub deaths: Vec<Death>,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Meta {
+    pub map_name: String,
+    pub map_size: [f64; 2], // en tuiles (MapSize/4096), diagnostic
+    pub duration_sec: f64,
+    pub loop_offset: i64,
+    pub viewer_version: u32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HeroTrack {
+    pub player_id: i64, // playerId replay (m_controlPlayerId, 1..=10)
+    pub samples: Vec<Sample>,
+    pub life: Vec<Interval>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Sample {
+    pub t: f64,
+    pub x: f64,
+    pub y: f64,
+    pub exact: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Interval {
+    pub from: f64,
+    pub to: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Death {
+    pub t: f64,
+    pub x: f64,
+    pub y: f64,
+    pub victim_player_id: i64,
+    pub killer_player_id: Option<i64>,
+}

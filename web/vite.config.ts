@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
 // Build → web/dist (servi par storm-codex-server). En dev, proxy API/WS vers le serveur :8088.
@@ -11,4 +11,5 @@ export default defineConfig({
     },
   },
   build: { outDir: "dist", emptyOutDir: true },
+  test: { environment: "node" },
 });
