@@ -1,5 +1,16 @@
 # STATUS — lire d'abord, mettre à jour en dernier
 
+## Visionneuse 2D — fast-follows (Phases 2–5) EN COURS (branche `feat/replay2d-fastfollows`, 2026-07-09)
+Plan : `docs/plans/2026-07-09-visionneuse-2d-fast-follows.md` (9 lots, revu 2×). Livrés + revus (spec+qualité) :
+lecture animée (US-11), structures vivant/détruit (US-16), kill-feed cliquable (US-20), flashes de sorts
+(US-18), talents/niveaux + bande talents (US-19/US-27), objectifs par carte (US-21→24). Reste : toggle
+minions (US-26), export clip (US-25), vérif E2E globale. **Section complète à écrire au lot 9.**
+- ⚠️ **Braxis US-21 : inférence de vagues zerg best-effort, NON couverte par un test automatisé** — le
+  corpus committé n'a pas de replay Braxis. Validée manuellement UNE fois sur un vrai replay du box
+  (read-only) : 4 vagues à 229/663/937/1385 s (comptes 51/61/63/13), plausible. Framework par-carte
+  isolé (`src/maps/`), cartes-trou (Blackheart's Bay, Volskaya) → warning « objective data unavailable ».
+
+
 ## Visionneuse 2D de replay — MVP-1 : livré + VÉRIFIÉ (calage confirmé) + mergé sur main (2026-07-09)
 Nouvelle feature (hors jalons 0→6) : onglet **« Replay 2D »** dans le détail de match — rejoue les
 positions des héros sur la minimap avec scrub à seek instantané (état vivant/mort + marqueurs de
