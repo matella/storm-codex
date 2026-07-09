@@ -3,7 +3,7 @@
 // replay2d.ts). Play/pause + vitesse animent `t` en temps réel via usePlayback (US-11).
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { fetchReplay2d, fetchMatch, mapImage, universeColor, heroIcon, initials, useDimTalents, talentInfo } from "../api";
+import { fetchReplay2d, fetchMatch, mapImage, minimapImage, mapSlug, universeColor, heroIcon, initials, useDimTalents, talentInfo } from "../api";
 import { sampleAt, deathsNear, castFlash, minionsNear, type FeedEvent, type Objective } from "../replay2d";
 import { advance, usePlayback } from "../usePlayback";
 import { clipFrames, downloadBlob, recordCanvasStream, supportsClipExport } from "../clipExport";
@@ -89,6 +89,14 @@ function resolveColor(v: string): string {
 }
 
 // Cache module-level des portraits chargés (évite de recréer une Image() à chaque frame de scrub).
+// Placement de la minimap dans le canvas : rectangle DEST [dx0,dy0,dx1,dy1] (fractions du canvas) où
+// l'image est dessinée. `MapSize` (bornes de coords du jeu) inclut une marge au-delà de l'île visible →
+// les cores/structures y sont plus resserrés (ex. Cursed Hollow : cores à x 0.17/0.80 dans le jeu mais
+// 0.09/0.91 dans l'image) → l'image doit être dessinée INSÉRÉE (plus petite) pour que ses repères
+// tombent sous les pastilles. Calé sur les cercles de base (spawns). Défaut = pleine image (fill).
+const DEFAULT_FIT: [number, number, number, number] = [0, 0, 1, 1];
+const MAP_FIT: Record<string, [number, number, number, number]> = {};
+
 const iconCache = new Map<string, HTMLImageElement>();
 function loadIcon(url: string, onLoad: () => void): HTMLImageElement {
   let img = iconCache.get(url);
@@ -136,7 +144,6 @@ export function Replay2D({ id }: { id: string }) {
     return treeId ? talentInfo(treeId)?.name ?? null : null;
   };
   const [t, setT] = useState(0);
-  const [mapBroken, setMapBroken] = useState(false);
   // US-26 : minions/camps sont OFF par défaut — pas de coût de dessin/filtrage tant que l'opérateur
   // ne l'active pas explicitement.
   const [showMinions, setShowMinions] = useState(false);
@@ -186,6 +193,28 @@ export function Replay2D({ id }: { id: string }) {
     if (data) for (const p of data.players) m.set(p.playerId, p);
     return m;
   }, [data]);
+
+  // Fond de la visionneuse : minimap in-game (prioritaire) → art peint (fallback) → dégradé (conteneur).
+  // Chargée en Image et dessinée DANS le canvas (drawImage), pour partager la transform des pastilles.
+  const bgRef = useRef<{ img: HTMLImageElement; crop: [number, number, number, number] } | null>(null);
+  useEffect(() => {
+    bgRef.current = null;
+    const map = data?.meta.mapName;
+    if (!map) return;
+    const img = new Image();
+    let stage: 0 | 1 = 0; // 0 = minimap ; 1 = art peint (fallback)
+    const load = () => { img.src = (stage === 0 ? minimapImage(map) : mapImage(map)) ?? ""; };
+    img.onload = () => {
+      bgRef.current = { img, crop: stage === 0 ? (MAP_FIT[mapSlug(map)] ?? DEFAULT_FIT) : DEFAULT_FIT };
+      bumpRedraw((n) => n + 1);
+    };
+    img.onerror = () => {
+      if (stage === 0) { stage = 1; load(); } // minimap absente → tenter l'art peint
+      else { bgRef.current = null; bumpRedraw((n) => n + 1); } // les deux absents → dégradé
+    };
+    load();
+    return () => { img.onload = null; img.onerror = null; };
+  }, [data?.meta.mapName]);
 
   // US-21..24 : events + objectifs fusionnés en une seule liste de feed, triée par t — un
   // objectif (ex. vague zerg Braxis) apparaît chronologiquement parmi les takedowns/structures.
@@ -297,6 +326,16 @@ export function Replay2D({ id }: { id: string }) {
     if (!ctx) return;
     const W = canvas.width, H = canvas.height;
     ctx.clearRect(0, 0, W, H);
+
+    // Fond : minimap in-game (ou art peint en fallback), recadrée sur l'aire jouable pour caler les
+    // positions, + léger voile pour que les pastilles ressortent. Sinon le dégradé du conteneur reste.
+    const bg = bgRef.current;
+    if (bg) {
+      const [dx0, dy0, dx1, dy1] = bg.crop; // placement DEST dans le canvas (image insérée si < [0,1])
+      ctx.drawImage(bg.img, dx0 * W, dy0 * H, (dx1 - dx0) * W, (dy1 - dy0) * H);
+      ctx.fillStyle = "rgba(12,14,22,0.30)";
+      ctx.fillRect(0, 0, W, H);
+    }
 
     // US-26 : minions/camps TOUT en dessous (avant structures ET héros) — dots discrets, fenêtre
     // ±5s autour de t (nearest-window, pas d'interpolation : le signal est déjà dédupliqué/grossier).
@@ -449,8 +488,6 @@ export function Replay2D({ id }: { id: string }) {
   if (isLoading) return <div className="empty">loading…</div>;
   if (!data) return <div className="empty">replay unavailable</div>;
 
-  const bg = !mapBroken ? mapImage(data.meta.mapName) : null;
-
   return (
     <div className="card" style={{ padding: 14 }}>
       {data.warnings.length > 0 && (
@@ -484,14 +521,6 @@ export function Replay2D({ id }: { id: string }) {
             flex: "1 1 360px",
           }}
         >
-          {bg && (
-            <img
-              src={bg}
-              alt=""
-              onError={() => setMapBroken(true)}
-              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
-            />
-          )}
           <canvas
             ref={canvasRef}
             width={CANVAS_SIZE}

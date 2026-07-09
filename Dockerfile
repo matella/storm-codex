@@ -31,10 +31,13 @@ RUN apt-get update \
 WORKDIR /app
 COPY --from=server /src/target/release/storm-codex-server /usr/local/bin/storm-codex-server
 COPY --from=web /web/dist /app/web
+# minimaps in-game bakées (committées au repo) — copiées dans IMAGES_DIR/minimaps au démarrage
+COPY assets/minimaps /app/minimaps
 ENV WEB_DIR=/app/web \
     ARCHIVE_DIR=/data/archive \
     RAW_CACHE_DIR=/data/raw-cache \
     IMAGES_DIR=/data/images \
+    MINIMAPS_BUNDLE_DIR=/app/minimaps \
     ORPHEUS_URL=http://host.docker.internal:3010 \
     BIND_ADDR=0.0.0.0:8088
 EXPOSE 8088
