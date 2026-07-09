@@ -89,13 +89,32 @@ function resolveColor(v: string): string {
 }
 
 // Cache module-level des portraits chargés (évite de recréer une Image() à chaque frame de scrub).
-// Placement de la minimap dans le canvas : rectangle DEST [dx0,dy0,dx1,dy1] (fractions du canvas) où
-// l'image est dessinée. `MapSize` (bornes de coords du jeu) inclut une marge au-delà de l'île visible →
-// les cores/structures y sont plus resserrés (ex. Cursed Hollow : cores à x 0.17/0.80 dans le jeu mais
-// 0.09/0.91 dans l'image) → l'image doit être dessinée INSÉRÉE (plus petite) pour que ses repères
-// tombent sous les pastilles. Calé sur les cercles de base (spawns). Défaut = pleine image (fill).
-const DEFAULT_FIT: [number, number, number, number] = [0, 0, 1, 1];
-const MAP_FIT: Record<string, [number, number, number, number]> = {};
+// Calibration par carte : le repère de coords du jeu est tourné/mis à l'échelle par rapport à l'image
+// minimap (ex. Cursed Hollow : cores à la même hauteur en jeu mais en diagonale dans l'image → rotation).
+// On stocke la position IMAGE (fractions) des 2 cores (bleu, rouge) ; à l'exécution on lit leurs coords
+// JEU depuis les structures, et on résout une similitude (rotation+échelle+translation) qui pose l'image
+// pour que ses cores tombent EXACTEMENT sous les pastilles-core. Sans ancres → pleine image (fallback).
+type Anchor2 = { blue: [number, number]; red: [number, number] };
+const MAP_ANCHORS: Record<string, Anchor2> = {
+  // [xFraction, yFraction] du centre de chaque core dans /images/minimaps/<slug>.jpg (calibré par carte).
+  // Vide pour l'instant → fallback pleine image droite (lisible ; calibration fine = projet dédié).
+};
+
+/** Similitude (a,b,c,d,e,f pour ctx.setTransform) qui envoie les 2 points image `s` sur les 2 points
+ *  canvas `d`. Rotation + échelle uniforme + translation (méthode nombre complexe vd/vs). */
+function solveSimilarity(
+  s0: [number, number], s1: [number, number], d0: [number, number], d1: [number, number],
+): [number, number, number, number, number, number] {
+  const vsx = s1[0] - s0[0], vsy = s1[1] - s0[1];
+  const vdx = d1[0] - d0[0], vdy = d1[1] - d0[1];
+  const den = vsx * vsx + vsy * vsy || 1;
+  const a = (vdx * vsx + vdy * vsy) / den; // scale*cosθ
+  const b = (vdy * vsx - vdx * vsy) / den; // scale*sinθ
+  const c = -b, d = a;
+  const e = d0[0] - (a * s0[0] + c * s0[1]);
+  const f = d0[1] - (b * s0[0] + d * s0[1]);
+  return [a, b, c, d, e, f];
+}
 
 const iconCache = new Map<string, HTMLImageElement>();
 function loadIcon(url: string, onLoad: () => void): HTMLImageElement {
@@ -196,7 +215,7 @@ export function Replay2D({ id }: { id: string }) {
 
   // Fond de la visionneuse : minimap in-game (prioritaire) → art peint (fallback) → dégradé (conteneur).
   // Chargée en Image et dessinée DANS le canvas (drawImage), pour partager la transform des pastilles.
-  const bgRef = useRef<{ img: HTMLImageElement; crop: [number, number, number, number] } | null>(null);
+  const bgRef = useRef<{ img: HTMLImageElement; slug: string; minimap: boolean } | null>(null);
   useEffect(() => {
     bgRef.current = null;
     const map = data?.meta.mapName;
@@ -205,7 +224,7 @@ export function Replay2D({ id }: { id: string }) {
     let stage: 0 | 1 = 0; // 0 = minimap ; 1 = art peint (fallback)
     const load = () => { img.src = (stage === 0 ? minimapImage(map) : mapImage(map)) ?? ""; };
     img.onload = () => {
-      bgRef.current = { img, crop: stage === 0 ? (MAP_FIT[mapSlug(map)] ?? DEFAULT_FIT) : DEFAULT_FIT };
+      bgRef.current = { img, slug: mapSlug(map), minimap: stage === 0 };
       bumpRedraw((n) => n + 1);
     };
     img.onerror = () => {
@@ -331,8 +350,26 @@ export function Replay2D({ id }: { id: string }) {
     // positions, + léger voile pour que les pastilles ressortent. Sinon le dégradé du conteneur reste.
     const bg = bgRef.current;
     if (bg) {
-      const [dx0, dy0, dx1, dy1] = bg.crop; // placement DEST dans le canvas (image insérée si < [0,1])
-      ctx.drawImage(bg.img, dx0 * W, dy0 * H, (dx1 - dx0) * W, (dy1 - dy0) * H);
+      const iw = bg.img.naturalWidth, ih = bg.img.naturalHeight;
+      const anchors = bg.minimap ? MAP_ANCHORS[bg.slug] : undefined;
+      const cores = data.structures.filter((s) => s.kind === "core");
+      const blueCore = cores.find((s) => s.team === 0), redCore = cores.find((s) => s.team === 1);
+      if (anchors && blueCore && redCore) {
+        // Similitude image→canvas calée sur les 2 cores : leurs positions image (ancres) sont envoyées
+        // sur les positions canvas des pastilles-core (gx*W, (1-gy)*H). Fixe la rotation/échelle par carte.
+        const [a, b, c, d, e, f] = solveSimilarity(
+          [anchors.blue[0] * iw, anchors.blue[1] * ih],
+          [anchors.red[0] * iw, anchors.red[1] * ih],
+          [blueCore.x * W, (1 - blueCore.y) * H],
+          [redCore.x * W, (1 - redCore.y) * H],
+        );
+        ctx.save();
+        ctx.setTransform(a, b, c, d, e, f);
+        ctx.drawImage(bg.img, 0, 0);
+        ctx.restore();
+      } else {
+        ctx.drawImage(bg.img, 0, 0, W, H); // pas d'ancres → pleine image (fallback non calibré)
+      }
       ctx.fillStyle = "rgba(12,14,22,0.30)";
       ctx.fillRect(0, 0, W, H);
     }
