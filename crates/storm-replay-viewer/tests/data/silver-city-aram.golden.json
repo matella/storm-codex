@@ -178,7 +178,7 @@
       "kind": "camp",
       "structureKind": null,
       "t": 127.5,
-      "team": null,
+      "team": 1,
       "victimPlayerId": null
     },
     {
@@ -186,7 +186,7 @@
       "kind": "camp",
       "structureKind": null,
       "t": 128.3125,
-      "team": null,
+      "team": 0,
       "victimPlayerId": null
     },
     {
@@ -394,7 +394,7 @@
       "kind": "camp",
       "structureKind": null,
       "t": 528.8125,
-      "team": null,
+      "team": 0,
       "victimPlayerId": null
     },
     {
@@ -402,7 +402,7 @@
       "kind": "camp",
       "structureKind": null,
       "t": 535.625,
-      "team": null,
+      "team": 0,
       "victimPlayerId": null
     },
     {

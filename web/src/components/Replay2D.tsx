@@ -119,8 +119,18 @@ export function Replay2D({ id }: { id: string }) {
   }, [data, t]);
 
   const feedRowRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const feedListRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    feedRowRefs.current[highlightIdx]?.scrollIntoView({ block: "nearest" });
+    // Scroll confiné au conteneur de la liste (jamais scrollIntoView, qui remonterait tous les
+    // ancêtres scrollables, page incluse, et déplacerait la page pendant la lecture).
+    const container = feedListRef.current;
+    const row = feedRowRefs.current[highlightIdx];
+    if (!container || !row) return;
+    const top = row.offsetTop;
+    const bottom = top + row.offsetHeight;
+    if (top < container.scrollTop) container.scrollTop = top;
+    else if (bottom > container.scrollTop + container.clientHeight)
+      container.scrollTop = bottom - container.clientHeight;
   }, [highlightIdx]);
 
   const heroForPlayer = (playerId: number | null): string | null =>
@@ -299,6 +309,7 @@ export function Replay2D({ id }: { id: string }) {
         <div style={{ minWidth: 200, flex: "1 1 220px", maxWidth: 280 }}>
           <p className="cap" style={{ margin: "0 0 8px" }}>Kill feed</p>
           <div
+            ref={feedListRef}
             style={{
               maxHeight: 260,
               overflowY: "auto",

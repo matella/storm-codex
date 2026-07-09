@@ -337,10 +337,16 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
             continue;
         }
         let t = loop_to_sec(field_int(e, "_gameloop").unwrap_or(0));
+        // Équipe capturante = m_fixedData["TeamID"] en fixed-point (÷4096) : 1 = bleu, 2 = rouge
+        // (cf. docs/research/hots-replay-data-reference.md). Notre convention interne : 0 = bleu,
+        // 1 = rouge → team = résolu − 1. None si le champ est absent.
+        let team = fixed_data_int(e, "TeamID")
+            .map(|v| (v as f64 / FIXED).round() as i64 - 1)
+            .filter(|t| (0..=1).contains(t));
         events.push(FeedEvent {
             t,
             kind: "camp".to_string(),
-            team: None,
+            team,
             victim_player_id: None,
             killer_player_id: None,
             structure_kind: None,
@@ -373,6 +379,17 @@ fn event_name(e: &Value) -> String {
 }
 fn field_int(e: &Value, k: &str) -> Option<i64> {
     e.field(k).and_then(Value::as_int)
+}
+
+// Valeur d'un SStatGameEvent.m_fixedData par clé (même schéma key/value que map_size).
+fn fixed_data_int(e: &Value, key: &str) -> Option<i64> {
+    let fixed = e.field("m_fixedData").and_then(Value::as_array)?;
+    for kv in fixed {
+        if kv.field("m_key").and_then(Value::as_str_lossy).as_deref() == Some(key) {
+            return kv.field("m_value").and_then(Value::as_int);
+        }
+    }
+    None
 }
 
 fn map_size(tracker: &[Value]) -> Option<(f64, f64)> {
