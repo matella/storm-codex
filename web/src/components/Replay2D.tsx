@@ -52,13 +52,16 @@ export function Replay2D({ id }: { id: string }) {
   const [tick, bumpRedraw] = useState(0); // incrémenté quand un portrait finit de charger → redessine
   const duration = data?.meta.durationSec || 0;
 
+  // Miroir de `t` lu dans onTick : évite un effet de bord (pause) dans l'updater de setT, qui doit
+  // rester pur (StrictMode double-invoque les updaters en dev → pause() jouée deux fois).
+  const tRef = useRef(0);
+  useEffect(() => { tRef.current = t; }, [t]);
+
   const pb = usePlayback({
     onTick: (dt) => {
-      setT((prev) => {
-        const r = advance(prev, dt, pb.speed, duration);
-        if (!r.playing) pb.pause(); // fin de clip atteinte → coupe la boucle rAF
-        return r.t;
-      });
+      const r = advance(tRef.current, dt, pb.speed, duration);
+      setT(r.t);
+      if (!r.playing) pb.pause(); // fin de clip atteinte → coupe la boucle rAF
     },
   });
 
@@ -209,15 +212,15 @@ export function Replay2D({ id }: { id: string }) {
         </div>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
-        <span
+        <button
+          type="button"
           className="pill on"
-          role="button"
           aria-label={pb.playing ? "pause" : "play"}
           onClick={pb.toggle}
-          style={{ minWidth: 28, textAlign: "center" }}
+          style={{ minWidth: 28, textAlign: "center", fontFamily: "inherit", lineHeight: "inherit" }}
         >
           {pb.playing ? "⏸" : "▶"}
-        </span>
+        </button>
         <select
           aria-label="playback speed"
           value={pb.speed}
