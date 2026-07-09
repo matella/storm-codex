@@ -1,5 +1,27 @@
 # STATUS — lire d'abord, mettre à jour en dernier
 
+## Visionneuse 2D — fonds de minimap in-game + calibration (branche `feat/minimap-backgrounds`, 2026-07-09)
+Spec : `docs/specs/2026-07-09-minimap-backgrounds-design.md`. Remplace l'art peint de loading-screen (chargé)
+par la **vraie minimap tactique in-game** (top-down propre) → lisibilité nettement meilleure.
+- **Assets** : 15 minimaps extraites du jeu par l'opérateur (CascView a échoué → download direct), downscalées
+  1400px, slug-nommées, **committées** `assets/minimaps/` (5,2 Mo) et **bakées dans l'image** (Dockerfile COPY
+  + `MINIMAPS_BUNDLE_DIR`) ; `bundle_minimaps()` les copie dans `IMAGES_DIR/minimaps` au démarrage (idempotent)
+  → servies `/images/minimaps/<slug>.jpg`. Pas de fetch runtime (fallback baké).
+- **Front** : `minimapImage()`/`mapSlug()` ; fond **prioritaire minimap → art peint → dégradé**. La minimap est
+  dessinée DROITE dans le canvas ; les overlays (héros/structures/minions/morts) sont **PROJETÉS** via une
+  **similitude par carte** (rotation+échelle) calée sur les 2 cores — le repère de coords du jeu est tourné/étiré
+  vs l'image (Cursed Hollow ~20°). Ancres cores par carte dans `MAP_ANCHORS`.
+- **Calibration** : **13 battlegrounds calibrés** (Cursed Hollow affiné + vérifié en direct ; 12 mesurés à
+  l'image, spot-checkés Dragon Shire/Braxis/Towers of Doom — orientation OK, cores près des bases). Haunted
+  Mines (1 partie) + Blackheart's Bay (5) → fallback pleine image. **Affinables** à l'œil via le hook dev
+  `window.__cal("<slug>",[bx,by],[rx,ry])` sur une vraie partie (box : toutes les cartes présentes).
+- **Vérif** : E2E local (Cursed Hollow, Braxis, Dragon Shire, Towers of Doom…) — minimap propre + calibration.
+  Tests workspace + vitest verts. **Reste : merge + redéploiement box** (readability + calibration).
+- **Idée (backlog, opérateur 2026-07-09)** : **mode calibration interactif in-app** — au lieu de mesurer les
+  ancres à l'image / `window.__cal`, permettre de **glisser à la souris les 2 points cores** sur la minimap
+  pour les placer au pixel près, aperçu live, puis sauvegarder (persist `MAP_ANCHORS` côté serveur/settings).
+  Extension naturelle du hook `window.__cal` déjà en place. Non implémenté (idée).
+
 ## Visionneuse 2D — fast-follows (Phases 2–5) : LIVRÉ + VÉRIFIÉ E2E (branche `feat/replay2d-fastfollows`, 2026-07-09)
 Plan : `docs/plans/2026-07-09-visionneuse-2d-fast-follows.md` (9 lots, revu 2×). **8 lots de feature livrés,
 chacun revu spec+qualité (findings repliés)** : lecture animée play/pause+vitesse (US-11) ; structures

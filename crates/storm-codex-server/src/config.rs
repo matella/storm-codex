@@ -29,6 +29,9 @@ pub struct Config {
     /// Portraits héros + images de cartes vendorisés ici au démarrage (auto-suffisant,
     /// déterministe — pas de dépendance runtime à HotsPatchNotes), servis sur `/images`.
     pub images_dir: PathBuf,
+    /// Minimaps in-game bakées/committées (`assets/minimaps`), copiées dans `images_dir/minimaps`
+    /// au démarrage (idempotent) → servies sur `/images/minimaps`. Pas de fetch runtime.
+    pub minimaps_bundle_dir: PathBuf,
     /// API Orpheus (musique) — proxifiée par `/api/now-playing` pour le widget musique OBS.
     pub orpheus_url: Option<String>,
     /// Webhook sortant (Discord/ntfy/générique) notifié à chaque nouveau patch. Absent = pas de notif.
@@ -65,6 +68,9 @@ impl Config {
             referential_url: std::env::var("REFERENTIAL_URL").ok().filter(|s| !s.is_empty()),
             images_dir: PathBuf::from(
                 std::env::var("IMAGES_DIR").unwrap_or_else(|_| "./.images".into()),
+            ),
+            minimaps_bundle_dir: PathBuf::from(
+                std::env::var("MINIMAPS_BUNDLE_DIR").unwrap_or_else(|_| "assets/minimaps".into()),
             ),
             orpheus_url: std::env::var("ORPHEUS_URL").ok().filter(|s| !s.is_empty()),
             patch_webhook_url: std::env::var("PATCH_WEBHOOK_URL").ok().filter(|s| !s.is_empty()),

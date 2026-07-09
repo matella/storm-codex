@@ -54,10 +54,40 @@ async fn main() {
     }
 }
 
+/// Copie les minimaps bakées (`bundle`, ex. `assets/minimaps`) dans `images_dir/minimaps`
+/// (idempotent : saute les fichiers déjà présents). Servies ensuite sur `/images/minimaps` par le
+/// ServeDir existant. Best-effort : une erreur ne bloque pas le démarrage (fallback front sur l'art peint).
+fn bundle_minimaps(bundle: &std::path::Path, images_dir: &std::path::Path) {
+    let dst = images_dir.join("minimaps");
+    if std::fs::create_dir_all(&dst).is_err() {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(bundle) else {
+        return; // bundle absent (dev sans assets) → pas de minimaps, fallback front
+    };
+    let mut copied = 0u32;
+    for e in entries.flatten() {
+        let path = e.path();
+        if !path.is_file() {
+            continue;
+        }
+        if let Some(name) = path.file_name() {
+            let target = dst.join(name);
+            if !target.exists() && std::fs::copy(&path, &target).is_ok() {
+                copied += 1;
+            }
+        }
+    }
+    if copied > 0 {
+        tracing::info!("minimaps bakées : {copied} copiées dans {}", dst.display());
+    }
+}
+
 async fn run() -> Result<(), String> {
     let cfg = Config::from_env()?;
     std::fs::create_dir_all(&cfg.archive_dir).map_err(|e| format!("archive_dir : {e}"))?;
     std::fs::create_dir_all(&cfg.raw_cache_dir).map_err(|e| format!("raw_cache_dir : {e}"))?;
+    bundle_minimaps(&cfg.minimaps_bundle_dir, &cfg.images_dir);
 
     let db = PgPoolOptions::new()
         .max_connections(16)

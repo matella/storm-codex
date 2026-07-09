@@ -368,11 +368,23 @@ export function useDimTalents() {
 export function talentInfo(treeId: string | null): DimTalent | null {
   return (treeId && DIMT[treeId]) || null;
 }
-/** Image de carte : slug = nom en minuscules, apostrophes retirées, espaces → tirets.
+/** Slug de carte : nom en minuscules, apostrophes retirées, espaces → tirets. */
+export function mapSlug(map: string): string {
+  return map.toLowerCase().replace(/['']/g, "").replace(/\s+/g, "-");
+}
+
+/** Minimap in-game (vue top-down propre, bakée) : `/images/minimaps/<slug>.jpg`. Fond prioritaire de
+ *  la visionneuse 2D — fallback sur `mapImage()` (art peint) puis dégradé. `null` si carte inconnue. */
+export function minimapImage(map: string | null): string | null {
+  if (!map) return null;
+  return `/images/minimaps/${mapSlug(map)}.jpg`;
+}
+
+/** Image de carte (art peint de loading-screen) : `/images/battlegrounds/<slug>.png`.
  *  Les cartes ARAM peuvent ne pas avoir d'image (404) → le consommateur prévoit un fallback. */
 export function mapImage(map: string | null): string | null {
   if (!map) return null;
-  const slug = map.toLowerCase().replace(/['']/g, "").replace(/\s+/g, "-");
+  const slug = mapSlug(map);
   return `/images/battlegrounds/${slug}.png`;
 }
 // ── identité opérateur (réglage app_settings.operator_names) ──────────────────

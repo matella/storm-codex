@@ -3,7 +3,7 @@
 // replay2d.ts). Play/pause + vitesse animent `t` en temps réel via usePlayback (US-11).
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { fetchReplay2d, fetchMatch, mapImage, universeColor, heroIcon, initials, useDimTalents, talentInfo } from "../api";
+import { fetchReplay2d, fetchMatch, mapImage, minimapImage, mapSlug, universeColor, heroIcon, initials, useDimTalents, talentInfo } from "../api";
 import { sampleAt, deathsNear, castFlash, minionsNear, type FeedEvent, type Objective } from "../replay2d";
 import { advance, usePlayback } from "../usePlayback";
 import { clipFrames, downloadBlob, recordCanvasStream, supportsClipExport } from "../clipExport";
@@ -89,6 +89,55 @@ function resolveColor(v: string): string {
 }
 
 // Cache module-level des portraits chargés (évite de recréer une Image() à chaque frame de scrub).
+// Calibration par carte : le repère de coords du jeu est tourné/mis à l'échelle par rapport à l'image
+// minimap (ex. Cursed Hollow : cores à la même hauteur en jeu mais en diagonale dans l'image → rotation).
+// On stocke la position IMAGE (fractions) des 2 cores (bleu, rouge) ; à l'exécution on lit leurs coords
+// JEU depuis les structures, et on résout une similitude (rotation+échelle+translation) qui pose l'image
+// pour que ses cores tombent EXACTEMENT sous les pastilles-core. Sans ancres → pleine image (fallback).
+type Anchor2 = { blue: [number, number]; red: [number, number] };
+const MAP_ANCHORS: Record<string, Anchor2> = {
+  // [xFraction, yFraction] du centre de chaque core (bleu, rouge) dans /images/minimaps/<slug>.jpg.
+  // Le core game vient des données ; la similitude cale l'orientation/échelle par carte. Sans entrée →
+  // fallback pleine image droite (lisible mais non calibré). Mesuré à l'image ; Cursed Hollow affiné en
+  // direct. Affinables à l'œil via window.__cal("<slug>",[bx,by],[rx,ry]) sur une vraie partie.
+  "cursed-hollow": { blue: [0.115, 0.6], red: [0.905, 0.365] },
+  "battlefield-of-eternity": { blue: [0.05, 0.52], red: [0.94, 0.44] },
+  "infernal-shrines": { blue: [0.06, 0.44], red: [0.92, 0.44] },
+  "alterac-pass": { blue: [0.06, 0.63], red: [0.9, 0.4] },
+  "dragon-shire": { blue: [0.06, 0.42], red: [0.93, 0.44] },
+  "garden-of-terror": { blue: [0.09, 0.72], red: [0.92, 0.35] },
+  "sky-temple": { blue: [0.06, 0.38], red: [0.93, 0.42] },
+  "volskaya-foundry": { blue: [0.06, 0.35], red: [0.93, 0.38] },
+  "hanamura-temple": { blue: [0.07, 0.45], red: [0.93, 0.45] },
+  "warhead-junction": { blue: [0.06, 0.32], red: [0.93, 0.32] },
+  "tomb-of-the-spider-queen": { blue: [0.1, 0.35], red: [0.9, 0.35] },
+  "towers-of-doom": { blue: [0.08, 0.42], red: [0.92, 0.48] },
+  "braxis-holdout": { blue: [0.08, 0.72], red: [0.85, 0.38] },
+};
+
+// Override de calibration en direct (dev) : `window.__cal(slug, [bx,by], [rx,ry])` pose les ancres image
+// des cores et redessine, pour caler une carte à l'œil sans rebuild. Baké ensuite dans MAP_ANCHORS.
+let LIVE_CAL: { slug: string; blue: [number, number]; red: [number, number] } | null = null;
+function liveCalFor(slug: string): Anchor2 | undefined {
+  return LIVE_CAL && LIVE_CAL.slug === slug ? { blue: LIVE_CAL.blue, red: LIVE_CAL.red } : undefined;
+}
+
+/** Similitude (a,b,c,d,e,f pour ctx.setTransform) qui envoie les 2 points image `s` sur les 2 points
+ *  canvas `d`. Rotation + échelle uniforme + translation (méthode nombre complexe vd/vs). */
+function solveSimilarity(
+  s0: [number, number], s1: [number, number], d0: [number, number], d1: [number, number],
+): [number, number, number, number, number, number] {
+  const vsx = s1[0] - s0[0], vsy = s1[1] - s0[1];
+  const vdx = d1[0] - d0[0], vdy = d1[1] - d0[1];
+  const den = vsx * vsx + vsy * vsy || 1;
+  const a = (vdx * vsx + vdy * vsy) / den; // scale*cosθ
+  const b = (vdy * vsx - vdx * vsy) / den; // scale*sinθ
+  const c = -b, d = a;
+  const e = d0[0] - (a * s0[0] + c * s0[1]);
+  const f = d0[1] - (b * s0[0] + d * s0[1]);
+  return [a, b, c, d, e, f];
+}
+
 const iconCache = new Map<string, HTMLImageElement>();
 function loadIcon(url: string, onLoad: () => void): HTMLImageElement {
   let img = iconCache.get(url);
@@ -136,7 +185,6 @@ export function Replay2D({ id }: { id: string }) {
     return treeId ? talentInfo(treeId)?.name ?? null : null;
   };
   const [t, setT] = useState(0);
-  const [mapBroken, setMapBroken] = useState(false);
   // US-26 : minions/camps sont OFF par défaut — pas de coût de dessin/filtrage tant que l'opérateur
   // ne l'active pas explicitement.
   const [showMinions, setShowMinions] = useState(false);
@@ -186,6 +234,37 @@ export function Replay2D({ id }: { id: string }) {
     if (data) for (const p of data.players) m.set(p.playerId, p);
     return m;
   }, [data]);
+
+  // Fond de la visionneuse : minimap in-game (prioritaire) → art peint (fallback) → dégradé (conteneur).
+  // Chargée en Image et dessinée DANS le canvas (drawImage), pour partager la transform des pastilles.
+  const bgRef = useRef<{ img: HTMLImageElement; slug: string; minimap: boolean } | null>(null);
+  useEffect(() => {
+    bgRef.current = null;
+    const map = data?.meta.mapName;
+    if (!map) return;
+    const img = new Image();
+    let stage: 0 | 1 = 0; // 0 = minimap ; 1 = art peint (fallback)
+    const load = () => { img.src = (stage === 0 ? minimapImage(map) : mapImage(map)) ?? ""; };
+    img.onload = () => {
+      bgRef.current = { img, slug: mapSlug(map), minimap: stage === 0 };
+      bumpRedraw((n) => n + 1);
+    };
+    img.onerror = () => {
+      if (stage === 0) { stage = 1; load(); } // minimap absente → tenter l'art peint
+      else { bgRef.current = null; bumpRedraw((n) => n + 1); } // les deux absents → dégradé
+    };
+    load();
+    return () => { img.onload = null; img.onerror = null; };
+  }, [data?.meta.mapName]);
+
+  // Hook de calibration en direct (dev) : window.__cal("<slug>", [bx,by], [rx,ry]) → redessine.
+  useEffect(() => {
+    (window as unknown as { __cal?: unknown }).__cal = (slug: string, blue: [number, number], red: [number, number]) => {
+      LIVE_CAL = { slug, blue, red };
+      bumpRedraw((n) => n + 1);
+    };
+    return () => { delete (window as unknown as { __cal?: unknown }).__cal; };
+  }, []);
 
   // US-21..24 : events + objectifs fusionnés en une seule liste de feed, triée par t — un
   // objectif (ex. vague zerg Braxis) apparaît chronologiquement parmi les takedowns/structures.
@@ -298,13 +377,36 @@ export function Replay2D({ id }: { id: string }) {
     const W = canvas.width, H = canvas.height;
     ctx.clearRect(0, 0, W, H);
 
+    // Fond : minimap in-game (ou art peint en fallback), recadrée sur l'aire jouable pour caler les
+    // positions, + léger voile pour que les pastilles ressortent. Sinon le dégradé du conteneur reste.
+    // Projection jeu→canvas. Carte dessinée DROITE (pleine) ; les overlays sont PROJETÉS via une
+    // similitude calée sur les 2 cores (le repère de coords du jeu est tourné/étiré vs la minimap →
+    // on tourne les pastilles, pas la carte). Défaut (pas de calibration) : identité + flip Y.
+    let project = (gx: number, gy: number): [number, number] => [gx * W, (1 - gy) * H];
+    const bg = bgRef.current;
+    if (bg) {
+      const cores = data.structures.filter((s) => s.kind === "core");
+      const blueCore = cores.find((s) => s.team === 0), redCore = cores.find((s) => s.team === 1);
+      const cal = bg.minimap ? (liveCalFor(bg.slug) ?? MAP_ANCHORS[bg.slug]) : undefined;
+      if (cal && blueCore && redCore) {
+        // solveSimilarity : jeu(core) → fraction image(ancre). project applique ×W/×H.
+        const [a, b, c, d, e, f] = solveSimilarity(
+          [blueCore.x, blueCore.y], [redCore.x, redCore.y], cal.blue, cal.red,
+        );
+        project = (gx, gy) => [(a * gx + c * gy + e) * W, (b * gx + d * gy + f) * H];
+      }
+      ctx.drawImage(bg.img, 0, 0, W, H); // carte droite
+      ctx.fillStyle = "rgba(12,14,22,0.30)";
+      ctx.fillRect(0, 0, W, H);
+    }
+
     // US-26 : minions/camps TOUT en dessous (avant structures ET héros) — dots discrets, fenêtre
     // ±5s autour de t (nearest-window, pas d'interpolation : le signal est déjà dédupliqué/grossier).
     if (showMinions) {
       const neutralColor = resolveColor("var(--muted-2)");
       ctx.globalAlpha = 0.35;
       for (const ms of minionsNear(data.minions, t)) {
-        const cx = ms.x * W, cy = (1 - ms.y) * H;
+        const [cx, cy] = project(ms.x, ms.y);
         ctx.beginPath();
         ctx.arc(cx, cy, 2, 0, Math.PI * 2);
         ctx.fillStyle = ms.team === 1 ? teamColor[1] : ms.team === 0 ? teamColor[0] : neutralColor;
@@ -318,7 +420,7 @@ export function Replay2D({ id }: { id: string }) {
     // pour réduire le bruit visuel.
     for (const s of data.structures) {
       if (s.kind === "other") continue;
-      const cx = s.x * W, cy = (1 - s.y) * H;
+      const [cx, cy] = project(s.x, s.y);
       const destroyed = s.destroyedAt !== null && t >= s.destroyedAt;
       const size = s.kind === "core" ? 9 : 5;
       ctx.fillStyle = destroyed ? "#5a5d6b" : teamColor[s.team === 1 ? 1 : 0];
@@ -339,8 +441,7 @@ export function Replay2D({ id }: { id: string }) {
       if (!p) continue;
       const meta = playerByPlayerId.get(track.playerId);
       const team = meta?.team === 1 ? 1 : 0;
-      const cx = p.x * W;
-      const cy = (1 - p.y) * H; // flip Y : le monde monte (y grandit vers le haut), le canvas descend
+      const [cx, cy] = project(p.x, p.y);
 
       ctx.globalAlpha = p.alive ? 1 : 0.4;
 
@@ -435,7 +536,7 @@ export function Replay2D({ id }: { id: string }) {
     ctx.globalAlpha = 1;
 
     for (const d of deathsNear(data.deaths, t)) {
-      const cx = d.x * W, cy = (1 - d.y) * H;
+      const [cx, cy] = project(d.x, d.y);
       ctx.strokeStyle = teamColor[1];
       ctx.lineWidth = 2;
       const s = 6;
@@ -448,8 +549,6 @@ export function Replay2D({ id }: { id: string }) {
 
   if (isLoading) return <div className="empty">loading…</div>;
   if (!data) return <div className="empty">replay unavailable</div>;
-
-  const bg = !mapBroken ? mapImage(data.meta.mapName) : null;
 
   return (
     <div className="card" style={{ padding: 14 }}>
@@ -484,14 +583,6 @@ export function Replay2D({ id }: { id: string }) {
             flex: "1 1 360px",
           }}
         >
-          {bg && (
-            <img
-              src={bg}
-              alt=""
-              onError={() => setMapBroken(true)}
-              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
-            />
-          )}
           <canvas
             ref={canvasRef}
             width={CANVAS_SIZE}
