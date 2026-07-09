@@ -25,9 +25,13 @@ export interface LevelTick { t: number; team: number; level: number }
 // `kind`/`value`/`team`. V1 : seul Braxis ("zerg_wave") alimente cette liste ; les autres cartes
 // renvoient un tableau vide (éventuellement accompagné d'un warning, cf. `warnings`).
 export interface Objective { t: number; kind: string; team: number | null; value: number | null }
+// US-26 : sample de position minion/camp (non-héros), agressivement dédupliqué côté crate
+// (storm-replay-viewer::extract) — volume potentiellement élevé, affiché SEULEMENT si le toggle
+// "Minions / camps" est activé (défaut OFF).
+export interface MinionSample { t: number; x: number; y: number; team: number }
 export interface Replay2D {
   meta: { mapName: string; mapSize: [number, number]; durationSec: number; loopOffset: number; viewerVersion: number };
-  players: PlayerMeta[]; heroes: HeroTrack[]; deaths: Death[]; structures: Structure[]; events: FeedEvent[]; levels: LevelTick[]; objectives: Objective[]; warnings: string[];
+  players: PlayerMeta[]; heroes: HeroTrack[]; deaths: Death[]; structures: Structure[]; events: FeedEvent[]; levels: LevelTick[]; objectives: Objective[]; warnings: string[]; minions: MinionSample[];
 }
 
 const aliveAt = (life: Interval[], t: number) => life.some((iv) => t >= iv.from && t <= iv.to);
@@ -66,6 +70,12 @@ export function sampleAt(h: HeroTrack, t: number): { x: number; y: number; alive
 /** Morts « récentes » à t (marqueur qui persiste ~4 s de scrub). */
 export function deathsNear(deaths: Death[], t: number, window = 4): Death[] {
   return deaths.filter((d) => t >= d.t && t <= d.t + window);
+}
+
+/** US-26 : samples minions/camps dans une fenêtre ±window autour de t (nearest-window, PAS
+ *  d'interpolation — le pas d'échantillonnage minions est trop grossier/dédupliqué pour lerp). */
+export function minionsNear(minions: MinionSample[], t: number, window = 5): MinionSample[] {
+  return minions.filter((m) => Math.abs(m.t - t) <= window);
 }
 
 /** Intensité (0..1) du flash de cast d'aptitude à l'instant t : décroissance linéaire depuis le

@@ -39,7 +39,7 @@ fn all_coords_normalized() {
 fn duration_and_meta_sane() {
     let m = model();
     assert!(m.meta.duration_sec > 60.0, "durée trop courte");
-    assert_eq!(m.meta.viewer_version, 6);
+    assert_eq!(m.meta.viewer_version, 7);
     assert!(m.meta.map_size[0] > 0.0 && m.meta.map_size[1] > 0.0);
 }
 
@@ -277,12 +277,36 @@ fn objectives_framework() {
     }
 }
 
+// US-26 : samples minions/camps bornés, en volume contrôlé (dédup + cap dans extract.rs). Pas
+// d'exigence de non-vacuité (certaines cartes/replays peuvent en avoir peu) mais silver-city
+// (ARAM, minions constants) doit en produire.
+#[test]
+fn minions_bounded() {
+    let m = model();
+    assert!(m.minions.len() < 20000, "trop de minions: {}", m.minions.len());
+    for ms in &m.minions {
+        assert!(
+            (0.0..=1.0).contains(&ms.x) && (0.0..=1.0).contains(&ms.y),
+            "coord minion hors [0,1]: {:?}",
+            ms
+        );
+        assert!(
+            matches!(ms.team, -1..=1),
+            "team minion hors {{0,1,-1}}: {}",
+            ms.team
+        );
+    }
+}
+
 #[test]
 fn golden_json_stable() {
     let m = model();
     // exclure viewerVersion du comparé (bump volontaire → régénérer le golden)
     let mut v = serde_json::to_value(&m).unwrap();
     v["meta"]["viewerVersion"] = serde_json::json!("<ignored>");
+    // US-26 : minions/camps sont un volume élevé et non déterministe dans leur détail — exclus du
+    // golden (comme viewerVersion) pour ne pas gonfler le fixture ; couverts par `minions_bounded`.
+    v["minions"] = serde_json::json!("<excluded>");
     let path = "tests/data/silver-city-aram.golden.json";
     if std::env::var("UPDATE_GOLDEN").is_ok() {
         // Écrit joliment pour la lecture humaine. L'ORDRE des clés dépend des features serde_json

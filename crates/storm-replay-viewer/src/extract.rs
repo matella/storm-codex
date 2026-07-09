@@ -42,13 +42,27 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
             .and_then(Value::as_str_lossy)
             .map(|n| n.starts_with("Hero"))
             .unwrap_or(false);
-        if (1..=10).contains(&p) {
+        // US-26 : les lane minions/camps sont contrôlés par l'IA d'équipe (11 = bleu, 12 = rouge,
+        // même convention que les structures) — élargi au-delà de 1..=10 pour que la résolution
+        // minions/camps (non-héros) fonctionne dans CETTE MÊME table (cf. avertissement
+        // recyclage d'index ci-dessus, accepté ici comme la dédup en aval l'atténue).
+        if (1..=12).contains(&p) {
             unit_player.insert(idx, (p, is_hero));
         }
     }
 
-    // 3) samples exacts depuis SUnitPositionsEvent (m_items = [idxDelta, x, y]*)
+    // 3) samples exacts depuis SUnitPositionsEvent (m_items = [idxDelta, x, y]*). US-26 : la MÊME
+    //    passe alimente aussi les samples minions/camps (unités non-héros résolues) — pas de
+    //    second passage sur tracker pour ce volume, déjà le plus gros événement du fichier.
+    //    Dédup agressive par cellule de grille (~1/64 tuile) × bucket temporel (~2s) : on ne garde
+    //    qu'un point par (cellule, bucket, équipe), et un cap dur `MINION_CAP` protège le payload.
+    const MINION_CAP: usize = 15000;
+    const MINION_TIME_BUCKET_SEC: f64 = 2.0;
     let mut samples: HashMap<i64, Vec<Sample>> = HashMap::new();
+    let mut minions: Vec<MinionSample> = Vec::new();
+    let mut minion_seen: std::collections::HashSet<(i64, i64, i64, i64)> = std::collections::HashSet::new();
+    let mut minion_seen_count: u64 = 0; // unités non-héros rencontrées (avant dédup), pour le warning de troncature
+    let mut minion_truncated = false;
     for e in &tracker {
         if event_name(e) != "SUnitPositionsEvent" {
             continue;
@@ -64,17 +78,44 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
         let mut idx = field_int(e, "m_firstUnitIndex").unwrap_or(0);
         for tri in items.chunks_exact(3) {
             idx += tri[0]; // index cumulatif
-            if let Some(&(p, true)) = unit_player.get(&idx) {
-                let (x, y) = norm_tile(tri[1], tri[2]);
-                samples.entry(p).or_default().push(Sample {
-                    t,
-                    x: q3(x),
-                    y: q3(y),
-                    exact: true,
-                });
+            match unit_player.get(&idx) {
+                Some(&(p, true)) => {
+                    let (x, y) = norm_tile(tri[1], tri[2]);
+                    samples.entry(p).or_default().push(Sample {
+                        t,
+                        x: q3(x),
+                        y: q3(y),
+                        exact: true,
+                    });
+                }
+                Some(&(p, false)) => {
+                    minion_seen_count += 1;
+                    if minions.len() >= MINION_CAP {
+                        minion_truncated = true;
+                        continue;
+                    }
+                    let team = match p {
+                        11 => 0,
+                        12 => 1,
+                        _ => -1,
+                    };
+                    let (x, y) = norm_tile(tri[1], tri[2]);
+                    let (qx, qy) = (q3(x), q3(y));
+                    let gx = (qx * 64.0).floor() as i64;
+                    let gy = (qy * 64.0).floor() as i64;
+                    let tbucket = (t / MINION_TIME_BUCKET_SEC).floor() as i64;
+                    if minion_seen.insert((gx, gy, team, tbucket)) {
+                        minions.push(MinionSample { t, x: qx, y: qy, team });
+                    }
+                }
+                None => {}
             }
         }
     }
+    if minion_truncated {
+        eprintln!("minions truncated: {}/{minion_seen_count}", minions.len());
+    }
+    minions.sort_by(|a, b| a.t.total_cmp(&b.t));
 
     // 4) densification via game events SCmd*/TargetPoint clé par _userid → playerId.
     //    Mapping AUTORITAIRE via SPlayerSetupEvent (m_userId → m_playerId) — PAS l'hypothèse
@@ -506,6 +547,7 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
         levels,
         objectives,
         warnings,
+        minions,
     })
 }
 

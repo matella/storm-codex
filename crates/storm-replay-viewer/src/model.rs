@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-pub const VIEWER_VERSION: u32 = 6;
+pub const VIEWER_VERSION: u32 = 7;
 pub const LOOP_OFFSET: i64 = 610;
 pub const LOOPS_PER_SEC: f64 = 16.0;
 pub const FIXED: f64 = 4096.0;
@@ -16,6 +16,7 @@ pub struct ViewerModel {
     pub levels: Vec<LevelTick>,
     pub objectives: Vec<Objective>,
     pub warnings: Vec<String>,
+    pub minions: Vec<MinionSample>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -63,6 +64,17 @@ pub struct Sample {
     pub x: f64,
     pub y: f64,
     pub exact: bool,
+}
+
+// US-26 : samples de position minions/camps (non-héros), agressivement dédupliqués (cf.
+// extract.rs) — volume potentiellement élevé, donc exclus du golden de test dédié.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MinionSample {
+    pub t: f64,
+    pub x: f64,
+    pub y: f64,
+    pub team: i64, // 0 = bleu, 1 = rouge, -1 = neutre/inconnu
 }
 
 #[derive(Debug, Clone, Serialize)]

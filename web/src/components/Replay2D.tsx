@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchReplay2d, fetchMatch, mapImage, universeColor, heroIcon, initials, useDimTalents, talentInfo } from "../api";
-import { sampleAt, deathsNear, castFlash, type FeedEvent, type Objective } from "../replay2d";
+import { sampleAt, deathsNear, castFlash, minionsNear, type FeedEvent, type Objective } from "../replay2d";
 import { advance, usePlayback } from "../usePlayback";
 import { Avatar } from "./Avatar";
 import { TalentStrip2D } from "./TalentStrip2D";
@@ -136,6 +136,9 @@ export function Replay2D({ id }: { id: string }) {
   };
   const [t, setT] = useState(0);
   const [mapBroken, setMapBroken] = useState(false);
+  // US-26 : minions/camps sont OFF par défaut — pas de coût de dessin/filtrage tant que l'opérateur
+  // ne l'active pas explicitement.
+  const [showMinions, setShowMinions] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [tick, bumpRedraw] = useState(0); // incrémenté quand un portrait finit de charger → redessine
   const duration = data?.meta.durationSec || 0;
@@ -226,6 +229,21 @@ export function Replay2D({ id }: { id: string }) {
     if (!ctx) return;
     const W = canvas.width, H = canvas.height;
     ctx.clearRect(0, 0, W, H);
+
+    // US-26 : minions/camps TOUT en dessous (avant structures ET héros) — dots discrets, fenêtre
+    // ±5s autour de t (nearest-window, pas d'interpolation : le signal est déjà dédupliqué/grossier).
+    if (showMinions) {
+      const neutralColor = resolveColor("var(--muted-2)");
+      ctx.globalAlpha = 0.35;
+      for (const ms of minionsNear(data.minions, t)) {
+        const cx = ms.x * W, cy = (1 - ms.y) * H;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 2, 0, Math.PI * 2);
+        ctx.fillStyle = ms.team === 1 ? teamColor[1] : ms.team === 0 ? teamColor[0] : neutralColor;
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
 
     // Structures d'abord (sous les héros) : petits carrés/losanges couleur d'équipe, le core plus
     // grand ; détruite (à t courant) → grisée + croix. "other" (ex. HallOfStormsLocationUnit) sauté
@@ -358,7 +376,7 @@ export function Replay2D({ id }: { id: string }) {
       ctx.moveTo(cx + s, cy - s); ctx.lineTo(cx - s, cy + s);
       ctx.stroke();
     }
-  }, [t, data, playerByPlayerId, teamColor, tick]);
+  }, [t, data, playerByPlayerId, teamColor, tick, showMinions]);
 
   if (isLoading) return <div className="empty">loading…</div>;
   if (!data) return <div className="empty">replay unavailable</div>;
@@ -513,6 +531,15 @@ export function Replay2D({ id }: { id: string }) {
         <span className="mono muted" style={{ fontSize: 11, minWidth: 90, textAlign: "right" }}>
           {fmtClock(t)} / {fmtClock(duration)}
         </span>
+        <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--muted-2)", cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            aria-label="Minions / camps"
+            checked={showMinions}
+            onChange={(e) => setShowMinions(e.target.checked)}
+          />
+          Minions / camps
+        </label>
       </div>
       <TalentStrip2D
         heroes={data.heroes}
