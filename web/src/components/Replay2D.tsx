@@ -98,8 +98,21 @@ type Anchor2 = { blue: [number, number]; red: [number, number] };
 const MAP_ANCHORS: Record<string, Anchor2> = {
   // [xFraction, yFraction] du centre de chaque core (bleu, rouge) dans /images/minimaps/<slug>.jpg.
   // Le core game vient des données ; la similitude cale l'orientation/échelle par carte. Sans entrée →
-  // fallback pleine image droite (lisible mais non calibré).
+  // fallback pleine image droite (lisible mais non calibré). Mesuré à l'image ; Cursed Hollow affiné en
+  // direct. Affinables à l'œil via window.__cal("<slug>",[bx,by],[rx,ry]) sur une vraie partie.
   "cursed-hollow": { blue: [0.115, 0.6], red: [0.905, 0.365] },
+  "battlefield-of-eternity": { blue: [0.05, 0.52], red: [0.94, 0.44] },
+  "infernal-shrines": { blue: [0.06, 0.44], red: [0.92, 0.44] },
+  "alterac-pass": { blue: [0.06, 0.63], red: [0.9, 0.4] },
+  "dragon-shire": { blue: [0.06, 0.42], red: [0.93, 0.44] },
+  "garden-of-terror": { blue: [0.09, 0.72], red: [0.92, 0.35] },
+  "sky-temple": { blue: [0.06, 0.38], red: [0.93, 0.42] },
+  "volskaya-foundry": { blue: [0.06, 0.35], red: [0.93, 0.38] },
+  "hanamura-temple": { blue: [0.07, 0.45], red: [0.93, 0.45] },
+  "warhead-junction": { blue: [0.06, 0.32], red: [0.93, 0.32] },
+  "tomb-of-the-spider-queen": { blue: [0.1, 0.35], red: [0.9, 0.35] },
+  "towers-of-doom": { blue: [0.08, 0.42], red: [0.92, 0.48] },
+  "braxis-holdout": { blue: [0.08, 0.72], red: [0.85, 0.38] },
 };
 
 // Override de calibration en direct (dev) : `window.__cal(slug, [bx,by], [rx,ry])` pose les ancres image
