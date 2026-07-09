@@ -43,8 +43,11 @@ qui consomme les événements déjà décodés et produit le modèle de la visio
 ## Décisions verrouillées
 1. **Intégré à Storm Codex** (pas d'outil standalone). Web = la SPA existante ; format d'échange = JSON
    sur HTTP ; génération **à la demande + cache**, jamais matérialisée en masse dans Postgres.
-2. **Seek 100 % côté client.** Le serveur émet **toute la timeline du match en une fois** (quelques
-   centaines de Ko de JSON) ; le scrub est une recherche + interpolation en mémoire navigateur. →
+2. **Seek 100 % côté client.** Le serveur émet **toute la timeline du match en une fois** ; le scrub est
+   une recherche + interpolation en mémoire navigateur. Budget payload : les ~37 k events de commande ne
+   deviennent pas tous des samples — on ne garde que les `TargetPoint` de déplacement (pas chaque cast),
+   on déduplique les points quasi-immobiles et on quantifie les floats normalisés (~3 décimales), ce qui
+   maintient le JSON dans l'ordre de quelques centaines de Ko. →
    **les « snapshots toutes les N s » de la spec source deviennent inutiles en V1** (ne servent qu'au seek
    serveur ou aux payloads énormes — non applicable ici).
 3. **Calibration pilotée par la donnée** (via `MapSize`), images de minimap depuis `jamiephan`, fallback
@@ -54,7 +57,8 @@ qui consomme les événements déjà décodés et produit le modèle de la visio
    du shuffle ARAM via `dim_talents`). La visionneuse n'a jamais à re-résoudre l'identité du héros.
 
 ## Périmètre MVP-1 (tranche verticale mince — dé-risque la calibration d'abord)
-Fond de minimap correct · 10 pastilles héros colorées par équipe + portraits · barre de scrub à seek
+Fond de minimap correct · 10 pastilles héros (remplissage = **couleur d'équipe** ; l'anneau du portrait =
+`universeColor`) + portraits · barre de scrub à seek
 instantané côté client · **atténuation vivant/mort + marqueurs de mort** (remplace HP/mana) · **pas
 d'animation play/pause encore**. But : prouver la calibration des coordonnées + le seek instantané sur de
 vrais matchs, avant d'investir dans l'animation/polish.
@@ -107,10 +111,18 @@ modèle → la barre de scrub pilote une fonction pure `seek(t)` → rendu canva
   (immunité au shuffle) mais de la projection Postgres.
 - **État de vie** : intervalles Born (spawn) → Died → Revived. Héros mort = atténué ; marqueur de mort
   visible ~4 s de scrub autour de chaque `t` de mort.
+- **Morts (`deaths[]`)** : depuis `SUnitDiedEvent` de l'unité-héros suivie — `x,y` = `m_x`/`m_y`
+  (normalisés `[0,1]`), `t` corrigé offset, `victimPlayerId` = joueur propriétaire de l'unité morte (via le
+  lien unité→joueur), `killerPlayerId` = `m_killerPlayerId`. `m_killerPlayerId = 0` ou absent (mort
+  environnementale / par structure) → `killerPlayerId: null`.
 
 ## Seek client
 `seek(t)` pure : pour chaque héros, recherche binaire dans `samples`, lerp entre les deux encadrant `t`,
 résolution vivant/mort par intervalle. Zéro round-trip → garantit < 50 ms.
+**Interpolation vs intervalle mort** : ne pas lerper à travers un trou mort→respawn (le respawn est à la
+base, loin du lieu de mort → la pastille glisserait à travers la carte pendant qu'elle est atténuée).
+Règle V1 : pendant un intervalle mort, figer la pastille sur la dernière position vivante (pas de lerp),
+puis sauter à la position de respawn au retour en vie.
 
 ## Cas limites / erreurs
 - Carte sans image de minimap → fallback gradient voilé existant (déterministe, silencieux) ; héros
@@ -123,7 +135,8 @@ résolution vivant/mort par intervalle. Zéro round-trip → garantit < 50 ms.
 ## Tests
 - **Extraction** (crate) : tests unitaires sur le mini-corpus committé — maths d'offset, bornes de
   normalisation `[0,1]`, segmentation des intervalles de vie ; un **golden-JSON** snapshot pour un replay
-  connu.
+  connu (exclure `viewerVersion` du comparé, ou régénérer volontairement le golden à chaque bump de
+  version, pour que le test ne devienne pas bruyant à chaque raffinement d'extraction).
 - **Client** : test unitaire de `seek(t)`.
 - **Bout-en-bout** : vérification visuelle via les outils de preview sur un vrai match du backfill.
 
