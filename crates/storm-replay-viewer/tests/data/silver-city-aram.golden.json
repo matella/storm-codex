@@ -148,6 +148,320 @@
       "y": 0.463
     }
   ],
+  "events": [
+    {
+      "killerPlayerId": 2,
+      "kind": "takedown",
+      "structureKind": null,
+      "t": 79.0625,
+      "team": null,
+      "victimPlayerId": 8
+    },
+    {
+      "killerPlayerId": 6,
+      "kind": "takedown",
+      "structureKind": null,
+      "t": 80.625,
+      "team": null,
+      "victimPlayerId": 1
+    },
+    {
+      "killerPlayerId": 5,
+      "kind": "takedown",
+      "structureKind": null,
+      "t": 82.0625,
+      "team": null,
+      "victimPlayerId": 6
+    },
+    {
+      "killerPlayerId": null,
+      "kind": "camp",
+      "structureKind": null,
+      "t": 127.5,
+      "team": null,
+      "victimPlayerId": null
+    },
+    {
+      "killerPlayerId": null,
+      "kind": "camp",
+      "structureKind": null,
+      "t": 128.3125,
+      "team": null,
+      "victimPlayerId": null
+    },
+    {
+      "killerPlayerId": 4,
+      "kind": "takedown",
+      "structureKind": null,
+      "t": 147.125,
+      "team": null,
+      "victimPlayerId": 8
+    },
+    {
+      "killerPlayerId": 6,
+      "kind": "takedown",
+      "structureKind": null,
+      "t": 202.625,
+      "team": null,
+      "victimPlayerId": 4
+    },
+    {
+      "killerPlayerId": 8,
+      "kind": "takedown",
+      "structureKind": null,
+      "t": 210.5,
+      "team": null,
+      "victimPlayerId": 5
+    },
+    {
+      "killerPlayerId": 6,
+      "kind": "takedown",
+      "structureKind": null,
+      "t": 307.5,
+      "team": null,
+      "victimPlayerId": 1
+    },
+    {
+      "killerPlayerId": null,
+      "kind": "structure",
+      "structureKind": "wall",
+      "t": 315.1875,
+      "team": 1,
+      "victimPlayerId": null
+    },
+    {
+      "killerPlayerId": 4,
+      "kind": "takedown",
+      "structureKind": null,
+      "t": 316.0,
+      "team": null,
+      "victimPlayerId": 6
+    },
+    {
+      "killerPlayerId": null,
+      "kind": "structure",
+      "structureKind": "gate",
+      "t": 321.625,
+      "team": 1,
+      "victimPlayerId": null
+    },
+    {
+      "killerPlayerId": null,
+      "kind": "structure",
+      "structureKind": "tower",
+      "t": 327.5625,
+      "team": 1,
+      "victimPlayerId": null
+    },
+    {
+      "killerPlayerId": 8,
+      "kind": "takedown",
+      "structureKind": null,
+      "t": 335.125,
+      "team": null,
+      "victimPlayerId": 4
+    },
+    {
+      "killerPlayerId": 4,
+      "kind": "takedown",
+      "structureKind": null,
+      "t": 377.625,
+      "team": null,
+      "victimPlayerId": 8
+    },
+    {
+      "killerPlayerId": 3,
+      "kind": "takedown",
+      "structureKind": null,
+      "t": 381.0,
+      "team": null,
+      "victimPlayerId": 6
+    },
+    {
+      "killerPlayerId": null,
+      "kind": "structure",
+      "structureKind": "tower",
+      "t": 381.5,
+      "team": 1,
+      "victimPlayerId": null
+    },
+    {
+      "killerPlayerId": 2,
+      "kind": "takedown",
+      "structureKind": null,
+      "t": 383.0625,
+      "team": null,
+      "victimPlayerId": 9
+    },
+    {
+      "killerPlayerId": null,
+      "kind": "structure",
+      "structureKind": "wall",
+      "t": 387.5625,
+      "team": 1,
+      "victimPlayerId": null
+    },
+    {
+      "killerPlayerId": 1,
+      "kind": "takedown",
+      "structureKind": null,
+      "t": 393.25,
+      "team": null,
+      "victimPlayerId": 7
+    },
+    {
+      "killerPlayerId": null,
+      "kind": "structure",
+      "structureKind": "fort",
+      "t": 402.0625,
+      "team": 1,
+      "victimPlayerId": null
+    },
+    {
+      "killerPlayerId": null,
+      "kind": "structure",
+      "structureKind": "well",
+      "t": 402.0625,
+      "team": 1,
+      "victimPlayerId": null
+    },
+    {
+      "killerPlayerId": null,
+      "kind": "structure",
+      "structureKind": "gate",
+      "t": 419.3125,
+      "team": 1,
+      "victimPlayerId": null
+    },
+    {
+      "killerPlayerId": null,
+      "kind": "structure",
+      "structureKind": "wall",
+      "t": 419.75,
+      "team": 1,
+      "victimPlayerId": null
+    },
+    {
+      "killerPlayerId": null,
+      "kind": "structure",
+      "structureKind": "tower",
+      "t": 427.8125,
+      "team": 1,
+      "victimPlayerId": null
+    },
+    {
+      "killerPlayerId": null,
+      "kind": "structure",
+      "structureKind": "tower",
+      "t": 429.9375,
+      "team": 1,
+      "victimPlayerId": null
+    },
+    {
+      "killerPlayerId": 4,
+      "kind": "takedown",
+      "structureKind": null,
+      "t": 443.75,
+      "team": null,
+      "victimPlayerId": 8
+    },
+    {
+      "killerPlayerId": 1,
+      "kind": "takedown",
+      "structureKind": null,
+      "t": 495.25,
+      "team": null,
+      "victimPlayerId": 9
+    },
+    {
+      "killerPlayerId": 6,
+      "kind": "takedown",
+      "structureKind": null,
+      "t": 501.1875,
+      "team": null,
+      "victimPlayerId": 3
+    },
+    {
+      "killerPlayerId": 1,
+      "kind": "takedown",
+      "structureKind": null,
+      "t": 503.6875,
+      "team": null,
+      "victimPlayerId": 6
+    },
+    {
+      "killerPlayerId": null,
+      "kind": "camp",
+      "structureKind": null,
+      "t": 528.8125,
+      "team": null,
+      "victimPlayerId": null
+    },
+    {
+      "killerPlayerId": null,
+      "kind": "camp",
+      "structureKind": null,
+      "t": 535.625,
+      "team": null,
+      "victimPlayerId": null
+    },
+    {
+      "killerPlayerId": null,
+      "kind": "structure",
+      "structureKind": "fort",
+      "t": 556.6875,
+      "team": 1,
+      "victimPlayerId": null
+    },
+    {
+      "killerPlayerId": null,
+      "kind": "structure",
+      "structureKind": "well",
+      "t": 556.6875,
+      "team": 1,
+      "victimPlayerId": null
+    },
+    {
+      "killerPlayerId": 1,
+      "kind": "takedown",
+      "structureKind": null,
+      "t": 575.375,
+      "team": null,
+      "victimPlayerId": 8
+    },
+    {
+      "killerPlayerId": 3,
+      "kind": "takedown",
+      "structureKind": null,
+      "t": 584.0,
+      "team": null,
+      "victimPlayerId": 9
+    },
+    {
+      "killerPlayerId": 3,
+      "kind": "takedown",
+      "structureKind": null,
+      "t": 584.6875,
+      "team": null,
+      "victimPlayerId": 10
+    },
+    {
+      "killerPlayerId": 5,
+      "kind": "takedown",
+      "structureKind": null,
+      "t": 587.375,
+      "team": null,
+      "victimPlayerId": 6
+    },
+    {
+      "killerPlayerId": null,
+      "kind": "structure",
+      "structureKind": "core",
+      "t": 603.6875,
+      "team": 1,
+      "victimPlayerId": null
+    }
+  ],
   "heroes": [
     {
       "life": [

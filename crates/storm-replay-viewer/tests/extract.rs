@@ -39,7 +39,7 @@ fn all_coords_normalized() {
 fn duration_and_meta_sane() {
     let m = model();
     assert!(m.meta.duration_sec > 60.0, "durée trop courte");
-    assert_eq!(m.meta.viewer_version, 2);
+    assert_eq!(m.meta.viewer_version, 3);
     assert!(m.meta.map_size[0] > 0.0 && m.meta.map_size[1] > 0.0);
 }
 
@@ -159,6 +159,28 @@ fn structures_present_and_classified() {
             );
         }
     }
+}
+
+#[test]
+fn feed_events_sorted_nonempty() {
+    let m = model();
+    assert!(!m.events.is_empty(), "events vide");
+    assert!(
+        m.events.windows(2).all(|w| w[0].t <= w[1].t),
+        "events non triés par t croissant"
+    );
+    for e in &m.events {
+        assert!(
+            (0.0..=m.meta.duration_sec).contains(&e.t),
+            "event t hors bornes: {} (duration {})",
+            e.t,
+            m.meta.duration_sec
+        );
+    }
+    assert!(
+        m.events.iter().any(|e| e.kind == "takedown"),
+        "aucun event takedown"
+    );
 }
 
 #[test]

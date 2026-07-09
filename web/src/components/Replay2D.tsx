@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchReplay2d, mapImage, universeColor, heroIcon, initials } from "../api";
-import { sampleAt, deathsNear } from "../replay2d";
+import { sampleAt, deathsNear, type FeedEvent } from "../replay2d";
 import { advance, usePlayback } from "../usePlayback";
 import { Avatar } from "./Avatar";
 
@@ -16,6 +16,39 @@ function fmtClock(t: number): string {
   const m = Math.floor(t / 60);
   const s = Math.floor(t % 60);
   return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+const TEAM_NAME = ["Blue", "Red"];
+
+/** Libellé affiché (avec emoji) d'un event du kill-feed, résolu FRONT-side via `players[]`. */
+function feedLabel(e: FeedEvent, heroFor: (playerId: number | null) => string | null): string {
+  if (e.kind === "takedown") {
+    const killer = heroFor(e.killerPlayerId) ?? "Unknown";
+    const victim = heroFor(e.victimPlayerId) ?? "Unknown";
+    return `💀 ${killer} → ${victim}`;
+  }
+  if (e.kind === "structure") {
+    const team = e.team === 1 ? TEAM_NAME[1] : e.team === 0 ? TEAM_NAME[0] : "";
+    return `🏰 ${team} ${e.structureKind ?? "structure"}`.trim();
+  }
+  if (e.kind === "camp") return "🏕️ Camp captured";
+  return e.kind;
+}
+
+/** aria-label textuel (sans emoji) : event + timecode mm:ss. */
+function feedAriaLabel(e: FeedEvent, heroFor: (playerId: number | null) => string | null): string {
+  const time = fmtClock(e.t);
+  if (e.kind === "takedown") {
+    const killer = heroFor(e.killerPlayerId) ?? "unknown hero";
+    const victim = heroFor(e.victimPlayerId) ?? "unknown hero";
+    return `Takedown: ${killer} killed ${victim} at ${time}`;
+  }
+  if (e.kind === "structure") {
+    const team = e.team === 1 ? TEAM_NAME[1] : e.team === 0 ? TEAM_NAME[0] : "Unknown";
+    return `Structure destroyed: ${team} ${e.structureKind ?? "structure"} at ${time}`;
+  }
+  if (e.kind === "camp") return `Jungle camp captured at ${time}`;
+  return `${e.kind} at ${time}`;
 }
 
 /** Résout une valeur `var(--x)` en couleur calculée (le canvas ne comprend pas les custom properties
@@ -73,6 +106,38 @@ export function Replay2D({ id }: { id: string }) {
     if (data) for (const p of data.players) m.set(p.playerId, p);
     return m;
   }, [data]);
+
+  // Index de l'event le plus proche de (et ≤) t courant, pour le surlignage du kill-feed.
+  const highlightIdx = useMemo(() => {
+    const evs = data?.events ?? [];
+    let idx = -1;
+    for (let i = 0; i < evs.length; i++) {
+      if (evs[i].t <= t) idx = i;
+      else break;
+    }
+    return idx;
+  }, [data, t]);
+
+  const feedRowRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  useEffect(() => {
+    feedRowRefs.current[highlightIdx]?.scrollIntoView({ block: "nearest" });
+  }, [highlightIdx]);
+
+  const heroForPlayer = (playerId: number | null): string | null =>
+    playerId === null ? null : playerByPlayerId.get(playerId)?.hero ?? null;
+
+  /** Couleur d'équipe d'une ligne du kill-feed : victime pour un takedown, équipe propriétaire
+   *  pour une structure ; neutre (muted) pour un camp / cas team inconnu. */
+  const feedRowColor = (e: FeedEvent): string => {
+    if (e.kind === "takedown") {
+      const team = playerByPlayerId.get(e.victimPlayerId ?? -1)?.team;
+      return team === 1 ? teamColor[1] : team === 0 ? teamColor[0] : "var(--muted-2)";
+    }
+    if (e.kind === "structure") {
+      return e.team === 1 ? teamColor[1] : e.team === 0 ? teamColor[0] : "var(--muted-2)";
+    }
+    return "var(--muted-2)";
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -230,6 +295,47 @@ export function Replay2D({ id }: { id: string }) {
               ))}
             </div>
           ))}
+        </div>
+        <div style={{ minWidth: 200, flex: "1 1 220px", maxWidth: 280 }}>
+          <p className="cap" style={{ margin: "0 0 8px" }}>Kill feed</p>
+          <div
+            style={{
+              maxHeight: 260,
+              overflowY: "auto",
+              display: "flex",
+              flexDirection: "column",
+              gap: 2,
+            }}
+          >
+            {data.events.map((e, i) => (
+              <button
+                key={i}
+                type="button"
+                ref={(el) => { feedRowRefs.current[i] = el; }}
+                aria-label={feedAriaLabel(e, heroForPlayer)}
+                onClick={() => { pb.pause(); setT(e.t); }}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 8,
+                  textAlign: "left",
+                  fontFamily: "inherit",
+                  fontSize: 11,
+                  padding: "4px 6px",
+                  borderRadius: 6,
+                  border: "1px solid transparent",
+                  borderColor: i === highlightIdx ? feedRowColor(e) : "transparent",
+                  background: i === highlightIdx ? "var(--hairline-strong)" : "transparent",
+                  color: "inherit",
+                  cursor: "pointer",
+                }}
+              >
+                <span style={{ color: feedRowColor(e) }}>{feedLabel(e, heroForPlayer)}</span>
+                <span className="mono muted" style={{ fontSize: 10, flexShrink: 0 }}>{fmtClock(e.t)}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>

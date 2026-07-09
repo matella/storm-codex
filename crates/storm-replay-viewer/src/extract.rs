@@ -301,6 +301,54 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
     }
     structures.sort_by(|a, b| (a.team, &a.kind).cmp(&(b.team, &b.kind)));
 
+    // 10) feed unifié : réutilise deaths/structures déjà calculés (aucune passe tracker lourde en
+    //     plus) + un scan léger des SStatGameEvent{JungleCampCapture} pour les camps. `team` reste
+    //     `None` pour les takedowns — c'est le FRONT qui le dérive de `players[]` (garde ce crate
+    //     indépendant du mapping playerId→équipe).
+    let mut events: Vec<FeedEvent> = Vec::new();
+    for d in &deaths {
+        events.push(FeedEvent {
+            t: d.t,
+            kind: "takedown".to_string(),
+            team: None,
+            victim_player_id: Some(d.victim_player_id),
+            killer_player_id: d.killer_player_id,
+            structure_kind: None,
+        });
+    }
+    for s in &structures {
+        if let Some(t) = s.destroyed_at {
+            events.push(FeedEvent {
+                t,
+                kind: "structure".to_string(),
+                team: Some(s.team),
+                victim_player_id: None,
+                killer_player_id: None,
+                structure_kind: Some(s.kind.clone()),
+            });
+        }
+    }
+    for e in &tracker {
+        if event_name(e) != "SStatGameEvent" {
+            continue;
+        }
+        if e.field("m_eventName").and_then(Value::as_str_lossy).as_deref() != Some("JungleCampCapture")
+        {
+            continue;
+        }
+        let t = loop_to_sec(field_int(e, "_gameloop").unwrap_or(0));
+        events.push(FeedEvent {
+            t,
+            kind: "camp".to_string(),
+            team: None,
+            victim_player_id: None,
+            killer_player_id: None,
+            structure_kind: None,
+        });
+    }
+    events.retain(|e| e.t >= 0.0);
+    events.sort_by(|a, b| a.t.total_cmp(&b.t));
+
     Ok(ViewerModel {
         meta: Meta {
             map_name: details.title.clone(),
@@ -312,6 +360,7 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
         heroes,
         deaths,
         structures,
+        events,
         warnings: Vec::new(),
     })
 }
