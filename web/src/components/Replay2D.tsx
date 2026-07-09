@@ -96,9 +96,18 @@ function resolveColor(v: string): string {
 // pour que ses cores tombent EXACTEMENT sous les pastilles-core. Sans ancres → pleine image (fallback).
 type Anchor2 = { blue: [number, number]; red: [number, number] };
 const MAP_ANCHORS: Record<string, Anchor2> = {
-  // [xFraction, yFraction] du centre de chaque core dans /images/minimaps/<slug>.jpg (calibré par carte).
-  // Vide pour l'instant → fallback pleine image droite (lisible ; calibration fine = projet dédié).
+  // [xFraction, yFraction] du centre de chaque core (bleu, rouge) dans /images/minimaps/<slug>.jpg.
+  // Le core game vient des données ; la similitude cale l'orientation/échelle par carte. Sans entrée →
+  // fallback pleine image droite (lisible mais non calibré).
+  "cursed-hollow": { blue: [0.115, 0.6], red: [0.905, 0.365] },
 };
+
+// Override de calibration en direct (dev) : `window.__cal(slug, [bx,by], [rx,ry])` pose les ancres image
+// des cores et redessine, pour caler une carte à l'œil sans rebuild. Baké ensuite dans MAP_ANCHORS.
+let LIVE_CAL: { slug: string; blue: [number, number]; red: [number, number] } | null = null;
+function liveCalFor(slug: string): Anchor2 | undefined {
+  return LIVE_CAL && LIVE_CAL.slug === slug ? { blue: LIVE_CAL.blue, red: LIVE_CAL.red } : undefined;
+}
 
 /** Similitude (a,b,c,d,e,f pour ctx.setTransform) qui envoie les 2 points image `s` sur les 2 points
  *  canvas `d`. Rotation + échelle uniforme + translation (méthode nombre complexe vd/vs). */
@@ -235,6 +244,15 @@ export function Replay2D({ id }: { id: string }) {
     return () => { img.onload = null; img.onerror = null; };
   }, [data?.meta.mapName]);
 
+  // Hook de calibration en direct (dev) : window.__cal("<slug>", [bx,by], [rx,ry]) → redessine.
+  useEffect(() => {
+    (window as unknown as { __cal?: unknown }).__cal = (slug: string, blue: [number, number], red: [number, number]) => {
+      LIVE_CAL = { slug, blue, red };
+      bumpRedraw((n) => n + 1);
+    };
+    return () => { delete (window as unknown as { __cal?: unknown }).__cal; };
+  }, []);
+
   // US-21..24 : events + objectifs fusionnés en une seule liste de feed, triée par t — un
   // objectif (ex. vague zerg Braxis) apparaît chronologiquement parmi les takedowns/structures.
   const feedRows = useMemo((): FeedRow[] => {
@@ -348,28 +366,23 @@ export function Replay2D({ id }: { id: string }) {
 
     // Fond : minimap in-game (ou art peint en fallback), recadrée sur l'aire jouable pour caler les
     // positions, + léger voile pour que les pastilles ressortent. Sinon le dégradé du conteneur reste.
+    // Projection jeu→canvas. Carte dessinée DROITE (pleine) ; les overlays sont PROJETÉS via une
+    // similitude calée sur les 2 cores (le repère de coords du jeu est tourné/étiré vs la minimap →
+    // on tourne les pastilles, pas la carte). Défaut (pas de calibration) : identité + flip Y.
+    let project = (gx: number, gy: number): [number, number] => [gx * W, (1 - gy) * H];
     const bg = bgRef.current;
     if (bg) {
-      const iw = bg.img.naturalWidth, ih = bg.img.naturalHeight;
-      const anchors = bg.minimap ? MAP_ANCHORS[bg.slug] : undefined;
       const cores = data.structures.filter((s) => s.kind === "core");
       const blueCore = cores.find((s) => s.team === 0), redCore = cores.find((s) => s.team === 1);
-      if (anchors && blueCore && redCore) {
-        // Similitude image→canvas calée sur les 2 cores : leurs positions image (ancres) sont envoyées
-        // sur les positions canvas des pastilles-core (gx*W, (1-gy)*H). Fixe la rotation/échelle par carte.
+      const cal = bg.minimap ? (liveCalFor(bg.slug) ?? MAP_ANCHORS[bg.slug]) : undefined;
+      if (cal && blueCore && redCore) {
+        // solveSimilarity : jeu(core) → fraction image(ancre). project applique ×W/×H.
         const [a, b, c, d, e, f] = solveSimilarity(
-          [anchors.blue[0] * iw, anchors.blue[1] * ih],
-          [anchors.red[0] * iw, anchors.red[1] * ih],
-          [blueCore.x * W, (1 - blueCore.y) * H],
-          [redCore.x * W, (1 - redCore.y) * H],
+          [blueCore.x, blueCore.y], [redCore.x, redCore.y], cal.blue, cal.red,
         );
-        ctx.save();
-        ctx.setTransform(a, b, c, d, e, f);
-        ctx.drawImage(bg.img, 0, 0);
-        ctx.restore();
-      } else {
-        ctx.drawImage(bg.img, 0, 0, W, H); // pas d'ancres → pleine image (fallback non calibré)
+        project = (gx, gy) => [(a * gx + c * gy + e) * W, (b * gx + d * gy + f) * H];
       }
+      ctx.drawImage(bg.img, 0, 0, W, H); // carte droite
       ctx.fillStyle = "rgba(12,14,22,0.30)";
       ctx.fillRect(0, 0, W, H);
     }
@@ -380,7 +393,7 @@ export function Replay2D({ id }: { id: string }) {
       const neutralColor = resolveColor("var(--muted-2)");
       ctx.globalAlpha = 0.35;
       for (const ms of minionsNear(data.minions, t)) {
-        const cx = ms.x * W, cy = (1 - ms.y) * H;
+        const [cx, cy] = project(ms.x, ms.y);
         ctx.beginPath();
         ctx.arc(cx, cy, 2, 0, Math.PI * 2);
         ctx.fillStyle = ms.team === 1 ? teamColor[1] : ms.team === 0 ? teamColor[0] : neutralColor;
@@ -394,7 +407,7 @@ export function Replay2D({ id }: { id: string }) {
     // pour réduire le bruit visuel.
     for (const s of data.structures) {
       if (s.kind === "other") continue;
-      const cx = s.x * W, cy = (1 - s.y) * H;
+      const [cx, cy] = project(s.x, s.y);
       const destroyed = s.destroyedAt !== null && t >= s.destroyedAt;
       const size = s.kind === "core" ? 9 : 5;
       ctx.fillStyle = destroyed ? "#5a5d6b" : teamColor[s.team === 1 ? 1 : 0];
@@ -415,8 +428,7 @@ export function Replay2D({ id }: { id: string }) {
       if (!p) continue;
       const meta = playerByPlayerId.get(track.playerId);
       const team = meta?.team === 1 ? 1 : 0;
-      const cx = p.x * W;
-      const cy = (1 - p.y) * H; // flip Y : le monde monte (y grandit vers le haut), le canvas descend
+      const [cx, cy] = project(p.x, p.y);
 
       ctx.globalAlpha = p.alive ? 1 : 0.4;
 
@@ -511,7 +523,7 @@ export function Replay2D({ id }: { id: string }) {
     ctx.globalAlpha = 1;
 
     for (const d of deathsNear(data.deaths, t)) {
-      const cx = d.x * W, cy = (1 - d.y) * H;
+      const [cx, cy] = project(d.x, d.y);
       ctx.strokeStyle = teamColor[1];
       ctx.lineWidth = 2;
       const s = 6;
