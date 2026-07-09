@@ -306,7 +306,7 @@ export function MatchDetail() {
           {m.picks && [0, 1].map((t) => (
             <div key={t} className="row">
               <span className={t === 0 ? "tm-blue" : "tm-red"} style={{ minWidth: 70, fontSize: 11 }}>
-                équipe {t === 0 ? "bleue" : "rouge"}{m.picks.first === t && <span className="bdg b-mvp" style={{ marginLeft: 5 }}>1st pick</span>}
+                {t === 0 ? "Blue team" : "Red team"}{m.picks.first === t && <span className="bdg b-mvp" style={{ marginLeft: 5 }}>1st pick</span>}
               </span>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {(m.picks[t] ?? []).map((h: string, i: number) => (
@@ -367,7 +367,7 @@ export function MatchDetail() {
         <div className="row">
           <span className="muted">Winner</span>
           <span style={{ marginLeft: "auto" }} className={m.winner === 0 ? "tm-blue" : "tm-red"}>
-            équipe {m.winner === 0 ? "bleue" : "rouge"}
+            {m.winner === 0 ? "Blue team" : "Red team"}
           </span>
         </div>
         <div className="row">
