@@ -154,9 +154,14 @@ export function Replay2D({ id }: { id: string }) {
   // pb.toggle/onTick forcerait à faire connaître clipEnd au hook de lecture générale pour rien
   // (un enregistrement est un mode ponctuel, pas un mode de lecture permanent).
   const exportRafRef = useRef<number | null>(null);
+  // Handle du recorder actif : à l'unmount pendant un enregistrement, il faut appeler stop() —
+  // sinon le MediaRecorder n'est jamais arrêté (pas de timeslice → aucun chunk n'est flush, onstop
+  // ne se déclenche pas) et la promesse d'export reste pendante à jamais.
+  const recorderRef = useRef<{ stop: () => Promise<Blob> } | null>(null);
   useEffect(() => {
     return () => {
       if (exportRafRef.current != null) cancelAnimationFrame(exportRafRef.current);
+      recorderRef.current?.stop().catch(() => {}); // libère le recorder ; Blob ignoré (composant démonté)
     };
   }, []);
 
@@ -255,6 +260,7 @@ export function Replay2D({ id }: { id: string }) {
     setRecording(true);
     try {
       const recorder = recordCanvasStream(canvas, 30);
+      recorderRef.current = recorder; // exposé au cleanup d'unmount pour libérer le recorder
       setT(clipStart);
       tRef.current = clipStart;
       await new Promise<void>((resolve) => {
@@ -279,6 +285,7 @@ export function Replay2D({ id }: { id: string }) {
       const blob = await recorder.stop();
       downloadBlob(blob, `replay-${id}-${Math.round(clipStart)}-${Math.round(clipEnd)}.webm`);
     } finally {
+      recorderRef.current = null; // recorder déjà arrêté (ou en échec) → plus rien à libérer à l'unmount
       setRecording(false);
     }
   };

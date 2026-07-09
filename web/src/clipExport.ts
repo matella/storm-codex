@@ -43,9 +43,15 @@ export function recordCanvasStream(canvas: HTMLCanvasElement, fps = 30): { stop:
   recorder.start();
 
   const stop = (): Promise<Blob> =>
-    new Promise((resolve) => {
+    new Promise((resolve, reject) => {
+      // Une erreur d'encodage doit rejeter (le caller re-active l'UI via son finally) plutôt que de
+      // télécharger un fichier corrompu silencieusement.
+      recorder.onerror = (e: Event) => reject((e as Event & { error?: DOMException }).error ?? new Error("MediaRecorder error"));
       recorder.onstop = () => {
-        resolve(new Blob(chunks, { type: mimeType ?? "video/webm" }));
+        // Type RÉEL négocié par le recorder (pas notre candidat) : si aucun candidat n'était
+        // supporté, le navigateur a choisi son conteneur par défaut — l'étiquette du Blob doit
+        // correspondre aux octets réels du fichier téléchargé.
+        resolve(new Blob(chunks, { type: recorder.mimeType || "video/webm" }));
       };
       recorder.stop();
     });
