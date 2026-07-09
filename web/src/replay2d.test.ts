@@ -6,6 +6,7 @@ const h: HeroTrack = {
   samples: [ {t:0,x:0,y:0,exact:true}, {t:10,x:1,y:1,exact:false} ],
   life: [ {from:0,to:6}, {from:8,to:10} ],
   casts: [],
+  talents: [],
 };
 
 describe("sampleAt", () => {

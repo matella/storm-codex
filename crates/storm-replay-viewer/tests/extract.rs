@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use storm_replay::Replay;
-use storm_replay_viewer::build_model;
+use storm_replay_viewer::{build_model, LevelTick};
 
 fn model() -> storm_replay_viewer::ViewerModel {
     let replay = Replay::open("tests/data/silver-city-aram.StormReplay").expect("open");
@@ -39,7 +39,7 @@ fn all_coords_normalized() {
 fn duration_and_meta_sane() {
     let m = model();
     assert!(m.meta.duration_sec > 60.0, "durée trop courte");
-    assert_eq!(m.meta.viewer_version, 4);
+    assert_eq!(m.meta.viewer_version, 5);
     assert!(m.meta.map_size[0] > 0.0 && m.meta.map_size[1] > 0.0);
 }
 
@@ -204,6 +204,57 @@ fn casts_present() {
             h.casts.windows(2).all(|w| w[0] <= w[1]),
             "player {} : casts non triés",
             h.player_id
+        );
+    }
+}
+
+// US-19 : indicateurs de talent/niveau. On ne vérifie pas les VALEURS de talent_id (V1 =
+// référentiel-free, toujours None) mais la FORME : au moins un héros avec des picks (tier
+// strictement croissant), et des levels non vides avec le niveau non-décroissant par équipe.
+#[test]
+fn talents_and_levels() {
+    let m = model();
+
+    assert!(
+        m.heroes.iter().any(|h| !h.talents.is_empty()),
+        "aucun héros avec des talents extraits"
+    );
+    for h in &m.heroes {
+        for tp in &h.talents {
+            assert!(
+                (0.0..=m.meta.duration_sec).contains(&tp.t),
+                "player {} : talent hors bornes t={} (duration {})",
+                h.player_id,
+                tp.t,
+                m.meta.duration_sec
+            );
+        }
+        assert!(
+            h.talents.windows(2).all(|w| w[0].tier < w[1].tier),
+            "player {} : tiers non strictement croissants: {:?}",
+            h.player_id,
+            h.talents.iter().map(|t| t.tier).collect::<Vec<_>>()
+        );
+    }
+
+    assert!(!m.levels.is_empty(), "levels vide");
+    for lt in &m.levels {
+        assert!(
+            (0.0..=m.meta.duration_sec).contains(&lt.t),
+            "level hors bornes t={} (duration {})",
+            lt.t,
+            m.meta.duration_sec
+        );
+        assert!((0..=1).contains(&lt.team), "team hors {{0,1}}: {}", lt.team);
+    }
+    // Non-décroissant par équipe, une fois trié/groupé par équipe puis t.
+    for team in [0i64, 1i64] {
+        let mut lv: Vec<&LevelTick> = m.levels.iter().filter(|l| l.team == team).collect();
+        lv.sort_by(|a, b| a.t.total_cmp(&b.t));
+        assert!(
+            lv.windows(2).all(|w| w[0].level <= w[1].level),
+            "team {team} : levels non non-décroissants: {:?}",
+            lv.iter().map(|l| l.level).collect::<Vec<_>>()
         );
     }
 }

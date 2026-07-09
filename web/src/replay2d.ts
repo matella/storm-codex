@@ -3,7 +3,10 @@
 
 export interface Sample { t: number; x: number; y: number; exact: boolean }
 export interface Interval { from: number; to: number }
-export interface HeroTrack { playerId: number; samples: Sample[]; life: Interval[]; casts: number[] }
+// US-19 : un pick de talent (tier = ordre de pick, 1-based). `talentId` reste `null` côté crate
+// (référentiel-free) — résolu best-effort côté front via match_players.talents + dim_talents.
+export interface TalentPick { t: number; tier: number; talentId: string | null }
+export interface HeroTrack { playerId: number; samples: Sample[]; life: Interval[]; casts: number[]; talents: TalentPick[] }
 export interface PlayerMeta { playerId: number; name: string | null; hero: string | null; team: number | null; win: boolean | null }
 export interface Death { t: number; x: number; y: number; victimPlayerId: number; killerPlayerId: number | null }
 export interface Structure { team: number; kind: string; x: number; y: number; destroyedAt: number | null }
@@ -15,9 +18,11 @@ export interface FeedEvent {
   killerPlayerId: number | null;
   structureKind: string | null;
 }
+// US-19 : passage de niveau d'équipe (ARAM = XP partagée, toute l'équipe monte ensemble).
+export interface LevelTick { t: number; team: number; level: number }
 export interface Replay2D {
   meta: { mapName: string; mapSize: [number, number]; durationSec: number; loopOffset: number; viewerVersion: number };
-  players: PlayerMeta[]; heroes: HeroTrack[]; deaths: Death[]; structures: Structure[]; events: FeedEvent[]; warnings: string[];
+  players: PlayerMeta[]; heroes: HeroTrack[]; deaths: Death[]; structures: Structure[]; events: FeedEvent[]; levels: LevelTick[]; warnings: string[];
 }
 
 const aliveAt = (life: Interval[], t: number) => life.some((iv) => t >= iv.from && t <= iv.to);

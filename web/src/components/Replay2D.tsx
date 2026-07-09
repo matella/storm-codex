@@ -3,10 +3,14 @@
 // replay2d.ts). Play/pause + vitesse animent `t` en temps réel via usePlayback (US-11).
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { fetchReplay2d, mapImage, universeColor, heroIcon, initials } from "../api";
+import { fetchReplay2d, fetchMatch, mapImage, universeColor, heroIcon, initials, useDimTalents, talentInfo } from "../api";
 import { sampleAt, deathsNear, castFlash, type FeedEvent } from "../replay2d";
 import { advance, usePlayback } from "../usePlayback";
 import { Avatar } from "./Avatar";
+import { TalentStrip2D } from "./TalentStrip2D";
+
+// US-19 : un pick de talent reste "récent" (badge sur le portrait) pendant cette fenêtre après t.
+const TALENT_MARKER_WINDOW_SEC = 3;
 
 const CANVAS_SIZE = 640;
 const HERO_R = 10;
@@ -79,6 +83,30 @@ export function Replay2D({ id }: { id: string }) {
     queryFn: () => fetchReplay2d(id),
     staleTime: Infinity, // replay décodé d'un match fini = immuable (comme dim-heroes/dim-talents)
   });
+  // US-27 : résolution best-effort des NOMS de talent pour la bande (US-19/US-27) — la
+  // visionneuse elle-même (positions/casts/morts) ne dépend d'AUCUN de ces deux appels ; s'ils
+  // échouent ou sont vides, la bande retombe sur "Tier N" (cf. TalentStrip2D). Même queryKey que
+  // MatchDetail (["match", id]) → réutilise le cache/la requête en vol, pas de double fetch.
+  useDimTalents();
+  const { data: matchData } = useQuery({
+    queryKey: ["match", id],
+    queryFn: () => fetchMatch(id),
+    staleTime: Infinity,
+  });
+  const talentsByHero = useMemo(() => {
+    const m = new Map<string, Record<string, string>>();
+    const players = matchData?.players;
+    if (players)
+      for (const p of Object.values(players) as any[]) {
+        if (p?.hero && p?.talents) m.set(p.hero, p.talents as Record<string, string>);
+      }
+    return m;
+  }, [matchData]);
+  const talentNameFor = (hero: string | null, tier: number): string | null => {
+    if (!hero) return null;
+    const treeId = talentsByHero.get(hero)?.[`Tier${tier}Choice`];
+    return treeId ? talentInfo(treeId)?.name ?? null : null;
+  };
   const [t, setT] = useState(0);
   const [mapBroken, setMapBroken] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -251,6 +279,25 @@ export function Replay2D({ id }: { id: string }) {
         ctx.moveTo(cx + s, cy - s); ctx.lineTo(cx - s, cy + s);
         ctx.stroke();
       }
+
+      // US-19 : badge de pick de talent récent (fenêtre fixe, pas de fondu — juste "un pick a eu
+      // lieu près de maintenant"). Timing du pick = le contrat ; le nom est résolu à part (bande).
+      const recentTalent = track.talents.find((tp) => Math.abs(t - tp.t) <= TALENT_MARKER_WINDOW_SEC);
+      if (recentTalent) {
+        const bx = cx + HERO_R + 2, by = cy - HERO_R - 2;
+        ctx.beginPath();
+        ctx.arc(bx, by, 6, 0, Math.PI * 2);
+        ctx.fillStyle = "#f5c542";
+        ctx.fill();
+        ctx.strokeStyle = "#1a1500";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.fillStyle = "#1a1500";
+        ctx.font = "bold 8px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("↑", bx, by + 0.5);
+      }
     }
     ctx.globalAlpha = 1;
 
@@ -395,6 +442,13 @@ export function Replay2D({ id }: { id: string }) {
           {fmtClock(t)} / {fmtClock(duration)}
         </span>
       </div>
+      <TalentStrip2D
+        heroes={data.heroes}
+        players={data.players}
+        levels={data.levels}
+        t={t}
+        talentNameFor={talentNameFor}
+      />
     </div>
   );
 }

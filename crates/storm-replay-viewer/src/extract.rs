@@ -85,12 +85,25 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
     // aptitude (m_abilLink) — juste « un cast a eu lieu » ; c'est pourquoi cette collecte vit
     // dans la MÊME passe que la densification de commandes plutôt qu'une passe dédiée.
     let mut cast_times: HashMap<i64, Vec<f64>> = HashMap::new();
+    // US-19 : picks de talent — SHeroTalentTreeSelectedEvent, une par pick, ordre d'arrivée =
+    // ordre de tier (1, 2, 3…). Repliée dans CETTE passe (pas de passe game-events dédiée) ;
+    // on stocke juste `t`, le tier (index+1) est assigné après tri.
+    let mut talent_times: HashMap<i64, Vec<f64>> = HashMap::new();
     replay.visit_game_events(|ev: Value| {
         let uid = ev
             .field("_userid")
             .and_then(|u| u.field("m_userId"))
             .and_then(Value::as_int);
         let p = uid.and_then(|u| user_to_player.get(&u).copied());
+
+        if event_name(&ev) == "SHeroTalentTreeSelectedEvent" {
+            if let Some(p) = p {
+                let t = loop_to_sec(field_int(&ev, "_gameloop").unwrap_or(0));
+                if t >= 0.0 {
+                    talent_times.entry(p).or_default().push(t);
+                }
+            }
+        }
 
         // Cast d'aptitude : m_abil présent et non nul. Vérifié AVANT le early-return sur
         // TargetPoint ci-dessous — un même SCmdEvent peut porter m_abil ET m_data.TargetPoint,
@@ -144,6 +157,24 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
         *v = kept;
     }
 
+    // Talents : tri par t croissant, tier = ordre de pick (1-based). talent_id reste None (V1 —
+    // référentiel-free, cf. doc du champ dans model.rs).
+    let mut talents: HashMap<i64, Vec<TalentPick>> = HashMap::new();
+    for (p, mut ts) in talent_times {
+        ts.sort_by(|a, b| a.total_cmp(b));
+        talents.insert(
+            p,
+            ts.into_iter()
+                .enumerate()
+                .map(|(i, t)| TalentPick {
+                    t,
+                    tier: i as i64 + 1,
+                    talent_id: None,
+                })
+                .collect(),
+        );
+    }
+
     // 5) fusion samples (exacts + commande), tri par t croissant, dédup des points
     //    quasi-immobiles (delta < EPS depuis le dernier retenu, même exact), clamp [0,1].
     let mut player_ids: Vec<i64> = unit_player
@@ -184,6 +215,7 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
             samples: deduped,
             life: Vec::new(), // rempli ci-dessous
             casts: cast_times.remove(p).unwrap_or_default(),
+            talents: talents.remove(p).unwrap_or_default(),
         });
     }
 
@@ -390,6 +422,66 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
     events.retain(|e| e.t >= 0.0);
     events.sort_by(|a, b| a.t.total_cmp(&b.t));
 
+    // 11) levels : SStatGameEvent{LevelUp}.m_intData = [{PlayerID}, {Level}] → playerId→équipe
+    // via le même croisement que player_toons (SPlayerSetupEvent.m_slotId × details.players
+    // .working_set_slot_id → team_id), PAS l'hypothèse « 1..5/6..10 » (vraie sur ce corpus mais
+    // non garantie par le format). ARAM = XP d'équipe partagée : ~5 SStatGameEvent quasi
+    // simultanés par level-up d'équipe → dédupliqués en un seul LevelTick (team, level) à la
+    // t la plus tôt.
+    let mut slot_to_team: HashMap<i64, i64> = HashMap::new();
+    for p in &details.players {
+        if let Some(slot) = p.working_set_slot_id {
+            slot_to_team.insert(slot, p.team_id);
+        }
+    }
+    let mut player_team: HashMap<i64, i64> = HashMap::new();
+    for e in &tracker {
+        if event_name(e) != "SPlayerSetupEvent" {
+            continue;
+        }
+        let (Some(pid), Some(slot)) = (field_int(e, "m_playerId"), field_int(e, "m_slotId")) else {
+            continue;
+        };
+        if let Some(&team) = slot_to_team.get(&slot) {
+            player_team.insert(pid, team);
+        }
+    }
+
+    let mut level_first_t: HashMap<(i64, i64), f64> = HashMap::new(); // (team, level) → t la plus tôt
+    for e in &tracker {
+        if event_name(e) != "SStatGameEvent" {
+            continue;
+        }
+        if e.field("m_eventName").and_then(Value::as_str_lossy).as_deref() != Some("LevelUp") {
+            continue;
+        }
+        let (Some(pid), Some(level)) = (int_data_int(e, "PlayerID"), int_data_int(e, "Level")) else {
+            continue;
+        };
+        let Some(&team) = player_team.get(&pid) else {
+            continue;
+        };
+        let t = loop_to_sec(field_int(e, "_gameloop").unwrap_or(0));
+        level_first_t
+            .entry((team, level))
+            .and_modify(|cur| {
+                if t < *cur {
+                    *cur = t;
+                }
+            })
+            .or_insert(t);
+    }
+    let mut levels: Vec<LevelTick> = level_first_t
+        .into_iter()
+        .filter(|&((_, _), t)| t >= 0.0)
+        .map(|((team, level), t)| LevelTick { t, team, level })
+        .collect();
+    // Tri déterministe : `level_first_t` vient d'un HashMap (ordre d'itération randomisé par
+    // process) — deux entrées à t strictement égal (même gameloop, équipes/niveaux différents)
+    // doivent avoir un ordre STABLE d'un run à l'autre (golden JSON compare l'ordre des tableaux).
+    // Départage par (team, level) après t.
+    levels.sort_by(|a, b| a.t.total_cmp(&b.t).then(a.team.cmp(&b.team)).then(a.level.cmp(&b.level)));
+
     Ok(ViewerModel {
         meta: Meta {
             map_name: details.title.clone(),
@@ -402,6 +494,7 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
         deaths,
         structures,
         events,
+        levels,
         warnings: Vec::new(),
     })
 }
@@ -420,6 +513,18 @@ fn field_int(e: &Value, k: &str) -> Option<i64> {
 fn fixed_data_int(e: &Value, key: &str) -> Option<i64> {
     let fixed = e.field("m_fixedData").and_then(Value::as_array)?;
     for kv in fixed {
+        if kv.field("m_key").and_then(Value::as_str_lossy).as_deref() == Some(key) {
+            return kv.field("m_value").and_then(Value::as_int);
+        }
+    }
+    None
+}
+
+// Valeur d'un SStatGameEvent.m_intData par clé (même schéma key/value que fixed_data_int, mais
+// m_value est un entier brut — pas fixed-point). Utilisé pour LevelUp (PlayerID/Level).
+fn int_data_int(e: &Value, key: &str) -> Option<i64> {
+    let data = e.field("m_intData").and_then(Value::as_array)?;
+    for kv in data {
         if kv.field("m_key").and_then(Value::as_str_lossy).as_deref() == Some(key) {
             return kv.field("m_value").and_then(Value::as_int);
         }

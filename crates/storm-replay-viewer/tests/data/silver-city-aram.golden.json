@@ -7250,6 +7250,38 @@
           "x": 0.814,
           "y": 0.481
         }
+      ],
+      "talents": [
+        {
+          "t": 46.125,
+          "talentId": null,
+          "tier": 1
+        },
+        {
+          "t": 151.875,
+          "talentId": null,
+          "tier": 2
+        },
+        {
+          "t": 274.875,
+          "talentId": null,
+          "tier": 3
+        },
+        {
+          "t": 373.6875,
+          "talentId": null,
+          "tier": 4
+        },
+        {
+          "t": 435.25,
+          "talentId": null,
+          "tier": 5
+        },
+        {
+          "t": 565.3125,
+          "talentId": null,
+          "tier": 6
+        }
       ]
     },
     {
@@ -17143,6 +17175,38 @@
           "x": 0.814,
           "y": 0.484
         }
+      ],
+      "talents": [
+        {
+          "t": 15.125,
+          "talentId": null,
+          "tier": 1
+        },
+        {
+          "t": 158.1875,
+          "talentId": null,
+          "tier": 2
+        },
+        {
+          "t": 244.125,
+          "talentId": null,
+          "tier": 3
+        },
+        {
+          "t": 365.5,
+          "talentId": null,
+          "tier": 4
+        },
+        {
+          "t": 435.0,
+          "talentId": null,
+          "tier": 5
+        },
+        {
+          "t": 579.3125,
+          "talentId": null,
+          "tier": 6
+        }
       ]
     },
     {
@@ -22084,6 +22148,38 @@
           "x": 0.794,
           "y": 0.491
         }
+      ],
+      "talents": [
+        {
+          "t": 5.25,
+          "talentId": null,
+          "tier": 1
+        },
+        {
+          "t": 147.875,
+          "talentId": null,
+          "tier": 2
+        },
+        {
+          "t": 244.3125,
+          "talentId": null,
+          "tier": 3
+        },
+        {
+          "t": 363.8125,
+          "talentId": null,
+          "tier": 4
+        },
+        {
+          "t": 431.9375,
+          "talentId": null,
+          "tier": 5
+        },
+        {
+          "t": 557.125,
+          "talentId": null,
+          "tier": 6
+        }
       ]
     },
     {
@@ -25855,6 +25951,38 @@
           "t": 601.75,
           "x": 0.805,
           "y": 0.464
+        }
+      ],
+      "talents": [
+        {
+          "t": 30.5625,
+          "talentId": null,
+          "tier": 1
+        },
+        {
+          "t": 150.3125,
+          "talentId": null,
+          "tier": 2
+        },
+        {
+          "t": 249.875,
+          "talentId": null,
+          "tier": 3
+        },
+        {
+          "t": 365.4375,
+          "talentId": null,
+          "tier": 4
+        },
+        {
+          "t": 434.5,
+          "talentId": null,
+          "tier": 5
+        },
+        {
+          "t": 559.4375,
+          "talentId": null,
+          "tier": 6
         }
       ]
     },
@@ -32559,6 +32687,38 @@
           "t": 603.875,
           "x": 0.814,
           "y": 0.485
+        }
+      ],
+      "talents": [
+        {
+          "t": 41.8125,
+          "talentId": null,
+          "tier": 1
+        },
+        {
+          "t": 150.5625,
+          "talentId": null,
+          "tier": 2
+        },
+        {
+          "t": 243.75,
+          "talentId": null,
+          "tier": 3
+        },
+        {
+          "t": 367.4375,
+          "talentId": null,
+          "tier": 4
+        },
+        {
+          "t": 439.625,
+          "talentId": null,
+          "tier": 5
+        },
+        {
+          "t": 562.875,
+          "talentId": null,
+          "tier": 6
         }
       ]
     },
@@ -39424,6 +39584,33 @@
           "x": 0.835,
           "y": 0.464
         }
+      ],
+      "talents": [
+        {
+          "t": 25.6875,
+          "talentId": null,
+          "tier": 1
+        },
+        {
+          "t": 153.4375,
+          "talentId": null,
+          "tier": 2
+        },
+        {
+          "t": 244.75,
+          "talentId": null,
+          "tier": 3
+        },
+        {
+          "t": 352.75,
+          "talentId": null,
+          "tier": 4
+        },
+        {
+          "t": 514.6875,
+          "talentId": null,
+          "tier": 5
+        }
       ]
     },
     {
@@ -43039,6 +43226,33 @@
           "t": 591.875,
           "x": 0.859,
           "y": 0.556
+        }
+      ],
+      "talents": [
+        {
+          "t": 38.9375,
+          "talentId": null,
+          "tier": 1
+        },
+        {
+          "t": 153.5,
+          "talentId": null,
+          "tier": 2
+        },
+        {
+          "t": 240.875,
+          "talentId": null,
+          "tier": 3
+        },
+        {
+          "t": 351.5,
+          "talentId": null,
+          "tier": 4
+        },
+        {
+          "t": 505.125,
+          "talentId": null,
+          "tier": 5
         }
       ]
     },
@@ -50080,6 +50294,33 @@
           "x": 0.847,
           "y": 0.5
         }
+      ],
+      "talents": [
+        {
+          "t": 35.25,
+          "talentId": null,
+          "tier": 1
+        },
+        {
+          "t": 176.5,
+          "talentId": null,
+          "tier": 2
+        },
+        {
+          "t": 247.875,
+          "talentId": null,
+          "tier": 3
+        },
+        {
+          "t": 355.0625,
+          "talentId": null,
+          "tier": 4
+        },
+        {
+          "t": 504.8125,
+          "talentId": null,
+          "tier": 5
+        }
       ]
     },
     {
@@ -55210,6 +55451,33 @@
           "t": 583.8125,
           "x": 0.845,
           "y": 0.511
+        }
+      ],
+      "talents": [
+        {
+          "t": 11.875,
+          "talentId": null,
+          "tier": 1
+        },
+        {
+          "t": 158.875,
+          "talentId": null,
+          "tier": 2
+        },
+        {
+          "t": 257.5625,
+          "talentId": null,
+          "tier": 3
+        },
+        {
+          "t": 358.3125,
+          "talentId": null,
+          "tier": 4
+        },
+        {
+          "t": 511.1875,
+          "talentId": null,
+          "tier": 5
         }
       ]
     },
@@ -65176,7 +65444,191 @@
           "x": 0.845,
           "y": 0.508
         }
+      ],
+      "talents": [
+        {
+          "t": 10.4375,
+          "talentId": null,
+          "tier": 1
+        },
+        {
+          "t": 155.8125,
+          "talentId": null,
+          "tier": 2
+        },
+        {
+          "t": 241.125,
+          "talentId": null,
+          "tier": 3
+        },
+        {
+          "t": 352.5,
+          "talentId": null,
+          "tier": 4
+        },
+        {
+          "t": 509.75,
+          "talentId": null,
+          "tier": 5
+        }
       ]
+    }
+  ],
+  "levels": [
+    {
+      "level": 1,
+      "t": 2.375,
+      "team": 0
+    },
+    {
+      "level": 1,
+      "t": 2.375,
+      "team": 1
+    },
+    {
+      "level": 2,
+      "t": 82.125,
+      "team": 0
+    },
+    {
+      "level": 2,
+      "t": 91.9375,
+      "team": 1
+    },
+    {
+      "level": 3,
+      "t": 107.9375,
+      "team": 0
+    },
+    {
+      "level": 3,
+      "t": 126.8125,
+      "team": 1
+    },
+    {
+      "level": 4,
+      "t": 143.9375,
+      "team": 0
+    },
+    {
+      "level": 4,
+      "t": 149.375,
+      "team": 1
+    },
+    {
+      "level": 5,
+      "t": 169.0625,
+      "team": 0
+    },
+    {
+      "level": 5,
+      "t": 182.9375,
+      "team": 1
+    },
+    {
+      "level": 6,
+      "t": 191.9375,
+      "team": 0
+    },
+    {
+      "level": 6,
+      "t": 202.6875,
+      "team": 1
+    },
+    {
+      "level": 7,
+      "t": 238.5,
+      "team": 1
+    },
+    {
+      "level": 7,
+      "t": 242.5,
+      "team": 0
+    },
+    {
+      "level": 8,
+      "t": 282.6875,
+      "team": 1
+    },
+    {
+      "level": 8,
+      "t": 283.9375,
+      "team": 0
+    },
+    {
+      "level": 9,
+      "t": 316.0625,
+      "team": 0
+    },
+    {
+      "level": 9,
+      "t": 318.9375,
+      "team": 1
+    },
+    {
+      "level": 10,
+      "t": 349.4375,
+      "team": 1
+    },
+    {
+      "level": 10,
+      "t": 362.0,
+      "team": 0
+    },
+    {
+      "level": 11,
+      "t": 379.125,
+      "team": 0
+    },
+    {
+      "level": 12,
+      "t": 393.3125,
+      "team": 0
+    },
+    {
+      "level": 11,
+      "t": 408.375,
+      "team": 1
+    },
+    {
+      "level": 13,
+      "t": 429.9375,
+      "team": 0
+    },
+    {
+      "level": 12,
+      "t": 453.25,
+      "team": 1
+    },
+    {
+      "level": 14,
+      "t": 472.9375,
+      "team": 0
+    },
+    {
+      "level": 13,
+      "t": 501.25,
+      "team": 1
+    },
+    {
+      "level": 15,
+      "t": 505.9375,
+      "team": 0
+    },
+    {
+      "level": 14,
+      "t": 548.9375,
+      "team": 1
+    },
+    {
+      "level": 16,
+      "t": 554.9375,
+      "team": 0
+    },
+    {
+      "level": 17,
+      "t": 584.75,
+      "team": 0
     }
   ],
   "meta": {

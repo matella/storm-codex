@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-pub const VIEWER_VERSION: u32 = 4;
+pub const VIEWER_VERSION: u32 = 5;
 pub const LOOP_OFFSET: i64 = 610;
 pub const LOOPS_PER_SEC: f64 = 16.0;
 pub const FIXED: f64 = 4096.0;
@@ -13,6 +13,7 @@ pub struct ViewerModel {
     pub deaths: Vec<Death>,
     pub structures: Vec<Structure>,
     pub events: Vec<FeedEvent>,
+    pub levels: Vec<LevelTick>,
     pub warnings: Vec<String>,
 }
 
@@ -33,6 +34,26 @@ pub struct HeroTrack {
     pub samples: Vec<Sample>,
     pub life: Vec<Interval>,
     pub casts: Vec<f64>, // instants (sec) de cast d'aptitude, triés, dédupliqués temporellement
+    pub talents: Vec<TalentPick>, // picks de talent, triés par t croissant (tier = ordre de pick)
+}
+
+// US-19 : un pick de talent. `talent_id` reste `None` en V1 — ce crate est référentiel-free (le
+// nom se résout côté front via dim_talents, à partir de match_players.talents).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TalentPick {
+    pub t: f64,
+    pub tier: i64, // 1-based, ordre de pick (pas le niveau du tier HotS)
+    pub talent_id: Option<String>,
+}
+
+// US-19 : un passage de niveau d'équipe (ARAM = XP partagée → toute l'équipe monte ensemble).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LevelTick {
+    pub t: f64,
+    pub team: i64, // 0 = bleu, 1 = rouge
+    pub level: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
