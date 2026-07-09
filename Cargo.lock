@@ -2019,6 +2019,7 @@ dependencies = [
  "sha2",
  "sqlx",
  "storm-replay",
+ "storm-replay-viewer",
  "storm-stats",
  "tar",
  "thiserror",

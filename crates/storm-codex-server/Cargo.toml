@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 storm-replay = { path = "../storm-replay" }
+storm-replay-viewer = { path = "../storm-replay-viewer" }
 storm-stats = { path = "../storm-stats" }
 axum = { version = "0.8", features = ["ws", "macros"] }
 tokio = { version = "1", features = ["full"] }

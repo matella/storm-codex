@@ -11,6 +11,7 @@ mod manage;
 pub mod project;
 mod raw;
 mod read;
+mod replay2d;
 mod upload;
 mod ws;
 
@@ -137,6 +138,7 @@ async fn run() -> Result<(), String> {
         .route("/api/matches", get(read::list_matches))
         .route("/api/matches/{id}", get(read::get_match))
         .route("/api/matches/{id}/raw", get(raw::get_raw))
+        .route("/api/matches/{id}/replay2d", get(replay2d::get_replay2d))
         .route("/api/players/{toon}", get(read::get_player))
         .route("/api/heroes", get(read::list_heroes))
         .route("/api/hero/{hero}", get(read::hero_detail))

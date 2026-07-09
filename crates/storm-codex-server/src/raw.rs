@@ -86,18 +86,19 @@ pub async fn get_raw(
     json_response(bytes)
 }
 
-fn json_response(bytes: Vec<u8>) -> Response {
+/// Réutilisé par `replay2d.rs` (même pattern cache-disque LRU + réponse JSON).
+pub(crate) fn json_response(bytes: Vec<u8>) -> Response {
     ([(header::CONTENT_TYPE, "application/json")], bytes).into_response()
 }
 
-fn filetime_now(path: &std::path::Path) -> std::io::Result<()> {
+pub(crate) fn filetime_now(path: &std::path::Path) -> std::io::Result<()> {
     // « touch » : réécrit l'heure d'accès/modif pour le classement LRU
     let f = std::fs::OpenOptions::new().append(true).open(path)?;
     f.set_modified(std::time::SystemTime::now())
 }
 
 /// Éviction LRU : tant que la somme des tailles dépasse `max`, supprime le plus ancien (mtime).
-async fn enforce_lru(dir: &std::path::Path, max: u64) {
+pub(crate) async fn enforce_lru(dir: &std::path::Path, max: u64) {
     let dir = dir.to_path_buf();
     let _ = tokio::task::spawn_blocking(move || {
         let mut files: Vec<(std::path::PathBuf, u64, std::time::SystemTime)> =
