@@ -1,6 +1,6 @@
 # STATUS — lire d'abord, mettre à jour en dernier
 
-## Visionneuse 2D de replay — MVP-1 : code livré + smoke local OK, calage box en attente (2026-07-09)
+## Visionneuse 2D de replay — MVP-1 : livré + VÉRIFIÉ (calage confirmé) + mergé sur main (2026-07-09)
 Nouvelle feature (hors jalons 0→6) : onglet **« Replay 2D »** dans le détail de match — rejoue les
 positions des héros sur la minimap avec scrub à seek instantané (état vivant/mort + marqueurs de
 mort ; **pas d'HP/mana** — donnée absente du replay ; pas d'animation play/pause). Branche
@@ -21,10 +21,17 @@ mort ; **pas d'HP/mana** — donnée absente du replay ; pas d'animation play/pa
   toutes ∈ [0,1], cache écrit). Front : onglet rend 10 pastilles colorées par équipe + légende noms
   réels, **scrub repositionne les héros**, **0 requête réseau par seek** (seek 100 % client prouvé),
   fallback dégradé sur carte sans image OK, aucune erreur console.
-- **Reste (calage box)** : la smoke ne pouvait pas juger le **calage carte-relatif** (Silver City ARAM
-  n'a pas d'image ; HotsPatchNotes non branché en local → portraits en initiales). → Runbook
-  `docs/runbooks/2026-07-09-visionneuse-2d-verif-box.md` : vérifier sur le box un match d'une **carte
-  imagée** (orientation/flip-Y/recadrage + portraits réels), puis finaliser la branche.
+- **Calage vérifié (2026-07-09)** sur une **carte imagée** — approche read-only (aucune modif du box) :
+  1 replay Cursed Hollow + les 15 images de cartes tirés du box (`docker cp` → `/tmp` → scp/rsync,
+  nettoyés), rejoués dans un serveur local. Résultat : **fond = vraie image Cursed Hollow**, 10 héros
+  **bien placés et séparés par équipe** (bleu à gauche / rouge à droite au spawn, cohérent avec la
+  géométrie de la carte), **orientation/flip-Y correcte — aucune correction nécessaire**, scrub anime
+  les positions de façon plausible (teamfights, solo-lane Dehaka en bas…), 0 erreur console. Portraits
+  en initiales seulement parce que `dim_heroes` n'est pas répliqué en local (pas de HotsPatchNotes) —
+  sur le box il l'est → portraits réels. **Feature mergée sur `main`** (merge `feat/replay2d`).
+- **Reste (opérateur, optionnel)** : déployer sur le box (rsync + `docker compose up -d --build`,
+  `--exclude .env`) pour l'avoir en live ; c'est le seul « reste ». Runbook toujours valable :
+  `docs/runbooks/2026-07-09-visionneuse-2d-verif-box.md`.
 
 ## Où on en est (2026-06-12)
 - **Recherche terminée** : anatomie SotS + hots-parser, verdicts dépendances, comparatif moteurs,
