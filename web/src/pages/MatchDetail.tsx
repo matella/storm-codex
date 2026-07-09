@@ -288,7 +288,7 @@ export function MatchDetail() {
         <span className={tab === "replay2d" ? "pill on" : "pill"} onClick={() => setTab("replay2d")}>Replay 2D</span>
       </div>
 
-      {tab === "replay2d" && (id ? <Replay2D id={id} /> : <div className="empty">match invalide</div>)}
+      {tab === "replay2d" && (id ? <Replay2D id={id} /> : <div className="empty">invalid match</div>)}
 
       {tab === "score" && (<>
       {(m.picks || bans[0] || bans[1]) && (

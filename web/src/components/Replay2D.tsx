@@ -7,8 +7,6 @@ import { fetchReplay2d, mapImage, universeColor, heroIcon, initials } from "../a
 import { sampleAt, deathsNear } from "../replay2d";
 import { Avatar } from "./Avatar";
 
-// Miroir de --tm-blue / --tm-red (theme.css) : le contexte canvas 2D ne résout pas var(...).
-const TEAM_COLOR = ["#85b7eb", "#f09595"];
 const CANVAS_SIZE = 640;
 const HERO_R = 10;
 
@@ -41,11 +39,18 @@ function loadIcon(url: string, onLoad: () => void): HTMLImageElement {
 }
 
 export function Replay2D({ id }: { id: string }) {
-  const { data, isLoading } = useQuery({ queryKey: ["replay2d", id], queryFn: () => fetchReplay2d(id) });
+  const { data, isLoading } = useQuery({
+    queryKey: ["replay2d", id],
+    queryFn: () => fetchReplay2d(id),
+    staleTime: Infinity, // replay décodé d'un match fini = immuable (comme dim-heroes/dim-talents)
+  });
   const [t, setT] = useState(0);
   const [mapBroken, setMapBroken] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [, bumpRedraw] = useState(0); // forcé quand un portrait finit de charger en arrière-plan
+  const [tick, bumpRedraw] = useState(0); // incrémenté quand un portrait finit de charger → redessine
+
+  // Couleurs d'équipe résolues une fois depuis les tokens CSS (le canvas ne comprend pas var(...)).
+  const teamColor = useMemo(() => [resolveColor("var(--tm-blue)"), resolveColor("var(--tm-red)")], []);
 
   const playerByPlayerId = useMemo(() => {
     const m = new Map<number, { name: string | null; hero: string | null; team: number | null }>();
@@ -75,7 +80,7 @@ export function Replay2D({ id }: { id: string }) {
       ctx.beginPath();
       ctx.arc(cx, cy, HERO_R + 3, 0, Math.PI * 2);
       ctx.lineWidth = 2;
-      ctx.strokeStyle = TEAM_COLOR[team];
+      ctx.strokeStyle = teamColor[team];
       ctx.stroke();
 
       // remplissage : portrait clippé en cercle si chargé, sinon pastille couleur d'équipe + initiales
@@ -96,7 +101,7 @@ export function Replay2D({ id }: { id: string }) {
       if (!drewPortrait) {
         ctx.beginPath();
         ctx.arc(cx, cy, HERO_R, 0, Math.PI * 2);
-        ctx.fillStyle = TEAM_COLOR[team];
+        ctx.fillStyle = teamColor[team];
         ctx.fill();
         if (meta?.hero) {
           ctx.fillStyle = "#0b0c11";
@@ -128,7 +133,7 @@ export function Replay2D({ id }: { id: string }) {
 
     for (const d of deathsNear(data.deaths, t)) {
       const cx = d.x * W, cy = (1 - d.y) * H;
-      ctx.strokeStyle = "#f09595";
+      ctx.strokeStyle = teamColor[1];
       ctx.lineWidth = 2;
       const s = 6;
       ctx.beginPath();
@@ -136,10 +141,10 @@ export function Replay2D({ id }: { id: string }) {
       ctx.moveTo(cx + s, cy - s); ctx.lineTo(cx - s, cy + s);
       ctx.stroke();
     }
-  }, [t, data, playerByPlayerId]);
+  }, [t, data, playerByPlayerId, teamColor, tick]);
 
   if (isLoading) return <div className="empty">loading…</div>;
-  if (!data) return <div className="empty">replay indisponible</div>;
+  if (!data) return <div className="empty">replay unavailable</div>;
 
   const bg = !mapBroken ? mapImage(data.meta.mapName) : null;
   const duration = data.meta.durationSec || 0;
@@ -174,11 +179,11 @@ export function Replay2D({ id }: { id: string }) {
           />
         </div>
         <div style={{ minWidth: 180, flex: "0 0 200px" }}>
-          <p className="cap" style={{ margin: "0 0 8px" }}>Joueurs</p>
+          <p className="cap" style={{ margin: "0 0 8px" }}>Players</p>
           {[0, 1].map((team) => (
             <div key={team} style={{ marginBottom: 10 }}>
               <span className={team === 0 ? "tm-blue" : "tm-red"} style={{ fontSize: 10 }}>
-                {team === 0 ? "équipe bleue" : "équipe rouge"}
+                {team === 0 ? "Blue team" : "Red team"}
               </span>
               {data.players.filter((p) => p.team === team).map((p) => (
                 <div key={p.playerId} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 0" }}>
@@ -199,6 +204,8 @@ export function Replay2D({ id }: { id: string }) {
           step={0.1}
           value={t}
           onChange={(e) => setT(Number(e.target.value))}
+          aria-label="replay time"
+          aria-valuetext={fmtClock(t)}
           style={{ flex: 1 }}
         />
         <span className="mono muted" style={{ fontSize: 11, minWidth: 90, textAlign: "right" }}>
