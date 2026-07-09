@@ -1,6 +1,7 @@
 // Couche API typée vers storm-codex-server + hook WebSocket temps réel.
 import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { Replay2D } from "./replay2d";
 
 export interface MatchPlayer {
   toon: string;
@@ -153,6 +154,7 @@ export function aggParams(f: AggFilter): string {
 }
 export const fetchMatch = (id: number | string) =>
   get<{ id: number; match: any; players: Record<string, any> }>(`/api/matches/${id}`);
+export const fetchReplay2d = (id: number | string) => get<Replay2D>(`/api/matches/${id}/replay2d`);
 export const fetchPlayer = (toon: string) => get<PlayerSummary>(`/api/players/${encodeURIComponent(toon)}`);
 export const fetchHeroes = (f: AggFilter = {}) => get<HeroStat[]>(`/api/heroes?${aggParams(f)}`);
 
