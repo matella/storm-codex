@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchReplay2d, mapImage, universeColor, heroIcon, initials } from "../api";
-import { sampleAt, deathsNear, type FeedEvent } from "../replay2d";
+import { sampleAt, deathsNear, castFlash, type FeedEvent } from "../replay2d";
 import { advance, usePlayback } from "../usePlayback";
 import { Avatar } from "./Avatar";
 
@@ -230,6 +230,17 @@ export function Replay2D({ id }: { id: string }) {
       ctx.lineWidth = 1.5;
       ctx.strokeStyle = resolveColor(universeColor(meta?.hero ?? null));
       ctx.stroke();
+
+      // flash de cast d'aptitude (US-18) : anneau blanc qui pulse puis s'estompe, ~0,6s après
+      // chaque cast — subtil, pas de tentative d'identifier l'aptitude jouée.
+      const flash = castFlash(track.casts, t);
+      if (flash > 0) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, HERO_R + 5, 0, Math.PI * 2);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = `rgba(255, 255, 255, ${flash})`;
+        ctx.stroke();
+      }
 
       if (!p.alive) {
         ctx.strokeStyle = "#e8eaf2";

@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-pub const VIEWER_VERSION: u32 = 3;
+pub const VIEWER_VERSION: u32 = 4;
 pub const LOOP_OFFSET: i64 = 610;
 pub const LOOPS_PER_SEC: f64 = 16.0;
 pub const FIXED: f64 = 4096.0;
@@ -32,6 +32,7 @@ pub struct HeroTrack {
     pub player_id: i64, // playerId replay (m_controlPlayerId, 1..=10)
     pub samples: Vec<Sample>,
     pub life: Vec<Interval>,
+    pub casts: Vec<f64>, // instants (sec) de cast d'aptitude, triés, dédupliqués temporellement
 }
 
 #[derive(Debug, Clone, Serialize)]

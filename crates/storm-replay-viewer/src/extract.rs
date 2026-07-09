@@ -81,7 +81,30 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
     //    fragile « slot+1 ». `user_to_player` construit une seule fois depuis le tracker.
     let user_to_player = user_to_player(&tracker); // m_userId → m_playerId (1..=10)
     let mut cmd_samples: HashMap<i64, Vec<Sample>> = HashMap::new();
+    // US-18 : casts d'aptitude — SCmdEvent avec m_abil non nul. On n'identifie PAS quelle
+    // aptitude (m_abilLink) — juste « un cast a eu lieu » ; c'est pourquoi cette collecte vit
+    // dans la MÊME passe que la densification de commandes plutôt qu'une passe dédiée.
+    let mut cast_times: HashMap<i64, Vec<f64>> = HashMap::new();
     replay.visit_game_events(|ev: Value| {
+        let uid = ev
+            .field("_userid")
+            .and_then(|u| u.field("m_userId"))
+            .and_then(Value::as_int);
+        let p = uid.and_then(|u| user_to_player.get(&u).copied());
+
+        // Cast d'aptitude : m_abil présent et non nul. Vérifié AVANT le early-return sur
+        // TargetPoint ci-dessous — un même SCmdEvent peut porter m_abil ET m_data.TargetPoint,
+        // les deux doivent pouvoir être extraits du même événement.
+        let is_cast = !matches!(ev.field("m_abil"), None | Some(Value::Null));
+        if is_cast {
+            if let Some(p) = p {
+                let t = loop_to_sec(field_int(&ev, "_gameloop").unwrap_or(0));
+                if t >= 0.0 {
+                    cast_times.entry(p).or_default().push(t);
+                }
+            }
+        }
+
         let Some(tp) = ev.field("m_data").and_then(|d| d.field("TargetPoint")) else {
             return;
         };
@@ -91,11 +114,7 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
         ) else {
             return;
         };
-        let uid = ev
-            .field("_userid")
-            .and_then(|u| u.field("m_userId"))
-            .and_then(Value::as_int);
-        let Some(p) = uid.and_then(|u| user_to_player.get(&u).copied()) else {
+        let Some(p) = p else {
             return;
         };
         let t = loop_to_sec(field_int(&ev, "_gameloop").unwrap_or(0));
@@ -109,6 +128,21 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
             });
         }
     })?;
+
+    // Tri + dédup temporelle des casts : un cast dans les CAST_DEDUP_SEC qui suivent le
+    // précédent cast retenu (même joueur) est jeté — évite un flash quasi continu quand
+    // plusieurs SCmdEvent d'affilée portent m_abil pour la même pression de touche.
+    const CAST_DEDUP_SEC: f64 = 0.3;
+    for v in cast_times.values_mut() {
+        v.sort_by(|a, b| a.total_cmp(b));
+        let mut kept: Vec<f64> = Vec::with_capacity(v.len());
+        for &t in v.iter() {
+            if kept.last().is_none_or(|&last| t - last >= CAST_DEDUP_SEC) {
+                kept.push(t);
+            }
+        }
+        *v = kept;
+    }
 
     // 5) fusion samples (exacts + commande), tri par t croissant, dédup des points
     //    quasi-immobiles (delta < EPS depuis le dernier retenu, même exact), clamp [0,1].
@@ -149,6 +183,7 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
             player_id: *p,
             samples: deduped,
             life: Vec::new(), // rempli ci-dessous
+            casts: cast_times.remove(p).unwrap_or_default(),
         });
     }
 

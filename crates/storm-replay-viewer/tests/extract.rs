@@ -39,7 +39,7 @@ fn all_coords_normalized() {
 fn duration_and_meta_sane() {
     let m = model();
     assert!(m.meta.duration_sec > 60.0, "durée trop courte");
-    assert_eq!(m.meta.viewer_version, 3);
+    assert_eq!(m.meta.viewer_version, 4);
     assert!(m.meta.map_size[0] > 0.0 && m.meta.map_size[1] > 0.0);
 }
 
@@ -181,6 +181,31 @@ fn feed_events_sorted_nonempty() {
         m.events.iter().any(|e| e.kind == "takedown"),
         "aucun event takedown"
     );
+}
+
+// US-18 : indicateurs flash de cast d'aptitude. On ne cherche pas à identifier l'aptitude —
+// juste « un cast a eu lieu » — donc un simple comptage + bornage + tri suffit à couvrir le
+// contrat côté extraction.
+#[test]
+fn casts_present() {
+    let m = model();
+    let total: usize = m.heroes.iter().map(|h| h.casts.len()).sum();
+    assert!(total > 100, "trop peu de casts extraits (total {total})");
+    for h in &m.heroes {
+        for &t in &h.casts {
+            assert!(
+                (0.0..=m.meta.duration_sec).contains(&t),
+                "player {} : cast hors bornes t={t} (duration {})",
+                h.player_id,
+                m.meta.duration_sec
+            );
+        }
+        assert!(
+            h.casts.windows(2).all(|w| w[0] <= w[1]),
+            "player {} : casts non triés",
+            h.player_id
+        );
+    }
 }
 
 #[test]
