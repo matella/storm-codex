@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchReplay2d, fetchMatch, mapImage, universeColor, heroIcon, initials, useDimTalents, talentInfo } from "../api";
 import { sampleAt, deathsNear, castFlash, minionsNear, type FeedEvent, type Objective } from "../replay2d";
 import { advance, usePlayback } from "../usePlayback";
+import { clipFrames, downloadBlob, recordCanvasStream, supportsClipExport } from "../clipExport";
 import { Avatar } from "./Avatar";
 import { TalentStrip2D } from "./TalentStrip2D";
 
@@ -143,6 +144,22 @@ export function Replay2D({ id }: { id: string }) {
   const [tick, bumpRedraw] = useState(0); // incrémenté quand un portrait finit de charger → redessine
   const duration = data?.meta.durationSec || 0;
 
+  // US-25 : export d'un sous-intervalle [clipStart, clipEnd] en webm — la sélection est en secondes
+  // de replay (mêmes unités que `t`), pas de frame index.
+  const [clipStart, setClipStart] = useState<number | null>(null);
+  const [clipEnd, setClipEnd] = useState<number | null>(null);
+  const [recording, setRecording] = useState(false);
+  // rAF de la boucle de lecture pilotée (start→end) dédiée à l'export — DÉLIBÉRÉMENT séparée de
+  // usePlayback : celle-ci clampe sur `duration` (fin du replay), pas sur `clipEnd`. Réutiliser
+  // pb.toggle/onTick forcerait à faire connaître clipEnd au hook de lecture générale pour rien
+  // (un enregistrement est un mode ponctuel, pas un mode de lecture permanent).
+  const exportRafRef = useRef<number | null>(null);
+  useEffect(() => {
+    return () => {
+      if (exportRafRef.current != null) cancelAnimationFrame(exportRafRef.current);
+    };
+  }, []);
+
   // Miroir de `t` lu dans onTick : évite un effet de bord (pause) dans l'updater de setT, qui doit
   // rester pur (StrictMode double-invoque les updaters en dev → pause() jouée deux fois).
   const tRef = useRef(0);
@@ -220,6 +237,50 @@ export function Replay2D({ id }: { id: string }) {
       return e.team === 1 ? teamColor[1] : e.team === 0 ? teamColor[0] : "var(--muted-2)";
     }
     return "var(--muted-2)";
+  };
+
+  const canExportClip =
+    supportsClipExport() && clipStart != null && clipEnd != null && clipStart < clipEnd && !recording;
+
+  /** US-25 : enregistre le canvas LIVE pendant une lecture pilotée clipStart→clipEnd, puis
+   *  télécharge le webm. Boucle rAF locale (indépendante de usePlayback, cf. commentaire plus
+   *  haut) : avance `t` par dt réel × vitesse courante jusqu'à atteindre clipEnd. */
+  const handleExportClip = async () => {
+    if (recording || clipStart == null || clipEnd == null || clipStart >= clipEnd) return;
+    if (!supportsClipExport()) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    pb.pause(); // coupe toute lecture en cours avant de prendre le contrôle de `t`
+    setRecording(true);
+    try {
+      const recorder = recordCanvasStream(canvas, 30);
+      setT(clipStart);
+      tRef.current = clipStart;
+      await new Promise<void>((resolve) => {
+        let last = performance.now();
+        const loop = (now: number) => {
+          const dt = (now - last) / 1000;
+          last = now;
+          const next = tRef.current + dt * pb.speed;
+          if (next >= clipEnd) {
+            setT(clipEnd);
+            tRef.current = clipEnd;
+            exportRafRef.current = null;
+            resolve();
+            return;
+          }
+          setT(next);
+          tRef.current = next;
+          exportRafRef.current = requestAnimationFrame(loop);
+        };
+        exportRafRef.current = requestAnimationFrame(loop);
+      });
+      const blob = await recorder.stop();
+      downloadBlob(blob, `replay-${id}-${Math.round(clipStart)}-${Math.round(clipEnd)}.webm`);
+    } finally {
+      setRecording(false);
+    }
   };
 
   useEffect(() => {
@@ -503,6 +564,7 @@ export function Replay2D({ id }: { id: string }) {
           className="pill on"
           aria-label={pb.playing ? "pause" : "play"}
           onClick={pb.toggle}
+          disabled={recording}
           style={{ minWidth: 28, textAlign: "center", fontFamily: "inherit", lineHeight: "inherit" }}
         >
           {pb.playing ? "⏸" : "▶"}
@@ -511,6 +573,7 @@ export function Replay2D({ id }: { id: string }) {
           aria-label="playback speed"
           value={pb.speed}
           onChange={(e) => pb.setSpeed(Number(e.target.value))}
+          disabled={recording}
           style={{ fontSize: 11, background: "transparent", color: "var(--muted-2)", border: "1px solid var(--hairline-strong)", borderRadius: 12, padding: "3px 6px" }}
         >
           {SPEEDS.map((s) => (
@@ -526,6 +589,7 @@ export function Replay2D({ id }: { id: string }) {
           onChange={(e) => { pb.pause(); setT(Number(e.target.value)); }}
           aria-label="replay time"
           aria-valuetext={fmtClock(t)}
+          disabled={recording}
           style={{ flex: 1 }}
         />
         <span className="mono muted" style={{ fontSize: 11, minWidth: 90, textAlign: "right" }}>
@@ -537,9 +601,64 @@ export function Replay2D({ id }: { id: string }) {
             aria-label="Minions / camps"
             checked={showMinions}
             onChange={(e) => setShowMinions(e.target.checked)}
+            disabled={recording}
           />
           Minions / camps
         </label>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
+        <span className="cap" style={{ fontSize: 10 }}>Clip export</span>
+        <button
+          type="button"
+          className="pill"
+          aria-label="Set clip in point to current time"
+          onClick={() => setClipStart(t)}
+          disabled={recording}
+        >
+          Set in
+        </button>
+        <button
+          type="button"
+          className="pill"
+          aria-label="Set clip out point to current time"
+          onClick={() => setClipEnd(t)}
+          disabled={recording}
+        >
+          Set out
+        </button>
+        <span className="mono muted" style={{ fontSize: 11 }}>
+          {clipStart != null && clipEnd != null
+            ? `${fmtClock(clipStart)}–${fmtClock(clipEnd)}`
+            : "no range selected"}
+        </span>
+        {clipStart != null && clipEnd != null && clipStart < clipEnd && (
+          <span className="muted" style={{ fontSize: 10 }}>
+            {clipFrames(clipStart, clipEnd, 30)} frames @30fps
+          </span>
+        )}
+        <button
+          type="button"
+          className="pill on"
+          aria-label="Export clip to webm"
+          onClick={handleExportClip}
+          disabled={!canExportClip}
+          title={
+            !supportsClipExport()
+              ? "Clip export isn't supported in this browser (missing MediaRecorder / captureStream)"
+              : undefined
+          }
+        >
+          Export clip
+        </button>
+        {recording && (
+          <span
+            role="status"
+            aria-label="Recording clip"
+            style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#e5484d" }}
+          >
+            <span aria-hidden="true">●</span> Recording…
+          </span>
+        )}
       </div>
       <TalentStrip2D
         heroes={data.heroes}
