@@ -1,11 +1,11 @@
 use crate::model::*;
 use crate::Error;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use storm_replay::{Replay, Value};
 
 const EPS: f64 = 0.004;
 
-fn loop_to_sec(gameloop: i64) -> f64 {
+pub(crate) fn loop_to_sec(gameloop: i64) -> f64 {
     (gameloop as f64 - LOOP_OFFSET as f64) / LOOPS_PER_SEC
 }
 
@@ -42,13 +42,27 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
             .and_then(Value::as_str_lossy)
             .map(|n| n.starts_with("Hero"))
             .unwrap_or(false);
-        if (1..=10).contains(&p) {
+        // US-26 : les lane minions/camps sont contrôlés par l'IA d'équipe (11 = bleu, 12 = rouge,
+        // même convention que les structures) — élargi au-delà de 1..=10 pour que la résolution
+        // minions/camps (non-héros) fonctionne dans CETTE MÊME table (cf. avertissement
+        // recyclage d'index ci-dessus, accepté ici comme la dédup en aval l'atténue).
+        if (1..=12).contains(&p) {
             unit_player.insert(idx, (p, is_hero));
         }
     }
 
-    // 3) samples exacts depuis SUnitPositionsEvent (m_items = [idxDelta, x, y]*)
+    // 3) samples exacts depuis SUnitPositionsEvent (m_items = [idxDelta, x, y]*). US-26 : la MÊME
+    //    passe alimente aussi les samples minions/camps (unités non-héros résolues) — pas de
+    //    second passage sur tracker pour ce volume, déjà le plus gros événement du fichier.
+    //    Dédup agressive par cellule de grille (~1/64 tuile) × bucket temporel (~2s) : on ne garde
+    //    qu'un point par (cellule, bucket, équipe), et un cap dur `MINION_CAP` protège le payload.
+    const MINION_CAP: usize = 15000;
+    const MINION_TIME_BUCKET_SEC: f64 = 2.0;
     let mut samples: HashMap<i64, Vec<Sample>> = HashMap::new();
+    let mut minions: Vec<MinionSample> = Vec::new();
+    let mut minion_seen: HashSet<(i64, i64, i64, i64)> = HashSet::new();
+    let mut minion_seen_count: u64 = 0; // unités non-héros rencontrées (avant dédup), pour le warning de troncature
+    let mut minion_truncated = false;
     for e in &tracker {
         if event_name(e) != "SUnitPositionsEvent" {
             continue;
@@ -64,24 +78,89 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
         let mut idx = field_int(e, "m_firstUnitIndex").unwrap_or(0);
         for tri in items.chunks_exact(3) {
             idx += tri[0]; // index cumulatif
-            if let Some(&(p, true)) = unit_player.get(&idx) {
-                let (x, y) = norm_tile(tri[1], tri[2]);
-                samples.entry(p).or_default().push(Sample {
-                    t,
-                    x: q3(x),
-                    y: q3(y),
-                    exact: true,
-                });
+            match unit_player.get(&idx) {
+                Some(&(p, true)) => {
+                    let (x, y) = norm_tile(tri[1], tri[2]);
+                    samples.entry(p).or_default().push(Sample {
+                        t,
+                        x: q3(x),
+                        y: q3(y),
+                        exact: true,
+                    });
+                }
+                Some(&(p, false)) => {
+                    minion_seen_count += 1;
+                    if minions.len() >= MINION_CAP {
+                        minion_truncated = true;
+                        continue;
+                    }
+                    let team = match p {
+                        11 => 0,
+                        12 => 1,
+                        _ => -1,
+                    };
+                    let (x, y) = norm_tile(tri[1], tri[2]);
+                    // Clamp [0,1] avant q3 comme héros/deaths/structures : norm_tile peut
+                    // légèrement déborder aux bords de carte (unités de jungle proches des limites).
+                    let (qx, qy) = (q3(x.clamp(0.0, 1.0)), q3(y.clamp(0.0, 1.0)));
+                    let gx = (qx * 64.0).floor() as i64;
+                    let gy = (qy * 64.0).floor() as i64;
+                    let tbucket = (t / MINION_TIME_BUCKET_SEC).floor() as i64;
+                    if minion_seen.insert((gx, gy, team, tbucket)) {
+                        minions.push(MinionSample { t, x: qx, y: qy, team });
+                    }
+                }
+                None => {}
             }
         }
     }
+    if minion_truncated {
+        eprintln!("minions truncated: {}/{minion_seen_count}", minions.len());
+    }
+    minions.sort_by(|a, b| a.t.total_cmp(&b.t));
 
     // 4) densification via game events SCmd*/TargetPoint clé par _userid → playerId.
     //    Mapping AUTORITAIRE via SPlayerSetupEvent (m_userId → m_playerId) — PAS l'hypothèse
     //    fragile « slot+1 ». `user_to_player` construit une seule fois depuis le tracker.
     let user_to_player = user_to_player(&tracker); // m_userId → m_playerId (1..=10)
     let mut cmd_samples: HashMap<i64, Vec<Sample>> = HashMap::new();
+    // US-18 : casts d'aptitude — SCmdEvent avec m_abil non nul. On n'identifie PAS quelle
+    // aptitude (m_abilLink) — juste « un cast a eu lieu » ; c'est pourquoi cette collecte vit
+    // dans la MÊME passe que la densification de commandes plutôt qu'une passe dédiée.
+    let mut cast_times: HashMap<i64, Vec<f64>> = HashMap::new();
+    // US-19 : picks de talent — SHeroTalentTreeSelectedEvent, une par pick, ordre d'arrivée =
+    // ordre de tier (1, 2, 3…). Repliée dans CETTE passe (pas de passe game-events dédiée) ;
+    // on stocke juste `t`, le tier (index+1) est assigné après tri.
+    let mut talent_times: HashMap<i64, Vec<f64>> = HashMap::new();
     replay.visit_game_events(|ev: Value| {
+        let uid = ev
+            .field("_userid")
+            .and_then(|u| u.field("m_userId"))
+            .and_then(Value::as_int);
+        let p = uid.and_then(|u| user_to_player.get(&u).copied());
+
+        if event_name(&ev) == "SHeroTalentTreeSelectedEvent" {
+            if let Some(p) = p {
+                let t = loop_to_sec(field_int(&ev, "_gameloop").unwrap_or(0));
+                if t >= 0.0 {
+                    talent_times.entry(p).or_default().push(t);
+                }
+            }
+        }
+
+        // Cast d'aptitude : m_abil présent et non nul. Vérifié AVANT le early-return sur
+        // TargetPoint ci-dessous — un même SCmdEvent peut porter m_abil ET m_data.TargetPoint,
+        // les deux doivent pouvoir être extraits du même événement.
+        let is_cast = !matches!(ev.field("m_abil"), None | Some(Value::Null));
+        if is_cast {
+            if let Some(p) = p {
+                let t = loop_to_sec(field_int(&ev, "_gameloop").unwrap_or(0));
+                if t >= 0.0 {
+                    cast_times.entry(p).or_default().push(t);
+                }
+            }
+        }
+
         let Some(tp) = ev.field("m_data").and_then(|d| d.field("TargetPoint")) else {
             return;
         };
@@ -91,11 +170,7 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
         ) else {
             return;
         };
-        let uid = ev
-            .field("_userid")
-            .and_then(|u| u.field("m_userId"))
-            .and_then(Value::as_int);
-        let Some(p) = uid.and_then(|u| user_to_player.get(&u).copied()) else {
+        let Some(p) = p else {
             return;
         };
         let t = loop_to_sec(field_int(&ev, "_gameloop").unwrap_or(0));
@@ -109,6 +184,39 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
             });
         }
     })?;
+
+    // Tri + dédup temporelle des casts : un cast dans les CAST_DEDUP_SEC qui suivent le
+    // précédent cast retenu (même joueur) est jeté — évite un flash quasi continu quand
+    // plusieurs SCmdEvent d'affilée portent m_abil pour la même pression de touche.
+    const CAST_DEDUP_SEC: f64 = 0.3;
+    for v in cast_times.values_mut() {
+        v.sort_by(|a, b| a.total_cmp(b));
+        let mut kept: Vec<f64> = Vec::with_capacity(v.len());
+        for &t in v.iter() {
+            if kept.last().is_none_or(|&last| t - last >= CAST_DEDUP_SEC) {
+                kept.push(t);
+            }
+        }
+        *v = kept;
+    }
+
+    // Talents : tri par t croissant, tier = ordre de pick (1-based). talent_id reste None (V1 —
+    // référentiel-free, cf. doc du champ dans model.rs).
+    let mut talents: HashMap<i64, Vec<TalentPick>> = HashMap::new();
+    for (p, mut ts) in talent_times {
+        ts.sort_by(|a, b| a.total_cmp(b));
+        talents.insert(
+            p,
+            ts.into_iter()
+                .enumerate()
+                .map(|(i, t)| TalentPick {
+                    t,
+                    tier: i as i64 + 1,
+                    talent_id: None,
+                })
+                .collect(),
+        );
+    }
 
     // 5) fusion samples (exacts + commande), tri par t croissant, dédup des points
     //    quasi-immobiles (delta < EPS depuis le dernier retenu, même exact), clamp [0,1].
@@ -149,6 +257,8 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
             player_id: *p,
             samples: deduped,
             life: Vec::new(), // rempli ci-dessous
+            casts: cast_times.remove(p).unwrap_or_default(),
+            talents: talents.remove(p).unwrap_or_default(),
         });
     }
 
@@ -232,9 +342,201 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
     //    garantir l'invariant côté consommateur ; warnings = vec![] (US-7 plus tard).
     heroes.sort_by_key(|h| h.player_id);
 
+    // 9) structures : SUnitBornEvent contrôlées par 11 (équipe 0) / 12 (équipe 1), types
+    //    Town*/KingsCore/HallOfStorms, en excluant le fantôme visuel post-destruction
+    //    ("...Destroyed"). Destruction = SUnitDiedEvent apparié par (tagIndex, tagRecycle) — PAS
+    //    tagIndex seul : les structures peuvent recycler un index pendant qu'une sœur est vivante.
+    let mut structures: Vec<Structure> = Vec::new();
+    let mut tag_to_structure: HashMap<(i64, i64), usize> = HashMap::new();
+    for e in &tracker {
+        if event_name(e) != "SUnitBornEvent" {
+            continue;
+        }
+        let control = field_int(e, "m_controlPlayerId").unwrap_or(0);
+        if control != 11 && control != 12 {
+            continue;
+        }
+        let Some(type_name) = e.field("m_unitTypeName").and_then(Value::as_str_lossy) else {
+            continue;
+        };
+        let is_structure = (type_name.starts_with("Town")
+            || type_name.starts_with("KingsCore")
+            || type_name.starts_with("HallOfStorms"))
+            && !type_name.contains("Destroyed");
+        if !is_structure {
+            continue;
+        }
+        let team = if control == 11 { 0 } else { 1 };
+        let kind = if type_name.contains("Core") {
+            "core"
+        } else if type_name.starts_with("TownTownHall") {
+            "fort"
+        } else if type_name.contains("Tower") {
+            "tower"
+        } else if type_name.starts_with("TownWall") {
+            "wall"
+        } else if type_name.starts_with("TownGate") {
+            "gate"
+        } else if type_name.starts_with("TownMoonwell") {
+            "well"
+        } else {
+            "other"
+        }
+        .to_string();
+        let x = field_int(e, "m_x").unwrap_or(0);
+        let y = field_int(e, "m_y").unwrap_or(0);
+        let (nx, ny) = norm_tile(x, y);
+        let idx = field_int(e, "m_unitTagIndex").unwrap_or(-1);
+        let recycle = field_int(e, "m_unitTagRecycle").unwrap_or(-1);
+
+        tag_to_structure.insert((idx, recycle), structures.len());
+        structures.push(Structure {
+            team,
+            kind,
+            x: q3(nx.clamp(0.0, 1.0)),
+            y: q3(ny.clamp(0.0, 1.0)),
+            destroyed_at: None,
+        });
+    }
+    for e in &tracker {
+        if event_name(e) != "SUnitDiedEvent" {
+            continue;
+        }
+        let idx = field_int(e, "m_unitTagIndex").unwrap_or(-1);
+        let recycle = field_int(e, "m_unitTagRecycle").unwrap_or(-1);
+        if let Some(&i) = tag_to_structure.get(&(idx, recycle)) {
+            let t = loop_to_sec(field_int(e, "_gameloop").unwrap_or(0));
+            structures[i].destroyed_at = Some(t);
+        }
+    }
+    structures.sort_by(|a, b| (a.team, &a.kind).cmp(&(b.team, &b.kind)));
+
+    // 10) feed unifié : réutilise deaths/structures déjà calculés (aucune passe tracker lourde en
+    //     plus) + un scan léger des SStatGameEvent{JungleCampCapture} pour les camps. `team` reste
+    //     `None` pour les takedowns — c'est le FRONT qui le dérive de `players[]` (garde ce crate
+    //     indépendant du mapping playerId→équipe).
+    let mut events: Vec<FeedEvent> = Vec::new();
+    for d in &deaths {
+        events.push(FeedEvent {
+            t: d.t,
+            kind: "takedown".to_string(),
+            team: None,
+            victim_player_id: Some(d.victim_player_id),
+            killer_player_id: d.killer_player_id,
+            structure_kind: None,
+        });
+    }
+    for s in &structures {
+        if let Some(t) = s.destroyed_at {
+            events.push(FeedEvent {
+                t,
+                kind: "structure".to_string(),
+                team: Some(s.team),
+                victim_player_id: None,
+                killer_player_id: None,
+                structure_kind: Some(s.kind.clone()),
+            });
+        }
+    }
+    for e in &tracker {
+        if event_name(e) != "SStatGameEvent" {
+            continue;
+        }
+        if e.field("m_eventName").and_then(Value::as_str_lossy).as_deref() != Some("JungleCampCapture")
+        {
+            continue;
+        }
+        let t = loop_to_sec(field_int(e, "_gameloop").unwrap_or(0));
+        // Équipe capturante = m_fixedData["TeamID"] en fixed-point (÷4096) : 1 = bleu, 2 = rouge
+        // (cf. docs/research/hots-replay-data-reference.md). Notre convention interne : 0 = bleu,
+        // 1 = rouge → team = résolu − 1. None si le champ est absent.
+        let team = fixed_data_int(e, "TeamID")
+            .map(|v| (v as f64 / FIXED).round() as i64 - 1)
+            .filter(|t| (0..=1).contains(t));
+        events.push(FeedEvent {
+            t,
+            kind: "camp".to_string(),
+            team,
+            victim_player_id: None,
+            killer_player_id: None,
+            structure_kind: None,
+        });
+    }
+    events.retain(|e| e.t >= 0.0);
+    events.sort_by(|a, b| a.t.total_cmp(&b.t));
+
+    // 11) levels : SStatGameEvent{LevelUp}.m_intData = [{PlayerID}, {Level}] → playerId→équipe
+    // via le même croisement que player_toons (SPlayerSetupEvent.m_slotId × details.players
+    // .working_set_slot_id → team_id), PAS l'hypothèse « 1..5/6..10 » (vraie sur ce corpus mais
+    // non garantie par le format). ARAM = XP d'équipe partagée : ~5 SStatGameEvent quasi
+    // simultanés par level-up d'équipe → dédupliqués en un seul LevelTick (team, level) à la
+    // t la plus tôt.
+    let mut slot_to_team: HashMap<i64, i64> = HashMap::new();
+    for p in &details.players {
+        if let Some(slot) = p.working_set_slot_id {
+            slot_to_team.insert(slot, p.team_id);
+        }
+    }
+    let mut player_team: HashMap<i64, i64> = HashMap::new();
+    for e in &tracker {
+        if event_name(e) != "SPlayerSetupEvent" {
+            continue;
+        }
+        let (Some(pid), Some(slot)) = (field_int(e, "m_playerId"), field_int(e, "m_slotId")) else {
+            continue;
+        };
+        if let Some(&team) = slot_to_team.get(&slot) {
+            player_team.insert(pid, team);
+        }
+    }
+
+    let mut level_first_t: HashMap<(i64, i64), f64> = HashMap::new(); // (team, level) → t la plus tôt
+    for e in &tracker {
+        if event_name(e) != "SStatGameEvent" {
+            continue;
+        }
+        if e.field("m_eventName").and_then(Value::as_str_lossy).as_deref() != Some("LevelUp") {
+            continue;
+        }
+        let (Some(pid), Some(level)) = (int_data_int(e, "PlayerID"), int_data_int(e, "Level")) else {
+            continue;
+        };
+        let Some(&team) = player_team.get(&pid) else {
+            continue;
+        };
+        let t = loop_to_sec(field_int(e, "_gameloop").unwrap_or(0));
+        level_first_t
+            .entry((team, level))
+            .and_modify(|cur| {
+                if t < *cur {
+                    *cur = t;
+                }
+            })
+            .or_insert(t);
+    }
+    let mut levels: Vec<LevelTick> = level_first_t
+        .into_iter()
+        .filter(|&((_, _), t)| t >= 0.0)
+        .map(|((team, level), t)| LevelTick { t, team, level })
+        .collect();
+    // Tri déterministe : `level_first_t` vient d'un HashMap (ordre d'itération randomisé par
+    // process) — deux entrées à t strictement égal (même gameloop, équipes/niveaux différents)
+    // doivent avoir un ordre STABLE d'un run à l'autre (golden JSON compare l'ordre des tableaux).
+    // Départage par (team, level) après t.
+    levels.sort_by(|a, b| a.t.total_cmp(&b.t).then(a.team.cmp(&b.team)).then(a.level.cmp(&b.level)));
+
+    // 12) objectifs par carte (US-21..24) : routage + extraction isolés dans `crate::maps` — cette
+    //     fonction `build` ne connaît AUCUNE logique spécifique à une carte. Cartes "gap" connues →
+    //     un warning explicite plutôt qu'un silence trompeur.
+    let map_name = details.title.clone();
+    let (mut objectives, obj_warnings) = crate::maps::objectives(&map_name, &tracker);
+    objectives.sort_by(|a, b| a.t.total_cmp(&b.t));
+    let mut warnings: Vec<String> = Vec::new();
+    warnings.extend(obj_warnings);
+
     Ok(ViewerModel {
         meta: Meta {
-            map_name: details.title.clone(),
+            map_name,
             map_size: [map_w, map_h],
             duration_sec,
             loop_offset: LOOP_OFFSET,
@@ -242,18 +544,46 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
         },
         heroes,
         deaths,
-        warnings: Vec::new(),
+        structures,
+        events,
+        levels,
+        objectives,
+        warnings,
+        minions,
     })
 }
 
-fn event_name(e: &Value) -> String {
+pub(crate) fn event_name(e: &Value) -> String {
     e.field("_event")
         .and_then(Value::as_str_lossy)
         .and_then(|s| s.rsplit('.').next().map(str::to_string))
         .unwrap_or_default()
 }
-fn field_int(e: &Value, k: &str) -> Option<i64> {
+pub(crate) fn field_int(e: &Value, k: &str) -> Option<i64> {
     e.field(k).and_then(Value::as_int)
+}
+
+// Valeur d'un SStatGameEvent.m_fixedData par clé (même schéma key/value que map_size).
+fn fixed_data_int(e: &Value, key: &str) -> Option<i64> {
+    let fixed = e.field("m_fixedData").and_then(Value::as_array)?;
+    for kv in fixed {
+        if kv.field("m_key").and_then(Value::as_str_lossy).as_deref() == Some(key) {
+            return kv.field("m_value").and_then(Value::as_int);
+        }
+    }
+    None
+}
+
+// Valeur d'un SStatGameEvent.m_intData par clé (même schéma key/value que fixed_data_int, mais
+// m_value est un entier brut — pas fixed-point). Utilisé pour LevelUp (PlayerID/Level).
+fn int_data_int(e: &Value, key: &str) -> Option<i64> {
+    let data = e.field("m_intData").and_then(Value::as_array)?;
+    for kv in data {
+        if kv.field("m_key").and_then(Value::as_str_lossy).as_deref() == Some(key) {
+            return kv.field("m_value").and_then(Value::as_int);
+        }
+    }
+    None
 }
 
 fn map_size(tracker: &[Value]) -> Option<(f64, f64)> {

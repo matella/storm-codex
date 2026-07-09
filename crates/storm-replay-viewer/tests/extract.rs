@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use storm_replay::Replay;
-use storm_replay_viewer::build_model;
+use storm_replay_viewer::{build_model, LevelTick};
 
 fn model() -> storm_replay_viewer::ViewerModel {
     let replay = Replay::open("tests/data/silver-city-aram.StormReplay").expect("open");
@@ -39,7 +39,7 @@ fn all_coords_normalized() {
 fn duration_and_meta_sane() {
     let m = model();
     assert!(m.meta.duration_sec > 60.0, "durée trop courte");
-    assert_eq!(m.meta.viewer_version, 1);
+    assert_eq!(m.meta.viewer_version, 7);
     assert!(m.meta.map_size[0] > 0.0 && m.meta.map_size[1] > 0.0);
 }
 
@@ -134,11 +134,179 @@ fn player_toons_authoritative_mapping() {
 }
 
 #[test]
+fn structures_present_and_classified() {
+    let m = model();
+    assert!(
+        m.structures.iter().any(|s| s.team == 0 && s.kind == "core"),
+        "aucun core team 0"
+    );
+    assert!(
+        m.structures.iter().any(|s| s.team == 1 && s.kind == "core"),
+        "aucun core team 1"
+    );
+    for s in &m.structures {
+        assert!(
+            (0.0..=1.0).contains(&s.x) && (0.0..=1.0).contains(&s.y),
+            "coord hors [0,1]: {:?} ({})",
+            (s.x, s.y),
+            s.kind
+        );
+        if let Some(d) = s.destroyed_at {
+            assert!(
+                (0.0..=m.meta.duration_sec).contains(&d),
+                "destroyedAt hors bornes: {d} (duration {})",
+                m.meta.duration_sec
+            );
+        }
+    }
+}
+
+#[test]
+fn feed_events_sorted_nonempty() {
+    let m = model();
+    assert!(!m.events.is_empty(), "events vide");
+    assert!(
+        m.events.windows(2).all(|w| w[0].t <= w[1].t),
+        "events non triés par t croissant"
+    );
+    for e in &m.events {
+        assert!(
+            (0.0..=m.meta.duration_sec).contains(&e.t),
+            "event t hors bornes: {} (duration {})",
+            e.t,
+            m.meta.duration_sec
+        );
+    }
+    assert!(
+        m.events.iter().any(|e| e.kind == "takedown"),
+        "aucun event takedown"
+    );
+}
+
+// US-18 : indicateurs flash de cast d'aptitude. On ne cherche pas à identifier l'aptitude —
+// juste « un cast a eu lieu » — donc un simple comptage + bornage + tri suffit à couvrir le
+// contrat côté extraction.
+#[test]
+fn casts_present() {
+    let m = model();
+    let total: usize = m.heroes.iter().map(|h| h.casts.len()).sum();
+    assert!(total > 100, "trop peu de casts extraits (total {total})");
+    for h in &m.heroes {
+        for &t in &h.casts {
+            assert!(
+                (0.0..=m.meta.duration_sec).contains(&t),
+                "player {} : cast hors bornes t={t} (duration {})",
+                h.player_id,
+                m.meta.duration_sec
+            );
+        }
+        assert!(
+            h.casts.windows(2).all(|w| w[0] <= w[1]),
+            "player {} : casts non triés",
+            h.player_id
+        );
+    }
+}
+
+// US-19 : indicateurs de talent/niveau. On ne vérifie pas les VALEURS de talent_id (V1 =
+// référentiel-free, toujours None) mais la FORME : au moins un héros avec des picks (tier
+// strictement croissant), et des levels non vides avec le niveau non-décroissant par équipe.
+#[test]
+fn talents_and_levels() {
+    let m = model();
+
+    assert!(
+        m.heroes.iter().any(|h| !h.talents.is_empty()),
+        "aucun héros avec des talents extraits"
+    );
+    for h in &m.heroes {
+        for tp in &h.talents {
+            assert!(
+                (0.0..=m.meta.duration_sec).contains(&tp.t),
+                "player {} : talent hors bornes t={} (duration {})",
+                h.player_id,
+                tp.t,
+                m.meta.duration_sec
+            );
+        }
+        assert!(
+            h.talents.windows(2).all(|w| w[0].tier < w[1].tier),
+            "player {} : tiers non strictement croissants: {:?}",
+            h.player_id,
+            h.talents.iter().map(|t| t.tier).collect::<Vec<_>>()
+        );
+    }
+
+    assert!(!m.levels.is_empty(), "levels vide");
+    for lt in &m.levels {
+        assert!(
+            (0.0..=m.meta.duration_sec).contains(&lt.t),
+            "level hors bornes t={} (duration {})",
+            lt.t,
+            m.meta.duration_sec
+        );
+        assert!((0..=1).contains(&lt.team), "team hors {{0,1}}: {}", lt.team);
+    }
+    // Non-décroissant par équipe, une fois trié/groupé par équipe puis t.
+    for team in [0i64, 1i64] {
+        let mut lv: Vec<&LevelTick> = m.levels.iter().filter(|l| l.team == team).collect();
+        lv.sort_by(|a, b| a.t.total_cmp(&b.t));
+        assert!(
+            lv.windows(2).all(|w| w[0].level <= w[1].level),
+            "team {team} : levels non non-décroissants: {:?}",
+            lv.iter().map(|l| l.level).collect::<Vec<_>>()
+        );
+    }
+}
+
+// US-21..24 : silver-city est un ARAM (pas Braxis, pas une gap map connue) → aucun objectif,
+// aucun warning. Le contrat de bornage [0, duration] est vérifié même si la liste est vide (elle
+// l'est ici), pour documenter l'invariant attendu dès qu'une autre carte l'alimentera.
+#[test]
+fn objectives_framework() {
+    let m = model();
+    assert!(m.objectives.is_empty(), "silver-city (ARAM) ne doit produire aucun objectif");
+    assert!(m.warnings.is_empty(), "silver-city n'est pas une gap map connue");
+    for o in &m.objectives {
+        assert!(
+            (0.0..=m.meta.duration_sec).contains(&o.t),
+            "objective t hors bornes: {} (duration {})",
+            o.t,
+            m.meta.duration_sec
+        );
+    }
+}
+
+// US-26 : samples minions/camps bornés, en volume contrôlé (dédup + cap dans extract.rs). Pas
+// d'exigence de non-vacuité (certaines cartes/replays peuvent en avoir peu) mais silver-city
+// (ARAM, minions constants) doit en produire.
+#[test]
+fn minions_bounded() {
+    let m = model();
+    assert!(m.minions.len() < 20000, "trop de minions: {}", m.minions.len());
+    for ms in &m.minions {
+        assert!(
+            (0.0..=1.0).contains(&ms.x) && (0.0..=1.0).contains(&ms.y),
+            "coord minion hors [0,1]: {:?}",
+            ms
+        );
+        assert!(
+            matches!(ms.team, -1..=1),
+            "team minion hors {{0,1,-1}}: {}",
+            ms.team
+        );
+    }
+}
+
+#[test]
 fn golden_json_stable() {
     let m = model();
     // exclure viewerVersion du comparé (bump volontaire → régénérer le golden)
     let mut v = serde_json::to_value(&m).unwrap();
     v["meta"]["viewerVersion"] = serde_json::json!("<ignored>");
+    // US-26 : minions/camps sont un volume élevé et non déterministe dans leur détail — exclus du
+    // golden (comme viewerVersion) pour ne pas gonfler le fixture ; couverts par `minions_bounded`.
+    v["minions"] = serde_json::json!("<excluded>");
     let path = "tests/data/silver-city-aram.golden.json";
     if std::env::var("UPDATE_GOLDEN").is_ok() {
         // Écrit joliment pour la lecture humaine. L'ORDRE des clés dépend des features serde_json
