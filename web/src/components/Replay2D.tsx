@@ -1,14 +1,16 @@
 // Onglet « Replay 2D » : charge le modèle de visionneuse (positions normalisées [0,1]) une fois,
 // puis scrub 100% côté client — pas de requête réseau par déplacement du curseur (seek(t) pur, cf.
-// replay2d.ts). Pas d'animation play/pause en MVP-1, juste une barre de scrub.
+// replay2d.ts). Play/pause + vitesse animent `t` en temps réel via usePlayback (US-11).
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchReplay2d, mapImage, universeColor, heroIcon, initials } from "../api";
 import { sampleAt, deathsNear } from "../replay2d";
+import { advance, usePlayback } from "../usePlayback";
 import { Avatar } from "./Avatar";
 
 const CANVAS_SIZE = 640;
 const HERO_R = 10;
+const SPEEDS = [0.5, 1, 2, 4, 8];
 
 function fmtClock(t: number): string {
   const m = Math.floor(t / 60);
@@ -48,6 +50,17 @@ export function Replay2D({ id }: { id: string }) {
   const [mapBroken, setMapBroken] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [tick, bumpRedraw] = useState(0); // incrémenté quand un portrait finit de charger → redessine
+  const duration = data?.meta.durationSec || 0;
+
+  const pb = usePlayback({
+    onTick: (dt) => {
+      setT((prev) => {
+        const r = advance(prev, dt, pb.speed, duration);
+        if (!r.playing) pb.pause(); // fin de clip atteinte → coupe la boucle rAF
+        return r.t;
+      });
+    },
+  });
 
   // Couleurs d'équipe résolues une fois depuis les tokens CSS (le canvas ne comprend pas var(...)).
   const teamColor = useMemo(() => [resolveColor("var(--tm-blue)"), resolveColor("var(--tm-red)")], []);
@@ -147,7 +160,6 @@ export function Replay2D({ id }: { id: string }) {
   if (!data) return <div className="empty">replay unavailable</div>;
 
   const bg = !mapBroken ? mapImage(data.meta.mapName) : null;
-  const duration = data.meta.durationSec || 0;
 
   return (
     <div className="card" style={{ padding: 14 }}>
@@ -197,13 +209,32 @@ export function Replay2D({ id }: { id: string }) {
         </div>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+        <span
+          className="pill on"
+          role="button"
+          aria-label={pb.playing ? "pause" : "play"}
+          onClick={pb.toggle}
+          style={{ minWidth: 28, textAlign: "center" }}
+        >
+          {pb.playing ? "⏸" : "▶"}
+        </span>
+        <select
+          aria-label="playback speed"
+          value={pb.speed}
+          onChange={(e) => pb.setSpeed(Number(e.target.value))}
+          style={{ fontSize: 11, background: "transparent", color: "var(--muted-2)", border: "1px solid var(--hairline-strong)", borderRadius: 12, padding: "3px 6px" }}
+        >
+          {SPEEDS.map((s) => (
+            <option key={s} value={s}>{s}×</option>
+          ))}
+        </select>
         <input
           type="range"
           min={0}
           max={duration}
           step={0.1}
           value={t}
-          onChange={(e) => setT(Number(e.target.value))}
+          onChange={(e) => { pb.pause(); setT(Number(e.target.value)); }}
           aria-label="replay time"
           aria-valuetext={fmtClock(t)}
           style={{ flex: 1 }}
