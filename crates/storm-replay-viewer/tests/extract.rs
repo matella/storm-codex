@@ -101,6 +101,38 @@ fn life_intervals_ordered_and_bounded() {
     }
 }
 
+// player_toons() est autoritaire : le serveur (Chunk 2) s'en sert pour joindre les métadonnées
+// joueurs de Postgres par toon_handle. On garantit ici la forme du contrat.
+#[test]
+fn player_toons_authoritative_mapping() {
+    let replay = Replay::open("tests/data/silver-city-aram.StormReplay").expect("open");
+    let toons = storm_replay_viewer::player_toons(&replay).expect("player_toons");
+
+    assert_eq!(toons.len(), 10, "10 joueurs attendus");
+
+    // playerIds = exactement l'ensemble 1..=10 (uniques, sans trou).
+    let ids: Vec<i64> = toons.iter().map(|(p, _)| *p).collect();
+    let mut sorted_ids = ids.clone();
+    sorted_ids.sort_unstable();
+    sorted_ids.dedup();
+    assert_eq!(
+        sorted_ids,
+        (1..=10).collect::<Vec<_>>(),
+        "playerIds != {{1..=10}}"
+    );
+
+    // tous les toon_handle non vides.
+    for (p, toon) in &toons {
+        assert!(!toon.is_empty(), "player {p} : toon_handle vide");
+    }
+
+    // résultat trié par playerId croissant.
+    assert!(
+        ids.windows(2).all(|w| w[0] < w[1]),
+        "player_toons non trié par playerId croissant: {ids:?}"
+    );
+}
+
 #[test]
 fn golden_json_stable() {
     let m = model();

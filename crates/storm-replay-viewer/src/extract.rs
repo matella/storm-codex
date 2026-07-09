@@ -17,9 +17,19 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
     let (msx, msy) = map_size(&tracker).ok_or(Error::Missing("MapSize"))?;
     let (map_w, map_h) = (msx / FIXED, msy / FIXED); // en tuiles
     let norm_tile = |x: i64, y: i64| (x as f64 / map_w, y as f64 / map_h);
-    let norm_world = |x: i64, y: i64| (x as f64 / msx, y as f64 / msy); // coords ×4096
+    // Coords game (TargetPoint) = tuiles ×4096, msx/msy aussi ×4096 → le facteur 4096 s'annule.
+    let norm_world = |x: i64, y: i64| (x as f64 / msx, y as f64 / msy);
 
-    // 2) unité(tagIndex) → (player, isHero) depuis SUnitBornEvent (recycle: dernier gagne)
+    // 2) unité(tagIndex) → (player, isHero) depuis SUnitBornEvent.
+    //    Clé = m_unitTagIndex SEUL (pas (index, recycle)) : SUnitPositionsEvent référence les
+    //    unités par index uniquement, donc on résout l'occupant COURANT de cet index — « dernier
+    //    Born gagne » donne exactement cela. Sûr pour les héros : une unité-héros ne libère jamais
+    //    son index en cours de partie (Died→Revived le conserve), donc l'occupant courant est
+    //    toujours le bon héros.
+    //    ⚠️ PAS sûr tel quel pour structures/minions (fast-follow) : créés/détruits en masse, un
+    //    index peut être recyclé pendant qu'un frère est vivant → résolution ambiguë. Avant
+    //    d'étendre ce pipeline aux unités non-héros, clé par (index, recycle) avec résolution par
+    //    événement (via m_unitTagRecycle).
     let mut unit_player: HashMap<i64, (i64, bool)> = HashMap::new();
     for e in &tracker {
         if event_name(e) != "SUnitBornEvent" {
@@ -218,7 +228,8 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
     }
     deaths.sort_by(|a, b| a.t.total_cmp(&b.t));
 
-    // 8) heroes triés par player_id ; warnings = vec![] (US-7 plus tard)
+    // 8) heroes déjà construits dans l'ordre de player_ids (trié + dédupliqué) — tri défensif pour
+    //    garantir l'invariant côté consommateur ; warnings = vec![] (US-7 plus tard).
     heroes.sort_by_key(|h| h.player_id);
 
     Ok(ViewerModel {
