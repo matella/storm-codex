@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-pub const VIEWER_VERSION: u32 = 1;
+pub const VIEWER_VERSION: u32 = 2;
 pub const LOOP_OFFSET: i64 = 610;
 pub const LOOPS_PER_SEC: f64 = 16.0;
 pub const FIXED: f64 = 4096.0;
@@ -11,6 +11,7 @@ pub struct ViewerModel {
     pub meta: Meta,
     pub heroes: Vec<HeroTrack>,
     pub deaths: Vec<Death>,
+    pub structures: Vec<Structure>,
     pub warnings: Vec<String>,
 }
 
@@ -54,4 +55,14 @@ pub struct Death {
     pub y: f64,
     pub victim_player_id: i64,
     pub killer_player_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Structure {
+    pub team: i64,
+    pub kind: String,
+    pub x: f64,
+    pub y: f64,
+    pub destroyed_at: Option<f64>,
 }

@@ -232,6 +232,75 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
     //    garantir l'invariant côté consommateur ; warnings = vec![] (US-7 plus tard).
     heroes.sort_by_key(|h| h.player_id);
 
+    // 9) structures : SUnitBornEvent contrôlées par 11 (équipe 0) / 12 (équipe 1), types
+    //    Town*/KingsCore/HallOfStorms, en excluant le fantôme visuel post-destruction
+    //    ("...Destroyed"). Destruction = SUnitDiedEvent apparié par (tagIndex, tagRecycle) — PAS
+    //    tagIndex seul : les structures peuvent recycler un index pendant qu'une sœur est vivante.
+    let mut structures: Vec<Structure> = Vec::new();
+    let mut tag_to_structure: HashMap<(i64, i64), usize> = HashMap::new();
+    for e in &tracker {
+        if event_name(e) != "SUnitBornEvent" {
+            continue;
+        }
+        let control = field_int(e, "m_controlPlayerId").unwrap_or(0);
+        if control != 11 && control != 12 {
+            continue;
+        }
+        let Some(type_name) = e.field("m_unitTypeName").and_then(Value::as_str_lossy) else {
+            continue;
+        };
+        let is_structure = (type_name.starts_with("Town")
+            || type_name.starts_with("KingsCore")
+            || type_name.starts_with("HallOfStorms"))
+            && !type_name.contains("Destroyed");
+        if !is_structure {
+            continue;
+        }
+        let team = if control == 11 { 0 } else { 1 };
+        let kind = if type_name.contains("Core") {
+            "core"
+        } else if type_name.starts_with("TownTownHall") {
+            "fort"
+        } else if type_name.contains("Tower") {
+            "tower"
+        } else if type_name.starts_with("TownWall") {
+            "wall"
+        } else if type_name.starts_with("TownGate") {
+            "gate"
+        } else if type_name.starts_with("TownMoonwell") {
+            "well"
+        } else {
+            "other"
+        }
+        .to_string();
+        let x = field_int(e, "m_x").unwrap_or(0);
+        let y = field_int(e, "m_y").unwrap_or(0);
+        let (nx, ny) = norm_tile(x, y);
+        let idx = field_int(e, "m_unitTagIndex").unwrap_or(-1);
+        let recycle = field_int(e, "m_unitTagRecycle").unwrap_or(-1);
+
+        tag_to_structure.insert((idx, recycle), structures.len());
+        structures.push(Structure {
+            team,
+            kind,
+            x: q3(nx.clamp(0.0, 1.0)),
+            y: q3(ny.clamp(0.0, 1.0)),
+            destroyed_at: None,
+        });
+    }
+    for e in &tracker {
+        if event_name(e) != "SUnitDiedEvent" {
+            continue;
+        }
+        let idx = field_int(e, "m_unitTagIndex").unwrap_or(-1);
+        let recycle = field_int(e, "m_unitTagRecycle").unwrap_or(-1);
+        if let Some(&i) = tag_to_structure.get(&(idx, recycle)) {
+            let t = loop_to_sec(field_int(e, "_gameloop").unwrap_or(0));
+            structures[i].destroyed_at = Some(t);
+        }
+    }
+    structures.sort_by(|a, b| (a.team, &a.kind).cmp(&(b.team, &b.kind)));
+
     Ok(ViewerModel {
         meta: Meta {
             map_name: details.title.clone(),
@@ -242,6 +311,7 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
         },
         heroes,
         deaths,
+        structures,
         warnings: Vec::new(),
     })
 }

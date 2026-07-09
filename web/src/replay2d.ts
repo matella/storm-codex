@@ -6,9 +6,10 @@ export interface Interval { from: number; to: number }
 export interface HeroTrack { playerId: number; samples: Sample[]; life: Interval[] }
 export interface PlayerMeta { playerId: number; name: string | null; hero: string | null; team: number | null; win: boolean | null }
 export interface Death { t: number; x: number; y: number; victimPlayerId: number; killerPlayerId: number | null }
+export interface Structure { team: number; kind: string; x: number; y: number; destroyedAt: number | null }
 export interface Replay2D {
   meta: { mapName: string; mapSize: [number, number]; durationSec: number; loopOffset: number; viewerVersion: number };
-  players: PlayerMeta[]; heroes: HeroTrack[]; deaths: Death[]; warnings: string[];
+  players: PlayerMeta[]; heroes: HeroTrack[]; deaths: Death[]; structures: Structure[]; warnings: string[];
 }
 
 const aliveAt = (life: Interval[], t: number) => life.some((iv) => t >= iv.from && t <= iv.to);

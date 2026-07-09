@@ -39,7 +39,7 @@ fn all_coords_normalized() {
 fn duration_and_meta_sane() {
     let m = model();
     assert!(m.meta.duration_sec > 60.0, "durée trop courte");
-    assert_eq!(m.meta.viewer_version, 1);
+    assert_eq!(m.meta.viewer_version, 2);
     assert!(m.meta.map_size[0] > 0.0 && m.meta.map_size[1] > 0.0);
 }
 
@@ -131,6 +131,34 @@ fn player_toons_authoritative_mapping() {
         ids.windows(2).all(|w| w[0] < w[1]),
         "player_toons non trié par playerId croissant: {ids:?}"
     );
+}
+
+#[test]
+fn structures_present_and_classified() {
+    let m = model();
+    assert!(
+        m.structures.iter().any(|s| s.team == 0 && s.kind == "core"),
+        "aucun core team 0"
+    );
+    assert!(
+        m.structures.iter().any(|s| s.team == 1 && s.kind == "core"),
+        "aucun core team 1"
+    );
+    for s in &m.structures {
+        assert!(
+            (0.0..=1.0).contains(&s.x) && (0.0..=1.0).contains(&s.y),
+            "coord hors [0,1]: {:?} ({})",
+            (s.x, s.y),
+            s.kind
+        );
+        if let Some(d) = s.destroyed_at {
+            assert!(
+                (0.0..=m.meta.duration_sec).contains(&d),
+                "destroyedAt hors bornes: {d} (duration {})",
+                m.meta.duration_sec
+            );
+        }
+    }
 }
 
 #[test]

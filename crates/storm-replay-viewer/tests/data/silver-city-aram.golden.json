@@ -62586,5 +62586,231 @@
     ],
     "viewerVersion": "<ignored>"
   },
+  "structures": [
+    {
+      "destroyedAt": null,
+      "kind": "core",
+      "team": 0,
+      "x": 0.19,
+      "y": 0.486
+    },
+    {
+      "destroyedAt": null,
+      "kind": "fort",
+      "team": 0,
+      "x": 0.383,
+      "y": 0.505
+    },
+    {
+      "destroyedAt": null,
+      "kind": "fort",
+      "team": 0,
+      "x": 0.266,
+      "y": 0.486
+    },
+    {
+      "destroyedAt": null,
+      "kind": "gate",
+      "team": 0,
+      "x": 0.306,
+      "y": 0.495
+    },
+    {
+      "destroyedAt": null,
+      "kind": "gate",
+      "team": 0,
+      "x": 0.427,
+      "y": 0.5
+    },
+    {
+      "destroyedAt": null,
+      "kind": "other",
+      "team": 0,
+      "x": 0.137,
+      "y": 0.542
+    },
+    {
+      "destroyedAt": null,
+      "kind": "tower",
+      "team": 0,
+      "x": 0.431,
+      "y": 0.519
+    },
+    {
+      "destroyedAt": null,
+      "kind": "tower",
+      "team": 0,
+      "x": 0.423,
+      "y": 0.481
+    },
+    {
+      "destroyedAt": null,
+      "kind": "tower",
+      "team": 0,
+      "x": 0.31,
+      "y": 0.477
+    },
+    {
+      "destroyedAt": null,
+      "kind": "tower",
+      "team": 0,
+      "x": 0.302,
+      "y": 0.514
+    },
+    {
+      "destroyedAt": null,
+      "kind": "wall",
+      "team": 0,
+      "x": 0.415,
+      "y": 0.468
+    },
+    {
+      "destroyedAt": null,
+      "kind": "wall",
+      "team": 0,
+      "x": 0.427,
+      "y": 0.532
+    },
+    {
+      "destroyedAt": null,
+      "kind": "wall",
+      "team": 0,
+      "x": 0.294,
+      "y": 0.528
+    },
+    {
+      "destroyedAt": null,
+      "kind": "wall",
+      "team": 0,
+      "x": 0.306,
+      "y": 0.463
+    },
+    {
+      "destroyedAt": null,
+      "kind": "well",
+      "team": 0,
+      "x": 0.391,
+      "y": 0.468
+    },
+    {
+      "destroyedAt": null,
+      "kind": "well",
+      "team": 0,
+      "x": 0.258,
+      "y": 0.449
+    },
+    {
+      "destroyedAt": 603.6875,
+      "kind": "core",
+      "team": 1,
+      "x": 0.81,
+      "y": 0.486
+    },
+    {
+      "destroyedAt": 402.0625,
+      "kind": "fort",
+      "team": 1,
+      "x": 0.617,
+      "y": 0.505
+    },
+    {
+      "destroyedAt": 556.6875,
+      "kind": "fort",
+      "team": 1,
+      "x": 0.73,
+      "y": 0.486
+    },
+    {
+      "destroyedAt": 419.3125,
+      "kind": "gate",
+      "team": 1,
+      "x": 0.694,
+      "y": 0.495
+    },
+    {
+      "destroyedAt": 321.625,
+      "kind": "gate",
+      "team": 1,
+      "x": 0.573,
+      "y": 0.5
+    },
+    {
+      "destroyedAt": null,
+      "kind": "other",
+      "team": 1,
+      "x": 0.859,
+      "y": 0.542
+    },
+    {
+      "destroyedAt": 429.9375,
+      "kind": "tower",
+      "team": 1,
+      "x": 0.698,
+      "y": 0.514
+    },
+    {
+      "destroyedAt": 427.8125,
+      "kind": "tower",
+      "team": 1,
+      "x": 0.69,
+      "y": 0.477
+    },
+    {
+      "destroyedAt": 381.5,
+      "kind": "tower",
+      "team": 1,
+      "x": 0.577,
+      "y": 0.481
+    },
+    {
+      "destroyedAt": 327.5625,
+      "kind": "tower",
+      "team": 1,
+      "x": 0.569,
+      "y": 0.519
+    },
+    {
+      "destroyedAt": 315.1875,
+      "kind": "wall",
+      "team": 1,
+      "x": 0.569,
+      "y": 0.532
+    },
+    {
+      "destroyedAt": 419.75,
+      "kind": "wall",
+      "team": 1,
+      "x": 0.69,
+      "y": 0.463
+    },
+    {
+      "destroyedAt": 387.5625,
+      "kind": "wall",
+      "team": 1,
+      "x": 0.581,
+      "y": 0.468
+    },
+    {
+      "destroyedAt": null,
+      "kind": "wall",
+      "team": 1,
+      "x": 0.702,
+      "y": 0.528
+    },
+    {
+      "destroyedAt": 402.0625,
+      "kind": "well",
+      "team": 1,
+      "x": 0.605,
+      "y": 0.468
+    },
+    {
+      "destroyedAt": 556.6875,
+      "kind": "well",
+      "team": 1,
+      "x": 0.738,
+      "y": 0.449
+    }
+  ],
   "warnings": []
 }

@@ -82,6 +82,27 @@ export function Replay2D({ id }: { id: string }) {
     const W = canvas.width, H = canvas.height;
     ctx.clearRect(0, 0, W, H);
 
+    // Structures d'abord (sous les héros) : petits carrés/losanges couleur d'équipe, le core plus
+    // grand ; détruite (à t courant) → grisée + croix. "other" (ex. HallOfStormsLocationUnit) sauté
+    // pour réduire le bruit visuel.
+    for (const s of data.structures) {
+      if (s.kind === "other") continue;
+      const cx = s.x * W, cy = (1 - s.y) * H;
+      const destroyed = s.destroyedAt !== null && t >= s.destroyedAt;
+      const size = s.kind === "core" ? 9 : 5;
+      ctx.fillStyle = destroyed ? "#5a5d6b" : teamColor[s.team === 1 ? 1 : 0];
+      ctx.fillRect(cx - size / 2, cy - size / 2, size, size);
+      if (destroyed) {
+        ctx.strokeStyle = "#e8eaf2";
+        ctx.lineWidth = 1;
+        const s2 = size / 2 + 1;
+        ctx.beginPath();
+        ctx.moveTo(cx - s2, cy - s2); ctx.lineTo(cx + s2, cy + s2);
+        ctx.moveTo(cx + s2, cy - s2); ctx.lineTo(cx - s2, cy + s2);
+        ctx.stroke();
+      }
+    }
+
     for (const track of data.heroes) {
       const p = sampleAt(track, t);
       if (!p) continue;
