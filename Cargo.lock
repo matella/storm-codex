@@ -2042,6 +2042,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "storm-replay-viewer"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "storm-replay",
+ "thiserror",
+]
+
+[[package]]
 name = "storm-stats"
 version = "0.1.0"
 dependencies = [
