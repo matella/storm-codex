@@ -18,7 +18,13 @@ use storm_replay_viewer::{build_model, player_toons, ViewerModel, VIEWER_VERSION
 /// Métadonnées `match_players` jointes par toon_handle : `(name, hero, team, win)`.
 type PlayerMeta = (Option<String>, Option<String>, Option<i32>, Option<bool>);
 /// Ligne brute `match_players` (toon_handle + métadonnées).
-type PlayerMetaRow = (String, Option<String>, Option<String>, Option<i32>, Option<bool>);
+type PlayerMetaRow = (
+    String,
+    Option<String>,
+    Option<String>,
+    Option<i32>,
+    Option<bool>,
+);
 
 pub async fn get_replay2d(State(s): State<AppState>, Path(id): Path<i64>) -> Response {
     // fichier archivé d'un upload ayant produit ce match (même requête que raw.rs)
@@ -39,6 +45,12 @@ pub async fn get_replay2d(State(s): State<AppState>, Path(id): Path<i64>) -> Res
             .into_response();
     };
 
+    // Clé de cache = match_id + VIEWER_VERSION seulement. Le payload embarque pourtant des
+    // métadonnées match_players mutables (name/hero/team/win) sans y être clé — sûr UNIQUEMENT
+    // parce que reprocesser un replay alloue un match_id neuf (project.rs : DELETE par fingerprint,
+    // cascade → match_players, puis INSERT … RETURNING id), jamais un UPDATE in-place des joueurs
+    // d'un match_id existant. Si une édition in-place des métadonnées joueurs d'un match_id existant
+    // est un jour ajoutée, invalider/évincer cette entrée de cache à cet endroit-là.
     let cache = s
         .cfg
         .raw_cache_dir
