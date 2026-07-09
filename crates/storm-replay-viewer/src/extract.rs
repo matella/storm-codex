@@ -1,6 +1,6 @@
 use crate::model::*;
 use crate::Error;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use storm_replay::{Replay, Value};
 
 const EPS: f64 = 0.004;
@@ -60,7 +60,7 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
     const MINION_TIME_BUCKET_SEC: f64 = 2.0;
     let mut samples: HashMap<i64, Vec<Sample>> = HashMap::new();
     let mut minions: Vec<MinionSample> = Vec::new();
-    let mut minion_seen: std::collections::HashSet<(i64, i64, i64, i64)> = std::collections::HashSet::new();
+    let mut minion_seen: HashSet<(i64, i64, i64, i64)> = HashSet::new();
     let mut minion_seen_count: u64 = 0; // unités non-héros rencontrées (avant dédup), pour le warning de troncature
     let mut minion_truncated = false;
     for e in &tracker {
@@ -100,7 +100,9 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
                         _ => -1,
                     };
                     let (x, y) = norm_tile(tri[1], tri[2]);
-                    let (qx, qy) = (q3(x), q3(y));
+                    // Clamp [0,1] avant q3 comme héros/deaths/structures : norm_tile peut
+                    // légèrement déborder aux bords de carte (unités de jungle proches des limites).
+                    let (qx, qy) = (q3(x.clamp(0.0, 1.0)), q3(y.clamp(0.0, 1.0)));
                     let gx = (qx * 64.0).floor() as i64;
                     let gy = (qy * 64.0).floor() as i64;
                     let tbucket = (t / MINION_TIME_BUCKET_SEC).floor() as i64;
