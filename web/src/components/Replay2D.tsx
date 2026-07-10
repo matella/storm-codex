@@ -279,6 +279,10 @@ export function Replay2D({ id }: { id: string }) {
 
   // Fond de la visionneuse : minimap in-game (prioritaire) → art peint (fallback) → dégradé (conteneur).
   // Chargée en Image et dessinée DANS le canvas (drawImage), pour partager la transform des pastilles.
+  // Ratio d'affichage = ratio natif de l'image de fond chargée (défaut 1 = carré si aucun fond).
+  // Le canvas carré étirait chaque carte non carrée (ex. Tomb 2:1, Haunted Mines 2.9:1 écrasées en
+  // hauteur) ; on cale le canvas + conteneur sur le ratio de l'image → carte à ses vraies proportions.
+  const [bgAspect, setBgAspect] = useState(1);
   const bgRef = useRef<{ img: HTMLImageElement; slug: string; minimap: boolean } | null>(null);
   useEffect(() => {
     bgRef.current = null;
@@ -289,6 +293,7 @@ export function Replay2D({ id }: { id: string }) {
     const load = () => { img.src = (stage === 0 ? minimapImage(map) : mapImage(map)) ?? ""; };
     img.onload = () => {
       bgRef.current = { img, slug: mapSlug(map), minimap: stage === 0 };
+      if (img.naturalWidth > 0 && img.naturalHeight > 0) setBgAspect(img.naturalWidth / img.naturalHeight);
       bumpRedraw((n) => n + 1);
     };
     img.onerror = () => {
@@ -601,6 +606,11 @@ export function Replay2D({ id }: { id: string }) {
   if (isLoading) return <div className="empty">loading…</div>;
   if (!data) return <div className="empty">replay unavailable</div>;
 
+  // Dimensions du canvas au ratio natif de la carte (grand axe = CANVAS_SIZE) : l'image est dessinée
+  // pleine (0,0,W,H) sans déformation, les pastilles projetées en fractions × (W,H) suivent la carte.
+  const canvasW = bgAspect >= 1 ? CANVAS_SIZE : Math.round(CANVAS_SIZE * bgAspect);
+  const canvasH = bgAspect >= 1 ? Math.round(CANVAS_SIZE / bgAspect) : CANVAS_SIZE;
+
   return (
     <div className="card" style={{ padding: 14 }}>
       {data.warnings.length > 0 && (
@@ -632,7 +642,7 @@ export function Replay2D({ id }: { id: string }) {
           style={{
             position: "relative",
             width: "min(100%, 560px)",
-            aspectRatio: "1 / 1",
+            aspectRatio: `${canvasW} / ${canvasH}`,
             borderRadius: 8,
             overflow: "hidden",
             background: "linear-gradient(135deg, #1a1d2a, #232636)",
@@ -640,8 +650,8 @@ export function Replay2D({ id }: { id: string }) {
         >
           <canvas
             ref={canvasRef}
-            width={CANVAS_SIZE}
-            height={CANVAS_SIZE}
+            width={canvasW}
+            height={canvasH}
             style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
           />
           {calibrating && editAnchors && (["blue", "red"] as const).map((color) => (
