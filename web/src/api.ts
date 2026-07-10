@@ -380,8 +380,10 @@ export function minimapImage(map: string | null): string | null {
   return `/images/minimaps/${mapSlug(map)}.jpg`;
 }
 
-/** Ancres de calibration minimap par slug de carte : position image (fractions) des 2 cores. */
-export type MinimapAnchors = Record<string, { blue: [number, number]; red: [number, number] }>;
+/** Ancres de calibration minimap par slug : position image (fractions) des 2 cores + échelle
+ *  verticale `vscale` (défaut 1) pour corriger l'aspect (2 cores ~horizontaux ne fixent qu'une
+ *  échelle uniforme ; vscale ajuste indépendamment le vertical). */
+export type MinimapAnchors = Record<string, { blue: [number, number]; red: [number, number]; vscale?: number }>;
 
 /** Persiste les ancres minimap (remplacement complet) via l'endpoint admin. `token` = admin_token
  *  (localStorage) ; ignoré si le serveur est en mode ouvert. */

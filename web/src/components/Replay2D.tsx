@@ -94,7 +94,7 @@ function resolveColor(v: string): string {
 // On stocke la position IMAGE (fractions) des 2 cores (bleu, rouge) ; à l'exécution on lit leurs coords
 // JEU depuis les structures, et on résout une similitude (rotation+échelle+translation) qui pose l'image
 // pour que ses cores tombent EXACTEMENT sous les pastilles-core. Sans ancres → pleine image (fallback).
-type Anchor2 = { blue: [number, number]; red: [number, number] };
+type Anchor2 = { blue: [number, number]; red: [number, number]; vscale?: number };
 const MAP_ANCHORS: Record<string, Anchor2> = {
   // [xFraction, yFraction] du centre de chaque core (bleu, rouge) dans /images/minimaps/<slug>.jpg.
   // Le core game vient des données ; la similitude cale l'orientation/échelle par carte. Sans entrée →
@@ -177,7 +177,7 @@ export function Replay2D({ id }: { id: string }) {
   const savedAnchors: MinimapAnchors = settings?.minimap_anchors ?? {};
   // Mode calibration (opérateur) : glisser les 2 points cores sur la minimap, aperçu live, sauvegarde.
   const [calibrating, setCalibrating] = useState(false);
-  const [editAnchors, setEditAnchors] = useState<{ blue: [number, number]; red: [number, number] } | null>(null);
+  const [editAnchors, setEditAnchors] = useState<Anchor2 | null>(null);
   const [dragging, setDragging] = useState<"blue" | "red" | null>(null);
   const [calSaved, setCalSaved] = useState<string>("");
   const calContainerRef = useRef<HTMLDivElement>(null);
@@ -186,8 +186,8 @@ export function Replay2D({ id }: { id: string }) {
     const slug = data ? mapSlug(data.meta.mapName) : "";
     const cur = savedAnchors[slug] ?? MAP_ANCHORS[slug];
     setEditAnchors(cur
-      ? { blue: [...cur.blue] as [number, number], red: [...cur.red] as [number, number] }
-      : { blue: [0.1, 0.5], red: [0.9, 0.5] });
+      ? { blue: [...cur.blue] as [number, number], red: [...cur.red] as [number, number], vscale: cur.vscale ?? 1 }
+      : { blue: [0.1, 0.5], red: [0.9, 0.5], vscale: 1 });
     setCalibrating(true);
     setCalSaved("");
   };
@@ -436,11 +436,15 @@ export function Replay2D({ id }: { id: string }) {
       if (cal && blueCore && redCore) {
         // Jeu (y↑) → image (y↓) : on convertit game-y en repère image (1-gy) AVANT la similitude —
         // sinon la similitude (rotation+échelle, sans réflexion) inverse verticalement les cartes à
-        // cores horizontaux (rotation ≈ 0). solveSimilarity : jeu(core) → fraction image(ancre).
+        // cores horizontaux (rotation ≈ 0). `vscale` étire/écrase le vertical autour du centre (0.5)
+        // pour corriger l'aspect (2 cores ~horizontaux ne fixent qu'une échelle uniforme). Appliqué aux
+        // cores ET aux points → les cores (proches de y=0.5) restent ancrés, le reste s'ajuste.
+        const vs = cal.vscale ?? 1;
+        const vy = (gy: number) => 0.5 + vs * (1 - gy - 0.5);
         const [a, b, c, d, e, f] = solveSimilarity(
-          [blueCore.x, 1 - blueCore.y], [redCore.x, 1 - redCore.y], cal.blue, cal.red,
+          [blueCore.x, vy(blueCore.y)], [redCore.x, vy(redCore.y)], cal.blue, cal.red,
         );
-        project = (gx, gy) => [(a * gx + c * (1 - gy) + e) * W, (b * gx + d * (1 - gy) + f) * H];
+        project = (gx, gy) => [(a * gx + c * vy(gy) + e) * W, (b * gx + d * vy(gy) + f) * H];
       }
       ctx.drawImage(bg.img, 0, 0, W, H); // carte droite
       ctx.fillStyle = "rgba(12,14,22,0.30)";
@@ -660,7 +664,17 @@ export function Replay2D({ id }: { id: string }) {
             <button type="button" className="pill" aria-label="calibrer la minimap" onClick={enterCalibration}>Calibrate map</button>
           ) : (
             <>
-              <span className="muted">Drag the blue/red dots onto the two bases, then save.</span>
+              <span className="muted">Drag the blue/red dots onto the two bases; adjust vertical to fix stretch.</span>
+              <label style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                vertical
+                <input
+                  type="range" min={0.5} max={1.6} step={0.02} value={editAnchors?.vscale ?? 1}
+                  aria-label="échelle verticale de la carte"
+                  onChange={(ev) => editAnchors && setEditAnchors({ ...editAnchors, vscale: Number(ev.target.value) })}
+                  style={{ width: 100 }}
+                />
+                <span className="mono">{(editAnchors?.vscale ?? 1).toFixed(2)}</span>
+              </label>
               <button type="button" className="pill on" aria-label="enregistrer la calibration" onClick={saveCalibration}>Save</button>
               <button type="button" className="pill" aria-label="annuler la calibration" onClick={() => { setCalibrating(false); setDragging(null); }}>Cancel</button>
             </>
