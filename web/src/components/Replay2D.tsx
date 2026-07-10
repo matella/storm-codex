@@ -460,11 +460,11 @@ export function Replay2D({ id }: { id: string }) {
     // ±5s autour de t (nearest-window, pas d'interpolation : le signal est déjà dédupliqué/grossier).
     if (showMinions) {
       const neutralColor = resolveColor("var(--muted-2)");
-      ctx.globalAlpha = 0.35;
+      ctx.globalAlpha = 0.55;
       for (const ms of minionsNear(data.minions, t)) {
         const [cx, cy] = project(ms.x, ms.y);
         ctx.beginPath();
-        ctx.arc(cx, cy, 2, 0, Math.PI * 2);
+        ctx.arc(cx, cy, 3.5, 0, Math.PI * 2);
         ctx.fillStyle = ms.team === 1 ? teamColor[1] : ms.team === 0 ? teamColor[0] : neutralColor;
         ctx.fill();
       }
