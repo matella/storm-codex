@@ -83,6 +83,36 @@ pub async fn put_settings(
     }
 }
 
+/// PUT /api/admin/minimap-anchors (admin) — persiste les ancres de calibration minimap par carte
+/// (`{ "<slug>": { "blue": [x,y], "red": [x,y] } }`) dans `app_settings.minimap_anchors`. Consommé
+/// par la visionneuse 2D (surcharge les défauts bakés). Corps = l'objet complet (remplacement).
+pub async fn put_minimap_anchors(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Json(anchors): Json<J>,
+) -> (StatusCode, Json<J>) {
+    if !is_admin(&headers, &s) {
+        return forbidden();
+    }
+    if !anchors.is_object() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "objet attendu"})),
+        );
+    }
+    match sqlx::query(
+        "INSERT INTO app_settings (key, value) VALUES ('minimap_anchors', $1)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+    )
+    .bind(&anchors)
+    .execute(&s.db)
+    .await
+    {
+        Ok(_) => (StatusCode::OK, Json(anchors)),
+        Err(e) => db_err(e),
+    }
+}
+
 #[derive(Deserialize)]
 pub struct NewTeam {
     name: String,
