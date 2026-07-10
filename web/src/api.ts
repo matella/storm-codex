@@ -380,6 +380,20 @@ export function minimapImage(map: string | null): string | null {
   return `/images/minimaps/${mapSlug(map)}.jpg`;
 }
 
+/** Ancres de calibration minimap par slug de carte : position image (fractions) des 2 cores. */
+export type MinimapAnchors = Record<string, { blue: [number, number]; red: [number, number] }>;
+
+/** Persiste les ancres minimap (remplacement complet) via l'endpoint admin. `token` = admin_token
+ *  (localStorage) ; ignoré si le serveur est en mode ouvert. */
+export async function saveMinimapAnchors(anchors: MinimapAnchors, token: string): Promise<void> {
+  const r = await fetch("/api/admin/minimap-anchors", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(anchors),
+  });
+  if (!r.ok) throw new Error(`minimap-anchors → ${r.status}`);
+}
+
 /** Image de carte (art peint de loading-screen) : `/images/battlegrounds/<slug>.png`.
  *  Les cartes ARAM peuvent ne pas avoir d'image (404) → le consommateur prévoit un fallback. */
 export function mapImage(map: string | null): string | null {

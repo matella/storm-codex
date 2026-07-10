@@ -2,8 +2,8 @@
 // puis scrub 100% côté client — pas de requête réseau par déplacement du curseur (seek(t) pur, cf.
 // replay2d.ts). Play/pause + vitesse animent `t` en temps réel via usePlayback (US-11).
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { fetchReplay2d, fetchMatch, mapImage, minimapImage, mapSlug, universeColor, heroIcon, initials, useDimTalents, talentInfo } from "../api";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { fetchReplay2d, fetchMatch, mapImage, minimapImage, mapSlug, universeColor, heroIcon, initials, useDimTalents, talentInfo, saveMinimapAnchors, type MinimapAnchors } from "../api";
 import { sampleAt, deathsNear, castFlash, minionsNear, type FeedEvent, type Objective } from "../replay2d";
 import { advance, usePlayback } from "../usePlayback";
 import { clipFrames, downloadBlob, recordCanvasStream, supportsClipExport } from "../clipExport";
@@ -166,6 +166,48 @@ export function Replay2D({ id }: { id: string }) {
     queryFn: () => fetchMatch(id),
     staleTime: Infinity,
   });
+
+  // Ancres de calibration minimap persistées (app_settings) — surchargent les défauts bakés MAP_ANCHORS.
+  const qc = useQueryClient();
+  const { data: settings } = useQuery({
+    queryKey: ["settings"],
+    queryFn: async () => (await fetch("/api/settings")).json() as Promise<{ minimap_anchors?: MinimapAnchors }>,
+    staleTime: 60_000,
+  });
+  const savedAnchors: MinimapAnchors = settings?.minimap_anchors ?? {};
+  // Mode calibration (opérateur) : glisser les 2 points cores sur la minimap, aperçu live, sauvegarde.
+  const [calibrating, setCalibrating] = useState(false);
+  const [editAnchors, setEditAnchors] = useState<{ blue: [number, number]; red: [number, number] } | null>(null);
+  const [dragging, setDragging] = useState<"blue" | "red" | null>(null);
+  const [calSaved, setCalSaved] = useState<string>("");
+  const calContainerRef = useRef<HTMLDivElement>(null);
+
+  const enterCalibration = () => {
+    const slug = data ? mapSlug(data.meta.mapName) : "";
+    const cur = savedAnchors[slug] ?? MAP_ANCHORS[slug];
+    setEditAnchors(cur
+      ? { blue: [...cur.blue] as [number, number], red: [...cur.red] as [number, number] }
+      : { blue: [0.1, 0.5], red: [0.9, 0.5] });
+    setCalibrating(true);
+    setCalSaved("");
+  };
+  const onCalMove = (e: React.PointerEvent) => {
+    if (!dragging || !calContainerRef.current || !editAnchors) return;
+    const rect = calContainerRef.current.getBoundingClientRect();
+    const r3 = (n: number) => Math.round(Math.min(1, Math.max(0, n)) * 1000) / 1000;
+    setEditAnchors({ ...editAnchors, [dragging]: [r3((e.clientX - rect.left) / rect.width), r3((e.clientY - rect.top) / rect.height)] });
+  };
+  const saveCalibration = async () => {
+    if (!data || !editAnchors) return;
+    const next: MinimapAnchors = { ...savedAnchors, [mapSlug(data.meta.mapName)]: editAnchors };
+    try {
+      await saveMinimapAnchors(next, localStorage.getItem("admin_token") ?? "");
+      await qc.invalidateQueries({ queryKey: ["settings"] });
+      setCalibrating(false); setDragging(null); setCalSaved("saved ✓");
+    } catch {
+      setCalSaved("save failed (admin token?)");
+    }
+  };
   // Clé par NOM de joueur (battletag), PAS par héros : un match ARAM peut avoir deux fois le même
   // héros (miroir) → une clé héros afficherait les talents de l'autre joueur. Le nom est unique
   // par match ; replay2d `players[]` porte le même `name`, donc la jointure est sûre. Si un nom
@@ -387,13 +429,18 @@ export function Replay2D({ id }: { id: string }) {
     if (bg) {
       const cores = data.structures.filter((s) => s.kind === "core");
       const blueCore = cores.find((s) => s.team === 0), redCore = cores.find((s) => s.team === 1);
-      const cal = bg.minimap ? (liveCalFor(bg.slug) ?? MAP_ANCHORS[bg.slug]) : undefined;
+      // Ancres effectives : édition en cours (calibration) > persistées > hook live > défauts bakés.
+      const cal = bg.minimap
+        ? (calibrating && editAnchors ? editAnchors : (savedAnchors[bg.slug] ?? liveCalFor(bg.slug) ?? MAP_ANCHORS[bg.slug]))
+        : undefined;
       if (cal && blueCore && redCore) {
-        // solveSimilarity : jeu(core) → fraction image(ancre). project applique ×W/×H.
+        // Jeu (y↑) → image (y↓) : on convertit game-y en repère image (1-gy) AVANT la similitude —
+        // sinon la similitude (rotation+échelle, sans réflexion) inverse verticalement les cartes à
+        // cores horizontaux (rotation ≈ 0). solveSimilarity : jeu(core) → fraction image(ancre).
         const [a, b, c, d, e, f] = solveSimilarity(
-          [blueCore.x, blueCore.y], [redCore.x, redCore.y], cal.blue, cal.red,
+          [blueCore.x, 1 - blueCore.y], [redCore.x, 1 - redCore.y], cal.blue, cal.red,
         );
-        project = (gx, gy) => [(a * gx + c * gy + e) * W, (b * gx + d * gy + f) * H];
+        project = (gx, gy) => [(a * gx + c * (1 - gy) + e) * W, (b * gx + d * (1 - gy) + f) * H];
       }
       ctx.drawImage(bg.img, 0, 0, W, H); // carte droite
       ctx.fillStyle = "rgba(12,14,22,0.30)";
@@ -545,7 +592,7 @@ export function Replay2D({ id }: { id: string }) {
       ctx.moveTo(cx + s, cy - s); ctx.lineTo(cx - s, cy + s);
       ctx.stroke();
     }
-  }, [t, data, playerByPlayerId, teamColor, tick, showMinions]);
+  }, [t, data, playerByPlayerId, teamColor, tick, showMinions, calibrating, editAnchors, settings]);
 
   if (isLoading) return <div className="empty">loading…</div>;
   if (!data) return <div className="empty">replay unavailable</div>;
@@ -572,7 +619,12 @@ export function Replay2D({ id }: { id: string }) {
         </div>
       )}
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 360px" }}>
         <div
+          ref={calContainerRef}
+          onPointerMove={calibrating ? onCalMove : undefined}
+          onPointerUp={() => setDragging(null)}
+          onPointerLeave={() => setDragging(null)}
           style={{
             position: "relative",
             width: "min(100%, 560px)",
@@ -580,7 +632,6 @@ export function Replay2D({ id }: { id: string }) {
             borderRadius: 8,
             overflow: "hidden",
             background: "linear-gradient(135deg, #1a1d2a, #232636)",
-            flex: "1 1 360px",
           }}
         >
           <canvas
@@ -589,6 +640,33 @@ export function Replay2D({ id }: { id: string }) {
             height={CANVAS_SIZE}
             style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
           />
+          {calibrating && editAnchors && (["blue", "red"] as const).map((color) => (
+            <div
+              key={color}
+              onPointerDown={(e) => { e.preventDefault(); setDragging(color); }}
+              title={`core ${color} — glisser sur la base ${color === "blue" ? "bleue" : "rouge"}`}
+              style={{
+                position: "absolute", left: `${editAnchors[color][0] * 100}%`, top: `${editAnchors[color][1] * 100}%`,
+                transform: "translate(-50%, -50%)", width: 20, height: 20, borderRadius: "50%",
+                border: "2px solid #fff", background: color === "blue" ? "var(--tm-blue)" : "var(--tm-red)",
+                boxShadow: "0 0 0 2px rgba(0,0,0,.55)", cursor: dragging === color ? "grabbing" : "grab",
+                zIndex: 5, touchAction: "none",
+              }}
+            />
+          ))}
+        </div>
+        <div style={{ marginTop: 6, display: "flex", gap: 8, alignItems: "center", fontSize: 11, flexWrap: "wrap" }}>
+          {!calibrating ? (
+            <button type="button" className="pill" aria-label="calibrer la minimap" onClick={enterCalibration}>Calibrate map</button>
+          ) : (
+            <>
+              <span className="muted">Drag the blue/red dots onto the two bases, then save.</span>
+              <button type="button" className="pill on" aria-label="enregistrer la calibration" onClick={saveCalibration}>Save</button>
+              <button type="button" className="pill" aria-label="annuler la calibration" onClick={() => { setCalibrating(false); setDragging(null); }}>Cancel</button>
+            </>
+          )}
+          {calSaved && <span className="muted">{calSaved}</span>}
+        </div>
         </div>
         <div style={{ minWidth: 180, flex: "0 0 200px" }}>
           <p className="cap" style={{ margin: "0 0 8px" }}>Players</p>
