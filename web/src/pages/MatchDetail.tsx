@@ -1,7 +1,7 @@
 import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "react-router-dom";
-import { fetchMatch, modeBadge, fmtTime, fmtDur, useDimTalents, talentInfo, awardLabel } from "../api";
+import { fetchMatch, modeBadge, fmtTime, fmtDur, fmtClock, announceLabel, useDimTalents, talentInfo, awardLabel } from "../api";
 import { Avatar } from "../components/Avatar";
 import { LevelChart } from "../components/LevelChart";
 
@@ -263,20 +263,6 @@ function BMTable({ players, messages }: { players: any[]; messages: any[] }) {
       </div>
     </>
   );
-}
-
-/** mm:ss signé — les messages du draft/chargement ont un temps négatif (avant le début de partie). */
-function fmtClock(sec: number): string {
-  const s = Math.floor(Math.abs(sec));
-  return `${sec < 0 ? "−" : ""}${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-}
-
-function announceLabel(a: any): string {
-  const k = a && typeof a === "object" ? Object.keys(a)[0] : null;
-  if (k === "Ability") return "ability callout";
-  if (k === "Vitals") return "vitals callout (help)";
-  if (k === "Behavior") return "behavior callout";
-  return "callout";
 }
 
 function ChatLog({ messages, players }: { messages: any; players: Record<string, any> }) {

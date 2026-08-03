@@ -2,6 +2,7 @@
 //! WebSocket, REST. Jalon 3. Config par env (cf. `.env.example`).
 
 mod admin;
+mod auth;
 mod azure;
 mod config;
 mod dim;
@@ -127,8 +128,25 @@ async fn run() -> Result<(), String> {
         });
     }
     let bind = state.cfg.bind_addr.clone();
+    let app = api_router(&state);
+    let app = serve_spa(app, &state).with_state(state)
+    // Limite de corps de requête : le défaut axum (2 Mo) rejetait en 413 — AVANT le handler, donc
+    // sans trace ni ligne uploads — les replays de longues parties (un Braxis Holdout 5v5 dépasse
+    // 2 Mo), faisant boucler l'uploader. 64 Mo couvre largement (replays < ~10 Mo).
+    .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024));
 
-    let app = Router::new()
+    let listener = tokio::net::TcpListener::bind(&bind)
+        .await
+        .map_err(|e| format!("bind {bind} : {e}"))?;
+    tracing::info!("storm-codex-server à l'écoute sur {bind}");
+    axum::serve(listener, app)
+        .await
+        .map_err(|e| format!("serve : {e}"))
+}
+
+/// Toutes les routes API + images (sans le fallback SPA) — extraite pour les tests d'intégration.
+fn api_router(state: &AppState) -> Router<AppState> {
+    Router::new()
         .route("/api/health", get(health))
         .route("/api/upload", post(upload::upload))
         // alias compat client-rs (Hots-Overlay) : il poste sur /api/upload-raw (octets bruts,
@@ -181,11 +199,13 @@ async fn run() -> Result<(), String> {
         .nest_service(
             "/images",
             tower_http::services::ServeDir::new(&state.cfg.images_dir),
-        );
+        )
+}
 
-    // Front buildé (SPA) : ServeDir sert les assets ; toute route inconnue renvoie index.html
-    // (statut 200) pour que le routing client React fonctionne sur les liens profonds.
-    let app = match &state.cfg.web_dir {
+/// Front buildé (SPA) : ServeDir sert les assets ; toute route inconnue renvoie index.html
+/// (statut 200) pour que le routing client React fonctionne sur les liens profonds.
+fn serve_spa(app: Router<AppState>, state: &AppState) -> Router<AppState> {
+    match &state.cfg.web_dir {
         Some(dir) => {
             let index = std::fs::read_to_string(dir.join("index.html")).unwrap_or_default();
             // index.html en `no-cache` : non fingerprinté, il doit toujours être revalidé sinon
@@ -210,19 +230,6 @@ async fn run() -> Result<(), String> {
         }
         None => app,
     }
-    .with_state(state)
-    // Limite de corps de requête : le défaut axum (2 Mo) rejetait en 413 — AVANT le handler, donc
-    // sans trace ni ligne uploads — les replays de longues parties (un Braxis Holdout 5v5 dépasse
-    // 2 Mo), faisant boucler l'uploader. 64 Mo couvre largement (replays < ~10 Mo).
-    .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024));
-
-    let listener = tokio::net::TcpListener::bind(&bind)
-        .await
-        .map_err(|e| format!("bind {bind} : {e}"))?;
-    tracing::info!("storm-codex-server à l'écoute sur {bind}");
-    axum::serve(listener, app)
-        .await
-        .map_err(|e| format!("serve : {e}"))
 }
 
 async fn health(State(state): State<AppState>) -> (StatusCode, Json<serde_json::Value>) {
@@ -240,4 +247,187 @@ async fn health(State(state): State<AppState>) -> (StatusCode, Json<serde_json::
             "db": if db_up { "up" } else { "down" },
         })),
     )
+}
+
+/// Tests d'intégration niveau routeur (tower::oneshot, sans écoute réseau). Ignorés sans
+/// `DATABASE_URL` (pattern du test de projection) — lancer avec le Postgres Docker du dev,
+/// exécutés en CI contre un service Postgres.
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod api_tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use http_body_util::BodyExt;
+    use tower::util::ServiceExt;
+
+    async fn test_state(admin_token: Option<&str>) -> Option<AppState> {
+        let Ok(url) = std::env::var("DATABASE_URL") else {
+            eprintln!("DATABASE_URL absent → test d'intégration API ignoré");
+            return None;
+        };
+        let db = sqlx::postgres::PgPoolOptions::new()
+            .connect(&url)
+            .await
+            .expect("connexion");
+        sqlx::migrate!("./migrations").run(&db).await.expect("migrations");
+        let dir = std::env::temp_dir().join(format!("storm-codex-test-{}", uuid::Uuid::new_v4()));
+        let cfg = config::Config {
+            database_url: url,
+            bind_addr: "127.0.0.1:0".into(),
+            archive_dir: dir.join("archive"),
+            raw_cache_dir: dir.join("raw-cache"),
+            raw_cache_max_bytes: 64 * 1024 * 1024,
+            admin_token: admin_token.map(str::to_owned),
+            web_dir: None,
+            redis_url: None,
+            jarvis_channel: "test".into(),
+            azure_push_url: None,
+            azure_push_token: None,
+            hotspatchnotes_url: None,
+            referential_url: None,
+            images_dir: dir.join("images"),
+            orpheus_url: None,
+            patch_webhook_url: None,
+        };
+        std::fs::create_dir_all(&cfg.archive_dir).unwrap();
+        std::fs::create_dir_all(&cfg.raw_cache_dir).unwrap();
+        let (events, _) = tokio::sync::broadcast::channel(64);
+        Some(AppState {
+            cfg: Arc::new(cfg),
+            db,
+            parse_sem: Arc::new(Semaphore::new(2)),
+            events,
+            draft: Arc::new(RwLock::new(draft::DraftState::new(
+                draft::Format::Standard,
+                draft::Side::Blue,
+                "Sky Temple".into(),
+            ))),
+        })
+    }
+
+    fn app(state: &AppState) -> Router {
+        api_router(state).with_state(state.clone())
+    }
+
+    async fn json_body(resp: axum::response::Response) -> serde_json::Value {
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    #[tokio::test]
+    async fn health_repond_ok_avec_db() {
+        let Some(state) = test_state(None).await else { return };
+        let resp = app(&state)
+            .oneshot(Request::get("/api/health").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = json_body(resp).await;
+        assert_eq!(v["status"], "ok");
+        assert_eq!(v["parser_version"], PARSER_VERSION);
+    }
+
+    #[tokio::test]
+    async fn admin_ferme_exige_bearer_et_ouvre_avec() {
+        let Some(state) = test_state(Some("s3cret")).await else { return };
+        // sans token → 401
+        let resp = app(&state)
+            .oneshot(
+                Request::post("/api/admin/tokens")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"name":"t"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+        // avec le bon Bearer → créé
+        let resp = app(&state)
+            .oneshot(
+                Request::post("/api/admin/tokens")
+                    .header("authorization", "Bearer s3cret")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"name":"test-integration"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let v = json_body(resp).await;
+        assert!(v["token"].as_str().is_some_and(|t| !t.is_empty()));
+    }
+
+    /// Bout-en-bout réel : création de token → upload d'un replay committé → parse → projection
+    /// → lecture du détail (avec `match.messages`) → dédup 409 au re-upload.
+    #[tokio::test]
+    async fn upload_parse_lecture_et_dedup() {
+        let Some(state) = test_state(None).await else { return };
+        // token d'upload (mode admin ouvert)
+        let resp = app(&state)
+            .oneshot(
+                Request::post("/api/admin/tokens")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"name":"e2e"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let token = json_body(resp).await["token"].as_str().unwrap().to_owned();
+
+        // upload du replay de référence (alias compat client-rs)
+        let replay = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../storm-replay/tests/data/2026-06-09 20.35.02 Industrial District.StormReplay");
+        let bytes = std::fs::read(&replay).expect("replay committé");
+        // purge d'un éventuel run précédent (idempotence du test)
+        let hash = crate::upload::sha256_hex(&bytes);
+        sqlx::query("DELETE FROM uploads WHERE fingerprint = $1")
+            .bind(&hash)
+            .execute(&state.db)
+            .await
+            .unwrap();
+        let upload_req = |b: Vec<u8>, tok: &str| {
+            Request::post("/api/upload-raw")
+                .header("authorization", format!("Bearer {tok}"))
+                .header("x-filename", "2026-06-09 20.35.02 Industrial%20District.StormReplay")
+                .body(Body::from(b))
+                .unwrap()
+        };
+        let resp = app(&state).oneshot(upload_req(bytes.clone(), &token)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = json_body(resp).await;
+        assert_eq!(v["status"], "parsed", "réponse : {v}");
+        let match_id = v["match_id"].as_i64().expect("match_id");
+
+        // lecture du détail : forme {match, players}, messages présents (chat + pings)
+        let resp = app(&state)
+            .oneshot(Request::get(format!("/api/matches/{match_id}")).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let detail = json_body(resp).await;
+        assert_eq!(detail["match"]["map"], "Industrial District");
+        assert_eq!(detail["players"].as_object().unwrap().len(), 10);
+        assert!(
+            detail["match"]["messages"].as_array().is_some_and(|m| !m.is_empty()),
+            "messages absents du détail"
+        );
+
+        // re-upload identique → 409 duplicate
+        let resp = app(&state).oneshot(upload_req(bytes, &token)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+
+        // sans token → 401
+        let resp = app(&state)
+            .oneshot(
+                Request::post("/api/upload-raw")
+                    .header("x-filename", "x.StormReplay")
+                    .body(Body::from(vec![0u8; 8]))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
 }

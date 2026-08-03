@@ -23,6 +23,9 @@ Ce fichier est le **contrat de travail** de tout intervenant, humain ou IA. La r
    via MCP Context7 (ne pas coder de mémoire les API axum/sqlx/TanStack…).
 4. **Prouver** (jamais déclarer) : tests + vérification adaptée au type de changement
    (tableau ci-dessous). Une feature UI se vérifie dans le navigateur sur données réelles.
+   Commandes : `cargo test --workspace` (les tests d'intégration DB s'ignorent sans
+   `DATABASE_URL` — les lancer avec le Postgres Docker dev, la CI les exécute toujours) ;
+   `npm test --prefix web` (vitest, helpers purs de `api.ts`) ; `npm run build --prefix web`.
 5. **Documenter le reste** : `docs/STATUS.md` (fin de session) ; mémoire IA le cas échéant.
 6. **Commit + push** (l'opérateur a autorisé le push direct sur `main` à chaque étape finie).
 
@@ -35,7 +38,8 @@ Ce fichier est le **contrat de travail** de tout intervenant, humain ou IA. La r
 | Forme de la projection (`project.rs`, storm-stats output) | `06-modele-donnees.md` + bump `PARSER_VERSION` + `04-serveur.md` si pipeline | reprocess vérifié idempotent |
 | Logique de stats (`storm-stats/process.rs`) | `03-storm-stats.md` (toute divergence → tolerances.json) | **diff de parité re-vert** (`tools/parity-harness/`) |
 | Décodage (`storm-replay`) | `02-storm-replay.md` | crosscheck heroprotocol + mini-corpus |
-| Page/route/overlay front | `08-frontend.md` | `npm run build` vert + vérif navigateur sur données réelles |
+| Page/route/overlay front | `08-frontend.md` | `npm test` + `npm run build` verts + vérif navigateur sur données réelles |
+| Helper pur de `web/src/api.ts` | — (si le contrat UI ne change pas) | test vitest dans `api.test.ts` |
 | Variable d'env, compose, Dockerfile, CI | `04-serveur.md` / `09-operations.md` | build/déploiement testé |
 | Event WS ou Jarvis | `07-evenements.md` | event observé (WS ou Redis) |
 | Perf touchée (parse, API, backfill) | budget re-mesuré dans `01-architecture.md` | bench correspondant |

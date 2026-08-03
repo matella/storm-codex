@@ -11,13 +11,7 @@ use serde::Deserialize;
 use serde_json::Value as J;
 
 fn is_admin(h: &HeaderMap, s: &AppState) -> bool {
-    // Mode ouvert : pas de token configuré → écritures autorisées (auto-hébergement local).
-    let Some(token) = s.cfg.admin_token.as_deref() else { return true };
-    h.get(axum::http::header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .map(str::trim)
-        == Some(token)
+    crate::auth::is_admin(h, s.cfg.admin_token.as_deref())
 }
 fn forbidden() -> (StatusCode, Json<J>) {
     (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "admin token requis"})))

@@ -42,10 +42,15 @@ Tests : `cargo test` (le test de projection s'ignore sans `DATABASE_URL`) ; pari
 + `AUTH_TOKEN=<token nominatif>`. Au lancement : backfill **complet** du non-uploadé
 (oldest-first, idempotent — set persisté + 409 serveur), puis watch du dossier replays.
 
-## CI — publication d'image (`.github/workflows/publish.yml`)
+## CI — tests (`ci.yml`) + publication d'image (`publish.yml`)
 
-**Chaque push sur `main`** (et chaque tag `v*`) build l'image Docker complète et la pousse sur
-**`ghcr.io/matella/storm-codex:latest`** (GITHUB_TOKEN, rien à configurer). Conséquences :
+**`ci.yml`** (push main + PR) : job `rust` = clippy strict (`-D warnings`) + `cargo test
+--workspace` contre un **service Postgres 17** (les tests d'intégration DB-gated tournent
+réellement) ; job `web` = `npm ci` + `npm test` (vitest) + `npm run build`.
+
+**`publish.yml`** : **chaque push sur `main`** (et chaque tag `v*`) build l'image Docker complète
+et la pousse sur **`ghcr.io/matella/storm-codex:latest`** (GITHUB_TOKEN, rien à configurer).
+Conséquences :
 
 - Un push sur `main` = une image publique à jour ; le box peut donc aussi se mettre à jour par
   `docker pull ghcr.io/matella/storm-codex:latest` au lieu d'un build local (alternative au

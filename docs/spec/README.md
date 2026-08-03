@@ -50,5 +50,5 @@ comportement, et à **mettre à jour dans le même commit** que le changement.
 | `corpus/` | replays réels de test (`spike50` bench, `stats` parité) — **non committés** (gitignorés, NAS/box) | données locales |
 | `spike/` | jalon 0 (spike go/no-go décodage, benchs .NET/Python) | archive — ne plus toucher |
 | `scripts/` | `backup.sh` (pg_dump + rétention) | actif |
-| `.github/workflows/publish.yml` | CI : image Docker → ghcr.io à chaque push `main` | actif |
+| `.github/workflows/` | `ci.yml` (clippy + tests Rust/web, Postgres de service) · `publish.yml` (image Docker → ghcr.io à chaque push `main`) | actifs |
 | `docs/` | voir cartographie ci-dessus | — |

@@ -368,8 +368,10 @@ fn percent_decode(s: &str) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
-    use super::percent_decode;
+    use super::{game_fingerprint, percent_decode, reject_class};
+    use serde_json::json;
 
     #[test]
     fn decodes_apostrophe_map_name() {
@@ -381,5 +383,52 @@ mod tests {
         assert_eq!(percent_decode("Cursed Hollow.StormReplay"), "Cursed Hollow.StormReplay");
         // % en fin de chaîne sans 2 hexa → conservé tel quel
         assert_eq!(percent_decode("weird%2"), "weird%2");
+    }
+
+    /// Chaque statut de rejet storm-stats a sa classe typée (lisible en Admin) ; un statut
+    /// inconnu retombe sur `parse_failed`, jamais de panique.
+    #[test]
+    fn reject_class_exhaustif_et_sans_trou() {
+        let known = [
+            (0, "unsupported_mode"),
+            (-2, "stats_failure"),
+            (-3, "unsupported_map"),
+            (-4, "computer_player"),
+            (-5, "incomplete"),
+            (-6, "too_old"),
+            (-7, "unverified_build"),
+        ];
+        for (status, class) in known {
+            assert_eq!(reject_class(status), class, "statut {status}");
+        }
+        assert_eq!(reject_class(-99), "parse_failed");
+    }
+
+    fn output(date: &str, map: &str, length: f64, toons: &[&str]) -> storm_stats::Output {
+        let mut players = serde_json::Map::new();
+        for t in toons {
+            players.insert((*t).into(), json!({}));
+        }
+        storm_stats::Output {
+            status: 1,
+            match_: Some(
+                serde_json::from_value(json!({"date": date, "map": map, "length": length}))
+                    .unwrap(),
+            ),
+            players: Some(players),
+        }
+    }
+
+    /// Le fingerprint de partie est stable (dédup) : indépendant de l'ordre des toons,
+    /// sensible au contenu. `length` entier s'affiche sans `.0` (compat JS de l'overlay).
+    #[test]
+    fn game_fingerprint_stable_et_ordre_independant() {
+        let a = output("2026-06-09", "Sky Temple", 900.0, &["b", "a", "c"]);
+        let b = output("2026-06-09", "Sky Temple", 900.0, &["c", "a", "b"]);
+        assert_eq!(game_fingerprint(&a), game_fingerprint(&b), "ordre des toons");
+        let c = output("2026-06-09", "Sky Temple", 901.0, &["a", "b", "c"]);
+        assert_ne!(game_fingerprint(&a), game_fingerprint(&c), "length différente");
+        // sans match (rejet) → pas de fingerprint
+        assert_eq!(game_fingerprint(&storm_stats::Output { status: -3, match_: None, players: None }), None);
     }
 }

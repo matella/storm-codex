@@ -256,6 +256,26 @@ Le développement est essentiellement terminé (jalons 0→5 livrés + vérifié
   (`attributeId`→`attr.json`) pour ne pas créer de faux diffs de format (Li-Ming, E.T.C.…).
   Backfill : **5557 lignes corrigées, 0 divergence restante** ; trace dans `heroCorrectedFrom`.
 
+## Campagne de tests — FAIT (2026-08-03, demande opérateur)
+Couverture avant : 25 tests Rust (draft surtout), 0 test front, pas de CI de tests. Ajouté :
+- **storm-stats `tests/invariants.rs`** (4) : invariants du pipeline complet sur replay réel
+  committé — identité/cohérence match (winner/équipes/durée), **messages** (tri chronologique,
+  auteurs = joueurs, charge par type chat/ping/annonce, LoadingProgress filtré), score+talents+
+  takedowns, timeline XP monotone.
+- **Serveur** : `auth.rs` factorisé (dette admin/manage réglée) + 3 tests ; contrat Jarvis
+  (invariants spine + résumé joueurs) 2 tests ; `reject_class` exhaustif + `game_fingerprint`
+  (stabilité/ordre) 2 tests ; **intégration niveau routeur** (`api_tests` dans main.rs,
+  `api_router()` extrait, tower::oneshot) : health, auth admin ouvert/fermé 401/201, et
+  **bout-en-bout upload réel → parse → projection → détail avec messages → 409 dédup → 401
+  sans token**. DB-gated (skip sans DATABASE_URL), exécutés en CI.
+- **Front** : vitest (`web/src/api.test.ts`, 13 tests) — fmtDur/fmtClock, announceLabel,
+  modeBadge, matchesUrl, heroKey, awardLabel, classBadge, parseTrack (2 shapes Orpheus),
+  pickOperator, sideOfStep, fallbacks initials/universeColor/mapImage. `npm test`.
+- **CI `ci.yml`** : clippy strict + `cargo test` avec **service Postgres 17** (l'intégration DB
+  tourne à chaque push/PR) + vitest + build web.
+Total : **51 tests** (38 Rust + 13 vitest). Parité Node (114 replays) et E2E box restent hors
+CI (corpus/infra privés) — inchangés.
+
 ## Audit complet + nettoyage — FAIT (2026-08-03, demande opérateur)
 Passe totale (code, risques, vitesse, hygiène) :
 - **Qualité** : clippy strict 0 warning (11 `unwrap` dans les tests de `draft/mod.rs` → attribut
