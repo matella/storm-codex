@@ -67,6 +67,25 @@ un re-backfill. L'archive brute (`/data/archive` du volume) est la seule donnée
 | Redis Jarvis | réseau `jarvis_default` | pas d'émission d'events (parse intact) |
 | Orpheus | box :3010 | `/api/now-playing` vide (widget musique inerte) |
 
+## Risques connus & dette (audit 2026-08-03 — à re-passer périodiquement)
+
+Acceptés en l'état (contexte : auto-hébergé, LAN/Tailscale, un opérateur) :
+- **`ADMIN_TOKEN` vide = mode ouvert** — voulu en local ; à définir si exposé (reverse proxy).
+- **Conteneur en root** (Dockerfile sans `USER`) — passer non-root toucherait les permissions du
+  volume `/data` ; à faire si exposition publique.
+- **Panics d'init** dans storm-stats (`constants.rs`, regex de `process.rs`) — sur données
+  **embarquées** à la compilation : un échec = build invalide, crash au démarrage acceptable.
+- **Auth admin dupliquée** (`admin.rs` + `manage.rs`, comparaison non constant-time) — candidate
+  à factorisation, sans enjeu en LAN.
+
+Dette dépendances (décision opérateur requise — majors) :
+- **react-router-dom 6.x** : advisories (open redirect `Link`, `deserializeErrors` SSR) sans
+  patch 6.x — correctif = migration v7. Risque réel faible ici (pas de SSR, liens internes).
+- **vite 5 / esbuild** : advisory sur le **dev server uniquement** (jamais exposé) — correctif =
+  vite 8 (breaking). Prod non concernée (build statique).
+- Audit : `npm audit` (dompurify + postcss corrigés 2026-08-03) ; `cargo audit` non installé —
+  `cargo install cargo-audit` si on veut la passe côté Rust.
+
 ## Runbooks (procédures opérateur détaillées)
 
 `docs/runbooks/` : bascule/décommission du Node overlay · reverse proxy + ntfy · publication

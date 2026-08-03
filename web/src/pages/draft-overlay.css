@@ -1,7 +1,7 @@
 @import url("https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=JetBrains+Mono:wght@700&family=Cinzel:wght@700;800&display=swap");
 
 /* Overlay de draft OBS — vue Timeline. Fond transparent ; data-skin sur .draft-overlay.
-   Porté de docs/draft-aesthetics.html (skins nexus/glass/tactical/mono). */
+   Porté de docs/specs/2026-06-19-draft-aesthetics.html (skins nexus/glass/tactical/mono). */
 .draft-overlay { position: fixed; inset: 0; overflow: hidden; color: #eef2fc;
   font-family: "Inter", "Segoe UI", system-ui, sans-serif;
   --blue:#2f6df6; --red:#e0414b; --blue-soft:#7fa6ff; --red-soft:#ff8088; --gold:#e8c66a;

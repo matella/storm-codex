@@ -256,6 +256,22 @@ Le développement est essentiellement terminé (jalons 0→5 livrés + vérifié
   (`attributeId`→`attr.json`) pour ne pas créer de faux diffs de format (Li-Ming, E.T.C.…).
   Backfill : **5557 lignes corrigées, 0 divergence restante** ; trace dans `heroCorrectedFrom`.
 
+## Audit complet + nettoyage — FAIT (2026-08-03, demande opérateur)
+Passe totale (code, risques, vitesse, hygiène) :
+- **Qualité** : clippy strict 0 warning (11 `unwrap` dans les tests de `draft/mod.rs` → attribut
+  `allow` conforme à la convention) ; 25 tests Rust verts ; build front vert.
+- **Sécu deps** : `npm audit fix` → dompurify + postcss (high) corrigés. Restent react-router 6
+  (fix = v7, décision majeure) et vite/esbuild (dev-only) → « Risques connus » de `spec/09`.
+- **Risques code** : pas d'interpolation SQL (100 % bind), pas de traversée de chemin (archive
+  nommée par hash, X-Filename seulement en base), pas de secret committé, pas d'`unsafe`.
+  Acceptés/documentés : mode admin ouvert par défaut, conteneur root, panics d'init sur données
+  embarquées, auth dupliquée admin/manage.
+- **Vitesse** : bench re-mesuré sur le corpus local (114 replays) : **141 ms médiane < 150**,
+  p95 243 ms. Budgets tenus.
+- **Hygiène** : `.DS_Store` retiré du repo ; `.gitignore` complété (`.DS_Store`, `.images/`,
+  `backups/`) ; docs draft rangées (`docs/specs/` + `docs/plans/`, réfs mises à jour) ;
+  `__pycache__` local purgé. Aucun composant front orphelin, pas de junk committé.
+
 ## Spec vivante — FAIT (2026-08-03, demande opérateur)
 **`docs/spec/`** : documentation vivante de l'état courant (spec-driven) — 9 fichiers :
 architecture/invariants, storm-replay, storm-stats/parité, serveur/config, **référence API

@@ -51,7 +51,7 @@ Moteur **pur, zéro I/O** (`mod.rs`) : un format = liste ordonnée d'étapes `{o
 `first_pick: Side` découple l'ordre (First/Second) du côté visuel (blue/red). État singleton
 autoritatif en mémoire (`AppState.draft`), **persisté** dans `draft_live` (JSONB, id=1),
 rechargé au démarrage. Chaque mutation broadcast `draft.updated` sur `/ws`.
-Design : `docs/2026-06-19-draft-simulator-design.md`.
+Design : `docs/specs/2026-06-19-draft-simulator-design.md`.
 
 ## Configuration (env — `config.rs`, modèle : `.env.example`)
 
