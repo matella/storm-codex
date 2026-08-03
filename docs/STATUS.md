@@ -264,6 +264,11 @@ complète**, modèle de données (migrations 0001→0008), événements WS+Jarvi
 et `CLAUDE.md` : **tout commit qui change un contrat met à jour la section correspondante**.
 Les specs datées (`docs/specs/`) restent les décisions figées ; STATUS reste le journal.
 Chat de la partie déployé sur le box au passage (bundle `index-BmQMoQ9z.js`, vérifié).
+**Complété (même jour, audit « tout est-il documenté ? »)** : `10-developpement.md` (workflow
+spec-first : checklist doc+preuve par type de changement, définition de « fini », limites IA),
+carte du repo dans le README de la spec, **CI ghcr.io documentée** (publish.yml — image publiée
+à chaque push main, c'était non documenté), et **règle n° 0 dans CLAUDE.md** : pas de diff de
+code portant un contrat sans son diff de doc dans le même commit.
 
 ## Chat de la partie — FAIT (2026-08-03, demande opérateur)
 La fiche de match affiche le **log de chat complet** (bloc `Match chat`, composant `ChatLog` dans

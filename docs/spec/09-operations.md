@@ -42,6 +42,17 @@ Tests : `cargo test` (le test de projection s'ignore sans `DATABASE_URL`) ; pari
 + `AUTH_TOKEN=<token nominatif>`. Au lancement : backfill **complet** du non-uploadé
 (oldest-first, idempotent — set persisté + 409 serveur), puis watch du dossier replays.
 
+## CI — publication d'image (`.github/workflows/publish.yml`)
+
+**Chaque push sur `main`** (et chaque tag `v*`) build l'image Docker complète et la pousse sur
+**`ghcr.io/matella/storm-codex:latest`** (GITHUB_TOKEN, rien à configurer). Conséquences :
+
+- Un push sur `main` = une image publique à jour ; le box peut donc aussi se mettre à jour par
+  `docker pull ghcr.io/matella/storm-codex:latest` au lieu d'un build local (alternative au
+  rsync + build documenté ci-dessus — le compose actuel du box fait `build: .`).
+- Ne jamais pousser sur `main` un état qui ne build pas (le Dockerfile est le gate : SPA
+  `tsc + vite` puis Rust release).
+
 ## Sauvegardes
 
 `scripts/backup.sh [dest]` : `pg_dump` → `.sql.gz` horodaté, rétention 14. La base est de toute

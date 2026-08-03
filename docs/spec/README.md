@@ -35,4 +35,20 @@ comportement, et à **mettre à jour dans le même commit** que le changement.
 6. [Modèle de données](06-modele-donnees.md) — schéma Postgres (migrations)
 7. [Événements](07-evenements.md) — WS `/ws` et contrat Jarvis (Redis)
 8. [Frontend](08-frontend.md) — pages SPA, overlays OBS
-9. [Opérations](09-operations.md) — dev, déploiement box, sauvegardes, pièges
+9. [Opérations](09-operations.md) — dev, déploiement box, CI, sauvegardes, pièges
+10. [**Workflow de développement**](10-developpement.md) — **à lire avant toute modification** :
+    cycle spec-first, checklist doc/preuve par type de changement, définition de « fini »
+
+## Carte du repo
+
+| Chemin | Contenu | Statut |
+|---|---|---|
+| `crates/storm-replay` · `storm-stats` | bibliothèques publiques (décodage, stats) | actif — publiables crates.io |
+| `crates/storm-codex-server` | serveur (API + front + overlays) + migrations | actif |
+| `web/` | SPA React (Vite) buildée dans `web/dist` | actif |
+| `tools/` | `protocol_gen.py` (tables de protocole), `crosscheck_streams.py` (parité décodage), `parity-harness/` (parité stats vs hots-parser) | outillage — requis pour les preuves |
+| `corpus/` | replays réels de test (`spike50` bench, `stats` parité) — **non committés** (gitignorés, NAS/box) | données locales |
+| `spike/` | jalon 0 (spike go/no-go décodage, benchs .NET/Python) | archive — ne plus toucher |
+| `scripts/` | `backup.sh` (pg_dump + rétention) | actif |
+| `.github/workflows/publish.yml` | CI : image Docker → ghcr.io à chaque push `main` | actif |
+| `docs/` | voir cartographie ci-dessus | — |
