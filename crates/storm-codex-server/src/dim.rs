@@ -580,13 +580,10 @@ fn download_referenced(list: &[serde_json::Value], field: &str, base: &str, imag
             let _ = std::fs::create_dir_all(parent);
         }
         let url = format!("{base}{path}");
+        // 404 / corps vide (ex. carte ARAM sans image) → on saute, le front a un fallback
         match ureq::get(&url).call().and_then(|mut r| r.body_mut().read_to_vec()) {
-            Ok(bytes) if !bytes.is_empty() => {
-                if std::fs::write(&dest, &bytes).is_ok() {
-                    n += 1;
-                }
-            }
-            _ => {} // 404 (ex. carte ARAM sans image) → on saute, le front a un fallback
+            Ok(bytes) if !bytes.is_empty() && std::fs::write(&dest, &bytes).is_ok() => n += 1,
+            _ => {}
         }
     }
     n
