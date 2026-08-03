@@ -256,6 +256,18 @@ Le développement est essentiellement terminé (jalons 0→5 livrés + vérifié
   (`attributeId`→`attr.json`) pour ne pas créer de faux diffs de format (Li-Ming, E.T.C.…).
   Backfill : **5557 lignes corrigées, 0 divergence restante** ; trace dans `heroCorrectedFrom`.
 
+## Chat de la partie — FAIT (2026-08-03, demande opérateur)
+La fiche de match affiche le **log de chat complet** (bloc `Match chat`, composant `ChatLog` dans
+`web/src/pages/MatchDetail.tsx`) : chat par défaut, **pings** et **callouts** (ability/vitals/
+behavior) en filtres optionnels ; ordre chronologique avec temps signé (les messages de draft/
+chargement sont avant le début de partie), avatar + nom coloré par équipe, destinataire
+(all/allies/obs). **Aucun changement serveur/DB/re-process** : storm-stats décode déjà
+`replay.message.events` → `match.messages`, projeté dans `matches.data` et déjà renvoyé par
+`/api/matches/{id}` — les matchs déjà backfillés l'affichent tels quels. Au passage, la colonne
+« Pings » de la table BM comptait *tous* les messages du joueur (chats et callouts compris) →
+filtrée sur le type Ping. Vérifié sur un replay réel : 3 chats / 52 pings / 6 callouts, total
+pings de la table BM = 52.
+
 ## Jalons (résumé — détail et critères dans la spec)
 0 spike **GO ✅** → 1 storm-replay **✅** → 2 storm-stats **✅** (+ 2.5 cartes ARAM) →
 3 serveur+DB+backfill **✅** → 4 front parité **socle ✅** → 5 stream+Jarvis+bascule **code ✅ +
