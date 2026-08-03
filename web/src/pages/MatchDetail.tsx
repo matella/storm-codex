@@ -229,9 +229,15 @@ function XPCurve({ data }: { data: any[] }) {
   );
 }
 
+// `match.messages` (storm-stats / replay.message.events) — constants.json MessageType/MessageTarget.
+const MSG_CHAT = 0;
+const MSG_PING = 1;
+const MSG_ANNOUNCE = 5;
+const TARGET: Record<number, string> = { 0: "all", 1: "allies", 4: "obs" };
+
 /** Table BM (taunts/dances/sprays/voiceLines) + pings (depuis `match.messages`) par joueur. */
 function BMTable({ players, messages }: { players: any[]; messages: any[] }) {
-  const pings = (toon: string) => (messages || []).filter((x) => x.player === toon).length;
+  const pings = (toon: string) => (messages || []).filter((x) => x.player === toon && x.type === MSG_PING).length;
   const cnt = (a: any) => (Array.isArray(a) ? a.length : 0);
   const any = players.some((p) => cnt(p.taunts) + cnt(p.dances) + cnt(p.sprays) + cnt(p.voiceLines) + pings(p.ToonHandle) > 0);
   if (!any) return null;
@@ -256,6 +262,80 @@ function BMTable({ players, messages }: { players: any[]; messages: any[] }) {
         </table>
       </div>
     </>
+  );
+}
+
+/** mm:ss signé — les messages du draft/chargement ont un temps négatif (avant le début de partie). */
+function fmtClock(sec: number): string {
+  const s = Math.floor(Math.abs(sec));
+  return `${sec < 0 ? "−" : ""}${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function announceLabel(a: any): string {
+  const k = a && typeof a === "object" ? Object.keys(a)[0] : null;
+  if (k === "Ability") return "ability callout";
+  if (k === "Vitals") return "vitals callout (help)";
+  if (k === "Behavior") return "behavior callout";
+  return "callout";
+}
+
+function ChatLog({ messages, players }: { messages: any; players: Record<string, any> }) {
+  const [pings, setPings] = useState(false);
+  const [announces, setAnnounces] = useState(false);
+  const all: any[] = Array.isArray(messages) ? messages : [];
+  const counts = {
+    chat: all.filter((m) => m.type === MSG_CHAT).length,
+    ping: all.filter((m) => m.type === MSG_PING).length,
+    announce: all.filter((m) => m.type === MSG_ANNOUNCE).length,
+  };
+  const shown = all
+    .filter(
+      (m) =>
+        m.type === MSG_CHAT ||
+        (pings && m.type === MSG_PING) ||
+        (announces && m.type === MSG_ANNOUNCE),
+    )
+    .sort((a, b) => num(a.loop) - num(b.loop));
+
+  return (
+    <div className="card">
+      <div className="card-hd" style={{ flexWrap: "wrap", gap: 6 }}>
+        <span className="kick" style={{ margin: 0 }}>Chat</span>
+        <span className="pill on">{counts.chat} messages</span>
+        <span className={pings ? "pill on" : "pill"} onClick={() => setPings(!pings)}>
+          pings ({counts.ping})
+        </span>
+        <span className={announces ? "pill on" : "pill"} onClick={() => setAnnounces(!announces)}>
+          callouts ({counts.announce})
+        </span>
+      </div>
+      {shown.length === 0 && <div className="empty">no message</div>}
+      {shown.map((msg, i) => {
+        const p = players[msg.player] ?? {};
+        const teamCls = msg.team === 0 ? "tm-blue" : msg.team === 1 ? "tm-red" : "muted";
+        return (
+          <div key={i} className="row" style={{ alignItems: "flex-start" }}>
+            <span className="mono muted" style={{ minWidth: 46, fontSize: 11 }}>{fmtClock(num(msg.time))}</span>
+            <Avatar hero={p.hero ?? null} size={20} />
+            <span className={teamCls} style={{ minWidth: 108, fontSize: 11 }} title={msg.player}>
+              {p.name ?? msg.player}
+            </span>
+            {msg.type === MSG_CHAT ? (
+              <>
+                <span className="bdg b-qm">{TARGET[msg.recipient] ?? "?"}</span>
+                <span style={{ fontSize: 12, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{msg.text}</span>
+              </>
+            ) : (
+              <span className="muted" style={{ fontSize: 11 }}>
+                {msg.type === MSG_PING
+                  ? `ping ${TARGET[msg.recipient] ?? ""}`.trim()
+                  : announceLabel(msg.announcement)}
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -333,6 +413,9 @@ export function MatchDetail() {
       </div>
       <ScoreTable players={players} team={0} label="Blue team" cls="tm-blue" adv={adv} />
       <ScoreTable players={players} team={1} label="Red team" cls="tm-red" adv={adv} />
+
+      <p className="cap">Match chat</p>
+      <ChatLog messages={m.messages} players={data.players ?? {}} />
 
       {Array.isArray(m.levelAdvTimeline) && m.levelAdvTimeline.length > 1 && (
         <>
