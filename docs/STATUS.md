@@ -256,6 +256,15 @@ Le développement est essentiellement terminé (jalons 0→5 livrés + vérifié
   (`attributeId`→`attr.json`) pour ne pas créer de faux diffs de format (Li-Ming, E.T.C.…).
   Backfill : **5557 lignes corrigées, 0 divergence restante** ; trace dans `heroCorrectedFrom`.
 
+## Spec vivante — FAIT (2026-08-03, demande opérateur)
+**`docs/spec/`** : documentation vivante de l'état courant (spec-driven) — 9 fichiers :
+architecture/invariants, storm-replay, storm-stats/parité, serveur/config, **référence API
+complète**, modèle de données (migrations 0001→0008), événements WS+Jarvis, frontend
+(routes/overlays), opérations (dev/box/backup). Règle de maintenance dans `docs/spec/README.md`
+et `CLAUDE.md` : **tout commit qui change un contrat met à jour la section correspondante**.
+Les specs datées (`docs/specs/`) restent les décisions figées ; STATUS reste le journal.
+Chat de la partie déployé sur le box au passage (bundle `index-BmQMoQ9z.js`, vérifié).
+
 ## Chat de la partie — FAIT (2026-08-03, demande opérateur)
 La fiche de match affiche le **log de chat complet** (bloc `Match chat`, composant `ChatLog` dans
 `web/src/pages/MatchDetail.tsx`) : chat par défaut, **pings** et **callouts** (ability/vitals/

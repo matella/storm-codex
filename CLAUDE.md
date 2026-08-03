@@ -3,6 +3,11 @@
 > Chargé à chaque session. **Commencer par `docs/STATUS.md`** (état + prochaine étape), le mettre
 > à jour en fin de session. La spec programme est `docs/specs/2026-06-12-storm-codex-design.md` —
 > elle a été validée par l'opérateur et relue : ne pas re-trancher ses décisions sans lui.
+>
+> **Spec vivante : `docs/spec/`** (architecture, API, modèle de données, événements, front, ops).
+> La lire avant de modifier un contrat, et **la mettre à jour dans le même commit** que tout
+> changement de comportement (endpoint → `05-api.md`, migration → `06-modele-donnees.md`, event →
+> `07-evenements.md`, page/route → `08-frontend.md`, env/déploiement → `04-serveur.md`/`09-operations.md`).
 
 ## Ce qu'est le projet
 Rénovation complète de Stats of the Storm (tracker de stats HotS) : crates Rust open-source
