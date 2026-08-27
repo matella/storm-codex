@@ -83,10 +83,14 @@ sortie de `strings` (qui ne détecte que des runs ASCII imprimables) — il est 
 blob mais en UTF-8 multi-octets. Vérifié en cherchant les octets bruts :
 
 ```
-offset 0x43e3e : 07 ce 86 4b 21 1b d0 9b d0 be d0 b2 d0 ba d0 b8 d0 b9 d0 ad d0 bb d1 8c d1 84
+offset 0x43e38 : 07 ce 86 4b 21 1b d0 9b d0 be d0 b2 d0 ba d0 b8 d0 b9 d0 ad d0 bb d1 8c d1 84
                  23 32 31 35 33 34 36 00
                  [len=0x1b=27] Л  о  в  к  и  й  Э  л  ь  ф  #  2  1  5  3  4  6  \0
 ```
+
+(`0x43e3e`, cité par erreur comme offset de départ dans une version antérieure de ce document, est
+en réalité le premier octet du nom cyrillique lui-même — `d0 9b` = « Л » — c'est-à-dire l'octet
+0x43e38 + 6, une fois passés les 6 octets `07 ce 86 4b 21 1b` qui précèdent la chaîne UTF-8.)
 
 Le préfixe `0x1b` = 27 correspond exactement à la longueur **en octets UTF-8** de
 `"ЛовкийЭльф#215346"` (10 caractères cyrilliques × 2 octets = 20, + `"#215346"` = 7 octets → 27).
@@ -99,8 +103,8 @@ l'ASCII pur ni un compte de caractères.**
 d'un champ texte de la forme `T:<nombre>#<nombre>`, par exemple juste avant `Sando#2475` :
 
 ```
-00043394: 03 00 00 00 19 01 54 3a 31 30 35 36 31 37 35 37   ......T:1056175
-000433a4: 36 23 32 32 37 00 01 01 ...                        6#227...
+0004338e: 03 00 00 00 19 01 54 3a 31 30 35 36 31 37 35 37   ......T:1056175
+0004339e: 36 23 32 32 37 00 01 01 ...                        6#227...
 ```
 soit la chaîne `"T:105617576#227\0"` immédiatement suivie, plus loin, de `"Sando#2475"` (avec son
 propre octet de longueur `0x0a`=10 bien vérifié, cf. plus bas). **Contrairement au champ
@@ -164,6 +168,21 @@ Recherche active mais négative :
   suffixes de type d'actif (`ICON`, `PORT`ait, `LOOT`, `Lcns`=license) accolés au mot générique
   `Hero`, **pas des noms de héros** — probablement des clés de la structure de récompenses/lobby
   UI, sans rapport avec le pick.
+- **Précision sur l'exhaustivité de la recherche ci-dessus :** la recherche des noms complets
+  (premier point) et celle des abrégés dans la zone à enregistrements fixes (troisième point) sont
+  toutes deux restées négatives, mais une recherche complémentaire en sous-chaîne brute (`grep -a`,
+  4 premiers caractères de chaque nom de héros, insensible à la casse, sur l'intégralité du blob —
+  pas limitée à cette zone) trouve bel et bien plusieurs de ces préfixes dans `silver-city.bin` :
+  `Tass` (Tassadar, ×1, offset 0x8f50), `Vari` (Varian, ×1, offset 0x12b1), `Meph` (Mephisto, ×3,
+  offsets 0x14be/0x5903/0x91d9), `Zary` (Zarya, ×3, offsets 0x15b2/0x59f7/0x92cd), `Chro`
+  (Chromie, ×1, offset 0x97d1) et `Rehg` (Rehgar, ×1, offset 0x8f13). Ces offsets sont dispersés et
+  sans relation évidente entre eux — à noter, chaque occurrence `Zary` se trouve exactement 0xf4
+  octets après l'occurrence `Meph` correspondante, ce qui évoque un enregistrement répété de
+  structure fixe plutôt qu'un pick isolé. **Hypothèse non confirmée :** bruit de zone
+  binaire/table générique (répétition du même token à des endroits sans rapport, aucune occurrence
+  adossée à un BattleTag ni à un motif de longueur-préfixe exploitable), pas une trace lisible du
+  pick. Ceci ne change pas la conclusion ci-dessous : aucune **forme canonique complète** d'un nom
+  de héros n'a été trouvée associée à un joueur.
 
 **Conclusion, honnête : le héros pické n'est pas trouvable en clair dans ce blob par une recherche
 de chaînes ou de motifs connus. Réponse à la sous-question ARAM (correspond-il au héros réellement
