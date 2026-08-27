@@ -12,7 +12,28 @@
 //!
 //! Crate pur : aucune I/O, aucune dépendance sur `storm-replay`.
 
+use std::collections::HashSet;
+use std::sync::OnceLock;
+
+use regex::Regex;
 use thiserror::Error;
+
+/// Longueur minimale d'un blob pouvant contenir un BattleTag valide : nom (3 caractères) + `#` +
+/// discriminant (4 chiffres). En dessous, aucun match n'est possible par construction — inutile de
+/// lancer la regex, autant le signaler explicitement via `LobbyError::TooShort`.
+const MIN_BLOB_LEN: usize = 8;
+
+/// Regex de production, identique à celle de `storm-stats::process::get_battletags`
+/// (`crates/storm-stats/src/process.rs`) — validée sur le corpus de référence. `\p{L}` couvre les
+/// alphabets non-ASCII (cyrillique notamment) ; le suffixe `[zØ]?` optionnel capture du bruit
+/// binaire collé après le discriminant, retiré ensuite (cf. `parse`).
+fn battletag_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r"[\p{L}\d]{3,24}#\d{4,10}[zØ]?")
+            .unwrap_or_else(|e| unreachable!("regex de battletag invalide : {e}"))
+    })
+}
 
 /// Un joueur du lobby.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,8 +79,60 @@ pub enum LobbyError {
 /// Retourne [`LobbyError`] si le blob est trop court ou ne contient aucun joueur identifiable.
 /// Ne panique jamais, quelle que soit l'entrée.
 pub fn parse(bytes: &[u8]) -> Result<Lobby, LobbyError> {
-    Err(LobbyError::Unrecognized(format!(
-        "parse non implémenté ({} octets)",
-        bytes.len()
-    )))
+    if bytes.len() < MIN_BLOB_LEN {
+        return Err(LobbyError::TooShort(bytes.len()));
+    }
+
+    // `from_utf8_lossy` décode les séquences UTF-8 multi-octets valides (BattleTags cyrilliques
+    // inclus) et ne fait planter la recherche sur aucune entrée : les octets invalides deviennent
+    // des `U+FFFD`, qui ne matchent ni `\p{L}` ni `\d` et agissent donc comme des séparateurs.
+    let text = String::from_utf8_lossy(bytes);
+    let re = battletag_regex();
+
+    let mut seen = HashSet::new();
+    let mut players = Vec::new();
+    for m in re.find_iter(&text) {
+        let full = m.as_str();
+        let Some(hash) = full.find('#') else {
+            continue;
+        };
+        let name = &full[..hash];
+        // Ne conserver que les chiffres du discriminant : la regex autorise un suffixe `z`/`Ø`
+        // final qui appartient au bruit binaire environnant, pas au BattleTag (cf. brief tâche 3,
+        // résolution 1). Le parseur de référence compare à un entier (`js_parse_int`).
+        let discriminant: String = full[hash + 1..]
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .collect();
+        if discriminant.is_empty() || name.is_empty() {
+            continue;
+        }
+
+        let battletag = format!("{name}#{discriminant}");
+        if !seen.insert(battletag) {
+            // Déjà vu : on garde la première occurrence (et donc l'ordre qu'elle porte).
+            continue;
+        }
+
+        players.push(LobbyPlayer {
+            name: name.to_string(),
+            discriminant,
+            team: None,
+        });
+    }
+
+    if players.is_empty() {
+        return Err(LobbyError::NoPlayers);
+    }
+
+    // Le format ne porte aucun champ d'équipe explicite (cf. rapport de format, Q3). L'ordre
+    // d'apparition n'est une preuve d'équipe que sur une partie 5v5 complète : ailleurs, une
+    // équipe fausse serait pire qu'une équipe absente (cf. brief tâche 3, résolution 4).
+    if players.len() == 10 {
+        for (i, p) in players.iter_mut().enumerate() {
+            p.team = Some(u8::from(i >= 5));
+        }
+    }
+
+    Ok(Lobby { players })
 }
