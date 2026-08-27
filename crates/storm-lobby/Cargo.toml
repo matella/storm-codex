@@ -1,0 +1,24 @@
+[package]
+name = "storm-lobby"
+version = "0.1.0"
+description = "Parseur autonome du fichier de lobby Heroes of the Storm (replay.server.battlelobby)"
+keywords = ["heroes-of-the-storm", "lobby", "parser", "blizzard"]
+categories = ["parser-implementations", "games"]
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+regex = "1"
+thiserror = "2"
+
+# L'oracle a besoin du décodeur et du parseur complets pour connaître la vérité de chaque replay.
+# En dev-dependencies uniquement : le crate publié reste pur.
+[dev-dependencies]
+storm-replay = { path = "../storm-replay" }
+storm-stats = { path = "../storm-stats" }
+serde_json = "1"
+anyhow = "1"
+
+[lints]
+workspace = true

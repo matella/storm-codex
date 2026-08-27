@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/storm-replay", "crates/storm-stats", "crates/storm-codex-server", "crates/storm-replay-viewer"]
+members = ["crates/storm-replay", "crates/storm-stats", "crates/storm-codex-server", "crates/storm-replay-viewer", "crates/storm-lobby"]
 # Le spike du jalon 0 est figé (lockfile à lui) — il ne fait pas partie du workspace.
 exclude = ["spike/storm-decode"]
 
