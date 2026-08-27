@@ -94,24 +94,34 @@ watcher %TEMP%\…\TempWriteReplayP1\
 Ne dépend pas de `storm-replay` : il reçoit des octets. Cohérent avec `storm-replay-viewer`
 (géométrie du problème isolée, testable seule, publiable au jalon 6).
 
+> **Mis à jour le 2026-08-27 après l'exécution du spike.** Constats mesurés
+> (`docs/research/2026-08-27-lobby-format.md`) : les BattleTags sont **présents en clair**, préfixés
+> par une longueur en octets UTF-8 ; le **toon handle, le héros pické, la carte et le mode sont
+> absents** ; l'équipe n'a **aucun champ explicite** et se déduit de l'ordre (5+5). Le type public
+> ne porte donc que ce qui est réellement décodable — un champ toujours `None` serait du poids mort.
+
 ```rust
 pub fn parse(bytes: &[u8]) -> Result<Lobby, LobbyError>;
 
 pub struct Lobby {
-    pub players: Vec<LobbyPlayer>,   // ordre du lobby
-    pub map: Option<String>,
+    pub players: Vec<LobbyPlayer>,   // ordre d'apparition dans le blob
 }
 pub struct LobbyPlayer {
-    pub name: String,
-    pub battletag: Option<String>,
-    pub toon_handle: String,         // "region-programId-realm-id", format déjà en base
-    pub team: Option<u8>,
-    pub hero: Option<String>,        // normalisé vers dim_heroes.id quand présent
+    pub name: String,                // peut contenir de l'UTF-8 non-ASCII
+    pub discriminant: String,        // partie après '#'
+    pub team: Option<u8>,            // déduit de l'ordre, uniquement si 10 joueurs pile
+}
+impl LobbyPlayer {
+    pub fn battletag(&self) -> String;  // "nom#1234" — la clé d'identité
 }
 ```
 
-Tout champ incertain est `Option`. Le parser ne comble jamais un trou par une valeur inventée.
 Erreurs typées (`thiserror`), pas d'`unwrap()` hors tests.
+
+**Résolution de l'identité.** Le blob ne donne pas le toon handle : le serveur le retrouve en
+rapprochant `nom#discriminant` de `match_players.name` + `match_players.data->>'tag'`, c'est-à-dire
+**contre l'archive elle-même**. Un joueur absent de l'archive reste non résolu — sans conséquence,
+puisqu'il n'a de toute façon aucun historique à afficher.
 
 ### Module serveur `lobby.rs`
 
@@ -162,8 +172,9 @@ Agrégats SQL sur `match_players` ⋈ `matches` (~20 000 lignes, index existants
 
 ### Liaison replay ↔ lobby
 
-**Méthode retenue : l'ensemble des 10 `toon_handle`**, plus une fenêtre temporelle de quelques
-heures. Identique des deux côtés, déjà en base, ne suppose rien du format binaire.
+**Méthode retenue : l'ensemble des 10 BattleTags**, plus une fenêtre temporelle de quelques
+heures. Le parse complet reconstruit les mêmes BattleTags depuis le blob embarqué dans le replay
+(`get_battletags`, `process.rs:313`), donc les deux côtés portent la même clé.
 
 Alternative plus exacte — hasher les octets du blob et comparer à celui extrait du replay — retenue
 **seulement si le point 4 du spike confirme** l'identité bit-à-bit. Sinon on garde les handles.
@@ -206,9 +217,9 @@ constates qu'une partie s'est bien passée.
 | Ce qui casse | Comportement |
 |---|---|
 | Blizzard change le format | `POST /api/lobby` répond 200 avec `parse_failed` classé, build loggé en clair. La page affiche « lobby illisible (build X) » **et** le sélecteur de héros → le build suggéré s'affiche quand même. Perte des 9 joueurs, pas de la fonction principale. |
-| Héros absent du blob | sélecteur, un tap |
+| Héros absent du blob (**confirmé** par le spike) | sélecteur, un tap |
 | Joueur jamais croisé | « jamais croisé » écrit tel quel — jamais un 50 % fabriqué sur zéro partie |
-| Carte absente du blob | stats héros affichées ; stats carte au debrief |
+| Carte absente du blob (**confirmé** par le spike) | sélecteur, un tap ; à défaut, stats carte au debrief |
 | Aucun build pour ce héros | « aucun build » + raccourci « importer depuis ta meilleure partie sur ce héros » (données déjà en base) |
 | Box injoignable | état précédent affiché et marqué périmé — pas de spinner infini |
 
