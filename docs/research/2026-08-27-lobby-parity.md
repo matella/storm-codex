@@ -82,7 +82,9 @@ des 123 divergences de BattleTags de l'archive sont des sur-captures — les 10 
 l'archive.
 
 Ces personnes en trop sont de vrais comptes présents dans le lobby mais qui ne jouent pas — des
-**observateurs**. Extrait de diagnostic, nommé, sur trois replays fautifs :
+**observateurs**. Extrait de diagnostic, nommé, sur trois replays fautifs (noms de fichiers
+élidés et indentation resserrée pour la lecture — la sortie brute de l'outil est plus verbeuse ;
+les deux blocs de chiffres ci-dessus sont en revanche verbatim) :
 
 ```
 2088f5ef… — 12 battletags décodés
@@ -113,7 +115,7 @@ replays dont les 10 BattleTags sont pourtant corrects :
   - **268 ordres sans information d'équipe** (94,7 % des fausses) : la composition n'est pas
     reconstructible à partir de l'ordre, sous aucune convention.
 
-**Le second cas domine à 19 contre 1.** En lobby personnalisé, les joueurs changent de slot et
+**Le second cas domine à près de 18 contre 1** (268 / 15 = 17,9). En lobby personnalisé, les joueurs changent de slot et
 d'équipe avant le lancement, et l'ordre du blob reflète l'ordre d'arrivée, pas la composition
 finale. Ce n'est donc pas un signe à corriger : l'information est absente.
 
