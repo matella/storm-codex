@@ -108,3 +108,82 @@ impl LobbyState {
         }
     }
 }
+
+/// Relie un match fraîchement parsé au lobby courant, si c'est la même partie. Critère : l'ensemble
+/// des BattleTags. Le parse complet reconstruit les mêmes `nom#tag` depuis le blob embarqué dans le
+/// replay (`storm_stats`, `get_battletags`), donc les deux côtés portent la même clé — sans rien
+/// supposer du format binaire. Renvoie `true` si la liaison a eu lieu (l'appelant sait alors qu'il
+/// doit persister et diffuser).
+pub async fn lier_match(db: &sqlx::PgPool, state: &mut LobbyState, match_id: i64) -> bool {
+    if state.match_id.is_some() || state.players.is_empty() {
+        return false;
+    }
+    let tags_match: Vec<String> = sqlx::query_scalar(
+        "SELECT name || '#' || (data ->> 'tag')
+         FROM match_players
+         WHERE match_id = $1 AND name IS NOT NULL AND data ->> 'tag' IS NOT NULL",
+    )
+    .bind(match_id)
+    .fetch_all(db)
+    .await
+    .unwrap_or_default();
+
+    let lobby_tags: Vec<String> = state.players.iter().map(|p| p.battletag.clone()).collect();
+    if !memes_battletags(&tags_match, &lobby_tags) {
+        return false;
+    }
+    state.match_id = Some(match_id);
+    true
+}
+
+/// Cœur de `lier_match`, extrait en fonction pure pour être testable sans pool Postgres (même
+/// motif que `meme_lobby` dans `api.rs`) : deux ensembles de BattleTags décrivent la même partie
+/// s'ils contiennent exactement les mêmes tags, indépendamment de l'ordre. Un ensemble vide n'est
+/// jamais considéré comme correspondant à lui-même — sans joueur, la comparaison ne prouve rien.
+fn memes_battletags(a: &[String], b: &[String]) -> bool {
+    if a.is_empty() || b.is_empty() || a.len() != b.len() {
+        return false;
+    }
+    let mut a = a.to_vec();
+    let mut b = b.to_vec();
+    a.sort();
+    b.sort();
+    a == b
+}
+
+#[cfg(test)]
+mod tests {
+    use super::memes_battletags;
+
+    fn tags(xs: &[&str]) -> Vec<String> {
+        xs.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    #[test]
+    fn memes_tags_dans_un_ordre_different_sont_le_meme_ensemble() {
+        let a = tags(&["a#1", "b#2", "c#3"]);
+        let b = tags(&["c#3", "a#1", "b#2"]);
+        assert!(memes_battletags(&a, &b));
+    }
+
+    #[test]
+    fn un_tag_different_donne_des_ensembles_differents() {
+        let a = tags(&["a#1", "b#2", "c#3"]);
+        let b = tags(&["a#1", "b#2", "quelqu_un_d_autre#9"]);
+        assert!(!memes_battletags(&a, &b));
+    }
+
+    #[test]
+    fn des_tailles_differentes_ne_correspondent_jamais() {
+        let a = tags(&["a#1", "b#2", "c#3"]);
+        let b = tags(&["a#1", "b#2"]);
+        assert!(!memes_battletags(&a, &b));
+    }
+
+    #[test]
+    fn deux_ensembles_vides_ne_correspondent_jamais() {
+        let a: Vec<String> = Vec::new();
+        let b: Vec<String> = Vec::new();
+        assert!(!memes_battletags(&a, &b));
+    }
+}

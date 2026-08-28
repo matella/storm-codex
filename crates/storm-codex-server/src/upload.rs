@@ -295,6 +295,25 @@ async fn run_parse(
             .bind(match_id)
             .execute(&state.db)
             .await;
+
+            // Si ce match est la partie du lobby ouvert, le companion bascule en debrief. Verrou
+            // tenu seulement pour la mutation + la persistance (même patron que `muter` dans
+            // `lobby/api.rs`) : la diffusion WS se fait après le `drop` explicite.
+            let mut lobby_lie = false;
+            let mut guard = state.lobby.write().await;
+            if let Some(st) = guard.as_mut() {
+                if crate::lobby::lier_match(&state.db, st, match_id).await {
+                    if let Err(e) = crate::lobby::store::save(&state.db, st).await {
+                        tracing::error!("lobby save: {e}");
+                    }
+                    lobby_lie = true;
+                }
+            }
+            drop(guard);
+            if lobby_lie {
+                let _ = state.events.send(serde_json::json!({ "type": "lobby.updated" }));
+            }
+
             // push temps réel (jalon 3 T5)
             let _ = state.events.send(serde_json::json!({
                 "type": "match.parsed",
