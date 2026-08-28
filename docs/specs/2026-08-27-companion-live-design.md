@@ -170,7 +170,7 @@ Le serveur ne renvoie pas le lobby brut mais le lobby joint à l'archive :
 - `match_id` : rempli à la liaison → bascule en debrief.
 
 Agrégats SQL sur `match_players` ⋈ `matches` (~20 000 lignes, index existants sur `toon_handle`,
-`hero`, `match_id`). Contrat p95 < 100 ms tenu sans effort.
+`hero`, `match_id`). Budget : voir le critère 3 ci-dessous, amendé après mesure.
 
 ### Liaison replay ↔ lobby
 
@@ -246,7 +246,24 @@ constates qu'une partie s'est bien passée.
 1. Spike : parité lobby **≥ 99 % sur les modes matchmakés** (personnalisées hors critère) ;
    présence du héros tranchée par oui ou non. → **atteint : 100 %** sur 2 710 parties.
 2. Détection lobby → page remplie **< 2 s**.
-3. `/api/lobby` **p95 < 100 ms**.
+3. `/api/lobby` : **`GET` p95 < 100 ms** (il sert l'état depuis la mémoire — mesuré à ~1 ms) ;
+   **`POST` p95 < 500 ms**.
+
+   **Amendement du 2026-08-28, décision opérateur, mesure à l'appui.** Le critère initial était
+   « `/api/lobby` p95 < 100 ms », hérité du contrat d'API général de la spec programme. Mesuré par
+   `crates/storm-codex-server/backfill_bench.py` : le `POST` tient **18 ms en régime chaud**, mais
+   **165 ms à froid** — reproductible sur 3 redémarrages (164,6 / 167,6 / 169,3 ms). Or le régime
+   chaud n'existe pas à l'usage : il y a **un `POST` par partie**, serveur inactif entre deux, donc
+   le chemin à froid **est** le chemin nominal.
+
+   Le contrat de 100 ms n'est donc pas tenu, et prétendre le contraire serait faux. Il est amendé
+   plutôt que contourné, parce que le besoin réel ne le justifie pas : ce `POST` s'exécute pendant
+   un écran de chargement de **45 secondes**, où 165 ms sont imperceptibles. Le seuil de 500 ms
+   laisse une marge de 3× sur la mesure et resterait invisible à l'usage.
+
+   Ce qui n'est **pas** décidé : la cause des ~150 ms de froid (établissement de connexion du pool,
+   planification SQL, autre) n'a pas été investiguée. Si ce seuil venait à sauter, c'est le premier
+   endroit où regarder — un `min_connections` sur le pool sqlx est l'hypothèse la plus probable.
 4. E2E scripté et rejouable sur le Mac.
 5. Chaque dégradation du tableau ci-dessus exercée par un test ou une vérification manuelle tracée.
 

@@ -64,27 +64,31 @@ fn bearer(headers: &HeaderMap) -> Option<String> {
         .map(|s| s.trim().to_owned())
 }
 
+/// Vrai si l'en-tête porte un `Bearer` correspondant à un token d'upload non révoqué.
+/// Partagé avec `lobby::api::ingest` : les deux endpoints ont le même contrat d'authentification.
+pub async fn token_valide(db: &sqlx::PgPool, headers: &HeaderMap) -> bool {
+    token_id(db, headers).await.is_some()
+}
+
+/// L'id du token, quand il est valide (l'upload en a besoin pour tracer `uploads.token_id`).
+pub async fn token_id(db: &sqlx::PgPool, headers: &HeaderMap) -> Option<i64> {
+    let tok = bearer(headers)?;
+    let h = sha256_hex(tok.as_bytes());
+    sqlx::query_scalar("SELECT id FROM upload_tokens WHERE token_hash = $1 AND revoked_at IS NULL")
+        .bind(&h)
+        .fetch_optional(db)
+        .await
+        .ok()
+        .flatten()
+}
+
 pub async fn upload(
     State(state): State<AppState>,
     headers: HeaderMap,
     bytes: Bytes,
 ) -> (StatusCode, Json<UploadResponse>) {
     // 1. authentification par token (token_hash = SHA-256 du token en clair)
-    let token_id: Option<i64> = match bearer(&headers) {
-        Some(tok) => {
-            let h = sha256_hex(tok.as_bytes());
-            sqlx::query_scalar(
-                "SELECT id FROM upload_tokens WHERE token_hash = $1 AND revoked_at IS NULL",
-            )
-            .bind(&h)
-            .fetch_optional(&state.db)
-            .await
-            .ok()
-            .flatten()
-        }
-        None => None,
-    };
-    let Some(token_id) = token_id else {
+    let Some(token_id) = token_id(&state.db, &headers).await else {
         return (
             StatusCode::UNAUTHORIZED,
             Json(UploadResponse {
@@ -291,6 +295,26 @@ async fn run_parse(
             .bind(match_id)
             .execute(&state.db)
             .await;
+
+            // Si ce match est la partie du lobby ouvert, le companion bascule en debrief. Verrou
+            // tenu pour la lecture (`lier_match` interroge `match_players` sous ce verrou), la
+            // mutation et la persistance (même patron que `muter` dans `lobby/api.rs`) : la
+            // diffusion WS se fait après le `drop` explicite.
+            let mut lobby_lie = false;
+            let mut guard = state.lobby.write().await;
+            if let Some(st) = guard.as_mut() {
+                if crate::lobby::lier_match(&state.db, st, match_id).await {
+                    if let Err(e) = crate::lobby::store::save(&state.db, st).await {
+                        tracing::error!("lobby save: {e}");
+                    }
+                    lobby_lie = true;
+                }
+            }
+            drop(guard);
+            if lobby_lie {
+                let _ = state.events.send(serde_json::json!({ "type": "lobby.updated" }));
+            }
+
             // push temps réel (jalon 3 T5)
             let _ = state.events.send(serde_json::json!({
                 "type": "match.parsed",

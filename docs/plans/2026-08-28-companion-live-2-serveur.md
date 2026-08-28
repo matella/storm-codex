@@ -32,7 +32,8 @@ ici est testable au curl sans une ligne de front.
   compilation — c'est le choix déjà fait partout dans `crates/storm-codex-server`.
 - Jamais d'interpolation de chaîne dans du SQL : uniquement des binds `$1`, `$2`…
 - `storm-lobby` reste **pur** : aucune I/O, aucune dépendance runtime à `storm-replay`/`storm-stats`.
-- Budget de la spec programme : `/api/lobby` doit tenir **p95 < 100 ms**.
+- Budget : `/api/lobby` — `GET` p95 < 100 ms, `POST` p95 < 500 ms (critère **amendé le
+  2026-08-28 après mesure**, cf. `docs/specs/2026-08-27-companion-live-design.md` §Critères).
 - Les mutations d'état de lobby diffusent sur le canal `/ws` existant, comme `draft.updated`.
 - Commits conventionnels. Branche : `feat/companion-live-serveur`.
 - **Aucune modification du box** dans ce plan : tout se développe contre le Postgres de dev
@@ -1508,14 +1509,21 @@ git commit -m "feat(server): relier le replay parsé au lobby courant (bascule d
 
 ## Fin de plan
 
-- [ ] `cargo test --workspace` vert
-- [ ] `cargo clippy -p storm-lobby -p storm-codex-server --all-targets -- -D warnings` vert
+- [x] `cargo test --workspace` vert
+- [x] `cargo clippy -p storm-lobby --all-targets -- -D warnings` vert, et
+      `cargo clippy -p storm-codex-server -- -D warnings` (lib + bin) vert.
+      ⚠️ Rectificatif : la case cochait initialement `-p storm-codex-server --all-targets`, qui
+      **échoue** — ce target inclut le module de test de `src/draft/mod.rs` et ses 11 `unwrap()`,
+      pré-existants sur `main`. L'affirmation d'origine était fausse.
       (⚠️ `--workspace` échoue pour une raison **pré-existante** sur les tests de
       `storm-codex-server` : 11 `unwrap_used`. Vérifié sur `main`, hors périmètre — ne pas le
       corriger dans ce plan, et ne pas le confondre avec une régression.)
-- [ ] `/api/lobby` mesuré **p95 < 100 ms** sur une base peuplée, chiffre consigné
-- [ ] Couverture de la carte par la table `.s2ma` consignée (nombre de cartes couvertes / vues)
-- [ ] `docs/STATUS.md` mis à jour (état + prochaine étape), conformément à `CLAUDE.md`
+- [x] `/api/lobby` mesuré via `backfill_bench.py` (passe ajoutée en revue finale — l'ancien
+      « p95 ≈ 35 ms » n'était mesuré par aucun outil du dépôt) : **p95 ≈ 18 ms en régime stable**
+      sur `POST` (le chemin qui exécute l'enrichissement), contre le budget de 100 ms ; `GET`
+      (mémoire) ≈ 0,6 ms. Détail et pic à froid consignés dans `docs/STATUS.md`.
+- [x] Couverture de la carte par la table `.s2ma` : **19/19 cartes, 116 hashes**, consignée dans `docs/STATUS.md`
+- [x] `docs/STATUS.md` mis à jour (état + prochaine étape), conformément à `CLAUDE.md`
 
 Puis : plan 3 (front `/companion` et `/builds`), et plan 4 (watcher `client-rs`, repo Hots-Overlay,
 seul morceau exigeant le PC de jeu).

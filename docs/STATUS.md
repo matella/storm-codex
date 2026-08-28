@@ -1,5 +1,74 @@
 # STATUS — lire d'abord, mettre à jour en dernier
 
+## Companion live — plan 2 (serveur) : LIVRÉ (branche `feat/companion-live-serveur`, 2026-08-28)
+Plan : `docs/plans/2026-08-28-companion-live-2-serveur.md`. Le serveur expose tout ce dont la page
+companion aura besoin. **Front = plan 3, watcher `client-rs` = plan 4** (seul morceau exigeant le PC
+de jeu). 6 tâches, chacune revue spec+qualité ; **10 correctifs Important repliés** (compté à 5 puis
+9 dans des passes antérieures — les deux comptes étaient faux), tous issus du code de mon propre
+plan et attrapés par les revues — détail plus bas.
+- **Carte déduite sans saisie** : `storm-lobby` extrait les hashes `.s2ma` du blob et les résout via
+  une table dérivée de l'archive (`src/maps.rs`, générée par `examples/derive_maps.rs`).
+  **19 cartes sur 19 couvertes, 116 hashes**, sur 3 322 replays. Critère retenu : hash jamais
+  observé sur une autre carte — ne peut pas produire d'association fausse. Un critère plus strict
+  avait été envisagé (hash présent dans TOUS les replays de sa carte) puis écarté : mesuré une
+  fois, lors de la mise au point du critère, il ne couvrait que 9/19 cartes (Blizzard republie les
+  `.s2ma` à chaque patch) — ce critère n'existe plus dans le code, ce chiffre n'est donc pas
+  rejouable. Garantie circulaire par construction (dérivée et validée sur la même archive) :
+  documenté sur le champ `Lobby::map`.
+- **Migration `0009`** : `builds` (bibliothèque de builds de talents, `picks` à la forme exacte du
+  parser) + `lobby_live` (singleton, calque de `draft_live`) + index de résolution BattleTag.
+  L'invariant « un seul build par défaut par héros » est tenu par un **index partiel unique**.
+- **Routes** : `POST/GET/DELETE /api/lobby`, `POST /api/lobby/{hero,map,teams}`, CRUD
+  `/api/builds` + `POST /api/builds/from-match`. WS `lobby.detected` / `lobby.updated`.
+- **Enrichissement** : `nom#discriminant` → `toon_handle` **contre l'archive elle-même**, puis
+  historiques (parties avec/contre toi, winrates, héros favoris) et tes stats héros/carte.
+  Requêtes **batchées** (LEFT JOIN LATERAL + `= ANY($1)`) au lieu de la boucle par joueur du plan.
+  **Mesuré** (passe `/api/lobby` ajoutée à `backfill_bench.py` en revue finale, puis corrigée en
+  dernière revue avant merge : le `GET` était mesuré *avant* le premier `POST`, donc sur mémoire
+  vide — `204` systématique, chiffre sans rapport avec la sérialisation d'un état enrichi réel) :
+  **p95 ≈ 36 ms en régime stable sur `POST /api/lobby`** (décodage + enrichissement SQL, médiane
+  ~31 ms, max ~53 ms sur 20 requêtes), contre un contrat de 100 ms. `GET` sert la mémoire une fois
+  l'état enrichi posé (dix joueurs, historiques, build) : p95 ~1,2 ms.
+  ⚠️ **Le chemin à froid dépasse le budget contractuel de 100 ms, et ce n'est pas une anomalie de
+  démarrage à ignorer** : mesuré à 165–169 ms de façon reproductible sur 3 redémarrages consécutifs
+  (premier `POST /api/lobby` après lancement du serveur, avant tout autre trafic). En usage réel il
+  y a exactement **un `POST /api/lobby` par partie, serveur inactif entre deux** (le box ne tourne
+  que le soir) — **le chemin froid est donc le chemin nominal de cet endpoint**, pas le tout premier
+  appel isolé qu'un simple warm-up ferait disparaître. Reste à investiguer avant mise en prod (pool
+  de connexions pré-chauffé au démarrage, ou budget à revoir spécifiquement pour cette route).
+- **Dégradations tenues** : blob illisible → `parse_failed` + sélecteur manuel, jamais d'erreur HTTP
+  ni de page vide ; joueur jamais croisé → `toon_handle`/`history` à `null`, jamais un winrate
+  fabriqué ; un `parse_failed` transitoire (fichier lu pendant que le jeu l'écrit) **n'écrase pas**
+  un lobby déjà enrichi de moins de 2 minutes.
+- **Correctifs Important repliés** (tous des défauts de mon plan, attrapés en revue — **10**, pas
+  5 ni 9 comme documenté à tort dans des passes antérieures) : `update` de builds committait le
+  démarquage du défaut sur un 404 ; `meme_lobby` laissait un blob illisible écraser un lobby
+  enrichi ; l'opérateur était compté « avec lui-même » dans son propre historique ; effacer la
+  carte la marquait quand même « saisie à la main » ; la fenêtre de 6 h de la liaison replay↔lobby
+  était promise en prose et absente du code ; **(revue finale de branche)** une revanche entre les
+  mêmes dix joueurs (ligue/scrim) n'était jamais ingérée tant que le lobby précédent restait lié
+  à son match ; `from_match` ne persistait jamais `source_match_id`, rendant la provenance de tout
+  build importé irrécupérable ; `mes_parties` pouvait compter un même adversaire à la fois « avec »
+  et « contre » (fan-out de jointure sur homonyme d'archive, `DISTINCT ON` ajouté) ; un `hero` NULL
+  en base faisait répondre 500 au lieu du 422 déjà prévu pour l'absence de talents ; **(dernière
+  revue avant merge)** un simple redémarrage du watcher qui repostait le blob de lobby déjà lié
+  détruisait le debrief (`match_id` réécrasé à `null`, irrécupérable) — corrigé par une garde de
+  hash SHA-256 sur les octets bruts du blob, prioritaire sur toutes les autres règles
+  d'idempotence : un hash identique à l'état courant est toujours `unchanged`, y compris lié.
+- **Vérif** : `cargo test --workspace` vert, **42 tests** dans `storm-codex-server` dont des tests
+  purs sur l'idempotence par BattleTags et par hash, la réassignation d'équipe et la fenêtre
+  temporelle.
+  **Clippy, énoncé exactement** : `-p storm-lobby --all-targets -- -D warnings` propre, et
+  `-p storm-codex-server -- -D warnings` (lib + bin) propre. En revanche `-p storm-codex-server
+  --all-targets` **échoue** — il inclut le module de test de `src/draft/mod.rs`, qui porte 11
+  `unwrap()`. ⚠️ `clippy --workspace
+  --all-targets` échoue sur 11 `unwrap()` dans les *tests* de `draft/mod.rs` — **pré-existant sur
+  `main`**, vérifié, hors périmètre.
+- **Restes connus** : `/api/admin/reprocess` n'appelle pas `lier_match` (exclusion jugée légitime :
+  le backfill ne doit pas lier un vieux match au lobby du jour) ; pas de test d'intégration contre
+  une base (dette de projet, aucun crate n'en a).
+
+
 ## Companion live — plan 1 (`storm-lobby`) : LIVRÉ + MESURÉ (branche `feat/companion-live`, 2026-08-28)
 Spec : `docs/specs/2026-08-27-companion-live-design.md` · Plan :
 `docs/plans/2026-08-27-companion-live-1-storm-lobby.md`. Nouveau crate pur `crates/storm-lobby` :

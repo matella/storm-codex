@@ -18,6 +18,8 @@ use std::sync::OnceLock;
 use regex::Regex;
 use thiserror::Error;
 
+mod maps;
+
 /// Longueur minimale d'un blob pouvant contenir un BattleTag valide : nom (3 caractères) + `#` +
 /// discriminant (4 chiffres). En dessous, aucun match n'est possible par construction — inutile de
 /// lancer la regex, autant le signaler explicitement via `LobbyError::TooShort`.
@@ -70,6 +72,16 @@ impl LobbyPlayer {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Lobby {
     pub players: Vec<LobbyPlayer>,
+    /// Carte, déduite des hashes `.s2ma` via une table dérivée de l'archive. `None` si aucun hash
+    /// connu — le format ne nomme jamais la carte.
+    ///
+    /// Portée de la garantie : la table est dérivée de l'archive **et** validée sur elle, ce qui
+    /// est circulaire par construction. Elle ne peut pas se tromper sur un replay ayant servi à la
+    /// dérivation ; le risque résiduel est un hash partagé avec une carte absente de ce corpus —
+    /// carte jamais jouée, ou replay écarté au traitement (parse en échec, blob illisible). Le
+    /// consommateur doit donc traiter cette valeur comme une commodité, pas comme une vérité —
+    /// c'est pourquoi la saisie manuelle de la carte reste disponible côté serveur.
+    pub map: Option<String>,
 }
 
 /// `#[non_exhaustive]` ici aussi : c'est l'outil idiomatique pour garder la marge d'ajout d'une
@@ -89,6 +101,31 @@ pub enum LobbyError {
     /// aujourd'hui reviendrait à la réintroduire plus tard en rupture de semver pour un crate publié.
     #[error("structure de lobby non reconnue : {0}")]
     Unrecognized(String),
+}
+
+/// Hashes des fichiers `.s2ma` (cartes) référencés par le blob, dans l'ordre d'apparition,
+/// dédupliqués. Le blob ne nomme jamais la carte : ces hashes sont la seule piste, et leur
+/// correspondance vers un nom vit dans [`maps`] (dérivée de l'archive).
+#[must_use]
+pub fn map_hashes(bytes: &[u8]) -> Vec<String> {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    // Même motif que `parse()` : le littéral est vérifié par les tests, donc l'échec de
+    // compilation de la regex est impossible en usage normal — mais pas de `unwrap()` nu.
+    let re = RE.get_or_init(|| match Regex::new(r"([0-9a-f]{32})\.s2ma") {
+        Ok(r) => r,
+        Err(e) => unreachable!("regex .s2ma invalide : {e}"),
+    });
+    let text = String::from_utf8_lossy(bytes);
+    let mut out: Vec<String> = Vec::new();
+    for c in re.captures_iter(&text) {
+        if let Some(h) = c.get(1) {
+            let h = h.as_str().to_string();
+            if !out.contains(&h) {
+                out.push(h);
+            }
+        }
+    }
+    out
 }
 
 /// Décode un blob `replay.server.battlelobby`.
@@ -158,5 +195,14 @@ pub fn parse(bytes: &[u8]) -> Result<Lobby, LobbyError> {
         }
     }
 
-    Ok(Lobby { players })
+    // Le blob ne nomme jamais la carte : elle se déduit des hashes `.s2ma` qu'il référence, via la
+    // table dérivée de l'archive (cf. `maps`). `None` si aucun hash connu.
+    let map = map_hashes(bytes).iter().find_map(|h| {
+        maps::MAP_BY_HASH
+            .iter()
+            .find(|(hash, _)| hash == h)
+            .map(|(_, nom)| (*nom).to_string())
+    });
+
+    Ok(Lobby { players, map })
 }

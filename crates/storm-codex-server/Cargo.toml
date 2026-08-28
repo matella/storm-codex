@@ -10,6 +10,7 @@ repository.workspace = true
 storm-replay = { path = "../storm-replay" }
 storm-replay-viewer = { path = "../storm-replay-viewer" }
 storm-stats = { path = "../storm-stats" }
+storm-lobby = { path = "../storm-lobby" }
 axum = { version = "0.8", features = ["ws", "macros"] }
 tokio = { version = "1", features = ["full"] }
 sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "json", "chrono", "migrate"] }

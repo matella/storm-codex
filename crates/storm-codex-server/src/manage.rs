@@ -10,7 +10,7 @@ use axum::{
 use serde::Deserialize;
 use serde_json::Value as J;
 
-fn is_admin(h: &HeaderMap, s: &AppState) -> bool {
+pub(crate) fn is_admin(h: &HeaderMap, s: &AppState) -> bool {
     // Mode ouvert : pas de token configuré → écritures autorisées (auto-hébergement local).
     let Some(token) = s.cfg.admin_token.as_deref() else { return true };
     h.get(axum::http::header::AUTHORIZATION)

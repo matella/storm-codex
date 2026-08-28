@@ -13,3 +13,7 @@ tools/parity-harness/node_modules/
 .archive/
 .raw-cache/
 .env
+
+# Artefact d'exécution du serveur en local : IMAGES_DIR par défaut, repeuplé à chaque
+# démarrage (portraits héros + minimaps bakées). Jamais à committer.
+.images/
