@@ -13,6 +13,16 @@ use crate::AppState;
 /// Idempotence : deux POST du même fichier (le watcher redémarre, le jeu réécrit) ne doivent pas
 /// écraser un état déjà enrichi ni rediffuser un événement. On compare l'ensemble des BattleTags.
 fn meme_lobby(a: &LobbyState, b: &LobbyState) -> bool {
+    // (c) Un lobby déjà lié à un match (`a.match_id.is_some()`) décrit une partie terminée : ce
+    // n'est jamais « le même lobby » qu'un blob qui vient d'être ingéré, même si les dix
+    // BattleTags coïncident. Scénario réel : revanche en ligue/scrim entre la même composition
+    // (cf. `FENETRE_LIAISON_HEURES` dans `lobby/mod.rs`, qui documente que ce cas est fréquent).
+    // Sans cette garde, le blob de la partie 2 serait jugé identique à celui — déjà lié — de la
+    // partie 1 : `unchanged`, pas de ré-enrichissement, pas de `lobby.detected`, et la page
+    // resterait affichée en debrief de la partie 1 pendant tout le chargement de la partie 2.
+    if a.match_id.is_some() {
+        return false;
+    }
     // (a) Idempotence des états illisibles. `unreadable()` produit `players: []` avec
     // `status: "parse_failed"` : sans ce cas, le garde `players.is_empty()` ci-dessous ferait
     // juger « différents » deux blobs illisibles reposés coup sur coup, donc chaque repost
@@ -180,14 +190,18 @@ fn appliquer_teams(
 }
 
 /// Mutation + ré-enrichissement + persistance + diffusion, factorisés : les trois routes
-/// ci-dessus ne diffèrent que par la mutation elle-même.
+/// `set_hero`/`set_map`/`set_teams` ci-dessus ne diffèrent que par la mutation elle-même.
 ///
-/// Le write-lock est gardé pendant `enrich` (SQL) et `save` : c'est délibéré, pas un oubli. Le
-/// serveur n'a qu'un seul utilisateur donc la contention est nulle et `enrich` est mesuré à
-/// ~35 ms — mais le verrou reste la frontière de correction : deux mutations concurrentes (par
-/// ex. deux saisies rapprochées depuis l'UI) ne doivent jamais s'entrelacer au milieu d'un
-/// enrichissement. La diffusion WebSocket, elle, se fait après le `drop(guard)` explicite
-/// ci-dessous : elle n'a pas besoin du verrou et ne doit pas retarder sa libération.
+/// Le write-lock est gardé pendant `enrich` (SQL) et `save` : c'est délibéré, pas un oubli, **pour
+/// ces trois routes de saisie**. Le serveur n'a qu'un seul utilisateur donc la contention est
+/// nulle — mais le verrou reste leur frontière de correction : deux saisies rapprochées depuis
+/// l'UI ne doivent jamais s'entrelacer au milieu d'un enrichissement. `ingest` (le `POST
+/// /api/lobby` qui reçoit le blob) est aussi une mutation mais suit un patron différent : il
+/// n'enrichit qu'après avoir relâché le verrou de lecture qui sert à détecter les doublons — un
+/// nouveau blob n'a pas besoin d'être empêché de s'entrelacer avec l'enrichissement d'un autre
+/// puisqu'il n'y a par construction qu'un seul lobby en cours de détection à la fois côté jeu. La
+/// diffusion WebSocket, elle, se fait après le `drop(guard)` explicite ci-dessous : elle n'a pas
+/// besoin du verrou et ne doit pas retarder sa libération.
 async fn muter<F>(s: AppState, f: F) -> (StatusCode, Json<J>)
 where
     F: FnOnce(&mut LobbyState),
@@ -273,6 +287,18 @@ mod tests {
         let a = LobbyState::unreadable(chrono::Utc::now().to_rfc3339());
         let b = LobbyState::unreadable(chrono::Utc::now().to_rfc3339());
         assert!(meme_lobby(&a, &b));
+    }
+
+    #[test]
+    fn un_lobby_deja_lie_n_est_jamais_le_meme_qu_un_blob_entrant() {
+        // Revanche entre les mêmes dix joueurs (ligue/scrim) : la partie 1 est déjà liée à son
+        // replay (`match_id: Some(...)`) quand le lobby de la partie 2, même composition, arrive.
+        // Sans la garde (c) de `meme_lobby`, ce test échouerait : les BattleTags identiques
+        // feraient juger les deux lobbys identiques, et la partie 2 ne serait jamais ingérée.
+        let mut a = lobby_avec(&dix_battletags());
+        a.match_id = Some(42);
+        let b = lobby_avec(&dix_battletags());
+        assert!(!meme_lobby(&a, &b));
     }
 
     #[test]

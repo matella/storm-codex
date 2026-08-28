@@ -297,8 +297,9 @@ async fn run_parse(
             .await;
 
             // Si ce match est la partie du lobby ouvert, le companion bascule en debrief. Verrou
-            // tenu seulement pour la mutation + la persistance (même patron que `muter` dans
-            // `lobby/api.rs`) : la diffusion WS se fait après le `drop` explicite.
+            // tenu pour la lecture (`lier_match` interroge `match_players` sous ce verrou), la
+            // mutation et la persistance (même patron que `muter` dans `lobby/api.rs`) : la
+            // diffusion WS se fait après le `drop` explicite.
             let mut lobby_lie = false;
             let mut guard = state.lobby.write().await;
             if let Some(st) = guard.as_mut() {

@@ -63,9 +63,18 @@ async fn historiques(db: &PgPool, toons: &[String]) -> HashMap<String, J> {
             FROM app_settings WHERE key = 'operator_names'
          ),
          mes_parties AS (
-            SELECT mp.match_id, mp.team
+            -- Au plus une ligne par match. `operator_names` est un filtre, pas une clé : si deux
+            -- lignes de `match_players` d'un même match le satisfont (deux comptes de l'opérateur
+            -- dans la même partie, ou un homonyme dans l'archive — le discriminant n'entre pas
+            -- dans le critère), une jointure sur toutes les lignes ferait compter chaque
+            -- adversaire deux fois, et si ces deux lignes sont dans des camps opposés, la même
+            -- partie serait comptée à la fois « ensemble » et « contre ». `DISTINCT ON` fige un
+            -- choix arbitraire mais unique par match — suffisant : la question posée est « ai-je
+            -- croisé ce joueur dans ce match, dans quel camp », pas « laquelle de mes lignes ».
+            SELECT DISTINCT ON (mp.match_id) mp.match_id, mp.team
             FROM match_players mp
             WHERE lower(mp.name) IN (SELECT name FROM moi)
+            ORDER BY mp.match_id
          ),
          cibles AS (
             SELECT DISTINCT toon_handle FROM UNNEST($1::text[]) AS toon_handle
@@ -201,7 +210,10 @@ pub async fn enrich(db: &PgPool, state: &mut LobbyState) {
         p.toon_handle = toon;
     }
 
-    // L'opérateur : le premier joueur du lobby dont le nom figure dans `operator_names`.
+    // L'opérateur : le premier joueur du lobby dont le nom figure dans `operator_names` (le plan
+    // disait « le dernier » ; le premier est retenu, sans conséquence : un lobby légitime ne
+    // contient jamais deux comptes de l'opérateur, donc `position()` ne trouve au plus qu'une
+    // seule correspondance de toute façon).
     state.me = state
         .players
         .iter()
@@ -218,7 +230,15 @@ pub async fn enrich(db: &PgPool, state: &mut LobbyState) {
         .filter(|(i, _)| Some(*i) != state.me)
         .filter_map(|(_, p)| p.toon_handle.clone())
         .collect();
-    let historiques_par_toon = historiques(db, &toons_connus).await;
+    // `operator_names` non configuré : `state.me` est toujours `None` ci-dessus, donc « avec/contre
+    // moi » n'a aucun sens. N'appelle pas `historiques` dans ce cas — un `games_with: 0` renvoyé
+    // pour tout le monde serait un faux zéro indiscernable d'un vrai zéro, exactement ce que
+    // l'en-tête de ce module promet d'éviter.
+    let historiques_par_toon = if noms_operateur.is_empty() {
+        HashMap::new()
+    } else {
+        historiques(db, &toons_connus).await
+    };
     for (i, p) in state.players.iter_mut().enumerate() {
         p.history = if Some(i) == state.me {
             None

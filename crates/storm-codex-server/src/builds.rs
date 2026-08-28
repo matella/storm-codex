@@ -60,6 +60,11 @@ pub struct BuildBody {
     pub notes: Option<String>,
     #[serde(default)]
     pub is_default: bool,
+    /// Provenance : `match_id` du match d'où le build a été importé (`from_match`). `None` pour
+    /// un build créé ou modifié directement via `POST`/`PUT /api/builds` — absent du payload,
+    /// `#[serde(default)]` le laisse à `null`.
+    #[serde(default)]
+    pub source_match_id: Option<i64>,
 }
 
 /// `POST /api/builds` — créer un build. Marquer `is_default` retire d'abord le défaut existant du
@@ -81,14 +86,15 @@ pub async fn create(
             .map_err(db_err)?;
     }
     let id: i64 = sqlx::query_scalar(
-        "INSERT INTO builds (hero_id, name, picks, notes, is_default)
-         VALUES ($1, $2, $3, $4, $5) RETURNING id",
+        "INSERT INTO builds (hero_id, name, picks, notes, is_default, source_match_id)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
     )
     .bind(&b.hero_id)
     .bind(&b.name)
     .bind(&b.picks)
     .bind(&b.notes)
     .bind(b.is_default)
+    .bind(b.source_match_id)
     .fetch_one(&mut *tx)
     .await
     .map_err(db_err)?;
@@ -180,7 +186,10 @@ pub async fn from_match(
     if !crate::manage::is_admin(&headers, &s) {
         return Err(refus_admin());
     }
-    let row: Option<(String, J)> = sqlx::query_as(
+    // `hero` est nullable (parties IA/quittées avant pick) : décoder en `String` ferait échouer
+    // sqlx sur ces lignes-là et remonterait un 500 générique sur une action utilisateur explicite
+    // au lieu du 422 attendu.
+    let row: Option<(Option<String>, J)> = sqlx::query_as(
         "SELECT hero, COALESCE(data -> 'talents', '{}'::jsonb)
          FROM match_players WHERE match_id = $1 AND toon_handle = $2",
     )
@@ -194,6 +203,12 @@ pub async fn from_match(
         return Err((
             StatusCode::NOT_FOUND,
             Json(json!({ "error": "joueur absent de ce match" })),
+        ));
+    };
+    let Some(hero_id) = hero_id else {
+        return Err((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({ "error": "héros non renseigné pour ce joueur sur ce match" })),
         ));
     };
     if picks.as_object().is_none_or(serde_json::Map::is_empty) {
@@ -212,6 +227,7 @@ pub async fn from_match(
             picks,
             notes: None,
             is_default: b.is_default,
+            source_match_id: Some(b.match_id),
         }),
     )
     .await
