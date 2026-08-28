@@ -10,16 +10,22 @@ use serde_json::{json, Value as J};
 use crate::lobby::{store, LobbyState};
 use crate::AppState;
 
-/// Idempotence : deux POST du même fichier (le watcher redémarre, le jeu réécrit) ne doivent pas
-/// écraser un état déjà enrichi ni rediffuser un événement. On compare l'ensemble des BattleTags.
+/// Deuxième ligne de défense de l'idempotence, après la garde par hash de `ingest` (voir
+/// [`decider`]) : celle-ci absorbe tout repost octet pour octet identique — y compris sur un
+/// lobby déjà lié, ce qui protège le debrief d'un simple redémarrage du watcher qui repose sur
+/// disque le même `replay.server.battlelobby`. `meme_lobby` ne voit donc jamais deux blobs
+/// identiques ; elle ne traite que le cas où le hash a changé mais où les BattleTags pourraient
+/// tout de même désigner « le même lobby » (le jeu réécrit le fichier en plusieurs passes autour
+/// de la bonne lecture). On compare l'ensemble des BattleTags.
 fn meme_lobby(a: &LobbyState, b: &LobbyState) -> bool {
-    // (c) Un lobby déjà lié à un match (`a.match_id.is_some()`) décrit une partie terminée : ce
-    // n'est jamais « le même lobby » qu'un blob qui vient d'être ingéré, même si les dix
-    // BattleTags coïncident. Scénario réel : revanche en ligue/scrim entre la même composition
-    // (cf. `FENETRE_LIAISON_HEURES` dans `lobby/mod.rs`, qui documente que ce cas est fréquent).
-    // Sans cette garde, le blob de la partie 2 serait jugé identique à celui — déjà lié — de la
-    // partie 1 : `unchanged`, pas de ré-enrichissement, pas de `lobby.detected`, et la page
-    // resterait affichée en debrief de la partie 1 pendant tout le chargement de la partie 2.
+    // (c) Un lobby déjà lié à un match (`a.match_id.is_some()`) décrit une partie terminée : un
+    // blob dont le hash diffère (sinon la garde de `decider` l'aurait absorbé avant d'arriver
+    // ici) mais dont les BattleTags coïncident n'est donc jamais « le même lobby » qu'un blob qui
+    // vient d'être ingéré. Scénario réel : revanche en ligue/scrim entre la même composition (cf.
+    // `FENETRE_LIAISON_HEURES` dans `lobby/mod.rs`, qui documente que ce cas est fréquent). Sans
+    // cette garde, le blob de la partie 2 serait jugé identique à celui — déjà lié — de la partie
+    // 1 : `unchanged`, pas de ré-enrichissement, pas de `lobby.detected`, et la page resterait
+    // affichée en debrief de la partie 1 pendant tout le chargement de la partie 2.
     if a.match_id.is_some() {
         return false;
     }
@@ -62,6 +68,36 @@ fn parse_failed_transitoire(prec: &LobbyState, nouveau: &LobbyState) -> bool {
     }
 }
 
+/// Décision d'idempotence de `ingest`, extraite en fonction pure pour être testable sans
+/// `AppState` (même motif que `meme_lobby`/`appliquer_teams`).
+#[derive(Debug, PartialEq, Eq)]
+enum Decision {
+    Unchanged,
+    Ingerer,
+}
+
+/// Règle appliquée dans cet ordre, `prec` étant l'état actuellement en mémoire (`None` si aucun
+/// lobby n'a encore été détecté) :
+/// 1. **hash identique à `prec`** → `Unchanged`, quoi qu'il arrive, y compris si `prec` est déjà
+///    lié à un match. C'est la garde qui protège le debrief : `replay.server.battlelobby` survit
+///    sur le disque entre deux parties, donc un redémarrage du watcher qui le repose ne doit
+///    jamais réécraser un état déjà enrichi avec `match_id: None`.
+/// 2. sinon, les règles existantes (`meme_lobby`, `parse_failed_transitoire`) s'appliquent
+///    inchangées — la garde « déjà lié » de `meme_lobby` comprise : un blob différent avec les
+///    mêmes BattleTags sur un lobby lié est une revanche, et doit être ingéré.
+fn decider(prec: Option<&LobbyState>, nouveau: &LobbyState) -> Decision {
+    let Some(prec) = prec else {
+        return Decision::Ingerer;
+    };
+    if prec.content_hash == nouveau.content_hash {
+        return Decision::Unchanged;
+    }
+    if meme_lobby(prec, nouveau) || parse_failed_transitoire(prec, nouveau) {
+        return Decision::Unchanged;
+    }
+    Decision::Ingerer
+}
+
 /// `POST /api/lobby` — octets bruts, `Bearer` d'upload.
 pub async fn ingest(
     State(s): State<AppState>,
@@ -75,6 +111,10 @@ pub async fn ingest(
         );
     }
 
+    // Calculé avant le décodage, sur les octets bruts : c'est le même helper que l'upload de
+    // replay (`crate::upload::sha256_hex`), et il doit être posé même si le blob s'avère
+    // illisible plus bas — un blob illisible reposté doit lui aussi être reconnu comme un repost.
+    let content_hash = crate::upload::sha256_hex(&bytes);
     let detected_at = chrono::Utc::now().to_rfc3339();
     let mut state = match storm_lobby::parse(&bytes) {
         Ok(lobby) => LobbyState::from_lobby(&lobby, detected_at),
@@ -84,13 +124,12 @@ pub async fn ingest(
             LobbyState::unreadable(detected_at)
         }
     };
+    state.content_hash = content_hash;
 
     {
         let courant = s.lobby.read().await;
-        if let Some(prec) = courant.as_ref() {
-            if meme_lobby(prec, &state) || parse_failed_transitoire(prec, &state) {
-                return (StatusCode::OK, Json(json!({ "status": "unchanged" })));
-            }
+        if decider(courant.as_ref(), &state) == Decision::Unchanged {
+            return (StatusCode::OK, Json(json!({ "status": "unchanged" })));
         }
     }
 
@@ -255,6 +294,7 @@ mod tests {
             me_stats: None,
             match_id: None,
             status: None,
+            content_hash: String::new(),
         }
     }
 
@@ -299,6 +339,50 @@ mod tests {
         a.match_id = Some(42);
         let b = lobby_avec(&dix_battletags());
         assert!(!meme_lobby(&a, &b));
+    }
+
+    #[test]
+    fn meme_hash_sur_lobby_deja_lie_est_unchanged() {
+        // C'est le cas qui protège le debrief : `replay.server.battlelobby` survit sur le disque
+        // entre deux parties, un redémarrage du watcher le repose à l'identique. Sans la garde
+        // par hash en tête de `decider`, `meme_lobby` jugerait (à raison, vu la garde (c)) que ce
+        // n'est *pas* le même lobby puisque `match_id.is_some()` — et écraserait le debrief.
+        let mut prec = lobby_avec(&dix_battletags());
+        prec.match_id = Some(42);
+        prec.content_hash = "abc123".to_string();
+        let mut nouveau = lobby_avec(&dix_battletags());
+        nouveau.content_hash = "abc123".to_string();
+        assert_eq!(decider(Some(&prec), &nouveau), Decision::Unchanged);
+    }
+
+    #[test]
+    fn hash_different_memes_battletags_sur_lobby_lie_est_ingere() {
+        // La revanche entre les mêmes dix joueurs doit continuer à être ingérée : ce test
+        // vérifie que la garde par hash ne réintroduit pas le bug que la garde (c) de
+        // `meme_lobby` avait corrigé.
+        let mut prec = lobby_avec(&dix_battletags());
+        prec.match_id = Some(42);
+        prec.content_hash = "abc123".to_string();
+        let mut nouveau = lobby_avec(&dix_battletags());
+        nouveau.content_hash = "xyz789".to_string();
+        assert_eq!(decider(Some(&prec), &nouveau), Decision::Ingerer);
+    }
+
+    #[test]
+    fn meme_hash_sur_lobby_non_lie_est_unchanged() {
+        // Repost ordinaire (watcher redémarré, lobby pas encore lié) : cas déjà couvert avant
+        // l'introduction du hash, à ne pas régresser.
+        let mut prec = lobby_avec(&dix_battletags());
+        prec.content_hash = "abc123".to_string();
+        let mut nouveau = lobby_avec(&dix_battletags());
+        nouveau.content_hash = "abc123".to_string();
+        assert_eq!(decider(Some(&prec), &nouveau), Decision::Unchanged);
+    }
+
+    #[test]
+    fn aucun_lobby_courant_est_toujours_ingere() {
+        let nouveau = lobby_avec(&dix_battletags());
+        assert_eq!(decider(None, &nouveau), Decision::Ingerer);
     }
 
     #[test]

@@ -61,8 +61,10 @@ pub struct BuildBody {
     #[serde(default)]
     pub is_default: bool,
     /// Provenance : `match_id` du match d'où le build a été importé (`from_match`). `None` pour
-    /// un build créé ou modifié directement via `POST`/`PUT /api/builds` — absent du payload,
-    /// `#[serde(default)]` le laisse à `null`.
+    /// un build créé directement via `POST /api/builds` — absent du payload, `#[serde(default)]`
+    /// le laisse à `null`. `PUT /api/builds/{id}` (`update`, plus bas) ne liste pas cette colonne
+    /// dans son `UPDATE` : ce champ du payload est donc ignoré à la modification, et la
+    /// provenance déjà en base est conservée telle quelle, quoi que porte `source_match_id` ici.
     #[serde(default)]
     pub source_match_id: Option<i64>,
 }

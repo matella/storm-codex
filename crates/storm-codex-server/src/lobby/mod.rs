@@ -56,6 +56,17 @@ pub struct LobbyState {
     /// plutôt qu'une page vide.
     #[serde(default)]
     pub status: Option<String>,
+    /// SHA-256 hexadécimal des octets bruts reçus par `POST /api/lobby` (avant décodage) —
+    /// calculé avec `crate::upload::sha256_hex`, le même helper que l'upload de replay. Sert de
+    /// garde d'idempotence de premier niveau dans `lobby::api::ingest` : un hash identique à
+    /// celui de l'état courant est *toujours* un repost du même fichier, y compris quand l'état
+    /// est déjà lié à un match (`match_id.is_some()`) — c'est ce qui protège le debrief d'un
+    /// simple redémarrage du watcher qui repose le `replay.server.battlelobby` resté sur le
+    /// disque. `#[serde(default)]` : un état persisté par une version antérieure du serveur n'a
+    /// pas ce champ et doit rester désérialisable (il vaut alors `""`, qui ne collisionne avec
+    /// aucun hash réel).
+    #[serde(default)]
+    pub content_hash: String,
 }
 
 impl LobbyState {
@@ -86,6 +97,7 @@ impl LobbyState {
             me_stats: None,
             match_id: None,
             status: None,
+            content_hash: String::new(),
         }
     }
 
@@ -105,6 +117,7 @@ impl LobbyState {
             me_stats: None,
             match_id: None,
             status: Some("parse_failed".into()),
+            content_hash: String::new(),
         }
     }
 }
