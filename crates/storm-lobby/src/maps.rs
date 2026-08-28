@@ -4,7 +4,10 @@
 //! sur l'archive du box. Un hash n'est retenu que s'il n'a JAMAIS été observé sur une autre
 //! carte. Une même carte a plusieurs hashes : Blizzard republie ses fichiers `.s2ma` à chaque
 //! patch, donc exiger qu'un seul hash couvre tous les replays d'une carte éliminerait les cartes
-//! les plus jouées (mesuré : 9 cartes sur 19 avec ce critère, 19 sur 19 sans).
+//! les plus jouées. Mesuré une fois, lors de la mise au point de ce critère : la couverture totale
+//! ne validait que 9 cartes sur 19 ; le critère retenu ici (jamais observé ailleurs) validait les
+//! 19. Ce critère de couverture totale n'existe plus dans le code — le chiffre n'est donc pas
+//! rejouable, seulement attesté par cette run de dérivation initiale.
 
 /// `(hash, nom de carte)`, trié par hash — les noms sont ceux que `matches.map` stocke.
 pub(crate) const MAP_BY_HASH: &[(&str, &str)] = &[

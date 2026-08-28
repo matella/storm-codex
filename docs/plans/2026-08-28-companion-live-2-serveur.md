@@ -1513,7 +1513,10 @@ git commit -m "feat(server): relier le replay parsé au lobby courant (bascule d
       (⚠️ `--workspace` échoue pour une raison **pré-existante** sur les tests de
       `storm-codex-server` : 11 `unwrap_used`. Vérifié sur `main`, hors périmètre — ne pas le
       corriger dans ce plan, et ne pas le confondre avec une régression.)
-- [x] `/api/lobby` mesuré **p95 ≈ 35 ms** sur `POST` (le chemin qui exécute l'enrichissement), consigné dans `docs/STATUS.md`
+- [x] `/api/lobby` mesuré via `backfill_bench.py` (passe ajoutée en revue finale — l'ancien
+      « p95 ≈ 35 ms » n'était mesuré par aucun outil du dépôt) : **p95 ≈ 18 ms en régime stable**
+      sur `POST` (le chemin qui exécute l'enrichissement), contre le budget de 100 ms ; `GET`
+      (mémoire) ≈ 0,6 ms. Détail et pic à froid consignés dans `docs/STATUS.md`.
 - [x] Couverture de la carte par la table `.s2ma` : **19/19 cartes, 116 hashes**, consignée dans `docs/STATUS.md`
 - [x] `docs/STATUS.md` mis à jour (état + prochaine étape), conformément à `CLAUDE.md`
 

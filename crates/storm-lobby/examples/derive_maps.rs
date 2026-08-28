@@ -45,8 +45,10 @@ fn main() -> anyhow::Result<()> {
     // Critère de rétention : un hash n'est retenu que s'il n'a JAMAIS été observé sur une autre
     // carte. On n'exige PAS qu'il couvre tous les replays de sa carte — Blizzard republie les
     // fichiers `.s2ma` à chaque patch, donc une carte porte plusieurs hashes selon le build, et
-    // exiger une couverture totale éliminerait précisément les cartes les plus jouées
-    // (mesuré : 9 cartes sur 19 avec ce critère, 19 sur 19 sans).
+    // exiger une couverture totale éliminerait précisément les cartes les plus jouées. Mesuré une
+    // fois, lors de la mise au point de ce critère : la couverture totale ne validait que 9 cartes
+    // sur 19, contre 19 sur 19 avec le critère retenu ici — ce critère de couverture totale
+    // n'existe plus dans ce code, le chiffre n'est donc pas rejouable.
     let mut table: Vec<(String, String)> = Vec::new();
     for (hash, cartes) in &cartes_par_hash {
         if cartes.len() != 1 {
@@ -63,7 +65,10 @@ fn main() -> anyhow::Result<()> {
     println!("//! sur l'archive du box. Un hash n'est retenu que s'il n'a JAMAIS été observé sur une autre");
     println!("//! carte. Une même carte a plusieurs hashes : Blizzard republie ses fichiers `.s2ma` à chaque");
     println!("//! patch, donc exiger qu'un seul hash couvre tous les replays d'une carte éliminerait les cartes");
-    println!("//! les plus jouées (mesuré : 9 cartes sur 19 avec ce critère, 19 sur 19 sans).");
+    println!("//! les plus jouées. Mesuré une fois, lors de la mise au point de ce critère : la");
+    println!("//! couverture totale ne validait que 9 cartes sur 19 ; le critère retenu ici (jamais observé");
+    println!("//! ailleurs) validait les 19. Ce critère de couverture totale n'existe plus dans le code — le");
+    println!("//! chiffre n'est donc pas rejouable, seulement attesté par cette run de dérivation initiale.");
     println!();
     println!("/// `(hash, nom de carte)`, trié par hash — les noms sont ceux que `matches.map` stocke.");
     println!("pub(crate) const MAP_BY_HASH: &[(&str, &str)] = &[");

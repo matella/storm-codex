@@ -3,15 +3,17 @@
 ## Companion live — plan 2 (serveur) : LIVRÉ (branche `feat/companion-live-serveur`, 2026-08-28)
 Plan : `docs/plans/2026-08-28-companion-live-2-serveur.md`. Le serveur expose tout ce dont la page
 companion aura besoin. **Front = plan 3, watcher `client-rs` = plan 4** (seul morceau exigeant le PC
-de jeu). 6 tâches, chacune revue spec+qualité ; **4 correctifs Important repliés**, tous issus du
+de jeu). 6 tâches, chacune revue spec+qualité ; **5 correctifs Important repliés**, tous issus du
 code de mon propre plan et attrapés par les revues — détail plus bas.
 - **Carte déduite sans saisie** : `storm-lobby` extrait les hashes `.s2ma` du blob et les résout via
   une table dérivée de l'archive (`src/maps.rs`, générée par `examples/derive_maps.rs`).
-  **19 cartes sur 19 couvertes, 116 hashes**, sur 3 322 replays. ⚠️ Le critère initial du plan (hash
-  présent dans TOUS les replays de sa carte) ne couvrait que 9/19 : Blizzard republie les `.s2ma` à
-  chaque patch. Critère retenu : hash jamais observé sur une autre carte — ne peut pas produire
-  d'association fausse. Garantie circulaire par construction (dérivée et validée sur la même
-  archive) : documenté sur le champ `Lobby::map`.
+  **19 cartes sur 19 couvertes, 116 hashes**, sur 3 322 replays. Critère retenu : hash jamais
+  observé sur une autre carte — ne peut pas produire d'association fausse. Un critère plus strict
+  avait été envisagé (hash présent dans TOUS les replays de sa carte) puis écarté : mesuré une
+  fois, lors de la mise au point du critère, il ne couvrait que 9/19 cartes (Blizzard republie les
+  `.s2ma` à chaque patch) — ce critère n'existe plus dans le code, ce chiffre n'est donc pas
+  rejouable. Garantie circulaire par construction (dérivée et validée sur la même archive) :
+  documenté sur le champ `Lobby::map`.
 - **Migration `0009`** : `builds` (bibliothèque de builds de talents, `picks` à la forme exacte du
   parser) + `lobby_live` (singleton, calque de `draft_live`) + index de résolution BattleTag.
   L'invariant « un seul build par défaut par héros » est tenu par un **index partiel unique**.
@@ -19,9 +21,13 @@ code de mon propre plan et attrapés par les revues — détail plus bas.
   `/api/builds` + `POST /api/builds/from-match`. WS `lobby.detected` / `lobby.updated`.
 - **Enrichissement** : `nom#discriminant` → `toon_handle` **contre l'archive elle-même**, puis
   historiques (parties avec/contre toi, winrates, héros favoris) et tes stats héros/carte.
-  Requêtes **batchées** (LEFT JOIN LATERAL + `= ANY($1)`) au lieu de la boucle par joueur du plan :
-  **p95 ≈ 35 ms sur `POST /api/lobby`** (le chemin qui exécute réellement l'enrichissement), contre
-  un contrat de 100 ms. `GET` sert la mémoire (~1,4 ms).
+  Requêtes **batchées** (LEFT JOIN LATERAL + `= ANY($1)`) au lieu de la boucle par joueur du plan.
+  **Mesuré** (passe `/api/lobby` ajoutée à `backfill_bench.py` en revue finale — le chiffre
+  « ≈ 35 ms » précédemment consigné ici n'était mesuré par aucun outil du dépôt) : **p95 ≈ 18 ms
+  en régime stable sur `POST /api/lobby`** (décodage + enrichissement SQL, médiane ~15 ms, 5 runs
+  de 20 requêtes), contre un contrat de 100 ms. `GET` sert la mémoire, p95 ~0,6 ms. ⚠️ Le tout
+  premier appel après démarrage du serveur (warm-up connexion/plan SQL) a atteint 129 ms une fois
+  sur 5 runs — resté isolé sur les runs suivants, mais à surveiller si ça se reproduit en prod.
 - **Dégradations tenues** : blob illisible → `parse_failed` + sélecteur manuel, jamais d'erreur HTTP
   ni de page vide ; joueur jamais croisé → `toon_handle`/`history` à `null`, jamais un winrate
   fabriqué ; un `parse_failed` transitoire (fichier lu pendant que le jeu l'écrit) **n'écrase pas**
