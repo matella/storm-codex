@@ -119,6 +119,88 @@ pub async fn clear(State(s): State<AppState>) -> Json<J> {
     Json(json!({ "ok": true }))
 }
 
+#[derive(serde::Deserialize)]
+pub struct HeroBody {
+    /// Clé `dim_heroes.id`. `null` pour effacer la saisie.
+    pub hero: Option<String>,
+}
+
+/// `POST /api/lobby/hero` — le héros n'est jamais dans le blob : c'est le seul tap obligatoire.
+pub async fn set_hero(State(s): State<AppState>, Json(b): Json<HeroBody>) -> (StatusCode, Json<J>) {
+    muter(s, |st| st.hero = b.hero).await
+}
+
+#[derive(serde::Deserialize)]
+pub struct MapBody {
+    pub map: Option<String>,
+}
+
+/// `POST /api/lobby/map` — repli quand la carte n'a pas pu être déduite des hashes `.s2ma`.
+pub async fn set_map(State(s): State<AppState>, Json(b): Json<MapBody>) -> (StatusCode, Json<J>) {
+    muter(s, |st| {
+        st.map = b.map;
+        st.map_manual = true;
+    })
+    .await
+}
+
+#[derive(serde::Deserialize)]
+pub struct TeamsBody {
+    /// `battletag → équipe (0 ou 1)`. Les joueurs absents de la table gardent leur équipe.
+    pub teams: std::collections::HashMap<String, u8>,
+}
+
+/// `POST /api/lobby/teams` — réassignation par joueur, pas un bouton d'inversion. Mesuré sur
+/// 3 322 parties réelles (plan 1) : la déduction d'équipe est fiable à 100 % en matchmaking mais
+/// se trompe souvent en partie personnalisée, et parmi les échecs seuls 5,3 % sont une inversion
+/// des deux camps — les 94,7 % restants sont des ordres qui ne portent aucune information
+/// d'équipe. Un bouton « inverser » serait donc inutile 19 fois sur 20 : seule une saisie
+/// explicite par joueur peut reconstruire l'équipe correcte dans le cas général.
+pub async fn set_teams(State(s): State<AppState>, Json(b): Json<TeamsBody>) -> (StatusCode, Json<J>) {
+    muter(s, |st| {
+        for p in &mut st.players {
+            if let Some(t) = b.teams.get(&p.battletag) {
+                if *t <= 1 {
+                    p.team = Some(*t);
+                    p.team_manual = true;
+                }
+            }
+        }
+    })
+    .await
+}
+
+/// Mutation + ré-enrichissement + persistance + diffusion, factorisés : les trois routes
+/// ci-dessus ne diffèrent que par la mutation elle-même.
+///
+/// Le write-lock est gardé pendant `enrich` (SQL) et `save` : c'est délibéré, pas un oubli. Le
+/// serveur n'a qu'un seul utilisateur donc la contention est nulle et `enrich` est mesuré à
+/// ~35 ms — mais le verrou reste la frontière de correction : deux mutations concurrentes (par
+/// ex. deux saisies rapprochées depuis l'UI) ne doivent jamais s'entrelacer au milieu d'un
+/// enrichissement. La diffusion WebSocket, elle, se fait après le `drop(guard)` explicite
+/// ci-dessous : elle n'a pas besoin du verrou et ne doit pas retarder sa libération.
+async fn muter<F>(s: AppState, f: F) -> (StatusCode, Json<J>)
+where
+    F: FnOnce(&mut LobbyState),
+{
+    let mut guard = s.lobby.write().await;
+    let Some(st) = guard.as_mut() else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "aucun lobby courant" })),
+        );
+    };
+    f(st);
+    crate::lobby::enrich::enrich(&s.db, st).await;
+    if let Err(e) = store::save(&s.db, st).await {
+        tracing::error!("lobby save: {e}");
+    }
+    let out = serde_json::to_value(&*st).unwrap_or(J::Null);
+    drop(guard);
+    let _ = s.events.send(json!({ "type": "lobby.updated" }));
+    (StatusCode::OK, Json(out))
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {

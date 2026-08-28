@@ -228,6 +228,9 @@ async fn run() -> Result<(), String> {
                 .post(lobby::api::ingest)
                 .delete(lobby::api::clear),
         )
+        .route("/api/lobby/hero", post(lobby::api::set_hero))
+        .route("/api/lobby/map", post(lobby::api::set_map))
+        .route("/api/lobby/teams", post(lobby::api::set_teams))
         .route("/ws", any(ws::ws_handler))
         // portraits héros + images de cartes vendorisés (servis depuis images_dir)
         .nest_service(
