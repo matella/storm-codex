@@ -3,6 +3,7 @@
 
 mod admin;
 mod azure;
+mod builds;
 mod config;
 mod dim;
 mod draft;
@@ -191,6 +192,12 @@ async fn run() -> Result<(), String> {
         .route("/api/teams/{id}", axum::routing::delete(manage::delete_team).put(manage::update_team))
         .route("/api/collections", get(manage::list_collections).post(manage::create_collection))
         .route("/api/collections/{id}", axum::routing::delete(manage::delete_collection))
+        .route("/api/builds", get(builds::list).post(builds::create))
+        .route(
+            "/api/builds/{id}",
+            axum::routing::put(builds::update).delete(builds::delete),
+        )
+        .route("/api/builds/from-match", post(builds::from_match))
         .route("/api/admin/tokens", post(admin::create_token))
         .route(
             "/api/admin/tokens/{id}",
