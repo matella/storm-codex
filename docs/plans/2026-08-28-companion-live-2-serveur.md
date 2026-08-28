@@ -32,7 +32,8 @@ ici est testable au curl sans une ligne de front.
   compilation — c'est le choix déjà fait partout dans `crates/storm-codex-server`.
 - Jamais d'interpolation de chaîne dans du SQL : uniquement des binds `$1`, `$2`…
 - `storm-lobby` reste **pur** : aucune I/O, aucune dépendance runtime à `storm-replay`/`storm-stats`.
-- Budget de la spec programme : `/api/lobby` doit tenir **p95 < 100 ms**.
+- Budget : `/api/lobby` — `GET` p95 < 100 ms, `POST` p95 < 500 ms (critère **amendé le
+  2026-08-28 après mesure**, cf. `docs/specs/2026-08-27-companion-live-design.md` §Critères).
 - Les mutations d'état de lobby diffusent sur le canal `/ws` existant, comme `draft.updated`.
 - Commits conventionnels. Branche : `feat/companion-live-serveur`.
 - **Aucune modification du box** dans ce plan : tout se développe contre le Postgres de dev
