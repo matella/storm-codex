@@ -11,17 +11,22 @@ programme (« pas de pré-game en V1 »), sur décision de l'opérateur.
   invisible à `strings` — un parser ASCII perdrait un joueur sans échouer). **Absents** : toon
   handle, héros pické, carte, mode, champ d'équipe. L'identité se résout donc par BattleTag contre
   l'archive (`match_players.name` + `data->>'tag'`), et héros/carte passent en saisie manuelle.
-- **Parité mesurée sur 3 314 replays, 25 builds** (`docs/research/2026-08-27-lobby-parity.md`) :
-  **GO sur les modes matchmakés — 100 % de BattleTags ET 100 % d'équipes sur 2 702 parties**
-  (Storm League 1970/1970, ARAM 729/729, QM 3/3). Le chiffre global de 96,03 % était **entièrement**
-  produit par les parties personnalisées (398 évaluées : 76 % de tags, 29 % d'équipes) — des
-  observateurs siègent dans le lobby et l'ordre n'y porte pas l'équipe. Mode d'échec vérifié
-  **exhaustivement** : sur-capture, **jamais** un joueur manquant, jamais un décodage malformé.
+- **Parité mesurée sur 3 322 replays, 25 builds** (`docs/research/2026-08-27-lobby-parity.md`) :
+  **GO sur les modes matchmakés — 100 % de BattleTags ET 100 % d'équipes sur 2 710 parties**
+  (Storm League 1978/1978, ARAM 729/729, QM 3/3), soit 83,9 % de la base de comparaison
+  (2 710 / 3 231). Le chiffre global de 96,19 % était **entièrement** produit par les parties
+  personnalisées (521 évaluées, 16,1 % de la base : 398 exactes en tags, 76 % ; 115 exactes en
+  équipes, 29 %) — des observateurs siègent dans le lobby et l'ordre n'y porte pas l'équipe. Mode
+  d'échec vérifié **exhaustivement** sur les 3 231 replays : sur-capture (3,81 %), **jamais** un
+  joueur manquant, jamais un décodage malformé (0 % de sous-capture).
 - **Limite à connaître** : le blob ne porte pas le mode → le parser ne peut pas savoir qu'il lit une
   partie personnalisée. Sur une personnalisée à 10 occupants pile et sans observateur, il assignera
-  des équipes avec assurance et se trompera ~2 fois sur 3. Recommandation du rapport : garder la
-  déduction (parfaite sur 87 % de l'archive) et offrir une inversion manuelle d'un clic côté produit.
-- **Vérif** : `cargo test --workspace` vert (oracle 3/3, robustesse 4/4). `cargo clippy -p storm-lobby
+  des équipes avec assurance et se trompera dans la majorité de ces cas — 283 des 398 personnalisées
+  aux BattleTags exacts ont une équipe fausse (~71 %). Recommandation du rapport : garder la
+  déduction (parfaite sur 83,9 % de la base de comparaison) et offrir une inversion manuelle d'un
+  clic côté produit.
+- **Vérif** : `cargo test -p storm-lobby` vert (oracle 3/3, robustesse 4/4, team_rule 3/3).
+  `cargo clippy -p storm-lobby
   --all-targets -- -D warnings` propre. ⚠️ `cargo clippy --workspace --all-targets` échoue sur
   `storm-codex-server` (11 `unwrap_used` dans son *target de test*) — **pré-existant sur `main`**,
   vérifié, hors périmètre de cette branche.

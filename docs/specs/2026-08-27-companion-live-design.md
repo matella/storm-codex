@@ -56,7 +56,7 @@ automatique. Trace ici, conformément à la règle du repo.
 
 Aucune ligne de serveur ni de front avant ça.
 
-1. Extraire le blob lobby des 5 replays committés (`crates/*/tests/data/*.StormReplay`) et
+1. Extraire le blob lobby des 4 replays committés (`crates/*/tests/data/*.StormReplay`) et
    l'analyser à l'octet près.
 2. **Trancher la question ouverte : le héros pické figure-t-il dans le battlelobby ?** Inconnu à ce
    jour ; ne pas le supposer. Si oui, déterminer la forme du nom (vraisemblablement un nom interne
@@ -64,10 +64,10 @@ Aucune ligne de serveur ni de front avant ça.
 3. Vérifier si le blob porte la carte et le mode.
 4. Vérifier si les octets du fichier temporaire et du stream archivé sont identiques (décide la
    méthode de liaison replay↔lobby, cf. plus bas).
-5. Faire tourner le parser candidat sur l'archive du box (~2000 replays, 22 builds 2024→2026) et
-   diffuser contre le parse complet, qui connaît la vérité.
+5. Faire tourner le parser candidat sur l'archive du box (mesuré : 3 322 replays, 25 builds
+   2024→2026) et diffuser contre le parse complet, qui connaît la vérité.
 
-**Critère d'acceptation du spike : ≥ 99 % des lobbies avec noms, toon handles et équipes exacts.**
+**Critère d'acceptation du spike : ≥ 99 % des lobbies avec noms, BattleTags et équipes exacts.**
 
 Le spike ne peut pas faire échouer la feature — il détermine si elle coûte **zéro clic** (héros
 présent) ou **un tap** (héros absent, sélecteur manuel).
@@ -225,10 +225,12 @@ constates qu'une partie s'est bien passée.
 
 ## Tests
 
-- **`storm-lobby`** : goldens sur les 5 blobs committés ; **ne panique jamais** sur entrée
-  tronquée, vide ou aléatoire (`Err`, pas `panic`).
-- **`tools/lobby-parity/`** : parser autonome sur l'archive du box, diff contre le parse complet.
-  **Critère : ≥ 99 % (noms, toon handles, équipes) sur les 22 builds.**
+- **`storm-lobby`** : aucun golden — l'oracle (`tests/oracle.rs`) diffe contre le parse complet sur
+  les 4 replays committés du workspace ; **ne panique jamais** sur entrée tronquée, vide ou
+  aléatoire (`Err`, pas `panic`, `tests/robustness.rs`).
+- **`crates/storm-lobby/examples/parity.rs`** : parser autonome sur l'archive du box, diff contre le
+  parse complet, ventilé par mode de jeu. **Critère : ≥ 99 % (noms, BattleTags, équipes) sur les
+  modes matchmakés** — voir le verdict mesuré dans `docs/research/2026-08-27-lobby-parity.md`.
 - **Serveur** : invariant du build par défaut (violation refusée par la base) ; idempotence de
   l'upsert ; agrégats d'enrichissement sur base semée ; liaison par ensemble de handles.
 - **Front** : vitest sur les parties pures — diff de build, classification connu/inconnu. Même
