@@ -16,10 +16,9 @@ fn main() -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("usage: derive_maps <dossier>"))?
         .into();
 
-    // carte → nombre de replays, et hash → cartes où il apparaît, et (carte,hash) → occurrences
+    // carte → nombre de replays (pour le rapport de couverture), et hash → cartes où il apparaît
     let mut replays_par_carte: BTreeMap<String, usize> = BTreeMap::new();
     let mut cartes_par_hash: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    let mut occurrences: BTreeMap<(String, String), usize> = BTreeMap::new();
 
     for entry in std::fs::read_dir(&dir)? {
         let path = entry?.path();
@@ -39,25 +38,21 @@ fn main() -> anyhow::Result<()> {
 
         *replays_par_carte.entry(carte.clone()).or_default() += 1;
         for h in storm_lobby::map_hashes(&blob) {
-            cartes_par_hash.entry(h.clone()).or_default().insert(carte.clone());
-            *occurrences.entry((carte.clone(), h)).or_default() += 1;
+            cartes_par_hash.entry(h).or_default().insert(carte.clone());
         }
     }
 
-    // Un hash est discriminant s'il n'apparaît que sur une carte, et sur TOUS ses replays.
+    // Critère de rétention : un hash n'est retenu que s'il n'a JAMAIS été observé sur une autre
+    // carte. On n'exige PAS qu'il couvre tous les replays de sa carte — Blizzard republie les
+    // fichiers `.s2ma` à chaque patch, donc une carte porte plusieurs hashes selon le build, et
+    // exiger une couverture totale éliminerait précisément les cartes les plus jouées
+    // (mesuré : 9 cartes sur 19 avec ce critère, 19 sur 19 sans).
     let mut table: Vec<(String, String)> = Vec::new();
     for (hash, cartes) in &cartes_par_hash {
         if cartes.len() != 1 {
             continue;
         }
         let Some(carte) = cartes.iter().next() else { continue };
-        let vus = occurrences.get(&(carte.clone(), hash.clone())).copied().unwrap_or(0);
-        let total = replays_par_carte.get(carte).copied().unwrap_or(0);
-        // Critère : un hash n'est retenu que s'il n'a JAMAIS été vu sur une autre carte.
-        // On n'exige PAS qu'il couvre tous les replays de sa carte : Blizzard republie les
-        // fichiers `.s2ma` à chaque patch, donc une carte a plusieurs hashes selon le build,
-        // et exiger 100 % de couverture éliminerait précisément les cartes les plus jouées.
-        let _ = (vus, total);
         table.push((hash.clone(), carte.clone()));
     }
     table.sort();

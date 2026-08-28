@@ -76,8 +76,9 @@ pub struct Lobby {
     /// connu — le format ne nomme jamais la carte.
     ///
     /// Portée de la garantie : la table est dérivée de l'archive **et** validée sur elle, ce qui
-    /// est circulaire par construction. Elle ne peut pas se tromper sur une carte observée dans
-    /// l'archive ; le risque résiduel est un hash partagé avec une carte qui n'y figure pas. Le
+    /// est circulaire par construction. Elle ne peut pas se tromper sur un replay ayant servi à la
+    /// dérivation ; le risque résiduel est un hash partagé avec une carte absente de ce corpus —
+    /// carte jamais jouée, ou replay écarté au traitement (parse en échec, blob illisible). Le
     /// consommateur doit donc traiter cette valeur comme une commodité, pas comme une vérité —
     /// c'est pourquoi la saisie manuelle de la carte reste disponible côté serveur.
     pub map: Option<String>,
