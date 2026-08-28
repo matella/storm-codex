@@ -2018,6 +2018,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "sqlx",
+ "storm-lobby",
  "storm-replay",
  "storm-replay-viewer",
  "storm-stats",

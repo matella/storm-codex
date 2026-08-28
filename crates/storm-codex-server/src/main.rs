@@ -8,6 +8,7 @@ mod config;
 mod dim;
 mod draft;
 mod jarvis;
+mod lobby;
 mod manage;
 pub mod project;
 mod raw;
@@ -38,6 +39,8 @@ pub struct AppState {
     pub events: broadcast::Sender<serde_json::Value>,
     /// État autoritatif du simulateur de draft (singleton, persisté dans `draft_live`).
     pub draft: Arc<RwLock<draft::DraftState>>,
+    /// Lobby live courant (singleton, persisté dans `lobby_live`). `None` = aucun lobby.
+    pub lobby: Arc<RwLock<Option<lobby::LobbyState>>>,
 }
 
 #[tokio::main]
@@ -109,12 +112,14 @@ async fn run() -> Result<(), String> {
     let draft = draft::store::load(&db).await.unwrap_or_else(|| {
         draft::DraftState::new(draft::Format::Standard, draft::Side::Blue, "Sky Temple".into())
     });
+    let lobby_initial = lobby::store::load(&db).await;
     let state = AppState {
         cfg: Arc::new(cfg),
         db,
         parse_sem: Arc::new(Semaphore::new(cores)),
         events,
         draft: Arc::new(RwLock::new(draft)),
+        lobby: Arc::new(RwLock::new(lobby_initial)),
     };
 
     // Référentiel héros/talents/patches + images (best-effort, refresh 24 h ; chaque nouveau patch →
@@ -216,6 +221,13 @@ async fn run() -> Result<(), String> {
         .route("/api/draft/teams", post(draft::api::teams))
         .route("/api/draft/series/next", post(draft::api::series_next))
         .route("/api/draft/series/new", post(draft::api::series_new))
+        // Lobby live (companion) : détection pendant l'écran de chargement + broadcast WS lobby.detected
+        .route(
+            "/api/lobby",
+            get(lobby::api::get)
+                .post(lobby::api::ingest)
+                .delete(lobby::api::clear),
+        )
         .route("/ws", any(ws::ws_handler))
         // portraits héros + images de cartes vendorisés (servis depuis images_dir)
         .nest_service(
