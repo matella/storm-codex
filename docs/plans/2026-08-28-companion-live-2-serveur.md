@@ -1509,7 +1509,11 @@ git commit -m "feat(server): relier le replay parsé au lobby courant (bascule d
 ## Fin de plan
 
 - [x] `cargo test --workspace` vert
-- [x] `cargo clippy -p storm-lobby -p storm-codex-server --all-targets -- -D warnings` vert
+- [x] `cargo clippy -p storm-lobby --all-targets -- -D warnings` vert, et
+      `cargo clippy -p storm-codex-server -- -D warnings` (lib + bin) vert.
+      ⚠️ Rectificatif : la case cochait initialement `-p storm-codex-server --all-targets`, qui
+      **échoue** — ce target inclut le module de test de `src/draft/mod.rs` et ses 11 `unwrap()`,
+      pré-existants sur `main`. L'affirmation d'origine était fausse.
       (⚠️ `--workspace` échoue pour une raison **pré-existante** sur les tests de
       `storm-codex-server` : 11 `unwrap_used`. Vérifié sur `main`, hors périmètre — ne pas le
       corriger dans ce plan, et ne pas le confondre avec une régression.)

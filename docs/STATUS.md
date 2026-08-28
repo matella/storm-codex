@@ -38,8 +38,11 @@ code de mon propre plan et attrapés par les revues — détail plus bas.
   effacer la carte la marquait quand même « saisie à la main » ; la fenêtre de 6 h de la liaison
   replay↔lobby était promise en prose et absente du code.
 - **Vérif** : `cargo test --workspace` vert, **37 tests** dans `storm-codex-server` dont des tests
-  purs sur l'idempotence, la réassignation d'équipe et la fenêtre temporelle. `cargo clippy -p
-  storm-lobby -p storm-codex-server --all-targets -- -D warnings` propre. ⚠️ `clippy --workspace
+  purs sur l'idempotence, la réassignation d'équipe et la fenêtre temporelle.
+  **Clippy, énoncé exactement** : `-p storm-lobby --all-targets -- -D warnings` propre, et
+  `-p storm-codex-server -- -D warnings` (lib + bin) propre. En revanche `-p storm-codex-server
+  --all-targets` **échoue** — il inclut le module de test de `src/draft/mod.rs`, qui porte 11
+  `unwrap()`. ⚠️ `clippy --workspace
   --all-targets` échoue sur 11 `unwrap()` dans les *tests* de `draft/mod.rs` — **pré-existant sur
   `main`**, vérifié, hors périmètre.
 - **Restes connus** : `/api/admin/reprocess` n'appelle pas `lier_match` (exclusion jugée légitime :
