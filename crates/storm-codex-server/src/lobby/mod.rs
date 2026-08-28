@@ -109,13 +109,40 @@ impl LobbyState {
     }
 }
 
+/// Fenêtre au-delà de laquelle un lobby ouvert ne se lie plus à un match nouvellement parsé.
+/// Très largement au-delà de la durée d'une partie (20-30 min) plus le temps d'upload, donc aucune
+/// liaison légitime n'est jamais perdue à cause de cette limite ; assez courte pour qu'un lobby
+/// resté ouvert par erreur (partie annulée, replay jamais uploadé) ne capte pas, le lendemain ou
+/// plus tard, une partie ultérieure entre les mêmes dix joueurs — en ligue et en scrim la même
+/// composition se réaffronte régulièrement, et la comparaison de BattleTags seule ne peut alors pas
+/// distinguer les deux parties.
+const FENETRE_LIAISON_HEURES: i64 = 6;
+
+/// Vrai si `detected_at` remonte à plus de [`FENETRE_LIAISON_HEURES`]. Extrait de `lier_match` en
+/// fonction pure pour être testable sans pool Postgres. Même motif que `parse_failed_transitoire`
+/// dans `api.rs` : une date illisible ne doit jamais bloquer une liaison par ailleurs valide — on
+/// préfère perdre la protection temporelle sur ce cas dégénéré plutôt que la fonctionnalité.
+fn lobby_trop_ancien(detected_at: &str) -> bool {
+    match chrono::DateTime::parse_from_rfc3339(detected_at) {
+        Ok(detecte) => {
+            chrono::Utc::now().signed_duration_since(detecte)
+                > chrono::Duration::hours(FENETRE_LIAISON_HEURES)
+        }
+        Err(_) => false,
+    }
+}
+
 /// Relie un match fraîchement parsé au lobby courant, si c'est la même partie. Critère : l'ensemble
-/// des BattleTags. Le parse complet reconstruit les mêmes `nom#tag` depuis le blob embarqué dans le
-/// replay (`storm_stats`, `get_battletags`), donc les deux côtés portent la même clé — sans rien
-/// supposer du format binaire. Renvoie `true` si la liaison a eu lieu (l'appelant sait alors qu'il
-/// doit persister et diffuser).
+/// des BattleTags, et la fraîcheur du lobby (voir [`lobby_trop_ancien`]). Le parse complet
+/// reconstruit les mêmes `nom#tag` depuis le blob embarqué dans le replay (`storm_stats`,
+/// `get_battletags`), donc les deux côtés portent la même clé — sans rien supposer du format
+/// binaire. Renvoie `true` si la liaison a eu lieu (l'appelant sait alors qu'il doit persister et
+/// diffuser).
 pub async fn lier_match(db: &sqlx::PgPool, state: &mut LobbyState, match_id: i64) -> bool {
     if state.match_id.is_some() || state.players.is_empty() {
+        return false;
+    }
+    if lobby_trop_ancien(&state.detected_at) {
         return false;
     }
     let tags_match: Vec<String> = sqlx::query_scalar(
@@ -153,7 +180,7 @@ fn memes_battletags(a: &[String], b: &[String]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::memes_battletags;
+    use super::{lobby_trop_ancien, memes_battletags};
 
     fn tags(xs: &[&str]) -> Vec<String> {
         xs.iter().map(|s| (*s).to_string()).collect()
@@ -185,5 +212,34 @@ mod tests {
         let a: Vec<String> = Vec::new();
         let b: Vec<String> = Vec::new();
         assert!(!memes_battletags(&a, &b));
+    }
+
+    /// Fige la comparaison en multiensemble : mêmes éléments, mêmes longueurs, multiplicités
+    /// différentes ("a" apparaît deux fois d'un côté, "b" deux fois de l'autre) → ne doit jamais
+    /// correspondre. Une implémentation qui « simplifierait » vers un `HashSet` (qui dédoublonne)
+    /// verrait les deux ensembles devenir `{a#1, b#2}` des deux côtés et déclarerait, à tort, la
+    /// même partie.
+    #[test]
+    fn des_multiplicites_differentes_ne_correspondent_jamais() {
+        let a = tags(&["a#1", "a#1", "b#2"]);
+        let b = tags(&["a#1", "b#2", "b#2"]);
+        assert!(!memes_battletags(&a, &b));
+    }
+
+    #[test]
+    fn un_lobby_detecte_recemment_n_est_pas_trop_ancien() {
+        let recent = chrono::Utc::now().to_rfc3339();
+        assert!(!lobby_trop_ancien(&recent));
+    }
+
+    #[test]
+    fn un_lobby_detecte_il_y_a_sept_heures_est_trop_ancien() {
+        let il_y_a_sept_heures = (chrono::Utc::now() - chrono::Duration::hours(7)).to_rfc3339();
+        assert!(lobby_trop_ancien(&il_y_a_sept_heures));
+    }
+
+    #[test]
+    fn une_date_illisible_n_est_jamais_trop_ancienne() {
+        assert!(!lobby_trop_ancien("pas-une-date"));
     }
 }
