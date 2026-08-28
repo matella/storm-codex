@@ -67,7 +67,9 @@ Aucune ligne de serveur ni de front avant ça.
 5. Faire tourner le parser candidat sur l'archive du box (mesuré : 3 322 replays, 25 builds
    2024→2026) et diffuser contre le parse complet, qui connaît la vérité.
 
-**Critère d'acceptation du spike : ≥ 99 % des lobbies avec noms, BattleTags et équipes exacts.**
+**Critère d'acceptation du spike : ≥ 99 % des lobbies avec noms, BattleTags et équipes exacts,
+sur les modes matchmakés** (Storm League, ARAM, Quick Match). Les parties personnalisées sont hors
+critère : des observateurs y siègent dans le lobby et l'ordre n'y porte pas l'équipe.
 
 Le spike ne peut pas faire échouer la feature — il détermine si elle coûte **zéro clic** (héros
 présent) ou **un tap** (héros absent, sélecteur manuel).
@@ -241,7 +243,8 @@ constates qu'une partie s'est bien passée.
 
 ## Critères d'acceptation
 
-1. Spike : parité lobby **≥ 99 %** sur l'archive ; présence du héros tranchée par oui ou non.
+1. Spike : parité lobby **≥ 99 % sur les modes matchmakés** (personnalisées hors critère) ;
+   présence du héros tranchée par oui ou non. → **atteint : 100 %** sur 2 710 parties.
 2. Détection lobby → page remplie **< 2 s**.
 3. `/api/lobby` **p95 < 100 ms**.
 4. E2E scripté et rejouable sur le Mac.

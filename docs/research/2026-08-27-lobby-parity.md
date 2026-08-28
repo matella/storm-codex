@@ -37,6 +37,8 @@ base de comparaison  : 3231
 battletags exacts    : 3108 (96.19 %)
 erreurs de parse     : 0
 équipes exactes      : 2825 / 3108 évaluables (90.89 %)
+  dont inversion franche (camps permutés)   : 15 (5.30 % des fausses)
+  dont ordre sans information d'équipe      : 268 (94.70 % des fausses)
 ```
 
 96,19 % < 99 % : **no-go** au sens littéral du critère, sur la base de comparaison entière
@@ -104,11 +106,16 @@ La déduction 5+5 par l'ordre est **exacte à 100 %** en matchmaking. En personn
 replays dont les 10 BattleTags sont pourtant corrects :
 
 - 115 corrects (28,9 %)
-- **283 faux** (les 10 joueurs sont bons mais l'ordre ne reconstruit pas la bonne équipe)
+- **283 faux**, que le harnais sépare en deux catégories de nature très différente :
+  - **15 inversions franches** (5,3 % des fausses) : les deux camps sont simplement permutés.
+    L'ordre porte bien l'information d'équipe, il manque seulement de savoir quel côté est lequel —
+    c'est le seul cas qu'un produit puisse réparer d'un clic.
+  - **268 ordres sans information d'équipe** (94,7 % des fausses) : la composition n'est pas
+    reconstructible à partir de l'ordre, sous aucune convention.
 
-Ce résidu n'est pas un signe à corriger, c'est une information absente. En lobby personnalisé, les
-joueurs changent de slot et d'équipe avant le lancement, et l'ordre du blob reflète l'ordre
-d'arrivée, pas la composition finale.
+**Le second cas domine à 19 contre 1.** En lobby personnalisé, les joueurs changent de slot et
+d'équipe avant le lancement, et l'ordre du blob reflète l'ordre d'arrivée, pas la composition
+finale. Ce n'est donc pas un signe à corriger : l'information est absente.
 
 ## Limite structurelle à connaître
 
@@ -128,8 +135,11 @@ personnalisées à BattleTags corrects).
    (`team: None` hors du cas 10 pile) et elle attrape les personnalisées avec observateurs — testée
    désormais par `crates/storm-lobby/tests/team_rule.rs` sur un blob synthétique.
 4. **Afficher la réserve côté produit** pour le cas résiduel — une personnalisée à 10 occupants
-   pile. Le companion peut proposer une inversion manuelle des deux équipes d'un clic ; c'est
-   suffisant, puisque le seul mode d'erreur restant qui soit réparable est l'inversion.
+   pile — et ne pas compter sur un correctif d'interface pour le rattraper. Un bouton « inverser
+   les deux équipes » ne répare que **5,3 %** des cas fautifs ; les 94,7 % restants ne sont
+   réparables par aucune manipulation, l'ordre ne portant pas l'information. La réponse honnête
+   est donc de laisser l'opérateur corriger l'affectation à la main, ou d'assumer une liste plate
+   dans ce cas précis — pas de présenter l'inversion comme une solution générale.
 
 ## Pistes non implémentées
 

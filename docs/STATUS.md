@@ -15,8 +15,8 @@ programme (« pas de pré-game en V1 »), sur décision de l'opérateur.
   **GO sur les modes matchmakés — 100 % de BattleTags ET 100 % d'équipes sur 2 710 parties**
   (Storm League 1978/1978, ARAM 729/729, QM 3/3), soit 83,9 % de la base de comparaison
   (2 710 / 3 231). Le chiffre global de 96,19 % était **entièrement** produit par les parties
-  personnalisées (521 évaluées, 16,1 % de la base : 398 exactes en tags, 76 % ; 115 exactes en
-  équipes, 29 %) — des observateurs siègent dans le lobby et l'ordre n'y porte pas l'équipe. Mode
+  personnalisées (521 évaluées, 16,1 % de la base : 398 exactes en tags, 76 % ; et parmi ces 398,
+  115 exactes en équipes, 29 %) — des observateurs siègent dans le lobby et l'ordre n'y porte pas l'équipe. Mode
   d'échec vérifié **exhaustivement** sur les 3 231 replays : sur-capture (3,81 %), **jamais** un
   joueur manquant, jamais un décodage malformé (0 % de sous-capture).
 - **Limite à connaître** : le blob ne porte pas le mode → le parser ne peut pas savoir qu'il lit une

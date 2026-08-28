@@ -72,7 +72,11 @@ pub struct Lobby {
     pub players: Vec<LobbyPlayer>,
 }
 
+/// `#[non_exhaustive]` ici aussi : c'est l'outil idiomatique pour garder la marge d'ajout d'une
+/// variante sans rupture semver — et c'est ce qui permettra un jour de retirer `Unrecognized`
+/// (aujourd'hui inconstructible) sans casser les appelants.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum LobbyError {
     #[error("blob trop court ({0} octets) pour contenir un lobby")]
     TooShort(usize),

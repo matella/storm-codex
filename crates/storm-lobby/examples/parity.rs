@@ -48,6 +48,13 @@ struct Tally {
     battletags_exacts: usize,
     equipes_exactes: usize,
     equipes_evaluables: usize,
+    /// Équipes fausses mais les deux camps simplement PERMUTÉS : l'ordre porte bien
+    /// l'information d'équipe, il manque seulement de savoir quel côté est lequel. Réparable
+    /// d'un clic côté produit.
+    equipes_inversion: usize,
+    /// Équipes fausses sans être une permutation : l'ordre du lobby ne porte aucune
+    /// information d'équipe. Rien à réparer — l'information est absente.
+    equipes_disperse: usize,
     /// Plus de 10 décodés, mais les 10 vrais joueurs tous présents : des occupants en plus
     /// (observateurs), jamais un joueur manquant.
     sur_capture: usize,
@@ -211,6 +218,20 @@ fn main() -> anyhow::Result<()> {
                         t.equipes_exactes += 1;
                         mode_tally.equipes_exactes += 1;
                     } else {
+                        // Permutation complète : chaque joueur est dans l'équipe opposée à celle
+                        // qu'on lui a assignée. C'est la seule forme d'erreur d'équipe qu'un
+                        // produit puisse réparer d'un clic — d'où le comptage séparé.
+                        let inversion = lobby.players.iter().all(|p| match p.team {
+                            None => true,
+                            Some(team) => {
+                                attendu.get(&p.battletag()) == Some(&i64::from(1 - team))
+                            }
+                        });
+                        if inversion {
+                            t.equipes_inversion += 1;
+                        } else {
+                            t.equipes_disperse += 1;
+                        }
                         t.divergents.push(Divergence {
                             label,
                             reason: "équipes divergentes".into(),
@@ -249,6 +270,17 @@ fn main() -> anyhow::Result<()> {
         t.equipes_exactes,
         t.equipes_evaluables,
         pct(t.equipes_exactes, t.equipes_evaluables)
+    );
+    let fausses = t.equipes_inversion + t.equipes_disperse;
+    println!(
+        "  dont inversion franche (camps permutés)   : {} ({:.2} % des fausses)",
+        t.equipes_inversion,
+        pct(t.equipes_inversion, fausses)
+    );
+    println!(
+        "  dont ordre sans information d'équipe      : {} ({:.2} % des fausses)",
+        t.equipes_disperse,
+        pct(t.equipes_disperse, fausses)
     );
 
     println!("\nmode d'échec (sur la base entière, {base} replays)");
