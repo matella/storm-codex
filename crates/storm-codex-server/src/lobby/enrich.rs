@@ -207,18 +207,26 @@ pub async fn enrich(db: &PgPool, state: &mut LobbyState) {
         .iter()
         .position(|p| noms_operateur.iter().any(|n| n == &p.name.to_lowercase()));
 
-    // Historique : une requête pour tous les toon_handle résolus (pas une par joueur).
+    // Historique : une requête pour tous les toon_handle résolus (pas une par joueur), à
+    // l'exclusion de l'opérateur lui-même — sinon la formule « ensemble » compte ses propres
+    // parties comme jouées avec lui-même. Sa tuile n'en a de toute façon pas besoin : ses stats
+    // vivent dans `state.me_stats`. `state.me` est déjà déterminé ci-dessus.
     let toons_connus: Vec<String> = state
         .players
         .iter()
-        .filter_map(|p| p.toon_handle.clone())
+        .enumerate()
+        .filter(|(i, _)| Some(*i) != state.me)
+        .filter_map(|(_, p)| p.toon_handle.clone())
         .collect();
     let historiques_par_toon = historiques(db, &toons_connus).await;
-    for p in &mut state.players {
-        p.history = p
-            .toon_handle
-            .as_deref()
-            .and_then(|t| historiques_par_toon.get(t).cloned());
+    for (i, p) in state.players.iter_mut().enumerate() {
+        p.history = if Some(i) == state.me {
+            None
+        } else {
+            p.toon_handle
+                .as_deref()
+                .and_then(|t| historiques_par_toon.get(t).cloned())
+        };
     }
 
     state.me_stats = stats_operateur(db, state.hero.as_deref(), state.map.as_deref()).await;
