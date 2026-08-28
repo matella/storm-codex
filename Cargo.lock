@@ -2032,6 +2032,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "storm-lobby"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "regex",
+ "serde_json",
+ "storm-replay",
+ "storm-stats",
+ "thiserror",
+]
+
+[[package]]
 name = "storm-replay"
 version = "0.1.0"
 dependencies = [

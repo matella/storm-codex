@@ -56,7 +56,7 @@ automatique. Trace ici, conformément à la règle du repo.
 
 Aucune ligne de serveur ni de front avant ça.
 
-1. Extraire le blob lobby des 5 replays committés (`crates/*/tests/data/*.StormReplay`) et
+1. Extraire le blob lobby des 4 replays committés (`crates/*/tests/data/*.StormReplay`) et
    l'analyser à l'octet près.
 2. **Trancher la question ouverte : le héros pické figure-t-il dans le battlelobby ?** Inconnu à ce
    jour ; ne pas le supposer. Si oui, déterminer la forme du nom (vraisemblablement un nom interne
@@ -64,10 +64,12 @@ Aucune ligne de serveur ni de front avant ça.
 3. Vérifier si le blob porte la carte et le mode.
 4. Vérifier si les octets du fichier temporaire et du stream archivé sont identiques (décide la
    méthode de liaison replay↔lobby, cf. plus bas).
-5. Faire tourner le parser candidat sur l'archive du box (~2000 replays, 22 builds 2024→2026) et
-   diffuser contre le parse complet, qui connaît la vérité.
+5. Faire tourner le parser candidat sur l'archive du box (mesuré : 3 322 replays, 25 builds
+   2024→2026) et diffuser contre le parse complet, qui connaît la vérité.
 
-**Critère d'acceptation du spike : ≥ 99 % des lobbies avec noms, toon handles et équipes exacts.**
+**Critère d'acceptation du spike : ≥ 99 % des lobbies avec noms, BattleTags et équipes exacts,
+sur les modes matchmakés** (Storm League, ARAM, Quick Match). Les parties personnalisées sont hors
+critère : des observateurs y siègent dans le lobby et l'ordre n'y porte pas l'équipe.
 
 Le spike ne peut pas faire échouer la feature — il détermine si elle coûte **zéro clic** (héros
 présent) ou **un tap** (héros absent, sélecteur manuel).
@@ -94,24 +96,34 @@ watcher %TEMP%\…\TempWriteReplayP1\
 Ne dépend pas de `storm-replay` : il reçoit des octets. Cohérent avec `storm-replay-viewer`
 (géométrie du problème isolée, testable seule, publiable au jalon 6).
 
+> **Mis à jour le 2026-08-27 après l'exécution du spike.** Constats mesurés
+> (`docs/research/2026-08-27-lobby-format.md`) : les BattleTags sont **présents en clair**, préfixés
+> par une longueur en octets UTF-8 ; le **toon handle, le héros pické, la carte et le mode sont
+> absents** ; l'équipe n'a **aucun champ explicite** et se déduit de l'ordre (5+5). Le type public
+> ne porte donc que ce qui est réellement décodable — un champ toujours `None` serait du poids mort.
+
 ```rust
 pub fn parse(bytes: &[u8]) -> Result<Lobby, LobbyError>;
 
 pub struct Lobby {
-    pub players: Vec<LobbyPlayer>,   // ordre du lobby
-    pub map: Option<String>,
+    pub players: Vec<LobbyPlayer>,   // ordre d'apparition dans le blob
 }
 pub struct LobbyPlayer {
-    pub name: String,
-    pub battletag: Option<String>,
-    pub toon_handle: String,         // "region-programId-realm-id", format déjà en base
-    pub team: Option<u8>,
-    pub hero: Option<String>,        // normalisé vers dim_heroes.id quand présent
+    pub name: String,                // peut contenir de l'UTF-8 non-ASCII
+    pub discriminant: String,        // partie après '#'
+    pub team: Option<u8>,            // déduit de l'ordre, uniquement si 10 joueurs pile
+}
+impl LobbyPlayer {
+    pub fn battletag(&self) -> String;  // "nom#1234" — la clé d'identité
 }
 ```
 
-Tout champ incertain est `Option`. Le parser ne comble jamais un trou par une valeur inventée.
 Erreurs typées (`thiserror`), pas d'`unwrap()` hors tests.
+
+**Résolution de l'identité.** Le blob ne donne pas le toon handle : le serveur le retrouve en
+rapprochant `nom#discriminant` de `match_players.name` + `match_players.data->>'tag'`, c'est-à-dire
+**contre l'archive elle-même**. Un joueur absent de l'archive reste non résolu — sans conséquence,
+puisqu'il n'a de toute façon aucun historique à afficher.
 
 ### Module serveur `lobby.rs`
 
@@ -162,8 +174,9 @@ Agrégats SQL sur `match_players` ⋈ `matches` (~20 000 lignes, index existants
 
 ### Liaison replay ↔ lobby
 
-**Méthode retenue : l'ensemble des 10 `toon_handle`**, plus une fenêtre temporelle de quelques
-heures. Identique des deux côtés, déjà en base, ne suppose rien du format binaire.
+**Méthode retenue : l'ensemble des 10 BattleTags**, plus une fenêtre temporelle de quelques
+heures. Le parse complet reconstruit les mêmes BattleTags depuis le blob embarqué dans le replay
+(`get_battletags`, `process.rs:313`), donc les deux côtés portent la même clé.
 
 Alternative plus exacte — hasher les octets du blob et comparer à celui extrait du replay — retenue
 **seulement si le point 4 du spike confirme** l'identité bit-à-bit. Sinon on garde les handles.
@@ -206,18 +219,20 @@ constates qu'une partie s'est bien passée.
 | Ce qui casse | Comportement |
 |---|---|
 | Blizzard change le format | `POST /api/lobby` répond 200 avec `parse_failed` classé, build loggé en clair. La page affiche « lobby illisible (build X) » **et** le sélecteur de héros → le build suggéré s'affiche quand même. Perte des 9 joueurs, pas de la fonction principale. |
-| Héros absent du blob | sélecteur, un tap |
+| Héros absent du blob (**confirmé** par le spike) | sélecteur, un tap |
 | Joueur jamais croisé | « jamais croisé » écrit tel quel — jamais un 50 % fabriqué sur zéro partie |
-| Carte absente du blob | stats héros affichées ; stats carte au debrief |
+| Carte absente du blob (**confirmé** par le spike) | sélecteur, un tap ; à défaut, stats carte au debrief |
 | Aucun build pour ce héros | « aucun build » + raccourci « importer depuis ta meilleure partie sur ce héros » (données déjà en base) |
 | Box injoignable | état précédent affiché et marqué périmé — pas de spinner infini |
 
 ## Tests
 
-- **`storm-lobby`** : goldens sur les 5 blobs committés ; **ne panique jamais** sur entrée
-  tronquée, vide ou aléatoire (`Err`, pas `panic`).
-- **`tools/lobby-parity/`** : parser autonome sur l'archive du box, diff contre le parse complet.
-  **Critère : ≥ 99 % (noms, toon handles, équipes) sur les 22 builds.**
+- **`storm-lobby`** : aucun golden — l'oracle (`tests/oracle.rs`) diffe contre le parse complet sur
+  les 4 replays committés du workspace ; **ne panique jamais** sur entrée tronquée, vide ou
+  aléatoire (`Err`, pas `panic`, `tests/robustness.rs`).
+- **`crates/storm-lobby/examples/parity.rs`** : parser autonome sur l'archive du box, diff contre le
+  parse complet, ventilé par mode de jeu. **Critère : ≥ 99 % (noms, BattleTags, équipes) sur les
+  modes matchmakés** — voir le verdict mesuré dans `docs/research/2026-08-27-lobby-parity.md`.
 - **Serveur** : invariant du build par défaut (violation refusée par la base) ; idempotence de
   l'upsert ; agrégats d'enrichissement sur base semée ; liaison par ensemble de handles.
 - **Front** : vitest sur les parties pures — diff de build, classification connu/inconnu. Même
@@ -228,7 +243,8 @@ constates qu'une partie s'est bien passée.
 
 ## Critères d'acceptation
 
-1. Spike : parité lobby **≥ 99 %** sur l'archive ; présence du héros tranchée par oui ou non.
+1. Spike : parité lobby **≥ 99 % sur les modes matchmakés** (personnalisées hors critère) ;
+   présence du héros tranchée par oui ou non. → **atteint : 100 %** sur 2 710 parties.
 2. Détection lobby → page remplie **< 2 s**.
 3. `/api/lobby` **p95 < 100 ms**.
 4. E2E scripté et rejouable sur le Mac.
