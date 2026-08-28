@@ -63,23 +63,16 @@ def bench_lobby(token, blob_path):
     l'enrichissement SQL — c'est celui qui porte le budget.
     """
     print("\n=== /api/lobby (companion live) ===")
-    lat_get = []
-    for _ in range(30):
-        t = time.perf_counter()
-        get("/api/lobby")
-        lat_get.append((time.perf_counter() - t) * 1000)
-    lat_get.sort()
-    p95_get = lat_get[int(0.95 * len(lat_get)) - 1]
-    print(f"GET  /api/lobby : n={len(lat_get)} médiane={statistics.median(lat_get):.1f}ms "
-          f"p95={p95_get:.1f}ms max={lat_get[-1]:.1f}ms (état en mémoire, pas de SQL)")
 
     if not blob_path:
         print("POST /api/lobby : SAUTÉ (aucun blob fourni — 3e argument ou variable LOBBY_BLOB).")
         print('  Pour en produire un : cargo run -q -p storm-replay --example dump_lobby -- '
               '"<replay.StormReplay>" /tmp/lobby.bin')
+        print("GET  /api/lobby : SAUTÉ (dépend d'un état enrichi posé par le POST ci-dessus).")
         return
     if not os.path.exists(blob_path):
         print(f"POST /api/lobby : SAUTÉ (blob introuvable : {blob_path}).")
+        print("GET  /api/lobby : SAUTÉ (dépend d'un état enrichi posé par le POST ci-dessus).")
         return
 
     with open(blob_path, "rb") as f:
@@ -101,6 +94,20 @@ def bench_lobby(token, blob_path):
     p95_post = lat_post[int(0.95 * len(lat_post)) - 1]
     print(f"POST /api/lobby : n={len(lat_post)} médiane={statistics.median(lat_post):.1f}ms "
           f"p95={p95_post:.1f}ms max={lat_post[-1]:.1f}ms (décodage + enrichissement SQL)")
+
+    # Mesurée APRÈS le POST ci-dessus (jamais avant) : la dernière itération de la boucle se
+    # termine sur un POST, sans DELETE derrière — l'état en mémoire au moment de ce GET est donc
+    # l'état enrichi complet (dix joueurs, historiques, build), pas un `204` sur mémoire vide. Un
+    # GET mesuré avant le premier POST ne prouverait rien sur le coût réel de sérialisation.
+    lat_get = []
+    for _ in range(30):
+        t = time.perf_counter()
+        get("/api/lobby")
+        lat_get.append((time.perf_counter() - t) * 1000)
+    lat_get.sort()
+    p95_get = lat_get[int(0.95 * len(lat_get)) - 1]
+    print(f"GET  /api/lobby : n={len(lat_get)} médiane={statistics.median(lat_get):.1f}ms "
+          f"p95={p95_get:.1f}ms max={lat_get[-1]:.1f}ms (état enrichi en mémoire, pas de SQL)")
 
 
 def main():
