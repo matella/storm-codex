@@ -99,6 +99,43 @@ fn les_equipes_deduites_correspondent_au_replay() {
     }
 }
 
+/// Le blob contient des chemins de cache Battle.net vers des fichiers `.s2ma` (les cartes),
+/// identifiés par un hash de 32 caractères hexadécimaux. Ils sont la seule piste de carte du
+/// format (rapport de format, Q5).
+#[test]
+fn les_hashes_de_carte_sont_extraits() {
+    let path = data("crates/storm-stats/tests/data/silver-city-aram.StormReplay");
+    let replay = storm_replay::Replay::open(&path).expect("ouverture replay");
+    let blob = replay.battlelobby_raw().expect("stream battlelobby");
+    let hashes = storm_lobby::map_hashes(&blob);
+    assert!(
+        !hashes.is_empty(),
+        "aucun hash .s2ma extrait — le rapport de format en documente 9"
+    );
+    assert!(
+        hashes.iter().all(|h| h.len() == 32 && h.chars().all(|c| c.is_ascii_hexdigit())),
+        "hash mal formé : {hashes:?}"
+    );
+}
+
+/// La carte déduite des hashes doit correspondre à celle du parse complet, quand elle est déduite.
+/// Une carte `None` est acceptable (hash inconnu de la table) ; une carte FAUSSE ne l'est pas.
+#[test]
+fn la_carte_deduite_ne_ment_jamais() {
+    for path in replays() {
+        let label = path.file_name().and_then(|s| s.to_str()).expect("nom");
+        let filename = label;
+        let out = storm_stats::process_replay(&path, filename);
+        assert_eq!(out.status, 1, "{label} : parse complet rejeté");
+        let json = out.to_json();
+        let attendue = json["match"]["map"].as_str().unwrap_or_default().to_string();
+
+        if let Some(deduite) = lobby_of(&path).map {
+            assert_eq!(deduite, attendue, "{label} : carte déduite fausse");
+        }
+    }
+}
+
 /// Régression. Un BattleTag cyrillique est présent dans ce replay en UTF-8 multi-octets ; `strings`
 /// ne le voit pas. Un parser qui supposerait de l'ASCII perdrait silencieusement un joueur sur dix
 /// dans les parties européennes — sans échouer, ce qui est pire. Cf. le rapport de format, Q1.
