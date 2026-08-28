@@ -138,8 +138,10 @@ pub struct MapBody {
 /// `POST /api/lobby/map` — repli quand la carte n'a pas pu être déduite des hashes `.s2ma`.
 pub async fn set_map(State(s): State<AppState>, Json(b): Json<MapBody>) -> (StatusCode, Json<J>) {
     muter(s, |st| {
+        // `map_manual` reflète l'état réel : vrai seulement si une carte est effectivement
+        // saisie, faux si la saisie est effacée (`map: null`) — jamais « corrigé » sur du vide.
+        st.map_manual = b.map.is_some();
         st.map = b.map;
-        st.map_manual = true;
     })
     .await
 }
@@ -157,17 +159,24 @@ pub struct TeamsBody {
 /// d'équipe. Un bouton « inverser » serait donc inutile 19 fois sur 20 : seule une saisie
 /// explicite par joueur peut reconstruire l'équipe correcte dans le cas général.
 pub async fn set_teams(State(s): State<AppState>, Json(b): Json<TeamsBody>) -> (StatusCode, Json<J>) {
-    muter(s, |st| {
-        for p in &mut st.players {
-            if let Some(t) = b.teams.get(&p.battletag) {
-                if *t <= 1 {
-                    p.team = Some(*t);
-                    p.team_manual = true;
-                }
+    muter(s, |st| appliquer_teams(&mut st.players, &b.teams)).await
+}
+
+/// Cœur de `set_teams`, extrait en fonction pure pour être testable sans `AppState` (pas de pool
+/// Postgres, pas de `RwLock`). Strictement additive : un joueur absent de `teams`, ou dont la
+/// valeur n'est pas 0/1, garde son équipe et son `team_manual` d'origine intacts.
+fn appliquer_teams(
+    players: &mut [crate::lobby::LobbyPlayerState],
+    teams: &std::collections::HashMap<String, u8>,
+) {
+    for p in players {
+        if let Some(t) = teams.get(&p.battletag) {
+            if *t <= 1 {
+                p.team = Some(*t);
+                p.team_manual = true;
             }
         }
-    })
-    .await
+    }
 }
 
 /// Mutation + ré-enrichissement + persistance + diffusion, factorisés : les trois routes
@@ -304,5 +313,49 @@ mod tests {
         prec.detected_at = "pas-une-date".to_string();
         let nouveau = LobbyState::unreadable(chrono::Utc::now().to_rfc3339());
         assert!(!parse_failed_transitoire(&prec, &nouveau));
+    }
+
+    #[test]
+    fn appliquer_teams_reassigne_le_joueur_nomme_et_le_marque_manuel() {
+        let mut joueurs = vec![joueur("a#1"), joueur("b#2")];
+        let teams = std::collections::HashMap::from([("a#1".to_string(), 1u8)]);
+        appliquer_teams(&mut joueurs, &teams);
+        assert_eq!(joueurs[0].team, Some(1));
+        assert!(joueurs[0].team_manual);
+    }
+
+    #[test]
+    fn appliquer_teams_est_additive_les_absents_gardent_leur_etat() {
+        // Propriété la plus importante : un joueur absent de la table ne doit être touché ni
+        // dans son équipe ni dans son `team_manual`, même si un autre joueur du même appel est
+        // réassigné. Ce test échouerait si `appliquer_teams` réinitialisait les joueurs absents
+        // (par ex. `p.team = None` par défaut avant la boucle).
+        let mut joueurs = vec![joueur("a#1"), joueur("b#2")];
+        joueurs[1].team = Some(0);
+        joueurs[1].team_manual = true;
+        let teams = std::collections::HashMap::from([("a#1".to_string(), 1u8)]);
+        appliquer_teams(&mut joueurs, &teams);
+        assert_eq!(joueurs[1].team, Some(0));
+        assert!(joueurs[1].team_manual);
+    }
+
+    #[test]
+    fn appliquer_teams_ignore_une_valeur_hors_0_1() {
+        // Ce test échouerait si le filtre `<= 1` était retiré : `team` passerait à `Some(2)` et
+        // `team_manual` à `true` au lieu de rester intacts.
+        let mut joueurs = vec![joueur("a#1")];
+        let teams = std::collections::HashMap::from([("a#1".to_string(), 2u8)]);
+        appliquer_teams(&mut joueurs, &teams);
+        assert_eq!(joueurs[0].team, None);
+        assert!(!joueurs[0].team_manual);
+    }
+
+    #[test]
+    fn appliquer_teams_battletag_inconnu_n_a_aucun_effet_et_ne_panique_pas() {
+        let mut joueurs = vec![joueur("a#1")];
+        let teams = std::collections::HashMap::from([("inconnu#99".to_string(), 1u8)]);
+        appliquer_teams(&mut joueurs, &teams);
+        assert_eq!(joueurs[0].team, None);
+        assert!(!joueurs[0].team_manual);
     }
 }
