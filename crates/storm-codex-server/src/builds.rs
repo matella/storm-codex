@@ -130,10 +130,13 @@ pub async fn update(
     .await
     .map_err(db_err)?
     .rows_affected();
-    tx.commit().await.map_err(db_err)?;
     if n == 0 {
+        // Ligne inexistante : on abandonne la transaction (rollback implicite au drop de `tx`)
+        // plutôt que de committer le démarquage du défaut fait plus haut. Sans ça, un PUT sur un
+        // id inconnu répondait 404 tout en ayant persisté la perte du défaut du héros.
         return Err((StatusCode::NOT_FOUND, Json(json!({ "error": "build inconnu" }))));
     }
+    tx.commit().await.map_err(db_err)?;
     Ok(Json(json!({ "ok": true })))
 }
 
