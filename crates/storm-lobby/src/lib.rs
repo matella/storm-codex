@@ -36,6 +36,11 @@ fn battletag_regex() -> &'static Regex {
 }
 
 /// Un joueur du lobby.
+///
+/// `#[non_exhaustive]` : ce crate est destiné à crates.io et gagnera vraisemblablement des champs
+/// (le héros pické, si Blizzard l'expose un jour dans ce blob) — un ajout de champ ne doit pas
+/// casser la construction par les consommateurs externes.
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LobbyPlayer {
     /// Nom du compte, sans le discriminant. Peut contenir de l'UTF-8 non-ASCII (cf. le cas
@@ -58,6 +63,10 @@ impl LobbyPlayer {
 }
 
 /// Un lobby décodé. `players` est dans l'ordre d'apparition dans le blob.
+///
+/// `#[non_exhaustive]` pour la même raison que [`LobbyPlayer`] : marge d'évolution sans rupture de
+/// semver pour un crate publié sur crates.io.
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Lobby {
     pub players: Vec<LobbyPlayer>,
@@ -69,6 +78,11 @@ pub enum LobbyError {
     TooShort(usize),
     #[error("aucun joueur identifiable dans le blob")]
     NoPlayers,
+    /// Non construite aujourd'hui : le décodage actuel est une simple recherche par regex, qui ne
+    /// distingue pas de structure binaire à valider. Conservée (plutôt que supprimée) pour un futur
+    /// décodage structurel (ex. lecture de champs binaires typés au lieu du texte brut) qui pourrait
+    /// détecter une forme de blob reconnaissable mais invalide — retirer cette variante publique
+    /// aujourd'hui reviendrait à la réintroduire plus tard en rupture de semver pour un crate publié.
     #[error("structure de lobby non reconnue : {0}")]
     Unrecognized(String),
 }
@@ -100,6 +114,12 @@ pub fn parse(bytes: &[u8]) -> Result<Lobby, LobbyError> {
         // Ne conserver que les chiffres du discriminant : la regex autorise un suffixe `z`/`Ø`
         // final qui appartient au bruit binaire environnant, pas au BattleTag (cf. brief tâche 3,
         // résolution 1). Le parseur de référence compare à un entier (`js_parse_int`).
+        //
+        // Cette troncature aux chiffres ASCII est délibérée et alignée sur `js_parse_int`
+        // (`crates/storm-stats/src/process.rs`) : les deux parseurs doivent produire exactement la
+        // même clé `nom#discriminant` pour qu'un lobby décodé en live et une archive décodée après
+        // coup se rejoignent sur la même identité. Un désaccord sur ce point casserait la liaison
+        // replay ↔ lobby documentée dans la spec companion, en silence.
         let discriminant: String = full[hash + 1..]
             .chars()
             .take_while(char::is_ascii_digit)
