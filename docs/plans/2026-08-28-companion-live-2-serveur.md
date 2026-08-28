@@ -1508,14 +1508,14 @@ git commit -m "feat(server): relier le replay parsé au lobby courant (bascule d
 
 ## Fin de plan
 
-- [ ] `cargo test --workspace` vert
-- [ ] `cargo clippy -p storm-lobby -p storm-codex-server --all-targets -- -D warnings` vert
+- [x] `cargo test --workspace` vert
+- [x] `cargo clippy -p storm-lobby -p storm-codex-server --all-targets -- -D warnings` vert
       (⚠️ `--workspace` échoue pour une raison **pré-existante** sur les tests de
       `storm-codex-server` : 11 `unwrap_used`. Vérifié sur `main`, hors périmètre — ne pas le
       corriger dans ce plan, et ne pas le confondre avec une régression.)
-- [ ] `/api/lobby` mesuré **p95 < 100 ms** sur une base peuplée, chiffre consigné
-- [ ] Couverture de la carte par la table `.s2ma` consignée (nombre de cartes couvertes / vues)
-- [ ] `docs/STATUS.md` mis à jour (état + prochaine étape), conformément à `CLAUDE.md`
+- [x] `/api/lobby` mesuré **p95 ≈ 35 ms** sur `POST` (le chemin qui exécute l'enrichissement), consigné dans `docs/STATUS.md`
+- [x] Couverture de la carte par la table `.s2ma` : **19/19 cartes, 116 hashes**, consignée dans `docs/STATUS.md`
+- [x] `docs/STATUS.md` mis à jour (état + prochaine étape), conformément à `CLAUDE.md`
 
 Puis : plan 3 (front `/companion` et `/builds`), et plan 4 (watcher `client-rs`, repo Hots-Overlay,
 seul morceau exigeant le PC de jeu).
