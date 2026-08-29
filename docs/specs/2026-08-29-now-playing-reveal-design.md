@@ -89,7 +89,11 @@ changement de taille.
 - **Grand** : 300×408, padding 18, pochette 264×264 (rayon 12), kicker + égaliseur en haut à
   gauche, titre 20 px et artiste 14 px centrés sous la pochette. La hauteur intègre le bloc de
   titre fixe de 52 px (deux lignes, cf. « Cas limites ») : la maquette, antérieure à cette
-  décision, montre 382 sur une seule ligne.
+  décision, montre 382 sur une seule ligne. Ces cotes sont celles de la **boîte extérieure**
+  (`box-sizing: border-box` global dans `theme.css`, bordure 1 px) : l'intérieur disponible est
+  donc 298×406 et le contenu consomme 1 px de marge sur chaque bord. Écart assumé par l'opérateur
+  le 2026-08-29 — c'est le rendu validé sur la maquette, qui portait la même bordure ; rien ne
+  déborde de la carte.
 - **Mini** : 290×68, padding 10, pochette 48×48 (rayon 8), titre 14 px, artiste 12 px — identique
   à l'existant.
 - **Ancrage** : `OverlayFrame anchor="top-right" pad={36}`, inchangé.
