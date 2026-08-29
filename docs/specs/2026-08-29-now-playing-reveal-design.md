@@ -86,8 +86,10 @@ Une seule boîte `.card` transitionnant `width` / `height` / `border-radius` sur
 avec un délai, de sorte que la couche entrante arrive quand la boîte a déjà fait l'essentiel de son
 changement de taille.
 
-- **Grand** : 300×382, padding 18, pochette 264×264 (rayon 12), kicker + égaliseur en haut à
-  gauche, titre 20 px et artiste 14 px centrés sous la pochette.
+- **Grand** : 300×408, padding 18, pochette 264×264 (rayon 12), kicker + égaliseur en haut à
+  gauche, titre 20 px et artiste 14 px centrés sous la pochette. La hauteur intègre le bloc de
+  titre fixe de 52 px (deux lignes, cf. « Cas limites ») : la maquette, antérieure à cette
+  décision, montre 382 sur une seule ligne.
 - **Mini** : 290×68, padding 10, pochette 48×48 (rayon 8), titre 14 px, artiste 12 px — identique
   à l'existant.
 - **Ancrage** : `OverlayFrame anchor="top-right" pad={36}`, inchangé.
