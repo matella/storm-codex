@@ -489,6 +489,8 @@ export function jarvisPhrase(
 export interface NowPlayingResp { authenticated?: boolean; current?: Record<string, unknown> }
 export interface Track {
   playing: boolean;
+  /** identifiant stable de la piste (`id` ou `uri` Spotify) — absent sur l'ancien engine. */
+  id?: string;
   title?: string;
   artist?: string;
   art?: string;
@@ -505,6 +507,7 @@ export function parseTrack(np: NowPlayingResp | undefined): Track {
   const t = ((o.track as Record<string, unknown>) ?? (o.current as Record<string, unknown>) ?? o) as Record<string, unknown>;
   const str = (v: unknown) => (typeof v === "string" ? v : undefined);
   const title = str(t.name) ?? str(t.title) ?? str(t.track);
+  const id = str(t.id) ?? str(t.uri);
   // artiste : tableau Spotify [{name}] → joint, sinon string directe
   const artist = Array.isArray(t.artists)
     ? (t.artists as Array<Record<string, unknown>>).map((a) => str(a?.name)).filter(Boolean).join(", ") || undefined
@@ -520,7 +523,16 @@ export function parseTrack(np: NowPlayingResp | undefined): Track {
   const durationMs = num(t.durationMs) ?? num(t.duration);
   const progressMs = num(o.progressMs);
   const isPlaying = o.isPlaying !== false; // absent → on suppose en lecture
-  return { playing: !!(np?.authenticated && title && isPlaying), title, artist, art, album, durationMs, progressMs };
+  return { playing: !!(np?.authenticated && title && isPlaying), id, title, artist, art, album, durationMs, progressMs };
+}
+
+/** Clé d'identité d'une piste pour détecter un changement de morceau. `id` quand la source en
+ *  fournit un, sinon `titre|artiste` (l'ancien engine n'a pas d'identifiant). `null` = rien
+ *  d'exploitable, donc rien à annoncer. */
+export function trackKey(t: Track): string | null {
+  if (t.id) return t.id;
+  if (t.title) return `${t.title}|${t.artist ?? ""}`;
+  return null;
 }
 
 /** Badge BUFF / NERF / MIXED d'une section de patch (vert / rouge / ambre). null si inconnu. */
