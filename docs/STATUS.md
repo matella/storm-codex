@@ -1,5 +1,15 @@
 # STATUS — lire d'abord, mettre à jour en dernier
 
+## Déployé sur le box le 2026-09-01 — variante `/now-playing?reveal`
+`main` mergé et poussé (`642750c`), puis rsync + `docker compose up -d --build` sur matelab.
+Vérifs de `docs/spec/09-operations.md` passées : conteneurs healthy, `/api/health` 200, bundle
+passé de `index-BmQMoQ9z.js` à `index-LjZbPmIC.js` (le hash correspond au build local), `npr-card`
+présent dans le bundle servi, `.env` du box intact, aucune erreur au démarrage.
+**Reste dû** : la vérification navigateur sur données réelles exigée pour une route front — elle
+suppose l'OAuth Spotify côté Orpheus (section « Orpheus (musique) » plus bas). Le reveal n'a donc
+jamais été vu se déclencher pour de vrai ; premier test à faire = deux skips en moins de 2,6 s
+(reciblage sur place, la transition que les tests unitaires ne peuvent pas juger visuellement).
+
 ## Companion live — plan 2 (serveur) : LIVRÉ (branche `feat/companion-live-serveur`, 2026-08-28)
 Plan : `docs/plans/2026-08-28-companion-live-2-serveur.md`. Le serveur expose tout ce dont la page
 companion aura besoin. **Front = plan 3, watcher `client-rs` = plan 4** (seul morceau exigeant le PC
