@@ -1,14 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { parseTrack } from "../api";
+import { parseTrack, trackKey } from "../api";
 import { OverlayFrame } from "../components/OverlayFrame";
+import { RevealCard } from "./RevealCard";
+import { useTrackReveal } from "../useTrackReveal";
 
 /**
  * Widget musique OBS (browser source) — lecture Spotify LIVE via le proxy storm-codex
  * (/api/now-playing → Orpheus /api/playback/now). Ancré en HAUT-DROITE avec marge de coin.
- * Deux tailles :
+ * Trois variantes :
  *   - défaut  : carte étoffée (pochette, titre/artiste/album, progression, égaliseur).
  *   - `?mini` : compacte (pochette + titre + artiste seulement).
+ *   - `?reveal` : annonce en grand à chaque démarrage de lecture, puis repli sur `?mini`.
  * Fond transparent ; caché quand rien ne joue / en pause.
  */
 const fmt = (ms: number) => {
@@ -19,13 +22,18 @@ const fmt = (ms: number) => {
 const CARD_BG = "linear-gradient(135deg, rgba(18,20,28,.96), rgba(12,13,18,.96))";
 
 export function NowPlaying() {
-  const mini = new URLSearchParams(window.location.search).has("mini");
+  const params = new URLSearchParams(window.location.search);
+  const mini = params.has("mini");
+  const reveal = params.has("reveal");
   const { data } = useQuery({
     queryKey: ["now-playing"],
     queryFn: () => fetch("/api/now-playing").then((r) => r.json()),
-    refetchInterval: 5000,
+    // 2s seulement pour reveal (réaction rapide au changement de morceau) ; les autres
+    // conservent 5s pour que la source OBS en direct ne soit pas affectée.
+    refetchInterval: reveal ? 2000 : 5000,
   });
   const t = parseTrack(data);
+  const phase = useTrackReveal(t.playing, trackKey(t));
 
   // progression fluide : on cale sur la valeur serveur à chaque refetch, puis on avance localement.
   const [prog, setProg] = useState(0);
@@ -37,6 +45,14 @@ export function NowPlaying() {
   }, [t.playing, t.durationMs]);
 
   const pct = t.durationMs ? Math.min(100, (prog / t.durationMs) * 100) : 0;
+
+  if (reveal) {
+    return (
+      <OverlayFrame anchor="top-right" pad={36}>
+        <RevealCard track={t} phase={phase} />
+      </OverlayFrame>
+    );
+  }
 
   // Caché quand rien ne joue OU en pause → cadre vide (source OBS invisible).
   if (!t.playing) return <OverlayFrame anchor="top-right" pad={36}><span /></OverlayFrame>;

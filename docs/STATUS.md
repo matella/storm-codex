@@ -308,6 +308,15 @@ Spotify (PKCE, redirect 127.0.0.1:3010). Reste : l'opérateur autorise via tunne
   best game, phrase Jarvis. Session = parties du même jour calendaire que la dernière.
 - **`/now-playing`** (source persistante, EN) : widget musique lisant **Orpheus** via proxy
   `/api/now-playing` (config `ORPHEUS_URL`). Affiche « Music — off » tant que Spotify dormant.
+  Trois variantes : défaut (carte étoffée), `?mini` (badge compact), `?reveal` (annonce en grand
+  à chaque démarrage de lecture — entrée 440 ms, hold 2,6 s, morph 620 ms — puis repli sur le
+  badge). Spec `docs/specs/2026-08-29-now-playing-reveal-design.md`, plan
+  `docs/plans/2026-08-29-now-playing-reveal.md`. Sondage passé de 5 s à 2 s.
+  **Reste à vérifier sur le box** : (a) qu'Orpheus ne relaie pas l'API Spotify sans cache — le
+  sondage à 2 s fait ~30 requêtes/min par source ouverte ; repli documenté = push WS
+  `music.changed` ; (b) que le reveal s'affiche réellement, ce qui suppose l'OAuth Spotify faite
+  (voir la section « Orpheus (musique) » plus bas). Jusque-là seule la géométrie est vérifiée,
+  en pilotant les classes d'état à la main.
 - **Widget `/widget`** passé en anglais (VICTORY/DEFEAT) — cohérent. Voix Jarvis reste FR (persona).
 - Maquette : `docs/specs/2026-06-13-scene-obs-entre-games-mockup.html` (panneau gauche, cam+jeu
   modestes à droite, musique bas-droite persistante).
