@@ -32,16 +32,19 @@
 
 /* ── couche « grande carte » ─────────────────────────────────────────────── */
 .npr-big { padding: 18px; display: flex; flex-direction: column; align-items: center; text-align: center; }
-.npr-big .npr-krow { display: flex; align-items: center; gap: 8px; align-self: flex-start; height: 12px; margin-bottom: 10px; }
+.npr-big .npr-krow { display: flex; align-items: center; gap: 8px; align-self: flex-start; height: 12px; margin-bottom: 10px; flex-shrink: 0; }
 .npr-big .npr-art { width: 264px; height: 264px; border-radius: 12px; }
 .npr-big .npr-title {
   margin-top: 14px; height: 52px; font-size: 20px; line-height: 1.3; font-weight: 700; width: 100%;
+  /* La hauteur fixe de 52px doit rester incompressible, sinon la deuxième ligne perd
+     ses bas de casse (g, y, p). Le padding absorbe les 2px de débordement. */
+  flex-shrink: 0;
   /* deux lignes maxi : 264px à 20px tronquent vers 22 caractères sur une seule ligne. La hauteur
      reste fixe pour que la boîte garde une cible d'animation. */
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .npr-big .npr-artist { margin-top: 2px; height: 18px; font-size: 14px; color: var(--text-2); width: 100%;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
 
 /* ── couche « badge mini » (géométrie identique à la variante ?mini) ─────── */
 .npr-mini { padding: 10px; display: flex; gap: 12px; align-items: center; }

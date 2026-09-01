@@ -28,7 +28,9 @@ export function NowPlaying() {
   const { data } = useQuery({
     queryKey: ["now-playing"],
     queryFn: () => fetch("/api/now-playing").then((r) => r.json()),
-    refetchInterval: 2000,
+    // 2s seulement pour reveal (réaction rapide au changement de morceau) ; les autres
+    // conservent 5s pour que la source OBS en direct ne soit pas affectée.
+    refetchInterval: reveal ? 2000 : 5000,
   });
   const t = parseTrack(data);
   const phase = useTrackReveal(t.playing, trackKey(t));
