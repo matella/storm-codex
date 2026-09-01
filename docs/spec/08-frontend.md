@@ -31,7 +31,9 @@ fallback SPA (`index.html` en `no-cache`). Langue de l'UI : **anglais**.
 | `/widget?me=<nom>` | post-game : V/D, héros, carte, K/A/D + KP, phrase Jarvis |
 | `/queue` | scène entre-games 1920×1080 (panneau session, slots cam/game, musique) |
 | `/ticker` | bandeau défilant |
-| `/now-playing` | piste en cours (proxy Orpheus) |
+| `/now-playing` | piste en cours (proxy Orpheus) — carte étoffée : pochette, album, progression |
+| `/now-playing?mini` | badge compact 290×68 : pochette + titre + artiste |
+| `/now-playing?reveal` | annonce en grand (300×408) à chaque démarrage de lecture, tenue 2,6 s, puis repli en fondu sur le badge compact. Sondage 2 s (les deux autres variantes restent à 5 s). Spec `docs/specs/2026-08-29-now-playing-reveal-design.md` |
 | `/draft/overlay` | overlay de draft 1920×1080 (état par WS `draft.updated`) |
 
 ## Conventions
