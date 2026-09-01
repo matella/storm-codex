@@ -1,8 +1,24 @@
 # CLAUDE.md — Storm Codex
 
-> Chargé à chaque session. **Commencer par `docs/STATUS.md`** (état + prochaine étape), le mettre
-> à jour en fin de session. La spec programme est `docs/specs/2026-06-12-storm-codex-design.md` —
-> elle a été validée par l'opérateur et relue : ne pas re-trancher ses décisions sans lui.
+> Chargé à chaque session. **Le développement se pilote depuis la documentation** — dans l'ordre :
+> 1. `git fetch origin` (le clone local est souvent en retard — plusieurs machines poussent) ;
+> 2. `docs/STATUS.md` — état + prochaine étape (le mettre à jour en fin de session) ;
+> 3. `docs/spec/` — **spec vivante** : lire la section du domaine touché AVANT de modifier ;
+>    `docs/spec/10-developpement.md` est le contrat de travail (cycle spec-first, checklist).
+> La spec programme (`docs/specs/2026-06-12-storm-codex-design.md`, + suites datées) est validée
+> par l'opérateur : ne pas re-trancher ses décisions sans lui.
+
+## Règle n° 0 — pas de modification sans documentation
+
+**Interdit** de modifier un fichier qui porte un contrat (endpoint, migration, projection,
+event, page/route, env, CI, budget perf) sans mettre à jour la section `docs/spec/`
+correspondante **dans le même commit**. Mapping et preuves exigées par type de changement :
+tableau de `docs/spec/10-developpement.md`. Un diff de code sans son diff de doc est un
+changement **incomplet** — le compléter avant de committer. Seule exception : refactor/typo
+strictement sans changement de contrat, et le message de commit l'affirme explicitement.
+Toute **décision de conception** (nouvelle capacité, scope, architecture) passe d'abord par une
+spec datée `docs/specs/` validée par l'opérateur — l'IA ne l'implémente pas de sa propre
+initiative.
 
 ## Ce qu'est le projet
 Rénovation complète de Stats of the Storm (tracker de stats HotS) : crates Rust open-source

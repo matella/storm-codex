@@ -19,7 +19,7 @@ const FORMATS: { v: DraftFormat; label: string }[] = [
 ];
 
 /** Console opérateur du simulateur de draft. Pilote l'état serveur (REST) ; l'overlay /draft/overlay
- *  reflète tout en direct via WS. Cf. docs/draft-control-mockup.html. */
+ *  reflète tout en direct via WS. Cf. docs/specs/2026-06-19-draft-control-mockup.html. */
 export function Draft() {
   const { data: d } = useDraft();
   const dim = useDimHeroes();

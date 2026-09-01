@@ -12,8 +12,10 @@ tools/parity-harness/node_modules/
 # jalon 3 serveur
 .archive/
 .raw-cache/
+# IMAGES_DIR par défaut : repeuplé à chaque démarrage, jamais à committer.
+.images/
 .env
 
-# Artefact d'exécution du serveur en local : IMAGES_DIR par défaut, repeuplé à chaque
-# démarrage (portraits héros + minimaps bakées). Jamais à committer.
-.images/
+# OS / divers
+.DS_Store
+backups/

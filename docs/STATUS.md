@@ -448,6 +448,68 @@ Le développement est essentiellement terminé (jalons 0→5 livrés + vérifié
   (`attributeId`→`attr.json`) pour ne pas créer de faux diffs de format (Li-Ming, E.T.C.…).
   Backfill : **5557 lignes corrigées, 0 divergence restante** ; trace dans `heroCorrectedFrom`.
 
+## Campagne de tests — FAIT (2026-08-03, demande opérateur)
+Couverture avant : 25 tests Rust (draft surtout), 0 test front, pas de CI de tests. Ajouté :
+- **storm-stats `tests/invariants.rs`** (4) : invariants du pipeline complet sur replay réel
+  committé — identité/cohérence match (winner/équipes/durée), **messages** (tri chronologique,
+  auteurs = joueurs, charge par type chat/ping/annonce, LoadingProgress filtré), score+talents+
+  takedowns, timeline XP monotone.
+- **Serveur** : `auth.rs` factorisé (dette admin/manage réglée) + 3 tests ; contrat Jarvis
+  (invariants spine + résumé joueurs) 2 tests ; `reject_class` exhaustif + `game_fingerprint`
+  (stabilité/ordre) 2 tests ; **intégration niveau routeur** (`api_tests` dans main.rs,
+  `api_router()` extrait, tower::oneshot) : health, auth admin ouvert/fermé 401/201, et
+  **bout-en-bout upload réel → parse → projection → détail avec messages → 409 dédup → 401
+  sans token**. DB-gated (skip sans DATABASE_URL), exécutés en CI.
+- **Front** : vitest (`web/src/api.test.ts`, 13 tests) — fmtDur/fmtClock, announceLabel,
+  modeBadge, matchesUrl, heroKey, awardLabel, classBadge, parseTrack (2 shapes Orpheus),
+  pickOperator, sideOfStep, fallbacks initials/universeColor/mapImage. `npm test`.
+- **CI `ci.yml`** : clippy strict + `cargo test` avec **service Postgres 17** (l'intégration DB
+  tourne à chaque push/PR) + vitest + build web.
+Total : **51 tests** (38 Rust + 13 vitest). Parité Node (114 replays) et E2E box restent hors
+CI (corpus/infra privés) — inchangés.
+
+## Audit complet + nettoyage — FAIT (2026-08-03, demande opérateur)
+Passe totale (code, risques, vitesse, hygiène) :
+- **Qualité** : clippy strict 0 warning (11 `unwrap` dans les tests de `draft/mod.rs` → attribut
+  `allow` conforme à la convention) ; 25 tests Rust verts ; build front vert.
+- **Sécu deps** : `npm audit fix` → dompurify + postcss (high) corrigés. Restent react-router 6
+  (fix = v7, décision majeure) et vite/esbuild (dev-only) → « Risques connus » de `spec/09`.
+- **Risques code** : pas d'interpolation SQL (100 % bind), pas de traversée de chemin (archive
+  nommée par hash, X-Filename seulement en base), pas de secret committé, pas d'`unsafe`.
+  Acceptés/documentés : mode admin ouvert par défaut, conteneur root, panics d'init sur données
+  embarquées, auth dupliquée admin/manage.
+- **Vitesse** : bench re-mesuré sur le corpus local (114 replays) : **141 ms médiane < 150**,
+  p95 243 ms. Budgets tenus.
+- **Hygiène** : `.DS_Store` retiré du repo ; `.gitignore` complété (`.DS_Store`, `.images/`,
+  `backups/`) ; docs draft rangées (`docs/specs/` + `docs/plans/`, réfs mises à jour) ;
+  `__pycache__` local purgé. Aucun composant front orphelin, pas de junk committé.
+
+## Spec vivante — FAIT (2026-08-03, demande opérateur)
+**`docs/spec/`** : documentation vivante de l'état courant (spec-driven) — 9 fichiers :
+architecture/invariants, storm-replay, storm-stats/parité, serveur/config, **référence API
+complète**, modèle de données (migrations 0001→0008), événements WS+Jarvis, frontend
+(routes/overlays), opérations (dev/box/backup). Règle de maintenance dans `docs/spec/README.md`
+et `CLAUDE.md` : **tout commit qui change un contrat met à jour la section correspondante**.
+Les specs datées (`docs/specs/`) restent les décisions figées ; STATUS reste le journal.
+Chat de la partie déployé sur le box au passage (bundle `index-BmQMoQ9z.js`, vérifié).
+**Complété (même jour, audit « tout est-il documenté ? »)** : `10-developpement.md` (workflow
+spec-first : checklist doc+preuve par type de changement, définition de « fini », limites IA),
+carte du repo dans le README de la spec, **CI ghcr.io documentée** (publish.yml — image publiée
+à chaque push main, c'était non documenté), et **règle n° 0 dans CLAUDE.md** : pas de diff de
+code portant un contrat sans son diff de doc dans le même commit.
+
+## Chat de la partie — FAIT (2026-08-03, demande opérateur)
+La fiche de match affiche le **log de chat complet** (bloc `Match chat`, composant `ChatLog` dans
+`web/src/pages/MatchDetail.tsx`) : chat par défaut, **pings** et **callouts** (ability/vitals/
+behavior) en filtres optionnels ; ordre chronologique avec temps signé (les messages de draft/
+chargement sont avant le début de partie), avatar + nom coloré par équipe, destinataire
+(all/allies/obs). **Aucun changement serveur/DB/re-process** : storm-stats décode déjà
+`replay.message.events` → `match.messages`, projeté dans `matches.data` et déjà renvoyé par
+`/api/matches/{id}` — les matchs déjà backfillés l'affichent tels quels. Au passage, la colonne
+« Pings » de la table BM comptait *tous* les messages du joueur (chats et callouts compris) →
+filtrée sur le type Ping. Vérifié sur un replay réel : 3 chats / 52 pings / 6 callouts, total
+pings de la table BM = 52.
+
 ## Jalons (résumé — détail et critères dans la spec)
 0 spike **GO ✅** → 1 storm-replay **✅** → 2 storm-stats **✅** (+ 2.5 cartes ARAM) →
 3 serveur+DB+backfill **✅** → 4 front parité **socle ✅** → 5 stream+Jarvis+bascule **code ✅ +

@@ -30,5 +30,9 @@ ureq = { version = "3", features = ["json"] }
 flate2 = "1"
 tar = "0.4"
 
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+
 [lints]
 workspace = true

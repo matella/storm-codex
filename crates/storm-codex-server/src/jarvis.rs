@@ -71,3 +71,57 @@ async fn try_publish(redis_url: &str, channel: &str, event: &J) -> redis::RedisR
     redis::cmd("PUBLISH").arg(channel).arg(payload).query_async::<()>(&mut conn).await?;
     Ok(())
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+    use serde_json::Map;
+
+    fn fake_output() -> storm_stats::Output {
+        let match_: Map<String, J> = serde_json::from_value(json!({
+            "map": "Sky Temple", "mode": 50101, "length": 900.5, "winner": 1,
+        }))
+        .unwrap();
+        let players: Map<String, J> = serde_json::from_value(json!({
+            "1-Hero-1-111": { "hero": "Jaina", "name": "Alice", "team": 0, "win": false,
+                "gameStats": {"SoloKill": 3.0, "Deaths": 2.0, "Takedowns": 7.0,
+                               "HeroDamage": 40000.0, "Healing": 0.0} },
+            "1-Hero-1-222": { "hero": "Yrel", "name": "Bob", "team": 1, "win": true,
+                "gameStats": {"SoloKill": 1.0, "Deaths": 0.0, "Takedowns": 9.0,
+                               "HeroDamage": 15000.0, "Healing": 30000.0} },
+        }))
+        .unwrap();
+        storm_stats::Output { status: 1, match_: Some(match_), players: Some(players) }
+    }
+
+    /// Invariants spine (règle dure n° 6) : schema_version, type `entity.verb` au passé,
+    /// correlation/causation, occurred_at/recorded_at RFC3339.
+    #[test]
+    fn evenement_respecte_les_invariants_spine() {
+        let ev = match_completed_event(42, &fake_output());
+        assert_eq!(ev["schema_version"], 1);
+        assert_eq!(ev["type"], "hots.match.completed");
+        for id in ["correlation_id", "causation_id"] {
+            uuid::Uuid::parse_str(ev[id].as_str().expect(id)).expect("uuid valide");
+        }
+        for ts in ["occurred_at", "recorded_at"] {
+            chrono::DateTime::parse_from_rfc3339(ev[ts].as_str().expect(ts)).expect("rfc3339");
+        }
+    }
+
+    #[test]
+    fn data_resume_le_match_et_les_joueurs() {
+        let ev = match_completed_event(42, &fake_output());
+        let d = &ev["data"];
+        assert_eq!(d["match_id"], 42);
+        assert_eq!(d["map"], "Sky Temple");
+        assert_eq!(d["winner"], 1);
+        let players = d["players"].as_array().expect("players");
+        assert_eq!(players.len(), 2);
+        let bob = players.iter().find(|p| p["name"] == "Bob").expect("Bob");
+        assert_eq!(bob["win"], true);
+        assert_eq!(bob["kda"]["takedowns"], 9.0);
+        assert_eq!(bob["healing"], 30000.0);
+    }
+}

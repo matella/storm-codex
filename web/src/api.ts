@@ -562,6 +562,19 @@ export function fmtDur(seconds: number | null): string {
   const s = Math.floor(seconds % 60);
   return `${m}:${String(s).padStart(2, "0")}`;
 }
+/** mm:ss signé — les messages du draft/chargement ont un temps négatif (avant le début de partie). */
+export function fmtClock(sec: number): string {
+  const s = Math.floor(Math.abs(sec));
+  return `${sec < 0 ? "−" : ""}${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+/** Libellé d'une annonce joueur (`match.messages[].announcement` — AnnouncmentType). */
+export function announceLabel(a: any): string {
+  const k = a && typeof a === "object" ? Object.keys(a)[0] : null;
+  if (k === "Ability") return "ability callout";
+  if (k === "Vitals") return "vitals callout (help)";
+  if (k === "Behavior") return "behavior callout";
+  return "callout";
+}
 
 // ── simulateur de draft ───────────────────────────────────────────────────────
 export type Side = "blue" | "red";

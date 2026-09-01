@@ -1,0 +1,50 @@
+# CI de qualité : clippy strict + tests Rust (avec Postgres de service → les tests d'intégration
+# DB-gated tournent réellement) + tests & build front. Complète publish.yml (image ghcr.io).
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: storm
+          POSTGRES_PASSWORD: storm
+          POSTGRES_DB: storm_codex
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U storm -d storm_codex"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgres://storm:storm@localhost:5432/storm_codex
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: clippy (strict)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: tests (unitaires + intégration DB)
+        run: cargo test --workspace
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - name: tests (vitest)
+        run: npm test
+        working-directory: web
+      - name: build (tsc + vite)
+        run: npm run build
+        working-directory: web
