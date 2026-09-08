@@ -1,5 +1,21 @@
 # STATUS — lire d'abord, mettre à jour en dernier
 
+## ⚠ EN ATTENTE DE VALIDATION OPÉRATEUR — deux specs datées du 2026-09-08
+Scope retenu par l'opérateur, specs écrites et poussées, **rien n'est implémenté** (règle n° 0 :
+une décision de conception se valide avant de coder).
+- `docs/specs/2026-09-08-github-pages-design.md` — 4 volets : site de doc (mdBook), rustdoc des
+  crates, **playground WASM « dépose un replay »** (décodage 100 % navigateur), partage statique
+  d'un match. **Go technique mesuré** : `cargo build -p storm-stats -p storm-replay-viewer
+  --target wasm32-unknown-unknown --release` passe **sans aucune modification** (17,6 s) — toute la
+  chaîne est pure Rust (`bzip2-rs`, `miniz_oxide`). Restent à mesurer la taille du `.wasm`
+  (budget ≤ 3 Mo gzip) et le temps de décodage en navigateur (budget ≤ 1 s ; 133 ms en natif).
+- `docs/specs/2026-09-08-chat-de-match-design.md` — 4 volets : lien chat ↔ visionneuse 2D (les
+  `point{x,y}` des pings sont décodés depuis toujours et n'ont jamais été affichés), recherche et
+  filtres, contexte de jeu dans le fil, recherche inter-matchs (migration `0010 match_messages`
+  + `pg_trgm`, route `GET /api/chat`).
+- **Questions ouvertes** listées en fin de chaque spec (vie privée du partage statique, messages
+  d'observateurs écartés par le parser).
+
 ## Déployé sur le box le 2026-09-01 — variante `/now-playing?reveal`
 `main` mergé et poussé (`642750c`), puis rsync + `docker compose up -d --build` sur matelab.
 Vérifs de `docs/spec/09-operations.md` passées : conteneurs healthy, `/api/health` 200, bundle
