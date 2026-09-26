@@ -5,14 +5,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { scoutingWrite, useScoutingReport } from "../api";
 import { Avatar } from "../components/Avatar";
 import {
-  claimState, day, fmtRate, fmtWilson, statusMeta, targetNames, uploadLabel,
+  claimState, day, fmtRate, fmtWilson, mapsWithPlans, pidNames, statusMeta, targetNames, uploadLabel,
 } from "../scouting";
-import type { Count, Evidence, Facts, Rate, ScoutGame, ScoutingReport as Report } from "../scouting";
+import type { Count, Evidence, Facts, HeroCall, Rate, ScoutGame, ScoutingReport as Report } from "../scouting";
 
 type Tab = "overview" | "players" | "draft" | "maps" | "games" | "roster";
 const TABS: [Tab, string][] = [
-  ["overview", "Overview"], ["players", "Players"], ["draft", "Draft"],
-  ["maps", "Maps"], ["games", "Games"], ["roster", "Roster"],
+  ["overview", "Overview"], ["maps", "Maps"], ["draft", "Draft"],
+  ["players", "Players"], ["games", "Games"], ["roster", "Roster"],
 ];
 const inp = { background: "var(--surface-2)", border: "1px solid var(--hairline-strong)", color: "var(--text)", borderRadius: 6, padding: "5px 9px", fontSize: 12 } as const;
 
@@ -140,7 +140,7 @@ export function ScoutingReport() {
       </div>
 
       {tab === "overview" && <Overview r={r} facts={facts} go={setTab} />}
-      {tab === "players" && <Players r={r} facts={facts} />}
+      {tab === "players" && <Players facts={facts} />}
       {tab === "draft" && <Draft r={r} facts={facts} />}
       {tab === "maps" && <Maps r={r} facts={facts} />}
       {tab === "games" && <Games r={r} onChanged={refresh} flash={flash} />}
@@ -222,37 +222,67 @@ function rateKpi(label: string, r: Rate, rec?: Rate, recLabel = "win rate then")
   return <Kpi label={label} value={fmtRate(r)} sub={rec && rec.n > 0 ? `${recLabel}: ${fmtRate(rec)}` : undefined} />;
 }
 
+function Confidence({ c }: { c: string | null }) {
+  if (!c) return null;
+  return <span className={`bdg ${c === "high" ? "b-win" : c === "low" ? "b-qm" : "b-live"}`}>confidence: {c}</span>;
+}
+
+/** Un héros de l'analyse : ban (avec phase), pick, ou pick adverse attendu (avec joueur). */
+function HeroCallRow({ h, kind, names }: { h: HeroCall; kind: "ban" | "pick" | "theirs"; names: Record<string, string> }) {
+  const badge = kind === "ban"
+    ? <span className="bdg b-loss">ban{h.phase ? ` · ${h.phase === "mid" ? "mid" : "1st phase"}` : ""}</span>
+    : kind === "pick" ? <span className="bdg b-win">pick</span> : <span className="bdg b-live">they pick</span>;
+  return (
+    <Claim c={h}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+        {badge}<Avatar hero={h.hero} size={20} /><b>{h.hero}</b>
+        {kind === "theirs" && h.player && <span className="muted">({names[h.player] ?? h.player})</span>}
+      </span>
+      <span> — {h.why}</span>
+    </Claim>
+  );
+}
+
+function PlanSection({ title, children, empty }: { title: string; children: ReactNode[]; empty?: boolean }) {
+  if (empty) return null;
+  return (
+    <>
+      <div className="kick" style={{ padding: "10px 18px 0", margin: 0 }}>{title}</div>
+      {children}
+    </>
+  );
+}
+
 function Overview({ r, facts, go }: { r: Report; facts: Facts | null; go: (t: Tab) => void }) {
   if (!facts || facts.overview.games === 0) return <NoFacts r={r} go={go} />;
   const o = facts.overview, fl = facts.flow, d = facts.draft;
   const a = r.analysis;
+  const choice = a?.map_choice ?? { pick: [], avoid: [] };
   return (
     <>
       {a ? (
         <div className="card">
-          <div className="card-hd"><h2>Analysis</h2>
+          <div className="card-hd"><h2>Draft plan</h2>
             {r.analysis_tally && (
               <span className="muted mono" style={{ marginLeft: "auto", fontSize: 11 }}>
-                {r.analysis_tally.claims} claims · {r.analysis_tally.unsupported} unsupported · {r.analysis_tally.unknown_ids} unknown ids
+                {r.analysis_tally.claims} items · {r.analysis_tally.unsupported} unsupported · {r.analysis_tally.unknown_ids} unknown ids
               </span>
             )}
           </div>
           <div className="sc-claim" style={{ fontSize: 13, color: "var(--text)", whiteSpace: "pre-wrap" }}>{a.summary || <span className="muted">no summary</span>}</div>
+          <div className="sc-claim muted" style={{ fontSize: 11 }}>
+            Bans and picks map by map: <b style={{ cursor: "pointer", textDecoration: "underline" }} onClick={() => go("maps")}>Maps</b> ·
+            on any map: <b style={{ cursor: "pointer", textDecoration: "underline" }} onClick={() => go("draft")}>Draft</b>
+          </div>
         </div>
       ) : (
-        <div className="card"><div className="empty">No analysis yet — <b>Copy pack</b>, paste it into your LLM, then <b>Import analysis</b>.</div></div>
+        <div className="card"><div className="empty">No draft plan yet — <b>Copy pack</b>, paste it into your LLM, then <b>Import analysis</b>.</div></div>
       )}
-      {a && a.game_plan.length > 0 && (
+      {(choice.pick.length > 0 || choice.avoid.length > 0) && (
         <div className="card">
-          <div className="card-hd"><h2>Game plan</h2></div>
-          {a.game_plan.map((p, i) => (
-            <Claim key={i} c={p}>
-              <span className={`bdg ${p.confidence === "high" ? "b-win" : p.confidence === "low" ? "b-qm" : "b-live"}`} style={{ marginRight: 8 }}>
-                {p.confidence ?? "?"}
-              </span>
-              {p.point}
-            </Claim>
-          ))}
+          <div className="card-hd"><h2>Map choice</h2><span className="muted" style={{ fontSize: 11 }}>when we get to pick the map</span></div>
+          {choice.pick.map((m, i) => <Claim key={`p${i}`} c={m}><span className="bdg b-win" style={{ marginRight: 8 }}>pick</span><b>{m.map}</b> — {m.why}</Claim>)}
+          {choice.avoid.map((m, i) => <Claim key={`a${i}`} c={m}><span className="bdg b-loss" style={{ marginRight: 8 }}>avoid</span><b>{m.map}</b> — {m.why}</Claim>)}
         </div>
       )}
       <p className="cap">Key facts — seen from {r.target_name ?? "the target team"}</p>
@@ -274,13 +304,11 @@ function Overview({ r, facts, go }: { r: Report; facts: Facts | null; go: (t: Ta
   );
 }
 
-function Players({ r, facts }: { r: Report; facts: Facts | null }) {
-  const notes = useMemo(() => new Map((r.analysis?.players ?? []).map((p) => [p.id, p])), [r.analysis]);
+function Players({ facts }: { facts: Facts | null }) {
   if (!facts || facts.players.length === 0) return <div className="card"><div className="empty">No player data yet.</div></div>;
   return (
     <>
       {facts.players.map((p) => {
-        const n = notes.get(p.pid);
         const s = p.stats;
         return (
           <div key={p.pid} className="card">
@@ -289,8 +317,6 @@ function Players({ r, facts }: { r: Report; facts: Facts | null }) {
               <h2>{p.name}</h2>
               <span className="mono muted" style={{ fontSize: 11 }}>{p.pid}</span>
               {!p.core && <span className="bdg b-qm">substitute</span>}
-              {n?.threat && <span className={`bdg ${n.threat === "high" ? "b-loss" : n.threat === "medium" ? "b-mvp" : "b-qm"}`}>threat: {n.threat}</span>}
-              {n?.role && <span className="muted" style={{ fontSize: 11 }}>{n.role}</span>}
               <span className="mono" style={{ marginLeft: "auto", fontSize: 11 }}>{fmtRate(p.record)}</span>
             </div>
             <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
@@ -310,12 +336,6 @@ function Players({ r, facts }: { r: Report; facts: Facts | null }) {
                 dead {s.time_dead_pct.toFixed(1)}%
               </span>
             </div>
-            {n && (
-              <Claim c={n}>
-                {n.comfort_picks.length > 0 && <div className="muted" style={{ fontSize: 11 }}>comfort picks: {n.comfort_picks.join(", ")}</div>}
-                {n.notes}
-              </Claim>
-            )}
           </div>
         );
       })}
@@ -324,12 +344,22 @@ function Players({ r, facts }: { r: Report; facts: Facts | null }) {
 }
 
 function Draft({ r, facts }: { r: Report; facts: Facts | null }) {
-  if (!facts || facts.draft.games === 0) return <div className="card"><div className="empty">No draft data in these replays.</div></div>;
+  if (!facts || facts.overview.games === 0) return <div className="card"><div className="empty">No draft data in these replays.</div></div>;
   const d = facts.draft;
-  const a = r.analysis?.draft;
+  const g = r.analysis?.general;
+  const names = pidNames(facts);
   const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))", gap: 12, margin: "12px 0" } as const;
+  const faced = d.faced ?? [];
   return (
     <>
+      {g && (g.bans.length + g.picks.length + g.considerations.length > 0) && (
+        <div className="card">
+          <div className="card-hd"><h2>Draft plan — any map</h2></div>
+          {g.bans.map((h, i) => <HeroCallRow key={`b${i}`} h={h} kind="ban" names={names} />)}
+          {g.picks.map((h, i) => <HeroCallRow key={`p${i}`} h={h} kind="pick" names={names} />)}
+          {g.considerations.map((c, i) => <Claim key={`c${i}`} c={c}>{c.point}</Claim>)}
+        </div>
+      )}
       <div className="card"><div className="sc-grid">
         {rateKpi("Had first pick", d.first_pick)}
         <Kpi label="Win rate with first pick" value={fmtRate(d.first_pick_record)} />
@@ -350,22 +380,18 @@ function Draft({ r, facts }: { r: Report; facts: Facts | null }) {
           ))}
         </div>
       </div>
-      {a && (a.tendencies.length > 0 || a.recommended_bans.length > 0 || a.recommended_picks.length > 0) && (
+      {faced.length > 0 && (
         <div className="card">
-          <div className="card-hd"><h2>Analysis — draft</h2></div>
-          {a.tendencies.map((t, i) => <Claim key={`t${i}`} c={t}>{t.claim}</Claim>)}
-          {a.recommended_bans.map((b, i) => (
-            <Claim key={`b${i}`} c={b}>
-              <span className="bdg b-loss" style={{ marginRight: 8 }}>ban</span>
-              <b>{b.hero}</b>{b.map && <span className="muted"> on {b.map}</span>} — {b.why}
-            </Claim>
-          ))}
-          {a.recommended_picks.map((b, i) => (
-            <Claim key={`p${i}`} c={b}>
-              <span className="bdg b-win" style={{ marginRight: 8 }}>pick</span>
-              <b>{b.hero}</b>{b.map && <span className="muted"> on {b.map}</span>} — {b.why}
-            </Claim>
-          ))}
+          <div className="card-hd"><h2>Heroes picked against them</h2><span className="muted" style={{ fontSize: 11 }}>games faced · their record in those games</span></div>
+          <div className="row" style={{ flexWrap: "wrap", gap: 14 }}>
+            {faced.map((h) => (
+              <span key={h.id} title={h.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, opacity: h.picks.k < 3 ? 0.75 : 1 }}>
+                <Avatar hero={h.hero} size={22} />
+                <span style={{ fontSize: 12 }}>{h.hero}</span>
+                <span className="mono muted" style={{ fontSize: 10 }}>{h.picks.k}g · {fmtRate(h.record)}</span>
+              </span>
+            ))}
+          </div>
         </div>
       )}
     </>
@@ -373,34 +399,42 @@ function Draft({ r, facts }: { r: Report; facts: Facts | null }) {
 }
 
 function Maps({ r, facts }: { r: Report; facts: Facts | null }) {
-  if (!facts || facts.maps.length === 0) return <div className="card"><div className="empty">No map data yet.</div></div>;
-  const notes = r.analysis?.maps ?? [];
-  const list = (cs: Count[]) => cs.slice(0, 4).map((c) => `${c.key} ×${c.count.k}`).join(", ") || "—";
+  const rows = mapsWithPlans(facts, r.analysis?.maps);
+  if (rows.length === 0) return <div className="card"><div className="empty">No map data yet.</div></div>;
+  const names = pidNames(facts);
+  const list = (cs: Count[]) => cs.map((c) => `${c.key} ×${c.count.k}`).join(", ") || "—";
   return (
     <>
-      <div className="card">
-        <table>
-          <thead><tr><th>MAP</th><th>RECORD</th><th>CONFIDENCE</th><th>THEY PICK</th><th>THEY BAN</th><th>BANNED VS THEM</th></tr></thead>
-          <tbody>
-            {facts.maps.map((m) => (
-              <tr key={m.id} title={`${m.id}.record`}>
-                <td>{m.map}</td>
-                <td className="mono">{fmtRate(m.record)}</td>
-                <td className="mono muted">{fmtWilson(m.wilson)}</td>
-                <td>{m.picks.slice(0, 5).map((h) => `${h.hero} ×${h.picks.k}`).join(", ")}</td>
-                <td>{list(m.bans)}</td>
-                <td>{list(m.bans_against)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {notes.length > 0 && (
-        <div className="card">
-          <div className="card-hd"><h2>Analysis — maps</h2></div>
-          {notes.map((m, i) => <Claim key={i} c={m}><b>{m.map}</b> — {m.assessment}</Claim>)}
+      {rows.map(({ map, facts: m, plan }) => (
+        <div key={map} className="card">
+          <div className="card-hd">
+            <h2>{map}</h2>
+            {m && <span className="mono" style={{ fontSize: 11 }}>{fmtRate(m.record)}</span>}
+            {m && <span className="mono muted" style={{ fontSize: 10 }}>{fmtWilson(m.wilson)}</span>}
+            {!m && <span className="bdg b-qm">not in these replays</span>}
+            <span style={{ marginLeft: "auto" }}>{plan && <Confidence c={plan.confidence} />}</span>
+          </div>
+          {m && (
+            <div className="row" style={{ flexDirection: "column", alignItems: "stretch", gap: 4, fontSize: 11 }}>
+              <div><span className="muted">They picked: </span>
+                {m.picks.map((h) => `${h.hero}${h.by?.length ? ` (${h.by.map((p) => names[p] ?? p).join(", ")})` : ""}`).join(" · ") || "—"}</div>
+              <div><span className="muted">They banned: </span>{list(m.bans)}</div>
+              <div><span className="muted">Banned against them: </span>{list(m.bans_against)}</div>
+            </div>
+          )}
+          {plan ? (
+            <>
+              {plan.overview && <Claim c={plan}><span style={{ color: "var(--text)" }}>{plan.overview}</span></Claim>}
+              <PlanSection title="We ban" empty={plan.bans.length === 0}>{plan.bans.map((h, i) => <HeroCallRow key={i} h={h} kind="ban" names={names} />)}</PlanSection>
+              <PlanSection title="We pick" empty={plan.picks.length === 0}>{plan.picks.map((h, i) => <HeroCallRow key={i} h={h} kind="pick" names={names} />)}</PlanSection>
+              <PlanSection title="They will likely pick" empty={plan.their_picks.length === 0}>{plan.their_picks.map((h, i) => <HeroCallRow key={i} h={h} kind="theirs" names={names} />)}</PlanSection>
+              <PlanSection title="Consider" empty={plan.considerations.length === 0}>{plan.considerations.map((c, i) => <Claim key={i} c={c}>{c.point}</Claim>)}</PlanSection>
+            </>
+          ) : (
+            r.analysis && <div className="sc-claim muted">No plan for this map in the analysis — see the Draft tab for advice on any map.</div>
+          )}
         </div>
-      )}
+      ))}
     </>
   );
 }

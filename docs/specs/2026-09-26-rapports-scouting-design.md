@@ -23,6 +23,7 @@ Chaque rapport est un objet durable : titre libre modifiable, horodatage, liste 
 | Origine des replays | les parties de l'adversaire **contre d'autres équipes, et parfois contre nous** |
 | Utilisateurs | **l'opérateur seul** — pas de partage, pas de lien public |
 | Analyses | **une seule par rapport** ; réimporter **écrase** l'analyse en place |
+| Contenu de l'analyse (2026-09-26, après la v1) | **la draft uniquement, carte par carte** : quelles cartes choisir ou éviter, et pour chaque carte quoi bannir, quoi prendre, ce qu'ils vont probablement jouer, quoi prévoir ; plus un plan valable sur toute carte. Plus de notes joueurs ni de plan de jeu général → `format_version: 2` |
 | Règle de roster | le côté cible compte **toujours au moins 3 joueurs de l'équipe principale**, sauf exception ; pour les exceptions, l'opérateur peut désigner un **joueur ancre** |
 | Étape LLM | **manuelle** (copier-coller ou fichier) : l'opérateur n'a pas d'API OpenAI/Anthropic — aucun appel de LLM depuis l'app |
 | Noms des joueurs | **inclus** dans le pack, sans option pour les retirer (ce ne sont que des pseudos) |
@@ -202,7 +203,8 @@ approximé.
 | Cartes | par carte : parties, V/D, winrate + **intervalle de Wilson 95 %** (`map.<carte>.record`) |
 | Joueurs | par joueur `pN` : parties, héros joués (parties, victoires), répartition des rôles, KDA moyen, dégâts héros/min, siège/min, soins/min, morts/partie, part des dégâts de l'équipe (`pN.*`) |
 | Héros × carte | héros pris par la cible sur chaque carte (`map.<carte>.picks`) |
-| Draft | taux de first pick ; bans faits par la cible (global, par carte, par phase) ; bans subis ; héros pris en first pick ; rôle pris en premier ; derniers picks (`draft.*`) |
+| Draft | taux de first pick ; bans faits par la cible (global, par carte, par phase) ; bans subis ; héros pris en first pick ; rôle pris en premier ; derniers picks ; **héros joués contre eux** avec leur bilan dans ces parties (`draft.faced.*`) (`draft.*`) |
+| Picks par carte | héros pris par la cible sur chaque carte **avec le joueur `pN` qui l'a joué** (`map.<carte>.pick.*`) |
 | Déroulé | winrate selon premier à 10, premier fort, premier objectif ; écart de niveau moyen à 10/15/20 min ; winrate par tranche de durée ; remontées et parties perdues en tête (`flow.*`) |
 
 Règles :
@@ -235,29 +237,37 @@ embarqué), pas en dur dans le code.
 
 ## Volet E — Import de l'analyse
 
-### Format imposé (`format_version: 1`)
+### Format imposé (`format_version: 2` — plan de draft carte par carte)
+
+La v1 (notes joueurs, tendances, plan de jeu général) est remplacée le 2026-09-26 à la demande de
+l'opérateur : il ne veut que la draft, carte par carte. Une réponse v1 est refusée à l'import
+(« copy the pack again »).
 
 ```json
 {
-  "format_version": 1,
+  "format_version": 2,
   "report_id": 12,
   "facts_version": 3,
   "model": "claude-opus-5-5",
-  "summary": "…",
-  "players": [
-    { "id": "p1", "role": "Tank", "threat": "high",
-      "comfort_picks": ["Johanna", "Diablo"],
-      "notes": "…", "evidence": ["p1.hero.johanna"] }
-  ],
-  "draft": {
-    "tendencies":       [{ "claim": "…", "evidence": ["draft.first_pick.rate"] }],
-    "recommended_bans": [{ "hero": "…", "map": "…", "why": "…", "evidence": ["…"] }],
-    "recommended_picks":[{ "hero": "…", "map": "…", "why": "…", "evidence": ["…"] }]
+  "summary": "… identité de draft de l'équipe (3-5 phrases)",
+  "map_choice": {
+    "pick":  [{ "map": "…", "why": "…", "evidence": ["map.x.record"] }],
+    "avoid": [{ "map": "…", "why": "…", "evidence": ["…"] }]
   },
-  "maps":      [{ "map": "…", "assessment": "…", "evidence": ["…"] }],
-  "game_plan": [{ "point": "…", "confidence": "low|medium|high", "evidence": ["…"] }]
+  "maps": [{
+    "map": "Braxis Holdout", "confidence": "low|medium|high",
+    "overview": "ce qu'on attend d'eux sur cette carte", "evidence": ["…"],
+    "bans":        [{ "hero": "…", "phase": "first|mid", "why": "…", "evidence": ["…"] }],
+    "picks":       [{ "hero": "…", "why": "…", "evidence": ["…"] }],
+    "their_picks": [{ "hero": "…", "player": "p3", "why": "…", "evidence": ["…"] }],
+    "considerations": [{ "point": "…", "evidence": ["…"] }]
+  }],
+  "general": { "bans": [], "picks": [], "considerations": [] }
 }
 ```
+
+Une entrée `maps` par carte présente dans les faits ; `general` vaut pour toute carte, y compris
+celles absentes des replays. Chaque élément porte ses `evidence` (vérifiées à l'import).
 
 Le JSON Schema est un fichier du dépôt, embarqué dans le pack et utilisé à la validation.
 
@@ -300,12 +310,17 @@ Bouton « New report » (titre + nom d'équipe → ouvre le rapport).
 - **En-tête** : titre **éditable en place**, équipe cible, dates de création / mise à jour,
   statut, actions : *Copy pack*, *Download .md*, *Download .xlsx*, *Import analysis*.
 - **Onglets** :
-  - **Overview** — synthèse de l'analyse (si importée) + plan de jeu avec niveau de confiance ;
+  - **Overview** — synthèse de draft + **choix de carte** (à prendre / à éviter) ;
     faits d'ensemble.
   - **Players** — une carte par joueur (`pN` + nom + avatar) : pool de héros, rôles, stats clés,
     niveau de menace et notes de l'analyse.
-  - **Draft** — tendances, bans par carte, first picks ; bans/picks recommandés par l'analyse.
-  - **Maps** — bilan par carte avec intervalle de confiance ; évaluation de l'analyse.
+  - **Draft** — plan « toute carte » de l'analyse, puis bans, first/last picks, héros joués contre
+    eux avec leur bilan.
+  - **Maps** — **le plan de draft** : une carte par map (bilan + intervalle, ce qu'ils ont pris et
+    par qui, leurs bans, les bans subis), puis « We ban » (avec phase), « We pick », « They will
+    likely pick » (avec le joueur), « Consider », et le niveau de confiance. Les cartes que
+    l'analyse traite sans qu'elles soient dans les replays apparaissent aussi (« not in these
+    replays »).
   - **Games** — la liste des replays du rapport, zone de dépôt, statut par fichier, côté cible
     détecté et **par quelle règle** (roster / ancre / manuel), choix manuel du côté pour une
     partie non déterminée, retrait d'un replay.

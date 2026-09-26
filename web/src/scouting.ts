@@ -3,7 +3,7 @@
 
 export interface Rate { k: number; n: number }
 export interface FactRef { label: string; text: string; n: number; low: boolean }
-export interface HeroRow { id: string; hero: string; picks: Rate; record: Rate }
+export interface HeroRow { id: string; hero: string; picks: Rate; record: Rate; by?: string[] }
 export interface Count { id: string; key: string; count: Rate }
 export interface AvgStats {
   kills: number; deaths: number; assists: number; kill_participation_pct: number;
@@ -22,6 +22,8 @@ export interface DraftFacts {
   games: number; first_pick: Rate; first_pick_record: Rate; second_pick_record: Rate;
   bans_first: Count[]; bans_mid: Count[]; bans_against: Count[];
   openers: Count[]; opener_roles: Count[]; last_picks: Count[];
+  /** Héros joués contre eux : picks = parties affrontées, record = leur bilan dans ces parties. */
+  faced?: HeroRow[];
 }
 export interface FlowFacts {
   first_to_10: Rate; first_to_10_record: Rate; first_fort: Rate; first_fort_record: Rate;
@@ -55,17 +57,20 @@ export interface Snapshot {
 /** Preuve résolue par le serveur contre les faits courants. */
 export interface Evidence { id: string; known: boolean; label?: string; text?: string; n?: number; low?: boolean }
 interface Cited { evidence: Evidence[]; unsupported: boolean }
+export type HeroCall = Cited & { hero: string; phase: string | null; player: string | null; why: string };
+export type MapCall = Cited & { map: string; why: string };
+export type Point = Cited & { point: string };
+export type MapPlan = Cited & {
+  map: string; confidence: string | null; overview: string;
+  bans: HeroCall[]; picks: HeroCall[]; their_picks: HeroCall[]; considerations: Point[];
+};
+/** Plan de draft importé (format v2) : choix de carte, plan par carte, plan général. */
 export interface Analysis {
   model: string | null;
   summary: string;
-  players: (Cited & { id: string; role: string | null; threat: string | null; comfort_picks: string[]; notes: string })[];
-  draft: {
-    tendencies: (Cited & { claim: string })[];
-    recommended_bans: (Cited & { hero: string; map: string | null; why: string })[];
-    recommended_picks: (Cited & { hero: string; map: string | null; why: string })[];
-  };
-  maps: (Cited & { map: string; assessment: string })[];
-  game_plan: (Cited & { point: string; confidence: string | null })[];
+  map_choice: { pick: MapCall[]; avoid: MapCall[] };
+  maps: MapPlan[];
+  general: { bans: HeroCall[]; picks: HeroCall[]; considerations: Point[] };
 }
 
 export type ReportStatus = "empty" | "ready" | "analyzed" | "stale";
@@ -144,4 +149,18 @@ export function uploadLabel(r: { status?: string; error_class?: string; target_t
 export function targetNames(g: ScoutGame): string[] | null {
   if (g.target_team !== 0 && g.target_team !== 1) return null;
   return g.teams[g.target_team].map((p) => p.name);
+}
+
+/** Regroupe les faits par carte et les plans de l'analyse par carte (cartes des deux côtés, les
+ *  cartes jouées d'abord, dans l'ordre des faits). Rapprochement insensible à la casse. */
+export function mapsWithPlans(facts: Facts | null | undefined, plans: MapPlan[] | undefined): { map: string; facts: MapFacts | null; plan: MapPlan | null }[] {
+  const key = (m: string) => m.trim().toLowerCase();
+  const byKey = new Map((plans ?? []).map((p) => [key(p.map), p]));
+  const out: { map: string; facts: MapFacts | null; plan: MapPlan | null }[] = (facts?.maps ?? []).map((m) => {
+    const plan = byKey.get(key(m.map)) ?? null;
+    byKey.delete(key(m.map));
+    return { map: m.map, facts: m, plan };
+  });
+  for (const p of byKey.values()) out.push({ map: p.map, facts: null, plan: p });
+  return out;
 }

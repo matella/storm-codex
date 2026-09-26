@@ -1,7 +1,7 @@
 // Tests des helpers purs des rapports de scouting (environnement node).
 import { describe, expect, it } from "vitest";
-import { claimState, day, fmtRate, fmtWilson, pidNames, statusMeta, targetNames, uploadLabel } from "./scouting";
-import type { Facts, ScoutGame } from "./scouting";
+import { claimState, day, fmtRate, fmtWilson, mapsWithPlans, pidNames, statusMeta, targetNames, uploadLabel } from "./scouting";
+import type { Facts, MapPlan, ScoutGame } from "./scouting";
 
 describe("fmtRate / fmtWilson", () => {
   it("k/n et pourcentage arrondi", () => {
@@ -57,5 +57,21 @@ describe("pidNames / day / uploadLabel / targetNames", () => {
     } as unknown as ScoutGame;
     expect(targetNames(g)).toEqual(["B"]);
     expect(targetNames({ ...g, target_team: null })).toBeNull();
+  });
+});
+
+describe("mapsWithPlans", () => {
+  const plan = (map: string) => ({ map } as unknown as MapPlan);
+  it("rapproche faits et plans par carte, casse ignorée ; cartes du plan seul en fin", () => {
+    const facts = { maps: [{ map: "Braxis Holdout" }, { map: "Alterac Pass" }] } as unknown as Facts;
+    const r = mapsWithPlans(facts, [plan("alterac pass"), plan("Sky Temple")]);
+    expect(r.map((x) => [x.map, !!x.facts, !!x.plan])).toEqual([
+      ["Braxis Holdout", true, false],
+      ["Alterac Pass", true, true],
+      ["Sky Temple", false, true],
+    ]);
+  });
+  it("sans analyse : les cartes des faits seules", () => {
+    expect(mapsWithPlans(null, undefined)).toEqual([]);
   });
 });

@@ -512,15 +512,11 @@ mod api_tests {
         assert_eq!(&x[..2], b"PK");
 
         // import : JSON cassé → 422 et rien d'écrit ; valide → importé ; ré-import → écrasé
-        let resp = app(&state).oneshot(req("PUT", format!("/api/scouting/{id}/analysis"), Body::from("```json
-{bad}
-```"))).await.unwrap();
+        let resp = app(&state).oneshot(req("PUT", format!("/api/scouting/{id}/analysis"), Body::from("```json\n{bad}\n```"))).await.unwrap();
         assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        // plan de draft v2 : 1 carte citant un fait réel + un id inconnu, 1 considération sans preuve
         let analysis = |summary: &str| format!(
-            "Here you go:
-```json
-{{\"format_version\":1,\"report_id\":{id},\"facts_version\":{fv},\"summary\":\"{summary}\",\"game_plan\":[{{\"point\":\"x\",\"confidence\":\"low\",\"evidence\":[\"map.industrial_district.record\",\"nope\"]}},{{\"point\":\"y\",\"evidence\":[]}}]}}
-```");
+            "Here you go:\n```json\n{{\"format_version\":2,\"report_id\":{id},\"facts_version\":{fv},\"summary\":\"{summary}\",\"maps\":[{{\"map\":\"Industrial District\",\"confidence\":\"low\",\"overview\":\"o\",\"evidence\":[\"map.industrial_district.record\",\"nope\"],\"considerations\":[{{\"point\":\"y\",\"evidence\":[]}}]}}]}}\n```");
         let resp = app(&state).oneshot(req("PUT", format!("/api/scouting/{id}/analysis"), Body::from(analysis("first")))).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         let v = json_body(resp).await;
@@ -530,8 +526,8 @@ mod api_tests {
         let detail = json_body(app(&state).oneshot(req("GET", format!("/api/scouting/{id}"), Body::empty())).await.unwrap()).await;
         assert_eq!(detail["analysis"]["summary"], "second");
         assert_eq!(detail["status"], "analyzed");
-        assert_eq!(detail["analysis"]["game_plan"][0]["evidence"][0]["known"], true);
-        assert_eq!(detail["analysis"]["game_plan"][0]["evidence"][1]["known"], false);
+        assert_eq!(detail["analysis"]["maps"][0]["evidence"][0]["known"], true);
+        assert_eq!(detail["analysis"]["maps"][0]["evidence"][1]["known"], false);
 
         // isolation : aucune écriture dans uploads/matches pour ce replay
         assert_eq!(counts(state.db.clone(), sha, fp).await, before);

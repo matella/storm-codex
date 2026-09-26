@@ -96,6 +96,9 @@ pub struct HeroRow {
     pub hero: String,
     pub picks: Rate,
     pub record: Rate,
+    /// Joueurs (`pN`) qui l'ont joué, une entrée par partie — renseigné pour les picks par carte.
+    #[serde(default)]
+    pub by: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -156,6 +159,10 @@ pub struct DraftFacts {
     pub openers: Vec<Count>,
     pub opener_roles: Vec<Count>,
     pub last_picks: Vec<Count>,
+    /// Héros joués **contre** eux (toutes parties) : `picks` = parties où ils l'ont affronté,
+    /// `record` = leur bilan dans ces parties.
+    #[serde(default)]
+    pub faced: Vec<HeroRow>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -265,6 +272,7 @@ impl Tally {
                 hero: k.clone(),
                 picks: Rate { k: n, n: of },
                 record: Rate { k: w, n },
+                by: Vec::new(),
             })
             .collect()
     }
@@ -421,11 +429,15 @@ pub fn compute(
             let n = gs.len() as u32;
             let (mut record, mut picks, mut bans, mut against) =
                 (Rate::default(), Tally::default(), Tally::default(), Tally::default());
+            let mut by: BTreeMap<&str, Vec<String>> = BTreeMap::new();
             for g in &gs {
                 let w = won(g);
                 record.add(w);
                 for p in mine(g) {
                     picks.hit(&p.hero, w);
+                    by.entry(p.hero.as_str())
+                        .or_default()
+                        .push(pid_of.get(p.toon.as_str()).cloned().unwrap_or_else(|| p.name.clone()));
                 }
                 for b in &g.summary.bans[g.side as usize] {
                     bans.hit(&b.hero, w);
@@ -437,7 +449,14 @@ pub fn compute(
             let id = format!("map.{}", slug(map));
             MapFacts {
                 wilson: wilson(record),
-                picks: picks.heroes(&format!("{id}.pick"), n),
+                picks: picks
+                    .heroes(&format!("{id}.pick"), n)
+                    .into_iter()
+                    .map(|mut h| {
+                        h.by = by.remove(h.hero.as_str()).unwrap_or_default();
+                        h
+                    })
+                    .collect(),
                 bans: bans.counts(&format!("{id}.ban"), n),
                 bans_against: against.counts(&format!("{id}.ban_against"), n),
                 id,
@@ -502,6 +521,14 @@ pub fn compute(
     draft.openers = open.counts("draft.opener", dn);
     draft.opener_roles = open_role.counts("draft.opener_role", dn);
     draft.last_picks = last.counts("draft.last_pick", dn);
+    let mut faced = Tally::default();
+    for g in games {
+        let w = won(g);
+        for p in theirs(g) {
+            faced.hit(&p.hero, w);
+        }
+    }
+    draft.faced = faced.heroes("draft.faced", n_games);
 
     // ── déroulé ──
     let mut flow = FlowFacts::default();
@@ -707,8 +734,14 @@ pub fn ordered_index(f: &Facts) -> Vec<(String, FactRef)> {
             put(
                 &h.id,
                 FactRef {
-                    label: format!("{} — {} picked (games, record)", m.map, h.hero),
-                    text: format!("{} of {}, {}", h.picks.k, games(h.picks.n), h.record.text()),
+                    label: format!("{} — {} picked by them (games, record, players)", m.map, h.hero),
+                    text: format!(
+                        "{} of {}, {}{}",
+                        h.picks.k,
+                        games(h.picks.n),
+                        h.record.text(),
+                        if h.by.is_empty() { String::new() } else { format!(", played by {}", h.by.join(", ")) }
+                    ),
                     n: h.picks.n,
                     low: h.picks.n < LOW_SAMPLE,
                 },
@@ -736,6 +769,17 @@ pub fn ordered_index(f: &Facts) -> Vec<(String, FactRef)> {
         for c in list {
             put(&c.id, rate_ref(format!("{} — {what}", c.key), c.count));
         }
+    }
+    for h in &d.faced {
+        put(
+            &h.id,
+            FactRef {
+                label: format!("{} picked against them — their record in those games", h.hero),
+                text: format!("faced in {} of {}, their record {}", h.picks.k, games(h.picks.n), h.record.text()),
+                n: h.picks.k,
+                low: h.picks.k < LOW_SAMPLE,
+            },
+        );
     }
     let fl = &f.flow;
     put("flow.first_to_10", rate_ref("Reached level 10 first".into(), fl.first_to_10));
@@ -776,7 +820,22 @@ pub fn ordered_index(f: &Facts) -> Vec<(String, FactRef)> {
     }
     // un fait sans aucune partie (ex. tranche de durée vide) n'apporte rien au LLM : hors index
     ix.retain(|(id, r)| r.n > 0 || id.starts_with("overview."));
+    // ordre de lecture orienté draft : cartes et draft avant les joueurs (tri stable)
+    ix.sort_by_key(|(id, _)| section_rank(id));
     ix
+}
+
+/// Rang d'une section de faits dans le pack : vue d'ensemble, cartes, draft, joueurs, déroulé,
+/// parties.
+pub fn section_rank(id: &str) -> u8 {
+    match id.split('.').next().unwrap_or("") {
+        "overview" => 0,
+        "map" => 1,
+        "draft" => 2,
+        "flow" => 4,
+        "game" => 5,
+        _ => 3, // pN
+    }
 }
 
 #[cfg(test)]
@@ -882,6 +941,22 @@ mod tests {
         assert_eq!(d.bans_against[0].key, "Garrosh");
         assert_eq!(d.openers[0].key, "H_r1");
         assert_eq!(d.opener_roles[0].key, "Tank");
+    }
+
+    #[test]
+    fn heros_affrontes_et_picks_par_carte_attribues() {
+        let f = run(&sample(), &[0, 1]);
+        // o1..o5 sont en face dans les deux parties (1 victoire, 1 défaite de la cible)
+        let o1 = f.draft.faced.iter().find(|h| h.hero == "H_o1").unwrap();
+        assert_eq!(o1.id, "draft.faced.h_o1");
+        assert_eq!(o1.picks, Rate { k: 2, n: 2 });
+        assert_eq!(o1.record, Rate { k: 1, n: 2 });
+        assert!(f.index["draft.faced.h_o1"].text.contains("their record 1/2"));
+        // picks par carte : qui l'a joué
+        let braxis = f.maps.iter().find(|m| m.map == "Braxis Holdout").unwrap();
+        let r1 = braxis.picks.iter().find(|h| h.hero == "H_r1").unwrap();
+        assert_eq!(r1.by, vec!["p1".to_string()]);
+        assert!(f.index[&r1.id].text.contains("played by p1"));
     }
 
     #[test]

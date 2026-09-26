@@ -60,7 +60,7 @@ jamais dans `uploads`/`matches`/`match_players`. Toute mutation relance le recal
 | `DELETE /api/scouting/{id}/replays/{gid}` 🔒 | retire une partie |
 | `GET /api/scouting/{id}/pack.md` | pack LLM Markdown (prompt, joueurs `pN`, faits avec ids, parties, format de réponse) |
 | `GET /api/scouting/{id}/pack.xlsx` | mêmes faits en classeur (README, Facts, Players, Heroes, Maps, Draft, Games) |
-| `PUT /api/scouting/{id}/analysis` 🔒 | corps = texte brut de la réponse du LLM ; extrait/valide/écrase → `{warnings, tally}` ; `422` si JSON introuvable/invalide, `format_version` ≠ 1 ou `report_id` d'un autre rapport (rien n'est écrasé) |
+| `PUT /api/scouting/{id}/analysis` 🔒 | corps = texte brut de la réponse du LLM ; extrait/valide/écrase → `{warnings, tally}` ; `422` si JSON introuvable/invalide, `format_version` ≠ 2 (plan de draft carte par carte ; la v1 est refusée) ou `report_id` d'un autre rapport (rien n'est écrasé) |
 | `DELETE /api/scouting/{id}/analysis` 🔒 | retire l'analyse |
 
 ## Simulateur de draft (`draft/api.rs`)

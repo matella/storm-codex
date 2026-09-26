@@ -1,84 +1,95 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Storm Codex scouting analysis",
+  "title": "Storm Codex scouting draft plan",
   "type": "object",
-  "required": ["format_version", "report_id", "facts_version", "summary"],
+  "required": ["format_version", "report_id", "facts_version", "summary", "maps"],
   "properties": {
-    "format_version": { "const": 1 },
+    "format_version": { "const": 2 },
     "report_id": { "type": "integer" },
     "facts_version": { "type": "integer" },
     "model": { "type": "string", "description": "Name of the model that wrote this analysis" },
-    "summary": { "type": "string", "description": "5-8 sentence overview of the team" },
-    "players": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["id", "notes", "evidence"],
-        "properties": {
-          "id": { "type": "string", "pattern": "^p[0-9]+$" },
-          "role": { "type": "string" },
-          "threat": { "enum": ["low", "medium", "high"] },
-          "comfort_picks": { "type": "array", "items": { "type": "string" } },
-          "notes": { "type": "string" },
-          "evidence": { "type": "array", "items": { "type": "string" } }
-        }
-      }
-    },
-    "draft": {
+    "summary": { "type": "string", "description": "3-5 sentences: their draft identity" },
+    "map_choice": {
       "type": "object",
       "properties": {
-        "tendencies": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": ["claim", "evidence"],
-            "properties": {
-              "claim": { "type": "string" },
-              "evidence": { "type": "array", "items": { "type": "string" } }
-            }
-          }
-        },
-        "recommended_bans": { "$ref": "#/$defs/heroRec" },
-        "recommended_picks": { "$ref": "#/$defs/heroRec" }
+        "pick": { "type": "array", "items": { "$ref": "#/$defs/mapCall" } },
+        "avoid": { "type": "array", "items": { "$ref": "#/$defs/mapCall" } }
       }
     },
     "maps": {
       "type": "array",
+      "description": "One entry per map present in the facts",
       "items": {
         "type": "object",
-        "required": ["map", "assessment", "evidence"],
+        "required": ["map", "confidence", "overview", "evidence", "bans", "picks"],
         "properties": {
           "map": { "type": "string" },
-          "assessment": { "type": "string" },
-          "evidence": { "type": "array", "items": { "type": "string" } }
+          "confidence": { "enum": ["low", "medium", "high"] },
+          "overview": { "type": "string", "description": "What to expect from them on this map" },
+          "evidence": { "$ref": "#/$defs/evidence" },
+          "bans": { "type": "array", "items": { "$ref": "#/$defs/ban" } },
+          "picks": { "type": "array", "items": { "$ref": "#/$defs/heroCall" } },
+          "their_picks": { "type": "array", "items": { "$ref": "#/$defs/theirPick" } },
+          "considerations": { "type": "array", "items": { "$ref": "#/$defs/point" } }
         }
       }
     },
-    "game_plan": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["point", "confidence", "evidence"],
-        "properties": {
-          "point": { "type": "string" },
-          "confidence": { "enum": ["low", "medium", "high"] },
-          "evidence": { "type": "array", "items": { "type": "string" } }
-        }
+    "general": {
+      "type": "object",
+      "description": "Advice valid on any map, including maps absent from the replays",
+      "properties": {
+        "bans": { "type": "array", "items": { "$ref": "#/$defs/ban" } },
+        "picks": { "type": "array", "items": { "$ref": "#/$defs/heroCall" } },
+        "considerations": { "type": "array", "items": { "$ref": "#/$defs/point" } }
       }
     }
   },
   "$defs": {
-    "heroRec": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["hero", "why", "evidence"],
-        "properties": {
-          "hero": { "type": "string" },
-          "map": { "type": "string", "description": "Optional: map this applies to" },
-          "why": { "type": "string" },
-          "evidence": { "type": "array", "items": { "type": "string" } }
-        }
+    "evidence": { "type": "array", "items": { "type": "string" }, "description": "Fact ids from the pack" },
+    "mapCall": {
+      "type": "object",
+      "required": ["map", "why", "evidence"],
+      "properties": {
+        "map": { "type": "string" },
+        "why": { "type": "string" },
+        "evidence": { "$ref": "#/$defs/evidence" }
+      }
+    },
+    "heroCall": {
+      "type": "object",
+      "required": ["hero", "why", "evidence"],
+      "properties": {
+        "hero": { "type": "string" },
+        "why": { "type": "string" },
+        "evidence": { "$ref": "#/$defs/evidence" }
+      }
+    },
+    "ban": {
+      "type": "object",
+      "required": ["hero", "phase", "why", "evidence"],
+      "properties": {
+        "hero": { "type": "string" },
+        "phase": { "enum": ["first", "mid"] },
+        "why": { "type": "string" },
+        "evidence": { "$ref": "#/$defs/evidence" }
+      }
+    },
+    "theirPick": {
+      "type": "object",
+      "required": ["hero", "why", "evidence"],
+      "properties": {
+        "hero": { "type": "string" },
+        "player": { "type": "string", "pattern": "^p[0-9]+$" },
+        "why": { "type": "string" },
+        "evidence": { "$ref": "#/$defs/evidence" }
+      }
+    },
+    "point": {
+      "type": "object",
+      "required": ["point", "evidence"],
+      "properties": {
+        "point": { "type": "string" },
+        "evidence": { "$ref": "#/$defs/evidence" }
       }
     }
   }

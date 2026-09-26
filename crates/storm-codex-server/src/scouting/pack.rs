@@ -37,25 +37,34 @@ fn section(id: &str) -> &'static str {
 }
 
 fn example(meta: &PackMeta, f: &Facts) -> String {
-    let map_id = f.maps.first().map_or("map.<map>.record".to_string(), |m| format!("{}.record", m.id));
+    let (map, map_id) = f.maps.first().map_or(("<map>".to_string(), "map.<map>.record".to_string()), |m| {
+        (m.map.clone(), format!("{}.record", m.id))
+    });
     serde_json::to_string_pretty(&serde_json::json!({
-        "format_version": 1,
+        "format_version": crate::scouting::analysis::FORMAT_VERSION,
         "report_id": meta.report_id,
         "facts_version": meta.facts_version,
         "model": "<your model name>",
-        "summary": "<5-8 sentences: identity of the team, strengths, weaknesses>",
-        "players": [{
-            "id": "p1", "role": "<role>", "threat": "high",
-            "comfort_picks": ["<hero>"], "notes": "<what to expect from this player>",
-            "evidence": ["p1.record"]
-        }],
-        "draft": {
-            "tendencies": [{ "claim": "<draft habit>", "evidence": ["draft.first_pick"] }],
-            "recommended_bans": [{ "hero": "<hero>", "map": "<optional map>", "why": "<reason>", "evidence": ["<fact id>"] }],
-            "recommended_picks": [{ "hero": "<hero>", "why": "<reason>", "evidence": ["<fact id>"] }]
+        "summary": "<3-5 sentences: their draft identity>",
+        "map_choice": {
+            "pick": [{ "map": "<map to choose against them>", "why": "<reason>", "evidence": ["<fact id>"] }],
+            "avoid": [{ "map": "<map to avoid>", "why": "<reason>", "evidence": ["<fact id>"] }]
         },
-        "maps": [{ "map": "<map>", "assessment": "<how they do there>", "evidence": [map_id] }],
-        "game_plan": [{ "point": "<actionable advice>", "confidence": "medium", "evidence": ["<fact id>"] }]
+        "maps": [{
+            "map": map,
+            "confidence": "low",
+            "overview": "<what to expect from them on this map>",
+            "evidence": [map_id],
+            "bans": [{ "hero": "<hero>", "phase": "first", "why": "<reason>", "evidence": ["<fact id>"] }],
+            "picks": [{ "hero": "<hero for us>", "why": "<reason>", "evidence": ["<fact id>"] }],
+            "their_picks": [{ "hero": "<hero>", "player": "p1", "why": "<reason>", "evidence": ["<fact id>"] }],
+            "considerations": [{ "point": "<draft consideration>", "evidence": ["<fact id>"] }]
+        }],
+        "general": {
+            "bans": [{ "hero": "<hero>", "phase": "mid", "why": "<reason>", "evidence": ["<fact id>"] }],
+            "picks": [{ "hero": "<hero>", "why": "<reason>", "evidence": ["<fact id>"] }],
+            "considerations": [{ "point": "<applies on any map>", "evidence": ["<fact id>"] }]
+        }
     }))
     .unwrap_or_default()
 }
@@ -170,7 +179,7 @@ pub fn markdown(meta: &PackMeta, f: &Facts) -> String {
 
     push(&mut out, "## Response format");
     push(&mut out, "");
-    push(&mut out, "Answer with ONE ```json code block containing an object like this example (all sections optional except `format_version`, `report_id`, `facts_version`, `summary`):");
+    push(&mut out, "Answer with ONE ```json code block containing an object like this example — one `maps` entry per map present in the facts (required fields: `format_version`, `report_id`, `facts_version`, `summary`, `maps`):");
     push(&mut out, "");
     push(&mut out, "```json");
     push(&mut out, &example(meta, f));
@@ -203,6 +212,10 @@ mod tests {
         }
         assert!(md.contains("report_id: **9**"));
         assert!(md.contains("\"facts_version\": 4"));
+        assert!(md.contains("\"format_version\": 2"));
+        // ordre orienté draft : cartes et draft avant les joueurs
+        let (maps, draft, players) = (md.find("### Maps").unwrap(), md.find("### Draft").unwrap(), md.find("### Players").unwrap());
+        assert!(maps < draft && draft < players);
         assert!(md.contains("LOW SAMPLE"));
         assert!(md.contains("```json"));
         // l'exemple embarqué est lui-même importable

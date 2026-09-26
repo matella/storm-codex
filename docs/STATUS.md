@@ -19,6 +19,12 @@ les replays adverses ne touchent jamais `uploads`/`matches` — test d'intégrat
   leurs réponses (l'import tolère la prose autour du JSON) ; critère B — valider la détection sur
   un lot plus large (parties de l'adversaire contre plusieurs équipes) ; déploiement box
   (rsync + `docker compose up -d --build`, la migration 0010 s'applique au démarrage).
+- **Recentrage draft (2026-09-26, demande opérateur)** : l'analyse devient un **plan de draft
+  carte par carte** (`format_version: 2` : choix de carte, par carte bans avec phase / picks /
+  picks adverses attendus avec le joueur / points à prévoir, plan toute carte) ; la v1 est refusée
+  à l'import. Nouveaux faits : héros joués contre eux avec leur bilan (`draft.faced.*`), joueur
+  derrière chaque pick par carte ; pack réordonné (cartes et draft avant joueurs). Vérifié en
+  navigateur sur la série : plan v2 importé, 28 éléments, 0 sans preuve.
 - Hors v1 (spec volet F) : fiche de match / visionneuse 2D pour les replays de scouting,
   passerelle vers le simulateur de draft.
 - Aperçu local : config `storm-codex-server` dans `.claude/launch.json` (release, port 8089, sert
