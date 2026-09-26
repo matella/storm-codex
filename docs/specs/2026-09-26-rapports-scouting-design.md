@@ -22,6 +22,11 @@ Chaque rapport est un objet durable : titre libre modifiable, horodatage, liste 
 | Origine des replays | les parties de l'adversaire **contre d'autres équipes, et parfois contre nous** |
 | Utilisateurs | **l'opérateur seul** — pas de partage, pas de lien public |
 | Analyses | **une seule par rapport** ; réimporter **écrase** l'analyse en place |
+| Règle de roster | le côté cible compte **toujours au moins 3 joueurs de l'équipe principale**, sauf exception ; pour les exceptions, l'opérateur peut désigner un **joueur ancre** |
+| Étape LLM | **manuelle** (copier-coller ou fichier) : l'opérateur n'a pas d'API OpenAI/Anthropic — aucun appel de LLM depuis l'app |
+| Noms des joueurs | **inclus** dans le pack, sans option pour les retirer (ce ne sont que des pseudos) |
+| Langue de l'analyse | **anglais** (comme l'UI) |
+| Lien avec `teams` | **non** — le roster d'un rapport vit dans le rapport |
 
 ## L'existant (état au 2026-09-26)
 
@@ -30,7 +35,6 @@ Chaque rapport est un objet durable : titre libre modifiable, horodatage, liste 
 | Draft des parties perso | `crates/storm-stats/src/process.rs:2239` | `match.bans`, `match.picks` (+ `first`), `players.*.turn` — le mode `Custom` est dans la liste des modes draftés (`process.rs:2246-2255`) |
 | Upload + parse | `crates/storm-codex-server/src/upload.rs` | pipeline archive → parse → projection, `game_fingerprint` (`upload.rs:22`) |
 | Auth d'écriture | `crates/storm-codex-server/src/auth.rs` | `is_admin` : Bearer `ADMIN_TOKEN`, mode ouvert s'il est absent |
-| Équipes | table `teams` (roster JSONB de ToonHandles) | éventuel pré-remplissage du roster (question ouverte 2) |
 | Simulateur de draft | `/draft`, `draft_live` | passerelle éventuelle (volet F) |
 | Export CSV | `GET /api/matches.csv` | précédent d'export, **non réutilisé** (voir décision 1) |
 
@@ -61,8 +65,8 @@ Chaque rapport est un objet durable : titre libre modifiable, horodatage, liste 
    de replay, roster modifié) et versionné (`facts_version`). Les lectures ne re-décodent rien et
    ne rechargent pas 30 objets `match` : elles servent l'instantané.
 6. **Les joueurs sont désignés `p1`…`pN` dans le pack**, pas par leur BattleTag : identifiants
-   courts que le LLM recopie sans erreur, et que l'UI retraduit. Les noms figurent dans une table
-   de correspondance du pack (désactivable, question ouverte 3).
+   courts que le LLM recopie sans erreur, et que l'UI retraduit. Les noms figurent toujours dans
+   une table de correspondance du pack (décision opérateur : ce ne sont que des pseudos).
 7. **Routes d'écriture protégées** comme la gestion existante (`is_admin`, 🔒 si `ADMIN_TOKEN`).
 
 ## Volet A — Vérification préalable : le draft des parties perso (porte d'entrée)
@@ -89,6 +93,7 @@ CREATE TABLE scouting_reports (
     title                TEXT        NOT NULL,
     target_name          TEXT,                       -- nom libre de l'équipe scoutée
     roster               JSONB       NOT NULL DEFAULT '[]',  -- toon_handles confirmés par l'opérateur
+    anchors              JSONB       NOT NULL DEFAULT '[]',  -- toon_handles ancres (exceptions)
     facts                JSONB,                      -- instantané des faits (volet C)
     facts_version        INT         NOT NULL DEFAULT 0,
     analysis             JSONB,                      -- analyse importée validée (volet E), écrasable
@@ -110,6 +115,7 @@ CREATE TABLE scouting_games (
     map            TEXT,
     build          INT,
     target_team    INT,                              -- 0/1 ; NULL = équipe cible non déterminée
+    target_source  TEXT,                             -- 'roster' | 'anchor' | 'manual' ; NULL si non déterminée
     data           JSONB       NOT NULL,             -- sortie storm-stats complète {match, players}
     parser_version INT         NOT NULL,
     UNIQUE (report_id, fingerprint)
@@ -127,11 +133,24 @@ CREATE INDEX scouting_games_report_idx ON scouting_games (report_id);
 
 Les parties sont celles de l'adversaire contre des équipes variées, parfois contre nous :
 
-1. **Candidats** : les `toon_handle` présents dans au moins 50 % des parties du rapport.
-2. **Côté cible d'une partie** = le côté qui contient **au moins 3 candidats confirmés**. Moins de
-   3 → `target_team = NULL`, partie affichée « équipe non trouvée » et **exclue des faits**.
-3. L'opérateur **confirme ou corrige** le roster (coche/décoche, ajoute un remplaçant) ; toute
-   modification relance l'étape 2 puis le calcul des faits.
+Règle de l'opérateur : le côté cible compte **toujours au moins 3 joueurs de l'équipe
+principale**, sauf exception — et pour les exceptions, un **joueur ancre**.
+
+1. **Candidats** : les `toon_handle` présents dans au moins 50 % des parties du rapport. Si une
+   ancre est déjà définie, la détection part d'elle : candidats = joueurs du même côté que l'ancre
+   dans au moins 50 % des parties de l'ancre (plus robuste quand le lot contient beaucoup de
+   parties contre une même équipe, nous compris).
+2. **Côté cible d'une partie**, dans cet ordre :
+   1. le côté qui contient **au moins 3 joueurs du roster confirmé** → `target_source = 'roster'` ;
+   2. sinon, le côté qui contient **un joueur ancre** → `'anchor'` (l'exception : line-up remaniée) ;
+   3. sinon, **choix manuel** de l'opérateur dans l'onglet Games → `'manual'`.
+
+   Tant qu'aucune règle ne tranche : `target_team = NULL`, partie affichée « team not found » et
+   **exclue des faits**. Une ancre présente des deux côtés (cas impossible en jeu, donc donnée
+   corrompue) → non déterminée.
+3. L'opérateur **confirme ou corrige** le roster (coche/décoche, ajoute un joueur) et désigne
+   **0, 1 ou plusieurs ancres** ; toute modification relance l'étape 2 (les choix manuels sont
+   conservés) puis le calcul des faits.
 4. Joueurs du côté cible hors roster confirmé : comptés comme **remplaçants** (apparaissent dans
    les faits joueurs avec leur nombre de parties).
 
@@ -172,11 +191,11 @@ Deux sorties, même contenu :
 
 1. **`GET /api/scouting/{id}/pack.md`** (et bouton « Copier le pack ») — **format principal**,
    lisible par tous les LLM y compris locaux :
-   - le **prompt** d'analyse de scouting (rôle, objectif : préparer draft et plan de jeu contre
+   - le **prompt** d'analyse de scouting, **en anglais**, réponse exigée en anglais (rôle, objectif : préparer draft et plan de jeu contre
      cette équipe ; règles : citer les ids, ne rien affirmer sans fait, signaler les faibles
      échantillons) ;
    - la **définition** de chaque famille de faits ;
-   - la table `pN` → nom (désactivable) ;
+   - la table `pN` → nom ;
    - les **faits**, en tableaux Markdown, chaque ligne avec son id ;
    - le **format de réponse imposé** (JSON Schema, volet E) et un exemple minimal ;
    - `report_id` et `facts_version`, à recopier dans la réponse.
@@ -262,8 +281,9 @@ Bouton « New report » (titre + nom d'équipe → ouvre le rapport).
   - **Draft** — tendances, bans par carte, first picks ; bans/picks recommandés par l'analyse.
   - **Maps** — bilan par carte avec intervalle de confiance ; évaluation de l'analyse.
   - **Games** — la liste des replays du rapport, zone de dépôt, statut par fichier, côté cible
-    détecté, retrait d'un replay.
-  - **Roster** — candidats détectés, cases à cocher, remplaçants.
+    détecté et **par quelle règle** (roster / ancre / manuel), choix manuel du côté pour une
+    partie non déterminée, retrait d'un replay.
+  - **Roster** — candidats détectés, cases à cocher, remplaçants, **désignation des ancres**.
 - **Preuves** : chaque affirmation de l'analyse porte des **puces** avec la valeur réelle et `k/n`
   (survol = détail du fait) ; une affirmation `unsupported` est visiblement marquée.
 - **Import** : fenêtre avec zone de collage + dépôt de fichier, aperçu du rapport d'import avant
@@ -294,7 +314,10 @@ tenu par l'instantané de faits (décision 5), mesuré.
   sur une source `/api/scouting/{id}/games/{gid}` de même forme que `/api/matches/{id}`).
 - **Passerelle vers le simulateur de draft** : charger les tendances et bans recommandés du rapport
   dans `/draft` pendant une vraie draft.
-- Appel direct d'un LLM depuis l'app (Claude API / Ollama) — la v1 reste copier-coller/fichier.
+
+**Non-but** : aucun appel de LLM depuis l'app (l'opérateur n'a pas d'API OpenAI/Anthropic).
+L'étape LLM est manuelle : copier le pack, le coller dans ChatGPT/Claude/modèle local, recoller la
+réponse. D'où l'importance du bouton « Copy pack » et d'un import tolérant.
 
 ## Ordre de livraison
 
@@ -307,7 +330,7 @@ vérifiable seul ; B–C sont utiles sans LLM.
 |---|---|
 | A | 3 replays réels de parties perso avec draft : bans, first pick et ordre des picks identiques à ce que montre le client HotS (confirmation opérateur) — sinon l'écart est écrit ici et le volet Draft retiré |
 | B | Migration appliquée sur le Postgres dev ; sur un lot réel de replays d'une équipe, le roster détecté correspond à l'équipe (confirmation opérateur) ; **isolation prouvée** : réponses de `/api/heroes`, `/api/maps`, `/api/players/{toon}` identiques avant/après l'ajout de 20 replays de scouting (test d'intégration) ; reprocess idempotent sur `scouting_games` |
-| C | Tests unitaires de `scouting/facts.rs` : bilans, Wilson, exclusion des parties sans côté cible, remplaçants, `n` sur chaque fait |
+| C | Tests unitaires de `scouting/facts.rs` : bilans, Wilson, exclusion des parties sans côté cible, remplaçants, `n` sur chaque fait ; tests de la détection de côté : ≥ 3 du roster, repli sur l'ancre, choix manuel conservé après changement de roster, ancre des deux côtés → non déterminée |
 | D | Pack `.md` d'un rapport réel donné à Claude **et** à ChatGPT : les deux renvoient une réponse que l'import accepte ; `.xlsx` ouvert sans erreur dans Excel |
 | E | Tests de l'extraction (bloc fenced, prose autour, JSON cassé → refus sans écrasement, `report_id` faux → refus) et de la résolution des preuves (id inconnu → `unsupported`) ; `GET /api/scouting/{id}` mesuré p95 < 100 ms sur 30 parties ; vérif navigateur sur un rapport réel, analyse importée puis réimportée (écrasement) |
 
@@ -321,12 +344,10 @@ vérifiable seul ; B–C sont utiles sans LLM.
 | `docs/spec/04-serveur.md` | archivage `ARCHIVE_DIR/scouting/`, reprocess étendu |
 | `docs/spec/01-architecture.md` | p95 mesuré de `GET /api/scouting/{id}` |
 
-## Questions ouvertes pour l'opérateur
+## Questions tranchées (2026-09-26)
 
-1. **Seuil de détection du roster** : 50 % des parties et ≥ 3 joueurs d'un même côté — ça colle à
-   la façon dont les équipes que tu scoutes tournent leurs remplaçants ?
-2. **Lien avec `teams`** : veux-tu pouvoir pré-remplir le roster depuis une équipe déjà définie, et
-   à l'inverse enregistrer un roster détecté comme équipe (page Leagues) ?
-3. **Noms dans le pack** : la table `pN` → BattleTag part chez OpenAI/Anthropic quand tu utilises
-   un LLM en ligne. On l'inclut par défaut (analyse plus lisible) avec une case pour l'omettre ?
-4. **Langue de l'analyse** : le prompt demande une réponse en anglais (comme l'UI) ou en français ?
+1. **Roster** : au moins 3 joueurs de l'équipe principale, sinon joueur ancre (et choix manuel en
+   dernier recours) — intégré au volet B.
+2. **Lien avec `teams`** : non.
+3. **Noms dans le pack** : toujours inclus.
+4. **Langue de l'analyse** : anglais.

@@ -6,7 +6,7 @@
 JSON à format imposé avec preuves résolues, pages `/scouting` et `/scouting/:id`. Tables dédiées
 (`scouting_reports`, `scouting_games`) : les replays adverses ne touchent jamais `matches`.
 **Rien n'est implémenté.** Première tâche une fois validée : vérifier le draft des parties perso
-sur 3 replays réels (volet A). 4 questions ouvertes en fin de spec.
+sur 3 replays réels (volet A). Les 4 questions ouvertes sont tranchées (roster ≥ 3 + joueur ancre, pas de lien `teams`, noms inclus, analyse en anglais, étape LLM manuelle).
 
 ## ⚠ EN ATTENTE DE VALIDATION OPÉRATEUR — deux specs datées du 2026-09-08
 Scope retenu par l'opérateur, specs écrites et poussées, **rien n'est implémenté** (règle n° 0 :
