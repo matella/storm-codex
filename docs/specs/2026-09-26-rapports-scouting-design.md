@@ -1,7 +1,8 @@
 # Rapports de scouting
 
 > Spec storm-codex. Besoin exprimé par l'opérateur le 2026-09-26.
-> **Validée par l'opérateur le 2026-09-26** (« You can go »). Volet A en cours.
+> **Validée par l'opérateur le 2026-09-26** (« You can go »). Volet A passé (drafts confirmés).
+> Plan : `docs/plans/2026-09-26-rapports-scouting.md`.
 
 ## But
 
@@ -80,7 +81,7 @@ Si c'est faux ou incomplet : on documente l'écart ici, et le volet « Draft » 
 de la v1 (cartes, pool de héros et déroulé restent livrables) — une correction de storm-stats
 serait une divergence de parité à instruire dans `03-storm-stats.md`, spec séparée.
 
-### Résultat du décodage (2026-09-26) — confirmation opérateur attendue
+### Résultat du décodage (2026-09-26) — **confirmé par l'opérateur** (volet A passé)
 
 3 replays fournis par l'opérateur (une série du 2026-07-22, build 97605, mêmes 10 joueurs ; ancre
 `Razhag`) : Tomb of the Spider Queen, Alterac Pass, Braxis Holdout. Décodage sans erreur ;
