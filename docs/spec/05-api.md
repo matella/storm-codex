@@ -27,6 +27,7 @@ les routes marquées 🔒 exigent `Authorization: Bearer` (token d'upload nomina
 | `GET /api/patches` · `GET /api/patches/{id}` | liste `dim_patches` ; détail (contenu) |
 | `GET /api/maps` | agrégat par carte |
 | `GET /api/dim/heroes` · `GET /api/dim/talents` | référentiels répliqués |
+| `GET /api/dim/hero-attributes` | code attribut héros 4 lettres → nom canonique du parser (`heroAttribute` de `attr.json`, storm-stats) ; statique, sans DB. Résout les bans du draft, stockés bruts (`match.bans[t][i].hero` = `Crus`, `DEAT`…) — `dim_heroes` ne porte pas l'`attributeId` |
 | `GET /api/trends` | winrate/durée par build/patch |
 | `GET /api/now-playing` | proxy Orpheus (widget musique) |
 | `GET /api/settings` | réglages applicatifs (dont `operator_names`) |

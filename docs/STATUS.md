@@ -1,5 +1,17 @@
 # STATUS — lire d'abord, mettre à jour en dernier
 
+## Bans du draft résolus sur la fiche de match — 2026-09-26
+storm-stats stocke les bans en code attribut brut (`Crus`, `DEAT`…) ; la fiche de match les
+affichait tels quels (constaté sur le match 143). `dim_heroes` ne porte pas l'`attributeId`
+(absent de la liste HotsPatchNotes) → nouvelle route statique `GET /api/dim/hero-attributes`
+(`attr.json` de storm-stats, source déjà utilisée par `dim.rs`) + `banHero` / `useDimHeroAttributes`
+dans `api.ts`. Bloc Draft réorganisé par équipe : picks puis bans (nom + portrait), `no ban` pour
+un tour passé. Vérifié navigateur sur 143, 1702, 69 (tours passés), 1720 (custom), 1 (ARAM : pas de
+bloc) et en 375 px. **Pas encore déployé sur le box.**
+Constat annexe : un checkout Windows (`core.autocrlf=true`, pas de `.gitattributes`) a les
+migrations en CRLF → checksum sqlx différent (`VersionMismatch(1)`) contre une DB migrée depuis un
+checkout LF. Contourné localement ; correctif (`*.sql eol=lf`) à faire séparément.
+
 ## Rapports de scouting — spec VALIDÉE le 2026-09-26, volet A en cours
 `docs/specs/2026-09-26-rapports-scouting-design.md` — déposer les replays d'une équipe adverse
 (parties perso), faits chiffrés calculés en Rust, pack LLM (`.md` + `.xlsx`), import d'une analyse

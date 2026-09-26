@@ -12,7 +12,7 @@ fallback SPA (`index.html` en `no-cache`). Langue de l'UI : **anglais**.
 |---|---|---|
 | `/` | Dashboard | session courante, perspective opérateur (`operator_names`) |
 | `/matches` | Matches | liste filtrable (mode/carte/héros/joueur/dates), export CSV/JSON, temps réel WS |
-| `/match/:id` | MatchDetail | score 2 équipes (stats basic/advanced, talents nommés, awards/MVP), draft, **Match chat** (chat + filtres pings/callouts), level advantage (uPlot), XP, timeline des événements, table BM/pings, lien dump brut |
+| `/match/:id` | MatchDetail | score 2 équipes (stats basic/advanced, talents nommés, awards/MVP), draft (par équipe : picks + bans résolus en nom + portrait via `/api/dim/hero-attributes`, `no ban` pour un tour passé), **Match chat** (chat + filtres pings/callouts), level advantage (uPlot), XP, timeline des événements, table BM/pings, lien dump brut |
 | `/player/:toon` | Player | résumé + hero pool |
 | `/heroes` · `/hero/:name` | Heroes / Hero | agrégats triables ; fiche héros + patchs le concernant |
 | `/synergies` | Synergies | paires (avec/contre) |
@@ -40,7 +40,8 @@ fallback SPA (`index.html` en `no-cache`). Langue de l'UI : **anglais**.
 
 - **Couche API unique** : `web/src/api.ts` — types, fetchers, `useLiveUpdates` (WS + reconnexion
   2 s, invalidation TanStack), helpers d'affichage (`modeBadge`, `fmtTime`…), caches
-  `useDimHeroes`/`useDimTalents` (référentiels, `staleTime: Infinity`).
+  `useDimHeroes`/`useDimTalents`/`useDimHeroAttributes` (référentiels, `staleTime: Infinity`) ;
+  `banHero(ban, attrs)` résout un ban brut (code attribut storm-stats) en nom de héros.
 - Les **constantes miroir** du parser (modes 500xx, `MessageType`, `MessageTarget`…) sont
   répliquées là où le front les affiche — si `constants.json` (storm-stats) bouge, synchroniser.
 - Avatars : portraits vendorisés `/images` + anneau couleur d'univers (`useDimHeroes`) ;

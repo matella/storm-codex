@@ -205,6 +205,7 @@ fn api_router(state: &AppState) -> Router<AppState> {
         .route("/api/maps", get(read::list_maps))
         .route("/api/dim/heroes", get(read::dim_heroes))
         .route("/api/dim/talents", get(read::dim_talents))
+        .route("/api/dim/hero-attributes", get(read::dim_hero_attributes))
         .route("/api/matches.csv", get(read::matches_csv))
         .route("/api/trends", get(manage::trends))
         .route("/api/now-playing", get(read::now_playing))
@@ -383,6 +384,22 @@ mod api_tests {
         let v = json_body(resp).await;
         assert_eq!(v["status"], "ok");
         assert_eq!(v["parser_version"], PARSER_VERSION);
+    }
+
+    /// Codes attribut des bans → noms parser (attr.json), y compris les codes en capitales.
+    #[tokio::test]
+    async fn dim_hero_attributes_resout_les_codes_de_ban() {
+        let Some(state) = test_state(None).await else { return };
+        let resp = app(&state)
+            .oneshot(Request::get("/api/dim/hero-attributes").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = json_body(resp).await;
+        assert_eq!(v["Crus"], "Johanna");
+        assert_eq!(v["DEAT"], "Deathwing");
+        assert_eq!(v["L90E"], "E.T.C.");
+        assert!(v.as_object().is_some_and(|o| o.len() >= 90));
     }
 
     #[tokio::test]
