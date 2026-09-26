@@ -1,5 +1,13 @@
 # STATUS — lire d'abord, mettre à jour en dernier
 
+## ⚠ EN ATTENTE DE VALIDATION OPÉRATEUR — rapports de scouting (2026-09-26)
+`docs/specs/2026-09-26-rapports-scouting-design.md` — déposer les replays d'une équipe adverse
+(parties perso), faits chiffrés calculés en Rust, pack LLM (`.md` + `.xlsx`), import d'une analyse
+JSON à format imposé avec preuves résolues, pages `/scouting` et `/scouting/:id`. Tables dédiées
+(`scouting_reports`, `scouting_games`) : les replays adverses ne touchent jamais `matches`.
+**Rien n'est implémenté.** Première tâche une fois validée : vérifier le draft des parties perso
+sur 3 replays réels (volet A). 4 questions ouvertes en fin de spec.
+
 ## ⚠ EN ATTENTE DE VALIDATION OPÉRATEUR — deux specs datées du 2026-09-08
 Scope retenu par l'opérateur, specs écrites et poussées, **rien n'est implémenté** (règle n° 0 :
 une décision de conception se valide avant de coder).
