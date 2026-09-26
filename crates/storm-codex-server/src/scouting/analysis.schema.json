@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Storm Codex scouting analysis",
+  "type": "object",
+  "required": ["format_version", "report_id", "facts_version", "summary"],
+  "properties": {
+    "format_version": { "const": 1 },
+    "report_id": { "type": "integer" },
+    "facts_version": { "type": "integer" },
+    "model": { "type": "string", "description": "Name of the model that wrote this analysis" },
+    "summary": { "type": "string", "description": "5-8 sentence overview of the team" },
+    "players": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "notes", "evidence"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^p[0-9]+$" },
+          "role": { "type": "string" },
+          "threat": { "enum": ["low", "medium", "high"] },
+          "comfort_picks": { "type": "array", "items": { "type": "string" } },
+          "notes": { "type": "string" },
+          "evidence": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "draft": {
+      "type": "object",
+      "properties": {
+        "tendencies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["claim", "evidence"],
+            "properties": {
+              "claim": { "type": "string" },
+              "evidence": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "recommended_bans": { "$ref": "#/$defs/heroRec" },
+        "recommended_picks": { "$ref": "#/$defs/heroRec" }
+      }
+    },
+    "maps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["map", "assessment", "evidence"],
+        "properties": {
+          "map": { "type": "string" },
+          "assessment": { "type": "string" },
+          "evidence": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "game_plan": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["point", "confidence", "evidence"],
+        "properties": {
+          "point": { "type": "string" },
+          "confidence": { "enum": ["low", "medium", "high"] },
+          "evidence": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "heroRec": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["hero", "why", "evidence"],
+        "properties": {
+          "hero": { "type": "string" },
+          "map": { "type": "string", "description": "Optional: map this applies to" },
+          "why": { "type": "string" },
+          "evidence": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

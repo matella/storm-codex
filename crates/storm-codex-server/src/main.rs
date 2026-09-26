@@ -15,6 +15,7 @@ pub mod project;
 mod raw;
 mod read;
 mod replay2d;
+mod scouting;
 mod upload;
 mod ws;
 
@@ -249,6 +250,25 @@ fn api_router(state: &AppState) -> Router<AppState> {
         .route("/api/lobby/hero", post(lobby::api::set_hero))
         .route("/api/lobby/map", post(lobby::api::set_map))
         .route("/api/lobby/teams", post(lobby::api::set_teams))
+        // Rapports de scouting (tables dédiées, jamais projetés dans matches)
+        .route("/api/scouting", get(scouting::api::list).post(scouting::api::create))
+        .route(
+            "/api/scouting/{id}",
+            get(scouting::api::get)
+                .patch(scouting::api::patch)
+                .delete(scouting::api::delete),
+        )
+        .route("/api/scouting/{id}/replays", post(scouting::api::add_replay))
+        .route(
+            "/api/scouting/{id}/replays/{gid}",
+            axum::routing::patch(scouting::api::set_side).delete(scouting::api::delete_replay),
+        )
+        .route("/api/scouting/{id}/pack.md", get(scouting::api::pack_md))
+        .route("/api/scouting/{id}/pack.xlsx", get(scouting::api::pack_xlsx))
+        .route(
+            "/api/scouting/{id}/analysis",
+            axum::routing::put(scouting::api::put_analysis).delete(scouting::api::delete_analysis),
+        )
         .route("/ws", any(ws::ws_handler))
         // portraits héros + images de cartes vendorisés (servis depuis images_dir)
         .nest_service(
@@ -413,6 +433,111 @@ mod api_tests {
         assert_eq!(resp.status(), StatusCode::CREATED);
         let v = json_body(resp).await;
         assert!(v["token"].as_str().is_some_and(|t| !t.is_empty()));
+    }
+
+    /// Scouting bout-en-bout : création → dépôt d'un replay → lot ambigu (1 partie : les 10
+    /// joueurs à 100 %) → ancre → côté trouvé → faits → pack .md/.xlsx → import d'analyse →
+    /// écrasement. Et l'isolation : rien n'est écrit dans uploads/matches pour ce replay.
+    #[tokio::test]
+    async fn scouting_cycle_complet_et_isolation() {
+        let Some(state) = test_state(None).await else { return };
+        let replay = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../storm-replay/tests/data/2024-10-07 22.29.55 Industrial District.StormReplay");
+        let bytes = std::fs::read(&replay).expect("replay committé");
+        let sha = crate::upload::sha256_hex(&bytes);
+        let out = storm_stats::process_replay(&replay, "x");
+        let fp = crate::upload::game_fingerprint(&out).unwrap();
+        let counts = |db: sqlx::PgPool, sha: String, fp: String| async move {
+            let u: i64 = sqlx::query_scalar("SELECT count(*) FROM uploads WHERE fingerprint = $1")
+                .bind(&sha).fetch_one(&db).await.unwrap();
+            let m: i64 = sqlx::query_scalar("SELECT count(*) FROM matches WHERE fingerprint = $1")
+                .bind(&fp).fetch_one(&db).await.unwrap();
+            (u, m)
+        };
+        let before = counts(state.db.clone(), sha.clone(), fp.clone()).await;
+
+        let req = |method: &str, uri: String, body: Body| {
+            Request::builder().method(method).uri(uri).header("content-type", "application/json").body(body).unwrap()
+        };
+        let resp = app(&state)
+            .oneshot(req("POST", "/api/scouting".into(), Body::from(r#"{"title":"Test scout","target_name":"Team X"}"#)))
+            .await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let id = json_body(resp).await["id"].as_i64().unwrap();
+
+        let add = |b: Vec<u8>| {
+            Request::post(format!("/api/scouting/{id}/replays"))
+                .header("x-filename", "2024-10-07 22.29.55 Industrial%20District.StormReplay")
+                .body(Body::from(b)).unwrap()
+        };
+        let v = json_body(app(&state).oneshot(add(bytes.clone())).await.unwrap()).await;
+        assert_eq!(v["status"], "added", "{v}");
+        assert!(v["target_team"].is_null(), "lot d'une partie = ambigu, pas de côté : {v}");
+        let v = json_body(app(&state).oneshot(add(bytes.clone())).await.unwrap()).await;
+        assert_eq!(v["status"], "duplicate");
+
+        let detail = json_body(app(&state).oneshot(req("GET", format!("/api/scouting/{id}"), Body::empty())).await.unwrap()).await;
+        assert_eq!(detail["snapshot"]["detection"]["ambiguous"], true);
+        assert_eq!(detail["snapshot"]["facts"]["overview"]["excluded"], 1);
+        assert_eq!(detail["status"], "ready");
+        let anchor = detail["games"][0]["teams"][1][0]["toon"].as_str().unwrap().to_owned();
+
+        // ancre côté 1 → côté trouvé, roster = les 5 coéquipiers, 1 partie analysée
+        let body = serde_json::json!({ "anchors": [anchor] }).to_string();
+        let detail = json_body(app(&state).oneshot(req("PATCH", format!("/api/scouting/{id}"), Body::from(body))).await.unwrap()).await;
+        assert_eq!(detail["games"][0]["target_team"], 1, "{}", detail["games"]);
+        assert_eq!(detail["games"][0]["target_source"], "roster");
+        assert_eq!(detail["snapshot"]["roster"].as_array().unwrap().len(), 5);
+        assert_eq!(detail["snapshot"]["facts"]["overview"]["games"], 1);
+        let fv = detail["facts_version"].as_i64().unwrap();
+
+        // côté manuel puis retour à l'automatique
+        let body = r#"{"target_team":0}"#.to_string();
+        let gid = detail["games"][0]["gid"].as_i64().unwrap();
+        let d2 = json_body(app(&state).oneshot(req("PATCH", format!("/api/scouting/{id}/replays/{gid}"), Body::from(body))).await.unwrap()).await;
+        assert_eq!(d2["games"][0]["target_source"], "manual");
+        let d2 = json_body(app(&state).oneshot(req("PATCH", format!("/api/scouting/{id}/replays/{gid}"), Body::from(r#"{"target_team":null}"#))).await.unwrap()).await;
+        assert_eq!(d2["games"][0]["target_team"], 1);
+        let fv = d2["facts_version"].as_i64().unwrap().max(fv);
+
+        // packs
+        let resp = app(&state).oneshot(req("GET", format!("/api/scouting/{id}/pack.md"), Body::empty())).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let md = String::from_utf8(resp.into_body().collect().await.unwrap().to_bytes().to_vec()).unwrap();
+        assert!(md.contains(&format!("report_id: **{id}**")));
+        assert!(md.contains("`map.industrial_district.record`"));
+        let resp = app(&state).oneshot(req("GET", format!("/api/scouting/{id}/pack.xlsx"), Body::empty())).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let x = resp.into_body().collect().await.unwrap().to_bytes();
+        assert_eq!(&x[..2], b"PK");
+
+        // import : JSON cassé → 422 et rien d'écrit ; valide → importé ; ré-import → écrasé
+        let resp = app(&state).oneshot(req("PUT", format!("/api/scouting/{id}/analysis"), Body::from("```json
+{bad}
+```"))).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let analysis = |summary: &str| format!(
+            "Here you go:
+```json
+{{\"format_version\":1,\"report_id\":{id},\"facts_version\":{fv},\"summary\":\"{summary}\",\"game_plan\":[{{\"point\":\"x\",\"confidence\":\"low\",\"evidence\":[\"map.industrial_district.record\",\"nope\"]}},{{\"point\":\"y\",\"evidence\":[]}}]}}
+```");
+        let resp = app(&state).oneshot(req("PUT", format!("/api/scouting/{id}/analysis"), Body::from(analysis("first")))).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = json_body(resp).await;
+        assert_eq!(v["tally"]["claims"], 2, "{v}");
+        assert_eq!(v["tally"]["unsupported"], 1);
+        app(&state).oneshot(req("PUT", format!("/api/scouting/{id}/analysis"), Body::from(analysis("second")))).await.unwrap();
+        let detail = json_body(app(&state).oneshot(req("GET", format!("/api/scouting/{id}"), Body::empty())).await.unwrap()).await;
+        assert_eq!(detail["analysis"]["summary"], "second");
+        assert_eq!(detail["status"], "analyzed");
+        assert_eq!(detail["analysis"]["game_plan"][0]["evidence"][0]["known"], true);
+        assert_eq!(detail["analysis"]["game_plan"][0]["evidence"][1]["known"], false);
+
+        // isolation : aucune écriture dans uploads/matches pour ce replay
+        assert_eq!(counts(state.db.clone(), sha, fp).await, before);
+
+        let resp = app(&state).oneshot(req("DELETE", format!("/api/scouting/{id}"), Body::empty())).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
     }
 
     /// Bout-en-bout réel : création de token → upload d'un replay committé → parse → projection

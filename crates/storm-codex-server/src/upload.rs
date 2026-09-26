@@ -34,7 +34,7 @@ pub(crate) fn game_fingerprint(out: &storm_stats::Output) -> Option<String> {
 
 /// storm-stats statut ≠ 1 → classe d'erreur typée (visible en Admin). Exhaustif sur les
 /// constantes `storm_stats::status` (cf. constants.rs).
-fn reject_class(status: i64) -> &'static str {
+pub(crate) fn reject_class(status: i64) -> &'static str {
     match status {
         0 => "unsupported_mode",  // UNSUPPORTED — brawl / mode non géré
         -2 => "stats_failure",    // FAILURE — échec interne du moteur de stats
@@ -361,7 +361,7 @@ async fn mark_failed(db: &sqlx::PgPool, upload_id: i64, class: &str, msg: &str) 
     .await;
 }
 
-fn filename(headers: &HeaderMap) -> Option<String> {
+pub(crate) fn filename(headers: &HeaderMap) -> Option<String> {
     headers
         .get("x-filename")
         .and_then(|v| v.to_str().ok())

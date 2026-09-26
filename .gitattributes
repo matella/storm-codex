@@ -1,0 +1,3 @@
+# Les migrations sqlx sont vérifiées par somme de contrôle sur leurs octets exacts : un checkout
+# Windows (autocrlf) en CRLF les rend « modifiées » pour une base migrée en LF (VersionMismatch).
+crates/storm-codex-server/migrations/*.sql text eol=lf

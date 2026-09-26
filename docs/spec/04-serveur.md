@@ -25,6 +25,16 @@ POST /api/upload(-raw)  [Bearer token nominatif]
   replays longs (> 2 Mo) et faisait boucler l'uploader.
 - `X-Filename` est **percent-décodé** (apostrophes de cartes : Blackheart's Bay).
 
+## Scouting (`scouting/`)
+
+Chemin **séparé** du pipeline d'upload : `POST /api/scouting/{id}/replays` archive dans
+`ARCHIVE_DIR/scouting/<sha256>.StormReplay`, parse sur le même pool (`parse_sem`), résume
+(`summary.rs`) et insère dans `scouting_games` — jamais dans `uploads`/`matches`. Cœur pur testé
+unitairement (`summary`, `side`, `facts`, `pack`, `xlsx`, `analysis`) ; `api.rs` recalcule les
+faits sous verrou de ligne du rapport (`SELECT … FOR UPDATE`) à chaque mutation. Rôles des héros :
+`dim_heroes.data->>'expandedRole'` (le `gameStats.Role` du parser vaut 0 en partie perso).
+`POST /api/admin/reprocess` re-parse aussi les `scouting_games` périmés puis recalcule.
+
 ## Fingerprints (dédup à deux niveaux)
 
 - `uploads.fingerprint` = SHA-256 du **contenu du fichier** — dédup rapide pré-parse.

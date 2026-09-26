@@ -38,9 +38,23 @@ Ces tables sont **reconstruisibles** (refresh complet au démarrage/24 h) — pa
 - `draft_live` : singleton (id=1, CHECK) — tout l'état du simulateur de draft en JSONB
   (config, picks/bans, historique fearless), horodaté.
 
+## Scouting (0010)
+
+Rapports de scouting (spec `docs/specs/2026-09-26-rapports-scouting-design.md`). **Isolés** des
+tables de stats personnelles : un replay adverse n'est jamais projeté dans `matches`.
+
+| Table | Rôle | Points clés |
+|---|---|---|
+| `scouting_reports` | un rapport | `title`, `target_name`, `roster`/`anchors` (JSONB de toon_handles ; roster `[]` = détection auto), `facts` = instantané `{facts, detection, roster, roster_auto}` recalculé à chaque mutation, `facts_version`, `analysis` (JSON normalisé, une seule, écrasable) + `analysis_facts_version` / `analysis_model` / `analysis_imported_at` |
+| `scouting_games` | un replay d'un rapport | UNIQUE `(report_id, fingerprint)`, `file_sha256`, `archived_path` (`ARCHIVE_DIR/scouting/`), `target_team` + `target_source` (`roster`/`anchor`/`manual`), **`summary`** = résumé compact (seule entrée du calcul des faits), `data` = sortie storm-stats complète, `parser_version` ; CASCADE depuis le rapport |
+
+Le statut d'un rapport (`empty`/`ready`/`analyzed`/`stale`) est **dérivé**, jamais stocké.
+
 ## Conventions pour toute nouvelle migration
 
-1. Fichier `NNNN_description.sql` séquentiel — **jamais** modifier une migration appliquée.
+1. Fichier `NNNN_description.sql` séquentiel — **jamais** modifier une migration appliquée. Fins de
+   ligne forcées en LF (`.gitattributes`) : sqlx vérifie la somme de contrôle des octets exacts, un
+   checkout Windows en CRLF donnait `VersionMismatch` sur une base migrée en LF.
 2. Grosse structure → JSONB ; axe de filtre/tri → colonne promue + index.
 3. Si la projection change de forme : bump `PARSER_VERSION` (main.rs) → `POST /api/admin/reprocess`.
 4. Mettre à jour **ce fichier** dans le même commit.

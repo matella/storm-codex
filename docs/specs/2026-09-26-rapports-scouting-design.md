@@ -144,6 +144,11 @@ CREATE TABLE scouting_games (
 CREATE INDEX scouting_games_report_idx ON scouting_games (report_id);
 ```
 
+- **Écart d'implémentation assumé (2026-09-26)** : `scouting_games` porte aussi `summary JSONB`
+  (résumé compact : équipes, héros, bans, picks, stats, niveaux, objectifs), et `scouting_reports`
+  des ids `GENERATED ALWAYS AS IDENTITY` (convention des migrations récentes). Le recalcul des
+  faits ne lit que les résumés, pas N objets `match` complets ; `data` reste la projection
+  complète. `facts` stocke l'instantané `{facts, detection, roster, roster_auto}`.
 - **Replay brut archivé** sous `ARCHIVE_DIR/scouting/<sha256>.StormReplay` (règle des 3 étages :
   le brut reste la source de vérité).
 - **Re-process** : `POST /api/admin/reprocess` couvre aussi `scouting_games` (même critère
