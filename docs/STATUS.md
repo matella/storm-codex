@@ -1,12 +1,14 @@
 # STATUS — lire d'abord, mettre à jour en dernier
 
-## ⚠ EN ATTENTE DE VALIDATION OPÉRATEUR — rapports de scouting (2026-09-26)
+## Rapports de scouting — spec VALIDÉE le 2026-09-26, volet A en cours
 `docs/specs/2026-09-26-rapports-scouting-design.md` — déposer les replays d'une équipe adverse
 (parties perso), faits chiffrés calculés en Rust, pack LLM (`.md` + `.xlsx`), import d'une analyse
 JSON à format imposé avec preuves résolues, pages `/scouting` et `/scouting/:id`. Tables dédiées
 (`scouting_reports`, `scouting_games`) : les replays adverses ne touchent jamais `matches`.
-**Rien n'est implémenté.** Première tâche une fois validée : vérifier le draft des parties perso
-sur 3 replays réels (volet A). Les 4 questions ouvertes sont tranchées (roster ≥ 3 + joueur ancre, pas de lien `teams`, noms inclus, analyse en anglais, étape LLM manuelle).
+**Rien n'est implémenté.** Volet A : 3 replays réels décodés (ancre `Razhag`), drafts cohérents,
+**confirmation opérateur attendue** avant d'acter le volet. Ensuite : plan `docs/plans/`.
+Décisions opérateur : roster ≥ 3 + joueur ancre, pas de lien `teams`, noms inclus, analyse en
+anglais, étape LLM manuelle.
 
 ## ⚠ EN ATTENTE DE VALIDATION OPÉRATEUR — deux specs datées du 2026-09-08
 Scope retenu par l'opérateur, specs écrites et poussées, **rien n'est implémenté** (règle n° 0 :

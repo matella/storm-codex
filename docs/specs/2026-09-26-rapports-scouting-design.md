@@ -1,7 +1,7 @@
 # Rapports de scouting
 
 > Spec storm-codex. Besoin exprimé par l'opérateur le 2026-09-26.
-> **En attente de validation** avant `writing-plans` et implémentation.
+> **Validée par l'opérateur le 2026-09-26** (« You can go »). Volet A en cours.
 
 ## But
 
@@ -79,6 +79,26 @@ qu'on voit en rejouant la partie dans le client HotS (confirmation opérateur).
 Si c'est faux ou incomplet : on documente l'écart ici, et le volet « Draft » des faits est retiré
 de la v1 (cartes, pool de héros et déroulé restent livrables) — une correction de storm-stats
 serait une divergence de parité à instruire dans `03-storm-stats.md`, spec séparée.
+
+### Résultat du décodage (2026-09-26) — confirmation opérateur attendue
+
+3 replays fournis par l'opérateur (une série du 2026-07-22, build 97605, mêmes 10 joueurs ; ancre
+`Razhag`) : Tomb of the Spider Queen, Alterac Pass, Braxis Holdout. Décodage sans erreur ;
+`mode = -1` = `Custom` dans `constants.json` (valeur attendue, et la draft est bien extraite).
+Cohérence interne vérifiée : 3 bans par équipe (2 + 1), 5 picks par équipe, aucun héros banni
+n'est pické dans la même partie, aucun doublon.
+
+Ce qui est **lu** dans le replay et ce qui est **déduit** — à garder en tête pour les faits :
+
+| Donnée | Origine |
+|---|---|
+| Héros bannis par chaque équipe, et phase (2 premiers / 1 du milieu) | lu (attributs 4023/4025/4043 et 4028/4030/4045) |
+| Codes de ban → nom de héros | `data/attr.json` (`Crus` → Johanna…) — **le pack doit résoudre les codes** |
+| Équipe au first pick, ordre des picks au sein d'une équipe | lu |
+| Entrelacement global (ban A, ban B, ban A, ban B, pick A, B B, A A, ban B, ban A, B B, A A, B) | **déduit** : ordre standard codé en dur dans le parser (`process.rs:2343-2378`), pas lu |
+
+Conséquence : les faits de draft parlent de « bans de 1re phase / de milieu de draft » et d'« ordre
+de pick dans l'équipe », jamais d'un rang global qui ne serait qu'une hypothèse.
 
 ## Volet B — Stockage, dépôt des replays, détection de l'équipe cible
 
