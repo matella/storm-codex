@@ -2,7 +2,7 @@
 
 > Spec : `docs/specs/2026-09-26-rapports-scouting-design.md` (validée le 2026-09-26, volet A
 > confirmé par l'opérateur : drafts de 3 replays perso conformes).
-> Steps en cases à cocher (`- [ ]`).
+> Steps en cases à cocher (`- [x]`).
 
 **Goal :** l'opérateur dépose les replays d'une équipe adverse, storm-codex calcule des faits
 chiffrés, produit un pack LLM (`.md` + `.xlsx`), et réimporte une analyse JSON à format imposé
@@ -49,84 +49,84 @@ vitest (env node).
 
 ## Tâche 1 — Migration + résumé de partie (volet B)
 
-- [ ] `migrations/0010_scouting.sql` : tables de la spec + `anchors JSONB`, `target_source TEXT`,
+- [x] `migrations/0010_scouting.sql` : tables de la spec + `anchors JSONB`, `target_source TEXT`,
       `summary JSONB NOT NULL` ; index `(report_id)`.
-- [ ] `summary.rs` : `GameSummary { date, map, build, length_s, winner, teams: [[Player;5];2],
+- [x] `summary.rs` : `GameSummary { date, map, build, length_s, winner, teams: [[Player;5];2],
       bans: [Vec<Ban{hero, phase}>;2], picks: [Vec<String>;2], first_pick, first_fort,
       first_objective, level10_time: [Option<f64>;2], level_diff: Vec<(start,end,diff)> }` avec
       `Player { toon, name, hero, stats }` (K/D/A, HeroDamage, SiegeDamage, Healing, SelfHealing,
       DamageTaken, ExperienceContribution, TimeSpentDead, MercCampCaptures, KillParticipation).
       Tests : replay committé (forme, 10 joueurs, champs présents) ; ban `Crus` → `Johanna`.
-- [ ] `06-modele-donnees.md` mis à jour ; migration appliquée sur le Postgres dev.
+- [x] `06-modele-donnees.md` mis à jour ; migration appliquée sur le Postgres dev.
 
 ## Tâche 2 — Côté cible (volet B)
 
-- [ ] `side.rs` : `candidates(games, anchors)` (≥ 50 % des parties, ou des parties de l'ancre, du
+- [x] `side.rs` : `candidates(games, anchors)` (≥ 50 % des parties, ou des parties de l'ancre, du
       côté de l'ancre), `ambiguous` = des candidats se sont affrontés dans une même partie (lot de
       séries contre une même équipe → l'ancre est requise), `detect(teams, roster, anchors,
       manual)` → `Option<(side, Source)>`.
-- [ ] Tests : ≥ 3 du roster ; repli ancre ; manuel conservé ; ancre des deux côtés → `None` ;
+- [x] Tests : ≥ 3 du roster ; repli ancre ; manuel conservé ; ancre des deux côtés → `None` ;
       série BO3 contre la même équipe sans ancre → ambigu ; avec ancre → roster = 5 de l'ancre.
 
 ## Tâche 3 — Faits (volet C)
 
-- [ ] `facts.rs` : sections `overview`, `players` (`p1…pN`, cœur puis remplaçants, héros, rôles,
+- [x] `facts.rs` : sections `overview`, `players` (`p1…pN`, cœur puis remplaçants, héros, rôles,
       moyennes /min), `maps` (bilan + Wilson 95 %, picks, bans faits/subis), `draft` (taux de first
       pick, bans 1re phase / milieu, bans subis, premier pick de l'équipe, rôle du premier pick),
       `flow` (premier à 10, premier fort, premier objectif, écart de niveau moyen à 10/15/20 min,
       tranches de durée, remontées/écroulements à ±2 niveaux), `games` (une ligne par partie) +
       `index: BTreeMap<id, {label, text, k?, n, low}>`.
-- [ ] Tests : bilans, Wilson (valeurs de référence), exclusion des parties sans côté, remplaçants,
+- [x] Tests : bilans, Wilson (valeurs de référence), exclusion des parties sans côté, remplaçants,
       `n` partout, ids uniques et bien formés.
 
 ## Tâche 4 — API + dépôt (volet B/C)
 
-- [ ] `api.rs` : routes de la spec (+ `PATCH /api/scouting/{id}/replays/{gid}` pour le côté
+- [x] `api.rs` : routes de la spec (+ `PATCH /api/scouting/{id}/replays/{gid}` pour le côté
       manuel) ; dépôt = archive `ARCHIVE_DIR/scouting/<sha256>` → parse (pool `parse_sem`,
       `spawn_blocking`) → résumé → insert → recalcul ; toute mutation → `recompute(report_id)`
       (`facts`, `facts_version + 1`, `target_team` des parties non manuelles).
-- [ ] `POST /api/admin/reprocess` couvre `scouting_games` (`parser_version` périmé) puis recalcule.
-- [ ] Tests d'intégration : cycle création → dépôt → faits → suppression ; **isolation** :
+- [x] `POST /api/admin/reprocess` couvre `scouting_games` (`parser_version` périmé) puis recalcule.
+- [x] Tests d'intégration : cycle création → dépôt → faits → suppression ; **isolation** :
       `/api/heroes`, `/api/maps` identiques avant/après dépôt ; doublon → statut `duplicate`.
-- [ ] `05-api.md`, `04-serveur.md`.
+- [x] `05-api.md`, `04-serveur.md`.
 
 ## Tâche 5 — Pack (volet D)
 
-- [ ] `prompt.md` (anglais), `analysis.schema.json` ; `pack.rs` : prompt + définitions + table
+- [x] `prompt.md` (anglais), `analysis.schema.json` ; `pack.rs` : prompt + définitions + table
       `pN` → nom + faits en tableaux Markdown (colonne id) + schéma + exemple + `report_id` /
       `facts_version`.
-- [ ] `xlsx.rs` : onglets README, Overview, Players, Heroes, Maps, Draft, Flow, Games.
-- [ ] Routes `pack.md` / `pack.xlsx` (Content-Disposition). Tests : le Markdown contient chaque id
+- [x] `xlsx.rs` : onglets README, Overview, Players, Heroes, Maps, Draft, Flow, Games.
+- [x] Routes `pack.md` / `pack.xlsx` (Content-Disposition). Tests : le Markdown contient chaque id
       de l'index ; le classeur se génère (octets non vides, signature ZIP).
 
 ## Tâche 6 — Import de l'analyse (volet E)
 
-- [ ] `analysis.rs` : extraction (bloc ```json, sinon premier objet équilibré, en ignorant les
+- [x] `analysis.rs` : extraction (bloc ```json, sinon premier objet équilibré, en ignorant les
       accolades dans les chaînes), validation (`format_version == 1`, `report_id`), structures serde
       tolérantes, `resolve(analysis, index)` → preuves `{id, text}` + `unsupported`.
-- [ ] `PUT/DELETE /api/scouting/{id}/analysis` ; `GET /api/scouting/{id}` renvoie l'analyse avec
+- [x] `PUT/DELETE /api/scouting/{id}/analysis` ; `GET /api/scouting/{id}` renvoie l'analyse avec
       preuves résolues contre les faits **courants** + statut dérivé (`empty/ready/analyzed/stale`).
-- [ ] Tests : fenced, prose autour, JSON cassé → erreur et rien d'écrasé, `report_id` faux → refus,
+- [x] Tests : fenced, prose autour, JSON cassé → erreur et rien d'écrasé, `report_id` faux → refus,
       id inconnu → `unsupported`, `facts_version` ancien → avertissement.
 
 ## Tâche 7 — Front (volet E)
 
-- [ ] `api.ts` : types + hooks `useScoutingList`, `useScoutingReport` ; helpers purs
+- [x] `api.ts` : types + hooks `useScoutingList`, `useScoutingReport` ; helpers purs
       `web/src/scouting.ts` (`fmtRate`, `statusLabel`, `claimEvidence`) + tests vitest.
-- [ ] `pages/Scouting.tsx` (liste + création) ; `pages/ScoutingReport.tsx` (en-tête titre éditable,
+- [x] `pages/Scouting.tsx` (liste + création) ; `pages/ScoutingReport.tsx` (en-tête titre éditable,
       actions pack/import, onglets Overview / Players / Draft / Maps / Games / Roster, puces de
       preuve, dépôt séquentiel avec statut par fichier, fenêtre d'import avec aperçu et
       confirmation d'écrasement). Onglet nav « Scouting ».
-- [ ] `08-frontend.md`. `npm test` + `npm run build` verts.
+- [x] `08-frontend.md`. `npm test` + `npm run build` verts.
 
 ## Tâche 8 — Vérification réelle + mesure
 
-- [ ] Serveur dev + front : rapport avec les 3 replays de l'opérateur, ancre `Razhag` → roster des
+- [x] Serveur dev + front : rapport avec les 3 replays de l'opérateur, ancre `Razhag` → roster des
       5 attendus, 3 parties côté cible, faits cohérents avec les drafts confirmés.
-- [ ] Pack copié → réponse JSON (rédigée par Claude dans la session à partir du pack réel, l'étape
+- [x] Pack copié → réponse JSON (rédigée par Claude dans la session à partir du pack réel, l'étape
       LLM étant manuelle) → import → preuves affichées ; ré-import → écrasement.
-- [ ] `GET /api/scouting/{id}` : p95 mesuré (20 requêtes) → `01-architecture.md`.
-- [ ] `STATUS.md`, commit, push.
+- [x] `GET /api/scouting/{id}` : p95 mesuré (20 requêtes) → `01-architecture.md`.
+- [x] `STATUS.md`, commit, push.
 
 Critères d'acceptation D (Claude **et** ChatGPT sur le pack réel) et B (roster confirmé sur un vrai
 lot adverse plus large) : **exigent l'opérateur** — listés comme restant dus dans `STATUS.md`.

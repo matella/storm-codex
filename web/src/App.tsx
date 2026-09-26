@@ -22,6 +22,8 @@ import { Leagues } from "./pages/Leagues";
 import { Admin } from "./pages/Admin";
 import { Draft } from "./pages/Draft";
 import { DraftOverlay } from "./pages/DraftOverlay";
+import { Scouting } from "./pages/Scouting";
+import { ScoutingReport } from "./pages/ScoutingReport";
 
 export default function App() {
   return (
@@ -47,6 +49,8 @@ export default function App() {
         <Route path="trends" element={<Trends />} />
         <Route path="leagues" element={<Leagues />} />
         <Route path="draft" element={<Draft />} />
+        <Route path="scouting" element={<Scouting />} />
+        <Route path="scouting/:id" element={<ScoutingReport />} />
         <Route path="admin" element={<Admin />} />
       </Route>
     </Routes>

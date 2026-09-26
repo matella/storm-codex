@@ -14,6 +14,7 @@ const TABS: [string, string][] = [
   ["/trends", "Trends"],
   ["/leagues", "Leagues"],
   ["/draft", "Draft"],
+  ["/scouting", "Scouting"],
   ["/admin", "Admin"],
 ];
 

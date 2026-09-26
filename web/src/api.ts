@@ -2,6 +2,7 @@
 import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Replay2D } from "./replay2d";
+import type { ScoutingListItem, ScoutingReport } from "./scouting";
 
 export interface MatchPlayer {
   toon: string;
@@ -646,4 +647,35 @@ export function useDraft() {
 export function sideOfStep(d: DraftState, step: DraftStep): Side {
   if (step.order === "first") return d.first_pick;
   return d.first_pick === "blue" ? "red" : "blue";
+}
+
+// ── Rapports de scouting (/api/scouting/*) ────────────────────────────────────
+
+/** Écriture authentifiée : Bearer du token admin saisi dans Admin (localStorage), s'il existe.
+ *  En mode ouvert (pas d'ADMIN_TOKEN serveur), l'en-tête est simplement ignoré. */
+export function scoutingWrite(url: string, init: RequestInit = {}): Promise<Response> {
+  const token = localStorage.getItem("admin_token") ?? "";
+  return fetch(url, {
+    ...init,
+    headers: { ...(init.headers ?? {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+  });
+}
+
+export function useScoutingList() {
+  return useQuery({
+    queryKey: ["scouting"],
+    queryFn: async () => (await fetch("/api/scouting")).json() as Promise<ScoutingListItem[]>,
+  });
+}
+
+export function useScoutingReport(id: string | undefined) {
+  return useQuery({
+    queryKey: ["scouting", id],
+    enabled: !!id,
+    queryFn: async () => {
+      const r = await fetch(`/api/scouting/${id}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json() as Promise<ScoutingReport>;
+    },
+  });
 }

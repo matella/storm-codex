@@ -22,6 +22,8 @@ fallback SPA (`index.html` en `no-cache`). Langue de l'UI : **anglais**.
 | `/trends` | Trends | winrate/durée par patch |
 | `/leagues` | Leagues | équipes groupées par ligue |
 | `/draft` | Draft | console opérateur du simulateur de draft |
+| `/scouting` | Scouting | rapports de scouting (plus récent d'abord : titre, équipe, date, nb de replays, bilan, statut) + création |
+| `/scouting/:id` | ScoutingReport | titre/équipe éditables en place ; actions Copy pack / Download .md / .xlsx / Import analysis / Delete ; bandeaux (lot ambigu → ancre, replays exclus, analyse périmée) ; onglets Overview (synthèse + plan de jeu + faits clés), Players, Draft, Maps, Games (dépôt séquentiel par glisser-déposer, statut par fichier, côté cible cliquable = choix manuel), Roster (candidats, cases roster, ancres ⚓) ; chaque affirmation de l'analyse porte ses puces de preuve (libellé + valeur, pointillé = faible échantillon, rouge = id inconnu). Spec `docs/specs/2026-09-26-rapports-scouting-design.md` |
 | `/admin` | Admin | santé uploads, tokens, équipes/collections, réglages, reprocess |
 
 ### Sources OBS standalone (fond transparent, hors Layout)
@@ -43,6 +45,9 @@ fallback SPA (`index.html` en `no-cache`). Langue de l'UI : **anglais**.
   `useDimHeroes`/`useDimTalents` (référentiels, `staleTime: Infinity`).
 - Les **constantes miroir** du parser (modes 500xx, `MessageType`, `MessageTarget`…) sont
   répliquées là où le front les affiche — si `constants.json` (storm-stats) bouge, synchroniser.
+- Scouting : types + helpers purs dans `web/src/scouting.ts` (tests `scouting.test.ts`), hooks
+  `useScoutingList`/`useScoutingReport` et `scoutingWrite` (Bearer du token admin en
+  localStorage) dans `api.ts` ; styles préfixés `sc-` dans `theme.css`.
 - Avatars : portraits vendorisés `/images` + anneau couleur d'univers (`useDimHeroes`) ;
   fallback initiales.
 - Données du détail de match : **tout vient de `GET /api/matches/{id}`** (l'objet `match`

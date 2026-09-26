@@ -1,14 +1,28 @@
 # STATUS — lire d'abord, mettre à jour en dernier
 
-## Rapports de scouting — spec VALIDÉE le 2026-09-26, volet A en cours
-`docs/specs/2026-09-26-rapports-scouting-design.md` — déposer les replays d'une équipe adverse
-(parties perso), faits chiffrés calculés en Rust, pack LLM (`.md` + `.xlsx`), import d'une analyse
-JSON à format imposé avec preuves résolues, pages `/scouting` et `/scouting/:id`. Tables dédiées
-(`scouting_reports`, `scouting_games`) : les replays adverses ne touchent jamais `matches`.
-**Rien n'est implémenté.** Volet A : 3 replays réels décodés (ancre `Razhag`), drafts cohérents,
-**confirmation opérateur attendue** avant d'acter le volet. Ensuite : plan `docs/plans/`.
-Décisions opérateur : roster ≥ 3 + joueur ancre, pas de lien `teams`, noms inclus, analyse en
-anglais, étape LLM manuelle.
+## Rapports de scouting — LIVRÉ sur `main` le 2026-09-26 (pas encore déployé sur le box)
+Spec `docs/specs/2026-09-26-rapports-scouting-design.md` · plan `docs/plans/2026-09-26-rapports-scouting.md`.
+Pages `/scouting` et `/scouting/:id` ; routes `/api/scouting/*` ; migration `0010` (tables dédiées :
+les replays adverses ne touchent jamais `uploads`/`matches` — test d'intégration d'isolation).
+- **Volet A** (draft des parties perso) : 3 replays réels de l'opérateur, **confirmé** par lui.
+- **Vérifié en navigateur sur ces 3 replays** (serveur release :8089 + Postgres dev) : lot ambigu
+  détecté (série contre un même adversaire) → ancre `Razhag` → roster des 5 attendus, 3 parties par
+  la règle roster ; faits identiques aux drafts confirmés (first pick 2/3, bans 1re phase
+  Johanna/Falstad ×2, bans subis Deathwing/Garrosh ×2, ouvertures Dehaka/Hogger/Chromie, V/V/D) ;
+  pack `.md` 19 Ko + `.xlsx` ; analyse rédigée à partir du pack réel (étape LLM manuelle) importée
+  par la fenêtre d'import : 16 affirmations, 0 sans preuve ; ré-import = écrasement.
+- **Mesuré** : `GET /api/scouting/{id}` p95 5,9 ms (contrat 100 ms).
+- Tests : 25 tests scouting (dont intégration DB), 77 serveur, vitest 54 ; clippy `-D warnings` vert.
+- Correctif d'infra au passage : `.gitattributes` force LF sur les migrations (un checkout Windows
+  CRLF faisait échouer sqlx en `VersionMismatch` contre une base migrée en LF).
+- **Reste dû (opérateur)** : critère D — donner le pack réel à **ChatGPT et Claude** et réimporter
+  leurs réponses (l'import tolère la prose autour du JSON) ; critère B — valider la détection sur
+  un lot plus large (parties de l'adversaire contre plusieurs équipes) ; déploiement box
+  (rsync + `docker compose up -d --build`, la migration 0010 s'applique au démarrage).
+- Hors v1 (spec volet F) : fiche de match / visionneuse 2D pour les replays de scouting,
+  passerelle vers le simulateur de draft.
+- Aperçu local : config `storm-codex-server` dans `.claude/launch.json` (release, port 8089, sert
+  `web/dist` ; le 8088 peut être occupé par une autre session).
 
 ## ⚠ EN ATTENTE DE VALIDATION OPÉRATEUR — deux specs datées du 2026-09-08
 Scope retenu par l'opérateur, specs écrites et poussées, **rien n'est implémenté** (règle n° 0 :

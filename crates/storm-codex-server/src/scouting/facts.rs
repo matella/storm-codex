@@ -633,6 +633,10 @@ fn rate_ref(label: String, r: Rate) -> FactRef {
     FactRef { label, text: r.text(), n: r.n, low: r.n < LOW_SAMPLE }
 }
 
+fn games(n: u32) -> String {
+    format!("{n} game{}", if n == 1 { "" } else { "s" })
+}
+
 fn fmt_len(s: f64) -> String {
     format!("{}:{:02}", (s / 60.0) as u32, (s % 60.0) as u32)
 }
@@ -664,7 +668,7 @@ pub fn ordered_index(f: &Facts) -> Vec<(String, FactRef)> {
                 &h.id,
                 FactRef {
                     label: format!("{who} — {}: games played, record", h.hero),
-                    text: format!("{} games, {}", h.picks.k, r.text()),
+                    text: format!("{}, {}", games(h.picks.k), r.text()),
                     n: h.picks.k,
                     low: h.picks.k < LOW_SAMPLE,
                 },
@@ -704,7 +708,7 @@ pub fn ordered_index(f: &Facts) -> Vec<(String, FactRef)> {
                 &h.id,
                 FactRef {
                     label: format!("{} — {} picked (games, record)", m.map, h.hero),
-                    text: format!("{} of {} games, {}", h.picks.k, h.picks.n, h.record.text()),
+                    text: format!("{} of {}, {}", h.picks.k, games(h.picks.n), h.record.text()),
                     n: h.picks.n,
                     low: h.picks.n < LOW_SAMPLE,
                 },
@@ -748,7 +752,7 @@ pub fn ordered_index(f: &Facts) -> Vec<(String, FactRef)> {
             &l.id,
             FactRef {
                 label: format!("Average level lead at {} min (negative = behind)", l.minute),
-                text: format!("{:+.1} levels over {} games", l.avg, l.n),
+                text: format!("{:+.1} levels over {}", l.avg, games(l.n)),
                 n: l.n,
                 low: l.n < LOW_SAMPLE,
             },
@@ -770,6 +774,8 @@ pub fn ordered_index(f: &Facts) -> Vec<(String, FactRef)> {
             },
         );
     }
+    // un fait sans aucune partie (ex. tranche de durée vide) n'apporte rien au LLM : hors index
+    ix.retain(|(id, r)| r.n > 0 || id.starts_with("overview."));
     ix
 }
 
@@ -919,7 +925,7 @@ mod tests {
             "draft.ban_first.johanna",
             "flow.first_to_10",
             "flow.level_diff.10",
-            "flow.length.lt15",
+            "flow.length.15_20",
             "game.1",
         ] {
             assert!(f.index.contains_key(id), "id absent : {id}");

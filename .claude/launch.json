@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "web", "--", "--port", "5180", "--strictPort"],
       "port": 5180
+    },
+    {
+      "name": "storm-codex-server",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-NoProfile", "-Command", "$env:BIND_ADDR='127.0.0.1:8089'; $env:WEB_DIR='./web/dist'; $env:DATABASE_URL='postgres://storm:storm@localhost:5433/storm_codex'; ./target/release/storm-codex-server.exe"],
+      "port": 8089
     }
   ]
 }
