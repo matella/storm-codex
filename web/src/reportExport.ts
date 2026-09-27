@@ -8,7 +8,7 @@ import type { ExportAssets } from "./reportHtml";
 import type { ScoutingReport } from "./scouting";
 
 /** Couleurs d'univers (miroir des tokens --u-* de theme.css) : le fichier exporté n'a pas le thème. */
-const UNIVERSE_HEX: Record<string, string> = {
+export const UNIVERSE_HEX: Record<string, string> = {
   Warcraft: "#ef9f27",
   StarCraft: "#378add",
   Diablo: "#e24b4a",

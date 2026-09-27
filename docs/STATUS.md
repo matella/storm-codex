@@ -32,6 +32,9 @@ les replays adverses ne touchent jamais `uploads`/`matches` — test d'intégrat
   Vérifié : export réel depuis le bouton, rendu contrôlé par captures Edge headless en 1400 px et
   dans un iframe de 390 px (téléphone). En dev, les portraits viennent de HotsPatchNotes du box
   (`HOTSPATCHNOTES_URL` ajouté à la config d'aperçu, lecture seule).
+- **Pages au style « dossier » (2026-09-27)** : `/scouting` et `/scouting/:id` reprennent le langage
+  visuel de l'export (page unique à sections, tableaux de draft par carte, dépôt/roster restylés).
+  Export inchangé. Vérifié par captures Edge headless de la vraie page (1400 px + iframe 390 px).
 - Hors v1 (spec volet F) : fiche de match / visionneuse 2D pour les replays de scouting,
   passerelle vers le simulateur de draft.
 - Aperçu local : config `storm-codex-server` dans `.claude/launch.json` (release, port 8089, sert

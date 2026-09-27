@@ -373,6 +373,16 @@ que l'opérateur envoie à ses coéquipiers (Discord, mail). Exigence : « highl
 - Fonctionne sans analyse importée (faits seuls) et sans portraits (médaillons à initiales sur
   l'anneau de couleur de l'univers).
 
+### Page de l'app au même style (demande opérateur, 2026-09-27)
+
+« Les mêmes visuels dans le site, sans toucher à l'export » : les pages `/scouting` et
+`/scouting/:id` adoptent le langage de l'export (couverture, tableaux de draft par carte, portraits
+barrés / lumineux, preuves compactes). L'export n'est **pas modifié** : la page réutilise seulement
+ses helpers purs (`compactEvidence`, `humanize`) et sa table de couleurs d'univers. Les styles de
+l'export stylisent `body`/`h1`/`main` : ils sont **portés** dans une feuille scopée `.sd`, pas
+injectés. Les onglets disparaissent au profit d'une page unique avec barre de sections ; dépôt,
+côté manuel et roster deviennent les deux dernières sections.
+
 ## Volet F — Plus tard, hors v1
 
 - **Fiche de partie pour les replays de scouting** (réutiliser `MatchDetail` et la visionneuse 2D

@@ -1,93 +1,52 @@
+// Page d'un rapport de scouting, présentée en « dossier » — même langage visuel que l'export HTML
+// (reportHtml.ts, inchangé), plus les parties interactives : édition, dépôt, côté manuel, roster,
+// import d'analyse, export. Styles scopés : scouting-dossier.css.
 import { useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { scoutingWrite, useScoutingReport } from "../api";
-import { Avatar } from "../components/Avatar";
-import { exportReportHtml } from "../reportExport";
+import { minimapImage, scoutingWrite, useDimHeroes, useScoutingReport } from "../api";
 import {
-  claimState, day, fmtRate, fmtWilson, mapsWithPlans, pidNames, statusMeta, targetNames, uploadLabel,
-} from "../scouting";
-import type { Count, Evidence, Facts, HeroCall, Rate, ScoutGame, ScoutingReport as Report } from "../scouting";
-
-type Tab = "overview" | "players" | "draft" | "maps" | "games" | "roster";
-const TABS: [Tab, string][] = [
-  ["overview", "Overview"], ["maps", "Maps"], ["draft", "Draft"],
-  ["players", "Players"], ["games", "Games"], ["roster", "Roster"],
-];
-const inp = { background: "var(--surface-2)", border: "1px solid var(--hairline-strong)", color: "var(--text)", borderRadius: 6, padding: "5px 9px", fontSize: 12 } as const;
+  CallCard, Chips, Consider, EvLine, Lane, mapAnchor, Meter, PickChips, Pips, Portrait, SecHead, TextChips, useDossierFonts,
+} from "../components/Dossier";
+import type { Names } from "../components/Dossier";
+import { exportReportHtml } from "../reportExport";
+import { humanize as humanizeSafe } from "../reportHtml";
+import { day, fmtRate, mapsWithPlans, pidNames, uploadLabel } from "../scouting";
+import type { Evidence, Facts, GameRow, MapFacts, MapPlan, Rate, ScoutGame, ScoutingReport as Report } from "../scouting";
+import "./scouting-dossier.css";
 
 const fmtLen = (s: number | null | undefined) =>
   s == null ? "?" : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-
-// ── preuves ─────────────────────────────────────────────────────────────────
-
-function Ev({ e }: { e: Evidence }) {
-  if (!e.known) return <span className="sc-ev bad" title={`Unknown fact id: ${e.id}`}>? {e.id}</span>;
-  return (
-    <span className={e.low ? "sc-ev low" : "sc-ev"} title={`${e.id}${e.low ? " — low sample: fewer than 3 games" : ""}`}>
-      <span className="muted">{e.label}:</span> {e.text}
-    </span>
-  );
-}
-
-function Claim({ c, children }: { c: { evidence: Evidence[]; unsupported: boolean }; children: ReactNode }) {
-  const st = claimState(c);
-  return (
-    <div className="sc-claim">
-      {children}
-      {st === "unsupported" && <span className="sc-flag dn">UNSUPPORTED</span>}
-      {st === "partial" && <span className="sc-flag" style={{ color: "#fac775" }}>SOME IDS UNKNOWN</span>}
-      <div>{c.evidence.map((e, i) => <Ev key={i} e={e} />)}</div>
-    </div>
-  );
-}
-
-function Kpi({ label, value, sub }: { label: string; value: ReactNode; sub?: ReactNode }) {
-  return (
-    <div className="sc-kpi">
-      <div className="l">{label}</div>
-      <div className="v mono">{value}</div>
-      {sub && <div className="s">{sub}</div>}
-    </div>
-  );
-}
-
-function CountList({ title, items, empty = "—" }: { title: string; items: Count[]; empty?: string }) {
-  return (
-    <div className="card" style={{ margin: 0 }}>
-      <div className="card-hd"><h2 style={{ fontSize: 12 }}>{title}</h2></div>
-      {items.length === 0 && <div className="empty" style={{ padding: 14 }}>{empty}</div>}
-      {items.map((c) => (
-        <div key={c.id} className="row" title={c.id}>
-          <Avatar hero={c.key} size={20} />
-          <span style={{ fontSize: 12 }}>{c.key}</span>
-          <span className="mono muted" style={{ marginLeft: "auto", fontSize: 11, opacity: c.count.n < 3 ? 0.6 : 1 }}>{fmtRate(c.count)}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ── page ────────────────────────────────────────────────────────────────────
+const pct = (r: Rate | null | undefined) => (r && r.n ? Math.round((r.k * 100) / r.n) : null);
+/** `2/3` seul — sous une grande valeur en %, qui porte déjà le pourcentage. */
+const kn = (r: Rate | null | undefined) => (r && r.n ? `${r.k}/${r.n}` : "—");
+const imgVar = (url: string | null) => (url ? ({ "--img": `url('${url}')` } as CSSProperties) : undefined);
 
 export function ScoutingReport() {
   const { id } = useParams();
   const { data: r, error, isLoading } = useScoutingReport(id);
-  const [tab, setTab] = useState<Tab>("overview");
-  const [msg, setMsg] = useState<string | null>(null);
+  useDimHeroes(); // portraits et univers (anneaux)
+  useDossierFonts();
+  const [msg, setMsg] = useState<{ text: string; bad: boolean } | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const qc = useQueryClient();
   const nav = useNavigate();
   const refresh = () => qc.invalidateQueries({ queryKey: ["scouting"] });
-  const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(null), 5000); };
+  const flash = (text: string) => { setMsg({ text, bad: text.startsWith("✗") }); setTimeout(() => setMsg(null), 6000); };
 
-  if (isLoading) return <div className="empty">loading…</div>;
-  if (error || !r) return <div className="empty">Report not found. <a href="/scouting">Back to reports</a></div>;
+  if (isLoading) return <div className="sd"><div className="sd-empty" style={{ marginTop: 24 }}>loading…</div></div>;
+  if (error || !r) return <div className="sd"><div className="sd-empty" style={{ marginTop: 24 }}>Report not found. <a href="/scouting">Back to reports</a></div></div>;
 
   const facts = r.snapshot?.facts ?? null;
-  const st = statusMeta(r.status);
+  const names = pidNames(facts);
+  const hasGames = !!facts && facts.overview.games > 0;
+  const rows = mapsWithPlans(facts, r.analysis?.maps);
+  const choice = r.analysis?.map_choice;
+  const hasChoice = !!choice && choice.pick.length + choice.avoid.length > 0;
+  const g = r.analysis?.general;
+  const hasGeneral = !!g && g.bans.length + g.picks.length + g.considerations.length > 0;
 
   const patch = async (body: object) => {
     const res = await scoutingWrite(`/api/scouting/${r.id}`, {
@@ -97,7 +56,6 @@ export function ScoutingReport() {
     else if (!res.ok) flash(`✗ HTTP ${res.status}`);
     refresh();
   };
-
   const copyPack = async () => {
     try {
       const text = await (await fetch(`/api/scouting/${r.id}/pack.md`)).text();
@@ -107,7 +65,6 @@ export function ScoutingReport() {
       flash("✗ could not copy — use Download .md instead");
     }
   };
-
   const exportHtml = async () => {
     if (exporting) return;
     setExporting(true);
@@ -119,347 +76,371 @@ export function ScoutingReport() {
     }
     setExporting(false);
   };
-
   const remove = async () => {
     if (!confirm(`Delete the report “${r.title}” and its replays?`)) return;
     const res = await scoutingWrite(`/api/scouting/${r.id}`, { method: "DELETE" });
     if (res.ok) { refresh(); nav("/scouting"); } else flash(`✗ HTTP ${res.status}`);
   };
 
+  // numérotation des sections présentes, dans l'ordre de lecture
+  let n = 0;
+  const next = () => ++n;
+
   return (
-    <>
-      <p className="kick" style={{ marginTop: 18 }}><a href="/scouting">Scouting</a> / report #{r.id}</p>
-      <Header r={r} onPatch={patch} />
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", margin: "10px 0" }}>
-        <span className={`bdg ${st.cls}`}>{st.label}</span>
-        <span className="muted" style={{ fontSize: 11 }}>
-          created {day(r.created_at)} · updated {day(r.updated_at)} · facts v{r.facts_version}
-          {r.analysis_imported_at && ` · analysis imported ${day(r.analysis_imported_at)}${r.analysis_model ? ` (${r.analysis_model})` : ""}`}
-        </span>
-        <span style={{ marginLeft: "auto", display: "flex", gap: 6, flexWrap: "wrap" }}>
-          <span className="pill" onClick={copyPack} title="Copy the LLM pack (Markdown) to the clipboard">Copy pack</span>
-          <a className="pill" href={`/api/scouting/${r.id}/pack.md`} download>Download .md</a>
-          <a className="pill" href={`/api/scouting/${r.id}/pack.xlsx`} download>Download .xlsx</a>
-          <span className="pill on" onClick={() => setImportOpen(true)}>Import analysis</span>
-          <span className="pill on" onClick={exportHtml} title="Save a self-contained, shareable HTML report for your teammates">
-            {exporting ? "exporting…" : "Export HTML"}
+    <div className="sd">
+      <div className="crumb"><a href="/scouting">Scouting</a> / report #{r.id}</div>
+      <Cover r={r} facts={facts} onPatch={patch}>
+        <div className="sd-cover-foot">
+          <span className={`sd-status ${r.status}`}>{statusText(r.status)}</span>
+          <span className="sd-meta">
+            created {day(r.created_at)} · updated {day(r.updated_at)} · facts v{r.facts_version}
+            {r.analysis_imported_at && ` · plan imported ${day(r.analysis_imported_at)}${r.analysis_model ? ` (${r.analysis_model})` : ""}`}
           </span>
-          <span className="pill" onClick={remove} title="Delete this report">Delete</span>
-        </span>
-      </div>
-      {msg && <div className="toast mono" style={{ borderRadius: 6 }}>{msg}</div>}
-      <Banners r={r} facts={facts} go={setTab} />
+          <span className="sd-actions">
+            <span className="sd-btn" onClick={copyPack} title="Copy the LLM pack (Markdown) to the clipboard">Copy pack</span>
+            <a className="sd-btn" href={`/api/scouting/${r.id}/pack.md`} download>.md</a>
+            <a className="sd-btn" href={`/api/scouting/${r.id}/pack.xlsx`} download>.xlsx</a>
+            <span className="sd-btn" onClick={() => setImportOpen(true)}>Import analysis</span>
+            <span className="sd-btn primary" onClick={exportHtml} aria-disabled={exporting} title="Save a self-contained, shareable HTML report for your teammates">
+              {exporting ? "Exporting…" : "Export HTML"}
+            </span>
+            <span className="sd-btn danger" onClick={remove} title="Delete this report">Delete</span>
+          </span>
+        </div>
+      </Cover>
 
-      <div style={{ display: "flex", gap: 6, margin: "14px 0 4px" }}>
-        {TABS.map(([t, label]) => (
-          <span key={t} className={tab === t ? "pill on" : "pill"} onClick={() => setTab(t)}>{label}</span>
-        ))}
-      </div>
+      <nav className="sd-nav">
+        {hasGames && <a href="#identity">Identity</a>}
+        {hasChoice && <a href="#map-choice">Map choice</a>}
+        {rows.map((x) => <a key={x.map} className="map" href={`#${mapAnchor(x.map)}`}>{x.map}</a>)}
+        {hasGeneral && <a href="#general">Any map</a>}
+        {hasGames && <a href="#players">Players</a>}
+        {hasGames && <a href="#faced">Faced</a>}
+        {hasGames && <a href="#flow">Game flow</a>}
+        <a href="#games">Replays</a>
+        <a href="#roster">Roster</a>
+      </nav>
+      {msg && <div className={msg.bad ? "sd-toast bad" : "sd-toast"}>{msg.text}</div>}
+      <Banners r={r} facts={facts} />
 
-      {tab === "overview" && <Overview r={r} facts={facts} go={setTab} />}
-      {tab === "players" && <Players facts={facts} />}
-      {tab === "draft" && <Draft r={r} facts={facts} />}
-      {tab === "maps" && <Maps r={r} facts={facts} />}
-      {tab === "games" && <Games r={r} onChanged={refresh} flash={flash} />}
-      {tab === "roster" && <Roster key={r.facts_version} r={r} onPatch={patch} />}
+      {hasGames && facts && (
+        <>
+          <Identity r={r} facts={facts} names={names} num={next()} />
+          {hasChoice && <MapChoice r={r} names={names} num={next()} />}
+          <section className="sd-sec" id="maps">
+            <SecHead num={next()} title="Map by map" sub="bans · picks · what they will play" />
+            {rows.map((x, i) => (
+              <MapBoard key={x.map} map={x.map} m={x.facts} plan={x.plan} facts={facts} names={names} i={i} hasAnalysis={!!r.analysis} />
+            ))}
+          </section>
+          {hasGeneral && <General r={r} names={names} num={next()} />}
+          <Players facts={facts} num={next()} />
+          <Faced facts={facts} num={next()} />
+          <Flow facts={facts} num={next()} />
+        </>
+      )}
+      <Games r={r} facts={facts} names={names} num={next()} onChanged={refresh} flash={flash} />
+      <Roster key={r.facts_version} r={r} num={next()} onPatch={patch} />
       {importOpen && <ImportModal r={r} onClose={() => setImportOpen(false)} onDone={refresh} />}
-    </>
+    </div>
   );
 }
 
-function Header({ r, onPatch }: { r: Report; onPatch: (b: object) => Promise<void> }) {
+function statusText(s: Report["status"]): string {
+  switch (s) {
+    case "empty": return "no replays";
+    case "ready": return "pack ready";
+    case "analyzed": return "draft plan ready";
+    case "stale": return "plan outdated";
+  }
+}
+
+// ── couverture (titre éditable en place) ────────────────────────────────────
+
+function Cover({ r, facts, onPatch, children }: { r: Report; facts: Facts | null; onPatch: (b: object) => Promise<void>; children: ReactNode }) {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(r.title);
   const [target, setTarget] = useState(r.target_name ?? "");
+  const o = facts?.overview;
+  const games = facts?.games ?? [];
+  const roster = (facts?.players ?? []).filter((p) => p.core);
+  const bg = facts?.maps[0] ? minimapImage(facts.maps[0].map) : null;
   const save = async () => {
     setEditing(false);
     if (title.trim() && (title !== r.title || target !== (r.target_name ?? ""))) await onPatch({ title, target_name: target });
   };
-  if (editing) {
-    return (
-      <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "6px 0" }}>
-        <input autoFocus style={{ ...inp, fontSize: 16, flex: 2 }} value={title} onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }} />
-        <input style={{ ...inp, flex: 1 }} placeholder="team name" value={target} onChange={(e) => setTarget(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }} />
-        <span className="pill on" onClick={save}>Save</span>
-      </div>
-    );
-  }
+  const start = () => { setTitle(r.title); setTarget(r.target_name ?? ""); setEditing(true); };
+  const keys = (e: React.KeyboardEvent) => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); };
+
   return (
-    <h1 style={{ cursor: "text" }} title="Click to rename" onClick={() => { setTitle(r.title); setTarget(r.target_name ?? ""); setEditing(true); }}>
-      {r.title} <span className="muted" style={{ fontSize: 13 }}>— {r.target_name ?? "unnamed team"} ✎</span>
-    </h1>
-  );
-}
-
-function Banners({ r, facts, go }: { r: Report; facts: Facts | null; go: (t: Tab) => void }) {
-  const out: ReactNode[] = [];
-  const s = r.snapshot;
-  if (s?.detection.ambiguous && s.roster_auto && r.anchors.length === 0 && r.games.length > 0) {
-    out.push(
-      <div key="amb" className="sc-banner">
-        These replays don't tell which team to scout (the same players keep facing each other). Set an{" "}
-        <b style={{ cursor: "pointer", textDecoration: "underline" }} onClick={() => go("roster")}>anchor player</b> from the team you're scouting.
-      </div>,
-    );
-  }
-  if (facts && facts.overview.excluded > 0) {
-    out.push(
-      <div key="exc" className="sc-banner">
-        {facts.overview.excluded} replay{facts.overview.excluded > 1 ? "s" : ""} left out: the target team wasn't found (fewer than 3 roster players and no anchor).{" "}
-        <b style={{ cursor: "pointer", textDecoration: "underline" }} onClick={() => go("games")}>Pick the side by hand</b> or adjust the roster.
-      </div>,
-    );
-  }
-  if (r.status === "stale") {
-    out.push(
-      <div key="stale" className="sc-banner">
-        The analysis was written on facts v{r.analysis_facts_version}; replays or roster changed since (now v{r.facts_version}). Copy the pack again and re-import to refresh it.
-      </div>,
-    );
-  }
-  return <>{out}</>;
-}
-
-// ── onglets ─────────────────────────────────────────────────────────────────
-
-function NoFacts({ r, go }: { r: Report; go: (t: Tab) => void }) {
-  return (
-    <div className="card"><div className="empty">
-      {r.games.length === 0 ? "No replays yet. " : "No game with the target team identified yet. "}
-      <b style={{ cursor: "pointer", textDecoration: "underline" }} onClick={() => go(r.games.length === 0 ? "games" : "roster")}>
-        {r.games.length === 0 ? "Add replays" : "Check the roster"}
-      </b>
-    </div></div>
-  );
-}
-
-function rateKpi(label: string, r: Rate, rec?: Rate, recLabel = "win rate then") {
-  return <Kpi label={label} value={fmtRate(r)} sub={rec && rec.n > 0 ? `${recLabel}: ${fmtRate(rec)}` : undefined} />;
-}
-
-function Confidence({ c }: { c: string | null }) {
-  if (!c) return null;
-  return <span className={`bdg ${c === "high" ? "b-win" : c === "low" ? "b-qm" : "b-live"}`}>confidence: {c}</span>;
-}
-
-/** Un héros de l'analyse : ban (avec phase), pick, ou pick adverse attendu (avec joueur). */
-function HeroCallRow({ h, kind, names }: { h: HeroCall; kind: "ban" | "pick" | "theirs"; names: Record<string, string> }) {
-  const badge = kind === "ban"
-    ? <span className="bdg b-loss">ban{h.phase ? ` · ${h.phase === "mid" ? "mid" : "1st phase"}` : ""}</span>
-    : kind === "pick" ? <span className="bdg b-win">pick</span> : <span className="bdg b-live">they pick</span>;
-  return (
-    <Claim c={h}>
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-        {badge}<Avatar hero={h.hero} size={20} /><b>{h.hero}</b>
-        {kind === "theirs" && h.player && <span className="muted">({names[h.player] ?? h.player})</span>}
-      </span>
-      <span> — {h.why}</span>
-    </Claim>
-  );
-}
-
-function PlanSection({ title, children, empty }: { title: string; children: ReactNode[]; empty?: boolean }) {
-  if (empty) return null;
-  return (
-    <>
-      <div className="kick" style={{ padding: "10px 18px 0", margin: 0 }}>{title}</div>
-      {children}
-    </>
-  );
-}
-
-function Overview({ r, facts, go }: { r: Report; facts: Facts | null; go: (t: Tab) => void }) {
-  if (!facts || facts.overview.games === 0) return <NoFacts r={r} go={go} />;
-  const o = facts.overview, fl = facts.flow, d = facts.draft;
-  const a = r.analysis;
-  const choice = a?.map_choice ?? { pick: [], avoid: [] };
-  return (
-    <>
-      {a ? (
-        <div className="card">
-          <div className="card-hd"><h2>Draft plan</h2>
-            {r.analysis_tally && (
-              <span className="muted mono" style={{ marginLeft: "auto", fontSize: 11 }}>
-                {r.analysis_tally.claims} items · {r.analysis_tally.unsupported} unsupported · {r.analysis_tally.unknown_ids} unknown ids
-              </span>
-            )}
-          </div>
-          <div className="sc-claim" style={{ fontSize: 13, color: "var(--text)", whiteSpace: "pre-wrap" }}>{a.summary || <span className="muted">no summary</span>}</div>
-          <div className="sc-claim muted" style={{ fontSize: 11 }}>
-            Bans and picks map by map: <b style={{ cursor: "pointer", textDecoration: "underline" }} onClick={() => go("maps")}>Maps</b> ·
-            on any map: <b style={{ cursor: "pointer", textDecoration: "underline" }} onClick={() => go("draft")}>Draft</b>
-          </div>
+    <header className="sd-cover" style={imgVar(bg)}>
+      <div className="sd-kicker">Scouting dossier · report #{r.id}</div>
+      {editing ? (
+        <div className="sd-edit">
+          <input autoFocus className="sd-input big" placeholder="team name" value={target} onChange={(e) => setTarget(e.target.value)} onKeyDown={keys} />
+          <input className="sd-input" style={{ flex: 2, minWidth: 220 }} placeholder="report title" value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={keys} />
+          <span className="sd-btn primary" onClick={save}>Save</span>
+          <span className="sd-btn" onClick={() => setEditing(false)}>Cancel</span>
         </div>
       ) : (
-        <div className="card"><div className="empty">No draft plan yet — <b>Copy pack</b>, paste it into your LLM, then <b>Import analysis</b>.</div></div>
+        <>
+          <h1 className="sd-title" title="Click to rename" onClick={start}>{r.target_name ?? "Unnamed team"}</h1>
+          <div className="sd-subtitle" title="Click to rename" onClick={start}>{r.title}<span className="edit">✎ RENAME</span></div>
+        </>
       )}
-      {(choice.pick.length > 0 || choice.avoid.length > 0) && (
-        <div className="card">
-          <div className="card-hd"><h2>Map choice</h2><span className="muted" style={{ fontSize: 11 }}>when we get to pick the map</span></div>
-          {choice.pick.map((m, i) => <Claim key={`p${i}`} c={m}><span className="bdg b-win" style={{ marginRight: 8 }}>pick</span><b>{m.map}</b> — {m.why}</Claim>)}
-          {choice.avoid.map((m, i) => <Claim key={`a${i}`} c={m}><span className="bdg b-loss" style={{ marginRight: 8 }}>avoid</span><b>{m.map}</b> — {m.why}</Claim>)}
-        </div>
-      )}
-      <p className="cap">Key facts — seen from {r.target_name ?? "the target team"}</p>
-      <div className="card"><div className="sc-grid">
-        <Kpi label="Record" value={fmtRate(o.record)} sub={`${day(o.first_date)} → ${day(o.last_date)}`} />
-        <Kpi label="Avg length" value={fmtLen(o.avg_length_s)} sub={`builds ${o.builds.join(", ") || "?"}`} />
-        {rateKpi("Had first pick", d.first_pick, d.first_pick_record, "win rate with FP")}
-        {rateKpi("First to level 10", fl.first_to_10, fl.first_to_10_record)}
-        {rateKpi("First fort", fl.first_fort, fl.first_fort_record)}
-        {rateKpi("First objective", fl.first_objective, fl.first_objective_record)}
-        <Kpi label="Comebacks" value={fmtRate(fl.comebacks)} sub="wins after trailing by 2+ levels" />
-        <Kpi label="Throws" value={fmtRate(fl.throws)} sub="losses after leading by 2+ levels" />
-        {fl.level_diff.map((l) => (
-          <Kpi key={l.id} label={`Level lead at ${l.minute} min`} value={l.n ? `${l.avg >= 0 ? "+" : ""}${l.avg.toFixed(1)}` : "—"} sub={`${l.n} game${l.n === 1 ? "" : "s"}`} />
-        ))}
-        {fl.length.map((b) => <Kpi key={b.id} label={`Games ${b.label}`} value={fmtRate(b.record)} />)}
-      </div></div>
-    </>
-  );
-}
-
-function Players({ facts }: { facts: Facts | null }) {
-  if (!facts || facts.players.length === 0) return <div className="card"><div className="empty">No player data yet.</div></div>;
-  return (
-    <>
-      {facts.players.map((p) => {
-        const s = p.stats;
-        return (
-          <div key={p.pid} className="card">
-            <div className="card-hd">
-              <Avatar hero={p.heroes[0]?.hero ?? null} size={28} />
-              <h2>{p.name}</h2>
-              <span className="mono muted" style={{ fontSize: 11 }}>{p.pid}</span>
-              {!p.core && <span className="bdg b-qm">substitute</span>}
-              <span className="mono" style={{ marginLeft: "auto", fontSize: 11 }}>{fmtRate(p.record)}</span>
+      <div className="sd-statline">
+        <div className="sd-stat big"><span className="sd-label">Record</span>
+          <strong>{o ? <>{o.record.k}<span>–</span>{o.record.n - o.record.k}</> : "—"}</strong><Pips games={games} /></div>
+        <div className="sd-stat"><span className="sd-label">Games</span><strong>{o?.games ?? 0}</strong>
+          <small>{o && o.games > 0 ? `${day(o.first_date)} → ${day(o.last_date)}` : "add replays below"}</small></div>
+        <div className="sd-stat"><span className="sd-label">Had first pick</span>
+          <strong>{pct(facts?.draft.first_pick) ?? "—"}{pct(facts?.draft.first_pick) != null && <span>%</span>}</strong>
+          <small>{kn(facts?.draft.first_pick)}</small></div>
+        <div className="sd-stat"><span className="sd-label">Avg length</span><strong>{o && o.games ? fmtLen(o.avg_length_s) : "—"}</strong>
+          <small>builds {o?.builds.join(", ") || "?"}</small></div>
+        {o && o.games > 0 && o.games < 5 && (
+          <div className="sd-sample">⚠ Small sample — {o.games} game{o.games === 1 ? "" : "s"}. Treat trends as hints, not certainties.</div>
+        )}
+      </div>
+      {roster.length > 0 && (
+        <div className="sd-roster">
+          {roster.map((p) => (
+            <div key={p.pid} className="sd-rm">
+              {p.heroes[0] && <Portrait hero={p.heroes[0].hero} size={58} />}
+              <div><strong>{p.name}</strong><span>{p.roles[0]?.key ?? ""}</span><em>{p.heroes.slice(0, 3).map((h) => h.hero).join(" · ")}</em></div>
             </div>
-            <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
-              {p.heroes.map((h) => (
-                <span key={h.id} title={h.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, opacity: h.picks.k < 3 ? 0.75 : 1 }}>
-                  <Avatar hero={h.hero} size={22} />
-                  <span style={{ fontSize: 12 }}>{h.hero}</span>
-                  <span className="mono muted" style={{ fontSize: 10 }}>{h.picks.k}g · {fmtRate(h.record)}</span>
-                </span>
-              ))}
-            </div>
-            <div className="row mono muted" style={{ fontSize: 10, flexWrap: "wrap" }}>
-              {p.roles.map((x) => `${x.key} ×${x.count.k}`).join(" · ")}
-              <span style={{ marginLeft: "auto" }}>
-                K/D/A {s.kills.toFixed(1)}/{s.deaths.toFixed(1)}/{s.assists.toFixed(1)} · KP {s.kill_participation_pct.toFixed(0)}% ·
-                dmg {s.hero_damage_pm.toFixed(0)}/min · siege {s.siege_damage_pm.toFixed(0)}/min · heal {s.healing_pm.toFixed(0)}/min ·
-                dead {s.time_dead_pct.toFixed(1)}%
-              </span>
-            </div>
-          </div>
-        );
-      })}
-    </>
-  );
-}
-
-function Draft({ r, facts }: { r: Report; facts: Facts | null }) {
-  if (!facts || facts.overview.games === 0) return <div className="card"><div className="empty">No draft data in these replays.</div></div>;
-  const d = facts.draft;
-  const g = r.analysis?.general;
-  const names = pidNames(facts);
-  const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))", gap: 12, margin: "12px 0" } as const;
-  const faced = d.faced ?? [];
-  return (
-    <>
-      {g && (g.bans.length + g.picks.length + g.considerations.length > 0) && (
-        <div className="card">
-          <div className="card-hd"><h2>Draft plan — any map</h2></div>
-          {g.bans.map((h, i) => <HeroCallRow key={`b${i}`} h={h} kind="ban" names={names} />)}
-          {g.picks.map((h, i) => <HeroCallRow key={`p${i}`} h={h} kind="pick" names={names} />)}
-          {g.considerations.map((c, i) => <Claim key={`c${i}`} c={c}>{c.point}</Claim>)}
-        </div>
-      )}
-      <div className="card"><div className="sc-grid">
-        {rateKpi("Had first pick", d.first_pick)}
-        <Kpi label="Win rate with first pick" value={fmtRate(d.first_pick_record)} />
-        <Kpi label="Win rate with second pick" value={fmtRate(d.second_pick_record)} />
-        <Kpi label="Drafts analysed" value={d.games} />
-      </div></div>
-      <div style={grid}>
-        <CountList title="Their first-phase bans" items={d.bans_first} />
-        <CountList title="Their mid-draft bans" items={d.bans_mid} />
-        <CountList title="Banned against them" items={d.bans_against} />
-        <CountList title="Their first pick" items={d.openers} />
-        <CountList title="Their last pick" items={d.last_picks} />
-        <div className="card" style={{ margin: 0 }}>
-          <div className="card-hd"><h2 style={{ fontSize: 12 }}>Role of their first pick</h2></div>
-          {d.opener_roles.map((c) => (
-            <div key={c.id} className="row"><span style={{ fontSize: 12 }}>{c.key}</span>
-              <span className="mono muted" style={{ marginLeft: "auto", fontSize: 11 }}>{fmtRate(c.count)}</span></div>
           ))}
         </div>
-      </div>
-      {faced.length > 0 && (
-        <div className="card">
-          <div className="card-hd"><h2>Heroes picked against them</h2><span className="muted" style={{ fontSize: 11 }}>games faced · their record in those games</span></div>
-          <div className="row" style={{ flexWrap: "wrap", gap: 14 }}>
-            {faced.map((h) => (
-              <span key={h.id} title={h.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, opacity: h.picks.k < 3 ? 0.75 : 1 }}>
-                <Avatar hero={h.hero} size={22} />
-                <span style={{ fontSize: 12 }}>{h.hero}</span>
-                <span className="mono muted" style={{ fontSize: 10 }}>{h.picks.k}g · {fmtRate(h.record)}</span>
-              </span>
-            ))}
-          </div>
+      )}
+      {children}
+    </header>
+  );
+}
+
+function Banners({ r, facts }: { r: Report; facts: Facts | null }) {
+  const s = r.snapshot;
+  return (
+    <>
+      {s?.detection.ambiguous && s.roster_auto && r.anchors.length === 0 && r.games.length > 0 && (
+        <div className="sd-banner">
+          These replays don't tell which team to scout (the same players keep facing each other). Set an <a href="#roster">anchor player</a> from the team you're scouting.
+        </div>
+      )}
+      {facts && facts.overview.excluded > 0 && (
+        <div className="sd-banner">
+          {facts.overview.excluded} replay{facts.overview.excluded > 1 ? "s" : ""} left out: the target team wasn't found (fewer than 3 roster players and no anchor).
+          {" "}<a href="#games">Pick the side by hand</a> or adjust the roster.
+        </div>
+      )}
+      {r.status === "stale" && (
+        <div className="sd-banner">
+          The draft plan was written on facts v{r.analysis_facts_version}; replays or roster changed since (now v{r.facts_version}). Copy the pack again and re-import to refresh it.
+        </div>
+      )}
+      {!r.analysis && facts && facts.overview.games > 0 && (
+        <div className="sd-banner" style={{ color: "var(--sd-accent2)", borderColor: "rgba(127,119,221,.35)", background: "rgba(127,119,221,.06)" }}>
+          No draft plan yet — <b>Copy pack</b>, paste it into your LLM, then <b>Import analysis</b>. The numbers below come straight from the replays.
         </div>
       )}
     </>
   );
 }
 
-function Maps({ r, facts }: { r: Report; facts: Facts | null }) {
-  const rows = mapsWithPlans(facts, r.analysis?.maps);
-  if (rows.length === 0) return <div className="card"><div className="empty">No map data yet.</div></div>;
-  const names = pidNames(facts);
-  const list = (cs: Count[]) => cs.map((c) => `${c.key} ×${c.count.k}`).join(", ") || "—";
+// ── sections du dossier ─────────────────────────────────────────────────────
+
+function Identity({ r, facts, names, num }: { r: Report; facts: Facts; names: Names; num: number }) {
+  const d = facts.draft;
+  const t = r.analysis_tally;
   return (
-    <>
-      {rows.map(({ map, facts: m, plan }) => (
-        <div key={map} className="card">
-          <div className="card-hd">
-            <h2>{map}</h2>
-            {m && <span className="mono" style={{ fontSize: 11 }}>{fmtRate(m.record)}</span>}
-            {m && <span className="mono muted" style={{ fontSize: 10 }}>{fmtWilson(m.wilson)}</span>}
-            {!m && <span className="bdg b-qm">not in these replays</span>}
-            <span style={{ marginLeft: "auto" }}>{plan && <Confidence c={plan.confidence} />}</span>
-          </div>
-          {m && (
-            <div className="row" style={{ flexDirection: "column", alignItems: "stretch", gap: 4, fontSize: 11 }}>
-              <div><span className="muted">They picked: </span>
-                {m.picks.map((h) => `${h.hero}${h.by?.length ? ` (${h.by.map((p) => names[p] ?? p).join(", ")})` : ""}`).join(" · ") || "—"}</div>
-              <div><span className="muted">They banned: </span>{list(m.bans)}</div>
-              <div><span className="muted">Banned against them: </span>{list(m.bans_against)}</div>
-            </div>
-          )}
-          {plan ? (
-            <>
-              {plan.overview && <Claim c={plan}><span style={{ color: "var(--text)" }}>{plan.overview}</span></Claim>}
-              <PlanSection title="We ban" empty={plan.bans.length === 0}>{plan.bans.map((h, i) => <HeroCallRow key={i} h={h} kind="ban" names={names} />)}</PlanSection>
-              <PlanSection title="We pick" empty={plan.picks.length === 0}>{plan.picks.map((h, i) => <HeroCallRow key={i} h={h} kind="pick" names={names} />)}</PlanSection>
-              <PlanSection title="They will likely pick" empty={plan.their_picks.length === 0}>{plan.their_picks.map((h, i) => <HeroCallRow key={i} h={h} kind="theirs" names={names} />)}</PlanSection>
-              <PlanSection title="Consider" empty={plan.considerations.length === 0}>{plan.considerations.map((c, i) => <Claim key={i} c={c}>{c.point}</Claim>)}</PlanSection>
-            </>
-          ) : (
-            r.analysis && <div className="sc-claim muted">No plan for this map in the analysis — see the Draft tab for advice on any map.</div>
-          )}
+    <section className="sd-sec" id="identity">
+      <SecHead num={num} title="Draft identity" />
+      <div className="sd-identity">
+        <div>
+          {r.analysis?.summary
+            ? <blockquote>{humanizeSafe(r.analysis.summary, names)}</blockquote>
+            : <blockquote className="muted">No draft plan imported yet — the numbers come straight from the replays.</blockquote>}
+          {t && <div className="sd-tally">{t.claims} recommendations · {t.unsupported} unsupported · {t.unknown_ids} unknown fact ids</div>}
         </div>
-      ))}
-    </>
+        <div className="sd-tells">
+          <div className="sd-tell"><span className="sd-label">They ban first</span><div className="sd-chips"><Chips list={d.bans_first} tone="ban" /></div></div>
+          <div className="sd-tell"><span className="sd-label">They ban mid-draft</span><div className="sd-chips"><Chips list={d.bans_mid} tone="ban" /></div></div>
+          <div className="sd-tell"><span className="sd-label">Their first pick</span><div className="sd-chips"><Chips list={d.openers} tone="them" /></div></div>
+          <div className="sd-tell"><span className="sd-label">Their last pick</span><div className="sd-chips"><Chips list={d.last_picks} tone="them" /></div></div>
+          <div className="sd-tell"><span className="sd-label">Banned against them</span><div className="sd-chips"><Chips list={d.bans_against} /></div></div>
+          <div className="sd-tell"><span className="sd-label">Role of their first pick · first pick {fmtRate(d.first_pick)}</span>
+            <div className="sd-chips"><TextChips list={d.opener_roles} /></div></div>
+        </div>
+      </div>
+    </section>
   );
 }
 
-function Games({ r, onChanged, flash }: { r: Report; onChanged: () => void; flash: (m: string) => void }) {
+function MapChoice({ r, names, num }: { r: Report; names: Names; num: number }) {
+  const c = r.analysis?.map_choice;
+  if (!c) return null;
+  const tile = (m: { map: string; why: string; evidence: Evidence[]; unsupported: boolean }, kind: "go" | "no", i: number) => (
+    <a key={`${kind}${i}`} className={`sd-mtile ${kind}`} href={`#${mapAnchor(m.map)}`} style={imgVar(minimapImage(m.map))}>
+      <span className="badge">{kind === "go" ? "PICK" : "AVOID"}</span>
+      <strong>{m.map}</strong>
+      <p>{humanizeSafe(m.why, names)}</p>
+      <EvLine ev={m.evidence} unsupported={m.unsupported} names={names} map={m.map} />
+    </a>
+  );
+  return (
+    <section className="sd-sec" id="map-choice">
+      <SecHead num={num} title="Map choice" sub="when we get to pick the map" />
+      <div className="sd-mtiles">{c.pick.map((m, i) => tile(m, "go", i))}{c.avoid.map((m, i) => tile(m, "no", i))}</div>
+    </section>
+  );
+}
+
+function MapBoard({ map, m, plan, facts, names, i, hasAnalysis }: {
+  map: string; m: MapFacts | null; plan: MapPlan | null; facts: Facts; names: Names; i: number; hasAnalysis: boolean;
+}) {
+  const games = facts.games.filter((x) => x.map === map);
+  return (
+    <article className="sd-mboard" id={mapAnchor(map)}>
+      <div className="sd-mboard-hd" style={imgVar(minimapImage(map))}>
+        <div>
+          <span className="idx">MAP {String(i + 1).padStart(2, "0")}</span>
+          <h3>{map}</h3>
+          <div className="sd-mboard-rec">
+            {m ? <><span className="rec">{m.record.k}–{m.record.n - m.record.k}</span><Pips games={games} /></> : <span className="rec none">not in these replays</span>}
+            {m?.wilson && <span className="ci">95% CI {Math.round(m.wilson[0])}–{Math.round(m.wilson[1])}%</span>}
+          </div>
+        </div>
+        {plan && <Meter conf={plan.confidence} />}
+      </div>
+      {plan?.overview && (
+        <>
+          <p className="sd-overview">{humanizeSafe(plan.overview, names)}</p>
+          <EvLine ev={plan.evidence} unsupported={plan.unsupported} names={names} map={map} />
+        </>
+      )}
+      {plan ? (
+        <>
+          <div className="sd-board">
+            <Lane title="We ban" kind="ban" empty="no ban suggested">{plan.bans.map((h, k) => <CallCard key={k} h={h} tone="ban" names={names} map={map} />)}</Lane>
+            <Lane title="We pick" kind="pick" empty="no pick suggested">{plan.picks.map((h, k) => <CallCard key={k} h={h} tone="pick" names={names} map={map} />)}</Lane>
+            <Lane title="They will likely pick" kind="them" empty="—">{plan.their_picks.map((h, k) => <CallCard key={k} h={h} tone="them" names={names} map={map} />)}</Lane>
+          </div>
+          <Consider points={plan.considerations} names={names} map={map} />
+        </>
+      ) : (
+        <div className="sd-noplan">{hasAnalysis ? <>No plan for this map — see <a href="#general">Any map</a>.</> : "No draft plan imported yet."}</div>
+      )}
+      {m && (
+        <div className="sd-lasttime">
+          <div><span className="sd-label">They played</span><div className="sd-chips"><PickChips list={m.picks} names={names} /></div></div>
+          <div><span className="sd-label">They banned</span><div className="sd-chips"><Chips list={m.bans} tone="ban" /></div></div>
+          <div><span className="sd-label">Banned against them</span><div className="sd-chips"><Chips list={m.bans_against} /></div></div>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function General({ r, names, num }: { r: Report; names: Names; num: number }) {
+  const g = r.analysis?.general;
+  if (!g) return null;
+  return (
+    <section className="sd-sec" id="general">
+      <SecHead num={num} title="Any map" sub="applies everywhere, including maps missing from the replays" />
+      <div className="sd-board two">
+        <Lane title="We ban" kind="ban" empty="—">{g.bans.map((h, k) => <CallCard key={k} h={h} tone="ban" names={names} />)}</Lane>
+        <Lane title="We pick" kind="pick" empty="—">{g.picks.map((h, k) => <CallCard key={k} h={h} tone="pick" names={names} />)}</Lane>
+      </div>
+      <Consider points={g.considerations} names={names} />
+    </section>
+  );
+}
+
+function Players({ facts, num }: { facts: Facts; num: number }) {
+  if (!facts.players.length) return null;
+  return (
+    <section className="sd-sec" id="players">
+      <SecHead num={num} title="Their players" />
+      <div className="sd-pcards">
+        {facts.players.map((p) => {
+          const max = Math.max(1, ...p.heroes.map((h) => h.picks.k));
+          return (
+            <div key={p.pid} className="sd-pcard">
+              <div className="sd-pcard-hd">
+                {p.heroes[0] && <Portrait hero={p.heroes[0].hero} size={72} />}
+                <div><strong>{p.name}</strong><span>{p.roles.map((x) => x.key).join(" / ")}{p.core ? "" : " · substitute"}</span><em>{fmtRate(p.record)} wins</em></div>
+              </div>
+              {p.heroes.map((h) => (
+                <div key={h.id} className="sd-pool-row" title={h.id}>
+                  <Portrait hero={h.hero} size={24} /><span>{h.hero}</span>
+                  <i className="sd-bar"><b style={{ width: `${Math.round((h.picks.k * 100) / max)}%` }} /></i>
+                  <em>{h.picks.k}g · {pct(h.record)}%</em>
+                </div>
+              ))}
+              <div className="sd-pstats">
+                K/D/A <b>{p.stats.kills.toFixed(1)}/{p.stats.deaths.toFixed(1)}/{p.stats.assists.toFixed(1)}</b> · KP <b>{p.stats.kill_participation_pct.toFixed(0)}%</b> ·
+                dmg <b>{p.stats.hero_damage_pm.toFixed(0)}</b>/min · heal <b>{p.stats.healing_pm.toFixed(0)}</b>/min · dead <b>{p.stats.time_dead_pct.toFixed(1)}%</b>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function Faced({ facts, num }: { facts: Facts; num: number }) {
+  const list = [...(facts.draft.faced ?? [])].sort((x, y) => (pct(x.record) ?? 0) - (pct(y.record) ?? 0) || y.picks.k - x.picks.k);
+  if (!list.length) return null;
+  return (
+    <section className="sd-sec" id="faced">
+      <SecHead num={num} title="What they faced" sub={<>heroes picked against them · their record in those games · <b className="lg-hot">green</b> = they never beat it</>} />
+      <div className="sd-faced">
+        {list.map((h) => {
+          const p = pct(h.record) ?? 0;
+          return (
+            <div key={h.id} className={`sd-fc ${p === 0 ? "hot" : p === 100 ? "cold" : ""}`} title={h.id}>
+              <Portrait hero={h.hero} size={44} /><span>{h.hero}</span><em>{h.record.k}/{h.record.n}</em>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function Flow({ facts, num }: { facts: Facts; num: number }) {
+  const fl = facts.flow;
+  const tile = (label: string, r: Rate, sub?: string) => (
+    <div className="sd-stat"><span className="sd-label">{label}</span><strong>{pct(r) ?? "—"}{pct(r) != null && <span>%</span>}</strong><small>{kn(r)}{sub ? ` · ${sub}` : ""}</small></div>
+  );
+  return (
+    <section className="sd-sec" id="flow">
+      <SecHead num={num} title="Game flow" sub="how their games tend to go" />
+      <div className="sd-flow">
+        {tile("First to level 10", fl.first_to_10, fl.first_to_10_record.n ? `won ${kn(fl.first_to_10_record)} then` : undefined)}
+        {tile("First fort", fl.first_fort, fl.first_fort_record.n ? `won ${kn(fl.first_fort_record)} then` : undefined)}
+        {tile("First objective", fl.first_objective, fl.first_objective_record.n ? `won ${kn(fl.first_objective_record)} then` : undefined)}
+        {tile("Comebacks", fl.comebacks, "won after trailing by 2+ levels")}
+        {tile("Throws", fl.throws, "lost after leading by 2+ levels")}
+        {fl.level_diff.map((l) => (
+          <div key={l.id} className="sd-stat"><span className="sd-label">Level lead at {l.minute} min</span>
+            <strong>{l.n ? `${l.avg >= 0 ? "+" : ""}${l.avg.toFixed(1)}` : "—"}</strong><small>{l.n} game{l.n === 1 ? "" : "s"}</small></div>
+        ))}
+        {fl.length.filter((b) => b.record.n > 0).map((b) => tile(`Games ${b.label}`, b.record))}
+      </div>
+    </section>
+  );
+}
+
+// ── replays (journal + gestion) ─────────────────────────────────────────────
+
+function Games({ r, facts, names, num, onChanged, flash }: {
+  r: Report; facts: Facts | null; names: Names; num: number; onChanged: () => void; flash: (m: string) => void;
+}) {
   const [queue, setQueue] = useState<{ name: string; state: string }[]>([]);
   const [over, setOver] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  const rowOf = useMemo(() => new Map((facts?.games ?? []).map((x) => [x.gid, x])), [facts]);
 
   const upload = async (files: File[]) => {
     const list = files.filter((f) => f.name.toLowerCase().endsWith(".stormreplay"));
@@ -483,8 +464,8 @@ function Games({ r, onChanged, flash }: { r: Report; onChanged: () => void; flas
       onChanged();
     }
   };
-
   const setSide = async (g: ScoutGame, team: number | null) => {
+    if (team !== null && g.target_team === team && g.target_source === "manual") return;
     const res = await scoutingWrite(`/api/scouting/${r.id}/replays/${g.gid}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target_team: team }),
     });
@@ -497,73 +478,85 @@ function Games({ r, onChanged, flash }: { r: Report; onChanged: () => void; flas
     if (!res.ok) flash(`✗ HTTP ${res.status}`);
     onChanged();
   };
+  const cls = (s: string) => (s === "waiting" || s.endsWith("…") ? "wait" : s.startsWith("added") && !s.includes("not found") ? "ok" : "ko");
 
   return (
-    <>
-      <div className="card">
-        <div
-          className={over ? "sc-drop over" : "sc-drop"}
-          onClick={() => input.current?.click()}
-          onDragOver={(e) => { e.preventDefault(); setOver(true); }}
-          onDragLeave={() => setOver(false)}
-          onDrop={(e) => { e.preventDefault(); setOver(false); upload([...e.dataTransfer.files]); }}
-        >
-          Drop .StormReplay files here, or click to choose
-          <input ref={input} type="file" multiple accept=".StormReplay,.stormreplay" style={{ display: "none" }}
-            onChange={(e) => { upload([...(e.target.files ?? [])]); e.target.value = ""; }} />
+    <section className="sd-sec" id="games">
+      <SecHead num={num} title="Replays" sub="click a team to set it as the scouted side by hand" />
+      <div
+        className={over ? "sd-drop over" : "sd-drop"}
+        onClick={() => input.current?.click()}
+        onDragOver={(e) => { e.preventDefault(); setOver(true); }}
+        onDragLeave={() => setOver(false)}
+        onDrop={(e) => { e.preventDefault(); setOver(false); upload([...e.dataTransfer.files]); }}
+      >
+        <b>Drop replays here</b>
+        .StormReplay files of their games — or click to choose
+        <input ref={input} type="file" multiple accept=".StormReplay,.stormreplay" style={{ display: "none" }}
+          onChange={(e) => { upload([...(e.target.files ?? [])]); e.target.value = ""; }} />
+      </div>
+      {queue.length > 0 && (
+        <div className="sd-queue">{queue.map((q, i) => <div key={i}><span>{q.name}</span><span className={cls(q.state)}>{q.state}</span></div>)}</div>
+      )}
+      {r.games.length === 0 ? null : (
+        <div className="sd-glog">
+          {r.games.map((g) => <GameLine key={g.gid} g={g} row={rowOf.get(g.gid) ?? null} names={names} onSide={setSide} onDelete={del} />)}
         </div>
-        {queue.map((q, i) => (
-          <div key={i} className="row mono" style={{ fontSize: 11 }}>
-            <span className="muted" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{q.name}</span>
-            <span style={{ marginLeft: "auto" }} className={q.state.startsWith("added") && !q.state.includes("not found") ? "up" : q.state === "waiting" || q.state.endsWith("…") ? "muted" : "dn"}>{q.state}</span>
-          </div>
-        ))}
-      </div>
-
-      <div className="card">
-        <div className="card-hd"><h2>Replays</h2><span className="muted" style={{ fontSize: 11 }}>click a team to set it as the scouted side by hand</span></div>
-        {r.games.length === 0 && <div className="empty">No replays yet.</div>}
-        {r.games.map((g) => {
-          const won = g.target_team != null && g.winner != null ? g.winner === g.target_team : null;
-          return (
-            <div key={g.gid} className="row" style={{ alignItems: "flex-start", flexWrap: "wrap" }}>
-              <div style={{ width: 150 }}>
-                <div style={{ fontSize: 12 }}>{g.map ?? "?"}</div>
-                <div className="muted mono" style={{ fontSize: 10 }}>{day(g.played_at)} · {fmtLen(g.length_s)}</div>
-              </div>
-              <div style={{ width: 70 }}>
-                {won === null ? <span className="bdg b-qm">?</span> : <span className={`bdg ${won ? "b-win" : "b-loss"}`}>{won ? "WIN" : "LOSS"}</span>}
-              </div>
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2, minWidth: 260 }}>
-                {g.teams.map((t, side) => (
-                  <span key={side} className={g.target_team === side ? "sc-team on" : "sc-team"} onClick={() => setSide(g, side)} title="Set as the scouted team">
-                    {t.map((p) => p.name).join(" · ")}
-                  </span>
-                ))}
-              </div>
-              <div style={{ width: 150, textAlign: "right", display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
-                {targetNames(g) ? <span className="bdg b-live">by {g.target_source}</span> : <span className="bdg b-mvp">team not found</span>}
-                <span style={{ display: "flex", gap: 6 }}>
-                  {g.target_source === "manual" && <span className="pill" onClick={() => setSide(g, null)} title="Back to automatic detection">auto</span>}
-                  <span className="pill" onClick={() => del(g)} title="Remove from the report">remove</span>
-                </span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </>
+      )}
+    </section>
   );
 }
 
-function Roster({ r, onPatch }: { r: Report; onPatch: (b: object) => Promise<void> }) {
+function GameLine({ g, row, names, onSide, onDelete }: {
+  g: ScoutGame; row: GameRow | null; names: Names;
+  onSide: (g: ScoutGame, team: number | null) => void; onDelete: (g: ScoutGame) => void;
+}) {
+  const t = g.target_team;
+  const won = t != null && g.winner != null ? g.winner === t : null;
+  const side = (s: 0 | 1) => {
+    const isTarget = t === s;
+    const team = g.teams[s];
+    // ordre de pick lu dans le replay quand la partie est analysée, sinon ordre du lobby
+    const order = row ? (isTarget ? row.picks : t != null ? row.opp_picks : null) : null;
+    const heroes = order ? order.map((p) => ({ hero: p.hero, who: isTarget ? names[p.player] ?? p.player : p.player })) : team.map((p) => ({ hero: p.hero, who: p.name }));
+    const bans = row && t != null ? (isTarget ? row.bans : row.bans_against) : [];
+    return (
+      <div className={isTarget ? "sd-gl-side target" : "sd-gl-side"} onClick={() => onSide(g, s)} title="Set as the scouted team">
+        <span className="sd-label"><span>{isTarget ? "Scouted team" : t == null ? `Team ${s === 0 ? "A" : "B"}` : "Opponent"}</span></span>
+        <div className="sd-gl-picks">
+          {heroes.map((h, i) => <span key={i}><Portrait hero={h.hero} size={30} /><em>{h.who}</em></span>)}
+        </div>
+        {bans.length > 0 && <div className="sd-gl-bans"><span className="sd-label">bans</span>{bans.map((b) => <Portrait key={b} hero={b} size={22} tone="ban" />)}</div>}
+      </div>
+    );
+  };
+  return (
+    <div className={`sd-gl ${won === true ? "w" : won === false ? "l" : ""}`}>
+      <div className="sd-gl-meta">
+        <strong>{won === null ? "?" : won ? "WIN" : "LOSS"}</strong>
+        <span>{g.map ?? "?"}</span>
+        <em>{day(g.played_at)} · {fmtLen(g.length_s)}{row?.first_pick === true ? " · they had first pick" : row?.first_pick === false ? " · opponent had first pick" : ""}</em>
+      </div>
+      {side(0)}
+      {side(1)}
+      <div className="sd-gl-manage">
+        {t != null ? <span className="sd-src">by {g.target_source}</span> : <span className="sd-src missing">team not found</span>}
+        <span style={{ display: "flex", gap: 6 }}>
+          {g.target_source === "manual" && <span className="sd-btn small" onClick={() => onSide(g, null)} title="Back to automatic detection">auto</span>}
+          <span className="sd-btn small danger" onClick={() => onDelete(g)} title="Remove from the report">remove</span>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function Roster({ r, num, onPatch }: { r: Report; num: number; onPatch: (b: object) => Promise<void> }) {
   const snap = r.snapshot;
   const candidates = new Set(snap?.detection.candidates.map((c) => c.toon) ?? []);
-  // tous les joueurs vus, avec leur nombre de parties
   const seen = useMemo(() => {
-    const m = new Map<string, { name: string; games: number }>();
+    const m = new Map<string, { name: string; games: number; hero: string }>();
     for (const g of r.games) for (const t of g.teams) for (const p of t) {
-      const e = m.get(p.toon) ?? { name: p.name, games: 0 };
+      const e = m.get(p.toon) ?? { name: p.name, games: 0, hero: p.hero };
       e.games += 1; e.name = p.name;
       m.set(p.toon, e);
     }
@@ -578,29 +571,31 @@ function Roster({ r, onPatch }: { r: Report; onPatch: (b: object) => Promise<voi
     || JSON.stringify([...anchors].sort()) !== JSON.stringify([...r.anchors].sort());
 
   return (
-    <div className="card">
-      <div className="card-hd">
-        <h2>Roster</h2>
-        <span className="muted" style={{ fontSize: 11 }}>
-          {snap?.roster_auto ? "auto-detected" : "set by hand"} · a game counts when 3+ roster players are on one side, otherwise the anchor's side
-        </span>
-        <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-          {!snap?.roster_auto && <span className="pill" onClick={() => onPatch({ roster: [] })}>Back to auto</span>}
-          <span className={dirty ? "pill on" : "pill"} onClick={() => dirty && onPatch({ roster, anchors })}>Save</span>
+    <section className="sd-sec" id="roster">
+      <SecHead num={num} title="Roster" sub={snap?.roster_auto ? "auto-detected" : "set by hand"} />
+      <div className="sd-roster-hd">
+        <span>A game counts when 3+ roster players are on one side, otherwise the anchor's side (⚓).</span>
+        <span className="sd-actions">
+          {!snap?.roster_auto && <span className="sd-btn" onClick={() => onPatch({ roster: [] })}>Back to auto</span>}
+          <span className={dirty ? "sd-btn primary" : "sd-btn"} aria-disabled={!dirty} onClick={() => dirty && onPatch({ roster, anchors })}>Save roster</span>
         </span>
       </div>
-      {seen.length === 0 && <div className="empty">Add replays first.</div>}
-      {seen.map(([toon, p]) => (
-        <div key={toon} className="row">
-          <input type="checkbox" checked={roster.includes(toon)} onChange={() => toggle(roster, setRoster, toon)} title="In the main roster" />
-          <span style={{ fontSize: 12 }}>{p.name}</span>
-          {candidates.has(toon) && <span className="bdg b-live">candidate</span>}
-          <span className="mono muted" style={{ fontSize: 10 }}>{toon}</span>
-          <span className="mono muted" style={{ marginLeft: "auto", fontSize: 11 }}>{p.games} game{p.games === 1 ? "" : "s"}</span>
-          <span className={anchors.includes(toon) ? "pill on" : "pill"} onClick={() => toggle(anchors, setAnchors, toon)} title="Anchor: this player's side is the scouted team">⚓ anchor</span>
-        </div>
-      ))}
-    </div>
+      {seen.length === 0 && <div className="sd-empty">Add replays first.</div>}
+      <div className="sd-roster-list">
+        {seen.map(([toon, p]) => (
+          <label key={toon} className={roster.includes(toon) ? "sd-roster-row in" : "sd-roster-row"}>
+            <input type="checkbox" checked={roster.includes(toon)} onChange={() => toggle(roster, setRoster, toon)} title="In the main roster" />
+            <Portrait hero={p.hero} size={30} />
+            <strong>{p.name}</strong>
+            {candidates.has(toon) && <span className="sd-cand">candidate</span>}
+            <span className="toon">{toon}</span>
+            <span className="games">{p.games} game{p.games === 1 ? "" : "s"}</span>
+            <span className={anchors.includes(toon) ? "sd-btn small on" : "sd-btn small"}
+              onClick={(e) => { e.preventDefault(); toggle(anchors, setAnchors, toon); }} title="Anchor: this player's side is the scouted team">⚓ anchor</span>
+          </label>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -610,14 +605,14 @@ function ImportModal({ r, onClose, onDone }: { r: Report; onClose: () => void; o
   const [busy, setBusy] = useState(false);
   const submit = async () => {
     if (!text.trim()) return;
-    if (r.analysis && !confirm(`Replace the analysis imported on ${day(r.analysis_imported_at)}?`)) return;
+    if (r.analysis && !confirm(`Replace the draft plan imported on ${day(r.analysis_imported_at)}?`)) return;
     setBusy(true);
     try {
       const res = await scoutingWrite(`/api/scouting/${r.id}/analysis`, { method: "PUT", headers: { "Content-Type": "text/plain" }, body: text });
       const body = await res.json().catch(() => ({}));
       if (res.ok) {
         const t = body.tally ?? {};
-        setResult({ ok: true, lines: [`✓ imported — ${t.claims ?? 0} claims, ${t.unsupported ?? 0} unsupported, ${t.unknown_ids ?? 0} unknown fact ids`, ...(body.warnings ?? []).map((w: string) => `⚠ ${w}`)] });
+        setResult({ ok: true, lines: [`✓ imported — ${t.claims ?? 0} recommendations, ${t.unsupported ?? 0} unsupported, ${t.unknown_ids ?? 0} unknown fact ids`, ...(body.warnings ?? []).map((w: string) => `⚠ ${w}`)] });
         onDone();
       } else {
         setResult({ ok: false, lines: [`✗ ${res.status === 401 ? "unauthorized — set the admin token in Admin" : body.error ?? `HTTP ${res.status}`}`, "Nothing was changed."] });
@@ -628,20 +623,24 @@ function ImportModal({ r, onClose, onDone }: { r: Report; onClose: () => void; o
     setBusy(false);
   };
   return (
-    <div className="sc-modal-bg" onClick={onClose}>
-      <div className="sc-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="card-hd"><h2>Import analysis</h2><span className="pill" style={{ marginLeft: "auto" }} onClick={onClose}>close</span></div>
-        <div style={{ padding: "12px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
-          <span className="note">Paste the LLM's whole reply (the JSON block can be surrounded by text), or load it from a file.
-            {r.analysis && " The current analysis will be replaced."}</span>
-          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={14}
-            style={{ ...inp, fontFamily: "JetBrains Mono, Consolas, monospace", fontSize: 11, resize: "vertical" }}
-            placeholder={'```json\n{ "format_version": 1, "report_id": ' + r.id + ', ... }\n```'} />
+    <div className="sd-modal-bg" onClick={onClose}>
+      <div className="sd-modal" onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
+          <h2>Import analysis</h2>
+          <span className="sd-btn" style={{ marginLeft: "auto" }} onClick={onClose}>Close</span>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <span className="muted" style={{ fontSize: 13 }}>Paste the LLM's whole reply (the JSON block can be surrounded by text), or load it from a file.
+            {r.analysis && " The current draft plan will be replaced."}</span>
+          <textarea className="sd-input" value={text} onChange={(e) => setText(e.target.value)} rows={14}
+            placeholder={'```json\n{ "format_version": 2, "report_id": ' + r.id + ', ... }\n```'} />
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input type="file" accept=".json,.txt,.md" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setText(await f.text()); }} style={{ fontSize: 11, color: "var(--muted-2)" }} />
-            <span className={busy ? "pill" : "pill on"} style={{ marginLeft: "auto" }} onClick={() => !busy && submit()}>{busy ? "importing…" : "Import"}</span>
+            <input type="file" accept=".json,.txt,.md" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setText(await f.text()); }} style={{ fontSize: 11, color: "var(--sd-muted)" }} />
+            <span className="sd-btn primary" style={{ marginLeft: "auto" }} aria-disabled={busy} onClick={() => !busy && submit()}>{busy ? "Importing…" : "Import"}</span>
           </div>
-          {result && result.lines.map((l, i) => <div key={i} className={`mono ${result.ok && i === 0 ? "up" : result.ok ? "muted" : "dn"}`} style={{ fontSize: 11 }}>{l}</div>)}
+          {result && result.lines.map((l, i) => (
+            <div key={i} className="res" style={{ color: result.ok && i === 0 ? "var(--sd-win)" : result.ok ? "var(--sd-muted)" : "var(--sd-loss2)" }}>{l}</div>
+          ))}
         </div>
       </div>
     </div>
