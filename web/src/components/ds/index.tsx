@@ -4,12 +4,12 @@
 
 import { useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { heroIcon, heroUniverse } from "../../api";
+import { heroIcon, heroUniverse, useDimHeroes } from "../../api";
 import { compactEvidence, humanize } from "../../reportHtml";
 import { UNIVERSE_HEX } from "../../reportExport";
 import type { Count, Evidence, HeroCall, HeroRow, Point } from "../../scouting";
 
-export type Tone = "ban" | "pick" | "them" | "plain";
+export type Tone = "ban" | "pick" | "them" | "plain" | "loss" | "blue" | "red";
 export type Names = Record<string, string>;
 
 /** Ancre d'une carte (#map-braxis-holdout) — identique à celle de l'export. */
@@ -22,6 +22,9 @@ const initials = (h: string) => {
 };
 
 export function Portrait({ hero, size = 40, tone = "plain" }: { hero: string; size?: number; tone?: Tone }) {
+  // abonné au référentiel (cache TanStack partagé) : re-rendu quand il arrive, sinon un portrait
+  // rendu avant son chargement resterait en initiales
+  useDimHeroes();
   const [broken, setBroken] = useState(false);
   const icon = heroIcon(hero);
   const ring = UNIVERSE_HEX[heroUniverse(hero) ?? "Nexus"] ?? UNIVERSE_HEX.Nexus;

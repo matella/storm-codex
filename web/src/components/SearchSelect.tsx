@@ -8,18 +8,21 @@ export function SearchSelect({
   onChange,
   placeholder,
   style,
+  className,
 }: {
   options: string[];
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   style?: CSSProperties;
+  className?: string;
 }) {
   const id = useId();
   return (
     <span style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
       <input
         list={id}
+        className={className}
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}

@@ -7,6 +7,8 @@ dans `theme.css`, classes globales `ds-` dans `src/ds.css`, composants partagés
 Polices **auto-hébergées** (`src/fonts.ts`, Fontsource, SIL OFL : Big Shoulders Display, Figtree,
 JetBrains Mono ; ~132 Ko en latin, `unicode-range`) — aucune requête Google Fonts. Chrome
 (`Layout`) : barre `ds-top` (marque en titrage, onglets mono capitales, aide, indicateur live),
+`Portrait` s'abonne au référentiel héros (re-rendu à son arrivée), pièces de partie dans
+`components/ds/match.tsx` (ModeTag, AwardTag, GameCard, LevelAdvantage, art de carte),
 conteneur `ds-app` (police Figtree, fond atmosphérique) et `ds-shell` (1180 px). Le `body` garde
 sa police d'origine : les sources OBS (hors Layout) ne changent pas. Buildée dans `web/dist`, servie par le binaire (`WEB_DIR`),
 fallback SPA (`index.html` en `no-cache`). Langue de l'UI : **anglais**.
@@ -17,9 +19,9 @@ fallback SPA (`index.html` en `no-cache`). Langue de l'UI : **anglais**.
 
 | Route | Page | Contenu |
 |---|---|---|
-| `/` | Dashboard | session courante, perspective opérateur (`operator_names`) |
-| `/matches` | Matches | liste filtrable (mode/carte/héros/joueur/dates), export CSV/JSON, temps réel WS |
-| `/match/:id` | MatchDetail | score 2 équipes (stats basic/advanced, talents nommés, awards/MVP), draft (par équipe : picks + bans résolus en nom + portrait via `/api/dim/hero-attributes`, `no ban` pour un tour passé), **Match chat** (chat + filtres pings/callouts), level advantage (uPlot), XP, timeline des événements, table BM/pings, lien dump brut |
+| `/` | Dashboard | **dossier** : couverture de la dernière session de l'opérateur (parties séparées de < 3 h, « Tonight » si c'est aujourd'hui) — bilan en très grand, pastilles, dernière partie (portrait, award, lien), tuiles winrate / K/D/A / MVP / héros ; cartes des parties de la session ; « Your form » (30 derniers résultats, winrate, 10 derniers, par mode, héros les plus joués). Logique pure `src/session.ts` (tests). Sans `operator_names` : invite vers Admin |
+| `/matches` | Matches | **dossier** : couverture « Archive » (nombre de parties, bilan de l'opérateur) avec les filtres pilotés par l'URL (mode, résultat, MVP, carte, héros, compte, dates, reset, export CSV/JSON) ; liste dense (date, mode court, portrait à ton victoire/défaite, carte + héros, résultat, MVP, durée, art de la carte en fond) |
+| `/match/:id` | MatchDetail | **dossier** : couverture (minimap découpée, mode, verdict VICTORY/DEFEAT du point de vue de l'opérateur — sinon « BLUE/RED TEAM WINS » —, takedowns, niveau, premier objectif/fort/keep ; la couleur suit l'équipe réelle, l'équipe de l'opérateur en premier), onglets Score / Replay 2D + lien dump brut. Sections : Draft (bans barrés avec phase, résolus via `/api/dim/hero-attributes`, `no ban` pour un tour passé ; picks dans l'ordre, FIRST PICK, YOU), Scoreboard (jauges relatives au max de la partie, stats basic/advanced, talents nommés, awards, total), Level advantage (SVG en escalier, premier fort marqué), Team XP, Timeline (piste + liste), Match chat (filtres pings/callouts), Taunts & pings, Full data |
 | `/player/:toon` | Player | résumé + hero pool |
 | `/heroes` · `/hero/:name` | Heroes / Hero | agrégats triables ; fiche héros + patchs le concernant |
 | `/synergies` | Synergies | paires (avec/contre) |

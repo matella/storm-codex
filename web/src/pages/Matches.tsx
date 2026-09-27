@@ -1,11 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
-  fetchMatches, fetchHeroes, modeBadge, fmtTime, fmtDur, mapImage, pickOperator,
+  fetchMatches, fetchHeroes, fmtTime, fmtDur, pickOperator,
   matchesParams, useSettings, operatorNames, awardLabel, type MatchSummary, type MatchListParams,
 } from "../api";
-import { Avatar } from "../components/Avatar";
 import { SearchSelect } from "../components/SearchSelect";
+import { Portrait } from "../components/ds";
+import { ModeTag, hasMapArt, mapArt } from "../components/ds/match";
 
 // Codes officiels (storm-stats GameMode). Brawls/IA rejetés au parse → on liste les modes réels.
 const MODE_FILTERS: [string, number | undefined][] = [
@@ -24,10 +25,10 @@ function ownPlayer(m: MatchSummary) {
   return { hero: p?.hero ?? null, win: p?.win ?? null, award: p?.award ?? null };
 }
 
-const inp = { background: "var(--surface-2)", border: "1px solid var(--hairline-strong)", color: "var(--text)", borderRadius: 6, padding: "4px 8px", fontSize: 12 } as const;
 /** date locale +1 jour (pour rendre la borne `to` inclusive côté serveur qui filtre `< to`). */
 const dayPlus1 = (d: string) => { const x = new Date(d + "T00:00:00"); x.setDate(x.getDate() + 1); return x.toISOString(); };
 
+/** Matches — l'archive filtrable. Couverture + filtres (pilotés par l'URL), liste dense de parties. */
 export function Matches() {
   useSettings();
   const accounts = operatorNames();
@@ -69,84 +70,80 @@ export function Matches() {
   const active = [...sp.keys()].length > 0;
   const reset = () => setSp({}, { replace: true });
   const exportQ = (extra: Record<string, string>) => { const q = matchesParams(params); Object.entries(extra).forEach(([k, v]) => q.set(k, v)); return q.toString(); };
+  const known = (data ?? []).map(ownPlayer).filter((o) => o.win != null);
+  const w = known.filter((o) => o.win).length;
 
   return (
-    <>
-      <h1>Matches</h1>
-      <div className="card">
-        {/* ligne 1 : modes + résultat + MVP */}
-        <div className="card-hd" style={{ flexWrap: "wrap", gap: 6 }}>
-          {MODE_FILTERS.map(([label, m]) => (
-            <span key={label} className={mode === m ? "pill on" : "pill"} onClick={() => setParam("mode", m != null ? String(m) : "")}>{label}</span>
-          ))}
-          <span style={{ width: 1, alignSelf: "stretch", background: "var(--hairline)", margin: "0 4px" }} />
-          {(["", "win", "loss"] as const).map((r) => (
-            <span key={r || "all"} className={result === r ? "pill on" : "pill"} onClick={() => setParam("result", r)}>
-              {r === "" ? "W+L" : r === "win" ? "Wins" : "Losses"}
-            </span>
-          ))}
-          <span className={mvp ? "pill on" : "pill"} onClick={() => setParam("mvp", mvp ? "" : "true")}>👑 MVP</span>
+    <div className="ds-page">
+      <header className="ds-cover" style={{ marginTop: 18 }}>
+        <div className="ds-kicker">Archive</div>
+        <h1 className="ds-title" style={{ cursor: "default" }}>Matches</h1>
+        <div className="ds-subtitle" style={{ cursor: "default" }}>
+          {isLoading ? "loading…" : `${data?.length ?? 0} game${data?.length === 1 ? "" : "s"}${data?.length === 200 ? " (latest 200)" : ""}`}
+          {known.length > 0 && <> · <b style={{ color: "var(--win)" }}>{w}</b>–<b style={{ color: "var(--loss-soft)" }}>{known.length - w}</b> for you</>}
+          {active && " · filtered"}
         </div>
-        {/* ligne 2 : carte / héros (recherche textuelle) / compte / dates / reset / export */}
-        <div className="row" style={{ flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-          <SearchSelect
-            style={{ ...inp, width: 150 }}
-            placeholder="search map…"
-            value={map}
-            onChange={(v) => setParam("map", v)}
-            options={(maps ?? []).map((m) => m.map).sort((a, b) => a.localeCompare(b))}
-          />
-          <SearchSelect
-            style={{ ...inp, width: 150 }}
-            placeholder="search hero…"
-            value={hero}
-            onChange={(v) => setParam("hero", v)}
-            options={(heroes ?? []).map((h) => h.hero).sort((a, b) => a.localeCompare(b))}
-          />
-          {accounts.length > 1 && (
-            <select style={inp} value={account} onChange={(e) => setParam("account", e.target.value)}>
-              <option value="">All my accounts</option>
-              {accounts.map((a) => <option key={a} value={a}>{a}</option>)}
-            </select>
-          )}
-          <label style={{ fontSize: 10, color: "var(--text-2)" }}>from <input type="date" style={inp} value={from} onChange={(e) => setParam("from", e.target.value)} /></label>
-          <label style={{ fontSize: 10, color: "var(--text-2)" }}>to <input type="date" style={inp} value={to} onChange={(e) => setParam("to", e.target.value)} /></label>
-          {active && <span className="pill" onClick={reset}>✕ reset</span>}
-          <a href={`/api/matches.csv?${exportQ({ limit: "5000" })}`} className="pill" style={{ marginLeft: "auto" }}>CSV ↓</a>
-          <a href={`/api/matches?${exportQ({ limit: "5000" })}`} className="pill" target="_blank" rel="noreferrer">JSON ↓</a>
-          <span style={{ fontSize: 10, color: "var(--kicker)" }}>{data?.length ?? 0} matches</span>
-        </div>
-
-        {isLoading && <div className="empty">loading…</div>}
-        {data?.length === 0 && <div className="empty">no matches for this filter</div>}
-        {data?.map((m) => {
-          const mb = modeBadge(m.mode);
-          const o = ownPlayer(m);
-          const aw = awardLabel(o.award);
-          const bg = mapImage(m.map);
-          return (
-            <div
-              key={m.id}
-              className="row link"
-              onClick={() => nav(`/match/${m.id}`)}
-              style={bg ? {
-                backgroundImage: `linear-gradient(90deg, var(--surface) 0%, rgba(14,16,22,.82) 45%, rgba(14,16,22,.62) 100%), url(${bg})`,
-                backgroundSize: "cover", backgroundPosition: "center 30%",
-              } : undefined}
-            >
-              <span className="mono muted" style={{ minWidth: 92, fontSize: 11 }}>{fmtTime(m.played_at)}</span>
-              <span className={`bdg ${mb.cls}`}>{mb.short}</span>
-              <Avatar hero={o.hero} />
-              <span style={{ fontSize: 12 }}>{m.map ?? "—"}</span>
-              {o.win != null && <span className={`bdg ${o.win ? "b-win" : "b-loss"}`}>{o.win ? "W" : "L"}</span>}
-              {aw?.mvp && <span title="MVP" style={{ fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 999, color: "#1a1500", background: "linear-gradient(90deg,#f5c542,#e0a818)" }}>MVP</span>}
-              <span style={{ marginLeft: "auto", color: "var(--kicker)", fontSize: 10 }}>
-                {fmtDur(m.length)} · {m.winner === 0 ? "blue" : m.winner === 1 ? "red" : "?"} team wins ›
+        <div className="ds-filters">
+          <div className="ds-pills">
+            {MODE_FILTERS.map(([label, m]) => (
+              <span key={label} className={mode === m ? "ds-pill on" : "ds-pill"} onClick={() => setParam("mode", m != null ? String(m) : "")}>{label}</span>
+            ))}
+            <span className="ds-sep" />
+            {(["", "win", "loss"] as const).map((r) => (
+              <span key={r || "all"} className={result === r ? "ds-pill on" : "ds-pill"} onClick={() => setParam("result", r)}>
+                {r === "" ? "W+L" : r === "win" ? "Wins" : "Losses"}
               </span>
-            </div>
-          );
-        })}
-      </div>
-    </>
+            ))}
+            <span className={mvp ? "ds-pill on" : "ds-pill"} onClick={() => setParam("mvp", mvp ? "" : "true")}>👑 MVP</span>
+          </div>
+          <div className="ds-pills">
+            <SearchSelect className="ds-input" style={{ width: 170 }} placeholder="search map…" value={map}
+              onChange={(v) => setParam("map", v)} options={(maps ?? []).map((m) => m.map).sort((a, b) => a.localeCompare(b))} />
+            <SearchSelect className="ds-input" style={{ width: 170 }} placeholder="search hero…" value={hero}
+              onChange={(v) => setParam("hero", v)} options={(heroes ?? []).map((h) => h.hero).sort((a, b) => a.localeCompare(b))} />
+            {accounts.length > 1 && (
+              <select className="ds-input" value={account} onChange={(e) => setParam("account", e.target.value)}>
+                <option value="">All my accounts</option>
+                {accounts.map((a) => <option key={a} value={a}>{a}</option>)}
+              </select>
+            )}
+            <label>from <input type="date" className="ds-input" value={from} onChange={(e) => setParam("from", e.target.value)} /></label>
+            <label>to <input type="date" className="ds-input" value={to} onChange={(e) => setParam("to", e.target.value)} /></label>
+            {active && <span className="ds-pill" onClick={reset}>✕ reset</span>}
+            <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+              <a href={`/api/matches.csv?${exportQ({ limit: "5000" })}`} className="ds-btn">CSV ↓</a>
+              <a href={`/api/matches?${exportQ({ limit: "5000" })}`} className="ds-btn" target="_blank" rel="noreferrer">JSON ↓</a>
+            </span>
+          </div>
+        </div>
+      </header>
+
+      <section className="ds-sec" style={{ marginTop: 26 }}>
+        {isLoading && <div className="ds-empty">loading…</div>}
+        {data?.length === 0 && <div className="ds-empty">No match for this filter.</div>}
+        <div className="ds-mlist">
+          {data?.map((m) => {
+            const o = ownPlayer(m);
+            const aw = awardLabel(o.award);
+            return (
+              <div key={m.id} className={`ds-mrow ${o.win === true ? "w" : o.win === false ? "l" : ""}`}
+                style={hasMapArt(m.map) ? mapArt(m.map) : undefined} onClick={() => nav(`/match/${m.id}`)}
+                role="link" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter") nav(`/match/${m.id}`); }}>
+                <span className="when">{fmtTime(m.played_at)}</span>
+                <span><ModeTag mode={m.mode} short /></span>
+                {o.hero ? <Portrait hero={o.hero} size={40} tone={o.win === true ? "pick" : o.win === false ? "loss" : "plain"} /> : <span />}
+                <span className="what"><span className="map">{m.map ?? "—"}</span>
+                  <span className="hero">{o.hero ?? `${m.winner === 0 ? "Blue" : m.winner === 1 ? "Red" : "?"} team wins`}</span></span>
+                <span style={{ display: "flex", gap: 6 }}>
+                  {o.win != null && <span className={`ds-tag ${o.win ? "win" : "loss"}`}>{o.win ? "WIN" : "LOSS"}</span>}
+                  {aw?.mvp && <span className="ds-tag mvp">👑 MVP</span>}
+                </span>
+                <span className="len">{fmtDur(m.length)} ›</span>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    </div>
   );
 }
