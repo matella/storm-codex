@@ -25,6 +25,13 @@ les replays adverses ne touchent jamais `uploads`/`matches` — test d'intégrat
   à l'import. Nouveaux faits : héros joués contre eux avec leur bilan (`draft.faced.*`), joueur
   derrière chaque pick par carte ; pack réordonné (cartes et draft avant joueurs). Vérifié en
   navigateur sur la série : plan v2 importé, 28 éléments, 0 sans preuve.
+- **Export HTML à partager (2026-09-27, volet G)** : bouton « Export HTML » → un fichier `.html`
+  autonome (portraits + minimaps embarqués une seule fois en WebP via classes CSS, ~600 Ko pour la
+  série de 3 parties, 33/33 portraits). Rendu pur `web/src/reportHtml.ts` (vitest : échappement du
+  texte LLM, data: URI filtrées, pseudos à la place des `pN`), chargement `reportExport.ts`.
+  Vérifié : export réel depuis le bouton, rendu contrôlé par captures Edge headless en 1400 px et
+  dans un iframe de 390 px (téléphone). En dev, les portraits viennent de HotsPatchNotes du box
+  (`HOTSPATCHNOTES_URL` ajouté à la config d'aperçu, lecture seule).
 - Hors v1 (spec volet F) : fiche de match / visionneuse 2D pour les replays de scouting,
   passerelle vers le simulateur de draft.
 - Aperçu local : config `storm-codex-server` dans `.claude/launch.json` (release, port 8089, sert

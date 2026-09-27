@@ -12,6 +12,7 @@ export const CHANGELOG: { version: string; title: string; items: string[] }[] = 
       "Pack LLM à copier (Markdown) ou télécharger (.md / .xlsx) pour ChatGPT, Claude ou un modèle local.",
       "Import de l'analyse du LLM : chaque affirmation affiche les chiffres qui la fondent, les affirmations sans preuve sont signalées.",
       "Joueur ancre pour désigner l'équipe scoutée quand les replays ne suffisent pas (série contre un même adversaire).",
+      "Plan de draft carte par carte (bans, picks, leurs picks probables) et export HTML autonome à envoyer à l'équipe.",
     ],
   },
   {

@@ -350,6 +350,10 @@ export function universeColor(hero: string | null): string {
   const u = dimHero(hero)?.universe;
   return (u && UNIVERSE_COLOR[u]) || "var(--u-nexus)";
 }
+/** Univers du héros (Warcraft, StarCraft…) — null si inconnu. */
+export function heroUniverse(hero: string | null): string | null {
+  return dimHero(hero)?.universe ?? null;
+}
 /** Portrait du héros (vendorisé, servi sur /images) — null si inconnu (→ fallback initiales). */
 export function heroIcon(hero: string | null): string | null {
   return dimHero(hero)?.icon || null;

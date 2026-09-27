@@ -10,7 +10,7 @@
     {
       "name": "storm-codex-server",
       "runtimeExecutable": "powershell",
-      "runtimeArgs": ["-NoProfile", "-Command", "$env:BIND_ADDR='127.0.0.1:8089'; $env:WEB_DIR='./web/dist'; $env:DATABASE_URL='postgres://storm:storm@localhost:5433/storm_codex'; ./target/release/storm-codex-server.exe"],
+      "runtimeArgs": ["-NoProfile", "-Command", "$env:BIND_ADDR='127.0.0.1:8089'; $env:WEB_DIR='./web/dist'; $env:DATABASE_URL='postgres://storm:storm@localhost:5433/storm_codex'; $env:HOTSPATCHNOTES_URL='http://192.168.129.85:5001'; ./target/release/storm-codex-server.exe"],
       "port": 8089
     }
   ]

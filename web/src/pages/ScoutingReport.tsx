@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { scoutingWrite, useScoutingReport } from "../api";
 import { Avatar } from "../components/Avatar";
+import { exportReportHtml } from "../reportExport";
 import {
   claimState, day, fmtRate, fmtWilson, mapsWithPlans, pidNames, statusMeta, targetNames, uploadLabel,
 } from "../scouting";
@@ -76,6 +77,7 @@ export function ScoutingReport() {
   const [tab, setTab] = useState<Tab>("overview");
   const [msg, setMsg] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const qc = useQueryClient();
   const nav = useNavigate();
   const refresh = () => qc.invalidateQueries({ queryKey: ["scouting"] });
@@ -106,6 +108,18 @@ export function ScoutingReport() {
     }
   };
 
+  const exportHtml = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const res = await exportReportHtml(r);
+      flash(`✓ ${res.fileName} saved (${Math.round(res.bytes / 1024)} KB, ${res.portraits}/${res.heroes} portraits, ${res.maps} maps) — send it to your team`);
+    } catch {
+      flash("✗ export failed");
+    }
+    setExporting(false);
+  };
+
   const remove = async () => {
     if (!confirm(`Delete the report “${r.title}” and its replays?`)) return;
     const res = await scoutingWrite(`/api/scouting/${r.id}`, { method: "DELETE" });
@@ -127,6 +141,9 @@ export function ScoutingReport() {
           <a className="pill" href={`/api/scouting/${r.id}/pack.md`} download>Download .md</a>
           <a className="pill" href={`/api/scouting/${r.id}/pack.xlsx`} download>Download .xlsx</a>
           <span className="pill on" onClick={() => setImportOpen(true)}>Import analysis</span>
+          <span className="pill on" onClick={exportHtml} title="Save a self-contained, shareable HTML report for your teammates">
+            {exporting ? "exporting…" : "Export HTML"}
+          </span>
           <span className="pill" onClick={remove} title="Delete this report">Delete</span>
         </span>
       </div>

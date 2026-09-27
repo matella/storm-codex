@@ -349,6 +349,30 @@ Bouton « New report » (titre + nom d'équipe → ouvre le rapport).
 **Budget** : `GET /api/scouting/{id}` p95 < 100 ms (contrat d'API) sur un rapport de 30 parties —
 tenu par l'instantané de faits (décision 5), mesuré.
 
+## Volet G — Export HTML à partager (demande opérateur, 2026-09-27)
+
+Bouton **Export HTML** sur la page d'un rapport : télécharge **un seul fichier `.html` autonome**
+que l'opérateur envoie à ses coéquipiers (Discord, mail). Exigence : « highly visual ».
+
+- **Autonome** : portraits des héros et minimaps embarqués en `data:` URI (réduits dans le
+  navigateur : portraits 128 px, minimaps 900 px, WebP) ; aucune dépendance à l'app ni au box.
+  Seules les polices viennent de Google Fonts, avec repli système si hors ligne.
+- **Généré côté navigateur** (`web/src/reportExport.ts` charge les images ; `web/src/reportHtml.ts`
+  rend — fonction **pure**, testée en vitest). Aucune route serveur nouvelle.
+- **Sécurité** : tout texte venu du LLM ou des replays est échappé (le fichier circule hors de l'app).
+- **Direction artistique** : « dossier de scouting » dans le langage de l'écran de draft HotS.
+  Couverture (nom de l'équipe en grand, bilan avec pastilles V/D, first pick, avertissement de
+  faible échantillon, médaillons du roster), identité de draft (synthèse + bans/ouvertures en
+  portraits), choix de carte (tuiles sur minimap), **un tableau de draft par carte** (en-tête
+  minimap, jauge de confiance, colonnes « We ban » — portraits barrés de rouge avec la phase —,
+  « We pick » — halo vert —, « They will likely pick » — halo orange + joueur —, « Consider », puis
+  ce qu'ils ont joué/banni sur la carte), plan « toute carte », cartes joueurs (pool en barres),
+  héros affrontés (ceux qui les ont battus en évidence), journal des parties. Chaque recommandation
+  garde ses preuves (libellé + valeur) ; « ⚠ unverified » si aucune. Navigation par cartes en tête,
+  responsive, impression propre, animations respectant `prefers-reduced-motion`.
+- Fonctionne sans analyse importée (faits seuls) et sans portraits (médaillons à initiales sur
+  l'anneau de couleur de l'univers).
+
 ## Volet F — Plus tard, hors v1
 
 - **Fiche de partie pour les replays de scouting** (réutiliser `MatchDetail` et la visionneuse 2D
