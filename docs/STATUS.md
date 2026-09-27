@@ -1,12 +1,18 @@
 # STATUS — lire d'abord, mettre à jour en dernier
 
+## ⚠ EN ATTENTE DE VALIDATION OPÉRATEUR — design « dossier » pour toute l'app (2026-09-27)
+`docs/specs/2026-09-27-design-dossier-app-design.md` + maquettes `…-app-mockup.html` (Session,
+Match detail, Hero page, données réelles) et `…-overlays-mockup.html` (exploration OBS, a priori
+hors périmètre). Évolution de Nexus Codex (palette inchangée), polices auto-hébergées, composants
+partagés `components/ds/`, déploiement en 5 lots. **Rien n'est implémenté.** 3 questions ouvertes.
+
 ## Rapports de scouting — LIVRÉ sur `main` le 2026-09-26 (pas encore déployé sur le box)
 Spec `docs/specs/2026-09-26-rapports-scouting-design.md` · plan `docs/plans/2026-09-26-rapports-scouting.md`.
 Pages `/scouting` et `/scouting/:id` ; routes `/api/scouting/*` ; migration `0010` (tables dédiées :
 les replays adverses ne touchent jamais `uploads`/`matches` — test d'intégration d'isolation).
 - **Volet A** (draft des parties perso) : 3 replays réels de l'opérateur, **confirmé** par lui.
 - **Vérifié en navigateur sur ces 3 replays** (serveur release :8089 + Postgres dev) : lot ambigu
-  détecté (série contre un même adversaire) → ancre `Razhag` → roster des 5 attendus, 3 parties par
+  détecté (série contre un même adversaire) → une ancre (joueur de l'équipe scoutée) → roster des 5 attendus, 3 parties par
   la règle roster ; faits identiques aux drafts confirmés (first pick 2/3, bans 1re phase
   Johanna/Falstad ×2, bans subis Deathwing/Garrosh ×2, ouvertures Dehaka/Hogger/Chromie, V/V/D) ;
   pack `.md` 19 Ko + `.xlsx` ; analyse rédigée à partir du pack réel (étape LLM manuelle) importée

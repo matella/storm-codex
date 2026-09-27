@@ -85,7 +85,7 @@ serait une divergence de parité à instruire dans `03-storm-stats.md`, spec sé
 ### Résultat du décodage (2026-09-26) — **confirmé par l'opérateur** (volet A passé)
 
 3 replays fournis par l'opérateur (une série du 2026-07-22, build 97605, mêmes 10 joueurs ; ancre
-`Razhag`) : Tomb of the Spider Queen, Alterac Pass, Braxis Holdout. Décodage sans erreur ;
+un joueur de l'équipe scoutée) : Tomb of the Spider Queen, Alterac Pass, Braxis Holdout. Décodage sans erreur ;
 `mode = -1` = `Custom` dans `constants.json` (valeur attendue, et la draft est bien extraite).
 Cohérence interne vérifiée : 3 bans par équipe (2 + 1), 5 picks par équipe, aucun héros banni
 n'est pické dans la même partie, aucun doublon.

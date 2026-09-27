@@ -113,7 +113,7 @@ export function compactEvidence(e: { label?: string; text?: string }, ctx: Ctx):
   return { label: pid(label), text: pid(e.text ?? "") };
 }
 
-/** Texte libre du LLM : « vmatom (p5) » → « vmatom », « p3 » seul → son pseudo. */
+/** Texte libre du LLM : « Solo (p5) » → « Solo », « p3 » seul → son pseudo. */
 export function humanize(text: string, names: Record<string, string>): string {
   return text
     .replace(/\s*\(p\d+\)/g, "")

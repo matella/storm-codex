@@ -1,0 +1,279 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Storm Codex — dossier design mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800;900&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>:root{--bg:#06070b;--panel:#0d0f16;--panel2:#12141d;--line:#1f2231;--line2:#2a2e42;--text:#e8eaf2;--text2:#c5c9d8;--muted:#8d93a8;--kicker:#5d6275;
+--accent:#7f77dd;--accent2:#afa9ec;--win:#5dcaa5;--loss:#e24b4a;--loss2:#f7c1c1;--gold:#fac775;--them:#f0a35e;--blue:#85b7eb;--red:#f09595;
+--display:"Big Shoulders Display","Arial Narrow",sans-serif;--body:"Figtree","Segoe UI",sans-serif;--mono:"JetBrains Mono",Consolas,monospace}
+*{box-sizing:border-box}html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 var(--body);
+background-image:radial-gradient(1200px 600px at 85% -10%,rgba(127,119,221,.13),transparent 60%),radial-gradient(900px 500px at -10% 30%,rgba(93,202,165,.04),transparent 60%);min-height:100vh}
+a{color:inherit;text-decoration:none}
+.mock-note{font:11px var(--mono);color:var(--kicker);padding:8px 28px;border-bottom:1px dashed var(--line2);display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.mock-note b{color:var(--gold);letter-spacing:.15em}
+.switch{margin-left:auto;display:flex;gap:6px}.switch a{padding:3px 10px;border:1px solid var(--line2);border-radius:14px;color:var(--muted)}.switch a.on{border-color:var(--accent);color:var(--text);background:rgba(127,119,221,.15)}
+/* chrome */
+.app-top{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:26px;padding:12px 28px;background:rgba(6,7,11,.85);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.brand{font:800 17px var(--display);letter-spacing:.16em}.brand b{color:var(--accent2);font-weight:800}
+.app-nav{display:flex;gap:18px;overflow-x:auto;scrollbar-width:none}
+.app-nav a{font:600 11px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:4px 0;border-bottom:2px solid transparent;white-space:nowrap}
+.app-nav a:hover{color:var(--text)}.app-nav a.on{color:var(--text);border-bottom-color:var(--accent)}
+.live{margin-left:auto;font:600 10px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--win);display:flex;gap:6px;align-items:center}
+.live i{width:7px;height:7px;border-radius:50%;background:var(--win);box-shadow:0 0 10px var(--win)}
+.shell{max-width:1180px;margin:0 auto;padding:22px 28px 60px}
+/* primitives */
+.display{font:900 clamp(56px,9vw,112px)/.86 var(--display);text-transform:uppercase;letter-spacing:.01em;margin:10px 0 8px;
+background:linear-gradient(180deg,#fff 30%,#b9b4ee);-webkit-background-clip:text;background-clip:text;color:transparent}
+.kicker{font:600 11px var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--accent2);display:flex;align-items:center;gap:10px}
+.kicker::before{content:"";width:28px;height:2px;background:var(--accent)}
+.label,.stat label{display:block;font:600 10px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--kicker);margin-bottom:4px}
+.sub{color:var(--text2);font-size:15px;margin-top:6px}
+.statline{display:flex;flex-wrap:wrap;gap:12px;margin-top:24px}
+.stat{background:rgba(13,15,22,.72);border:1px solid var(--line2);border-radius:12px;padding:12px 18px;min-width:150px;backdrop-filter:blur(4px)}
+.stat strong{font:800 34px/1 var(--display);display:block}.stat strong span{color:var(--muted);font-weight:600;margin:0 3px;font-size:.66em}.stat strong.sm{font-size:24px}
+.stat small{font:11px var(--mono);color:var(--muted)}
+.pips{display:inline-flex;flex-wrap:wrap;gap:4px;margin-top:10px}.pips i{width:14px;height:6px;border-radius:2px;background:var(--loss)}.pips i.w{background:var(--win)}
+.btn{display:inline-block;font:600 11px var(--mono);letter-spacing:.06em;padding:8px 14px;border-radius:8px;border:1px solid var(--line2);background:var(--panel2);color:var(--text2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#0b0c12}.btn:hover{border-color:var(--accent2)}
+.panel{background:var(--panel);border:1px solid var(--line2);border-radius:16px;padding:18px}.panel.flush{padding:0;overflow:hidden}
+.bar{display:block;height:6px;background:var(--line);border-radius:3px;overflow:hidden}.bar b{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.mode{font:700 9px var(--mono);letter-spacing:.14em;padding:3px 7px;border-radius:4px}
+.mode.sl{background:#26215c;color:#cecbf6}.mode.aram{background:#2b2416;color:var(--gold)}.mode.qm{background:#1a1d2a;color:var(--muted)}
+/* portraits */
+.pt{--s:40px;position:relative;display:inline-grid;place-items:center;width:var(--s);height:var(--s);border-radius:50%;flex-shrink:0;
+background:radial-gradient(circle at 30% 25%,#23263a,#0d0f16);box-shadow:0 0 0 2px var(--ring),0 4px 14px rgba(0,0,0,.45);overflow:hidden}
+.pt img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}.pt .ini{font:800 calc(var(--s)*.36) var(--display);color:var(--ring)}
+.pt-ban{filter:grayscale(1) brightness(.62);box-shadow:0 0 0 2px var(--loss)}
+.pt-ban .slash{position:absolute;inset:0;background:linear-gradient(135deg,transparent calc(50% - 1.5px),var(--loss) calc(50% - 1.5px),var(--loss) calc(50% + 1.5px),transparent calc(50% + 1.5px))}
+.pt-pick{box-shadow:0 0 0 2px var(--win),0 0 18px rgba(93,202,165,.45)}.pt-them{box-shadow:0 0 0 2px var(--red),0 0 16px rgba(240,149,149,.3)}
+.pt-loss{box-shadow:0 0 0 2px var(--loss),0 0 14px rgba(226,75,74,.3)}
+.hero-xl{box-shadow:0 0 0 3px var(--win),0 0 40px rgba(93,202,165,.35)}
+.hero-xxl{box-shadow:0 0 0 4px var(--ring),0 0 60px color-mix(in srgb,var(--ring) 45%,transparent)}
+/* sections */
+.sec{margin:52px 0 0}.sec-hd{display:flex;align-items:baseline;gap:14px;margin-bottom:18px;border-bottom:1px solid var(--line);padding-bottom:10px}
+.sec-hd .num{font:600 12px var(--mono);color:var(--accent)}.sec-hd h2{font:800 34px/1 var(--display);text-transform:uppercase;letter-spacing:.04em;margin:0}
+.sec-hd small{margin-left:auto;font:11px var(--mono);color:var(--muted)}
+/* cover (session) */
+.cover{position:relative;overflow:hidden;isolation:isolate;border:1px solid var(--line2);border-radius:22px;padding:34px 34px 26px;background:var(--panel)}
+.cover::before{content:"";position:absolute;inset:-30px;z-index:-2;background:center/cover no-repeat;background-image:var(--img);filter:blur(2px) saturate(.9);opacity:.28;
+-webkit-mask-image:linear-gradient(100deg,transparent 30%,#000 80%);mask-image:linear-gradient(100deg,transparent 30%,#000 80%)}
+.cover::after{content:"";position:absolute;inset:0;z-index:-1;background:repeating-linear-gradient(0deg,rgba(255,255,255,.018) 0 1px,transparent 1px 3px),radial-gradient(700px 300px at 0% 0%,rgba(127,119,221,.15),transparent 60%)}
+.cover-grid{display:grid;grid-template-columns:1fr auto;gap:30px;align-items:end}
+.bigrec{font:900 120px/.9 var(--display);letter-spacing:.02em}.bigrec span{color:var(--muted);margin:0 8px;font-size:.6em;vertical-align:middle}
+.lastgame{display:flex;gap:20px;align-items:center;background:rgba(13,15,22,.6);border:1px solid var(--line2);border-radius:80px 20px 20px 80px;padding:10px 24px 10px 10px;backdrop-filter:blur(4px)}
+.lastgame strong{display:block;font:900 40px/1 var(--display);text-transform:uppercase}.lastgame em{display:block;font-style:normal;color:var(--text2);margin:2px 0 8px}
+.mvp{display:inline-block;font:700 10px var(--mono);letter-spacing:.14em;color:var(--gold);background:rgba(250,199,117,.1);border:1px solid rgba(250,199,117,.35);padding:3px 8px;border-radius:5px;margin-right:8px}
+.gcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
+.gcard{display:block;background:var(--panel);border:1px solid var(--line2);border-radius:16px;overflow:hidden;transition:transform .15s,border-color .15s}
+.gcard:hover{transform:translateY(-2px);border-color:var(--accent)}
+.gcard-map{position:relative;height:74px;background:center/cover var(--img);display:flex;justify-content:space-between;align-items:flex-start;padding:10px 12px}
+.gcard-map::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(13,15,22,.1),var(--panel))}
+.gcard-map>*{position:relative;z-index:1}.gcard-map .time{font:600 11px var(--mono);color:var(--text2)}
+.gcard-body{display:flex;gap:14px;align-items:center;padding:0 16px 12px;margin-top:-26px;position:relative}
+.gcard-body strong{display:block;font:800 22px/1 var(--display);text-transform:uppercase}.gcard-body em{display:block;font-style:normal;font-size:12px;color:var(--muted)}
+.kda{font:600 13px var(--mono);color:var(--text2)}.kda i{color:var(--kicker);font-style:normal;margin:0 2px}
+.res{margin-left:auto;font:900 20px var(--display);letter-spacing:.08em}.gcard.w .res{color:var(--win)}.gcard.l .res{color:var(--loss2)}
+.gcard-aw{font:600 10px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--gold);padding:8px 16px;border-top:1px solid var(--line)}.gcard-aw.none{color:var(--kicker)}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.formstats{display:flex;gap:30px;margin-top:18px}.formstats strong{font:800 40px/1 var(--display)}.formstats strong span{color:var(--muted);font-size:.6em}.formstats em{display:block;font:11px var(--mono);color:var(--muted);font-style:normal}
+.hrow{display:grid;grid-template-columns:34px 110px 1fr 90px;gap:12px;align-items:center;padding:5px 0;font-size:13px}.hrow em{font:11px var(--mono);color:var(--muted);font-style:normal;text-align:right}
+/* match */
+.mhead{position:relative;overflow:hidden;isolation:isolate;border:1px solid var(--line2);border-radius:22px;padding:34px;min-height:320px;background:var(--panel)}
+.mhead::before{content:"";position:absolute;inset:0;z-index:-2;background:center/cover no-repeat var(--img);clip-path:polygon(40% 0,100% 0,100% 100%,26% 100%);opacity:.8}
+.mhead::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(90deg,var(--panel) 32%,rgba(13,15,22,.5) 62%,rgba(13,15,22,.1)),linear-gradient(0deg,var(--panel),transparent 50%)}
+.verdict{display:inline-block;font:900 28px var(--display);letter-spacing:.22em;padding:4px 16px;border-radius:8px}
+.verdict.w{color:var(--win);background:rgba(93,202,165,.1);box-shadow:inset 0 0 0 1px rgba(93,202,165,.4)}.verdict.l{color:var(--loss2);background:rgba(226,75,74,.1)}
+.score{display:flex;flex-wrap:wrap;gap:34px;margin-top:26px}.score strong{font:900 44px/1 var(--display)}.score span{color:var(--kicker);margin:0 8px;font:700 24px var(--display)}
+.us{color:var(--blue)}.them{color:var(--red)}
+.draft{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.dside{background:var(--panel);border:1px solid var(--line2);border-radius:16px;padding:16px 18px}
+.dside.ours{box-shadow:inset 0 3px 0 var(--blue)}.dside.theirs{box-shadow:inset 0 3px 0 var(--red)}
+.dside-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.fp{font:700 9px var(--mono);letter-spacing:.14em;color:var(--gold);border:1px solid rgba(250,199,117,.4);padding:2px 7px;border-radius:4px}
+.dbans{display:flex;gap:14px;padding-bottom:14px;border-bottom:1px dashed var(--line);margin-bottom:12px}
+.dban{display:flex;flex-direction:column;align-items:center;gap:4px}.dban em{font:700 8px var(--mono);letter-spacing:.14em;color:var(--loss2);font-style:normal}
+.dpicks{display:grid;gap:8px}.dpick{display:flex;gap:14px;align-items:center}
+.dpick strong{display:block;font:800 20px/1 var(--display);text-transform:uppercase}.dpick em{font-size:12px;color:var(--muted);font-style:normal}
+table.sb{width:100%;border-collapse:collapse}table.sb th{font:600 9px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--kicker);text-align:left;padding:12px 16px 8px;background:var(--panel2)}
+table.sb td{padding:8px 16px;border-top:1px solid var(--line);font-size:12px}
+table.sb tr.me td{background:rgba(127,119,221,.09)}table.sb tr.me td:first-child{box-shadow:inset 3px 0 0 var(--accent)}table.sb tbody.enemy .bar b{background:linear-gradient(90deg,#8c4a4a,var(--red))}
+.who{display:flex;gap:12px;align-items:center;min-width:230px}.who strong{display:block;font:800 16px/1 var(--display);text-transform:uppercase}.who em{font-size:11px;color:var(--muted);font-style:normal}
+.aw{margin-left:auto;font:700 8px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line2);padding:2px 6px;border-radius:4px;white-space:nowrap}
+.aw.mvp{color:var(--gold);border-color:rgba(250,199,117,.45)}
+.cell{display:grid;grid-template-columns:44px 1fr;gap:8px;align-items:center;min-width:130px;font:11px var(--mono);color:var(--text2)}
+svg.lvl{width:100%;height:150px;display:block}.axis{stroke:var(--line2);stroke-width:1}.line{fill:none;stroke:var(--accent2);stroke-width:1.5}
+.area-up{fill:rgba(133,183,235,.28)}.area-dn{fill:rgba(240,149,149,.28)}.mark{stroke:var(--gold);stroke-dasharray:3 3}.mk{fill:var(--gold);font:600 10px var(--mono)}
+.tick{fill:var(--kicker);font:10px var(--mono)}
+.tals,.bsteps{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}
+.tal,.bstep{background:var(--panel);border:1px solid var(--line2);border-radius:12px;padding:12px}
+.tal span,.bstep span{display:block;font:700 10px var(--mono);color:var(--accent2);letter-spacing:.1em}.tal span::before,.bstep span::before{content:"LV "}
+.tal strong,.bstep strong{display:block;font:800 17px/1.05 var(--display);text-transform:uppercase;margin-top:6px}
+/* hero */
+.hhead{position:relative;display:flex;gap:40px;align-items:center;padding:40px 34px;border:1px solid var(--line2);border-radius:22px;overflow:hidden;isolation:isolate;
+background:radial-gradient(600px 400px at 12% 50%,rgba(239,159,39,.18),transparent 65%),var(--panel)}
+.hhead::after{content:"";position:absolute;inset:0;z-index:-1;background:repeating-linear-gradient(0deg,rgba(255,255,255,.018) 0 1px,transparent 1px 3px)}
+.hhead .display{margin:6px 0 0}
+.mapts{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.mapt{position:relative;border-radius:14px;overflow:hidden;isolation:isolate;border:1px solid var(--line2);padding:16px;min-height:130px;display:flex;flex-direction:column;justify-content:flex-end}
+.mapt::before{content:"";position:absolute;inset:0;z-index:-2;background:center/cover var(--img);opacity:.4}
+.mapt::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg,rgba(6,7,11,.15),rgba(6,7,11,.92))}
+.mapt strong{font:800 22px/1 var(--display);text-transform:uppercase}.mapt-f{display:flex;justify-content:space-between;align-items:baseline;margin:6px 0 8px}
+.mapt .wr{font:900 30px var(--display)}.mapt .wr i{font-style:normal;font-size:.6em;color:var(--muted)}.mapt em{font:11px var(--mono);color:var(--muted);font-style:normal}
+.mapt.hot .bar b{background:var(--win)}.mapt.hot .wr{color:var(--win)}.mapt.cold .bar b{background:var(--loss)}.mapt.cold .wr{color:var(--loss2)}
+.builds{display:grid;gap:12px}.build{background:var(--panel);border:1px solid var(--line2);border-radius:16px;padding:14px;display:grid;grid-template-columns:110px 1fr;gap:14px;align-items:center}
+.build-hd strong{font:900 40px/1 var(--display);color:var(--win)}.build-hd strong i{font-size:.55em;font-style:normal;color:var(--muted)}.build-hd em{display:block;font:11px var(--mono);color:var(--muted);font-style:normal}
+.bstep{background:var(--panel2)}
+.patches{display:grid;gap:8px}.patch{display:grid;grid-template-columns:100px 80px 1fr;gap:14px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 16px}
+.pdate{font:600 12px var(--mono);color:var(--text2)}.patch p{margin:0;font-size:13px;color:var(--text2)}
+.ptag{font:700 9px var(--mono);letter-spacing:.14em;text-align:center;padding:3px 0;border-radius:4px}
+.ptag.buff{background:rgba(93,202,165,.15);color:var(--win)}.ptag.nerf{background:rgba(226,75,74,.15);color:var(--loss2)}.ptag.mixed{background:rgba(250,199,117,.12);color:var(--gold)}.ptag.fix{background:var(--panel2);color:var(--muted)}
+@keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+.page:not([hidden]) .sec,.page:not([hidden]) header{animation:rise .6s cubic-bezier(.2,.8,.2,1) both}.page:not([hidden]) .sec:nth-of-type(2){animation-delay:.08s}.page:not([hidden]) .sec:nth-of-type(3){animation-delay:.14s}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media (max-width:860px){.cover-grid,.form-grid,.draft,.mapts{grid-template-columns:1fr}.tals,.bsteps{grid-template-columns:repeat(2,1fr)}.hhead{flex-direction:column;align-items:flex-start}
+.build{grid-template-columns:1fr}.patch{grid-template-columns:1fr}.panel.flush{overflow-x:auto}.bigrec{font-size:84px}.shell,.app-top{padding-left:16px;padding-right:16px}}
+.you{margin-left:auto;font:700 9px var(--mono);letter-spacing:.14em;color:#0b0c12;background:var(--accent2);padding:3px 8px;border-radius:4px}
+.gcard-map.noart{background:repeating-linear-gradient(135deg,rgba(127,119,221,.10) 0 10px,transparent 10px 20px),linear-gradient(135deg,#1a1c2b,#0d0f16)}
+.mrow{display:grid;grid-template-columns:110px 1fr 90px;gap:12px;align-items:center;padding:5px 0}.mrow em{font:11px var(--mono);color:var(--muted);font-style:normal;text-align:right}
+.ptag.upd{background:rgba(127,119,221,.14);color:var(--accent2)}
+</style></head><body>
+<div class="mock-note"><b>MOCKUP</b> · proposed app-wide « dossier » design · real data from the archive · images load from the local checkout (.images / assets) ·
+<span class="switch"><a href="#" data-page="Session">Session</a><a href="#" data-page="Match">Match detail</a><a href="#" data-page="Heroes">Hero page</a></span></div>
+<nav class="app-top"><span class="brand">STORM <b>CODEX</b></span><div class="app-nav"><a class="on" href="#" data-page="Session">Session</a><a class="" href="#" data-page="Matches">Matches</a><a class="" href="#" data-page="Heroes">Heroes</a><a class="" href="#" data-page="Maps">Maps</a><a class="" href="#" data-page="Synergies">Synergies</a><a class="" href="#" data-page="Patch notes">Patch notes</a><a class="" href="#" data-page="Trends">Trends</a><a class="" href="#" data-page="Leagues">Leagues</a><a class="" href="#" data-page="Draft">Draft</a><a class="" href="#" data-page="Scouting">Scouting</a><a class="" href="#" data-page="Admin">Admin</a></div><span class="live"><i></i>online</span></nav>
+<main class="shell"><section class="page" data-name="Session">
+      <header class="cover" style="--img:url('../../assets/minimaps/braxis-holdout.jpg')">
+        <div class="kicker">Session · Tue 9 June 2026 · 18:23 → 20:02</div>
+        <div class="cover-grid">
+          <div>
+            <h1 class="display">Tonight</h1>
+            <div class="bigrec">4<span>–</span>0</div>
+            <span class="pips"><i class="w"></i><i class="w"></i><i class="w"></i><i class="w"></i></span>
+            <div class="sub">Perfect night — 4 games, 60:37 played</div>
+          </div>
+          <div class="lastgame">
+            <span class="pt pt-pick hero-xl" style="--s:132px;--ring:#ef9f27" title="Gul&#x27;dan"><span class="ini">GU</span><img src="../../.images/heroes/guldan.png" alt="" onerror="this.remove()"></span>
+            <div><span class="label">Last game</span><strong>Gul&#x27;dan</strong><em>Braxis Holdout · Storm League</em>
+            <span class="mvp">👑 MVP</span><a class="btn primary" href="#" data-page="Match">Open match ›</a></div>
+          </div>
+        </div>
+        <div class="statline">
+          <div class="stat"><label>Win rate tonight</label><strong>100<span>%</span></strong><small>4/4</small></div>
+          <div class="stat"><label>K / D / A</label><strong>19<span>/</span>16<span>/</span>88</strong><small>6.7 KDA ratio</small></div>
+          <div class="stat"><label>MVP</label><strong>1</strong><small>of 4 games</small></div>
+          <div class="stat"><label>Heroes</label><strong>4</strong><small>Chromie · Mei · Deckard · Gul'dan</small></div>
+        </div>
+      </header>
+      <section class="sec"><div class="sec-hd"><span class="num">01</span><h2>Tonight's games</h2><small>newest first</small></div>
+        <div class="gcards"><a class="gcard w" href="#" data-page="Match">
+          <div class="gcard-map" style="--img:url('../../assets/minimaps/braxis-holdout.jpg')"><span class="mode sl">STORM LEAGUE</span><span class="time">20:02</span></div>
+          <div class="gcard-body"><span class="pt pt-pick " style="--s:56px;--ring:#ef9f27" title="Gul&#x27;dan"><span class="ini">GU</span><img src="../../.images/heroes/guldan.png" alt="" onerror="this.remove()"></span>
+            <div><strong>Braxis Holdout</strong><em>Gul&#x27;dan · 13:32</em>
+            <span class="kda">5<i>/</i>1<i>/</i>17</span></div>
+            <span class="res">WIN</span></div>
+          <div class="gcard-aw">👑 MVP</div>
+        </a><a class="gcard w" href="#" data-page="Match">
+          <div class="gcard-map noart" style=""><span class="mode aram">ARAM</span><span class="time">18:58</span></div>
+          <div class="gcard-body"><span class="pt pt-pick " style="--s:56px;--ring:#e24b4a" title="Deckard"><span class="ini">DE</span><img src="../../.images/heroes/deckard.png" alt="" onerror="this.remove()"></span>
+            <div><strong>Braxis Outpost</strong><em>Deckard · 20:35</em>
+            <span class="kda">6<i>/</i>4<i>/</i>33</span></div>
+            <span class="res">WIN</span></div>
+          <div class="gcard-aw">◆ Teamfight damage</div>
+        </a><a class="gcard w" href="#" data-page="Match">
+          <div class="gcard-map noart" style=""><span class="mode aram">ARAM</span><span class="time">18:35</span></div>
+          <div class="gcard-body"><span class="pt pt-pick " style="--s:56px;--ring:#d85a30" title="Mei"><span class="ini">ME</span><img src="../../.images/heroes/mei.png" alt="" onerror="this.remove()"></span>
+            <div><strong>Industrial District</strong><em>Mei · 8:56</em>
+            <span class="kda">0<i>/</i>1<i>/</i>16</span></div>
+            <span class="res">WIN</span></div>
+          <div class="gcard-aw none">no award</div>
+        </a><a class="gcard w" href="#" data-page="Match">
+          <div class="gcard-map noart" style=""><span class="mode aram">ARAM</span><span class="time">18:23</span></div>
+          <div class="gcard-body"><span class="pt pt-pick " style="--s:56px;--ring:#ef9f27" title="Chromie"><span class="ini">CH</span><img src="../../.images/heroes/chromie.png" alt="" onerror="this.remove()"></span>
+            <div><strong>Lost Cavern</strong><em>Chromie · 17:34</em>
+            <span class="kda">8<i>/</i>10<i>/</i>22</span></div>
+            <span class="res">WIN</span></div>
+          <div class="gcard-aw">◆ Teamfight damage</div>
+        </a></div></section>
+      <section class="sec"><div class="sec-hd"><span class="num">02</span><h2>Your form</h2><small>last 148 games in the archive</small></div>
+        <div class="form-grid">
+          <div class="panel"><label class="label">Last 30 results · newest left</label><span class="pips"><i class="w"></i><i class="w"></i><i class="w"></i><i class="w"></i><i class="w"></i><i class="l"></i><i class="l"></i><i class="w"></i><i class="l"></i><i class="l"></i><i class="l"></i><i class="w"></i><i class="w"></i><i class="l"></i><i class="w"></i><i class="w"></i><i class="w"></i><i class="w"></i><i class="w"></i><i class="w"></i><i class="w"></i><i class="w"></i><i class="w"></i><i class="w"></i><i class="w"></i><i class="l"></i><i class="l"></i><i class="w"></i><i class="w"></i><i class="w"></i></span>
+            <div class="formstats"><div><strong>59<span>%</span></strong><em>win rate · 87/148</em></div>
+            <div><strong>6<span>/10</span></strong><em>last ten</em></div></div>
+            <label class="label" style="margin-top:22px">By mode</label><div class="mrow"><span class="mode qm">CUSTOM</span><i class="bar"><b style="width:62%"></b></i><em>62% · 40/64</em></div><div class="mrow"><span class="mode sl">STORM LEAGUE</span><i class="bar"><b style="width:46%"></b></i><em>46% · 24/52</em></div><div class="mrow"><span class="mode aram">ARAM</span><i class="bar"><b style="width:72%"></b></i><em>72% · 23/32</em></div></div>
+          <div class="panel"><label class="label">Most played</label><div class="hrow"><span class="pt pt-plain " style="--s:34px;--ring:#afa9ec" title="Blaze"><span class="ini">BL</span><img src="../../.images/heroes/blaze.png" alt="" onerror="this.remove()"></span><span>Blaze</span><i class="bar"><b style="width:100%"></b></i><em>27g · 67%</em></div><div class="hrow"><span class="pt pt-plain " style="--s:34px;--ring:#ef9f27" title="Hogger"><span class="ini">HO</span><img src="../../.images/heroes/hogger.png" alt="" onerror="this.remove()"></span><span>Hogger</span><i class="bar"><b style="width:67%"></b></i><em>18g · 67%</em></div><div class="hrow"><span class="pt pt-plain " style="--s:34px;--ring:#ef9f27" title="Brightwing"><span class="ini">BR</span><img src="../../.images/heroes/brightwing.png" alt="" onerror="this.remove()"></span><span>Brightwing</span><i class="bar"><b style="width:30%"></b></i><em>8g · 88%</em></div><div class="hrow"><span class="pt pt-plain " style="--s:34px;--ring:#e24b4a" title="Leoric"><span class="ini">LE</span><img src="../../.images/heroes/leoric.png" alt="" onerror="this.remove()"></span><span>Leoric</span><i class="bar"><b style="width:26%"></b></i><em>7g · 43%</em></div><div class="hrow"><span class="pt pt-plain " style="--s:34px;--ring:#afa9ec" title="Dehaka"><span class="ini">DE</span><img src="../../.images/heroes/dehaka.png" alt="" onerror="this.remove()"></span><span>Dehaka</span><i class="bar"><b style="width:22%"></b></i><em>6g · 33%</em></div><div class="hrow"><span class="pt pt-plain " style="--s:34px;--ring:#ef9f27" title="Tyrande"><span class="ini">TY</span><img src="../../.images/heroes/tyrande.png" alt="" onerror="this.remove()"></span><span>Tyrande</span><i class="bar"><b style="width:22%"></b></i><em>6g · 67%</em></div></div>
+        </div></section>
+    </section><section class="page" data-name="Match">
+      <header class="mhead" style="--img:url('../../assets/minimaps/braxis-holdout.jpg')">
+        <div class="kicker"><span class="mode sl">STORM LEAGUE</span> 9 June 2026 · 20:02 · 13:32 · build 97039</div>
+        <h1 class="display">Braxis Holdout</h1>
+        <div class="verdict w">VICTORY</div>
+        <div class="score">
+          <div><label class="label">Takedowns</label><strong class="us">21</strong><span>–</span><strong class="them">9</strong></div>
+          <div><label class="label">Team level</label><strong class="us">18</strong><span>–</span><strong class="them">15</strong></div>
+          <div><label class="label">First objective</label><strong class="us">US</strong></div>
+          <div><label class="label">First fort</label><strong class="them">THEM</strong></div>
+        </div>
+      </header>
+      <section class="sec"><div class="sec-hd"><span class="num">01</span><h2>Draft</h2><small>bans struck through · picks in team order</small></div>
+        <div class="draft"><div class="dside ours"><div class="dside-hd"><span class="label">Your team</span></div>
+          <div class="dbans"><span class="dban"><span class="pt pt-ban " style="--s:40px;--ring:#ef9f27" title="Mal&#x27;Ganis"><span class="ini">MA</span><img src="../../.images/heroes/malganis.png" alt="" onerror="this.remove()"><i class="slash"></i></span><em>1ST</em></span><span class="dban"><span class="pt pt-ban " style="--s:40px;--ring:#ef9f27" title="Garrosh"><span class="ini">GA</span><img src="../../.images/heroes/garrosh.png" alt="" onerror="this.remove()"><i class="slash"></i></span><em>1ST</em></span><span class="dban"><span class="pt pt-ban " style="--s:40px;--ring:#d85a30" title="Junkrat"><span class="ini">JU</span><img src="../../.images/heroes/junkrat.png" alt="" onerror="this.remove()"><i class="slash"></i></span><em>MID</em></span></div><div class="dpicks"><div class="dpick"><span class="pt pt-pick " style="--s:58px;--ring:#ef9f27" title="Muradin"><span class="ini">MU</span><img src="../../.images/heroes/muradin.png" alt="" onerror="this.remove()"></span><div><strong>Muradin</strong><em>Ally 1</em></div></div><div class="dpick"><span class="pt pt-pick " style="--s:58px;--ring:#ef9f27" title="Gul&#x27;dan"><span class="ini">GU</span><img src="../../.images/heroes/guldan.png" alt="" onerror="this.remove()"></span><div><strong>Gul&#x27;dan</strong><em>matella</em></div><span class="you">YOU</span></div><div class="dpick"><span class="pt pt-pick " style="--s:58px;--ring:#ef9f27" title="Malfurion"><span class="ini">MA</span><img src="../../.images/heroes/malfurion.png" alt="" onerror="this.remove()"></span><div><strong>Malfurion</strong><em>Ally 2</em></div></div><div class="dpick"><span class="pt pt-pick " style="--s:58px;--ring:#ef9f27" title="Falstad"><span class="ini">FA</span><img src="../../.images/heroes/falstad.png" alt="" onerror="this.remove()"></span><div><strong>Falstad</strong><em>Ally 3</em></div></div><div class="dpick"><span class="pt pt-pick " style="--s:58px;--ring:#e24b4a" title="Leoric"><span class="ini">LE</span><img src="../../.images/heroes/leoric.png" alt="" onerror="this.remove()"></span><div><strong>Leoric</strong><em>Ally 4</em></div></div></div></div><div class="dside theirs"><div class="dside-hd"><span class="label">Enemy team</span><span class="fp">FIRST PICK</span></div>
+          <div class="dbans"><span class="dban"><span class="pt pt-ban " style="--s:40px;--ring:#afa9ec" title="Dehaka"><span class="ini">DE</span><img src="../../.images/heroes/dehaka.png" alt="" onerror="this.remove()"><i class="slash"></i></span><em>1ST</em></span><span class="dban"><span class="pt pt-ban " style="--s:40px;--ring:#ef9f27" title="Tyrande"><span class="ini">TY</span><img src="../../.images/heroes/tyrande.png" alt="" onerror="this.remove()"><i class="slash"></i></span><em>1ST</em></span><span class="dban"><span class="pt pt-ban " style="--s:40px;--ring:#d85a30" title="Ana"><span class="ini">AN</span><img src="../../.images/heroes/ana.png" alt="" onerror="this.remove()"><i class="slash"></i></span><em>MID</em></span></div><div class="dpicks"><div class="dpick"><span class="pt pt-them " style="--s:58px;--ring:#ef9f27" title="Sylvanas"><span class="ini">SY</span><img src="../../.images/heroes/sylvanas.png" alt="" onerror="this.remove()"></span><div><strong>Sylvanas</strong><em>Enemy 1</em></div></div><div class="dpick"><span class="pt pt-them " style="--s:58px;--ring:#ef9f27" title="Arthas"><span class="ini">AR</span><img src="../../.images/heroes/arthas.png" alt="" onerror="this.remove()"></span><div><strong>Arthas</strong><em>Enemy 2</em></div></div><div class="dpick"><span class="pt pt-them " style="--s:58px;--ring:#e24b4a" title="Auriel"><span class="ini">AU</span><img src="../../.images/heroes/auriel.png" alt="" onerror="this.remove()"></span><div><strong>Auriel</strong><em>Enemy 3</em></div></div><div class="dpick"><span class="pt pt-them " style="--s:58px;--ring:#ef9f27" title="Deathwing"><span class="ini">DE</span><img src="../../.images/heroes/deathwing.png" alt="" onerror="this.remove()"></span><div><strong>Deathwing</strong><em>Enemy 4</em></div></div><div class="dpick"><span class="pt pt-them " style="--s:58px;--ring:#e24b4a" title="Nazeebo"><span class="ini">NA</span><img src="../../.images/heroes/nazeebo.png" alt="" onerror="this.remove()"></span><div><strong>Nazeebo</strong><em>Enemy 5</em></div></div></div></div></div></section>
+      <section class="sec"><div class="sec-hd"><span class="num">02</span><h2>Scoreboard</h2></div>
+        <div class="panel flush"><table class="sb"><thead><tr><th>Your team</th><th>K/D/A</th><th>Hero dmg</th><th>Siege</th><th>Healing</th><th>XP</th></tr></thead><tbody><tr class=""><td><div class="who"><span class="pt pt-plain " style="--s:36px;--ring:#ef9f27" title="Muradin"><span class="ini">MU</span><img src="../../.images/heroes/muradin.png" alt="" onerror="this.remove()"></span><div><strong>Muradin</strong><em>Ally 1</em></div><span class="aw">Most damage taken</span></div></td>
+              <td class="kda">3<i>/</i>1<i>/</i>15</td><td><div class="cell"><span>35.7k</span><i class="bar"><b style="width:86%"></b></i></div></td><td><div class="cell"><span>19.9k</span><i class="bar"><b style="width:21%"></b></i></div></td><td><div class="cell"><span>0.0k</span><i class="bar"><b style="width:0%"></b></i></div></td><td><div class="cell"><span>3.5k</span><i class="bar"><b style="width:29%"></b></i></div></td></tr><tr class="me"><td><div class="who"><span class="pt pt-plain " style="--s:36px;--ring:#ef9f27" title="Gul&#x27;dan"><span class="ini">GU</span><img src="../../.images/heroes/guldan.png" alt="" onerror="this.remove()"></span><div><strong>Gul&#x27;dan</strong><em>matella</em></div><span class="aw mvp">👑 MVP</span></div></td>
+              <td class="kda">5<i>/</i>1<i>/</i>12</td><td><div class="cell"><span>41.3k</span><i class="bar"><b style="width:100%"></b></i></div></td><td><div class="cell"><span>95.5k</span><i class="bar"><b style="width:100%"></b></i></div></td><td><div class="cell"><span>0.0k</span><i class="bar"><b style="width:0%"></b></i></div></td><td><div class="cell"><span>12.0k</span><i class="bar"><b style="width:100%"></b></i></div></td></tr><tr class=""><td><div class="who"><span class="pt pt-plain " style="--s:36px;--ring:#ef9f27" title="Malfurion"><span class="ini">MA</span><img src="../../.images/heroes/malfurion.png" alt="" onerror="this.remove()"></span><div><strong>Malfurion</strong><em>Ally 2</em></div><span class="aw">Most healing</span></div></td>
+              <td class="kda">5<i>/</i>1<i>/</i>12</td><td><div class="cell"><span>16.4k</span><i class="bar"><b style="width:40%"></b></i></div></td><td><div class="cell"><span>13.2k</span><i class="bar"><b style="width:14%"></b></i></div></td><td><div class="cell"><span>88.8k</span><i class="bar"><b style="width:100%"></b></i></div></td><td><div class="cell"><span>3.9k</span><i class="bar"><b style="width:33%"></b></i></div></td></tr><tr class=""><td><div class="who"><span class="pt pt-plain " style="--s:36px;--ring:#ef9f27" title="Falstad"><span class="ini">FA</span><img src="../../.images/heroes/falstad.png" alt="" onerror="this.remove()"></span><div><strong>Falstad</strong><em>Ally 3</em></div><span class="aw">Vengeances</span></div></td>
+              <td class="kda">6<i>/</i>2<i>/</i>10</td><td><div class="cell"><span>40.5k</span><i class="bar"><b style="width:98%"></b></i></div></td><td><div class="cell"><span>87.9k</span><i class="bar"><b style="width:92%"></b></i></div></td><td><div class="cell"><span>0.0k</span><i class="bar"><b style="width:0%"></b></i></div></td><td><div class="cell"><span>10.4k</span><i class="bar"><b style="width:86%"></b></i></div></td></tr><tr class=""><td><div class="who"><span class="pt pt-plain " style="--s:36px;--ring:#e24b4a" title="Leoric"><span class="ini">LE</span><img src="../../.images/heroes/leoric.png" alt="" onerror="this.remove()"></span><div><strong>Leoric</strong><em>Ally 4</em></div></div></td>
+              <td class="kda">2<i>/</i>4<i>/</i>12</td><td><div class="cell"><span>31.2k</span><i class="bar"><b style="width:75%"></b></i></div></td><td><div class="cell"><span>61.0k</span><i class="bar"><b style="width:64%"></b></i></div></td><td><div class="cell"><span>0.0k</span><i class="bar"><b style="width:0%"></b></i></div></td><td><div class="cell"><span>8.6k</span><i class="bar"><b style="width:72%"></b></i></div></td></tr></tbody>
+        <thead><tr><th>Enemy team</th><th>K/D/A</th><th>Hero dmg</th><th>Siege</th><th>Healing</th><th>XP</th></tr></thead><tbody class="enemy"><tr class=""><td><div class="who"><span class="pt pt-plain " style="--s:36px;--ring:#ef9f27" title="Sylvanas"><span class="ini">SY</span><img src="../../.images/heroes/sylvanas.png" alt="" onerror="this.remove()"></span><div><strong>Sylvanas</strong><em>Enemy 1</em></div></div></td>
+              <td class="kda">0<i>/</i>4<i>/</i>5</td><td><div class="cell"><span>29.0k</span><i class="bar"><b style="width:70%"></b></i></div></td><td><div class="cell"><span>44.4k</span><i class="bar"><b style="width:46%"></b></i></div></td><td><div class="cell"><span>0.0k</span><i class="bar"><b style="width:0%"></b></i></div></td><td><div class="cell"><span>7.1k</span><i class="bar"><b style="width:59%"></b></i></div></td></tr><tr class=""><td><div class="who"><span class="pt pt-plain " style="--s:36px;--ring:#ef9f27" title="Arthas"><span class="ini">AR</span><img src="../../.images/heroes/arthas.png" alt="" onerror="this.remove()"></span><div><strong>Arthas</strong><em>Enemy 2</em></div></div></td>
+              <td class="kda">3<i>/</i>5<i>/</i>2</td><td><div class="cell"><span>41.3k</span><i class="bar"><b style="width:100%"></b></i></div></td><td><div class="cell"><span>58.6k</span><i class="bar"><b style="width:61%"></b></i></div></td><td><div class="cell"><span>0.0k</span><i class="bar"><b style="width:0%"></b></i></div></td><td><div class="cell"><span>8.7k</span><i class="bar"><b style="width:72%"></b></i></div></td></tr><tr class=""><td><div class="who"><span class="pt pt-plain " style="--s:36px;--ring:#e24b4a" title="Auriel"><span class="ini">AU</span><img src="../../.images/heroes/auriel.png" alt="" onerror="this.remove()"></span><div><strong>Auriel</strong><em>Enemy 3</em></div></div></td>
+              <td class="kda">3<i>/</i>5<i>/</i>2</td><td><div class="cell"><span>16.9k</span><i class="bar"><b style="width:41%"></b></i></div></td><td><div class="cell"><span>22.4k</span><i class="bar"><b style="width:23%"></b></i></div></td><td><div class="cell"><span>31.1k</span><i class="bar"><b style="width:35%"></b></i></div></td><td><div class="cell"><span>3.2k</span><i class="bar"><b style="width:26%"></b></i></div></td></tr><tr class=""><td><div class="who"><span class="pt pt-plain " style="--s:36px;--ring:#ef9f27" title="Deathwing"><span class="ini">DE</span><img src="../../.images/heroes/deathwing.png" alt="" onerror="this.remove()"></span><div><strong>Deathwing</strong><em>Enemy 4</em></div><span class="aw">Zerg damage</span></div></td>
+              <td class="kda">2<i>/</i>2<i>/</i>3</td><td><div class="cell"><span>32.4k</span><i class="bar"><b style="width:78%"></b></i></div></td><td><div class="cell"><span>19.6k</span><i class="bar"><b style="width:21%"></b></i></div></td><td><div class="cell"><span>0.0k</span><i class="bar"><b style="width:0%"></b></i></div></td><td><div class="cell"><span>3.1k</span><i class="bar"><b style="width:26%"></b></i></div></td></tr><tr class=""><td><div class="who"><span class="pt pt-plain " style="--s:36px;--ring:#e24b4a" title="Nazeebo"><span class="ini">NA</span><img src="../../.images/heroes/nazeebo.png" alt="" onerror="this.remove()"></span><div><strong>Nazeebo</strong><em>Enemy 5</em></div></div></td>
+              <td class="kda">1<i>/</i>5<i>/</i>6</td><td><div class="cell"><span>36.7k</span><i class="bar"><b style="width:89%"></b></i></div></td><td><div class="cell"><span>35.4k</span><i class="bar"><b style="width:37%"></b></i></div></td><td><div class="cell"><span>0.0k</span><i class="bar"><b style="width:0%"></b></i></div></td><td><div class="cell"><span>5.2k</span><i class="bar"><b style="width:43%"></b></i></div></td></tr></tbody></table></div></section>
+      <section class="sec"><div class="sec-hd"><span class="num">03</span><h2>Level advantage</h2><small>above the line = you are ahead</small></div>
+        <div class="panel"><svg viewBox="0 0 1060 150" class="lvl" preserveAspectRatio="none">
+          <defs><clipPath id="up"><rect x="0" y="0" width="1060" height="75.0"/></clipPath><clipPath id="dn"><rect x="0" y="75.0" width="1060" height="75.0"/></clipPath></defs>
+          <line x1="0" x2="1060" y1="75.0" y2="75.0" class="axis"/>
+          <path d="M0.0,75.0 L0.0,75.0 L70.1,75.0 L70.1,93.0 L91.3,93.0 L91.3,75.0 L128.4,75.0 L128.4,93.0 L143.1,93.0 L143.1,75.0 L170.7,75.0 L170.7,93.0 L186.3,93.0 L186.3,75.0 L215.9,75.0 L215.9,93.0 L229.7,93.0 L229.7,75.0 L270.9,75.0 L270.9,57.0 L271.4,57.0 L271.4,75.0 L322.3,75.0 L322.3,57.0 L340.1,57.0 L340.1,75.0 L390.7,75.0 L390.7,57.0 L391.5,57.0 L391.5,75.0 L442.6,75.0 L442.6,93.0 L462.7,93.0 L462.7,75.0 L485.5,75.0 L485.5,57.0 L519.4,57.0 L519.4,75.0 L580.8,75.0 L580.8,57.0 L617.3,57.0 L617.3,75.0 L646.8,75.0 L646.8,57.0 L713.9,57.0 L713.9,39.0 L741.3,39.0 L741.3,57.0 L787.0,57.0 L787.0,39.0 L836.9,39.0 L836.9,21.0 L844.5,21.0 L844.5,39.0 L916.8,39.0 L916.8,21.0 L969.2,21.0 L969.2,39.0 L977.6,39.0 L977.6,21.0 L1006.6,21.0 L1006.6,39.0 L1049.8,39.0 L1049.8,21.0 L1060.0,21.0 L1060.0,75.0 Z" class="area-up" clip-path="url(#up)"/><path d="M0.0,75.0 L0.0,75.0 L70.1,75.0 L70.1,93.0 L91.3,93.0 L91.3,75.0 L128.4,75.0 L128.4,93.0 L143.1,93.0 L143.1,75.0 L170.7,75.0 L170.7,93.0 L186.3,93.0 L186.3,75.0 L215.9,75.0 L215.9,93.0 L229.7,93.0 L229.7,75.0 L270.9,75.0 L270.9,57.0 L271.4,57.0 L271.4,75.0 L322.3,75.0 L322.3,57.0 L340.1,57.0 L340.1,75.0 L390.7,75.0 L390.7,57.0 L391.5,57.0 L391.5,75.0 L442.6,75.0 L442.6,93.0 L462.7,93.0 L462.7,75.0 L485.5,75.0 L485.5,57.0 L519.4,57.0 L519.4,75.0 L580.8,75.0 L580.8,57.0 L617.3,57.0 L617.3,75.0 L646.8,75.0 L646.8,57.0 L713.9,57.0 L713.9,39.0 L741.3,39.0 L741.3,57.0 L787.0,57.0 L787.0,39.0 L836.9,39.0 L836.9,21.0 L844.5,21.0 L844.5,39.0 L916.8,39.0 L916.8,21.0 L969.2,21.0 L969.2,39.0 L977.6,39.0 L977.6,21.0 L1006.6,21.0 L1006.6,39.0 L1049.8,39.0 L1049.8,21.0 L1060.0,21.0 L1060.0,75.0 Z" class="area-dn" clip-path="url(#dn)"/>
+          <path d="M0.0,75.0 L0.0,75.0 L70.1,75.0 L70.1,93.0 L91.3,93.0 L91.3,75.0 L128.4,75.0 L128.4,93.0 L143.1,93.0 L143.1,75.0 L170.7,75.0 L170.7,93.0 L186.3,93.0 L186.3,75.0 L215.9,75.0 L215.9,93.0 L229.7,93.0 L229.7,75.0 L270.9,75.0 L270.9,57.0 L271.4,57.0 L271.4,75.0 L322.3,75.0 L322.3,57.0 L340.1,57.0 L340.1,75.0 L390.7,75.0 L390.7,57.0 L391.5,57.0 L391.5,75.0 L442.6,75.0 L442.6,93.0 L462.7,93.0 L462.7,75.0 L485.5,75.0 L485.5,57.0 L519.4,57.0 L519.4,75.0 L580.8,75.0 L580.8,57.0 L617.3,57.0 L617.3,75.0 L646.8,75.0 L646.8,57.0 L713.9,57.0 L713.9,39.0 L741.3,39.0 L741.3,57.0 L787.0,57.0 L787.0,39.0 L836.9,39.0 L836.9,21.0 L844.5,21.0 L844.5,39.0 L916.8,39.0 L916.8,21.0 L969.2,21.0 L969.2,39.0 L977.6,39.0 L977.6,21.0 L1006.6,21.0 L1006.6,39.0 L1049.8,39.0 L1049.8,21.0 L1060.0,21.0 L1060.0,75.0" class="line"/><line x1="444" x2="444" y1="8" y2="134" class="mark"/><text x="450" y="18" class="mk">first fort · our fort falls</text><text x="157" y="146" class="tick">2:00</text><text x="313" y="146" class="tick">4:00</text><text x="470" y="146" class="tick">6:00</text><text x="627" y="146" class="tick">8:00</text><text x="783" y="146" class="tick">10:00</text><text x="940" y="146" class="tick">12:00</text></svg></div></section>
+      <section class="sec"><div class="sec-hd"><span class="num">04</span><h2>Your build</h2><small>Gul&#x27;dan</small></div>
+        <div class="tals"><div class="tal"><span>1</span><strong>Echoed Corruption</strong></div><div class="tal"><span>4</span><strong>Consume Soul</strong></div><div class="tal"><span>7</span><strong>Bound by Shadow</strong></div><div class="tal"><span>10</span><strong>Horrify</strong></div><div class="tal"><span>13</span><strong>Fel Armor</strong></div><div class="tal"><span>16</span><strong>Ruinous Affliction</strong></div></div></section>
+    </section><section class="page" data-name="Heroes">
+      <header class="hhead">
+        <span class="pt pt-plain hero-xxl" style="--s:190px;--ring:#ef9f27" title="Gul&#x27;dan"><span class="ini">GU</span><img src="../../.images/heroes/guldan.png" alt="" onerror="this.remove()"></span>
+        <div class="hhead-txt">
+          <div class="kicker">Hero · Warcraft · Ranged Assassin</div>
+          <h1 class="display">Gul&#x27;dan</h1>
+          <div class="statline">
+            <div class="stat"><label>Win rate</label><strong>52<span>%</span></strong><small>158/302 games in the archive</small></div>
+            <div class="stat"><label>Avg K / D / T</label><strong>3.6<span>/</span>3.2<span>/</span>12.0</strong><small>per game</small></div>
+            <div class="stat"><label>Best map · 10+ games</label><strong class="sm">Alterac Pass</strong><small>13/18 · 72%</small></div>
+          </div>
+        </div>
+      </header>
+      <section class="sec"><div class="sec-hd"><span class="num">01</span><h2>Maps</h2><small>green ≥ 60% · red &lt; 45%</small></div><div class="mapts"><div class="mapt hot" style="--img:url('../../assets/minimaps/braxis-holdout.jpg')"><strong>Braxis Holdout</strong>
+          <div class="mapt-f"><span class="wr">64<i>%</i></span><em>38/59</em></div><i class="bar"><b style="width:64%"></b></i></div><div class="mapt cold" style="--img:url('../../assets/minimaps/tomb-of-the-spider-queen.jpg')"><strong>Tomb of the Spider Queen</strong>
+          <div class="mapt-f"><span class="wr">44<i>%</i></span><em>22/50</em></div><i class="bar"><b style="width:44%"></b></i></div><div class="mapt " style="--img:url('../../assets/minimaps/infernal-shrines.jpg')"><strong>Infernal Shrines</strong>
+          <div class="mapt-f"><span class="wr">52<i>%</i></span><em>25/48</em></div><i class="bar"><b style="width:52%"></b></i></div><div class="mapt " style="--img:url('../../assets/minimaps/dragon-shire.jpg')"><strong>Dragon Shire</strong>
+          <div class="mapt-f"><span class="wr">57<i>%</i></span><em>13/23</em></div><i class="bar"><b style="width:57%"></b></i></div><div class="mapt " style="--img:url('../../assets/minimaps/garden-of-terror.jpg')"><strong>Garden of Terror</strong>
+          <div class="mapt-f"><span class="wr">45<i>%</i></span><em>9/20</em></div><i class="bar"><b style="width:45%"></b></i></div><div class="mapt hot" style="--img:url('../../assets/minimaps/alterac-pass.jpg')"><strong>Alterac Pass</strong>
+          <div class="mapt-f"><span class="wr">72<i>%</i></span><em>13/18</em></div><i class="bar"><b style="width:72%"></b></i></div><div class="mapt cold" style="--img:url('None')"><strong>Lost Cavern</strong>
+          <div class="mapt-f"><span class="wr">43<i>%</i></span><em>6/14</em></div><i class="bar"><b style="width:43%"></b></i></div><div class="mapt cold" style="--img:url('../../assets/minimaps/volskaya-foundry.jpg')"><strong>Volskaya Foundry</strong>
+          <div class="mapt-f"><span class="wr">29<i>%</i></span><em>4/14</em></div><i class="bar"><b style="width:29%"></b></i></div><div class="mapt " style="--img:url('../../assets/minimaps/sky-temple.jpg')"><strong>Sky Temple</strong>
+          <div class="mapt-f"><span class="wr">50<i>%</i></span><em>6/12</em></div><i class="bar"><b style="width:50%"></b></i></div></div></section>
+      <section class="sec"><div class="sec-hd"><span class="num">02</span><h2>Builds that win</h2><small>most played talent paths</small></div><div class="builds"><div class="build"><div class="build-hd"><strong>64<i>%</i></strong><em>16/25 games</em></div><div class="bsteps"><div class="bstep"><span>1</span><strong>Pursuit of Flame</strong></div><div class="bstep"><span>4</span><strong>Consume Soul</strong></div><div class="bstep"><span>7</span><strong>Hunger for Power</strong></div><div class="bstep"><span>10</span><strong>Horrify</strong></div><div class="bstep"><span>13</span><strong>Fel Armor</strong></div><div class="bstep"><span>16</span><strong>Rampant Hellfire</strong></div><div class="bstep"><span>20</span><strong>Haunt</strong></div></div></div><div class="build"><div class="build-hd"><strong>56<i>%</i></strong><em>9/16 games</em></div><div class="bsteps"><div class="bstep"><span>1</span><strong>Pursuit of Flame</strong></div><div class="bstep"><span>4</span><strong>Consume Soul</strong></div><div class="bstep"><span>7</span><strong>Hunger for Power</strong></div><div class="bstep"><span>10</span><strong>Horrify</strong></div><div class="bstep"><span>13</span><strong>Fel Armor</strong></div><div class="bstep"><span>16</span><strong>Rampant Hellfire</strong></div></div></div><div class="build"><div class="build-hd"><strong>53<i>%</i></strong><em>8/15 games</em></div><div class="bsteps"><div class="bstep"><span>1</span><strong>Echoed Corruption</strong></div><div class="bstep"><span>4</span><strong>Consume Soul</strong></div><div class="bstep"><span>7</span><strong>Hunger for Power</strong></div><div class="bstep"><span>10</span><strong>Horrify</strong></div><div class="bstep"><span>13</span><strong>Fel Armor</strong></div><div class="bstep"><span>16</span><strong>Ruinous Affliction</strong></div></div></div></div></section>
+      <section class="sec"><div class="sec-hd"><span class="num">03</span><h2>Patch history</h2><small>from HotsPatchNotes</small></div><div class="patches"><div class="patch"><span class="pdate">2026-04-20</span><span class="ptag fix">BUGFIX</span>
+      <p>Base Drain Life [W] Fixed an issue that caused Drain Life to not always be interrupted if the target leaves its range.</p></div><div class="patch"><span class="pdate">2026-02-19</span><span class="ptag fix">BUGFIX</span>
+      <p>Level 16 Ruinous Affliction Fixed an issue that caused Ruinous Affliction to deal bonus damage on the 3rd and 5th hit, instead of the 3rd and 6th hit.</p></div><div class="patch"><span class="pdate">2026-02-10</span><span class="ptag fix">BUGFIX</span>
+      <p>Fixed an issue causing Gul&#x27;dan&#x27;s Health Funnel refunds to not trigger from units timing out.</p></div><div class="patch"><span class="pdate">2025-12-16</span><span class="ptag nerf">NERF</span>
+      <p>Talents Level 1 Echoed Corruption Pinnacle Reward healing increased from 50% to 100%. Pinnacle Reward requirement reduced from 100 to 85. Level 16 Ruinous Affliction Damage reduced…</p></div><div class="patch"><span class="pdate">2025-12-12</span><span class="ptag upd">UPDATE</span>
+      <p>Level 1 Echoed Corruption Pinnacle Reward healing increased to 100%, up from 50%. Pinnacle Reward requirement reduced to 85, down from 100. Level 16 Ruinous Affliction Damage reduc…</p></div></div></section>
+    </section></main>
+<script>
+function show(n){document.querySelectorAll('.page').forEach(p=>p.hidden=p.dataset.name!==n);
+document.querySelectorAll('.app-nav a').forEach(a=>a.classList.toggle('on',a.dataset.page===(n==='Match'?'Matches':n)));
+document.querySelectorAll('.switch a').forEach(a=>a.classList.toggle('on',a.dataset.page===n));scrollTo(0,0);location.hash=n;}
+document.addEventListener('click',e=>{const a=e.target.closest('[data-page]');if(!a)return;e.preventDefault();
+const n=a.dataset.page;if(['Session','Match','Heroes'].includes(n))show(n);else if(n==='Matches')show('Match');});
+show((location.hash||'#Session').slice(1));
+</script></body></html>

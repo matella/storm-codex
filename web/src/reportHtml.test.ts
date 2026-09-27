@@ -7,7 +7,7 @@ import type { Analysis, Facts, ScoutingReport } from "./scouting";
 const rate = (k: number, n: number) => ({ k, n });
 const facts = {
   overview: { games: 2, record: rate(1, 2), excluded: 0, first_date: "2026-07-22T19:00:00Z", last_date: "2026-07-22T20:00:00Z", builds: [97605], avg_length_s: 1200 },
-  players: [{ pid: "p1", toon: "t1", name: "Razhag", core: true, record: rate(1, 2),
+  players: [{ pid: "p1", toon: "t1", name: "Anchor", core: true, record: rate(1, 2),
     heroes: [{ id: "p1.hero.tyrael", hero: "Tyrael", picks: rate(2, 2), record: rate(1, 2) }],
     roles: [{ id: "p1.role.tank", key: "Tank", count: rate(2, 2) }],
     stats: { kills: 1, deaths: 2, assists: 3, kill_participation_pct: 50, hero_damage_pm: 100, siege_damage_pm: 1, healing_pm: 0, damage_taken_pm: 1, xp_pm: 1, time_dead_pct: 5 } }],
@@ -40,7 +40,7 @@ const analysis: Analysis = {
   general: { bans: [], picks: [], considerations: [] },
 };
 const report = (a: Analysis | null): ScoutingReport => ({
-  id: 3, title: "Series & co", target_name: "Razhag's team", roster: [], anchors: [], facts_version: 7,
+  id: 3, title: "Series & co", target_name: "Anchor's team", roster: [], anchors: [], facts_version: 7,
   snapshot: { facts, detection: { candidates: [], ambiguous: false }, roster: ["t1"], roster_auto: true },
   analysis: a, analysis_facts_version: 7, analysis_model: a ? "test-model" : null, analysis_imported_at: null,
   created_at: "2026-09-26", updated_at: "2026-09-26", status: a ? "analyzed" : "ready", games: [],
@@ -52,7 +52,7 @@ describe("renderReportHtml", () => {
   it("échappe tout texte venu du LLM ou des replays", () => {
     expect(html).not.toContain("<script>alert(1)</script>");
     expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
-    expect(html).toContain("Razhag&#39;s team");
+    expect(html).toContain("Anchor&#39;s team");
     expect(html).toContain("Series &amp; co");
   });
   it("un tableau de draft par carte, ancré, avec la navigation", () => {
@@ -91,16 +91,16 @@ describe("renderReportHtml", () => {
 describe("helpers d'export", () => {
   it("preuve compacte : sans parenthèses, sans répéter la carte, pseudos au lieu des pN", () => {
     const e = { label: "Alterac Pass — Hogger picked by them (games, record, players)", text: "1 of 1 game, 1/1 (100%), played by p5" };
-    expect(compactEvidence(e, { names: { p5: "vmatom" }, map: "Alterac Pass" }))
-      .toEqual({ label: "Hogger picked by them", text: "1 of 1 game, 1/1 (100%), played by vmatom" });
-    expect(compactEvidence({ label: "Razhag (p4) — averages", text: "x" }, { names: {} }).label).toBe("Razhag — averages");
+    expect(compactEvidence(e, { names: { p5: "Solo" }, map: "Alterac Pass" }))
+      .toEqual({ label: "Hogger picked by them", text: "1 of 1 game, 1/1 (100%), played by Solo" });
+    expect(compactEvidence({ label: "Anchor (p4) — averages", text: "x" }, { names: {} }).label).toBe("Anchor — averages");
   });
   it("humanize : pseudos au lieu des pN dans le texte du LLM", () => {
-    expect(humanize("bruiser for vmatom (p5), then p3 carries", { p3: "MrTyCo", p5: "vmatom" })).toBe("bruiser for vmatom, then MrTyCo carries");
+    expect(humanize("bruiser for Solo (p5), then p3 carries", { p3: "Carry", p5: "Solo" })).toBe("bruiser for Solo, then Carry carries");
   });
   it("esc", () => expect(esc(`<a href="x">'&'</a>`)).toBe("&lt;a href=&quot;x&quot;&gt;&#39;&amp;&#39;&lt;/a&gt;"));
   it("nom de fichier", () => {
-    expect(exportFileName("Série 2026-07-22 — Razhag's team")).toBe("scouting-serie-2026-07-22-razhag-s-team.html");
+    expect(exportFileName("Série 2026-07-22 — Anchor's team")).toBe("scouting-serie-2026-07-22-anchor-s-team.html");
     expect(exportFileName("!!!")).toBe("scouting-report.html");
   });
   it("héros et cartes à charger", () => {

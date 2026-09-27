@@ -36,8 +36,8 @@ describe("claimState", () => {
 
 describe("pidNames / day / uploadLabel / targetNames", () => {
   it("pN → nom", () => {
-    const facts = { players: [{ pid: "p1", name: "Razhag" }, { pid: "p2", name: "Grolg" }] } as unknown as Facts;
-    expect(pidNames(facts)).toEqual({ p1: "Razhag", p2: "Grolg" });
+    const facts = { players: [{ pid: "p1", name: "Anchor" }, { pid: "p2", name: "Ranged" }] } as unknown as Facts;
+    expect(pidNames(facts)).toEqual({ p1: "Anchor", p2: "Ranged" });
     expect(pidNames(null)).toEqual({});
   });
   it("date courte", () => {

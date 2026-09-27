@@ -121,7 +121,7 @@ vitest (env node).
 
 ## Tâche 8 — Vérification réelle + mesure
 
-- [x] Serveur dev + front : rapport avec les 3 replays de l'opérateur, ancre `Razhag` → roster des
+- [x] Serveur dev + front : rapport avec les 3 replays de l'opérateur, une ancre (joueur de l'équipe scoutée) → roster des
       5 attendus, 3 parties côté cible, faits cohérents avec les drafts confirmés.
 - [x] Pack copié → réponse JSON (rédigée par Claude dans la session à partir du pack réel, l'étape
       LLM étant manuelle) → import → preuves affichées ; ré-import → écrasement.
