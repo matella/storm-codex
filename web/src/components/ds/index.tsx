@@ -12,6 +12,9 @@ import type { Count, Evidence, HeroCall, HeroRow, Point } from "../../scouting";
 export type Tone = "ban" | "pick" | "them" | "plain" | "loss" | "blue" | "red";
 export type Names = Record<string, string>;
 
+/** Couleur hex de l'univers d'un héros (anneau des portraits, halo des couvertures). */
+export const heroRing = (hero: string | null) => UNIVERSE_HEX[heroUniverse(hero) ?? "Nexus"] ?? UNIVERSE_HEX.Nexus;
+
 /** Ancre d'une carte (#map-braxis-holdout) — identique à celle de l'export. */
 export const mapAnchor = (map: string) => "map-" + map.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
@@ -21,7 +24,7 @@ const initials = (h: string) => {
   return s.slice(0, 2).toUpperCase() || "?";
 };
 
-export function Portrait({ hero, size = 40, tone = "plain" }: { hero: string; size?: number; tone?: Tone }) {
+export function Portrait({ hero, size = 40, tone = "plain", className }: { hero: string; size?: number; tone?: Tone; className?: string }) {
   // abonné au référentiel (cache TanStack partagé) : re-rendu quand il arrive, sinon un portrait
   // rendu avant son chargement resterait en initiales
   useDimHeroes();
@@ -30,7 +33,7 @@ export function Portrait({ hero, size = 40, tone = "plain" }: { hero: string; si
   const ring = UNIVERSE_HEX[heroUniverse(hero) ?? "Nexus"] ?? UNIVERSE_HEX.Nexus;
   const style = { "--s": `${size}px`, "--ring": ring } as CSSProperties;
   return (
-    <span className={`ds-pt ds-pt-${tone}`} style={style} title={hero}>
+    <span className={`ds-pt ds-pt-${tone}${className ? ` ${className}` : ""}`} style={style} title={hero}>
       {icon && !broken
         ? <img src={icon} alt={hero} loading="lazy" onError={() => setBroken(true)} />
         : <span className="ds-ini">{initials(hero)}</span>}

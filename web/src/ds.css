@@ -447,3 +447,74 @@ svg.ds-lvl { width: 100%; height: 160px; display: block; }
   .ds-panel.flush.scroll { overflow-x: auto; }
   .ds-mhead { padding: 24px 18px; }
 }
+
+/* ══ Lot 2 — Heroes, Hero, Player, Maps ══ */
+.ds-filterbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 22px; }
+.ds-filterbar label { font: 600 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--kicker); display: inline-flex; gap: 6px; align-items: center; }
+.ds-filterbar .ds-input { padding: 6px 10px; font-size: 12px; }
+/* mur de héros */
+.ds-herowall { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.ds-htile { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px 10px 12px; background: var(--panel); border: 1px solid var(--line-2);
+  border-radius: 14px; text-decoration: none; color: inherit; cursor: pointer; transition: transform .15s, border-color .15s; text-align: center; }
+.ds-htile:hover { transform: translateY(-2px); border-color: var(--accent); }
+.ds-htile strong { font: 800 18px/1 var(--display); text-transform: uppercase; letter-spacing: .02em; }
+.ds-htile .wr { font: 900 26px/1 var(--display); } .ds-htile .wr i { font-style: normal; font-size: .55em; color: var(--muted-2); }
+.ds-htile .wr.hot { color: var(--win); } .ds-htile .wr.cold { color: var(--loss-soft); }
+.ds-htile em { font: 11px var(--mono); color: var(--muted-2); font-style: normal; }
+.ds-htile .ds-bar { width: 100%; }
+/* couverture héros / joueur à grand portrait */
+.ds-hhead { position: relative; display: flex; gap: 40px; align-items: center; padding: 38px 34px; margin-top: 18px; border: 1px solid var(--line-2); border-radius: 22px;
+  overflow: hidden; isolation: isolate; background: radial-gradient(600px 400px at 12% 50%, color-mix(in srgb, var(--ring, #7f77dd) 20%, transparent), transparent 65%), var(--panel); }
+.ds-hhead::after { content: ""; position: absolute; inset: 0; z-index: -1; background: repeating-linear-gradient(0deg, rgba(255,255,255,.018) 0 1px, transparent 1px 3px); }
+.ds-hhead .ds-title { margin: 8px 0 4px; }
+.ds-hhead-txt { min-width: 0; flex: 1; }
+.ds-pt.xl { box-shadow: 0 0 0 4px var(--ring), 0 0 60px color-mix(in srgb, var(--ring) 45%, transparent); }
+/* tuiles de carte */
+.ds-mapts { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+.ds-mapt { position: relative; display: flex; flex-direction: column; justify-content: flex-end; min-height: 140px; padding: 16px; border: 1px solid var(--line-2); border-radius: 14px;
+  overflow: hidden; isolation: isolate; text-decoration: none; color: inherit; transition: border-color .15s; }
+.ds-mapt::before { content: ""; position: absolute; inset: 0; z-index: -2; background: center/cover no-repeat var(--img, none); opacity: .42; transition: opacity .25s, transform .4s; }
+.ds-mapt.noart::before { background: repeating-linear-gradient(135deg, rgba(127,119,221,.10) 0 10px, transparent 10px 20px), linear-gradient(135deg, #1a1c2b, #0d0f16); opacity: 1; }
+.ds-mapt::after { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, rgba(6,7,11,.1), rgba(6,7,11,.92)); }
+.ds-mapt:hover { border-color: var(--accent); } .ds-mapt:hover::before { opacity: .55; transform: scale(1.04); }
+.ds-mapt strong { font: 800 22px/1 var(--display); text-transform: uppercase; }
+.ds-mapt-f { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 6px 0 8px; }
+.ds-mapt .wr { font: 900 30px var(--display); } .ds-mapt .wr i { font-style: normal; font-size: .6em; color: var(--muted-2); }
+.ds-mapt .wr.hot { color: var(--win); } .ds-mapt .wr.cold { color: var(--loss-soft); }
+.ds-mapt em { font: 11px var(--mono); color: var(--muted-2); font-style: normal; text-align: right; }
+.ds-mapt .meta { display: flex; gap: 12px; flex-wrap: wrap; font: 10px var(--mono); color: var(--kicker); margin-top: 8px; text-transform: uppercase; letter-spacing: .08em; }
+.ds-mapt .meta b { color: var(--text-2); font-weight: 600; }
+/* builds */
+.ds-builds { display: grid; gap: 12px; }
+.ds-build { display: grid; grid-template-columns: 110px 1fr; gap: 14px; align-items: center; background: var(--panel); border: 1px solid var(--line-2); border-radius: 16px; padding: 14px; }
+.ds-build-hd strong { font: 900 40px/1 var(--display); } .ds-build-hd strong i { font-size: .55em; font-style: normal; color: var(--muted-2); }
+.ds-build-hd strong.hot { color: var(--win); } .ds-build-hd strong.cold { color: var(--loss-soft); }
+.ds-build-hd em { display: block; font: 11px var(--mono); color: var(--muted-2); font-style: normal; }
+.ds-bsteps { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
+.ds-bstep { background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px 12px; min-width: 0; }
+.ds-bstep span { display: block; font: 700 10px var(--mono); color: var(--accent-2); letter-spacing: .1em; }
+.ds-bstep strong { display: block; font: 800 15px/1.05 var(--display); text-transform: uppercase; margin-top: 5px; overflow-wrap: anywhere; }
+/* patchs */
+.ds-patches { display: grid; gap: 8px; }
+.ds-patch { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.ds-patch summary { display: grid; grid-template-columns: 110px 84px 1fr auto; gap: 14px; align-items: center; padding: 12px 16px; cursor: pointer; list-style: none; }
+.ds-patch summary::-webkit-details-marker { display: none; }
+.ds-patch .pdate { font: 600 12px var(--mono); color: var(--text-2); }
+.ds-patch .pname { font-size: 13px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-patch .popen { font: 11px var(--mono); color: var(--accent-2); text-decoration: none; white-space: nowrap; }
+.ds-patch .pbody { padding: 4px 16px 14px; font-size: 13px; line-height: 1.55; color: var(--text-2); border-top: 1px solid var(--line); }
+.ds-ptag { font: 700 9px var(--mono); letter-spacing: .14em; text-align: center; padding: 3px 0; border-radius: 4px; }
+.ds-ptag.buff { background: rgba(93,202,165,.15); color: var(--win); } .ds-ptag.nerf { background: rgba(226,75,74,.15); color: var(--loss-soft); }
+.ds-ptag.mixed { background: rgba(250,199,117,.12); color: var(--gold); } .ds-ptag.fix { background: var(--panel-2); color: var(--muted-2); }
+.ds-ptag.upd { background: rgba(127,119,221,.14); color: var(--accent-2); }
+/* réserve de héros (joueur) */
+.ds-pool { display: grid; grid-template-columns: repeat(auto-fill, minmax(460px, 1fr)); gap: 4px 28px; }
+.ds-poolrow { display: grid; grid-template-columns: 34px minmax(0, 120px) minmax(40px, 1fr) 96px 92px; gap: 12px; align-items: center; padding: 6px 0; font-size: 13px; text-decoration: none; color: inherit; }
+.ds-poolrow em { font: 11px var(--mono); color: var(--muted-2); font-style: normal; text-align: right; }
+.ds-poolrow .wr { font: 600 12px var(--mono); text-align: right; white-space: nowrap; } .ds-poolrow .wr.hot { color: var(--win); } .ds-poolrow .wr.cold { color: var(--loss-soft); }
+@media (max-width: 860px) {
+  .ds-hhead { flex-direction: column; align-items: flex-start; padding: 26px 18px; gap: 20px; }
+  .ds-build { grid-template-columns: 1fr; } .ds-bsteps { grid-template-columns: repeat(2, 1fr); }
+  .ds-patch summary { grid-template-columns: 90px 70px 1fr; } .ds-patch .popen { display: none; }
+  .ds-poolrow { grid-template-columns: 34px minmax(0, 1fr) 60px 70px; } .ds-poolrow .ds-bar { display: none; }
+}

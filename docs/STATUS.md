@@ -10,8 +10,10 @@ Spec `docs/specs/2026-09-27-design-dossier-app-design.md` (+ maquettes). Overlay
   courbe de niveau passée d'uPlot à un SVG en escalier, `LevelChart` supprimé ; uPlot reste en
   dépendance). Session : la couverture suit désormais la **dernière partie de l'opérateur** (avant :
   la dernière partie de l'archive, même sans lui). Vérifié par captures Edge headless (données réelles).
-- Lots suivants : 2 Heroes/Hero/Player/Maps · 3 Synergies/Trends/Patch notes/Hero changes/Leagues ·
-  4 Draft console/Admin.
+- **Lot 2 (référentiel) — fait** : Heroes (mur de héros, rôle), Hero (grand portrait, cartes, builds,
+  patchs), Player (réserve de héros, parties récentes), Maps (tuiles sur l'art des cartes). HTML des
+  patchs rendu par `SafeHtml` (fragment DOMPurify, pas de chaîne HTML injectée).
+- Lots suivants : 3 Synergies/Trends/Patch notes/Hero changes/Leagues · 4 Draft console/Admin.
 ## Bans du draft résolus sur la fiche de match — 2026-09-26
 storm-stats stocke les bans en code attribut brut (`Crus`, `DEAT`…) ; la fiche de match les
 affichait tels quels (constaté sur le match 143). `dim_heroes` ne porte pas l'`attributeId`

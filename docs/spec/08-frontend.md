@@ -7,7 +7,8 @@ dans `theme.css`, classes globales `ds-` dans `src/ds.css`, composants partagés
 Polices **auto-hébergées** (`src/fonts.ts`, Fontsource, SIL OFL : Big Shoulders Display, Figtree,
 JetBrains Mono ; ~132 Ko en latin, `unicode-range`) — aucune requête Google Fonts. Chrome
 (`Layout`) : barre `ds-top` (marque en titrage, onglets mono capitales, aide, indicateur live),
-`Portrait` s'abonne au référentiel héros (re-rendu à son arrivée), pièces de partie dans
+`AggFilterBar` restylé (pilules), `SafeHtml` = point unique d'insertion du HTML externe (fragment DOM
+assaini par DOMPurify, `replaceChildren`), `Portrait` s'abonne au référentiel héros (re-rendu à son arrivée), pièces de partie dans
 `components/ds/match.tsx` (ModeTag, AwardTag, GameCard, LevelAdvantage, art de carte),
 conteneur `ds-app` (police Figtree, fond atmosphérique) et `ds-shell` (1180 px). Le `body` garde
 sa police d'origine : les sources OBS (hors Layout) ne changent pas. Buildée dans `web/dist`, servie par le binaire (`WEB_DIR`),
@@ -22,12 +23,12 @@ fallback SPA (`index.html` en `no-cache`). Langue de l'UI : **anglais**.
 | `/` | Dashboard | **dossier** : couverture de la dernière session de l'opérateur (parties séparées de < 3 h, « Tonight » si c'est aujourd'hui) — bilan en très grand, pastilles, dernière partie (portrait, award, lien), tuiles winrate / K/D/A / MVP / héros ; cartes des parties de la session ; « Your form » (30 derniers résultats, winrate, 10 derniers, par mode, héros les plus joués). Logique pure `src/session.ts` (tests). Sans `operator_names` : invite vers Admin |
 | `/matches` | Matches | **dossier** : couverture « Archive » (nombre de parties, bilan de l'opérateur) avec les filtres pilotés par l'URL (mode, résultat, MVP, carte, héros, compte, dates, reset, export CSV/JSON) ; liste dense (date, mode court, portrait à ton victoire/défaite, carte + héros, résultat, MVP, durée, art de la carte en fond) |
 | `/match/:id` | MatchDetail | **dossier** : couverture (minimap découpée, mode, verdict VICTORY/DEFEAT du point de vue de l'opérateur — sinon « BLUE/RED TEAM WINS » —, takedowns, niveau, premier objectif/fort/keep ; la couleur suit l'équipe réelle, l'équipe de l'opérateur en premier), onglets Score / Replay 2D + lien dump brut. Sections : Draft (bans barrés avec phase, résolus via `/api/dim/hero-attributes`, `no ban` pour un tour passé ; picks dans l'ordre, FIRST PICK, YOU), Scoreboard (jauges relatives au max de la partie, stats basic/advanced, talents nommés, awards, total), Level advantage (SVG en escalier, premier fort marqué), Team XP, Timeline (piste + liste), Match chat (filtres pings/callouts), Taunts & pings, Full data |
-| `/player/:toon` | Player | résumé + hero pool |
-| `/heroes` · `/hero/:name` | Heroes / Hero | agrégats triables ; fiche héros + patchs le concernant |
+| `/player/:toon` | Player | **dossier** : couverture au portrait du héros le plus joué (anneau d'univers), alias, tuiles winrate / K/D/T / héros ; réserve de héros en barres (top 18, « show all ») ; parties récentes en lignes de partie |
+| `/heroes` · `/hero/:name` | Heroes / Hero | **dossier** : mur de héros (portrait, winrate coloré, jauge, parties), tri « Most played / Win rate », filtre de rôle, filtres d'agrégat ; fiche héros : grand portrait à halo d'univers, tuiles (winrate, K/D/T, meilleure carte ≥ 5 parties), « See games », cartes en tuiles minimap (vert ≥ 55 %, rouge < 45 %), builds gagnants en pas de talents, historique de patchs dépliable (contenu via `SafeHtml`) |
 | `/synergies` | Synergies | paires (avec/contre) |
 | `/patches` · `/patch/:id` | Patches / Patch | patch notes (DOMPurify, chunk lazy) |
 | `/hero-changes` | HeroChanges | sections héros des patchs (buff/nerf) |
-| `/maps` | Maps | agrégat par carte |
+| `/maps` | Maps | **dossier** : une tuile par carte sur son art (ton bilan et winrate, parties, victoire côté bleu, durée moyenne), clic → Matches filtré sur la carte ; filtres d'agrégat |
 | `/trends` | Trends | winrate/durée par patch |
 | `/leagues` | Leagues | équipes groupées par ligue |
 | `/draft` | Draft | console opérateur du simulateur de draft |
