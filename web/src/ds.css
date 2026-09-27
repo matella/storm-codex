@@ -503,6 +503,8 @@ svg.ds-lvl { width: 100%; height: 160px; display: block; }
 .ds-patch .pname { font-size: 13px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ds-patch .popen { font: 11px var(--mono); color: var(--accent-2); text-decoration: none; white-space: nowrap; }
 .ds-patch .pbody { padding: 4px 16px 14px; font-size: 13px; line-height: 1.55; color: var(--text-2); border-top: 1px solid var(--line); }
+.ds-patch .pbody ul { padding-left: 20px; margin: 6px 0; } .ds-patch .pbody strong { color: var(--text); }
+.ds-patch .pbody h3, .ds-patch .pbody h4 { font: 800 16px var(--display); text-transform: uppercase; letter-spacing: .04em; color: var(--text); margin: 10px 0 4px; }
 .ds-ptag { font: 700 9px var(--mono); letter-spacing: .14em; text-align: center; padding: 3px 0; border-radius: 4px; }
 .ds-ptag.buff { background: rgba(93,202,165,.15); color: var(--win); } .ds-ptag.nerf { background: rgba(226,75,74,.15); color: var(--loss-soft); }
 .ds-ptag.mixed { background: rgba(250,199,117,.12); color: var(--gold); } .ds-ptag.fix { background: var(--panel-2); color: var(--muted-2); }
@@ -517,4 +519,68 @@ svg.ds-lvl { width: 100%; height: 160px; display: block; }
   .ds-build { grid-template-columns: 1fr; } .ds-bsteps { grid-template-columns: repeat(2, 1fr); }
   .ds-patch summary { grid-template-columns: 90px 70px 1fr; } .ds-patch .popen { display: none; }
   .ds-poolrow { grid-template-columns: 34px minmax(0, 1fr) 60px 70px; } .ds-poolrow .ds-bar { display: none; }
+}
+
+/* ══ Lot 3 — Synergies, Trends, Patch notes, Hero changes, Leagues ══ */
+.ds-rows { display: grid; gap: 2px; }
+.ds-srow { display: grid; grid-template-columns: 34px minmax(0, 1fr) minmax(60px, 1.2fr) 70px 60px; gap: 12px; align-items: center; padding: 7px 0;
+  border-top: 1px solid var(--line); font-size: 13px; text-decoration: none; color: inherit; }
+.ds-srow:first-child { border-top: 0; }
+.ds-srow .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-srow .wr { font: 700 13px var(--mono); text-align: right; } .ds-srow .wr.hot { color: var(--win); } .ds-srow .wr.cold { color: var(--loss-soft); }
+.ds-srow em { font: 11px var(--mono); color: var(--muted-2); font-style: normal; text-align: right; }
+.ds-initial { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font: 800 13px var(--display); color: var(--accent-2);
+  background: radial-gradient(circle at 30% 25%, #23263a, #0d0f16); box-shadow: 0 0 0 2px var(--line-2); }
+/* graphique de tendance */
+.ds-trend { display: flex; align-items: flex-end; gap: 6px; height: 200px; padding: 10px 4px 0; border-bottom: 1px solid var(--line-2); position: relative; }
+.ds-trend .mid { position: absolute; left: 0; right: 0; bottom: calc(50% - 10px); border-top: 1px dashed var(--line-2); }
+.ds-trend .col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; min-width: 0; gap: 4px; }
+.ds-trend .bar { width: 100%; max-width: 44px; border-radius: 6px 6px 2px 2px; background: linear-gradient(180deg, var(--accent-2), var(--accent)); }
+.ds-trend .bar.hot { background: linear-gradient(180deg, #8de0c2, var(--win)); } .ds-trend .bar.cold { background: linear-gradient(180deg, #f5a3a3, var(--loss)); }
+.ds-trend .bar.none { background: var(--line); }
+.ds-trend .v { font: 700 11px var(--mono); color: var(--text-2); }
+.ds-trend-x { display: flex; gap: 6px; padding: 6px 4px 0; }
+.ds-trend-x span { flex: 1; text-align: center; font: 9px var(--mono); color: var(--kicker); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* ligues */
+.ds-teams { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.ds-team { background: var(--panel); border: 1px solid var(--line-2); border-radius: 16px; padding: 16px; }
+.ds-team strong { display: block; font: 800 26px/1 var(--display); text-transform: uppercase; letter-spacing: .02em; margin-bottom: 10px; }
+.ds-team .ds-chips { gap: 5px; }
+/* liste de patchs */
+.ds-plist { display: grid; gap: 8px; }
+.ds-prow { display: grid; grid-template-columns: 76px minmax(0, 1fr) auto auto; gap: 18px; align-items: center; padding: 12px 18px; background: var(--panel);
+  border: 1px solid var(--line-2); border-radius: 14px; text-decoration: none; color: inherit; cursor: pointer; transition: border-color .15s; }
+.ds-prow:hover { border-color: var(--accent); }
+.ds-pdate { text-align: center; line-height: 1; }
+.ds-pdate b { display: block; font: 900 30px/1 var(--display); } .ds-pdate span { font: 600 10px var(--mono); letter-spacing: .12em; color: var(--accent-2); text-transform: uppercase; }
+.ds-prow .t { font: 800 20px/1.1 var(--display); text-transform: uppercase; letter-spacing: .02em; overflow: hidden; text-overflow: ellipsis; }
+.ds-prow .c { font: 11px var(--mono); color: var(--muted-2); white-space: nowrap; }
+/* détail de patch */
+.ds-patchgrid { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 20px; align-items: start; margin-top: 26px; }
+.ds-toc { position: sticky; top: calc(var(--topbar-h, 52px) + 14px); max-height: calc(100vh - 110px); overflow: auto; background: var(--panel); border: 1px solid var(--line-2);
+  border-radius: 14px; padding: 14px; font-size: 12px; }
+.ds-toc a { color: var(--text-2); text-decoration: none; } .ds-toc a:hover { color: var(--text); }
+.ds-toc .it { display: flex; align-items: center; gap: 6px; margin: 4px 0; line-height: 1.3; }
+.ds-toc .it.sec a { color: var(--accent-2); font-weight: 600; }
+.ds-prose { background: var(--panel); border: 1px solid var(--line-2); border-radius: 16px; padding: 22px 28px; font-size: 14px; line-height: 1.6; color: var(--text-2); min-width: 0; }
+.ds-prose h1, .ds-prose h2, .ds-prose h3, .ds-prose h4, .ds-prose h5 { font-family: var(--display); text-transform: uppercase; letter-spacing: .03em; color: var(--text);
+  scroll-margin-top: calc(var(--topbar-h, 52px) + 20px); }
+.ds-prose h1, .ds-prose h2 { font-size: 30px; font-weight: 800; margin: 28px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.ds-prose h3 { font-size: 22px; font-weight: 800; margin: 22px 0 8px; color: var(--accent-2); } .ds-prose h4, .ds-prose h5 { font-size: 17px; margin: 16px 0 6px; }
+.ds-prose ul { padding-left: 20px; margin: 6px 0; } .ds-prose li { margin: 3px 0; }
+.ds-prose strong { color: var(--text); } .ds-prose a { color: var(--accent-2); }
+.ds-prose img { max-width: 100%; border-radius: 8px; }
+/* héros modifiés */
+.ds-hclist { display: grid; gap: 6px; }
+.ds-hc { background: var(--panel); border: 1px solid var(--line-2); border-radius: 14px; }
+.ds-hc > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 16px; cursor: pointer; list-style: none; }
+.ds-hc > summary::-webkit-details-marker { display: none; }
+.ds-hc > summary strong { font: 800 20px/1 var(--display); text-transform: uppercase; }
+.ds-hc > summary .last { margin-left: auto; font: 11px var(--mono); color: var(--muted-2); }
+.ds-hc .ds-patches { padding: 4px 12px 12px; }
+@media (max-width: 860px) {
+  .ds-patchgrid { grid-template-columns: 1fr; } .ds-toc { position: static; max-height: 260px; }
+  .ds-prow { grid-template-columns: 56px minmax(0, 1fr); } .ds-prow .c, .ds-prow .ds-tag { display: none; }
+  .ds-srow { grid-template-columns: 34px minmax(0, 1fr) 64px 56px; } .ds-srow .ds-bar { display: none; }
+  .ds-prose { padding: 16px; }
 }

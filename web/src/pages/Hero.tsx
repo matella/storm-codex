@@ -2,12 +2,12 @@ import type { CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, Link, useSearchParams } from "react-router-dom";
 import {
-  fetchHeroDetail, fetchHeroPatches, useDimTalents, useDimHeroes, talentInfo, heroUniverse, fmtTime, searchToAgg, aggToSearch, type AggFilter,
+  fetchHeroDetail, fetchHeroPatches, useDimTalents, useDimHeroes, talentInfo, heroUniverse, searchToAgg, aggToSearch, type AggFilter,
 } from "../api";
 import { AggFilterBar } from "../components/AggFilterBar";
-import { SafeHtml } from "../components/SafeHtml";
 import { Portrait, SecHead, heroRing } from "../components/ds";
 import { hasMapArt, mapArt } from "../components/ds/match";
+import { PatchEntry } from "../components/ds/patch";
 
 const tierNum = (k: string) => parseInt(k.match(/\d+/)?.[0] ?? "0", 10);
 const pct = (w: number, g: number) => (g ? Math.round((100 * w) / g) : 0);
@@ -114,32 +114,14 @@ export function Hero() {
   );
 }
 
-const PTAG: Record<string, string> = { BUFF: "buff", NERF: "nerf", MIXED: "mixed", BUGFIX: "fix", REWORK: "upd", NEW: "upd" };
-
-/** Sens héros → patch : ajustements de ce héros à travers les patch notes (récent d'abord),
- *  dépliables ; chaque entrée lie vers la section du patch concerné. */
+/** Sens héros → patch : ajustements de ce héros à travers les patch notes (récent d'abord). */
 function HeroPatches({ hero, num }: { hero: string; num: number }) {
   const { data } = useQuery({ queryKey: ["hero-patches", hero], queryFn: () => fetchHeroPatches(hero) });
   if (!data || data.length === 0) return null;
   return (
     <section className="ds-sec">
       <SecHead num={num} title="Patch history" sub={`${data.length} change${data.length > 1 ? "s" : ""} · from HotsPatchNotes`} />
-      <div className="ds-patches">
-        {data.map((p) => {
-          const c = (p.classification ?? "").toUpperCase();
-          return (
-            <details key={p.patchInternalId + p.anchor} className="ds-patch">
-              <summary>
-                <span className="pdate">{p.liveDate ? fmtTime(p.liveDate).slice(0, 5) + "/" + p.liveDate.slice(0, 4) : "?"}</span>
-                <span className={`ds-ptag ${PTAG[c] ?? "upd"}`}>{c || "UPDATE"}</span>
-                <span className="pname">{p.patchName}{p.shortSummary ? ` — ${p.shortSummary}` : ""}</span>
-                <Link className="popen" to={`/patch/${encodeURIComponent(p.patchInternalId)}#${p.anchor}`} onClick={(e) => e.stopPropagation()}>open ›</Link>
-              </summary>
-              {p.content && <SafeHtml className="pbody patch-content" html={p.content} />}
-            </details>
-          );
-        })}
-      </div>
+      <div className="ds-patches">{data.map((p) => <PatchEntry key={p.patchInternalId + p.anchor} p={p} />)}</div>
     </section>
   );
 }

@@ -13,7 +13,10 @@ Spec `docs/specs/2026-09-27-design-dossier-app-design.md` (+ maquettes). Overlay
 - **Lot 2 (référentiel) — fait** : Heroes (mur de héros, rôle), Hero (grand portrait, cartes, builds,
   patchs), Player (réserve de héros, parties récentes), Maps (tuiles sur l'art des cartes). HTML des
   patchs rendu par `SafeHtml` (fragment DOMPurify, pas de chaîne HTML injectée).
-- Lots suivants : 3 Synergies/Trends/Patch notes/Hero changes/Leagues · 4 Draft console/Admin.
+- **Lot 3 (analyses) — fait** : Synergies, Trends (histogramme par patch), Patch notes (liste datée +
+  détail à sommaire), Hero changes, Leagues. `SafeHtml` est désormais le seul point d'insertion
+  d'HTML externe dans l'app (fragment DOMPurify, aucune chaîne HTML injectée).
+- Lot suivant : 4 Draft console/Admin.
 ## Bans du draft résolus sur la fiche de match — 2026-09-26
 storm-stats stocke les bans en code attribut brut (`Crus`, `DEAT`…) ; la fiche de match les
 affichait tels quels (constaté sur le match 143). `dim_heroes` ne porte pas l'`attributeId`
