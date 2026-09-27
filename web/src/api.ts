@@ -359,6 +359,26 @@ export function heroIcon(hero: string | null): string | null {
   return dimHero(hero)?.icon || null;
 }
 
+// ── codes attribut héros (attr.json de storm-stats) : bans du draft ────────────
+/** Code attribut 4 lettres (« Crus », « DEAT ») → nom canonique du parser (« Johanna »). */
+export type DimHeroAttributes = Record<string, string>;
+export function useDimHeroAttributes() {
+  const q = useQuery({
+    queryKey: ["dim-hero-attributes"],
+    queryFn: () => get<DimHeroAttributes>("/api/dim/hero-attributes"),
+    staleTime: Infinity,
+  });
+  return q.data;
+}
+/** Ban de draft (`match.bans[t][i]` : `{hero}` ou chaîne) → nom de héros, utilisable par `Avatar`.
+ *  storm-stats stocke le code attribut brut ; code inconnu ou référentiel pas encore chargé →
+ *  le code tel quel ; ban vide (tour passé) → null. */
+export function banHero(ban: unknown, attrs: DimHeroAttributes | undefined): string | null {
+  const code = typeof ban === "string" ? ban : (ban as { hero?: unknown } | null)?.hero;
+  if (typeof code !== "string" || !code) return null;
+  return attrs?.[code] ?? code;
+}
+
 // ── référentiel talents (dim_talents) : talentTreeId → nom/tier/héros ─────────
 export interface DimTalent { name: string; tier: number; hero: string | null; icon: string | null }
 export type DimTalents = Record<string, DimTalent>;

@@ -1,7 +1,7 @@
 import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "react-router-dom";
-import { fetchMatch, modeBadge, fmtTime, fmtDur, fmtClock, announceLabel, useDimTalents, talentInfo, awardLabel } from "../api";
+import { fetchMatch, modeBadge, fmtTime, fmtDur, fmtClock, announceLabel, useDimTalents, useDimHeroAttributes, banHero, talentInfo, awardLabel } from "../api";
 import { Avatar } from "../components/Avatar";
 import { LevelChart } from "../components/LevelChart";
 import { Replay2D } from "../components/Replay2D";
@@ -331,6 +331,7 @@ export function MatchDetail() {
   const [adv, setAdv] = useState(false);
   const [tab, setTab] = useState<"score" | "replay2d">("score");
   useDimTalents(); // peuple le référentiel talents (talentTreeId → nom)
+  const attrs = useDimHeroAttributes(); // codes attribut des bans → noms de héros
   const { data, isLoading } = useQuery({ queryKey: ["match", id], queryFn: () => fetchMatch(id!) });
 
   if (isLoading) return <div className="empty">loading…</div>;
@@ -357,30 +358,42 @@ export function MatchDetail() {
       {tab === "replay2d" && (id ? <Replay2D id={id} /> : <div className="empty">invalid match</div>)}
 
       {tab === "score" && (<>
-      {(m.picks || bans[0] || bans[1]) && (
+      {(m.picks || bans[0]?.length > 0 || bans[1]?.length > 0) && (
         <div className="card">
           <div className="card-hd"><span className="kick" style={{ margin: 0 }}>Draft</span>
-            {[0, 1].flatMap((t) => (bans[t] ?? []).map((b: any, i: number) => (
-              <span key={`${t}-${i}`} className="bdg b-loss">ban {typeof b === "string" ? b : b.hero}</span>
-            )))}
             {m.firstPickWin != null && (
               <span className="muted mono" style={{ marginLeft: "auto", fontSize: 10 }}>
                 first pick {m.firstPickWin ? "gagne" : "perd"}
               </span>
             )}
           </div>
-          {m.picks && [0, 1].map((t) => (
-            <div key={t} className="row">
+          {[0, 1].map((t) => (
+            <div key={t} className="row" style={{ flexWrap: "wrap" }}>
               <span className={t === 0 ? "tm-blue" : "tm-red"} style={{ minWidth: 70, fontSize: 11 }}>
-                {t === 0 ? "Blue team" : "Red team"}{m.picks.first === t && <span className="bdg b-mvp" style={{ marginLeft: 5 }}>1st pick</span>}
+                {t === 0 ? "Blue team" : "Red team"}{m.picks?.first === t && <span className="bdg b-mvp" style={{ marginLeft: 5 }}>1st pick</span>}
               </span>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {(m.picks[t] ?? []).map((h: string, i: number) => (
+                {(m.picks?.[t] ?? []).map((h: string, i: number) => (
                   <span key={i} style={{ display: "flex", alignItems: "center", gap: 4 }}>
                     <Avatar hero={h} size={20} /><span style={{ fontSize: 11 }}>{h}</span>
                   </span>
                 ))}
               </div>
+              {(bans[t] ?? []).length > 0 && (
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginLeft: "auto" }}>
+                  <span className="muted" style={{ fontSize: 10 }}>bans</span>
+                  {(bans[t] ?? []).map((b: unknown, i: number) => {
+                    const h = banHero(b, attrs);
+                    return h ? (
+                      <span key={i} className="bdg b-loss" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        <Avatar hero={h} size={16} />{h}
+                      </span>
+                    ) : (
+                      <span key={i} className="bdg b-qm">no ban</span>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           ))}
         </div>

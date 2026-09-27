@@ -8,6 +8,17 @@ Spec `docs/specs/2026-09-27-design-dossier-app-design.md` (+ maquettes). Overlay
   nuance : JetBrains Mono est désormais réellement chargé là où `.mono` l'utilisait déjà).
 - Lots suivants : 1 Session/Matches/Match detail · 2 Heroes/Hero/Player/Maps · 3 Synergies/Trends/
   Patch notes/Hero changes/Leagues · 4 Draft console/Admin.
+## Bans du draft résolus sur la fiche de match — 2026-09-26
+storm-stats stocke les bans en code attribut brut (`Crus`, `DEAT`…) ; la fiche de match les
+affichait tels quels (constaté sur le match 143). `dim_heroes` ne porte pas l'`attributeId`
+(absent de la liste HotsPatchNotes) → nouvelle route statique `GET /api/dim/hero-attributes`
+(`attr.json` de storm-stats, source déjà utilisée par `dim.rs`) + `banHero` / `useDimHeroAttributes`
+dans `api.ts`. Bloc Draft réorganisé par équipe : picks puis bans (nom + portrait), `no ban` pour
+un tour passé. Vérifié navigateur sur 143, 1702, 69 (tours passés), 1720 (custom), 1 (ARAM : pas de
+bloc) et en 375 px. **Pas encore déployé sur le box.**
+Constat annexe (CRLF des migrations sur checkout Windows) : corrigé sur `main` par `.gitattributes`
+(`migrations/*.sql eol=lf`). Fusionné dans `main` le 2026-09-27.
+
 ## Rapports de scouting — LIVRÉ sur `main` le 2026-09-26 (pas encore déployé sur le box)
 Spec `docs/specs/2026-09-26-rapports-scouting-design.md` · plan `docs/plans/2026-09-26-rapports-scouting.md`.
 Pages `/scouting` et `/scouting/:id` ; routes `/api/scouting/*` ; migration `0010` (tables dédiées :
