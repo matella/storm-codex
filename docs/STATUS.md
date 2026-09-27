@@ -1,11 +1,13 @@
 # STATUS — lire d'abord, mettre à jour en dernier
 
-## ⚠ EN ATTENTE DE VALIDATION OPÉRATEUR — design « dossier » pour toute l'app (2026-09-27)
-`docs/specs/2026-09-27-design-dossier-app-design.md` + maquettes `…-app-mockup.html` (Session,
-Match detail, Hero page, données réelles) et `…-overlays-mockup.html` (exploration OBS, a priori
-hors périmètre). Évolution de Nexus Codex (palette inchangée), polices auto-hébergées, composants
-partagés `components/ds/`, déploiement en 5 lots. **Rien n'est implémenté.** 3 questions ouvertes.
-
+## Design « dossier » pour toute l'app — spec VALIDÉE le 2026-09-27, déploiement par lots
+Spec `docs/specs/2026-09-27-design-dossier-app-design.md` (+ maquettes). Overlays OBS hors périmètre.
+- **Lot 0 (fondations) — fait** : polices auto-hébergées (Fontsource, 132 Ko latin), tokens dans
+  `theme.css`, design system global `src/ds.css` + `components/ds/`, nouvelle barre du haut,
+  pages Scouting migrées (identiques visuellement). `body` inchangé → sources OBS inchangées (seule
+  nuance : JetBrains Mono est désormais réellement chargé là où `.mono` l'utilisait déjà).
+- Lots suivants : 1 Session/Matches/Match detail · 2 Heroes/Hero/Player/Maps · 3 Synergies/Trends/
+  Patch notes/Hero changes/Leagues · 4 Draft console/Admin.
 ## Rapports de scouting — LIVRÉ sur `main` le 2026-09-26 (pas encore déployé sur le box)
 Spec `docs/specs/2026-09-26-rapports-scouting-design.md` · plan `docs/plans/2026-09-26-rapports-scouting.md`.
 Pages `/scouting` et `/scouting/:id` ; routes `/api/scouting/*` ; migration `0010` (tables dédiées :

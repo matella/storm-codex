@@ -1,7 +1,14 @@
 # Frontend — SPA & overlays OBS
 
-`web/` : Vite + React 18 + TS + TanStack Query + react-router + uPlot. Design **Nexus Codex**
-(tokens dans `theme.css`, sombre). Buildée dans `web/dist`, servie par le binaire (`WEB_DIR`),
+`web/` : Vite + React 18 + TS + TanStack Query + react-router + uPlot. Design **Nexus Codex ·
+Dossier** (spec `docs/specs/2026-09-27-design-dossier-app-design.md`) : tokens (couleurs, polices)
+dans `theme.css`, classes globales `ds-` dans `src/ds.css`, composants partagés
+`src/components/ds/` (Portrait à tons, Pips, Meter, SecHead, Chips, Lane/CallCard, EvLine…).
+Polices **auto-hébergées** (`src/fonts.ts`, Fontsource, SIL OFL : Big Shoulders Display, Figtree,
+JetBrains Mono ; ~132 Ko en latin, `unicode-range`) — aucune requête Google Fonts. Chrome
+(`Layout`) : barre `ds-top` (marque en titrage, onglets mono capitales, aide, indicateur live),
+conteneur `ds-app` (police Figtree, fond atmosphérique) et `ds-shell` (1180 px). Le `body` garde
+sa police d'origine : les sources OBS (hors Layout) ne changent pas. Buildée dans `web/dist`, servie par le binaire (`WEB_DIR`),
 fallback SPA (`index.html` en `no-cache`). Langue de l'UI : **anglais**.
 
 ## Routes (source de vérité : `web/src/App.tsx`)
@@ -23,7 +30,7 @@ fallback SPA (`index.html` en `no-cache`). Langue de l'UI : **anglais**.
 | `/leagues` | Leagues | équipes groupées par ligue |
 | `/draft` | Draft | console opérateur du simulateur de draft |
 | `/scouting` | Scouting | style « dossier » : couverture (nom d'équipe + titre → New report), liste des rapports (plus récent d'abord : équipe en titrage, titre, bilan, nb de replays, période, statut) |
-| `/scouting/:id` | ScoutingReport | **page « dossier »**, même langage visuel que l'export HTML : couverture (équipe et titre éditables en place, bilan + pastilles, first pick, durée, avertissement petit échantillon, médaillons du roster, statut, actions Copy pack / .md / .xlsx / Import analysis / **Export HTML** / Delete), barre de sections collante (une puce par carte), bandeaux (lot ambigu → ancre, replays exclus, plan périmé, pas de plan), puis sections numérotées : Draft identity, Map choice, **Map by map** (tableau de draft par carte : minimap, confiance, We ban / We pick / They will likely pick, Consider, ce qu'ils ont joué/banni), Any map, Their players, What they faced, Game flow, **Replays** (dépôt glisser-déposer, journal des parties ; cliquer un côté = côté scouté manuel, `auto` / `remove`), **Roster** (cases roster, ancres ⚓, Save roster). Composants `components/Dossier.tsx`, styles **scopés** `pages/scouting-dossier.css` (`.sd`, préfixe `sd-`), polices Big Shoulders Display / Figtree / JetBrains Mono chargées à la première visite. Spec `docs/specs/2026-09-26-rapports-scouting-design.md` |
+| `/scouting/:id` | ScoutingReport | **page « dossier »**, même langage visuel que l'export HTML : couverture (équipe et titre éditables en place, bilan + pastilles, first pick, durée, avertissement petit échantillon, médaillons du roster, statut, actions Copy pack / .md / .xlsx / Import analysis / **Export HTML** / Delete), barre de sections collante (une puce par carte), bandeaux (lot ambigu → ancre, replays exclus, plan périmé, pas de plan), puis sections numérotées : Draft identity, Map choice, **Map by map** (tableau de draft par carte : minimap, confiance, We ban / We pick / They will likely pick, Consider, ce qu'ils ont joué/banni), Any map, Their players, What they faced, Game flow, **Replays** (dépôt glisser-déposer, journal des parties ; cliquer un côté = côté scouté manuel, `auto` / `remove`), **Roster** (cases roster, ancres ⚓, Save roster). Composants `components/ds/`, classes `ds-` (`src/ds.css`). Spec `docs/specs/2026-09-26-rapports-scouting-design.md` |
 | `/admin` | Admin | santé uploads, tokens, équipes/collections, réglages, reprocess |
 
 ### Sources OBS standalone (fond transparent, hors Layout)
@@ -48,8 +55,7 @@ fallback SPA (`index.html` en `no-cache`). Langue de l'UI : **anglais**.
 - Scouting : types + helpers purs dans `web/src/scouting.ts` (tests `scouting.test.ts`), hooks
   `useScoutingList`/`useScoutingReport` et `scoutingWrite` (Bearer du token admin en
   localStorage) dans `api.ts` ; export HTML : `reportHtml.ts` (rendu pur) + `reportExport.ts` ;
-  pages : `components/Dossier.tsx` + `pages/scouting-dossier.css` (scopé `.sd`, ne fuit pas dans
-  le reste de l'app ; les anciens styles `sc-` de `theme.css` ont été retirés).
+  pages : composants `components/ds/` + classes `ds-` de `src/ds.css` (design system partagé).
 - Avatars : portraits vendorisés `/images` + anneau couleur d'univers (`useDimHeroes`) ;
   fallback initiales.
 - Données du détail de match : **tout vient de `GET /api/matches/{id}`** (l'objet `match`
