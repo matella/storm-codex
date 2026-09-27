@@ -71,100 +71,148 @@ export function Admin() {
   };
   const reprocess = async () => { await adminFetch("/api/admin/reprocess", token, { method: "POST" }); };
 
-  const inp = { background: "var(--surface-2)", border: "1px solid var(--hairline-strong)", color: "var(--text)", borderRadius: 6, padding: "5px 9px", fontSize: 12 } as const;
+  const byStatus = Object.entries((health?.by_status ?? {}) as Record<string, number>);
+  const byClass = Object.entries((health?.by_error_class ?? {}) as Record<string, number>);
+  const del = async (url: string, key: string) => { await adminFetch(url, token, { method: "DELETE" }); qc.invalidateQueries({ queryKey: [key] }); };
 
   return (
-    <>
-      <h1>Admin / Import</h1>
-      {adminOpen ? (
-        <div className="card">
-          <div className="row"><span className="muted" style={{ fontSize: 11 }}>
-            🔓 Local mode — no admin token required (server has no ADMIN_TOKEN set).
-            Set ADMIN_TOKEN in the server env to re-enable auth (recommended if exposed publicly).
-          </span></div>
-        </div>
-      ) : (
-        <div className="card">
-          <div className="card-hd"><span className="kick" style={{ margin: 0 }}>Admin token</span></div>
-          <div className="row">
-            <input style={{ ...inp, flex: 1 }} type="password" placeholder="ADMIN_TOKEN" value={token} onChange={(e) => setToken(e.target.value)} />
-            <span className="muted" style={{ fontSize: 10 }}>{token ? "configured" : "required for actions"}</span>
-          </div>
-        </div>
-      )}
-
-      <p className="cap">My identity (operator perspective)</p>
-      <div className="card">
-        <div className="row">
-          <input
-            style={{ ...inp, flex: 1 }}
-            placeholder="my in-game names, comma-separated (e.g. matella, MatellaSmurf)"
-            value={opValue}
-            onChange={(e) => setOpNames(e.target.value)}
-          />
-          <span className="pill on" onClick={saveOperator}>save</span>
-          {opMsg && (
-            <span className="mono" style={{ fontSize: 11, color: opMsg.startsWith("✓") ? "var(--win)" : "var(--loss)" }}>{opMsg}</span>
+    <div className="ds-page admin">
+      <style>{CSS}</style>
+      <header className="ds-cover" style={{ marginTop: 18 }}>
+        <div className="ds-kicker">Operator · settings</div>
+        <h1 className="ds-title" style={{ cursor: "default", fontSize: "clamp(44px, 7vw, 88px)" }}>Admin</h1>
+        <div className="ds-subtitle" style={{ cursor: "default" }}>Identity, upload pipeline, tokens, teams and collections.</div>
+        <div className="ds-cover-foot">
+          {adminOpen ? (
+            <span className="mode open">🔓 Local mode — no admin token required (server has no ADMIN_TOKEN set). Set ADMIN_TOKEN in the server env to re-enable auth (recommended if exposed publicly).</span>
+          ) : (
+            <>
+              <span className="ds-label" style={{ margin: 0 }}>Admin token</span>
+              <input className="ds-input" style={{ flex: 1, minWidth: 220 }} type="password" placeholder="ADMIN_TOKEN" value={token} onChange={(e) => setToken(e.target.value)} />
+              <span className={token ? "ds-tag win" : "ds-tag loss"}>{token ? "configured" : "required for actions"}</span>
+            </>
           )}
         </div>
-        <div className="row"><span className="muted" style={{ fontSize: 10 }}>
-          Multiple accounts? Comma-separate them (e.g. matella, матella). Cyrillic / any UTF-8 is fine.
-          Used everywhere (session, matches, widget) and by the Jarvis brief.
-        </span></div>
-      </div>
+      </header>
+
+      <Sec num="01" title="My identity" note="operator perspective">
+        <div className="ds-panel">
+          <div className="arow">
+            <input className="ds-input" style={{ flex: 1 }} placeholder="my in-game names, comma-separated (e.g. matella, MatellaSmurf)"
+              value={opValue} onChange={(e) => setOpNames(e.target.value)} />
+            <button className="ds-btn primary" onClick={saveOperator}>Save</button>
+          </div>
+          {opMsg && <div className="amsg" style={{ color: opMsg.startsWith("✓") ? "var(--win)" : "var(--loss-soft)" }}>{opMsg}</div>}
+          <p className="ahint">Multiple accounts? Comma-separate them (e.g. matella, матella). Cyrillic / any UTF-8 is fine.
+            Used everywhere (session, matches, widget) and by the Jarvis brief.</p>
+        </div>
+      </Sec>
 
       {health && (
-        <>
-          <p className="cap">Upload health</p>
-          <div className="card">
-            <div className="row"><span className="muted">By status</span><span className="mono" style={{ marginLeft: "auto" }}>{JSON.stringify(health.by_status)}</span></div>
-            <div className="row"><span className="muted">Failures by class</span><span className="mono" style={{ marginLeft: "auto" }}>{JSON.stringify(health.by_error_class)}</span></div>
-            <div className="row"><span className="muted">parser_version</span><span className="mono" style={{ marginLeft: "auto" }}>{health.parser_version}</span></div>
-            <div className="row link" onClick={reprocess}><span style={{ color: "var(--accent)" }}>Re-process (stale parser_version) ›</span></div>
+        <Sec num="02" title="Upload health" note={<>parser <b>{health.parser_version}</b></>}>
+          <div className="ds-panel">
+            <div className="ds-label">By status</div>
+            <div className="tiles">
+              {byStatus.length === 0 && <span className="none">no uploads yet</span>}
+              {byStatus.map(([k, n]) => <div key={k} className={`tile ${k}`}><b>{n}</b><span>{k}</span></div>)}
+            </div>
+            <div className="ds-label" style={{ marginTop: 16 }}>Failures by class</div>
+            <div className="tiles">
+              {byClass.length === 0 && <span className="none">no failures</span>}
+              {byClass.map(([k, n]) => <div key={k} className="tile failed"><b>{n}</b><span>{k}</span></div>)}
+            </div>
+            <div className="arow" style={{ marginTop: 16 }}>
+              <button className="ds-btn" onClick={reprocess}>Re-process stale parser_version ›</button>
+            </div>
           </div>
-        </>
+        </Sec>
       )}
 
-      <p className="cap">Upload tokens</p>
-      <div className="card">
-        <div className="row">
-          <input style={inp} placeholder="name (e.g. matella)" value={tokenName} onChange={(e) => setTokenName(e.target.value)} />
-          <span className="pill on" onClick={createToken}>create</span>
-        </div>
-        {newToken && <div className="row"><span className="muted">new token (copy now)</span><span className="mono" style={{ marginLeft: "auto", color: "var(--win)" }}>{newToken}</span></div>}
-      </div>
-
-      <p className="cap">Teams</p>
-      <div className="card">
-        <div className="row">
-          <input style={inp} placeholder="team name" value={teamName} onChange={(e) => setTeamName(e.target.value)} />
-          <input style={inp} placeholder="league (optional)" value={teamLeague} onChange={(e) => setTeamLeague(e.target.value)} />
-          <span className="pill on" onClick={createTeam}>add</span>
-        </div>
-        {(teams ?? []).map((t: any) => (
-          <div key={t.id} className="row"><span>{t.name}</span>
-            <input style={{ ...inp, marginLeft: "auto", fontSize: 11, width: 120 }} placeholder="league"
-                   defaultValue={t.league ?? ""} onBlur={(e) => setLeague(t.id, e.target.value)} />
-            <span className="muted" style={{ fontSize: 10 }}>{(t.roster ?? []).length} members</span>
-            <span className="pill" onClick={async () => { await adminFetch(`/api/teams/${t.id}`, token, { method: "DELETE" }); qc.invalidateQueries({ queryKey: ["teams"] }); }}>del.</span>
+      <Sec num={health ? "03" : "02"} title="Upload tokens" note="one per uploader (client-rs)">
+        <div className="ds-panel">
+          <div className="arow">
+            <input className="ds-input" placeholder="name (e.g. matella)" value={tokenName} onChange={(e) => setTokenName(e.target.value)} />
+            <button className="ds-btn primary" onClick={createToken}>Create</button>
           </div>
-        ))}
-        {(teams ?? []).length === 0 && <div className="empty">no teams</div>}
-      </div>
-
-      <p className="cap">Collections</p>
-      <div className="card">
-        <div className="row">
-          <input style={inp} placeholder="collection name" value={collName} onChange={(e) => setCollName(e.target.value)} />
-          <span className="pill on" onClick={createColl}>add</span>
+          {newToken && (
+            <div className="newtok">
+              <span className="ds-label" style={{ margin: 0 }}>New token — copy it now, it won't be shown again</span>
+              <code>{newToken}</code>
+            </div>
+          )}
         </div>
-        {(collections ?? []).map((c: any) => (
-          <div key={c.id} className="row"><span>{c.name}</span><span className="muted" style={{ marginLeft: "auto", fontSize: 10 }}>{c.count} matches</span>
-            <span className="pill" onClick={async () => { await adminFetch(`/api/collections/${c.id}`, token, { method: "DELETE" }); qc.invalidateQueries({ queryKey: ["collections"] }); }}>del.</span>
+      </Sec>
+
+      <div className="acols">
+        <Sec num={health ? "04" : "03"} title="Teams" note={`${(teams ?? []).length}`}>
+          <div className="ds-panel flush">
+            <div className="arow pad">
+              <input className="ds-input" style={{ flex: 1 }} placeholder="team name" value={teamName} onChange={(e) => setTeamName(e.target.value)} />
+              <input className="ds-input" style={{ width: 140 }} placeholder="league (optional)" value={teamLeague} onChange={(e) => setTeamLeague(e.target.value)} />
+              <button className="ds-btn primary" onClick={createTeam}>Add</button>
+            </div>
+            {(teams ?? []).map((t: any) => (
+              <div key={t.id} className="lrow">
+                <strong>{t.name}</strong>
+                <input className="ds-input small" placeholder="league" defaultValue={t.league ?? ""} onBlur={(e) => setLeague(t.id, e.target.value)} />
+                <span className="cnt">{(t.roster ?? []).length} members</span>
+                <button className="ds-btn small danger" onClick={() => del(`/api/teams/${t.id}`, "teams")}>Delete</button>
+              </div>
+            ))}
+            {(teams ?? []).length === 0 && <div className="none pad">no teams</div>}
           </div>
-        ))}
-        {(collections ?? []).length === 0 && <div className="empty">no collections</div>}
+        </Sec>
+
+        <Sec num={health ? "05" : "04"} title="Collections" note={`${(collections ?? []).length}`}>
+          <div className="ds-panel flush">
+            <div className="arow pad">
+              <input className="ds-input" style={{ flex: 1 }} placeholder="collection name" value={collName} onChange={(e) => setCollName(e.target.value)} />
+              <button className="ds-btn primary" onClick={createColl}>Add</button>
+            </div>
+            {(collections ?? []).map((c: any) => (
+              <div key={c.id} className="lrow">
+                <strong>{c.name}</strong>
+                <span className="cnt" style={{ marginLeft: "auto" }}>{c.count} matches</span>
+                <button className="ds-btn small danger" onClick={() => del(`/api/collections/${c.id}`, "collections")}>Delete</button>
+              </div>
+            ))}
+            {(collections ?? []).length === 0 && <div className="none pad">no collections</div>}
+          </div>
+        </Sec>
       </div>
-    </>
+    </div>
   );
 }
+
+function Sec({ num, title, note, children }: { num: string; title: string; note?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <section className="ds-sec" style={{ marginTop: 34 }}>
+      <div className="ds-sec-hd"><span className="num">{num}</span><h2>{title}</h2>{note && <small>{note}</small>}</div>
+      {children}
+    </section>
+  );
+}
+
+const CSS = `
+.admin .mode.open{font:12px var(--mono);color:var(--muted-2)}
+.admin .arow{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.admin .arow.pad{padding:14px 16px}
+.admin .amsg{margin-top:10px;font:12px var(--mono)}
+.admin .ahint{margin:12px 0 0;font:11px var(--mono);color:var(--kicker);line-height:1.6}
+.admin .tiles{display:flex;flex-wrap:wrap;gap:10px}
+.admin .tile{min-width:110px;padding:10px 14px;border-radius:12px;background:var(--panel-2);border:1px solid var(--line);box-shadow:inset 3px 0 0 var(--line-2)}
+.admin .tile b{display:block;font:900 34px/1 var(--display)}
+.admin .tile span{font:600 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted-2)}
+.admin .tile.done,.admin .tile.parsed,.admin .tile.ok{box-shadow:inset 3px 0 0 var(--win)} .admin .tile.done b,.admin .tile.parsed b,.admin .tile.ok b{color:var(--win)}
+.admin .tile.failed,.admin .tile.parse_failed{box-shadow:inset 3px 0 0 var(--loss)} .admin .tile.failed b,.admin .tile.parse_failed b{color:var(--loss-soft)}
+.admin .tile.duplicate,.admin .tile.pending{box-shadow:inset 3px 0 0 var(--gold)}
+.admin .newtok{margin-top:14px;padding:12px 14px;border-radius:12px;border:1px solid rgba(93,202,165,.35);background:rgba(93,202,165,.07);display:flex;flex-direction:column;gap:6px}
+.admin .newtok code{font:600 13px var(--mono);color:var(--win);word-break:break-all;user-select:all}
+.admin .acols{display:grid;grid-template-columns:1fr 1fr;gap:0 18px}
+.admin .lrow{display:flex;align-items:center;gap:10px;padding:10px 16px;border-top:1px solid var(--line)}
+.admin .lrow strong{font:800 17px var(--display);text-transform:uppercase;letter-spacing:.02em;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.admin .lrow .ds-input.small{margin-left:auto;width:120px;padding:5px 9px;font-size:12px}
+.admin .lrow .cnt{font:11px var(--mono);color:var(--muted-2);white-space:nowrap}
+.admin .none{font:12px var(--mono);color:var(--kicker)} .admin .none.pad{padding:16px}
+@media (max-width:900px){.admin .acols{grid-template-columns:1fr}}
+`;
