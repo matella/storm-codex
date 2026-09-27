@@ -56,7 +56,7 @@ Toute PR qui risque un budget re-mesure (benchs : `storm-stats-dump --bench`,
 
 ## Décisions verrouillées (opérateur — ne pas rouvrir sans lui)
 
-Rust (spike GO, repli .NET écarté) · Postgres · design Nexus Codex · remplacement du serveur
+Rust (spike GO, repli .NET écarté) · Postgres · design Nexus Codex · Dossier (évolution validée le 2026-09-27, spec `2026-09-27-design-dossier-app-design.md`) · remplacement du serveur
 Node local · V1 = parité SotS totale · pas de pré-game · pas de migration de données (backfill) ·
 **overlay local uniquement** (extension Twitch/Azure abandonnée, `azure.rs` dormant) ·
 nom Storm Codex. Détail et rationale : `docs/specs/` (datées).

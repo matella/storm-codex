@@ -3,7 +3,8 @@
 > Spec storm-codex. Demande opérateur du 2026-09-27 : « le style du scouting est vraiment bien,
 > peut-on faire quelque chose de similaire pour toute l'app ? ». Overlays OBS : « maquette pour
 > voir, mais très probablement hors périmètre ».
-> **En attente de validation** — rien n'est implémenté.
+> **Validée par l'opérateur le 2026-09-27** (« those look hella good, you can also do the entire
+> website »). Overlays : hors périmètre (pas de demande contraire). Ordre des lots : celui de la spec.
 > Maquettes : `2026-09-27-design-dossier-app-mockup.html` (Session, Match detail, Hero page) et
 > `2026-09-27-design-dossier-overlays-mockup.html` (exploration OBS).
 

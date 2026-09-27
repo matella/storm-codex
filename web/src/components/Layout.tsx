@@ -39,28 +39,26 @@ export function Layout() {
   // la pastille disparaît quand on visite la page Patch Notes
   useEffect(() => { if (loc.pathname.startsWith("/patches")) setNewPatch(false); }, [loc.pathname]);
   return (
-    <>
-      <div className="topbar">
-        <span className="brand">STORM CODEX</span>
-        <nav className="nav">
+    <div className="ds-app">
+      <header className="ds-top">
+        <NavLink to="/" className="ds-brand">STORM <b>CODEX</b></NavLink>
+        <nav className="ds-topnav">
           {TABS.map(([to, label]) => (
             <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => (isActive ? "on" : "")}>
               {label}
-              {to === "/patches" && newPatch && <span style={{ marginLeft: 5, color: "var(--accent)" }}>●</span>}
+              {to === "/patches" && newPatch && <i className="dot" title="new patch" />}
             </NavLink>
           ))}
         </nav>
-        <span className="pill" title="Help / what's new" style={{ marginLeft: "auto", cursor: "pointer" }} onClick={() => setHelp("tour")}>?</span>
-        <span className={live ? "live" : "live off"} style={{ marginLeft: 10 }}>
-          ● {live ? "online" : "offline"}
-        </span>
-      </div>
-      <div className="shell">
-        {flash && <div className="toast mono">{flash}</div>}
+        <span className="ds-help" title="Help / what's new" onClick={() => setHelp("tour")}>?</span>
+        <span className={live ? "ds-live" : "ds-live off"}><i />{live ? "online" : "offline"}</span>
+      </header>
+      <main className="ds-shell">
+        {flash && <div className="ds-flash">{flash}</div>}
         <Outlet />
-      </div>
+      </main>
       <Onboarding force={help === "tour"} onClose={() => setHelp(null)} />
       <WhatsNew force={help === "whatsnew"} onClose={() => setHelp(null)} />
-    </>
+    </div>
   );
 }
