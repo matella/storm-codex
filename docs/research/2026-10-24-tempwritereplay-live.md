@@ -99,12 +99,15 @@ Instantané de 16:26:48 (loop 8 643 côté tracker, 7 482 côté game ; gates à
   **apparition** de `replay.details` (1 408) et `replay.initData` (17 073) ; `attributes.events`,
   `load.info`, `resumable.events`, `smartcam.events`, `sync.events` passent de 0 à quelques
   centaines d'octets. `message.events` et `sync.history` restent vides (aucun chat).
-- **Le dossier n'est pas supprimé** à la fin de la partie (toujours présent à 16:29). Il est
-  recréé au lancement de la partie suivante (création simultanée observée à 16:04:35).
+- **Le dossier n'est pas supprimé** à la fin de la partie (toujours présent à 16:29). Il
+  n'existait pas avant la partie (vérifié vers 16:00) et est apparu à 16:04:35, tous fichiers
+  créés en même temps. Quand il disparaît (fermeture du client ? lancement de la partie
+  suivante ?) **n'a pas été observé**.
 - **Identité avec le replay final**, décodée avec les tables du build final : tracker **4 519 / 4 519
   événements identiques**, game events **6 022 / 6 022 identiques**, `details` et `initData`
-  identiques, `battlelobby` **identique à l'octet**. Les octets des fichiers temporaires sont donc
-  les streams du replay (avant compression MPQ) : un parse live terminé = le parse final.
+  identiques, `battlelobby` **identique à l'octet**. Les streams d'événements ont été comparés
+  **décodés**, pas octet par octet : ils décodent à l'identique, donc un parse live mené jusqu'au
+  bout donne le parse final.
 - Le replay final ne contient lui aussi que les `_userid` 0 et 16 : en Sandbox, les IA n'émettent
   pas de game events. Ce n'est pas une particularité du fichier temporaire.
 

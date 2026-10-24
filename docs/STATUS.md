@@ -4,8 +4,8 @@
 Spec `docs/specs/2026-10-24-feed-live-en-partie-design.md` · mesures
 `docs/research/2026-10-24-tempwritereplay-live.md`. **Aucun code.** Constat mesuré sur une partie
 (Sandbox contre l'IA) : HotS écrit `tracker.events` et `game.events` dans `TempWriteReplayP1`
-pendant la partie (blocs de 4 Ko, 10–70 s de retard), décodables par nos tables, identiques aux
-streams du replay final. Questions ouvertes Q1–Q5 (fair-play d'abord) et spike sur une partie
+pendant la partie (blocs de 4 Ko ; ~10–14 s de retard pour le tracker, jusqu'à ~85 s pour les
+aptitudes), décodables par nos tables, et décodant à l'identique des streams du replay final. Questions ouvertes Q1–Q5 (fair-play d'abord) et spike sur une partie
 matchmakée avant tout plan.
 - **Constat annexe** : la partie tournait en build **98348** (2.57.0), plus récent que nos tables
   embarquées (96477) ; décodée correctement par le repli « dernier protocole connu ». Régénérer les

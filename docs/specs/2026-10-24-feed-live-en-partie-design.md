@@ -9,7 +9,8 @@
 
 ## But
 
-Pendant une partie, voir **en direct, avec 10 à 70 secondes de retard**, ce qui se passe : niveaux
+Pendant une partie, voir **en direct, avec un retard mesuré d'environ 10–14 s pour le tracker et
+jusqu'à ~85 s pour les aptitudes** (game events : 37–72 s derrière le tracker), ce qui se passe : niveaux
 des équipes, talents choisis, morts avec les crédités, camps et objectifs, et **les aptitudes que
 tu utilises**. Aujourd'hui tout cela n'existe qu'après la partie, quand le replay remonte.
 
@@ -31,8 +32,8 @@ Une partie observée : **Sandbox contre l'IA**, Volskaya Foundry, build **98348*
    events, `details` et `initData` identiques, battlelobby identique à l'octet. Un parse live mené
    jusqu'au bout donne le parse final.
 5. **Fin de partie détectable** : flush final en une fois, avec **apparition de `replay.details` et
-   `replay.initData`** (absents pendant la partie). Le dossier **n'est pas supprimé** ; il est
-   recréé au lancement de la partie suivante.
+   `replay.initData`** (absents pendant la partie). Le dossier **n'est pas supprimé** à la fin ;
+   il n'existait pas avant la partie, mais le moment où il disparaît n'a pas été observé.
 6. **Le build n'est pas lisible à mi-partie** : pas d'en-tête MPQ dans le dossier. La partie
    tournait en 98348, plus récent que nos tables (96477) ; le repli « dernier protocole connu » a
    suffi cette fois.
@@ -113,8 +114,8 @@ watcher TempWriteReplayP1\
 - **Idempotent** : un morceau déjà reçu (offset + longueur ≤ connu) est accepté et ignoré ; un trou
   (offset > connu) répond `409` avec l'offset attendu, le client renvoie depuis là.
 - Pas de re-POST du fichier entier (il atteint ~240 Ko en 10 min de jeu et croît).
-- La session est identifiée par le hash du battlelobby (déjà calculé par le watcher du companion
-  pour la dédup) ; un nouveau lobby ferme la session précédente.
+- La session est identifiée par le hash du battlelobby (le même hash que le watcher du companion,
+  plan 4, doit calculer pour sa dédup) ; un nouveau lobby ferme la session précédente.
 
 ### Contrat de décodage à ajouter dans `storm-replay`
 
@@ -202,6 +203,7 @@ arrive.
 
 | Ce qui casse | Comportement |
 |---|---|
+| Fichiers d'une partie déjà finie trouvés au démarrage de `client-rs` (`replay.details` présent) | partie terminée → **aucune session live ouverte** ; le replay remonte par l'upload existant (même piège que le battlelobby résiduel du companion) |
 | Protocole faux (patch) | session marquée « flux illisible (build supposé X) », plus aucun état émis ; le pré-game et le debrief continuent de marcher |
 | Game events encore vides (début de partie) | section aptitudes « en attente des premières données », pas un zéro |
 | Aucun morceau depuis > 60 s alors que la partie n'est pas finie | « flux interrompu (pause ou déconnexion ?) » — cas observé le 2026-10-24 (13 min) |
@@ -216,7 +218,8 @@ arrive.
 3. **Source du build à mi-partie** : chercher le build dans le battlelobby ; à défaut, vérifier la
    lecture de `Versions\BaseNNNNN` dans le dossier d'installation.
 4. Caler l'horloge (loops − GatesOpen) sur l'horloge affichée en jeu.
-5. Reconnexion en cours de partie : le dossier est-il recréé, les fichiers repartent-ils de zéro ?
+5. Cycle de vie du dossier : quand disparaît-il (fermeture du client, partie suivante) ? En cas de
+   reconnexion en cours de partie, est-il recréé, les fichiers repartent-ils de zéro ?
 6. Aptitudes, étape 2 : évaluer la faisabilité des deux pistes de nommage (sans les implémenter).
 
 ## Tests
