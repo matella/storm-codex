@@ -39,8 +39,9 @@ Une partie observée : **Sandbox contre l'IA**, Volskaya Foundry, build **98348*
    suffi cette fois.
 
 **Ce qui n'est PAS établi** (une seule partie, contre l'IA) : la présence en cours de partie des
-ordres des 9 autres humains dans une partie matchmakée, les latences avec 10 humains, la cause de
-l'arrêt de 13 minutes observé. → spike ci-dessous.
+ordres des 9 autres humains dans une partie matchmakée, les latences avec 10 humains. (L'arrêt
+de 13 minutes observé était une pause de l'opérateur : en pause, rien n'est écrit.) → spike
+ci-dessous.
 
 ## Décision verrouillée touchée ?
 
@@ -206,7 +207,7 @@ arrive.
 | Fichiers d'une partie déjà finie trouvés au démarrage de `client-rs` (`replay.details` présent) | partie terminée → **aucune session live ouverte** ; le replay remonte par l'upload existant (même piège que le battlelobby résiduel du companion) |
 | Protocole faux (patch) | session marquée « flux illisible (build supposé X) », plus aucun état émis ; le pré-game et le debrief continuent de marcher |
 | Game events encore vides (début de partie) | section aptitudes « en attente des premières données », pas un zéro |
-| Aucun morceau depuis > 60 s alors que la partie n'est pas finie | « flux interrompu (pause ou déconnexion ?) » — cas observé le 2026-10-24 (13 min) |
+| Aucun morceau depuis > 60 s alors que la partie n'est pas finie | « flux interrompu (pause ou déconnexion ?) » — une pause de 13 min observée le 2026-10-24 produit exactement ce silence ; la page ne peut pas distinguer pause et déconnexion |
 | Box injoignable | `client-rs` garde son offset et rattrape au retour ; la page affiche l'état précédent marqué périmé |
 | `client-rs` absent ou arrêté | rien ne change pour le post-partie : le replay remonte comme aujourd'hui |
 

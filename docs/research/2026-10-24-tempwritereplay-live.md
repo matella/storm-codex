@@ -58,7 +58,9 @@ pas un délai fixe.
   game loop 4 998) et **~72 s** (16:26:48 : tracker 8 643, game 7 482).
 
 **Arrêt de 13 minutes** : aucune écriture ni avancée des loops entre **16:07:46 et 16:21:05**, sur
-les deux fichiers, sans disparition du dossier. Pause ou déconnexion — cause non établie.
+les deux fichiers, sans disparition du dossier. **Cause : l'opérateur avait mis la partie en
+pause** (confirmé par lui le 2026-10-24). En pause, le jeu n'écrit rien et les loops n'avancent
+pas ; l'écriture reprend avec la partie, sans trou ni rattrapage.
 
 **Bord de bloc** : le dernier événement d'un fichier est généralement coupé ; 1 à 14 octets restaient
 non décodables en fin de buffer selon l'instantané.
@@ -113,8 +115,8 @@ Instantané de 16:26:48 (loop 8 643 côté tracker, 7 482 côté game ; gates à
 
 ## Limites
 
-1. **Une partie Sandbox contre l'IA** : un seul humain, donc un seul émetteur d'ordres, et un arrêt
-   de 13 min inexpliqué. Dans une partie matchmakée, le volume d'ordres (10 humains) change le
+1. **Une partie Sandbox contre l'IA** : un seul humain, donc un seul émetteur d'ordres (l'arrêt de
+   13 min est une pause volontaire, cf. Cadence d'écriture). Dans une partie matchmakée, le volume d'ordres (10 humains) change le
    temps de remplissage des blocs, donc les latences ; la présence des ordres **des 9 autres**
    dans le fichier temporaire en cours de partie reste à vérifier.
 2. **Build non lisible à mi-partie** (cf. Protocole d'observation) : appris seulement à la fin, par
