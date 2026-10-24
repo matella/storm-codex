@@ -1,5 +1,16 @@
 # STATUS — lire d'abord, mettre à jour en dernier
 
+## Feed live en partie — spec BROUILLON du 2026-10-24, à valider par l'opérateur
+Spec `docs/specs/2026-10-24-feed-live-en-partie-design.md` · mesures
+`docs/research/2026-10-24-tempwritereplay-live.md`. **Aucun code.** Constat mesuré sur une partie
+(Sandbox contre l'IA) : HotS écrit `tracker.events` et `game.events` dans `TempWriteReplayP1`
+pendant la partie (blocs de 4 Ko, 10–70 s de retard), décodables par nos tables, identiques aux
+streams du replay final. Questions ouvertes Q1–Q5 (fair-play d'abord) et spike sur une partie
+matchmakée avant tout plan.
+- **Constat annexe** : la partie tournait en build **98348** (2.57.0), plus récent que nos tables
+  embarquées (96477) ; décodée correctement par le repli « dernier protocole connu ». Régénérer les
+  tables (`tools/protocol_gen.py`) quand heroprotocol publie 98348.
+
 ## Design « dossier » pour toute l'app — spec VALIDÉE le 2026-09-27, déploiement par lots
 Spec `docs/specs/2026-09-27-design-dossier-app-design.md` (+ maquettes). Overlays OBS hors périmètre.
 - **Lot 0 (fondations) — fait** : polices auto-hébergées (Fontsource, 132 Ko latin), tokens dans
