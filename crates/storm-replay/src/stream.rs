@@ -84,7 +84,9 @@ impl StreamDecoder {
             }
         };
         if partial.consumed > self.pending.len() {
-            return Err(Error::Corrupted("décodage partiel au-delà du buffer".into()));
+            return Err(Error::Corrupted(
+                "décodage partiel au-delà du buffer".into(),
+            ));
         }
         self.pending.drain(..partial.consumed);
         self.consumed += partial.consumed as u64;

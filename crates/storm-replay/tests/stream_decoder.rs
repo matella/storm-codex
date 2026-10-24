@@ -23,7 +23,9 @@ fn mini_corpus() -> Vec<PathBuf> {
 fn random_sizes(seed: u64) -> impl FnMut() -> usize {
     let mut x = seed;
     move || {
-        x = x.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
+        x = x
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
         1 + (x >> 33) as usize % 9_000
     }
 }

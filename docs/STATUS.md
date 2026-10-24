@@ -1,15 +1,28 @@
 # STATUS — lire d'abord, mettre à jour en dernier
 
-## Feed live en partie — spec BROUILLON du 2026-10-24, à valider par l'opérateur
-Spec `docs/specs/2026-10-24-feed-live-en-partie-design.md` · mesures
-`docs/research/2026-10-24-tempwritereplay-live.md`. **Aucun code.** Constat mesuré sur une partie
-(Sandbox contre l'IA) : HotS écrit `tracker.events` et `game.events` dans `TempWriteReplayP1`
-pendant la partie (blocs de 4 Ko ; ~10–14 s de retard pour le tracker, jusqu'à ~85 s pour les
-aptitudes), décodables par nos tables, et décodant à l'identique des streams du replay final. Questions ouvertes Q1–Q5 (fair-play d'abord) et spike sur une partie
-matchmakée avant tout plan.
-- **Constat annexe** : la partie tournait en build **98348** (2.57.0), plus récent que nos tables
-  embarquées (96477) ; décodée correctement par le repli « dernier protocole connu ». Régénérer les
-  tables (`tools/protocol_gen.py`) quand heroprotocol publie 98348.
+## Feed live en partie — serveur + page `/live` LIVRÉS le 2026-10-24 (vérifié par simulateur)
+Spec `docs/specs/2026-10-24-feed-live-en-partie-design.md` (décisions opérateur du 2026-10-24) ·
+plan `docs/plans/2026-10-24-feed-live.md` · mesures `docs/research/2026-10-24-tempwritereplay-live.md`.
+- **storm-replay** : `StreamDecoder` (décodage par morceaux des streams nus) + `*_events_raw()`.
+  Découpe 4 Ko / aléatoire / octet par octet = décodage entier (mini-corpus).
+- **Serveur** `src/live/` : `POST /api/live/chunk` (idempotent par offset, `409` sur trou, `413` au-delà
+  de 64 Mo), `/end`, `GET /api/live?scope=self|allies|all&me=`, `DELETE` (garde admin), WS
+  `live.updated` (signal sans état). Réducteur pur ; table unité → héros dérivée de l'archive (90/90).
+  Un replay rejoué par blocs de 4 Ko concorde avec `details` (héros) et storm-stats (morts, takedowns,
+  talents) sur les 3 replays committés.
+- **Page `/live`** (nav « Live ») = composant `LiveGame` : trois niveaux de visibilité (défaut « Me +
+  scoreboard »), aptitudes non nommées (pressions de touche), fil d'événements.
+- **Vérifié** : `examples/live_sim.rs` a rejoué la partie Sandbox du 2026-10-24 (76 blocs) et une partie
+  10 humains (259 blocs) contre le serveur release + Postgres dev ; page vérifiée dans le navigateur
+  (repos, en cours, terminé, trois niveaux, 375 px). Constat : en Sandbox, la réinitialisation de
+  talents ré-émet tous les `TalentChosen` → le tableau garde le dernier choix par palier.
+- **Reste** : watcher `client-rs` (repo Hots-Overlay) qui poste les blocs pour de vrai ; spike sur une
+  partie matchmakée (critère 3 : ordres des 9 autres en cours de partie, latences avec 10 humains,
+  source du build) ; état « en partie » de `/companion` quand la page existera ; nommage des
+  aptitudes (étape 2). **Pas encore déployé sur le box.**
+- **Constat annexe** : la partie du 2026-10-24 tournait en build **98348** (2.57.0), plus récent que nos
+  tables (96477) ; heroprotocol ne l'a pas publié (vérifié le 2026-10-24). Décodée correctement par le
+  repli « dernier protocole connu ».
 
 ## Design « dossier » pour toute l'app — spec VALIDÉE le 2026-09-27, déploiement par lots
 Spec `docs/specs/2026-09-27-design-dossier-app-design.md` (+ maquettes). Overlays OBS hors périmètre.

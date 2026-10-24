@@ -6,6 +6,7 @@ import { Onboarding } from "./Onboarding";
 
 const TABS: [string, string][] = [
   ["/", "Session"],
+  ["/live", "Live"],
   ["/matches", "Matches"],
   ["/heroes", "Heroes"],
   ["/maps", "Maps"],

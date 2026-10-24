@@ -24,6 +24,7 @@ import { Draft } from "./pages/Draft";
 import { DraftOverlay } from "./pages/DraftOverlay";
 import { Scouting } from "./pages/Scouting";
 import { ScoutingReport } from "./pages/ScoutingReport";
+import { Live } from "./pages/Live";
 
 export default function App() {
   return (
@@ -36,6 +37,7 @@ export default function App() {
       <Route path="draft/overlay" element={<DraftOverlay />} />
       <Route element={<Layout />}>
         <Route index element={<Dashboard />} />
+        <Route path="live" element={<Live />} />
         <Route path="matches" element={<Matches />} />
         <Route path="match/:id" element={<MatchDetail />} />
         <Route path="player/:toon" element={<Player />} />

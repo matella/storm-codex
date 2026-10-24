@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Replay2D } from "./replay2d";
 import type { ScoutingListItem, ScoutingReport } from "./scouting";
+import type { LiveScope, LiveView } from "./live";
 
 export interface MatchPlayer {
   toon: string;
@@ -269,6 +270,9 @@ export function useLiveUpdates(onEvent?: (ev: { type?: string; match_id?: number
           } else if (ev.type === "draft.updated") {
             qc.invalidateQueries({ queryKey: ["draft"] });
             onEvent?.(ev);
+          } else if (ev.type === "live.updated") {
+            // Signal sans état : la vue filtrée se relit par GET /api/live. Pas de toast.
+            qc.invalidateQueries({ queryKey: ["live"] });
           }
         } catch {
           /* ignore */
@@ -701,5 +705,27 @@ export function useScoutingReport(id: string | undefined) {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.json() as Promise<ScoutingReport>;
     },
+  });
+}
+
+// ── Feed live d'une partie en cours (/api/live) ───────────────────────────────
+
+/** Vue filtrée de la partie en cours ; `null` si aucune (204). */
+export async function fetchLive(scope: LiveScope, me: number | null): Promise<LiveView | null> {
+  const q = new URLSearchParams({ scope });
+  if (me != null) q.set("me", String(me));
+  const r = await fetch(`/api/live?${q.toString()}`);
+  if (r.status === 204) return null;
+  if (!r.ok) throw new Error(`/api/live → ${r.status}`);
+  return r.json() as Promise<LiveView>;
+}
+
+/** Partie en cours, rafraîchie par le WS (`live.updated`, via `useLiveUpdates` du Layout) ; le
+ *  `refetchInterval` rattrape un WS coupé. */
+export function useLive(scope: LiveScope, me: number | null) {
+  return useQuery({
+    queryKey: ["live", scope, me],
+    queryFn: () => fetchLive(scope, me),
+    refetchInterval: 15_000,
   });
 }
