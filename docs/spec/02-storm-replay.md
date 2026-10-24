@@ -13,6 +13,22 @@ Crate : `crates/storm-replay` (bibliothèque publique, MIT). Vitrine : son `READ
   (`details()`, `tracker_events()`, `message_events()`, …).
 - **Erreurs typées** (`thiserror`), classes stables — le serveur s'en sert pour classer les
   échecs d'upload (`error_class`).
+- **Streams bruts** : `battlelobby_raw()`, `tracker_events_raw()`, `game_events_raw()` rendent les
+  octets non décodés (simulateur live, tests).
+
+## Décodage par morceaux (`StreamDecoder`)
+
+Pour le feed live (`docs/specs/2026-10-24-feed-live-en-partie-design.md`) : HotS écrit
+`replay.tracker.events` et `replay.game.events` pendant la partie, par blocs de 4 Ko, sans en-tête
+MPQ ni build.
+
+- `StreamDecoder::new(StreamKind::{Tracker, Game}, build: Option<u32>)` — `None` = dernier protocole
+  embarqué ; un build sans table → repli signalé par `protocol_fallback()`.
+- `feed(&[u8]) -> Result<Vec<Value>>` rend les événements **complets**, identiques champ pour champ
+  à `tracker_events()` / `game_events()` ; un événement coupé (`Error::Truncated`) attend le morceau
+  suivant. Toute autre erreur remonte et laisse le décodeur dans son état d'avant l'appel.
+- `consumed()`, `pending()`, `gameloop()` exposent le point de reprise.
+- Le chemin d'un replay entier (`tracker_events()`…) n'est pas modifié : budget perf inchangé.
 
 ## Tables de protocole
 
@@ -38,4 +54,6 @@ consommateur intensif (~×1,6 sur Windows). Archive réelle : 2 821/2 821 décod
 ## Tests
 
 `tests/mini_corpus.rs` sur les replays committés de `tests/data/` (CI publique sans corpus
-privé). Le corpus complet vit sur le NAS/box (`fetch-corpus`).
+privé). Le corpus complet vit sur le NAS/box (`fetch-corpus`). `tests/stream_decoder.rs` : le
+décodage par morceaux (4 Ko, tailles pseudo-aléatoires, octet par octet) égale le décodage entier ;
+des octets aléatoires ne font jamais paniquer.
