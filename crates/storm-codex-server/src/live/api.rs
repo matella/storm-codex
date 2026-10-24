@@ -11,7 +11,7 @@ use serde_json::{json, Value as J};
 use storm_replay::StreamKind;
 
 use crate::live::state::Scope;
-use crate::live::{ChunkOutcome, LiveSession, Status};
+use crate::live::{ChunkOutcome, LiveSession, LobbyHint, Status};
 use crate::AppState;
 
 const SESSION_MAX_LEN: usize = 128;
@@ -27,13 +27,19 @@ fn bad(msg: &str) -> (StatusCode, Json<J>) {
     )
 }
 
-/// Carte et slot de l'opérateur, tirés du lobby courant s'il n'est pas déjà lié à un match fini.
-async fn lobby_hints(s: &AppState) -> (Option<String>, Option<i64>) {
+/// Indices du lobby courant, **seulement s'il appartient à cette session** (hash du battlelobby =
+/// id de session, contrat de `X-Session`). Sinon `None` : mieux vaut un « me » indéterminé qu'un
+/// « me » tiré du lobby d'une autre partie.
+async fn lobby_hint(s: &AppState, session: &str) -> Option<LobbyHint> {
     let lobby = s.lobby.read().await;
-    match lobby.as_ref().filter(|l| l.match_id.is_none()) {
-        Some(l) => (l.map.clone(), l.me.and_then(|i| i64::try_from(i).ok())),
-        None => (None, None),
-    }
+    lobby
+        .as_ref()
+        .filter(|l| l.content_hash == session)
+        .map(|l| LobbyHint {
+            map: l.map.clone(),
+            me_slot: l.me.and_then(|i| i64::try_from(i).ok()),
+            humans: l.players.len(),
+        })
 }
 
 /// `POST /api/live/chunk` — octets ajoutés d'un stream, `Bearer` d'upload.
@@ -174,10 +180,13 @@ pub struct ViewQuery {
 
 /// `GET /api/live?scope=self|allies|all&me=<playerId>` — vue filtrée ; `204` si aucune partie.
 pub async fn get(State(s): State<AppState>, Query(q): Query<ViewQuery>) -> Response {
-    let (map, slot) = lobby_hints(&s).await;
+    let Some(session) = s.live.read().await.as_ref().map(|l| l.id.clone()) else {
+        return StatusCode::NO_CONTENT.into_response();
+    };
+    let hint = lobby_hint(&s, &session).await;
     let live = s.live.read().await;
     match live.as_ref() {
-        Some(l) => Json(l.view(q.scope, q.me, slot, map)).into_response(),
+        Some(l) => Json(l.view(q.scope, q.me, hint.as_ref())).into_response(),
         None => StatusCode::NO_CONTENT.into_response(),
     }
 }
@@ -186,9 +195,14 @@ pub async fn get(State(s): State<AppState>, Query(q): Query<ViewQuery>) -> Respo
 /// `ADMIN_TOKEN` (mode ouvert s'il n'est pas configuré), comme les autres routes de gestion.
 pub async fn clear(State(s): State<AppState>, headers: HeaderMap) -> (StatusCode, Json<J>) {
     if !crate::manage::is_admin(&headers, &s) {
-        return (StatusCode::UNAUTHORIZED, Json(json!({ "error": "admin token requis" })));
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "admin token requis" })),
+        );
     }
     *s.live.write().await = None;
-    let _ = s.events.send(json!({ "type": "live.updated", "session": null }));
+    let _ = s
+        .events
+        .send(json!({ "type": "live.updated", "session": null }));
     (StatusCode::OK, Json(json!({ "ok": true })))
 }

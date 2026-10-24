@@ -16,6 +16,18 @@ pub const LIVE_SCHEMA_VERSION: u32 = 1;
 /// morceau est refusé (`413`) — garde-fou contre un client fou, pas une limite d'usage.
 pub const MAX_STREAM_BYTES: u64 = 64 * 1024 * 1024;
 
+/// Ce que le lobby de **cette** partie apprend à la vue. Fourni seulement si le hash du lobby
+/// (`lobby_live.content_hash`, SHA-256 du battlelobby) est l'id de session : un lobby d'une autre
+/// partie donnerait un mauvais slot, donc les aptitudes d'un autre joueur en `self`.
+#[derive(Debug, Clone, Default)]
+pub struct LobbyHint {
+    pub map: Option<String>,
+    /// Slot de l'opérateur (index du joueur dans le lobby = slot de travail).
+    pub me_slot: Option<i64>,
+    /// Nombre de joueurs humains du lobby.
+    pub humans: usize,
+}
+
 /// Que faire d'un morceau, selon ce qui a déjà été reçu sur ce stream.
 #[derive(Debug, PartialEq, Eq)]
 pub enum ChunkPlan {
@@ -168,14 +180,10 @@ impl LiveSession {
 
     /// Vue servie au front : état filtré + métadonnées de session.
     #[must_use]
-    pub fn view(
-        &self,
-        scope: Scope,
-        me: Option<i64>,
-        lobby_slot: Option<i64>,
-        map: Option<String>,
-    ) -> J {
-        let (me, me_source) = self.state.resolve_me(me, lobby_slot);
+    pub fn view(&self, scope: Scope, me: Option<i64>, lobby: Option<&LobbyHint>) -> J {
+        let (me, me_source) =
+            self.state
+                .resolve_me(me, lobby.and_then(|l| l.me_slot), lobby.map(|l| l.humans));
         let mut v = self.state.view(scope, me);
         if let Some(o) = v.as_object_mut() {
             o.insert("schema_version".into(), json!(LIVE_SCHEMA_VERSION));
@@ -185,7 +193,7 @@ impl LiveSession {
                 o.insert("reason".into(), json!(reason));
             }
             o.insert("me_source".into(), json!(me_source));
-            o.insert("map".into(), json!(map));
+            o.insert("map".into(), json!(lobby.and_then(|l| l.map.clone())));
             o.insert("started_at".into(), json!(self.started_at.to_rfc3339()));
             o.insert(
                 "last_chunk_at".into(),
@@ -264,8 +272,8 @@ mod tests {
         let back = off.saturating_sub(2048);
         noisy.apply_chunk(StreamKind::Tracker, back as u64, &tracker[back..]);
         assert_eq!(
-            once.view(Scope::All, None, None, None)["players"],
-            noisy.view(Scope::All, None, None, None)["players"]
+            once.view(Scope::All, None, None)["players"],
+            noisy.view(Scope::All, None, None)["players"]
         );
         assert_eq!(
             noisy.apply_chunk(StreamKind::Tracker, off as u64 + 1, b"x"),
@@ -285,7 +293,7 @@ mod tests {
         // Soit le hasard forme des événements tronqués (attente), soit c'est illisible ; jamais de panique.
         if s.status != Status::Live {
             assert_eq!(out, ChunkOutcome::Ignored);
-            assert_eq!(s.view(Scope::Me, None, None, None)["status"], "unreadable");
+            assert_eq!(s.view(Scope::Me, None, None)["status"], "unreadable");
             assert_eq!(
                 s.apply_chunk(StreamKind::Tracker, 4096, &junk),
                 ChunkOutcome::Ignored

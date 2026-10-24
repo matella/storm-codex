@@ -31,7 +31,7 @@ export interface LiveView {
   reason?: string;
   scope: LiveScope;
   me: number | null;
-  me_source: "explicit" | "lobby" | "single_commander" | null;
+  me_source: "explicit" | "lobby" | "single_human" | null;
   map: string | null;
   gates_loop: number | null;
   tracker_loop: number;

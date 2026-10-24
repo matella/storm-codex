@@ -130,9 +130,10 @@ par `--speed`.
 
 `POST /api/live/chunk`, en-têtes `X-Session: <id>`, `X-Stream: tracker|game`, `X-Offset: <n>`,
 `X-Build: <n>` (facultatif), corps = octets bruts ; `Bearer` d'upload.
-- **Session** : identifiant opaque choisi par le client (≤ 128 caractères). `client-rs` utilisera le
-  SHA-256 du battlelobby ; le simulateur celui du replay. Un identifiant nouveau **remplace** la
-  session courante (une seule partie à la fois).
+- **Session** : `X-Session` = **SHA-256 hexadécimal du battlelobby** (`client-rs` comme le
+  simulateur). C'est ce qui relie la session au lobby courant (`lobby_live.content_hash`) : la
+  carte et le slot de l'opérateur ne sont lus que si les deux coïncident. Un identifiant nouveau
+  **remplace** la session courante (une seule partie à la fois).
 - **Idempotent** : un morceau déjà reçu (offset + longueur ≤ connu) répond `200 duplicate` ; un
   morceau qui chevauche n'est appliqué que pour sa partie neuve ; un trou (offset > connu) répond
   `409` avec `expected_offset`, le client renvoie depuis là.
@@ -202,9 +203,13 @@ Module pur du serveur (`src/live/state.rs`), testable sans base ni réseau : il 
   quels dans le fil).
 - **Aptitudes** : par joueur, par couple `(m_abilLink, m_abilCmdIndex)` : compteur + gameloops
   (dédup 0,3 s par couple, règle de la visionneuse).
-- **Opérateur (`me`)** : `?me=` explicite (sélecteur de la page) ; sinon déduit : slot de
-  l'opérateur dans `lobby_live.me` → playerId via `SPlayerSetupEvent.m_slotId` ; sinon, s'il n'y a
-  qu'un seul utilisateur émetteur d'ordres (partie contre l'IA), lui.
+- **Opérateur (`me`)** — un « me » faux montrerait en `self` les aptitudes d'un autre joueur, un
+  « me » indéterminé n'en montre aucune ; d'où, dans l'ordre : `?me=` explicite (sélecteur de la
+  page) ; slot de l'opérateur dans le lobby **de cette session** (hash = id) → playerId via
+  `SPlayerSetupEvent.m_slotId` (ordre du lobby = slot, vérifié sur une partie à 10) ; si ce lobby
+  compte plusieurs humains, rien ; sinon l'unique joueur humain ayant émis un game event, une fois
+  que les game events couvrent au moins une minute (partie contre l'IA). Test : à aucun bloc d'une
+  partie à 10 humains cette dernière règle ne se déclenche.
 - `last_loop` par stream et horodatage du dernier morceau reçu, exposés tels quels : la page
   affiche le retard plutôt que de laisser croire à du temps réel.
 
@@ -292,7 +297,9 @@ existera. Piloté par `live.updated` :
 
 1. Spike : points 1 à 4 tranchés, chiffres consignés dans `docs/research/`.
 2. Morceau reçu → `live.updated` émis **< 200 ms** (le retard dominant est celui du jeu, ~10 s
-   pour le tracker, jusqu'à ~85 s pour les aptitudes, hors de notre contrôle).
+   pour le tracker, jusqu'à ~85 s pour les aptitudes, hors de notre contrôle). **Mesuré le
+   2026-10-24** (aller-retour `POST /api/live/chunk`, qui répond après le broadcast ; serveur release
+   local) : p95 1,7 ms sur 76 blocs, 1,6 ms sur 259 blocs → **tenu**.
 3. En fin de partie, l'état live final concorde avec la projection du replay final (héros, niveaux,
    talents, morts), vérifié sur une partie réelle.
 4. Aucune aptitude hors niveau dans la vue servie (test automatisé).

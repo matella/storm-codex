@@ -164,7 +164,7 @@ function LiveBoard({ v, now, scope, setScope, setMe }: {
               </option>
             ))}
           </select>
-          {v.me_source && <small>{v.me_source === "explicit" ? "picked" : v.me_source === "lobby" ? "from lobby" : "only player issuing commands"}</small>}
+          {v.me_source && <small>{v.me_source === "explicit" ? "picked" : v.me_source === "lobby" ? "from lobby" : "only human player"}</small>}
         </label>
       </section>
       {scope === "all" && (

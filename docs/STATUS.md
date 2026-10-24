@@ -12,6 +12,9 @@ plan `docs/plans/2026-10-24-feed-live.md` · mesures `docs/research/2026-10-24-t
   talents) sur les 3 replays committés.
 - **Page `/live`** (nav « Live ») = composant `LiveGame` : trois niveaux de visibilité (défaut « Me +
   scoreboard »), aptitudes non nommées (pressions de touche), fil d'événements.
+- **Critère 2 mesuré** : morceau → `live.updated`, p95 **1,7 ms** (budget 200 ms). Opérateur : lobby
+  pris en compte seulement si son hash = id de session (`X-Session` = SHA-256 du battlelobby) ;
+  déduction « un seul humain » bridée (testée sur chaque bloc d'une partie à 10).
 - **Vérifié** : `examples/live_sim.rs` a rejoué la partie Sandbox du 2026-10-24 (76 blocs) et une partie
   10 humains (259 blocs) contre le serveur release + Postgres dev ; page vérifiée dans le navigateur
   (repos, en cours, terminé, trois niveaux, 375 px). Constat : en Sandbox, la réinitialisation de

@@ -14,6 +14,10 @@ pub const LOOPS_PER_SEC: i64 = 16;
 const ABILITY_DEDUP_LOOPS: i64 = 5;
 /// Fenêtre de la timeline d'aptitudes servie au front.
 const ABILITY_WINDOW_LOOPS: i64 = 180 * LOOPS_PER_SEC;
+/// Avant de conclure « un seul humain » (partie contre l'IA), les game events doivent couvrir au
+/// moins cette durée : en partie à 10 humains, tous émettent des événements (caméra, sélection)
+/// bien avant — un premier bloc peut n'en contenir qu'un seul.
+const SINGLE_HUMAN_MIN_LOOPS: i64 = 60 * LOOPS_PER_SEC;
 /// Taille maximale du fil servi au front (les plus récents).
 const FEED_MAX: usize = 200;
 /// Taille maximale du fil conservé : au-delà, les plus anciens sont jetés (une partie réelle en
@@ -93,6 +97,10 @@ pub struct LiveState {
     gates_loop: Option<i64>,
     tracker_loop: i64,
     game_loop: i64,
+    /// Gameloop du premier game event reçu.
+    game_first_loop: Option<i64>,
+    /// `_userid` ayant émis au moins un game event (tous types : caméra, sélection, ordres).
+    game_users: BTreeSet<i64>,
     players: BTreeMap<i64, PlayerLive>,
     user_to_player: HashMap<i64, i64>,
     team_levels: [i64; 2],
@@ -295,6 +303,10 @@ impl LiveState {
     pub fn apply_game(&mut self, ev: &Value) {
         let at = int(ev, "_gameloop").unwrap_or(0);
         self.game_loop = self.game_loop.max(at);
+        self.game_first_loop.get_or_insert(at);
+        if let Some(u) = ev.field("_userid").and_then(Value::first_field_int) {
+            self.game_users.insert(u);
+        }
         if !s(ev, "_event").is_some_and(|n| n.ends_with("SCmdEvent")) {
             return;
         }
@@ -329,18 +341,20 @@ impl LiveState {
         }
     }
 
-    /// Utilisateurs (`_userid`) ayant émis au moins un ordre d'aptitude.
-    fn commanders(&self) -> Vec<i64> {
-        self.abilities.keys().copied().collect()
-    }
-
-    /// Détermine l'opérateur : `explicit` s'il désigne un joueur connu ; sinon le slot du lobby ;
-    /// sinon l'unique utilisateur émetteur d'ordres (partie contre l'IA).
+    /// Détermine l'opérateur. Un « me » indéterminé est sûr (aucune aptitude affichée en `self`) ;
+    /// un « me » faux montrerait celles d'un autre joueur — d'où des règles prudentes :
+    /// 1. `explicit` s'il désigne un joueur connu ;
+    /// 2. le slot de l'opérateur dans le lobby **de cette partie** (l'appelant ne passe le lobby
+    ///    que si son hash est l'id de session) ;
+    /// 3. si le lobby compte plusieurs humains : rien ;
+    /// 4. sinon, l'unique joueur humain ayant émis un game event, à condition que les game events
+    ///    couvrent au moins une minute (partie contre l'IA).
     #[must_use]
     pub fn resolve_me(
         &self,
         explicit: Option<i64>,
         lobby_slot: Option<i64>,
+        lobby_humans: Option<usize>,
     ) -> (Option<i64>, Option<&'static str>) {
         if let Some(p) = explicit.filter(|p| self.players.contains_key(p)) {
             return (Some(p), Some("explicit"));
@@ -350,10 +364,20 @@ impl LiveState {
                 return (Some(*p), Some("lobby"));
             }
         }
-        if let [only] = self.commanders()[..] {
-            if let Some(p) = self.user_to_player.get(&only) {
-                return (Some(*p), Some("single_commander"));
-            }
+        if lobby_humans.is_some_and(|n| n > 1) {
+            return (None, None);
+        }
+        let covered = self
+            .game_first_loop
+            .is_some_and(|first| self.game_loop - first >= SINGLE_HUMAN_MIN_LOOPS);
+        let humans: Vec<i64> = self
+            .game_users
+            .iter()
+            .filter_map(|u| self.user_to_player.get(u).copied())
+            .filter(|p| (1..=10).contains(p))
+            .collect();
+        if let ([only], true) = (&humans[..], covered) {
+            return (Some(*only), Some("single_human"));
         }
         (None, None)
     }
@@ -586,33 +610,64 @@ mod tests {
         assert_eq!(hero_name("HeroNotInTable"), "NotInTable");
     }
 
-    #[test]
-    fn resolve_me_falls_back_to_single_commander() {
+    fn one_human_state(game_span_loops: i64) -> LiveState {
         let mut st = LiveState::default();
-        st.players.insert(
-            1,
-            PlayerLive {
-                slot: Some(0),
-                user_id: Some(0),
-                ..Default::default()
-            },
-        );
-        st.players.insert(
-            2,
-            PlayerLive {
-                slot: Some(1),
-                user_id: None,
-                ..Default::default()
-            },
-        );
+        for (player, slot, user) in [(1, 0, Some(0)), (2, 1, None)] {
+            st.players.insert(
+                player,
+                PlayerLive {
+                    slot: Some(slot),
+                    user_id: user,
+                    ..Default::default()
+                },
+            );
+        }
         st.user_to_player.insert(0, 1);
-        st.abilities.entry(0).or_default();
+        st.game_users.insert(0);
+        st.game_first_loop = Some(0);
+        st.game_loop = game_span_loops;
+        st
+    }
+
+    #[test]
+    fn resolve_me_rules() {
+        let st = one_human_state(SINGLE_HUMAN_MIN_LOOPS);
         assert_eq!(
-            st.resolve_me(None, None),
-            (Some(1), Some("single_commander"))
+            st.resolve_me(None, None, None),
+            (Some(1), Some("single_human"))
         );
-        assert_eq!(st.resolve_me(None, Some(1)), (Some(2), Some("lobby")));
-        assert_eq!(st.resolve_me(Some(2), Some(0)), (Some(2), Some("explicit")));
-        assert_eq!(st.resolve_me(Some(9), None).1, Some("single_commander"));
+        assert_eq!(
+            st.resolve_me(None, None, Some(1)),
+            (Some(1), Some("single_human"))
+        );
+        assert_eq!(st.resolve_me(None, Some(1), None), (Some(2), Some("lobby")));
+        assert_eq!(
+            st.resolve_me(Some(2), Some(0), None),
+            (Some(2), Some("explicit"))
+        );
+        // Lobby à plusieurs humains sans slot opérateur : jamais de déduction.
+        assert_eq!(st.resolve_me(None, None, Some(10)), (None, None));
+        // Moins d'une minute de game events : trop tôt pour conclure « un seul humain ».
+        let early = one_human_state(SINGLE_HUMAN_MIN_LOOPS - 1);
+        assert_eq!(early.resolve_me(None, None, None), (None, None));
+    }
+
+    #[test]
+    fn first_game_block_of_a_10_human_game_never_guesses_me() {
+        let r = Replay::open(&corpus()[0]).unwrap();
+        let mut st = LiveState::default();
+        let mut tdec = StreamDecoder::new(StreamKind::Tracker, Some(r.header.base_build)).unwrap();
+        for ev in tdec.feed(&r.tracker_events_raw().unwrap()).unwrap() {
+            st.apply_tracker(&ev);
+        }
+        let game = r.game_events_raw().unwrap();
+        let mut gdec = StreamDecoder::new(StreamKind::Game, Some(r.header.base_build)).unwrap();
+        for (n, block) in game.chunks(4096).enumerate() {
+            for ev in gdec.feed(block).unwrap() {
+                st.apply_game(&ev);
+            }
+            // À aucun moment de la partie la déduction « un seul humain » ne doit se déclencher.
+            assert_eq!(st.resolve_me(None, None, None), (None, None), "bloc {n}");
+        }
     }
 }
