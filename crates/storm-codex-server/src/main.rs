@@ -9,6 +9,7 @@ mod config;
 mod dim;
 mod draft;
 mod jarvis;
+mod live;
 mod lobby;
 mod manage;
 pub mod project;
@@ -43,6 +44,8 @@ pub struct AppState {
     pub draft: Arc<RwLock<draft::DraftState>>,
     /// Lobby live courant (singleton, persisté dans `lobby_live`). `None` = aucun lobby.
     pub lobby: Arc<RwLock<Option<lobby::LobbyState>>>,
+    /// Partie en cours (feed live, en mémoire, jetable). `None` = aucune.
+    pub live: Arc<RwLock<Option<live::LiveSession>>>,
 }
 
 #[tokio::main]
@@ -122,6 +125,7 @@ async fn run() -> Result<(), String> {
         events,
         draft: Arc::new(RwLock::new(draft)),
         lobby: Arc::new(RwLock::new(lobby_initial)),
+        live: Arc::new(RwLock::new(None)),
     };
 
     // Référentiel héros/talents/patches + images (best-effort, refresh 24 h ; chaque nouveau patch →
@@ -251,6 +255,10 @@ fn api_router(state: &AppState) -> Router<AppState> {
         .route("/api/lobby/hero", post(lobby::api::set_hero))
         .route("/api/lobby/map", post(lobby::api::set_map))
         .route("/api/lobby/teams", post(lobby::api::set_teams))
+        // Feed live d'une partie en cours (blocs TempWriteReplayP1) + broadcast WS live.updated
+        .route("/api/live", get(live::api::get).delete(live::api::clear))
+        .route("/api/live/chunk", post(live::api::chunk))
+        .route("/api/live/end", post(live::api::end))
         // Rapports de scouting (tables dédiées, jamais projetés dans matches)
         .route("/api/scouting", get(scouting::api::list).post(scouting::api::create))
         .route(
@@ -376,6 +384,7 @@ mod api_tests {
             parse_sem: Arc::new(Semaphore::new(2)),
             events,
             lobby: Arc::new(RwLock::new(None)),
+            live: Arc::new(RwLock::new(None)),
             draft: Arc::new(RwLock::new(draft::DraftState::new(
                 draft::Format::Standard,
                 draft::Side::Blue,

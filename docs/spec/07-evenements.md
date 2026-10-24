@@ -9,6 +9,7 @@ Canal `AppState.events` (tokio broadcast, capacité 1024). Types émis aujourd'h
 | `match.parsed` | projection d'un match réussie | `match_id`, `map`… | SPA (invalide les queries TanStack), widget OBS |
 | `draft.updated` | toute mutation du simulateur de draft | (re-fetch `/api/draft`) | console `/draft`, overlay `/draft/overlay` |
 | `patch.new` | nouveau patch détecté par le job référentiel | `internalId`, `name` | notif in-app (WhatsNew) |
+| `live.updated` | morceau du feed live qui ajoute des événements, nouvelle session, fin, fermeture | `session` (**aucun état** : la vue filtrée se lit par `GET /api/live`, pour que rien hors niveau de visibilité ne passe par le WS) | page `/live` |
 
 Contrat côté client : les events sont des **signaux de re-fetch**, pas des données complètes —
 un client laggé (RecvError::Lagged) continue sans perte fonctionnelle.

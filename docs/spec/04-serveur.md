@@ -63,6 +63,19 @@ autoritatif en mémoire (`AppState.draft`), **persisté** dans `draft_live` (JSO
 rechargé au démarrage. Chaque mutation broadcast `draft.updated` sur `/ws`.
 Design : `docs/specs/2026-06-19-draft-simulator-design.md`.
 
+## Feed live (`live/`)
+
+Partie en cours, alimentée par `POST /api/live/chunk` (blocs de `TempWriteReplayP1`). `mod.rs` :
+session unique en mémoire (`AppState.live`, jamais persistée — le replay archivé reste la source
+de vérité), un `storm_replay::StreamDecoder` par stream, idempotence par offset (`plan_chunk`,
+fonction pure : doublon ignoré, chevauchement rogné, trou → `409`), statut `live`/`ended`/
+`unreadable` (une erreur de décodage fige la session sans jamais inventer d'état). `state.rs` :
+réducteur **pur** (héros, niveaux d'équipe, talents, morts/takedowns, camps, objectifs, ordres
+d'aptitude par `_userid` avec dédup 0,3 s) et vue filtrée par niveau `self`/`allies`/`all`.
+Héros : `hero_units.json` (unité du tracker → nom canonique, 90/90), dérivé de l'archive par
+`examples/derive_hero_units.rs`. Simulateur de bout en bout : `examples/live_sim.rs`.
+Design : `docs/specs/2026-10-24-feed-live-en-partie-design.md`.
+
 ## Configuration (env — `config.rs`, modèle : `.env.example`)
 
 | Variable | Défaut | Rôle |
