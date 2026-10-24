@@ -113,6 +113,10 @@ pub async fn chunk(
         ),
         ChunkOutcome::Duplicate => (StatusCode::OK, Json(json!({ "status": "duplicate" }))),
         ChunkOutcome::Ignored => (StatusCode::OK, Json(json!({ "status": "unreadable" }))),
+        ChunkOutcome::TooLarge => (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            Json(json!({ "status": "too_large" })),
+        ),
         ChunkOutcome::Gap { expected } => (
             StatusCode::CONFLICT,
             Json(json!({ "status": "gap", "expected_offset": expected })),
@@ -178,11 +182,13 @@ pub async fn get(State(s): State<AppState>, Query(q): Query<ViewQuery>) -> Respo
     }
 }
 
-/// `DELETE /api/live` — ferme la session courante (même garde que `DELETE /api/lobby`).
-pub async fn clear(State(s): State<AppState>) -> Json<J> {
+/// `DELETE /api/live` — ferme la session courante. Écriture d'administration : garde
+/// `ADMIN_TOKEN` (mode ouvert s'il n'est pas configuré), comme les autres routes de gestion.
+pub async fn clear(State(s): State<AppState>, headers: HeaderMap) -> (StatusCode, Json<J>) {
+    if !crate::manage::is_admin(&headers, &s) {
+        return (StatusCode::UNAUTHORIZED, Json(json!({ "error": "admin token requis" })));
+    }
     *s.live.write().await = None;
-    let _ = s
-        .events
-        .send(json!({ "type": "live.updated", "session": null }));
-    Json(json!({ "ok": true }))
+    let _ = s.events.send(json!({ "type": "live.updated", "session": null }));
+    (StatusCode::OK, Json(json!({ "ok": true })))
 }

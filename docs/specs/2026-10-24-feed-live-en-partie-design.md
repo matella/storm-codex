@@ -136,7 +136,9 @@ par `--speed`.
 - **Idempotent** : un morceau déjà reçu (offset + longueur ≤ connu) répond `200 duplicate` ; un
   morceau qui chevauche n'est appliqué que pour sa partie neuve ; un trou (offset > connu) répond
   `409` avec `expected_offset`, le client renvoie depuis là.
-- Corps limité à 1 Mo (un bloc fait 4 Ko ; un rattrapage après coupure en contient plusieurs).
+- Garde-fous mémoire : 64 Mo au plus par stream et par session (`413` au-delà ; une partie réelle
+  en fait quelques centaines de Ko), fil conservé borné à 2 000 éléments, timeline d'aptitudes
+  limitée à la fenêtre servie (3 min).
 
 ### Contrat de décodage ajouté à `storm-replay`
 
@@ -225,7 +227,7 @@ calibrée par héros (presser chaque touche en mode essai, une fois par patch).
 | `POST /api/live/chunk` 🔒 | octets ajoutés d'un stream (`X-Session`, `X-Stream`, `X-Offset`, `X-Build`?), `Bearer` upload. `200` `{status: applied\|duplicate, consumed, last_loop}` ; `409` `{expected_offset}` ; `400` en-tête invalide |
 | `POST /api/live/end` 🔒 | `{session}` — fin de partie signalée par le client ; la session passe en `ended` |
 | `GET /api/live?scope=self\|allies\|all&me=<playerId>` | vue filtrée de la session courante ; `204` si aucune |
-| `DELETE /api/live` | ferme la session (même garde que `DELETE /api/lobby` : aucune) |
+| `DELETE /api/live` 🔒 | ferme la session (garde `ADMIN_TOKEN` des routes de gestion) |
 | WS `live.updated` | `{type, session}` après chaque morceau qui change l'état ou changement de statut ; **aucun état dans l'event** — le front invalide `["live"]` |
 
 Pas de table : l'état live est **en mémoire** et jetable. Le replay archivé reste la source de

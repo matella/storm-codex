@@ -77,10 +77,10 @@ fois, aucune table.
 
 | Route | Rôle |
 |---|---|
-| `POST /api/live/chunk` 🔑 | octets ajoutés d'un stream, `Bearer` d'upload. En-têtes : `X-Session` (id opaque ≤ 128 car. ; un id nouveau **remplace** la session), `X-Stream` (`tracker` \| `game`), `X-Offset` (position du morceau dans le stream), `X-Build` (facultatif ; absent = dernier protocole embarqué). → `200 {status: "applied", consumed, last_loop, events}` ; `200 {status: "duplicate"}` (déjà reçu) ; `200 {status: "unreadable"}` (session illisible) ; `409 {status: "gap", expected_offset}` (renvoyer depuis là) ; `400` en-tête invalide ; `401` |
+| `POST /api/live/chunk` 🔑 | octets ajoutés d'un stream, `Bearer` d'upload. En-têtes : `X-Session` (id opaque ≤ 128 car. ; un id nouveau **remplace** la session), `X-Stream` (`tracker` \| `game`), `X-Offset` (position du morceau dans le stream), `X-Build` (facultatif ; absent = dernier protocole embarqué). → `200 {status: "applied", consumed, last_loop, events}` ; `200 {status: "duplicate"}` (déjà reçu) ; `200 {status: "unreadable"}` (session illisible) ; `409 {status: "gap", expected_offset}` (renvoyer depuis là) ; `413 {status: "too_large"}` (stream > 64 Mo) ; `400` en-tête invalide ; `401` |
 | `POST /api/live/end` 🔑 | `{session}` → statut `ended` ; `404` si ce n'est pas la session courante |
 | `GET /api/live?scope=self\|allies\|all&me=<playerId>` | vue filtrée (défaut `scope=self`) ; `204` si aucune partie. Champs : `status` (`live`/`ended`/`unreadable` + `reason`), `session`, `map` et opérateur tirés du lobby non lié, `me` + `me_source` (`explicit`/`lobby`/`single_commander`/`null`), `gates_loop`, `tracker_loop`, `game_loop`, `last_chunk_at`, `protocol {build, fallback, assumed_latest}`, `team_levels`, `players[]` (`player_id`, `team`, `hero`, `hero_unit`, `level`, `talents[{tree_id, loop}]`, `deaths`, `takedowns`, `abilities` = `null` si hors niveau, sinon `[{link, cmd, count, recent[loops des 3 dernières minutes]}]`), `feed[]` (200 plus récents : `death`/`talent`/`level`/`camp`/`objective`) |
-| `DELETE /api/live` | ferme la session (même garde que `DELETE /api/lobby`) |
+| `DELETE /api/live` 🔒 | ferme la session (garde `ADMIN_TOKEN`, mode ouvert s'il n'est pas configuré) |
 
 🔑 = jeton d'upload (comme `/api/upload-raw`). Chaque morceau qui ajoute des événements, et chaque
 changement de statut → WS `live.updated` (signal seul).

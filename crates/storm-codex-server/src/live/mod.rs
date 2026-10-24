@@ -11,6 +11,10 @@ use storm_replay::{StreamDecoder, StreamKind};
 
 /// Version du schéma de la vue `GET /api/live`.
 pub const LIVE_SCHEMA_VERSION: u32 = 1;
+/// Plafond par stream et par session. Mesuré : ~240 Ko de tracker et ~64 Ko de game events pour
+/// 10 min contre l'IA ; une partie matchmakée de 30 min reste très en dessous. Au-delà, le
+/// morceau est refusé (`413`) — garde-fou contre un client fou, pas une limite d'usage.
+pub const MAX_STREAM_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Que faire d'un morceau, selon ce qui a déjà été reçu sur ce stream.
 #[derive(Debug, PartialEq, Eq)]
@@ -75,6 +79,8 @@ pub enum ChunkOutcome {
     },
     /// Session illisible : le morceau est compté reçu mais n'est plus décodé.
     Ignored,
+    /// Le stream dépasserait [`MAX_STREAM_BYTES`] : refusé.
+    TooLarge,
 }
 
 /// Une partie en cours (une seule à la fois).
@@ -127,6 +133,9 @@ impl LiveSession {
             ChunkPlan::Apply { skip } => skip,
         };
         let fresh = &bytes[skip.min(bytes.len())..];
+        if feed.received + fresh.len() as u64 > MAX_STREAM_BYTES {
+            return ChunkOutcome::TooLarge;
+        }
         feed.received += fresh.len() as u64;
         self.last_chunk_at = chrono::Utc::now();
         if matches!(self.status, Status::Unreadable(_)) {

@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value as J};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::sync::OnceLock;
 use storm_replay::Value;
 
@@ -16,6 +16,9 @@ const ABILITY_DEDUP_LOOPS: i64 = 5;
 const ABILITY_WINDOW_LOOPS: i64 = 180 * LOOPS_PER_SEC;
 /// Taille maximale du fil servi au front (les plus récents).
 const FEED_MAX: usize = 200;
+/// Taille maximale du fil conservé : au-delà, les plus anciens sont jetés (une partie réelle en
+/// produit quelques centaines ; borne la mémoire face à un client qui enverrait n'importe quoi).
+const FEED_KEEP: usize = 2_000;
 
 /// Niveau de visibilité choisi par l'opérateur (spec § Fair-play). `self` par défaut.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -93,7 +96,7 @@ pub struct LiveState {
     players: BTreeMap<i64, PlayerLive>,
     user_to_player: HashMap<i64, i64>,
     team_levels: [i64; 2],
-    feed: Vec<FeedItem>,
+    feed: VecDeque<FeedItem>,
     /// Aptitudes par `_userid` (les game events peuvent précéder le `SPlayerSetupEvent`).
     abilities: BTreeMap<i64, BTreeMap<(i64, i64), AbilityStat>>,
 }
@@ -276,7 +279,10 @@ impl LiveState {
         team: Option<u8>,
         detail: J,
     ) {
-        self.feed.push(FeedItem {
+        if self.feed.len() >= FEED_KEEP {
+            self.feed.pop_front();
+        }
+        self.feed.push_back(FeedItem {
             at,
             kind,
             player,
@@ -316,6 +322,11 @@ impl LiveState {
         }
         stat.count += 1;
         stat.loops.push(at);
+        // Seule la fenêtre récente est servie : on jette le reste (le compteur, lui, est total).
+        let keep_from = at - ABILITY_WINDOW_LOOPS;
+        if stat.loops.first().is_some_and(|&l| l < keep_from) {
+            stat.loops.retain(|&l| l >= keep_from);
+        }
     }
 
     /// Utilisateurs (`_userid`) ayant émis au moins un ordre d'aptitude.

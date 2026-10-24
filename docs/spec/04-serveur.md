@@ -68,7 +68,8 @@ Design : `docs/specs/2026-06-19-draft-simulator-design.md`.
 Partie en cours, alimentée par `POST /api/live/chunk` (blocs de `TempWriteReplayP1`). `mod.rs` :
 session unique en mémoire (`AppState.live`, jamais persistée — le replay archivé reste la source
 de vérité), un `storm_replay::StreamDecoder` par stream, idempotence par offset (`plan_chunk`,
-fonction pure : doublon ignoré, chevauchement rogné, trou → `409`), statut `live`/`ended`/
+fonction pure : doublon ignoré, chevauchement rogné, trou → `409`), plafonds mémoire (64 Mo par
+stream → `413`, fil borné à 2 000 éléments, timelines d'aptitudes limitées à 3 min), statut `live`/`ended`/
 `unreadable` (une erreur de décodage fige la session sans jamais inventer d'état). `state.rs` :
 réducteur **pur** (héros, niveaux d'équipe, talents, morts/takedowns, camps, objectifs, ordres
 d'aptitude par `_userid` avec dédup 0,3 s) et vue filtrée par niveau `self`/`allies`/`all`.
