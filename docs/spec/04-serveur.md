@@ -25,6 +25,26 @@ POST /api/upload(-raw)  [Bearer token nominatif]
   replays longs (> 2 Mo) et faisait boucler l'uploader.
 - `X-Filename` est **percent-décodé** (apostrophes de cartes : Blackheart's Bay).
 
+## Correction du héros joué (`project.rs`)
+
+En ARAM (3 héros proposés + reroll), l'attribut `4002` que lit le parser — fidèle à hots-parser
+7.55.7, qui fait pareil — capte souvent un héros **proposé**, pas celui joué (ex. Braxis Outpost,
+build 98348 : les 10 héros parser sont faux, Kel'Thuzad sort « Kharazim »). storm-stats reste un
+port fidèle ; la correction vit dans la projection :
+
+- héros joué = **vote majoritaire des talents** du joueur via `dim_talents.tree_id → hero_id`
+  (`talent_hero`) ; aucun talent résoluble ou référentiel vide → héros du parser conservé ;
+- résolu **avant** l'écriture de `matches.data`, et appliqué partout où storm-stats a copié le
+  héros au moment de l'événement : `players[].hero` (original tracé dans `heroCorrectedFrom`),
+  `victim.hero` / `killers[].hero` de `players[].deaths`, `players[].takedowns` (de **tous** les
+  joueurs) et `match.takedowns`. Remplacement **par handle** (`player`), jamais par nom de héros
+  (deux joueurs peuvent avoir le même héros parser) ; le killer `"0"` « Nexus Forces » est intact ;
+- ne couvre pas encore `match.heroes` ni les picks (même cause, encore aux noms `4002`).
+
+Les comptes de morts/takedowns ne changent pas (seuls les noms sont réécrits). Un match projeté
+avant ce correctif se rafraîchit par `POST /api/admin/reprocess` (`PARSER_VERSION` 2), qui re-parse
+aussi les `scouting_games`.
+
 ## Scouting (`scouting/`)
 
 Chemin **séparé** du pipeline d'upload : `POST /api/scouting/{id}/replays` archive dans
