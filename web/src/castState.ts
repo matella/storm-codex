@@ -42,3 +42,12 @@ export function effectiveLineupMode(s: CastSeries): "A" | "B" {
 export function displayName(t: CastTeam, side: Side): string {
   return t.name.trim() === "" ? sideLabel(side) : t.name;
 }
+
+/** Score de série affiché [blue, red] : le forçage opérateur l'emporte, sinon décompte des vainqueurs. */
+export function seriesScore(s: CastSeries): [number, number] {
+  if (s.score_override) return s.score_override;
+  return [
+    s.games.filter((g) => g.winner === "blue").length,
+    s.games.filter((g) => g.winner === "red").length,
+  ];
+}

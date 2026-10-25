@@ -50,6 +50,7 @@ fallback SPA (`index.html` en `no-cache`). Langue de l'UI : **anglais**.
 | `/now-playing?mini` | badge compact 290×68 : pochette + titre + artiste |
 | `/now-playing?reveal` | annonce en grand (300×408) à chaque démarrage de lecture, tenue 2,6 s, puis repli en fondu sur le badge compact. Sondage 2 s (les deux autres variantes restent à 5 s). Spec `docs/specs/2026-08-29-now-playing-reveal-design.md` |
 | `/draft/overlay` | overlay de draft 1920×1080 (état par WS `draft.updated`). Mode replay : bannière « Draft ready — waiting » tant que rien n'est révélé, barre de timer pilotée par le prochain tick de lecture auto (`draftOverlay.ts`) ; bans non révélés en pointillés ; pseudos masqués côté API tant que le héros n'est pas révélé |
+| `/cast/overlay?skin=` | overlay de la régie de cast 1920×1080 (état `useCast()`, WS `cast.updated`). Une scène à la fois (`scene` : `ingame` / `hide` / `draft` / `series` / `lineups`), fondu d'entrée ≈ 300 ms ; `hide` ou série inactive = rien. **In-game** : deux onglets rectangulaires (coins carrés, arête intérieure verticale) ancrés par `web/src/cast/anchors.ts` (`INGAME_ANCHORS` : coin intérieur haut bleu x=39,2 %, rouge x=59,65 %, y=9,9 %, hauteur 4,6 %, largeur max 26 % — repères relevés sur `docs/specs/2026-10-25-cast-mockups/ingame.webp`), nom tronqué par ellipse, score de série (`score_override` sinon vainqueurs), pastille `BO n` / `GAME n+1` / format en capitales. Les scènes draft/series/lineups ne rendent rien tant que les tâches suivantes ne sont pas livrées |
 
 ## Conventions
 

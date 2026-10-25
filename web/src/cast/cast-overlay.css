@@ -1,0 +1,34 @@
+@import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@700;800&family=JetBrains+Mono:wght@700&display=swap");
+
+/* Overlay de cast OBS (1920×1080, fond transparent). Skin via data-skin (même jeu de variables que le draft). */
+.cast-overlay { position: fixed; inset: 0; overflow: hidden; container-type: size; color: #eef2fc;
+  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+  --blue:#2f6df6; --red:#e0414b; --blue-soft:#7fa6ff; --red-soft:#ff8088; --gold:#f0d27a;
+  --panel:linear-gradient(180deg,#160f30f5,#0b0820f5); --cardbd:#5a4aa0; --radius:4px;
+  --label-ff:"Cinzel","Trajan Pro",serif; --num-ff:"JetBrains Mono",ui-monospace,monospace; }
+.cast-overlay[data-skin=glass]{ --panel:linear-gradient(180deg,#0a1326f2,#0b0e1cf2); --cardbd:rgba(255,255,255,.14); --gold:#d8c089; }
+.cast-overlay[data-skin=tactical]{ --blue:#2ee6d6; --red:#ff4655; --blue-soft:#7ff0e6; --red-soft:#ff7a85; --gold:#ffd36b; --radius:0;
+  --panel:linear-gradient(180deg,#0c0f14f5,#070a0ef5); --cardbd:#243038; --label-ff:"Oswald","Arial Narrow",sans-serif; }
+.cast-overlay[data-skin=mono]{ --blue:#6ea8ff; --red:#ff7a85; --blue-soft:#9cc4ff; --red-soft:#ffa0a8; --gold:#cdd3e2;
+  --panel:linear-gradient(180deg,#0e1016f5,#0a0b10f5); --cardbd:rgba(255,255,255,.1); }
+
+/* une scène à la fois ; fondu ≈ 300 ms à l'entrée (la scène sortante est démontée) */
+.cast-overlay .scene { position: absolute; inset: 0; animation: cast-fade .3s ease-out both; }
+@keyframes cast-fade { from { opacity: 0 } to { opacity: 1 } }
+
+/* In-game : onglets rectangulaires (arête intérieure verticale, coins carrés) */
+.cast-overlay .tab { position: absolute; display: flex; align-items: center; gap: 1.2cqw; padding: 0 1.6cqw;
+  box-sizing: border-box; background: var(--panel); font-family: var(--label-ff); font-weight: 800;
+  font-size: 1.15cqw; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+.cast-overlay .tab .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.cast-overlay .tab .s { font-family: var(--num-ff); font-size: 1.5cqw; color: #fff; flex: none; }
+.cast-overlay .tab.b { color: var(--blue-soft); border-bottom: 3px solid var(--blue); justify-content: flex-end; }
+.cast-overlay .tab.r { color: var(--red-soft); border-bottom: 3px solid var(--red); }
+
+.cast-overlay .badge { position: absolute; top: 1%; right: .6%; width: 5.6cqw; display: flex; flex-direction: column;
+  gap: .3cqw; text-align: center; font-family: var(--label-ff); font-weight: 800; }
+.cast-overlay .badge .bo { background: var(--panel); border: 1px solid var(--cardbd); border-radius: var(--radius);
+  padding: .35cqw 0; font-size: .95cqw; letter-spacing: .1em; color: #fff; }
+.cast-overlay .badge .bo small { display: block; font-size: .55cqw; letter-spacing: .18em; color: var(--gold); margin-top: .1cqw; }
+.cast-overlay .badge .fl { background: var(--gold); color: #1a1230; border-radius: var(--radius); padding: .25cqw 0;
+  font-size: .6cqw; letter-spacing: .14em; }
