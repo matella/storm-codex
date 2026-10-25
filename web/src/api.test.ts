@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   announceLabel,
   awardLabel,
+  banHero,
   classBadge,
   fmtClock,
   fmtDur,
@@ -192,5 +193,23 @@ describe("trackKey", () => {
   });
   it("rend null sans id ni titre", () => {
     expect(trackKey({ playing: false })).toBeNull();
+  });
+});
+
+describe("banHero", () => {
+  const attrs = { Crus: "Johanna", DEAT: "Deathwing", L90E: "E.T.C." };
+  it("résout le code attribut brut stocké par storm-stats", () => {
+    expect(banHero({ hero: "Crus", order: 1, absolute: 1 }, attrs)).toBe("Johanna");
+    expect(banHero({ hero: "DEAT" }, attrs)).toBe("Deathwing");
+    expect(banHero("L90E", attrs)).toBe("E.T.C.");
+  });
+  it("retombe sur le code si inconnu ou référentiel pas encore chargé", () => {
+    expect(banHero({ hero: "ZZZZ" }, attrs)).toBe("ZZZZ");
+    expect(banHero({ hero: "Crus" }, undefined)).toBe("Crus");
+  });
+  it("rend null pour un ban vide (tour passé) ou mal formé", () => {
+    expect(banHero({ hero: "" }, attrs)).toBeNull();
+    expect(banHero(null, attrs)).toBeNull();
+    expect(banHero({}, attrs)).toBeNull();
   });
 });

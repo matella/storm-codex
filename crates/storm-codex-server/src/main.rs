@@ -9,12 +9,14 @@ mod config;
 mod dim;
 mod draft;
 mod jarvis;
+mod live;
 mod lobby;
 mod manage;
 pub mod project;
 mod raw;
 mod read;
 mod replay2d;
+mod scouting;
 mod upload;
 mod ws;
 
@@ -28,7 +30,7 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock, Semaphore};
 
 /// Version du projecteur — bumper quand la projection change ; pilote le re-process idempotent.
-pub const PARSER_VERSION: i32 = 1;
+pub const PARSER_VERSION: i32 = 2;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -42,6 +44,8 @@ pub struct AppState {
     pub draft: Arc<RwLock<draft::DraftState>>,
     /// Lobby live courant (singleton, persisté dans `lobby_live`). `None` = aucun lobby.
     pub lobby: Arc<RwLock<Option<lobby::LobbyState>>>,
+    /// Partie en cours (feed live, en mémoire, jetable). `None` = aucune.
+    pub live: Arc<RwLock<Option<live::LiveSession>>>,
 }
 
 #[tokio::main]
@@ -121,6 +125,7 @@ async fn run() -> Result<(), String> {
         events,
         draft: Arc::new(RwLock::new(draft)),
         lobby: Arc::new(RwLock::new(lobby_initial)),
+        live: Arc::new(RwLock::new(None)),
     };
 
     // Référentiel héros/talents/patches + images (best-effort, refresh 24 h ; chaque nouveau patch →
@@ -205,6 +210,7 @@ fn api_router(state: &AppState) -> Router<AppState> {
         .route("/api/maps", get(read::list_maps))
         .route("/api/dim/heroes", get(read::dim_heroes))
         .route("/api/dim/talents", get(read::dim_talents))
+        .route("/api/dim/hero-attributes", get(read::dim_hero_attributes))
         .route("/api/matches.csv", get(read::matches_csv))
         .route("/api/trends", get(manage::trends))
         .route("/api/now-playing", get(read::now_playing))
@@ -249,6 +255,29 @@ fn api_router(state: &AppState) -> Router<AppState> {
         .route("/api/lobby/hero", post(lobby::api::set_hero))
         .route("/api/lobby/map", post(lobby::api::set_map))
         .route("/api/lobby/teams", post(lobby::api::set_teams))
+        // Feed live d'une partie en cours (blocs TempWriteReplayP1) + broadcast WS live.updated
+        .route("/api/live", get(live::api::get).delete(live::api::clear))
+        .route("/api/live/chunk", post(live::api::chunk))
+        .route("/api/live/end", post(live::api::end))
+        // Rapports de scouting (tables dédiées, jamais projetés dans matches)
+        .route("/api/scouting", get(scouting::api::list).post(scouting::api::create))
+        .route(
+            "/api/scouting/{id}",
+            get(scouting::api::get)
+                .patch(scouting::api::patch)
+                .delete(scouting::api::delete),
+        )
+        .route("/api/scouting/{id}/replays", post(scouting::api::add_replay))
+        .route(
+            "/api/scouting/{id}/replays/{gid}",
+            axum::routing::patch(scouting::api::set_side).delete(scouting::api::delete_replay),
+        )
+        .route("/api/scouting/{id}/pack.md", get(scouting::api::pack_md))
+        .route("/api/scouting/{id}/pack.xlsx", get(scouting::api::pack_xlsx))
+        .route(
+            "/api/scouting/{id}/analysis",
+            axum::routing::put(scouting::api::put_analysis).delete(scouting::api::delete_analysis),
+        )
         .route("/ws", any(ws::ws_handler))
         // portraits héros + images de cartes vendorisés (servis depuis images_dir)
         .nest_service(
@@ -355,6 +384,7 @@ mod api_tests {
             parse_sem: Arc::new(Semaphore::new(2)),
             events,
             lobby: Arc::new(RwLock::new(None)),
+            live: Arc::new(RwLock::new(None)),
             draft: Arc::new(RwLock::new(draft::DraftState::new(
                 draft::Format::Standard,
                 draft::Side::Blue,
@@ -385,6 +415,22 @@ mod api_tests {
         assert_eq!(v["parser_version"], PARSER_VERSION);
     }
 
+    /// Codes attribut des bans → noms parser (attr.json), y compris les codes en capitales.
+    #[tokio::test]
+    async fn dim_hero_attributes_resout_les_codes_de_ban() {
+        let Some(state) = test_state(None).await else { return };
+        let resp = app(&state)
+            .oneshot(Request::get("/api/dim/hero-attributes").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = json_body(resp).await;
+        assert_eq!(v["Crus"], "Johanna");
+        assert_eq!(v["DEAT"], "Deathwing");
+        assert_eq!(v["L90E"], "E.T.C.");
+        assert!(v.as_object().is_some_and(|o| o.len() >= 90));
+    }
+
     #[tokio::test]
     async fn admin_ferme_exige_bearer_et_ouvre_avec() {
         let Some(state) = test_state(Some("s3cret")).await else { return };
@@ -413,6 +459,107 @@ mod api_tests {
         assert_eq!(resp.status(), StatusCode::CREATED);
         let v = json_body(resp).await;
         assert!(v["token"].as_str().is_some_and(|t| !t.is_empty()));
+    }
+
+    /// Scouting bout-en-bout : création → dépôt d'un replay → lot ambigu (1 partie : les 10
+    /// joueurs à 100 %) → ancre → côté trouvé → faits → pack .md/.xlsx → import d'analyse →
+    /// écrasement. Et l'isolation : rien n'est écrit dans uploads/matches pour ce replay.
+    #[tokio::test]
+    async fn scouting_cycle_complet_et_isolation() {
+        let Some(state) = test_state(None).await else { return };
+        let replay = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../storm-replay/tests/data/2024-10-07 22.29.55 Industrial District.StormReplay");
+        let bytes = std::fs::read(&replay).expect("replay committé");
+        let sha = crate::upload::sha256_hex(&bytes);
+        let out = storm_stats::process_replay(&replay, "x");
+        let fp = crate::upload::game_fingerprint(&out).unwrap();
+        let counts = |db: sqlx::PgPool, sha: String, fp: String| async move {
+            let u: i64 = sqlx::query_scalar("SELECT count(*) FROM uploads WHERE fingerprint = $1")
+                .bind(&sha).fetch_one(&db).await.unwrap();
+            let m: i64 = sqlx::query_scalar("SELECT count(*) FROM matches WHERE fingerprint = $1")
+                .bind(&fp).fetch_one(&db).await.unwrap();
+            (u, m)
+        };
+        let before = counts(state.db.clone(), sha.clone(), fp.clone()).await;
+
+        let req = |method: &str, uri: String, body: Body| {
+            Request::builder().method(method).uri(uri).header("content-type", "application/json").body(body).unwrap()
+        };
+        let resp = app(&state)
+            .oneshot(req("POST", "/api/scouting".into(), Body::from(r#"{"title":"Test scout","target_name":"Team X"}"#)))
+            .await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let id = json_body(resp).await["id"].as_i64().unwrap();
+
+        let add = |b: Vec<u8>| {
+            Request::post(format!("/api/scouting/{id}/replays"))
+                .header("x-filename", "2024-10-07 22.29.55 Industrial%20District.StormReplay")
+                .body(Body::from(b)).unwrap()
+        };
+        let v = json_body(app(&state).oneshot(add(bytes.clone())).await.unwrap()).await;
+        assert_eq!(v["status"], "added", "{v}");
+        assert!(v["target_team"].is_null(), "lot d'une partie = ambigu, pas de côté : {v}");
+        let v = json_body(app(&state).oneshot(add(bytes.clone())).await.unwrap()).await;
+        assert_eq!(v["status"], "duplicate");
+
+        let detail = json_body(app(&state).oneshot(req("GET", format!("/api/scouting/{id}"), Body::empty())).await.unwrap()).await;
+        assert_eq!(detail["snapshot"]["detection"]["ambiguous"], true);
+        assert_eq!(detail["snapshot"]["facts"]["overview"]["excluded"], 1);
+        assert_eq!(detail["status"], "ready");
+        let anchor = detail["games"][0]["teams"][1][0]["toon"].as_str().unwrap().to_owned();
+
+        // ancre côté 1 → côté trouvé, roster = les 5 coéquipiers, 1 partie analysée
+        let body = serde_json::json!({ "anchors": [anchor] }).to_string();
+        let detail = json_body(app(&state).oneshot(req("PATCH", format!("/api/scouting/{id}"), Body::from(body))).await.unwrap()).await;
+        assert_eq!(detail["games"][0]["target_team"], 1, "{}", detail["games"]);
+        assert_eq!(detail["games"][0]["target_source"], "roster");
+        assert_eq!(detail["snapshot"]["roster"].as_array().unwrap().len(), 5);
+        assert_eq!(detail["snapshot"]["facts"]["overview"]["games"], 1);
+        let fv = detail["facts_version"].as_i64().unwrap();
+
+        // côté manuel puis retour à l'automatique
+        let body = r#"{"target_team":0}"#.to_string();
+        let gid = detail["games"][0]["gid"].as_i64().unwrap();
+        let d2 = json_body(app(&state).oneshot(req("PATCH", format!("/api/scouting/{id}/replays/{gid}"), Body::from(body))).await.unwrap()).await;
+        assert_eq!(d2["games"][0]["target_source"], "manual");
+        let d2 = json_body(app(&state).oneshot(req("PATCH", format!("/api/scouting/{id}/replays/{gid}"), Body::from(r#"{"target_team":null}"#))).await.unwrap()).await;
+        assert_eq!(d2["games"][0]["target_team"], 1);
+        let fv = d2["facts_version"].as_i64().unwrap().max(fv);
+
+        // packs
+        let resp = app(&state).oneshot(req("GET", format!("/api/scouting/{id}/pack.md"), Body::empty())).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let md = String::from_utf8(resp.into_body().collect().await.unwrap().to_bytes().to_vec()).unwrap();
+        assert!(md.contains(&format!("report_id: **{id}**")));
+        assert!(md.contains("`map.industrial_district.record`"));
+        let resp = app(&state).oneshot(req("GET", format!("/api/scouting/{id}/pack.xlsx"), Body::empty())).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let x = resp.into_body().collect().await.unwrap().to_bytes();
+        assert_eq!(&x[..2], b"PK");
+
+        // import : JSON cassé → 422 et rien d'écrit ; valide → importé ; ré-import → écrasé
+        let resp = app(&state).oneshot(req("PUT", format!("/api/scouting/{id}/analysis"), Body::from("```json\n{bad}\n```"))).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        // plan de draft v2 : 1 carte citant un fait réel + un id inconnu, 1 considération sans preuve
+        let analysis = |summary: &str| format!(
+            "Here you go:\n```json\n{{\"format_version\":2,\"report_id\":{id},\"facts_version\":{fv},\"summary\":\"{summary}\",\"maps\":[{{\"map\":\"Industrial District\",\"confidence\":\"low\",\"overview\":\"o\",\"evidence\":[\"map.industrial_district.record\",\"nope\"],\"considerations\":[{{\"point\":\"y\",\"evidence\":[]}}]}}]}}\n```");
+        let resp = app(&state).oneshot(req("PUT", format!("/api/scouting/{id}/analysis"), Body::from(analysis("first")))).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = json_body(resp).await;
+        assert_eq!(v["tally"]["claims"], 2, "{v}");
+        assert_eq!(v["tally"]["unsupported"], 1);
+        app(&state).oneshot(req("PUT", format!("/api/scouting/{id}/analysis"), Body::from(analysis("second")))).await.unwrap();
+        let detail = json_body(app(&state).oneshot(req("GET", format!("/api/scouting/{id}"), Body::empty())).await.unwrap()).await;
+        assert_eq!(detail["analysis"]["summary"], "second");
+        assert_eq!(detail["status"], "analyzed");
+        assert_eq!(detail["analysis"]["maps"][0]["evidence"][0]["known"], true);
+        assert_eq!(detail["analysis"]["maps"][0]["evidence"][1]["known"], false);
+
+        // isolation : aucune écriture dans uploads/matches pour ce replay
+        assert_eq!(counts(state.db.clone(), sha, fp).await, before);
+
+        let resp = app(&state).oneshot(req("DELETE", format!("/api/scouting/{id}"), Body::empty())).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
     }
 
     /// Bout-en-bout réel : création de token → upload d'un replay committé → parse → projection

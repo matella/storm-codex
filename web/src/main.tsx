@@ -2,7 +2,9 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
+import "./fonts";
 import "./theme.css";
+import "./ds.css";
 import App from "./App";
 
 const qc = new QueryClient({

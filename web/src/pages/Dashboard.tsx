@@ -1,99 +1,129 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { fetchMatches, modeBadge, fmtTime, fmtDur, pickOperator, matchOperator } from "../api";
-import { Avatar } from "../components/Avatar";
+import { fetchMatches, fmtDur, matchOperator, modeBadge, operatorNames, useSettings } from "../api";
+import { Pips, Portrait, SecHead } from "../components/ds";
+import { AwardTag, GameCard, mapArt } from "../components/ds/match";
+import { byHero, byMode, kda, lastSession, myGames, pctOf } from "../session";
 
+const MODE_NAME: Record<string, string> = { SL: "Storm League", HL: "Hero League", TL: "Team League", UD: "Unranked", QM: "Quick Match", ARAM: "ARAM", CUSTOM: "Custom" };
+const modeName = (mode: number | null) => MODE_NAME[modeBadge(mode).short] ?? modeBadge(mode).short;
+const modeFam = (label: string) => (label === "ARAM" ? "aram" : ["Storm League", "Hero League", "Team League", "Unranked"].includes(label) ? "sl" : "qm");
+
+/** Session — la dernière soirée de l'opérateur en couverture, ses parties, puis sa forme récente. */
 export function Dashboard() {
-  // assez de parties pour des stats opérateur représentatives (winrate récent, main héros)
-  const { data: matches } = useQuery({
-    queryKey: ["matches", "dashboard"],
-    queryFn: () => fetchMatches({ limit: 500 }),
-  });
+  useSettings(); // operator_names
+  const { data: matches, isLoading } = useQuery({ queryKey: ["matches", "dashboard"], queryFn: () => fetchMatches({ limit: 500 }) });
+  const configured = operatorNames().length > 0;
+  const games = myGames(matches ?? [], matchOperator);
+  const session = lastSession(games);
 
-  const last = matches?.[0];
-  const lastMe = last ? pickOperator(last.players ?? []) : undefined;
-
-  // stats DU POINT DE VUE OPÉRATEUR, calculées sur les parties où un nom configuré matche
-  let games = 0;
-  let wins = 0;
-  const heroCount = new Map<string, number>();
-  for (const m of matches ?? []) {
-    const me = matchOperator(m.players ?? []);
-    if (!me) continue;
-    games += 1;
-    if (m.winner != null && me.team === m.winner) wins += 1;
-    if (me.hero) heroCount.set(me.hero, (heroCount.get(me.hero) ?? 0) + 1);
+  if (isLoading) return <div className="ds-page"><div className="ds-empty" style={{ marginTop: 24 }}>loading…</div></div>;
+  if (!configured || games.length === 0) {
+    return (
+      <div className="ds-page">
+        <header className="ds-cover" style={{ marginTop: 18 }}>
+          <div className="ds-kicker">Session</div>
+          <h1 className="ds-title" style={{ cursor: "default" }}>No session yet</h1>
+          <div className="ds-subtitle" style={{ cursor: "default" }}>
+            {configured ? "None of your accounts appears in the archive yet — upload replays with the uploader." : "Tell Storm Codex which accounts are yours in Admin → operator names."}
+          </div>
+          <div className="ds-cover-foot"><Link className="ds-btn primary" to="/admin">Open Admin</Link><Link className="ds-btn" to="/matches">Browse matches</Link></div>
+        </header>
+      </div>
+    );
   }
-  const wr = games ? ((100 * wins) / games).toFixed(1) : "—";
-  const mainHero = [...heroCount.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "—";
-  const distinct = heroCount.size;
+
+  const wins = session.filter((g) => g.won).length;
+  const last = session[session.length - 1];
+  const first = session[0];
+  const played = session.reduce((s, g) => s + (g.m.length ?? 0), 0);
+  const tot = session.reduce((s, g) => { const x = kda(g.me); return { k: s.k + x.k, d: s.d + x.d, a: s.a + x.a }; }, { k: 0, d: 0, a: 0 });
+  const mvps = session.filter((g) => (g.me.award ?? "").includes("MVP")).length;
+  const heroes = [...new Set(session.map((g) => g.me.hero).filter(Boolean))] as string[];
+  const d0 = new Date(first.m.played_at ?? 0);
+  const isToday = new Date().toDateString() === new Date(last.m.played_at ?? 0).toDateString();
+  const hhmm = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : "");
+  const verdict = wins === session.length ? "Perfect night" : wins === 0 ? "Rough night" : wins > session.length - wins ? "Winning night" : wins === session.length - wins ? "Even night" : "Tough night";
+
+  const form = games.map((g) => g.won);
+  const formWins = form.filter(Boolean).length;
+  const heroes6 = byHero(games).slice(0, 6);
+  const maxHero = heroes6[0]?.games ?? 1;
+  const modes = byMode(games, modeName);
 
   return (
-    <>
-      <h1>Session</h1>
-      <p className="note">Dashboard — your latest game and your stats (operator perspective).</p>
-
-      <div className="card">
-        {last && (
-          <div className="card-hd">
-            <Avatar hero={lastMe?.hero ?? null} size={42} />
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 500 }}>
-                Last game — {lastMe?.hero ?? "?"} · {last.map}{" "}
-                <span className={`bdg ${modeBadge(last.mode).cls}`} style={{ marginLeft: 6 }}>
-                  {modeBadge(last.mode).short}
-                </span>
-                {lastMe?.team != null && last.winner != null && (
-                  <span
-                    className={`bdg ${lastMe.team === last.winner ? "b-win" : "b-loss"}`}
-                    style={{ marginLeft: 6 }}
-                  >
-                    {lastMe.team === last.winner ? "W" : "L"}
-                  </span>
-                )}
-              </div>
-              <div className="mono" style={{ fontSize: 11.5, color: "var(--text-2)", marginTop: 2 }}>
-                {fmtTime(last.played_at)} · {fmtDur(last.length)} ·{" "}
-                <Link to={`/match/${last.id}`} style={{ color: "var(--accent)" }}>details ›</Link>
-              </div>
-            </div>
-          </div>
-        )}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)" }}>
-          {[
-            ["Win rate", `${wr}%`],
-            ["My games", String(games)],
-            ["Heroes played", String(distinct)],
-            ["Main hero", mainHero],
-          ].map(([k, v], idx) => (
-            <div key={k} style={{ padding: "12px 18px", borderRight: idx < 3 ? "1px solid var(--hairline)" : undefined }}>
-              <p className="kick" style={{ margin: "0 0 3px" }}>{k}</p>
-              <p className="mono" style={{ margin: 0, fontSize: 15 }}>{v}</p>
-            </div>
-          ))}
+    <div className="ds-page">
+      <header className="ds-cover" style={{ marginTop: 18, ...mapArt(last.m.map) }}>
+        <div className="ds-kicker">
+          Session · {d0.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "long", year: "numeric" })} · {hhmm(first.m.played_at)} → {hhmm(last.m.played_at)}
         </div>
-      </div>
+        <div className="ds-cover-grid">
+          <div>
+            <h1 className="ds-title" style={{ cursor: "default" }}>{isToday ? "Tonight" : "Last session"}</h1>
+            <div className="ds-bigrec">{wins}<span>–</span>{session.length - wins}</div>
+            <Pips games={session.map((g) => ({ won: g.won }))} />
+            <div className="ds-subtitle" style={{ cursor: "default", marginTop: 6 }}>{verdict} — {session.length} game{session.length > 1 ? "s" : ""}, {fmtDur(played)} played</div>
+          </div>
+          <Link className="ds-lastgame" to={`/match/${last.m.id}`}>
+            {last.me.hero && <Portrait hero={last.me.hero} size={132} tone={last.won ? "pick" : "loss"} />}
+            <div>
+              <span className="ds-label">Last game</span>
+              <strong>{last.me.hero ?? "?"}</strong>
+              <em>{last.m.map} · {modeName(last.m.mode)}</em>
+              <span style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <span className={`ds-tag ${last.won ? "win" : "loss"}`}>{last.won ? "WIN" : "LOSS"}</span>
+                <AwardTag raw={last.me.award} />
+                <span className="ds-btn primary small">Open match ›</span>
+              </span>
+            </div>
+          </Link>
+        </div>
+        <div className="ds-statline">
+          <div className="ds-stat"><span className="ds-label">Win rate</span><strong>{pctOf(wins, session.length)}<span>%</span></strong><small>{wins}/{session.length}</small></div>
+          <div className="ds-stat"><span className="ds-label">K / D / A</span><strong>{tot.k}<span>/</span>{tot.d}<span>/</span>{tot.a}</strong>
+            <small>{((tot.k + tot.a) / Math.max(tot.d, 1)).toFixed(1)} KDA ratio</small></div>
+          <div className="ds-stat"><span className="ds-label">MVP</span><strong>{mvps}</strong><small>of {session.length} game{session.length > 1 ? "s" : ""}</small></div>
+          <div className="ds-stat"><span className="ds-label">Heroes</span><strong>{heroes.length}</strong><small>{heroes.join(" · ")}</small></div>
+        </div>
+      </header>
 
-      <p className="cap">Recent matches</p>
-      <div className="card">
-        {matches?.slice(0, 6).map((m) => {
-          const me = pickOperator(m.players ?? []);
-          return (
-            <Link key={m.id} to={`/match/${m.id}`} className="row link">
-              <span className="mono muted" style={{ minWidth: 92, fontSize: 11 }}>{fmtTime(m.played_at)}</span>
-              <span className={`bdg ${modeBadge(m.mode).cls}`}>{modeBadge(m.mode).short}</span>
-              <Avatar hero={me?.hero ?? null} />
-              <span style={{ fontSize: 12 }}>{m.map}</span>
-              {me?.team != null && m.winner != null && (
-                <span className={`bdg ${me.team === m.winner ? "b-win" : "b-loss"}`}>
-                  {me.team === m.winner ? "W" : "L"}
-                </span>
-              )}
-              <span style={{ marginLeft: "auto", color: "var(--kicker)", fontSize: 10 }}>{fmtDur(m.length)} ›</span>
-            </Link>
-          );
-        })}
-      </div>
-    </>
+      <section className="ds-sec">
+        <SecHead num={1} title={isToday ? "Tonight's games" : "Session games"} sub="newest first" />
+        <div className="ds-gcards">{[...session].reverse().map((g) => <GameCard key={g.m.id} m={g.m} me={g.me} won={g.won} />)}</div>
+      </section>
+
+      <section className="ds-sec">
+        <SecHead num={2} title="Your form" sub={`last ${games.length} games in the archive`} />
+        <div className="ds-grid2">
+          <div className="ds-panel">
+            <span className="ds-label">Last {Math.min(30, form.length)} results · newest left</span>
+            <Pips games={form.slice(0, 30).map((won) => ({ won }))} />
+            <div className="ds-formstats">
+              <div><strong>{pctOf(formWins, form.length)}<span>%</span></strong><em>win rate · {formWins}/{form.length}</em></div>
+              <div><strong>{form.slice(0, 10).filter(Boolean).length}<span>/{Math.min(10, form.length)}</span></strong><em>last ten</em></div>
+            </div>
+            <span className="ds-label" style={{ marginTop: 22 }}>By mode</span>
+            {modes.map((t) => (
+              <div key={t.key} className="ds-modrow">
+                <span><span className={`ds-mode ${modeFam(t.key)}`}>{t.key}</span></span>
+                <i className="ds-bar"><b style={{ width: `${pctOf(t.wins, t.games)}%` }} /></i>
+                <em>{pctOf(t.wins, t.games)}% · {t.wins}/{t.games}</em>
+              </div>
+            ))}
+          </div>
+          <div className="ds-panel">
+            <span className="ds-label">Most played</span>
+            {heroes6.map((h) => (
+              <Link key={h.key} to={`/hero/${encodeURIComponent(h.key)}`} className="ds-hrow">
+                <Portrait hero={h.key} size={34} />
+                <span>{h.key}</span>
+                <i className="ds-bar"><b style={{ width: `${Math.round((h.games * 100) / maxHero)}%` }} /></i>
+                <em>{h.games}g · {pctOf(h.wins, h.games)}%</em>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }

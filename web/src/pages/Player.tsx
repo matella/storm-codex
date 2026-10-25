@@ -1,80 +1,87 @@
+import { useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useParams, useNavigate } from "react-router-dom";
-import { fetchPlayer, modeBadge, fmtTime, awardLabel } from "../api";
-import { Avatar } from "../components/Avatar";
+import { useParams, useNavigate, Link } from "react-router-dom";
+import { fetchPlayer, fmtTime, awardLabel } from "../api";
+import { Portrait, SecHead, heroRing } from "../components/ds";
+import { ModeTag, hasMapArt, mapArt } from "../components/ds/match";
 
+const pct = (w: number, g: number) => (g ? Math.round((100 * w) / g) : 0);
+
+/** Player — couverture au portrait de son héros le plus joué, réserve de héros, parties récentes. */
 export function Player() {
   const { toon } = useParams();
   const nav = useNavigate();
   const { data, isLoading } = useQuery({ queryKey: ["player", toon], queryFn: () => fetchPlayer(toon!) });
-  if (isLoading) return <div className="empty">loading…</div>;
-  if (!data) return <div className="empty">player not found</div>;
-  const wr = data.matches ? ((100 * data.wins) / data.matches).toFixed(1) : "—";
+  const [allHeroes, setAllHeroes] = useState(false);
+  if (isLoading) return <div className="ds-page"><div className="ds-empty" style={{ marginTop: 24 }}>loading…</div></div>;
+  if (!data) return <div className="ds-page"><div className="ds-empty" style={{ marginTop: 24 }}>Player not found. <Link to="/matches">Back to matches</Link></div></div>;
+  const main = data.heroes[0]?.hero ?? null;
+  const wr = pct(data.wins, data.matches);
   const kdaRatio = ((data.avg_takedowns ?? 0) / Math.max(1, data.avg_deaths ?? 0)).toFixed(1);
+  const maxG = data.heroes[0]?.games ?? 1;
+  const others = data.names.filter((n) => n !== data.name);
 
   return (
-    <>
-      <h1>{data.name ?? data.toon}</h1>
-      <p className="note mono">{data.toon} · alias : {data.names.join(", ") || "—"}</p>
-      <div className="card">
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)" }}>
-          {[
-            ["Games", String(data.matches)],
-            ["Wins", String(data.wins)],
-            ["Win rate", `${wr}%`],
-            ["Avg KDA", `${data.avg_kills}/${data.avg_deaths}/${data.avg_takedowns}`],
-            ["KDA ratio", kdaRatio],
-          ].map(([k, v], i) => (
-            <div key={k} style={{ padding: "12px 18px", borderRight: i < 4 ? "1px solid var(--hairline)" : undefined }}>
-              <p className="kick" style={{ margin: "0 0 3px" }}>{k}</p>
-              <p className="mono" style={{ margin: 0, fontSize: 15 }}>{v}</p>
-            </div>
-          ))}
+    <div className="ds-page">
+      <header className="ds-hhead" style={{ "--ring": heroRing(main) } as CSSProperties}>
+        {main && <Portrait hero={main} size={160} className="xl" />}
+        <div className="ds-hhead-txt">
+          <div className="ds-kicker">Player · {data.toon}</div>
+          <h1 className="ds-title" style={{ cursor: "default" }}>{data.name ?? data.toon}</h1>
+          {others.length > 0 && <div className="ds-subtitle" style={{ cursor: "default" }}>also seen as {others.join(", ")}</div>}
+          <div className="ds-statline" style={{ marginTop: 16 }}>
+            <div className="ds-stat"><span className="ds-label">Win rate</span><strong>{wr}<span>%</span></strong><small>{data.wins}–{data.matches - data.wins} · {data.matches} games</small></div>
+            <div className="ds-stat"><span className="ds-label">Avg K / D / T</span><strong>{data.avg_kills ?? "—"}<span>/</span>{data.avg_deaths ?? "—"}<span>/</span>{data.avg_takedowns ?? "—"}</strong><small>KDA ratio {kdaRatio}</small></div>
+            <div className="ds-stat"><span className="ds-label">Heroes</span><strong>{data.heroes.length}</strong><small>{main ? `main: ${main}` : ""}</small></div>
+          </div>
         </div>
-      </div>
+      </header>
 
-      <p className="cap">Hero pool</p>
-      <div className="card">
-        <table>
-          <thead><tr><th>Heroes</th><th>Games</th><th>Win rate</th><th>Avg KDA</th></tr></thead>
-          <tbody>
-            {data.heroes.map((h) => {
-              const r = h.games ? (100 * h.wins) / h.games : 0;
+      <section className="ds-sec">
+        <SecHead num={1} title="Hero pool" sub={data.heroes.length > 18
+          ? <span className="ds-pill" onClick={() => setAllHeroes(!allHeroes)}>{allHeroes ? "top 18" : `show all ${data.heroes.length}`}</span>
+          : "games · win rate · avg K/D/T"} />
+        <div className="ds-panel">
+          <div className="ds-pool">
+            {(allHeroes ? data.heroes : data.heroes.slice(0, 18)).map((h) => {
+              const p = pct(h.wins, h.games);
               return (
-                <tr key={h.hero}>
-                  <td><span style={{ display: "flex", alignItems: "center", gap: 8 }}><Avatar hero={h.hero} size={20} /> {h.hero}</span></td>
-                  <td className="mono">{h.games}</td>
-                  <td className="mono" style={{ color: r >= 50 ? "var(--win)" : "var(--loss)" }}>{r.toFixed(0)}%</td>
-                  <td className="mono muted">{h.avg_kills}/{h.avg_deaths}/{h.avg_takedowns}</td>
-                </tr>
+                <Link key={h.hero} to={`/hero/${encodeURIComponent(h.hero)}`} className="ds-poolrow">
+                  <Portrait hero={h.hero} size={34} />
+                  <span>{h.hero}</span>
+                  <i className="ds-bar"><b style={{ width: `${Math.round((h.games * 100) / maxG)}%` }} /></i>
+                  <span className={`wr ${p >= 55 ? "hot" : p < 45 ? "cold" : ""}`}>{p}% · {h.games}g</span>
+                  <em>{h.avg_kills}/{h.avg_deaths}/{h.avg_takedowns}</em>
+                </Link>
               );
             })}
-          </tbody>
-        </table>
-      </div>
+          </div>
+        </div>
+      </section>
 
-      <p className="cap">Recent games</p>
-      <div className="card">
-        <table>
-          <thead><tr><th>When</th><th>Mode</th><th>Hero</th><th>Map</th><th>Result</th><th>KDA</th></tr></thead>
-          <tbody>
-            {data.recent.map((g) => {
-              const mb = modeBadge(g.mode);
-              const aw = awardLabel(g.award);
-              return (
-                <tr key={g.match_id} className="link" onClick={() => nav(`/match/${g.match_id}`)}>
-                  <td className="mono muted" style={{ fontSize: 11 }}>{fmtTime(g.played_at)}</td>
-                  <td><span className={`bdg ${mb.cls}`}>{mb.short}</span></td>
-                  <td><span style={{ display: "flex", alignItems: "center", gap: 7 }}><Avatar hero={g.hero} size={18} /> {g.hero}{aw && <span title={aw.label} style={{ fontSize: 11 }}>{aw.mvp ? "👑" : aw.icon}</span>}</span></td>
-                  <td style={{ fontSize: 12 }}>{g.map}</td>
-                  <td><span className={`bdg ${g.win ? "b-win" : "b-loss"}`}>{g.win ? "W" : "L"}</span></td>
-                  <td className="mono">{g.kills}/{Math.max(0, (g.takedowns ?? 0) - (g.kills ?? 0))}/{g.deaths}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </>
+      <section className="ds-sec">
+        <SecHead num={2} title="Recent games" />
+        <div className="ds-mlist">
+          {data.recent.map((g) => {
+            const aw = awardLabel(g.award);
+            const a = Math.max(0, (g.takedowns ?? 0) - (g.kills ?? 0));
+            return (
+              <div key={g.match_id} className={`ds-mrow ${g.win ? "w" : "l"}`} style={hasMapArt(g.map) ? mapArt(g.map) : undefined}
+                onClick={() => nav(`/match/${g.match_id}`)} role="link" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter") nav(`/match/${g.match_id}`); }}>
+                <span className="when">{fmtTime(g.played_at)}</span>
+                <span><ModeTag mode={g.mode} short /></span>
+                {g.hero ? <Portrait hero={g.hero} size={40} tone={g.win ? "pick" : "loss"} /> : <span />}
+                <span className="what"><span className="map">{g.map ?? "—"}</span><span className="hero">{g.hero} · <span className="ds-kda">{g.kills}<i>/</i>{g.deaths}<i>/</i>{a}</span></span></span>
+                <span style={{ display: "flex", gap: 6 }}>
+                  <span className={`ds-tag ${g.win ? "win" : "loss"}`}>{g.win ? "WIN" : "LOSS"}</span>
+                  {aw?.mvp && <span className="ds-tag mvp">👑 MVP</span>}
+                </span>
+                <span className="len">›</span>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    </div>
   );
 }

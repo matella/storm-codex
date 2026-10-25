@@ -284,6 +284,14 @@ pub async fn dim_heroes(State(s): State<AppState>) -> Resp {
     Ok(Json(v))
 }
 
+/// GET /api/dim/hero-attributes — code attribut héros (4 lettres) → nom canonique du parser
+/// (`heroAttribute` de `attr.json`, figé dans storm-stats). Sert à résoudre les bans du draft,
+/// que storm-stats stocke bruts (`match.bans[t][i].hero` = « Crus », « DEAT »…). Statique, sans DB :
+/// `dim_heroes` ne porte pas l'`attributeId` (absent de la liste HotsPatchNotes).
+pub async fn dim_hero_attributes() -> Json<J> {
+    Json(storm_stats::constants::hero_attribute().clone())
+}
+
 /// GET /api/dim/talents — référentiel talents (`talentTreeId` → nom/tier/héros/icône) pour
 /// afficher les builds dans la fiche de match. Clé = la valeur stockée par le parser.
 pub async fn dim_talents(State(s): State<AppState>) -> Resp {

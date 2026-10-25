@@ -2,6 +2,8 @@
 import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Replay2D } from "./replay2d";
+import type { ScoutingListItem, ScoutingReport } from "./scouting";
+import type { LiveScope, LiveView } from "./live";
 
 export interface MatchPlayer {
   toon: string;
@@ -268,6 +270,9 @@ export function useLiveUpdates(onEvent?: (ev: { type?: string; match_id?: number
           } else if (ev.type === "draft.updated") {
             qc.invalidateQueries({ queryKey: ["draft"] });
             onEvent?.(ev);
+          } else if (ev.type === "live.updated") {
+            // Signal sans état : la vue filtrée se relit par GET /api/live. Pas de toast.
+            qc.invalidateQueries({ queryKey: ["live"] });
           }
         } catch {
           /* ignore */
@@ -349,9 +354,33 @@ export function universeColor(hero: string | null): string {
   const u = dimHero(hero)?.universe;
   return (u && UNIVERSE_COLOR[u]) || "var(--u-nexus)";
 }
+/** Univers du héros (Warcraft, StarCraft…) — null si inconnu. */
+export function heroUniverse(hero: string | null): string | null {
+  return dimHero(hero)?.universe ?? null;
+}
 /** Portrait du héros (vendorisé, servi sur /images) — null si inconnu (→ fallback initiales). */
 export function heroIcon(hero: string | null): string | null {
   return dimHero(hero)?.icon || null;
+}
+
+// ── codes attribut héros (attr.json de storm-stats) : bans du draft ────────────
+/** Code attribut 4 lettres (« Crus », « DEAT ») → nom canonique du parser (« Johanna »). */
+export type DimHeroAttributes = Record<string, string>;
+export function useDimHeroAttributes() {
+  const q = useQuery({
+    queryKey: ["dim-hero-attributes"],
+    queryFn: () => get<DimHeroAttributes>("/api/dim/hero-attributes"),
+    staleTime: Infinity,
+  });
+  return q.data;
+}
+/** Ban de draft (`match.bans[t][i]` : `{hero}` ou chaîne) → nom de héros, utilisable par `Avatar`.
+ *  storm-stats stocke le code attribut brut ; code inconnu ou référentiel pas encore chargé →
+ *  le code tel quel ; ban vide (tour passé) → null. */
+export function banHero(ban: unknown, attrs: DimHeroAttributes | undefined): string | null {
+  const code = typeof ban === "string" ? ban : (ban as { hero?: unknown } | null)?.hero;
+  if (typeof code !== "string" || !code) return null;
+  return attrs?.[code] ?? code;
 }
 
 // ── référentiel talents (dim_talents) : talentTreeId → nom/tier/héros ─────────
@@ -646,4 +675,57 @@ export function useDraft() {
 export function sideOfStep(d: DraftState, step: DraftStep): Side {
   if (step.order === "first") return d.first_pick;
   return d.first_pick === "blue" ? "red" : "blue";
+}
+
+// ── Rapports de scouting (/api/scouting/*) ────────────────────────────────────
+
+/** Écriture authentifiée : Bearer du token admin saisi dans Admin (localStorage), s'il existe.
+ *  En mode ouvert (pas d'ADMIN_TOKEN serveur), l'en-tête est simplement ignoré. */
+export function scoutingWrite(url: string, init: RequestInit = {}): Promise<Response> {
+  const token = localStorage.getItem("admin_token") ?? "";
+  return fetch(url, {
+    ...init,
+    headers: { ...(init.headers ?? {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+  });
+}
+
+export function useScoutingList() {
+  return useQuery({
+    queryKey: ["scouting"],
+    queryFn: async () => (await fetch("/api/scouting")).json() as Promise<ScoutingListItem[]>,
+  });
+}
+
+export function useScoutingReport(id: string | undefined) {
+  return useQuery({
+    queryKey: ["scouting", id],
+    enabled: !!id,
+    queryFn: async () => {
+      const r = await fetch(`/api/scouting/${id}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json() as Promise<ScoutingReport>;
+    },
+  });
+}
+
+// ── Feed live d'une partie en cours (/api/live) ───────────────────────────────
+
+/** Vue filtrée de la partie en cours ; `null` si aucune (204). */
+export async function fetchLive(scope: LiveScope, me: number | null): Promise<LiveView | null> {
+  const q = new URLSearchParams({ scope });
+  if (me != null) q.set("me", String(me));
+  const r = await fetch(`/api/live?${q.toString()}`);
+  if (r.status === 204) return null;
+  if (!r.ok) throw new Error(`/api/live → ${r.status}`);
+  return r.json() as Promise<LiveView>;
+}
+
+/** Partie en cours, rafraîchie par le WS (`live.updated`, via `useLiveUpdates` du Layout) ; le
+ *  `refetchInterval` rattrape un WS coupé. */
+export function useLive(scope: LiveScope, me: number | null) {
+  return useQuery({
+    queryKey: ["live", scope, me],
+    queryFn: () => fetchLive(scope, me),
+    refetchInterval: 15_000,
+  });
 }

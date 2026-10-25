@@ -1,75 +1,84 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { fetchSynergies } from "../api";
-import { Avatar } from "../components/Avatar";
+import { Portrait, SecHead } from "../components/ds";
 
 type Sort = "winrate" | "games";
+const pct = (w: number, g: number) => (g ? Math.round((100 * w) / g) : 0);
+const tone = (p: number) => (p >= 55 ? "hot" : p < 45 ? "cold" : "");
 
-/** Tri d'une liste {games,wins} par WR (min 1 partie) ou volume. */
+/** Tri d'une liste {games,wins} par winrate ou par volume. */
 function sorted<T extends { games: number; wins: number }>(rows: T[], by: Sort): T[] {
   const wr = (r: T) => (r.games ? r.wins / r.games : 0);
-  return [...rows].sort((a, b) => (by === "winrate" ? wr(b) - wr(a) : b.games - a.games));
+  return [...rows].sort((a, b) => (by === "winrate" ? wr(b) - wr(a) || b.games - a.games : b.games - a.games));
 }
 
+/** Synergies — du point de vue de l'opérateur : coéquipiers récurrents et héros affrontés. */
 export function Synergies() {
   const { data, isLoading } = useQuery({ queryKey: ["synergies"], queryFn: fetchSynergies });
-  const nav = useNavigate();
+  const [sort, setSort] = useState<Sort>("winrate");
+  const maxT = Math.max(1, ...(data?.teammates ?? []).map((t) => t.games));
+  const maxE = Math.max(1, ...(data?.enemies ?? []).map((e) => e.games));
+  const initials = (n: string) => n.replace(/[^\p{L}\p{N}]/gu, "").slice(0, 2).toUpperCase() || "?";
 
   return (
-    <>
-      <h1>Synergies</h1>
-      <p className="note">From your perspective, across all your accounts. Allies you played ≥3 games with, and enemy heroes you faced ≥3 times.</p>
-
-      {isLoading && <div className="empty">loading…</div>}
+    <div className="ds-page">
+      <header className="ds-cover" style={{ marginTop: 18 }}>
+        <div className="ds-kicker">Synergies</div>
+        <h1 className="ds-title" style={{ cursor: "default" }}>With &amp; against</h1>
+        <div className="ds-subtitle" style={{ cursor: "default" }}>From your perspective, across all your accounts — allies you played 3+ games with, enemy heroes you faced 3+ times.</div>
+        <div className="ds-filterbar">
+          <span className="ds-label" style={{ margin: 0 }}>Sort</span>
+          <span className={sort === "winrate" ? "ds-pill on" : "ds-pill"} onClick={() => setSort("winrate")}>Win rate</span>
+          <span className={sort === "games" ? "ds-pill on" : "ds-pill"} onClick={() => setSort("games")}>Games</span>
+        </div>
+      </header>
+      {isLoading && <div className="ds-empty" style={{ marginTop: 20 }}>loading…</div>}
       {data && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-          <div>
-            <p className="cap">Best teammates (by win rate)</p>
-            <div className="card">
-              <table>
-                <thead><tr><th>Ally</th><th>Games</th><th>W–L</th><th>Win rate</th></tr></thead>
-                <tbody>
-                  {sorted(data.teammates, "winrate").map((t) => {
-                    const w = (100 * t.wins) / t.games;
-                    return (
-                      <tr key={t.name}>
-                        <td>{t.name}</td>
-                        <td className="mono">{t.games}</td>
-                        <td className="mono"><span style={{ color: "var(--win)" }}>{t.wins}</span>-<span style={{ color: "var(--loss)" }}>{t.games - t.wins}</span></td>
-                        <td className="mono" style={{ color: w >= 50 ? "var(--win)" : "var(--loss)" }}>{w.toFixed(0)}%</td>
-                      </tr>
-                    );
-                  })}
-                  {data.teammates.length === 0 && <tr><td colSpan={4} className="empty">no recurring teammates</td></tr>}
-                </tbody>
-              </table>
+        <div className="ds-grid2" style={{ marginTop: 10 }}>
+          <section className="ds-sec" style={{ marginTop: 30 }}>
+            <SecHead num={1} title="Teammates" sub={`${data.teammates.length} recurring`} />
+            <div className="ds-panel">
+              <div className="ds-rows">
+                {sorted(data.teammates, sort).map((t) => {
+                  const p = pct(t.wins, t.games);
+                  return (
+                    <div key={t.name} className="ds-srow">
+                      <span className="ds-initial">{initials(t.name)}</span>
+                      <span className="nm">{t.name}</span>
+                      <i className="ds-bar"><b style={{ width: `${Math.round((t.games * 100) / maxT)}%` }} /></i>
+                      <span className={`wr ${tone(p)}`}>{p}%</span>
+                      <em>{t.wins}–{t.games - t.wins}</em>
+                    </div>
+                  );
+                })}
+                {data.teammates.length === 0 && <div className="ds-empty-row">no recurring teammates</div>}
+              </div>
             </div>
-          </div>
-
-          <div>
-            <p className="cap">Vs enemy heroes (your win rate)</p>
-            <div className="card">
-              <table>
-                <thead><tr><th>Enemy hero</th><th>Faced</th><th>W–L</th><th>Win rate</th></tr></thead>
-                <tbody>
-                  {sorted(data.enemies, "winrate").map((e) => {
-                    const w = (100 * e.wins) / e.games;
-                    return (
-                      <tr key={e.hero} className="link" onClick={() => nav(`/hero/${encodeURIComponent(e.hero)}`)}>
-                        <td><span style={{ display: "flex", alignItems: "center", gap: 7 }}><Avatar hero={e.hero} size={20} /> {e.hero}</span></td>
-                        <td className="mono">{e.games}</td>
-                        <td className="mono"><span style={{ color: "var(--win)" }}>{e.wins}</span>-<span style={{ color: "var(--loss)" }}>{e.games - e.wins}</span></td>
-                        <td className="mono" style={{ color: w >= 50 ? "var(--win)" : "var(--loss)" }}>{w.toFixed(0)}%</td>
-                      </tr>
-                    );
-                  })}
-                  {data.enemies.length === 0 && <tr><td colSpan={4} className="empty">not enough data</td></tr>}
-                </tbody>
-              </table>
+          </section>
+          <section className="ds-sec" style={{ marginTop: 30 }}>
+            <SecHead num={2} title="Against heroes" sub="your win rate when they are in front" />
+            <div className="ds-panel">
+              <div className="ds-rows">
+                {sorted(data.enemies, sort).map((e) => {
+                  const p = pct(e.wins, e.games);
+                  return (
+                    <Link key={e.hero} to={`/hero/${encodeURIComponent(e.hero)}`} className="ds-srow">
+                      <Portrait hero={e.hero} size={34} tone={p < 45 ? "red" : "plain"} />
+                      <span className="nm">{e.hero}</span>
+                      <i className="ds-bar"><b style={{ width: `${Math.round((e.games * 100) / maxE)}%` }} /></i>
+                      <span className={`wr ${tone(p)}`}>{p}%</span>
+                      <em>{e.wins}–{e.games - e.wins}</em>
+                    </Link>
+                  );
+                })}
+                {data.enemies.length === 0 && <div className="ds-empty-row">not enough data</div>}
+              </div>
             </div>
-          </div>
+          </section>
         </div>
       )}
-    </>
+    </div>
   );
 }

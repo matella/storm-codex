@@ -25,6 +25,39 @@ POST /api/upload(-raw)  [Bearer token nominatif]
   replays longs (> 2 Mo) et faisait boucler l'uploader.
 - `X-Filename` est **percent-décodé** (apostrophes de cartes : Blackheart's Bay).
 
+## Correction du héros joué (`project.rs`)
+
+En ARAM (3 héros proposés + reroll), l'attribut `4002` que lit le parser — fidèle à hots-parser
+7.55.7, qui fait pareil — capte souvent un héros **proposé**, pas celui joué (ex. Braxis Outpost,
+build 98348 : les 10 héros parser sont faux, Kel'Thuzad sort « Kharazim »). storm-stats reste un
+port fidèle ; la correction vit dans la projection :
+
+- héros joué = **vote majoritaire des talents** du joueur via `dim_talents.tree_id → hero_id`
+  (`talent_hero`) ; aucun talent résoluble ou référentiel vide → héros du parser conservé ;
+- résolu **avant** l'écriture de `matches.data`, et appliqué partout où storm-stats a copié le
+  héros au moment de l'événement : `players[].hero` (original tracé dans `heroCorrectedFrom`),
+  `victim.hero` / `killers[].hero` de `players[].deaths`, `players[].takedowns` (de **tous** les
+  joueurs) et `match.takedowns`. Remplacement **par handle** (`player`), jamais par nom de héros
+  (deux joueurs peuvent avoir le même héros parser) ; le killer `"0"` « Nexus Forces » est intact ;
+- ne couvre pas encore (même cause, encore aux noms `4002`) : `match.heroes`,
+  `match.teams[].heroes`, `players[].with.heroes`, `players[].against.heroes` et les picks.
+
+Les comptes de morts/takedowns ne changent pas (seuls les noms sont réécrits). Un match projeté
+avant ce correctif se rafraîchit par `POST /api/admin/reprocess` (`PARSER_VERSION` 2), qui re-parse
+aussi les `scouting_games` — effet de bord : chaque rapport touché est recalculé
+(`facts_version + 1`), donc une analyse importée passe `stale` alors que ses faits ne dépendent
+pas de cette projection.
+
+## Scouting (`scouting/`)
+
+Chemin **séparé** du pipeline d'upload : `POST /api/scouting/{id}/replays` archive dans
+`ARCHIVE_DIR/scouting/<sha256>.StormReplay`, parse sur le même pool (`parse_sem`), résume
+(`summary.rs`) et insère dans `scouting_games` — jamais dans `uploads`/`matches`. Cœur pur testé
+unitairement (`summary`, `side`, `facts`, `pack`, `xlsx`, `analysis`) ; `api.rs` recalcule les
+faits sous verrou de ligne du rapport (`SELECT … FOR UPDATE`) à chaque mutation. Rôles des héros :
+`dim_heroes.data->>'expandedRole'` (le `gameStats.Role` du parser vaut 0 en partie perso).
+`POST /api/admin/reprocess` re-parse aussi les `scouting_games` périmés puis recalcule.
+
 ## Fingerprints (dédup à deux niveaux)
 
 - `uploads.fingerprint` = SHA-256 du **contenu du fichier** — dédup rapide pré-parse.
@@ -52,6 +85,20 @@ Moteur **pur, zéro I/O** (`mod.rs`) : un format = liste ordonnée d'étapes `{o
 autoritatif en mémoire (`AppState.draft`), **persisté** dans `draft_live` (JSONB, id=1),
 rechargé au démarrage. Chaque mutation broadcast `draft.updated` sur `/ws`.
 Design : `docs/specs/2026-06-19-draft-simulator-design.md`.
+
+## Feed live (`live/`)
+
+Partie en cours, alimentée par `POST /api/live/chunk` (blocs de `TempWriteReplayP1`). `mod.rs` :
+session unique en mémoire (`AppState.live`, jamais persistée — le replay archivé reste la source
+de vérité), un `storm_replay::StreamDecoder` par stream, idempotence par offset (`plan_chunk`,
+fonction pure : doublon ignoré, chevauchement rogné, trou → `409`), plafonds mémoire (64 Mo par
+stream → `413`, fil borné à 2 000 éléments, timelines d'aptitudes limitées à 3 min), statut `live`/`ended`/
+`unreadable` (une erreur de décodage fige la session sans jamais inventer d'état). `state.rs` :
+réducteur **pur** (héros, niveaux d'équipe, talents, morts/takedowns, camps, objectifs, ordres
+d'aptitude par `_userid` avec dédup 0,3 s) et vue filtrée par niveau `self`/`allies`/`all`.
+Héros : `hero_units.json` (unité du tracker → nom canonique, 90/90), dérivé de l'archive par
+`examples/derive_hero_units.rs`. Simulateur de bout en bout : `examples/live_sim.rs`.
+Design : `docs/specs/2026-10-24-feed-live-en-partie-design.md`.
 
 ## Configuration (env — `config.rs`, modèle : `.env.example`)
 

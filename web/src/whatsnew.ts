@@ -1,9 +1,20 @@
 // Changelog produit (nos features storm-codex, distinct des patch notes HotS).
 // `version` croissante (date) ; le panneau « What's new » montre les entrées plus récentes que la
 // dernière vue (localStorage). Ajoute une entrée en tête à chaque lot de nouveautés.
-export const APP_VERSION = "2026.06.16";
+export const APP_VERSION = "2026.09.26";
 
 export const CHANGELOG: { version: string; title: string; items: string[] }[] = [
+  {
+    version: "2026.09.26",
+    title: "Scouting reports",
+    items: [
+      "Nouvelle page Scouting : dépose les replays d'une équipe adverse, ses tendances sortent en chiffres (draft, cartes, joueurs, déroulé).",
+      "Pack LLM à copier (Markdown) ou télécharger (.md / .xlsx) pour ChatGPT, Claude ou un modèle local.",
+      "Import de l'analyse du LLM : chaque affirmation affiche les chiffres qui la fondent, les affirmations sans preuve sont signalées.",
+      "Joueur ancre pour désigner l'équipe scoutée quand les replays ne suffisent pas (série contre un même adversaire).",
+      "Plan de draft carte par carte (bans, picks, leurs picks probables) et export HTML autonome à envoyer à l'équipe.",
+    ],
+  },
   {
     version: "2026.06.16",
     title: "Patch notes, synergies & timeline",

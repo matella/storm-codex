@@ -48,7 +48,7 @@ indépendamment (MIT).
 |---|---|---|
 | Parse complet (decode + stats) | < 150 ms/replay | 133 ms médiane (`docs/research/2026-06-12-jalon2-parite.md`) |
 | Fin de partie → page à jour | < 5 s | 1,4 s (`docs/research/2026-06-12-jalon3-bench.md`) |
-| API p95 | < 100 ms | 52 ms (idem) |
+| API p95 | < 100 ms | 52 ms (idem) ; `GET /api/scouting/{id}` : 5,9 ms (25 requêtes, rapport réel de 3 parties, 2026-09-26) |
 | Backfill archive 3 ans (~2 800) | < 5 min | 1,8 min (idem) |
 
 Toute PR qui risque un budget re-mesure (benchs : `storm-stats-dump --bench`,
@@ -56,7 +56,7 @@ Toute PR qui risque un budget re-mesure (benchs : `storm-stats-dump --bench`,
 
 ## Décisions verrouillées (opérateur — ne pas rouvrir sans lui)
 
-Rust (spike GO, repli .NET écarté) · Postgres · design Nexus Codex · remplacement du serveur
+Rust (spike GO, repli .NET écarté) · Postgres · design Nexus Codex · Dossier (évolution validée le 2026-09-27, spec `2026-09-27-design-dossier-app-design.md`) · remplacement du serveur
 Node local · V1 = parité SotS totale · pas de pré-game · pas de migration de données (backfill) ·
 **overlay local uniquement** (extension Twitch/Azure abandonnée, `azure.rs` dormant) ·
 nom Storm Codex. Détail et rationale : `docs/specs/` (datées).

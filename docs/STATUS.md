@@ -1,5 +1,114 @@
 # STATUS — lire d'abord, mettre à jour en dernier
 
+## Feed live en partie — serveur + page `/live` LIVRÉS le 2026-10-24 (vérifié par simulateur)
+Spec `docs/specs/2026-10-24-feed-live-en-partie-design.md` (décisions opérateur du 2026-10-24) ·
+plan `docs/plans/2026-10-24-feed-live.md` · mesures `docs/research/2026-10-24-tempwritereplay-live.md`.
+- **storm-replay** : `StreamDecoder` (décodage par morceaux des streams nus) + `*_events_raw()`.
+  Découpe 4 Ko / aléatoire / octet par octet = décodage entier (mini-corpus).
+- **Serveur** `src/live/` : `POST /api/live/chunk` (idempotent par offset, `409` sur trou, `413` au-delà
+  de 64 Mo), `/end`, `GET /api/live?scope=self|allies|all&me=`, `DELETE` (garde admin), WS
+  `live.updated` (signal sans état). Réducteur pur ; table unité → héros dérivée de l'archive (90/90).
+  Un replay rejoué par blocs de 4 Ko concorde avec `details` (héros) et storm-stats (morts, takedowns,
+  talents) sur les 3 replays committés.
+- **Page `/live`** (nav « Live ») = composant `LiveGame` : trois niveaux de visibilité (défaut « Me +
+  scoreboard »), aptitudes non nommées (pressions de touche), fil d'événements.
+- **Critère 2 mesuré** : morceau → `live.updated`, p95 **1,7 ms** (budget 200 ms). Opérateur : lobby
+  pris en compte seulement si son hash = id de session (`X-Session` = SHA-256 du battlelobby) ;
+  déduction « un seul humain » bridée (testée sur chaque bloc d'une partie à 10).
+- **Vérifié** : `examples/live_sim.rs` a rejoué la partie Sandbox du 2026-10-24 (76 blocs) et une partie
+  10 humains (259 blocs) contre le serveur release + Postgres dev ; page vérifiée dans le navigateur
+  (repos, en cours, terminé, trois niveaux, 375 px). Constat : en Sandbox, la réinitialisation de
+  talents ré-émet tous les `TalentChosen` → le tableau garde le dernier choix par palier.
+- **Watcher `client-rs` ÉCRIT (2026-10-25)** — repo Hots-Overlay, `client-rs/src/live.rs`, commit
+  `ac093e7` (matella/Hots-Overlay `main`) : lobby → `/api/lobby`, blocs pleins de 4 Ko → `/api/live/chunk`
+  (offset tenu par stream, `409` → renvoi, box injoignable → rattrapage), fin → queue + `/end` ;
+  partie déjà finie au démarrage → rien. 12 tests unitaires + 2 runs bout en bout (dont coupure du
+  serveur et redémarrage du watcher).
+- **Spike fait (2026-10-25)** sur une partie **ARAM** à 10 humains avec le vrai watcher :
+  `docs/research/2026-10-25-feed-live-spike-aram.md`. Ordres des **10** joueurs présents en cours de
+  partie ; retard médian **~5 s** pour les aptitudes, **~28 s** pour le tracker (l'inverse de la
+  Sandbox) ; build lisible à mi-partie par le **chemin du process** (`Versions\BaseNNNNN`). **Critère 3
+  tenu** (état final = projection du replay, 10/10 joueurs).
+- **Reste** : point 4 du spike (calage de l'horloge sur l'affichage en jeu) ; re-mesure sur une QM ou
+  SL ; `X-Build` depuis le chemin du process dans `client-rs` ; état « en partie » de `/companion`
+  quand la page existera ; nommage des aptitudes (étape 2). **Pas encore déployé sur le box.**
+- **Bug vu au spike (hors live)** : dans la projection d'un replay ARAM, les héros nommés dans
+  `deaths[].victim/killers` ne sont pas ceux de la partie (`players[].hero` est juste) — à analyser
+  dans `storm-stats`.
+- **Constat annexe** : la partie du 2026-10-24 tournait en build **98348** (2.57.0), plus récent que nos
+  tables (96477) ; heroprotocol ne l'a pas publié (vérifié le 2026-10-24). Décodée correctement par le
+  repli « dernier protocole connu ».
+
+## Design « dossier » pour toute l'app — spec VALIDÉE le 2026-09-27, déploiement par lots
+Spec `docs/specs/2026-09-27-design-dossier-app-design.md` (+ maquettes). Overlays OBS hors périmètre.
+- **Lot 0 (fondations) — fait** : polices auto-hébergées (Fontsource, 132 Ko latin), tokens dans
+  `theme.css`, design system global `src/ds.css` + `components/ds/`, nouvelle barre du haut,
+  pages Scouting migrées (identiques visuellement). `body` inchangé → sources OBS inchangées (seule
+  nuance : JetBrains Mono est désormais réellement chargé là où `.mono` l'utilisait déjà).
+- **Lot 1 (cœur) — fait** : Session, Matches, Match detail refaits (toutes les fonctions conservées ;
+  courbe de niveau passée d'uPlot à un SVG en escalier, `LevelChart` supprimé ; uPlot reste en
+  dépendance). Session : la couverture suit désormais la **dernière partie de l'opérateur** (avant :
+  la dernière partie de l'archive, même sans lui). Vérifié par captures Edge headless (données réelles).
+- **Lot 2 (référentiel) — fait** : Heroes (mur de héros, rôle), Hero (grand portrait, cartes, builds,
+  patchs), Player (réserve de héros, parties récentes), Maps (tuiles sur l'art des cartes). HTML des
+  patchs rendu par `SafeHtml` (fragment DOMPurify, pas de chaîne HTML injectée).
+- **Lot 3 (analyses) — fait** : Synergies, Trends (histogramme par patch), Patch notes (liste datée +
+  détail à sommaire), Hero changes, Leagues. `SafeHtml` est désormais le seul point d'insertion
+  d'HTML externe dans l'app (fragment DOMPurify, aucune chaîne HTML injectée).
+- **Lot 4 (outils opérateur) — fait** : Draft console et Admin passés au design (libellés en anglais,
+  toutes les fonctions conservées). L'overlay OBS `/draft/overlay` n'est pas touché.
+- **Déploiement du design « dossier » terminé** (lots 0→4) ; les overlays OBS restent hors périmètre.
+## Bans du draft résolus sur la fiche de match — 2026-09-26
+storm-stats stocke les bans en code attribut brut (`Crus`, `DEAT`…) ; la fiche de match les
+affichait tels quels (constaté sur le match 143). `dim_heroes` ne porte pas l'`attributeId`
+(absent de la liste HotsPatchNotes) → nouvelle route statique `GET /api/dim/hero-attributes`
+(`attr.json` de storm-stats, source déjà utilisée par `dim.rs`) + `banHero` / `useDimHeroAttributes`
+dans `api.ts`. Bloc Draft réorganisé par équipe : picks puis bans (nom + portrait), `no ban` pour
+un tour passé. Vérifié navigateur sur 143, 1702, 69 (tours passés), 1720 (custom), 1 (ARAM : pas de
+bloc) et en 375 px. **Pas encore déployé sur le box.**
+Constat annexe (CRLF des migrations sur checkout Windows) : corrigé sur `main` par `.gitattributes`
+(`migrations/*.sql eol=lf`). Fusionné dans `main` le 2026-09-27.
+
+## Rapports de scouting — LIVRÉ sur `main` le 2026-09-26 (pas encore déployé sur le box)
+Spec `docs/specs/2026-09-26-rapports-scouting-design.md` · plan `docs/plans/2026-09-26-rapports-scouting.md`.
+Pages `/scouting` et `/scouting/:id` ; routes `/api/scouting/*` ; migration `0010` (tables dédiées :
+les replays adverses ne touchent jamais `uploads`/`matches` — test d'intégration d'isolation).
+- **Volet A** (draft des parties perso) : 3 replays réels de l'opérateur, **confirmé** par lui.
+- **Vérifié en navigateur sur ces 3 replays** (serveur release :8089 + Postgres dev) : lot ambigu
+  détecté (série contre un même adversaire) → une ancre (joueur de l'équipe scoutée) → roster des 5 attendus, 3 parties par
+  la règle roster ; faits identiques aux drafts confirmés (first pick 2/3, bans 1re phase
+  Johanna/Falstad ×2, bans subis Deathwing/Garrosh ×2, ouvertures Dehaka/Hogger/Chromie, V/V/D) ;
+  pack `.md` 19 Ko + `.xlsx` ; analyse rédigée à partir du pack réel (étape LLM manuelle) importée
+  par la fenêtre d'import : 16 affirmations, 0 sans preuve ; ré-import = écrasement.
+- **Mesuré** : `GET /api/scouting/{id}` p95 5,9 ms (contrat 100 ms).
+- Tests : 25 tests scouting (dont intégration DB), 77 serveur, vitest 54 ; clippy `-D warnings` vert.
+- Correctif d'infra au passage : `.gitattributes` force LF sur les migrations (un checkout Windows
+  CRLF faisait échouer sqlx en `VersionMismatch` contre une base migrée en LF).
+- **Reste dû (opérateur)** : critère D — donner le pack réel à **ChatGPT et Claude** et réimporter
+  leurs réponses (l'import tolère la prose autour du JSON) ; critère B — valider la détection sur
+  un lot plus large (parties de l'adversaire contre plusieurs équipes) ; déploiement box
+  (rsync + `docker compose up -d --build`, la migration 0010 s'applique au démarrage).
+- **Recentrage draft (2026-09-26, demande opérateur)** : l'analyse devient un **plan de draft
+  carte par carte** (`format_version: 2` : choix de carte, par carte bans avec phase / picks /
+  picks adverses attendus avec le joueur / points à prévoir, plan toute carte) ; la v1 est refusée
+  à l'import. Nouveaux faits : héros joués contre eux avec leur bilan (`draft.faced.*`), joueur
+  derrière chaque pick par carte ; pack réordonné (cartes et draft avant joueurs). Vérifié en
+  navigateur sur la série : plan v2 importé, 28 éléments, 0 sans preuve.
+- **Export HTML à partager (2026-09-27, volet G)** : bouton « Export HTML » → un fichier `.html`
+  autonome (portraits + minimaps embarqués une seule fois en WebP via classes CSS, ~600 Ko pour la
+  série de 3 parties, 33/33 portraits). Rendu pur `web/src/reportHtml.ts` (vitest : échappement du
+  texte LLM, data: URI filtrées, pseudos à la place des `pN`), chargement `reportExport.ts`.
+  Vérifié : export réel depuis le bouton, rendu contrôlé par captures Edge headless en 1400 px et
+  dans un iframe de 390 px (téléphone). En dev, les portraits viennent de HotsPatchNotes du box
+  (`HOTSPATCHNOTES_URL` ajouté à la config d'aperçu, lecture seule).
+- **Pages au style « dossier » (2026-09-27)** : `/scouting` et `/scouting/:id` reprennent le langage
+  visuel de l'export (page unique à sections, tableaux de draft par carte, dépôt/roster restylés).
+  Export inchangé. Vérifié par captures Edge headless de la vraie page (1400 px + iframe 390 px).
+- Hors v1 (spec volet F) : fiche de match / visionneuse 2D pour les replays de scouting,
+  passerelle vers le simulateur de draft.
+- Aperçu local : config `storm-codex-server` dans `.claude/launch.json` (release, port 8089, sert
+  `web/dist` ; le 8088 peut être occupé par une autre session).
+
 ## ⚠ EN ATTENTE DE VALIDATION OPÉRATEUR — deux specs datées du 2026-09-08
 Scope retenu par l'opérateur, specs écrites et poussées, **rien n'est implémenté** (règle n° 0 :
 une décision de conception se valide avant de coder).

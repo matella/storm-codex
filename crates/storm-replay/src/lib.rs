@@ -21,13 +21,15 @@ mod attributes;
 mod bitpacked;
 mod error;
 mod protocol;
+mod stream;
 mod typeinfo;
 mod value;
 mod versioned;
 
 pub use attributes::{AttributeValue, Attributes};
 pub use error::{Error, Result};
-pub use protocol::LATEST_BUILD;
+pub use protocol::{StreamKind, LATEST_BUILD};
+pub use stream::StreamDecoder;
 pub use value::Value;
 
 use protocol::Protocol;
@@ -257,5 +259,16 @@ impl Replay {
     /// comme hots-parser).
     pub fn battlelobby_raw(&self) -> Result<Vec<u8>> {
         self.stream("replay.server.battlelobby")
+    }
+
+    /// `replay.tracker.events` brut (non décodé) — les octets que le jeu écrit dans son dossier
+    /// temporaire pendant la partie ; entrée de [`StreamDecoder`] (simulateur, tests).
+    pub fn tracker_events_raw(&self) -> Result<Vec<u8>> {
+        self.stream("replay.tracker.events")
+    }
+
+    /// `replay.game.events` brut (non décodé) — cf. [`Replay::tracker_events_raw`].
+    pub fn game_events_raw(&self) -> Result<Vec<u8>> {
+        self.stream("replay.game.events")
     }
 }

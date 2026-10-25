@@ -22,6 +22,17 @@
   --u-diablo: #e24b4a;
   --u-overwatch: #d85a30;
   --u-nexus: #afa9ec;
+  /* « Nexus Codex · Dossier » (spec 2026-09-27) : palette inchangée, tokens ajoutés */
+  --panel: #0d0f16;
+  --panel-2: #12141d;
+  --line: #1f2231;
+  --line-2: #2a2e42;
+  --accent-2: #afa9ec;
+  --gold: #fac775;
+  --them: #f0a35e;
+  --display: "Big Shoulders Display", "Arial Narrow", sans-serif;
+  --body: "Figtree", "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", Consolas, monospace;
 }
 
 * { box-sizing: border-box; }
@@ -30,7 +41,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: Inter, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: Inter, -apple-system, "Segoe UI", Roboto, sans-serif; /* inchangé : sources OBS */
   font-size: 13px;
 }
 a { color: inherit; text-decoration: none; }

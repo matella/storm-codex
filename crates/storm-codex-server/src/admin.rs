@@ -130,6 +130,9 @@ pub async fn reprocess(State(s): State<AppState>, headers: HeaderMap) -> (Status
             reprocess_one(&state, upload_id, &path).await;
         }
         tracing::info!("re-process terminé ({queued} fichiers)");
+        // replays de scouting (tables dédiées) : même critère parser_version, puis recalcul des faits
+        let n = crate::scouting::api::reprocess_stale(&state).await;
+        tracing::info!("re-process scouting terminé ({n} replays)");
     });
     (
         StatusCode::ACCEPTED,

@@ -29,6 +29,7 @@ uuid = { version = "1", features = ["v4"] }
 ureq = { version = "3", features = ["json"] }
 flate2 = "1"
 tar = "0.4"
+rust_xlsxwriter = "0.93"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

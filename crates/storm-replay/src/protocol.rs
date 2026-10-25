@@ -197,6 +197,131 @@ impl Protocol {
     }
 }
 
+/// Stream d'événements décodable par morceaux (cf. [`crate::StreamDecoder`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamKind {
+    /// `replay.tracker.events` (versioned).
+    Tracker,
+    /// `replay.game.events` (bitpacked).
+    Game,
+}
+
+/// Résultat d'un décodage partiel : les événements complets, les octets qu'ils occupent, et le
+/// gameloop du dernier d'entre eux (point de reprise).
+pub(crate) struct Partial {
+    pub events: Vec<Value>,
+    pub consumed: usize,
+    pub gameloop: i64,
+}
+
+impl Protocol {
+    /// Décode les événements **complets** de `content`, en partant du gameloop `start_loop`.
+    /// Une fin de données en plein événement (`Error::Truncated`) n'est pas une erreur : le
+    /// décodage s'arrête au dernier événement complet, que le morceau suivant prolongera. Toute
+    /// autre erreur (grammaire, eventid inconnu) remonte telle quelle.
+    pub(crate) fn decode_partial(
+        &self,
+        kind: StreamKind,
+        content: &[u8],
+        start_loop: i64,
+    ) -> Result<Partial> {
+        let mut out = Partial {
+            events: Vec::new(),
+            consumed: 0,
+            gameloop: start_loop,
+        };
+        let stop = |e: Error, out: Partial| match e {
+            Error::Truncated(_) => Ok(out),
+            other => Err(other),
+        };
+        match kind {
+            StreamKind::Tracker => {
+                let eventid_typeid = self.tracker_eventid_typeid.ok_or_else(|| {
+                    Error::Protocol("protocole sans tracker events (build < 2014)".into())
+                })?;
+                let mut decoder = VersionedDecoder::new(content, &self.typeinfos);
+                while !decoder.done() {
+                    match self.next_tracker_event(&mut decoder, eventid_typeid, out.gameloop) {
+                        Ok((event, gameloop)) => {
+                            out.events.push(event);
+                            out.gameloop = gameloop;
+                            out.consumed = decoder.used_bytes();
+                        }
+                        Err(e) => return stop(e, out),
+                    }
+                }
+            }
+            StreamKind::Game => {
+                let mut decoder = BitPackedDecoder::new(content, &self.typeinfos);
+                while !decoder.done() {
+                    match self.next_bitpacked_event(
+                        &mut decoder,
+                        self.game_eventid_typeid,
+                        &self.game_event_types,
+                        out.gameloop,
+                    ) {
+                        Ok((event, gameloop)) => {
+                            decoder.byte_align();
+                            out.events.push(event);
+                            out.gameloop = gameloop;
+                            // Aligné sur l'octet après byte_align : used_bits est un multiple de 8.
+                            out.consumed = (decoder.buffer.used_bits() / 8) as usize;
+                        }
+                        Err(e) => return stop(e, out),
+                    }
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    fn next_tracker_event(
+        &self,
+        decoder: &mut VersionedDecoder<'_>,
+        eventid_typeid: usize,
+        gameloop: i64,
+    ) -> Result<(Value, i64)> {
+        let gameloop = gameloop + decoder.svaruint32_value(self.svaruint32_typeid)?;
+        let eventid = decoder
+            .instance(eventid_typeid)?
+            .as_int()
+            .ok_or_else(|| Error::Corrupted("eventid invalide".into()))?;
+        let (typeid, name) = self.tracker_event_types.get(&eventid).ok_or_else(|| {
+            Error::Corrupted(format!(
+                "tracker eventid inconnu {eventid} à l'octet {}",
+                decoder.used_bytes()
+            ))
+        })?;
+        let mut event = decoder.instance(*typeid)?;
+        annotate(&mut event, name, eventid, gameloop, None);
+        Ok((event, gameloop))
+    }
+
+    fn next_bitpacked_event(
+        &self,
+        decoder: &mut BitPackedDecoder<'_>,
+        eventid_typeid: usize,
+        event_types: &EventTypes,
+        gameloop: i64,
+    ) -> Result<(Value, i64)> {
+        let gameloop = gameloop + decoder.svaruint32_value(self.svaruint32_typeid)?;
+        let userid = decoder.instance(self.replay_userid_typeid)?;
+        let eventid = decoder
+            .instance(eventid_typeid)?
+            .as_int()
+            .ok_or_else(|| Error::Corrupted("eventid invalide".into()))?;
+        let (typeid, name) = event_types.get(&eventid).ok_or_else(|| {
+            Error::Corrupted(format!(
+                "eventid inconnu {eventid} au bit {}",
+                decoder.buffer.used_bits()
+            ))
+        })?;
+        let mut event = decoder.instance(*typeid)?;
+        annotate(&mut event, name, eventid, gameloop, Some(userid));
+        Ok((event, gameloop))
+    }
+}
+
 /// Champs `_event`/`_eventid`/`_gameloop`/`_userid` ajoutés par la référence.
 /// Noms internés une fois par process — ce chemin tourne ~100 000 fois par replay.
 fn annotate(
