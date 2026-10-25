@@ -1,0 +1,327 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Draft depuis un replay — mockups</title>
+<!-- MOCKUPS (trace d'intention, placeholders) pour docs/specs/2026-10-25-draft-replay-design.md. Réutilise les tokens de draft-aesthetics.html. -->
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#070810;color:#e9edf7;font-family:"Inter","Segoe UI",system-ui,sans-serif}
+  
+  .stage{position:relative;width:100%;max-width:1180px;aspect-ratio:16/9;border-radius:16px;overflow:hidden;
+    border:1px solid #1c2132;box-shadow:0 24px 70px #000a}
+
+  /* ════════ TOKENS PAR SKIN ════════ */
+  .stage{
+    --blue:#2f6df6; --red:#e0414b; --blue-soft:#7fa6ff; --red-soft:#ff8088;
+    --ink:#eef2fc; --dim:#aab4d2; --gold:#e8c66a;
+    --bg:radial-gradient(125% 95% at 50% 35%,#211a44 0%,#120e26 46%,#06060f 100%);
+    --card:linear-gradient(180deg,rgba(22,28,52,.55),rgba(8,11,22,.35));
+    --cardbd:#2a3052; --radius:12px; --clip:none; --hexclip:none;
+    --label-ff:"Inter",sans-serif; --label-tr:.06em; --num-ff:"Inter",sans-serif;
+  }
+  .stage[data-skin=glass]{
+    --bg:linear-gradient(115deg,#0a1326 0%,#0b0e1c 42%,#1a0c14 100%);
+    --card:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.015));
+    --cardbd:rgba(255,255,255,.14); --radius:13px; --gold:#d8c089; --label-tr:.12em;
+  }
+  .stage[data-skin=tactical]{
+    --blue:#2ee6d6; --red:#ff4655; --blue-soft:#7ff0e6; --red-soft:#ff7a85; --gold:#ffd36b;
+    --bg:linear-gradient(180deg,#0c0f14 0%,#070a0e 100%);
+    --card:linear-gradient(180deg,rgba(20,28,34,.7),rgba(8,12,16,.5));
+    --cardbd:#243038; --radius:0; --clip:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%);
+    --label-ff:"Oswald","Arial Narrow",sans-serif; --label-tr:.16em; --num-ff:"JetBrains Mono",ui-monospace,monospace;
+  }
+  .stage[data-skin=nexus]{
+    --bg:radial-gradient(130% 100% at 50% 30%,#2a1d5c 0%,#160f30 45%,#070512 100%);
+    --card:linear-gradient(180deg,rgba(40,30,80,.5),rgba(12,9,26,.4));
+    --cardbd:#5a4aa0; --gold:#f0d27a; --radius:10px;
+    --hexclip:polygon(8% 0,92% 0,100% 50%,92% 100%,8% 100%,0 50%);
+    --label-ff:"Cinzel","Trajan Pro",serif; --label-tr:.1em;
+  }
+  .stage[data-skin=mono]{
+    --blue:#6ea8ff; --red:#ff7a85; --blue-soft:#9cc4ff; --red-soft:#ffa0a8; --gold:#cdd3e2;
+    --bg:linear-gradient(180deg,#0e1016 0%,#0a0b10 100%);
+    --card:rgba(255,255,255,.03); --cardbd:rgba(255,255,255,.1); --radius:8px; --label-tr:.2em;
+  }
+  .stage::before{content:"";position:absolute;inset:0;background:var(--bg)}
+  .stars{position:absolute;inset:0;opacity:.5;background-image:
+    radial-gradient(1px 1px at 18% 28%,#fff8,transparent),radial-gradient(1px 1px at 68% 58%,#fff6,transparent),
+    radial-gradient(1px 1px at 44% 78%,#fff7,transparent),radial-gradient(1px 1px at 86% 18%,#fff5,transparent)}
+  .stage[data-view=caster] .stars{display:none}
+
+  .label{font-family:var(--label-ff);letter-spacing:var(--label-tr);text-transform:uppercase;font-weight:700}
+  .num{font-family:var(--num-ff)}
+  /* indicateur de phase courante (qui pick/banne) + pulse de la tuile active */
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 2px var(--gold)}50%{box-shadow:0 0 0 2px var(--gold),0 0 24px var(--gold)}}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+  .phase{display:inline-flex;align-items:center;gap:7px;font-family:var(--label-ff);font-weight:800;font-size:11px;
+    letter-spacing:.12em;text-transform:uppercase;padding:5px 13px;border-radius:999px;border:1px solid var(--cardbd);
+    background:#0b0e18cc;backdrop-filter:blur(4px)}
+  .phase .dot{width:8px;height:8px;border-radius:50%;animation:blink 1.2s ease-in-out infinite}
+  .phase.b{color:var(--blue-soft)} .phase.b .dot{background:var(--blue)}
+  .phase.r{color:var(--red-soft)} .phase.r .dot{background:var(--red)}
+  .ban{width:40px;height:40px;border-radius:calc(var(--radius) - 4px);clip-path:var(--clip);position:relative;
+    background:linear-gradient(160deg,hsl(var(--h) 30% 24%),hsl(var(--h) 30% 8%));filter:grayscale(.7) brightness(.6);
+    border:1px solid #ffffff12}
+  .ban::after{content:"";position:absolute;inset:0;background:linear-gradient(135deg,transparent 45%,#ff3b46 46%,#ff3b46 54%,transparent 55%);opacity:.9}
+
+  /* ════════ VUE CASTER — fond map + grandes cartes ════════ */
+  .caster{position:absolute;inset:0;display:none}
+  .stage[data-view=caster] .caster{display:block}
+  /* image de map (placeholder dégradé « Sky Temple ») + scrim de lisibilité */
+  .c-bg{position:absolute;inset:0;background:
+    radial-gradient(55% 42% at 50% 82%,#7a6630aa,transparent 70%),
+    radial-gradient(80% 60% at 50% 26%,#3c5286,transparent 72%),
+    linear-gradient(180deg,#24314f 0%,#141d33 55%,#070b16 100%)}
+  .c-scrim{position:absolute;inset:0;background:
+    linear-gradient(180deg,#05060cc4 0%,#05060c30 26%,#05060c12 50%,#05060cdd 100%),
+    radial-gradient(120% 80% at 50% 50%,transparent 55%,#04050acc 100%)}
+
+  .c-top{position:absolute;top:18px;left:50%;transform:translateX(-50%);width:420px;text-align:center;z-index:2}
+  .c-mapname{font-family:var(--label-ff);letter-spacing:.24em;text-transform:uppercase;font-size:12.5px;
+    color:#cfe0ff;opacity:.9;margin-bottom:9px;text-shadow:0 1px 8px #000}
+  .c-score{display:flex;align-items:stretch;justify-content:center;border-radius:var(--radius);overflow:hidden;
+    clip-path:var(--clip);border:1px solid var(--cardbd);box-shadow:0 8px 26px #000a}
+  .c-score .t{flex:1;display:flex;align-items:center;gap:10px;padding:9px 16px;font-size:15px;backdrop-filter:blur(4px)}
+  .c-score .t.b{background:linear-gradient(90deg,color-mix(in srgb,var(--blue) 46%,#0b1224ee),#0b1224ee);justify-content:flex-start}
+  .c-score .t.r{background:linear-gradient(270deg,color-mix(in srgb,var(--red) 46%,#1a0b0eee),#1a0b0eee);justify-content:flex-end}
+  .c-score .n{font-family:var(--num-ff);font-size:24px;font-weight:800;color:#fff}
+  .c-score .vs{display:flex;align-items:center;padding:0 12px;background:#05060cf2;color:var(--gold);
+    font-family:var(--label-ff);font-weight:800;font-size:12px;letter-spacing:.1em}
+  .c-bans{display:flex;justify-content:center;gap:18px;margin-top:11px}
+  .c-bans .side{display:flex;gap:5px}
+  .c-bans .ban{width:34px;height:34px}
+  /* timer = barre blanche qui se vide (entre bans et picks) */
+  .c-timer{width:230px;height:5px;margin:11px auto 0;background:#ffffff26;border-radius:3px;overflow:hidden}
+  .c-timer span{display:block;height:100%;width:100%;background:#fff;border-radius:3px;animation:tick 22s linear infinite}
+  .stage[data-skin=tactical] .c-timer span{background:var(--blue);border-radius:0}
+  .stage[data-skin=nexus] .c-timer span{background:var(--gold)}
+  @keyframes tick{from{width:100%}to{width:0}}
+
+  /* strip de picks : cartes modérées, nom du joueur sur une plaque SOUS la carte */
+  .c-teams{position:absolute;left:0;right:0;bottom:16px;display:flex;align-items:flex-end;
+    justify-content:space-between;padding:0 22px;z-index:2}
+  .c-team{display:flex;gap:2px;width:42%}
+  .c-team.r{flex-direction:row-reverse}
+  .pc{flex:1;min-width:0;display:flex;flex-direction:column}
+  .pc .por{position:relative;width:100%;aspect-ratio:1/1.18;border-radius:var(--radius) var(--radius) 0 0;
+    clip-path:var(--clip);overflow:hidden;background:linear-gradient(165deg,hsl(var(--h) 54% 33%),hsl(var(--h) 60% 10%));
+    border:1px solid #ffffff1c;border-bottom:none}
+  .pc .fig{position:absolute;inset:0;background:radial-gradient(64% 50% at 50% 32%,#ffffff26,transparent 66%)}
+  .pc .plate{padding:4px 3px;text-align:center;font-size:10.5px;font-weight:700;color:#fff;letter-spacing:.01em;
+    background:#0b0e18f2;border:1px solid #ffffff14;border-radius:0 0 var(--radius) var(--radius);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .c-team.b .pc .plate{border-top:2px solid var(--blue)} .c-team.r .pc .plate{border-top:2px solid var(--red)}
+  .pc.empty .por{background:#0e1320;border:1px dashed #2a3148;border-bottom:none}
+  .pc.empty .plate{color:#7c87a8}
+  .pc.active .por{border-color:var(--gold);animation:pulse 1.4s ease-in-out infinite}
+  .c-phase{margin-top:11px}
+
+  /* ════════ VUE JOUEUR (colonnes verticales façon in-game) ════════ */
+  .player{position:absolute;inset:0;display:none}
+  .stage[data-view=player] .player{display:block}
+  .p-col{position:absolute;top:8%;display:flex;flex-direction:column;gap:1.6%;width:16%}
+  .p-col.l{left:1.4%} .p-col.r{right:1.4%}
+  .p-slot{display:flex;align-items:center;gap:8px;padding:5px;border-radius:var(--radius);clip-path:var(--clip);
+    background:var(--card);border:1px solid var(--cardbd);height:62px;backdrop-filter:blur(3px)}
+  .p-col.r .p-slot{flex-direction:row-reverse;text-align:right}
+  .p-col.l .p-slot.active{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue),0 0 18px var(--blue)}
+  .p-col.r .p-slot.active{border-color:var(--red);box-shadow:0 0 0 1px var(--red),0 0 18px var(--red)}
+  .p-av{width:48px;height:48px;border-radius:calc(var(--radius) - 2px);clip-path:var(--hexclip,none);flex-shrink:0;
+    background:linear-gradient(160deg,hsl(var(--h) 52% 32%),hsl(var(--h) 58% 10%));border:2px solid #ffffff22}
+  .stage[data-skin=nexus] .p-av{border:none;box-shadow:0 0 0 1.5px var(--gold)}
+  .p-meta{min-width:0;flex:1;overflow:hidden}
+  .p-hero{font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .p-pl{font-size:10.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .p-empty .p-meta{color:#586;font-style:italic;font-size:11px}
+  .p-bans{position:absolute;top:2.6%;display:flex;gap:6px}
+  .p-bans.l{left:19%} .p-bans.r{right:19%;flex-direction:row-reverse}
+  .p-center{position:absolute;top:3%;left:50%;transform:translateX(-50%);text-align:center}
+  .p-map{font-family:var(--label-ff);letter-spacing:.18em;text-transform:uppercase;font-size:17px;font-weight:800;color:#cfe0ff}
+  .p-timer{margin:9px auto 0;width:58px;height:58px;border-radius:50%;border:3px solid var(--gold);display:flex;
+    align-items:center;justify-content:center;font-family:var(--num-ff);font-size:25px;font-weight:800;color:var(--gold);
+    background:radial-gradient(circle,#1a1530,#0c0a1c)}
+  .p-pick{position:absolute;top:48%;left:50%;transform:translate(-50%,-50%);text-align:center}
+  .p-pick .ring{width:64px;height:64px;border-radius:50%;margin:0 auto 8px;border:2px solid var(--blue);
+    background:conic-gradient(from 0deg,var(--blue),var(--blue-soft),var(--blue));opacity:.85}
+  .p-pick b{display:block;font-size:18px;color:#cfe0ff} .p-pick span{font-size:13px;color:var(--blue-soft);font-weight:700}
+
+  /* ════════ VUE TIMELINE — picks/bans dans l'ordre du draft, carrés, sans axe ════════ */
+  .timeline{position:absolute;inset:0;display:none}
+  .stage[data-view=timeline] .timeline{display:block}
+  .tl-bg{position:absolute;inset:0;background:
+    radial-gradient(60% 45% at 50% 30%,#3c5286,transparent 72%),linear-gradient(180deg,#1a2138,#070b16)}
+  .tl-scrim{position:absolute;inset:0;background:linear-gradient(180deg,#05060cc8,#05060c55 35%,#05060cdd)}
+  .tl-head{position:absolute;top:16px;left:0;right:0;text-align:center;z-index:2}
+  .tl-head .map{font-family:var(--label-ff);letter-spacing:.22em;text-transform:uppercase;font-size:12px;color:#cfe0ff;opacity:.85}
+  .tl-head .teams{margin-top:6px;font-family:var(--label-ff);font-weight:800;font-size:18px;letter-spacing:.05em}
+  .tl-head .teams .b{color:var(--blue-soft)} .tl-head .teams .r{color:var(--red-soft)}
+  .tl-head .teams .s{font-family:var(--num-ff);color:#fff;margin:0 12px}
+  .tl-head .teams .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin:0 7px;vertical-align:middle;
+    animation:blink 1.2s ease-in-out infinite}
+  .tl-head .teams .b .dot{background:var(--blue)} .tl-head .teams .r .dot{background:var(--red)}
+  .tl-timer{width:230px;height:5px;margin:11px auto 0;background:#ffffff26;border-radius:3px;overflow:hidden}
+  .tl-timer span{display:block;height:100%;width:100%;background:var(--gold);border-radius:3px;animation:tick 22s linear infinite}
+  /* 3 rangées : picks bleus (haut) · bande de bans sur la ligne invisible · picks rouges (bas).
+     Chaque équipe n'a que ses 5 picks → tuiles héros bien plus grandes ; bans petits, en chrono. */
+  /* bande SERIES BANS (fearless) : pool de héros indispo, petites icônes barrées */
+  .tl-series{position:absolute;top:20%;left:5%;right:5%;text-align:center;z-index:2}
+  .tl-series .lab{font-family:var(--label-ff);letter-spacing:.18em;text-transform:uppercase;font-size:9.5px;
+    color:#9098b6;margin-bottom:5px}
+  .tl-series .pool{display:flex;flex-wrap:wrap;justify-content:center;gap:4px}
+  .si{width:25px;height:25px;border-radius:5px;clip-path:var(--clip);position:relative;border:1px solid #ffffff10;
+    background:linear-gradient(160deg,hsl(var(--h) 26% 24%),hsl(var(--h) 26% 9%));filter:grayscale(.78) brightness(.5)}
+  .si::after{content:"";position:absolute;inset:0;background:linear-gradient(135deg,transparent 44%,#cf3b46 46%,#cf3b46 54%,transparent 56%);opacity:.75}
+
+  .tl-stack{position:absolute;left:3%;right:3%;top:30%;bottom:6%;display:flex;flex-direction:column;
+    justify-content:center;gap:11px;z-index:2}
+  .tl-picks{display:grid;grid-template-columns:repeat(10,1fr);gap:8px}
+  .pk{position:relative;width:100%;aspect-ratio:1/1.4;border-radius:var(--radius);clip-path:var(--clip);
+    overflow:hidden;background:linear-gradient(165deg,hsl(var(--h) 54% 33%),hsl(var(--h) 60% 10%));border:1px solid #ffffff1c}
+  .pk.ghost{visibility:hidden}
+  .tl-picks.b .pk{box-shadow:inset 0 3px 0 var(--blue)} .tl-picks.r .pk{box-shadow:inset 0 -3px 0 var(--red)}
+  .pk .fig{position:absolute;inset:0;background:radial-gradient(64% 50% at 50% 30%,#ffffff26,transparent 66%)}
+  .pk .nm{position:absolute;left:0;right:0;bottom:0;padding:13px 3px 5px;text-align:center;background:linear-gradient(0deg,#000f 30%,transparent)}
+  .pk .nm b{display:block;font-size:11px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pk .nm i{display:block;font-style:normal;font-size:9px;font-weight:600;color:#c4cdea;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pk.empty{background:#0e1320;border:1px dashed #2a3148} .pk.empty .nm{color:#7c87a8;background:none}
+  .pk.active{border-color:var(--gold);animation:pulse 1.4s ease-in-out infinite}
+  .tl-bans{display:flex;justify-content:center;align-items:center;gap:6px}
+  .tl-bans .sep{width:16px}
+  .bn{position:relative;width:32px;height:32px;border-radius:calc(var(--radius) - 4px);clip-path:var(--clip);
+    background:linear-gradient(160deg,hsl(var(--h) 28% 22%),hsl(var(--h) 28% 8%));filter:grayscale(.7) brightness(.6);border:1px solid #ffffff12}
+  .bn.b{outline:2px solid color-mix(in srgb,var(--blue) 55%,transparent);outline-offset:-2px}
+  .bn.r{outline:2px solid color-mix(in srgb,var(--red) 55%,transparent);outline-offset:-2px}
+  .bn::after{content:"";position:absolute;inset:0;background:linear-gradient(135deg,transparent 45%,#ff3b46 46%,#ff3b46 54%,transparent 55%);opacity:.9}
+
+  body{background:#0a0c12}
+  .wrap{max-width:1240px;margin:0 auto;padding:22px 18px 60px}
+  h1{font-size:18px;margin:0 0 4px} h2{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:#7c8398;margin:34px 0 10px}
+  p.note{color:#9aa3bd;font-size:13px;margin:0 0 14px;max-width:880px;line-height:1.5}
+  .stage{max-width:960px;margin:0 auto 6px}
+  .cap{max-width:960px;margin:8px auto 22px;color:#9aa3bd;font-size:12.5px}
+  .cap b{color:#e9edf7}
+  .pk.hidden{background:#0e1320;border:1px dashed #2a3148}
+  .pk.hidden .nm{color:#586080;background:none}
+  .bn.hidden{background:#0e1320;border:1px dashed #2a3148;filter:none;outline:none}
+  .bn.next,.pk.next{border:1px solid var(--gold);animation:pulse 1.4s ease-in-out infinite}
+  .ready{display:inline-flex;align-items:center;gap:7px;font-family:var(--label-ff);font-weight:800;font-size:11px;letter-spacing:.14em;
+    text-transform:uppercase;padding:4px 12px;border-radius:999px;border:1px solid var(--cardbd);color:var(--gold);margin-top:8px;background:#0b0e18cc}
+  .tl-timer.idle span{animation:none;width:0}
+  .rc{background:#0c0e13;border:1px solid #222838;border-radius:14px;padding:16px;color:#e7ebf5;font:14px/1.4 Inter,"Segoe UI",system-ui,sans-serif}
+  .rc .row{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start}
+  .rc .card{background:#12151d;border:1px solid #222838;border-radius:12px;padding:12px 14px}
+  .rc .lab{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:#7c8398;margin-bottom:8px}
+  .drop{border:2px dashed #34406a;border-radius:12px;padding:20px;text-align:center;color:#9aa3bd;background:#0f1320}
+  .drop b{color:#cdd4e6;display:block;margin-bottom:3px} .drop small{color:#6f7794}
+  .q{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;background:#0f121a;border:1px solid #1e2433;margin-bottom:6px}
+  .q.cur{border-color:#2f6df6;box-shadow:0 0 0 1px #2f6df6}
+  .q .n{width:24px;height:24px;border-radius:50%;background:#1b2030;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px}
+  .q .t{flex:1;min-width:0} .q .t b{display:block;font-size:13px}
+  .q .t span{font-size:11.5px;color:#8b94ad}
+  .q .x{color:#7c8398;font-size:16px}
+  .tog{display:flex;align-items:center;gap:8px;font-size:13px;margin-top:10px}
+  .sw{width:36px;height:20px;border-radius:999px;background:#2f6df6;position:relative;flex-shrink:0}
+  .sw::after{content:"";position:absolute;right:2px;top:2px;width:16px;height:16px;border-radius:50%;background:#fff}
+  .rail{display:grid;grid-template-columns:repeat(12,1fr);gap:6px}
+  .ph{border-radius:9px;padding:7px 4px;text-align:center;background:#0f121a;border:1px solid #1e2433;font-size:11px;color:#8b94ad}
+  .ph b{display:block;font-size:12px;color:#cdd4e6;margin-bottom:2px}
+  .ph.blue{border-top:3px solid #2f6df6} .ph.red{border-top:3px solid #e0414b}
+  .ph.done{background:#141a2b;color:#aeb6cf}
+  .ph.cur{border-color:#e8c66a;box-shadow:0 0 0 1px #e8c66a;color:#e8c66a}
+  .ph .hh{display:block;margin-top:3px;font-size:10.5px;color:#e7ebf5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ph .hid{color:#4b5470;letter-spacing:.2em}
+  .ctl{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .btn{background:#1b2030;border:1px solid #2f3850;border-radius:8px;padding:9px 15px;color:#cdd4e6;font-weight:600}
+  .btn.primary{background:#2f6df6;border-color:#2f6df6;color:#fff} .btn.big{padding:12px 24px;font-size:15px}
+  .btn.go{background:#1f9d62;border-color:#1f9d62;color:#fff}
+  kbd{background:#0c0e13;border:1px solid #2f3850;border-radius:5px;padding:1px 6px;font-size:11px;color:#aeb6cf}
+  .cd{margin-left:auto;display:flex;align-items:center;gap:10px;color:#e8c66a;font-weight:800;font-variant-numeric:tabular-nums}
+  .cd .track{width:160px;height:6px;background:#ffffff1e;border-radius:3px;overflow:hidden}
+  .cd .track i{display:block;height:100%;width:58%;background:#e8c66a}
+  .dur{width:54px;background:#10131c;border:1px solid #2a3142;border-radius:8px;padding:8px;color:#e7ebf5;text-align:center;font:inherit}
+  .err{background:#2a1216;border:1px solid #6b2630;color:#ff9aa4;border-radius:9px;padding:9px 12px;font-size:13px;margin-top:10px}
+  .hint{color:#7c8398;font-size:12px}
+</style>
+<div class="wrap">
+<h1>Draft depuis un replay — mockups</h1>
+<p class="note">Deux écrans : la <b>télécommande</b> que tu pilotes (navigateur à part) et l'<b>overlay OBS</b> que le public voit, dans ses trois états. L'overlay reste le composant existant ; seuls changent ses états « prêt / en cours ».</p>
+
+<h2>A · Page télécommande — /draft/replay</h2>
+<div class="rc">
+  <div class="row">
+    <div class="card" style="flex:1 1 360px">
+      <div class="lab">Replays (Custom uniquement)</div>
+      <div class="drop"><b>Dépose un ou plusieurs .StormReplay</b><small>ils sont ajoutés à la file dans l'ordre</small></div>
+      <div class="err">Game_4.StormReplay — partie non personnalisée (Quick Match) : refusée.</div>
+    </div>
+    <div class="card" style="flex:1 1 360px">
+      <div class="lab">File · série (3 parties)</div>
+      <div class="q"><span class="n">1</span><div class="t"><b>Game 1 — Sky Temple</b><span>Germany vs France · draft terminé</span></div><span class="x">✕</span></div>
+      <div class="q cur"><span class="n">2</span><div class="t"><b>Game 2 — Cursed Hollow</b><span>en cours · phase 6 / 12</span></div><span class="x">✕</span></div>
+      <div class="q"><span class="n">3</span><div class="t"><b>Game 3 — Braxis Holdout</b><span>prêt</span></div><span class="x">✕</span></div>
+      <div class="tog"><span class="sw"></span> Fearless — picks des parties précédentes indisponibles <span class="hint">(10 héros)</span></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <div class="lab">Draft — 12 phases · Game 2 (les héros non révélés restent masqués)</div>
+    <div class="rail" id="rail"></div>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <div class="ctl">
+      <button class="btn">↶ Retour <kbd>⌫</kbd></button>
+      <button class="btn primary big">Suivant <kbd>Espace</kbd></button>
+      <button class="btn">⟲ Reset</button>
+      <span class="hint" style="margin:0 6px">|</span>
+      <button class="btn go big">▶ Auto</button>
+      <span class="hint">toutes les</span><input class="dur" value="30"><span class="hint">s par phase</span>
+      <span class="cd"><span class="hint">prochaine phase dans</span><span class="track"><i></i></span>:17</span>
+    </div>
+  </div>
+</div>
+
+<h2>B · Overlay OBS — /draft/overlay (Timeline · nexus)</h2>
+<p class="note">Le public voit uniquement ce qui est révélé. Les pseudos n'apparaissent qu'avec leur héros, pour ne rien spoiler.</p>
+<div id="stages"></div>
+</div>
+
+<script>
+  const HEROES=[["Tyrande",150],["Hogger",30],["Valla",0],["L. Vikings",210],["Malfurion",90],["Malthael",0],["Tyrael",48],["Rehgar",200],["Sylvanas",280],["Gwo",120]];
+  const PL=["HunterOrc","Blodcool","Dynouh","TLHasuObs","CMSkogh","Ubi","Krankle123","Vacilisco","DDXHlopakA","Gwo"];
+  const BANS=[265,200,210,18,48,120];
+  const PH=[["ban","blue",1],["ban","red",1],["ban","blue",1],["ban","red",1],["pick","blue",1],["pick","red",2],["pick","blue",2],["ban","red",1],["ban","blue",1],["pick","red",2],["pick","blue",2],["pick","red",1]];
+  const REV=["Anub'arak","Falstad","Diablo","Johanna","Tyrande"];
+  document.getElementById('rail').innerHTML=PH.map((p,i)=>{
+    const cls=i<5?"done":i===5?"cur":"";
+    const label=(p[0]==="ban"?"ban":"pick")+(p[2]>1?" ×"+p[2]:"");
+    const hid='<span class="hid">••••</span>';
+    return '<div class="ph '+p[1]+' '+cls+'"><b>'+(i+1)+' · '+label+'</b><span class="hh">'+(i<5?REV[i]:hid)+'</span></div>';
+  }).join('');
+  const BLUE=[0,3,4,7,8], RED=[1,2,5,6,9];
+  function stage(state){
+    const reveal = state==="ready"?0 : state==="mid"?1 : 10;
+    const bansShown = state==="ready"?0 : state==="mid"?4 : 6;
+    const head = state==="ready" ? '<div class="ready">Draft prêt — en attente</div>'
+      : state==="mid" ? '<span class="phase r"><span class="dot"></span>Red · 2 picks</span>' : '';
+    const col=(side,idxs)=>'<div class="tl-picks '+side+'">'+Array.from({length:10},(_,c)=>{
+      if(idxs.indexOf(c)<0) return '<div class="pk ghost"></div>';
+      if(c<reveal){const h=HEROES[c];return '<div class="pk" style="--h:'+h[1]+'"><span class="fig"></span><span class="nm"><b>'+h[0]+'</b><i>'+PL[c]+'</i></span></div>'}
+      const nxt = state==="mid" && (c===1||c===2);
+      return '<div class="pk hidden '+(nxt?'next':'')+'"><span class="nm"><b>'+(nxt?'…':'—')+'</b></span></div>'}).join('')+'</div>';
+    const bn=(i,s)=> i<bansShown?'<span class="bn '+s+'" style="--h:'+BANS[i]+'"></span>':'<span class="bn hidden"></span>';
+    const bans='<div class="tl-bans">'+bn(0,'b')+bn(1,'r')+bn(2,'b')+bn(3,'r')+'<span class="sep"></span>'+bn(4,'r')+bn(5,'b')+'</div>';
+    const timer = state==="mid" ? '<div class="tl-timer"><span></span></div>' : '<div class="tl-timer idle"><span></span></div>';
+    const series = '<div class="tl-series"><div class="lab">Series bans · indisponibles (fearless) · 10</div><div class="pool">'+
+      [265,200,30,120,48,300,18,160,90,340].map(h=>'<span class="si" style="--h:'+h+'"></span>').join('')+'</div></div>';
+    return '<div class="stage" data-skin="nexus" data-view="timeline"><span class="stars"></span><div class="timeline">'+
+      '<div class="tl-bg"></div><div class="tl-scrim"></div>'+
+      '<div class="tl-head"><div class="map">Cursed Hollow — Bo5</div>'+
+      '<div class="teams"><span class="b">Germany</span><span class="s">1 — 0</span><span class="r">France</span></div>'+head+timer+'</div>'+
+      series+'<div class="tl-stack">'+col('b',BLUE)+bans+col('r',RED)+'</div></div></div>';
+  }
+  const CAP={ready:["1 · Prêt","Replay chargé, rien révélé : cases vides en pointillés, bannière « Draft prêt ». Tu peux cadrer la scène dans OBS avant de lancer."],
+    mid:["2 · En cours (phase 6 / 12)","Les 4 bans et le 1er pick Blue sont révélés. Les 2 prochains picks Red pulsent et apparaissent ensemble, au clic ou au tick de 30 s ; la barre de timer se vide."],
+    done:["3 · Terminé","Les 12 phases révélées : bans et picks avec pseudos. Le ruban fearless reste affiché pour la partie suivante."]};
+  document.getElementById('stages').innerHTML=["ready","mid","done"].map(s=>stage(s)+'<div class="cap"><b>'+CAP[s][0]+'</b> — '+CAP[s][1]+'</div>').join('');
+</script>
