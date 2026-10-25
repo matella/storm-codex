@@ -1,0 +1,112 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>styled-mockups.html</title></head><body style="background:#0b0b10;color:#e8eaf2;font-family:sans-serif;max-width:1400px;margin:20px auto;padding:0 16px">
+<style>
+@import url("https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=Figtree:wght@400;600;700&family=Cinzel:wght@700;800&family=JetBrains+Mono:wght@500;700&display=swap");
+.sx{--blue:#2f6df6;--red:#e0414b;--bs:#7fa6ff;--rs:#ff8088;--gold:#f0d27a;--cardbd:#5a4aa0;
+ position:relative;aspect-ratio:16/9;width:100%;overflow:hidden;color:#eef2fc;font-family:Figtree,sans-serif;
+ background:radial-gradient(130% 100% at 50% 30%,#2a1d5c 0%,#160f30 45%,#070512 100%);border-radius:6px}
+.sx .stars{position:absolute;inset:0;opacity:.5;background-image:radial-gradient(1px 1px at 18% 28%,#fff8,transparent),radial-gradient(1px 1px at 68% 58%,#fff6,transparent),radial-gradient(1px 1px at 44% 78%,#fff7,transparent),radial-gradient(1px 1px at 86% 18%,#fff5,transparent)}
+.sx .head{position:absolute;top:3%;left:0;right:0;text-align:center}
+.sx .ttl{font-family:Cinzel,serif;letter-spacing:.22em;font-size:1.05vw;color:#cfe0ff;opacity:.85}
+.sx .teams{margin-top:.4vw;font-family:Cinzel,serif;font-weight:800;font-size:2vw;letter-spacing:.05em}
+.sx .teams .b{color:var(--bs)}.sx .teams .r{color:var(--rs)}.sx .teams .s{font-family:"JetBrains Mono",monospace;color:#fff;margin:0 1.2vw}
+.sx .pool{position:absolute;top:19%;left:4%;right:4%;display:grid;grid-template-columns:repeat(6,1fr);gap:.7vw}
+.sx .mp{position:relative;height:9vw;border-radius:10px;overflow:hidden;border:1px solid var(--cardbd);background:linear-gradient(160deg,#2b2160,#120c2b)}
+.sx .mp .art{position:absolute;inset:0;opacity:.55}
+.sx .mp .tx{position:absolute;left:0;right:0;bottom:0;padding:.5vw .6vw;background:linear-gradient(0deg,#000d 40%,transparent)}
+.sx .mp b{display:block;font-family:Cinzel,serif;font-size:.85vw;letter-spacing:.04em}
+.sx .mp i{display:block;font-style:normal;font-size:.68vw;color:#c4cdea;margin-top:2px}
+.sx .mp .res{position:absolute;top:.5vw;right:.5vw;font-family:"JetBrains Mono",monospace;font-weight:700;font-size:.8vw;padding:.15vw .5vw;border-radius:99px;background:#000a}
+.sx .mp.bw{box-shadow:inset 0 4px 0 var(--blue)}.sx .mp.rw{box-shadow:inset 0 4px 0 var(--red)}
+.sx .mp.next{border-color:var(--gold);box-shadow:0 0 22px #f0d27a55}
+.sx .mp.ban{filter:grayscale(.8) brightness(.55)}.sx .mp.ban::after{content:"";position:absolute;inset:0;background:linear-gradient(135deg,transparent 47%,#ff3b46 48%,#ff3b46 52%,transparent 53%)}
+.sx .slide{position:absolute;left:4%;right:4%;top:46%;bottom:7%;border:1px solid var(--cardbd);border-radius:12px;background:#0b0820cc;padding:1.4vw 1.8vw}
+.sx .slide .lab{font-family:Cinzel,serif;letter-spacing:.2em;font-size:.8vw;color:var(--gold)}
+.sx .cols{display:grid;grid-template-columns:1fr 1fr;gap:3vw;margin-top:1vw}
+.sx .row{display:flex;align-items:center;gap:.7vw;margin:.45vw 0;font-size:.85vw}
+.sx .row .n{width:9vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sx .row .bar{height:.8vw;border-radius:3px}
+.sx .row .v{font-family:"JetBrains Mono",monospace;font-size:.8vw;color:#cfd6ee}
+.sx .dots{position:absolute;bottom:.8vw;left:0;right:0;text-align:center;letter-spacing:.5em;color:#8f86c8;font-size:.9vw}
+.cr{font-family:Figtree,sans-serif;background:#06070b;color:#e8eaf2;border:1px solid #232636;border-radius:6px;overflow:hidden;font-size:12px}
+.cr .top{display:flex;align-items:center;gap:14px;padding:10px 14px;border-bottom:1px solid #232636;background:#0d0f16}
+.cr .top .br{font-family:"Big Shoulders Display";font-weight:800;letter-spacing:.12em;font-size:15px}
+.cr .scn{display:flex;gap:6px;margin-left:auto}
+.cr .scn span{font-family:"Big Shoulders Display";font-weight:600;letter-spacing:.1em;text-transform:uppercase;padding:6px 14px;border:1px solid #2a2e42;color:#9aa0b4;font-size:13px}
+.cr .scn span.on{background:#fac775;color:#14100a;border-color:#fac775}
+.cr .scn span.air::before{content:"● ";color:#e24b4a}
+.cr .body{display:grid;grid-template-columns:210px 1fr;min-height:340px}
+.cr .rail{border-right:1px solid #1f2231;padding:12px;background:#0d0f16}
+.cr .k{font-family:"JetBrains Mono";font-size:10px;letter-spacing:.14em;color:#5d6275;text-transform:uppercase;margin:12px 0 5px}.cr .k:first-child{margin-top:0}
+.cr .tm{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid #1f2231;background:#12141d;margin-bottom:4px}
+.cr .tm i{width:18px;height:18px;border-radius:3px;display:inline-block}
+.cr .pl{font-size:11px;color:#9aa0b4;padding:2px 8px}
+.cr .main{padding:12px}
+.cr .prev{aspect-ratio:16/5;border:1px solid #2a2e42;background:linear-gradient(120deg,#2a1d5c,#0a0716);display:flex;align-items:center;justify-content:center;color:#afa9ec;font-family:"JetBrains Mono";font-size:11px;letter-spacing:.1em;margin-bottom:10px}
+.cr .ws{display:grid;grid-template-columns:1fr 1.5fr 1fr;gap:8px}
+.cr .box{border:1px solid #1f2231;background:#0d0f16;padding:8px;min-height:130px}
+.cr .slot{height:20px;border:1px dashed #2a2e42;margin:3px 0;font-size:10px;color:#5d6275;padding:2px 6px}
+.cr .slot.f{border:1px solid #2a2e42;color:#e8eaf2;background:#12141d}
+.cr .hg{display:grid;grid-template-columns:repeat(8,1fr);gap:3px;margin-top:5px}.cr .hg i{aspect-ratio:1;background:#1a1d2a;display:block}.cr .hg i.x{opacity:.3}
+</style>
+
+<h2>Same two screens, in the Nexus Codex style</h2>
+<p class="subtitle">I reused the real tokens: the Nexus skin of the draft overlay (purple night sky, Cinzel labels, gold highlight) and the Dossier look of the app (Big Shoulders, hairlines). Portraits and map art are placeholders.</p>
+
+<h3>1. Series scene (OBS overlay)</h3>
+<div class="sx">
+  <div class="stars"></div>
+  <div class="head"><div class="ttl">BEST OF 5 · GAME 3 NEXT</div>
+    <div class="teams"><span class="b">TEAM BLUE</span><span class="s">1 – 1</span><span class="r">TEAM RED</span></div></div>
+  <div class="pool">
+    <div class="mp bw"><div class="art"></div><span class="res">1–0</span><div class="tx"><b>Cursed Hollow</b><i>picked by Blue · Blue won</i></div></div>
+    <div class="mp rw"><div class="art"></div><span class="res">0–1</span><div class="tx"><b>Tomb of the Spider Queen</b><i>picked by Red · Red won</i></div></div>
+    <div class="mp next"><div class="art"></div><div class="tx"><b>Dragon Shire</b><i>picked by Blue · NEXT</i></div></div>
+    <div class="mp"><div class="art"></div><div class="tx"><b>Hanamura Temple</b><i>decider</i></div></div>
+    <div class="mp ban"><div class="art"></div><div class="tx"><b>Volskaya Foundry</b><i>banned by Red</i></div></div>
+    <div class="mp ban"><div class="art"></div><div class="tx"><b>Sky Temple</b><i>banned by Blue</i></div></div>
+  </div>
+  <div class="slide">
+    <div class="lab">GAME 2 · TOMB OF THE SPIDER QUEEN · 17:42 · HERO DAMAGE</div>
+    <div class="cols">
+      <div>
+        <div class="row"><span class="n" style="color:var(--bs)">Player1 · Valla</span><span class="bar" style="width:14vw;background:var(--blue)"></span><span class="v">82.4k</span></div>
+        <div class="row"><span class="n" style="color:var(--bs)">Player2 · Jaina</span><span class="bar" style="width:11vw;background:var(--blue)"></span><span class="v">64.1k</span></div>
+        <div class="row"><span class="n" style="color:var(--bs)">Player3 · Muradin</span><span class="bar" style="width:6vw;background:var(--blue)"></span><span class="v">31.0k</span></div>
+      </div>
+      <div>
+        <div class="row"><span class="n" style="color:var(--rs)">Player6 · Li-Ming</span><span class="bar" style="width:15vw;background:var(--red)"></span><span class="v">88.9k</span></div>
+        <div class="row"><span class="n" style="color:var(--rs)">Player7 · Genji</span><span class="bar" style="width:12vw;background:var(--red)"></span><span class="v">70.2k</span></div>
+        <div class="row"><span class="n" style="color:var(--rs)">Player8 · Arthas</span><span class="bar" style="width:7vw;background:var(--red)"></span><span class="v">36.5k</span></div>
+      </div>
+    </div>
+    <div class="dots">○ ● ○ ○</div>
+  </div>
+</div>
+
+<h3 style="margin-top:28px">2. Control room (layout B) in the app</h3>
+<div class="cr">
+  <div class="top"><span class="br">STORM CODEX · CAST</span>
+    <div class="scn"><span>Series</span><span class="on air">Draft</span><span>In-game</span><span>Hide</span></div></div>
+  <div class="body">
+    <div class="rail">
+      <div class="k">Series</div>
+      <div class="tm"><i style="background:#2f6df6"></i>Team Blue <b style="margin-left:auto">1</b></div>
+      <div class="tm"><i style="background:#e0414b"></i>Team Red <b style="margin-left:auto">1</b></div>
+      <div class="pl">Bo5 · first pick: Blue</div>
+      <div class="k">Lineups</div>
+      <div class="pl">Player1 · Player2 · Player3 · Player4 · Player5</div>
+      <div class="k">Maps</div>
+      <div class="pl">✓ Cursed Hollow (Blue)</div><div class="pl">✓ Tomb (Red)</div><div class="pl">→ Dragon Shire (Blue)</div>
+    </div>
+    <div class="main">
+      <div class="prev">LIVE PREVIEW · DRAFT SCENE ON AIR</div>
+      <div class="ws">
+        <div class="box"><div class="k">Blue picks</div><div class="slot f">Valla — Player1</div><div class="slot f">Jaina — Player2</div><div class="slot">…</div></div>
+        <div class="box"><div class="k">Pick Red · 3rd pick</div><div class="hg"><i></i><i></i><i class="x"></i><i></i><i></i><i></i><i class="x"></i><i></i><i></i><i></i><i></i><i class="x"></i><i></i><i></i><i></i><i></i></div></div>
+        <div class="box"><div class="k">Red picks</div><div class="slot f">Li-Ming — Player6</div><div class="slot">…</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:16px">Both screens carry the same style as the rest of the app, and the overlay can keep the four draft skins (nexus, glass, tactical, mono). Does this look and feel right, or do you want it moodier, cleaner, more esports-broadcast?</p>
+</body></html>

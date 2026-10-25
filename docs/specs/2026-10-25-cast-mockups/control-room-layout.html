@@ -1,0 +1,79 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>control-room-layout.html</title></head><body style="background:#0b0b10;color:#e8eaf2;font-family:sans-serif;max-width:1400px;margin:20px auto;padding:0 16px">
+<h2>Caster control room: which layout feels right?</h2>
+<p class="subtitle">One page runs the whole broadcast. The scene you pick drives what OBS shows. Wireframes only, no styling yet.</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Scene bar on top, one workspace below</h3>
+      <p>Big scene buttons across the top. The workspace under them changes with the scene. A small "on air" preview sits at the right.</p>
+    </div>
+  </div>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">Option A: scene bar on top</div>
+  <div class="mockup-body">
+    <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+      <div class="mock-button" style="flex:1;text-align:center">Series &amp; maps</div>
+      <div class="mock-button" style="flex:1;text-align:center;background:#c9a24a;color:#111">Draft  (ON AIR)</div>
+      <div class="mock-button" style="flex:1;text-align:center">In-game</div>
+      <div class="mock-button" style="flex:1;text-align:center">Hide all</div>
+      <div style="width:150px;height:56px;border:1px dashed #888;display:flex;align-items:center;justify-content:center;font-size:11px">live preview</div>
+    </div>
+    <div style="display:flex;gap:12px">
+      <div style="flex:1;border:1px solid #666;padding:10px;min-height:170px">
+        <div class="label">Blue team</div>
+        <div class="placeholder">name · score · bans · picks (5 slots)</div>
+      </div>
+      <div style="flex:1.4;border:1px solid #666;padding:10px">
+        <div class="label">Hero picker</div>
+        <div class="placeholder">search · role tabs · hero grid</div>
+      </div>
+      <div style="flex:1;border:1px solid #666;padding:10px">
+        <div class="label">Red team</div>
+        <div class="placeholder">name · score · bans · picks (5 slots)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="options" style="margin-top:24px">
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Left rail: setup, then scenes, live preview in the middle</h3>
+      <p>A permanent side panel holds the series (teams, lineups, Bo, score). Scenes are tabs. You always see exactly what viewers see.</p>
+    </div>
+  </div>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">Option B: side rail and big live preview</div>
+  <div class="mockup-body">
+    <div style="display:flex;gap:12px">
+      <div style="width:170px;border:1px solid #666;padding:10px">
+        <div class="label">Series</div>
+        <div class="placeholder" style="margin-bottom:8px">Bo5 · 1–1<br>Blue vs Red</div>
+        <div class="label">Teams &amp; lineups</div>
+        <div class="placeholder" style="margin-bottom:8px">logos, 5 players each</div>
+        <div class="label">Maps</div>
+        <div class="placeholder">veto, results</div>
+      </div>
+      <div style="flex:1">
+        <div style="display:flex;gap:6px;margin-bottom:8px">
+          <div class="mock-button">Series</div><div class="mock-button" style="background:#c9a24a;color:#111">Draft</div><div class="mock-button">In-game</div><div class="mock-button">Hide</div>
+        </div>
+        <div style="border:1px dashed #888;height:120px;display:flex;align-items:center;justify-content:center;margin-bottom:8px">live preview of the overlay (1920×1080 scaled)</div>
+        <div style="border:1px solid #666;padding:10px">
+          <div class="label">Workspace for the selected scene</div>
+          <div class="placeholder">hero picker + slots (Draft)  /  map veto (Series)  /  score steppers (In-game)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:20px">A fits a single screen and is fast during a draft. B costs more width, but you never lose sight of what is on air. Click the one you prefer, or tell me what you'd change.</p>
+</body></html>
