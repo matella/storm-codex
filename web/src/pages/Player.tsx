@@ -1,7 +1,9 @@
 import { useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useParams, useNavigate, Link } from "react-router-dom";
-import { fetchPlayer, fmtTime, awardLabel } from "../api";
+import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
+import { fetchPlayer, fetchIdentity, fmtTime, awardLabel } from "../api";
+import { likelyAlias } from "../players";
+import { PlayerIdentity } from "../components/PlayerIdentity";
 import { Portrait, SecHead, heroRing } from "../components/ds";
 import { ModeTag, hasMapArt, mapArt } from "../components/ds/match";
 
@@ -13,6 +15,11 @@ export function Player() {
   const nav = useNavigate();
   const { data, isLoading } = useQuery({ queryKey: ["player", toon], queryFn: () => fetchPlayer(toon!) });
   const [allHeroes, setAllHeroes] = useState(false);
+  const [sp, setSp] = useSearchParams();
+  const tab = sp.get("tab") === "identity" ? "identity" : "stats";
+  // chargé à part du résumé (le calcul des comptes liés est plus lent) ; partagé avec l'onglet Identité
+  const { data: identity } = useQuery({ queryKey: ["identity", toon], queryFn: () => fetchIdentity(toon!), enabled: !!toon });
+  const alias = identity ? likelyAlias(identity) : null;
   if (isLoading) return <div className="ds-page"><div className="ds-empty" style={{ marginTop: 24 }}>loading…</div></div>;
   if (!data) return <div className="ds-page"><div className="ds-empty" style={{ marginTop: 24 }}>Player not found. <Link to="/matches">Back to matches</Link></div></div>;
   const main = data.heroes[0]?.hero ?? null;
@@ -28,7 +35,8 @@ export function Player() {
         <div className="ds-hhead-txt">
           <div className="ds-kicker">Player · {data.toon}</div>
           <h1 className="ds-title" style={{ cursor: "default" }}>{data.name ?? data.toon}</h1>
-          {others.length > 0 && <div className="ds-subtitle" style={{ cursor: "default" }}>also seen as {others.join(", ")}</div>}
+          {others.length > 0 && <div className="ds-subtitle" style={{ cursor: "default" }}>also seen as {others.slice(0, 3).join(", ")}{others.length > 3 && <> <Link to="?tab=identity">+{others.length - 3} more</Link></>}</div>}
+          {alias && <div className="ds-subtitle" style={{ cursor: "default" }}><Link to="?tab=identity">Also plays as {alias.name ?? alias.toon} →</Link></div>}
           <div className="ds-statline" style={{ marginTop: 16 }}>
             <div className="ds-stat"><span className="ds-label">Win rate</span><strong>{wr}<span>%</span></strong><small>{data.wins}–{data.matches - data.wins} · {data.matches} games</small></div>
             <div className="ds-stat"><span className="ds-label">Avg K / D / T</span><strong>{data.avg_kills ?? "—"}<span>/</span>{data.avg_deaths ?? "—"}<span>/</span>{data.avg_takedowns ?? "—"}</strong><small>KDA ratio {kdaRatio}</small></div>
@@ -37,6 +45,12 @@ export function Player() {
         </div>
       </header>
 
+      <nav className="ds-nav" aria-label="Player sections">
+        <a className={tab === "stats" ? "map" : undefined} href="?" onClick={(e) => { e.preventDefault(); setSp({}); }}>Stats</a>
+        <a className={tab === "identity" ? "map" : undefined} href="?tab=identity" onClick={(e) => { e.preventDefault(); setSp({ tab: "identity" }); }}>Identity</a>
+      </nav>
+
+      {tab === "identity" ? <PlayerIdentity toon={toon!} /> : <>
       <section className="ds-sec">
         <SecHead num={1} title="Hero pool" sub={data.heroes.length > 18
           ? <span className="ds-pill" onClick={() => setAllHeroes(!allHeroes)}>{allHeroes ? "top 18" : `show all ${data.heroes.length}`}</span>
@@ -82,6 +96,7 @@ export function Player() {
           })}
         </div>
       </section>
+      </>}
     </div>
   );
 }
