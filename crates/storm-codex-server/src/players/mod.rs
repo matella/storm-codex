@@ -2,6 +2,8 @@
 
 pub mod names;
 pub mod api;
+pub mod features;
+pub mod identity;
 pub mod search;
 pub mod similarity;
 

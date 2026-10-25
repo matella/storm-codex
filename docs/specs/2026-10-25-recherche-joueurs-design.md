@@ -61,7 +61,7 @@ co-équipiers récurrents.
 
 | Signal | Force | Note |
 |---|---|---|
-| **Propriétaire du même token** : deux comptes présents chacun dans ≥ 50 % des parties d'un même token (≥ 50 parties) | forte | « même uploader » brut est inopérant : chaque replay contient les 10 joueurs. Ne prouve pas à lui seul (prêt de PC) |
+| **Propriétaire du même token** : le compte principal d'un token (présent dans ≥ 50 % de ses ≥ 50 parties) et tout autre compte présent dans ≥ 10 % de ces parties **sans jamais partager une partie avec le principal** (une personne ne joue pas deux comptes dans la même partie ; les amis fréquents jouent avec le principal, ils ne comptent pas) | forte | « même uploader » brut est inopérant : chaque replay contient les 10 joueurs. Ne prouve pas à lui seul (prêt de PC) |
 | Co-équipiers récurrents communs | moyenne | approximation du groupe d'amis ; **hors opérateur (`operator_names`) et propriétaires de token**, sinon tout le monde est lié via eux |
 | Chevauchement du pool de héros | faible-moyenne | seul, ne suffit jamais pour « HAUT » |
 | Habitudes de talents sur mêmes héros | moyenne | |
@@ -74,7 +74,7 @@ arbitraire figée ici).
 
 ## Amendements (2026-10-25)
 
-1. Signal « même uploader » redéfini en « propriétaire de token » ; opérateur et propriétaires de token exclus des co-équipiers et de la présélection (constat sur le corpus dev : un token = 2 719 des 2 723 parties).
+1. Signal « même uploader » redéfini en « propriétaire de token » (définition affinée à l'implémentation : principal ≥ 50 % + autres comptes ≥ 10 % jamais dans une partie avec lui, car deux comptes d'une même personne se partagent les parties, ils ne peuvent pas dépasser 50 % chacun) ; opérateur et propriétaires de token exclus des co-équipiers et de la présélection (constat sur le corpus dev : un token = 2 719 des 2 723 parties).
 2. **Pseudo actuel, « was … » et « 3 plus récents » viennent de l'historique daté** (`match_players` + `matches.played_at`, NULL = plus ancien), pas de `players.last_name` (écrasé dans l'ordre de traitement). `players.names` ne sert que d'ensemble pour le matching.
 3. Routes front : `player/:toon` (existante) conservée ; `/players` = recherche. Remplace `/players/:toon`.
 4. Pas de `CREATE EXTENSION` : recherche en `lower()` + `ILIKE` ; trigram seulement si la mesure l'exige, via migration séparée validée. Insensibilité aux accents hors v1.

@@ -70,3 +70,50 @@ pub async fn insert_match(db: &PgPool, played_at: Option<DateTime<Utc>>, rows: &
     }
     id
 }
+
+/// Crée un token d'upload fictif ; renvoie son id.
+pub async fn make_token(db: &PgPool) -> i64 {
+    sqlx::query_scalar("INSERT INTO upload_tokens (name, token_hash) VALUES ($1, $2) RETURNING id")
+        .bind(format!("test-{}", uid()))
+        .bind(format!("test-hash-{}", uid()))
+        .fetch_one(db)
+        .await
+        .unwrap()
+}
+
+/// Enregistre qu'un token a uploadé une partie.
+pub async fn link_upload(db: &PgPool, token_id: i64, match_id: i64) {
+    sqlx::query("INSERT INTO uploads (token_id, filename, fingerprint, status, match_id) VALUES ($1,'t.StormReplay',$2,'parsed',$3)")
+        .bind(token_id)
+        .bind(format!("test-up-{}", uid()))
+        .bind(match_id)
+        .execute(db)
+        .await
+        .unwrap();
+}
+
+/// Supprime TOUTES les données de fixtures : les parties `test-%` (CASCADE sur leurs joueurs), les
+/// joueurs qui n'apparaissent que dans ces parties, les tokens `test-%`. À lancer à la main (jamais
+/// pendant d'autres tests) ; les vrais joueurs n'apparaissent dans aucune partie `test-%`.
+/// `cargo test -p storm-codex-server purge_fixtures -- --ignored`
+pub async fn purge(db: &PgPool) -> u64 {
+    let mut n = 0;
+    const TOONS: &str = "(SELECT mp.toon_handle FROM match_players mp JOIN matches m ON m.id = mp.match_id WHERE m.fingerprint LIKE 'test-%')";
+    for q in [
+        format!("DELETE FROM player_links WHERE toon_a IN {TOONS} OR toon_b IN {TOONS}"),
+        format!("DELETE FROM players WHERE toon_handle IN {TOONS}"),
+        "DELETE FROM uploads WHERE fingerprint LIKE 'test-%'".to_owned(),
+        "DELETE FROM upload_tokens WHERE name LIKE 'test-%'".to_owned(),
+        "DELETE FROM matches WHERE fingerprint LIKE 'test-%'".to_owned(),
+    ] {
+        n += sqlx::query(&q).execute(db).await.unwrap().rows_affected();
+    }
+    n
+}
+
+#[tokio::test]
+#[ignore = "purge manuelle des fixtures"]
+async fn purge_fixtures() {
+    let Some(db) = test_pool().await else { return };
+    eprintln!("{} lignes de fixtures supprimées", purge(&db).await);
+}
