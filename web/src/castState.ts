@@ -59,3 +59,29 @@ export function badgeGameNumber(games: GameRecord[]): number {
   if (last.winner === null) return last.number;
   return Math.max(...games.map((g) => g.number)) + 1;
 }
+
+/** Cartes sélectionnables (liste unique, partagée avec la console Draft). */
+export const MAPS = [
+  "Alterac Pass", "Battlefield of Eternity", "Braxis Holdout", "Blackheart's Bay",
+  "Cursed Hollow", "Dragon Shire", "Garden of Terror", "Hanamura Temple",
+  "Infernal Shrines", "Sky Temple", "Tomb of the Spider Queen", "Towers of Doom",
+  "Volskaya Foundry", "Warhead Junction",
+];
+
+/** Ajoute ou retire `map` du pool en cours de saisie ; sans mutation, ordre des autres entrées conservé. */
+export function togglePool(names: string[], map: string): string[] {
+  return names.includes(map) ? names.filter((n) => n !== map) : [...names, map];
+}
+
+/** Cartes que « Start game » peut lancer : pickées ou decider, sans partie associée (ordre du pool). */
+export function startableMaps(s: CastSeries): string[] {
+  return s.pool
+    .filter((m) => (m.status === "picked" || m.status === "decider") && !s.games.some((g) => g.map === m.name))
+    .map((m) => m.name);
+}
+
+/** Vainqueur posable : la partie `n` existe et n'en a pas encore (le serveur refuse WinnerAlreadySet). */
+export function canSetWinner(s: CastSeries, n: number): boolean {
+  const g = s.games.find((x) => x.number === n);
+  return g !== undefined && g.winner === null;
+}

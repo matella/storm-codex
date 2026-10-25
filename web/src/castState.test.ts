@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CastSeries, CastTeam, GameRecord, PoolMap } from "./castApi";
-import { badgeGameNumber, displayName, effectiveLineupMode, mapCardView, seriesScore } from "./castState";
+import { badgeGameNumber, canSetWinner, displayName, effectiveLineupMode, MAPS, mapCardView, seriesScore, startableMaps, togglePool } from "./castState";
 
 const game = (map: string, winner: GameRecord["winner"]): GameRecord => ({
   number: 1, map, winner, takedowns: [0, 0], duration_secs: null, summary: null,
@@ -74,4 +74,35 @@ describe("seriesScore", () => {
     expect(seriesScore(series({ games: [g("blue"), g("blue"), g("red"), g(null)] }))).toEqual([2, 1]));
   it("override wins", () =>
     expect(seriesScore(series({ games: [g("red")], score_override: [3, 0] }))).toEqual([3, 0]));
+});
+
+describe("form helpers", () => {
+  const pm = (name: string, o: Partial<PoolMap> = {}): PoolMap => ({ name, status: "available", ...o }) as PoolMap;
+  it("togglePool adds then removes, keeping a stable order", () => {
+    expect(togglePool(["A"], "B")).toEqual(["A", "B"]);
+    expect(togglePool(["A", "B", "C"], "B")).toEqual(["A", "C"]);
+    expect(togglePool([], "A")).toEqual(["A"]);
+  });
+  it("togglePool does not mutate its input", () => {
+    const a = ["A"];
+    togglePool(a, "B");
+    expect(a).toEqual(["A"]);
+  });
+  it("startableMaps = picked/decider maps without a game", () => {
+    const s = series({
+      pool: [pm("A", { status: "picked", by: "blue" }), pm("B", { status: "banned", by: "red" }), pm("C", { status: "decider" }), pm("D")],
+      games: [game("A", null)],
+    });
+    expect(startableMaps(s)).toEqual(["C"]);
+  });
+  it("canSetWinner only for an existing game without winner", () => {
+    const s = series({ games: [{ ...game("A", "blue"), number: 1 }, { ...game("B", null), number: 2 }] });
+    expect(canSetWinner(s, 1)).toBe(false);
+    expect(canSetWinner(s, 2)).toBe(true);
+    expect(canSetWinner(s, 3)).toBe(false);
+  });
+  it("MAPS is a single, duplicate-free list", () => {
+    expect(new Set(MAPS).size).toBe(MAPS.length);
+    expect(MAPS).toContain("Dragon Shire");
+  });
 });

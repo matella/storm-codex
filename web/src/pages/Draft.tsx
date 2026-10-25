@@ -7,13 +7,7 @@ import {
 } from "../api";
 import { Link } from "react-router-dom";
 import { Portrait } from "../components/ds";
-
-const MAPS = [
-  "Alterac Pass", "Battlefield of Eternity", "Braxis Holdout", "Blackheart's Bay",
-  "Cursed Hollow", "Dragon Shire", "Garden of Terror", "Hanamura Temple",
-  "Infernal Shrines", "Sky Temple", "Tomb of the Spider Queen", "Towers of Doom",
-  "Volskaya Foundry", "Warhead Junction",
-];
+import { MAPS } from "../castState";
 
 const FORMATS: { v: DraftFormat; label: string }[] = [
   { v: "standard", label: "Standard" }, { v: "normal", label: "Normal (no bans)" }, { v: "fearless", label: "Fearless" },
