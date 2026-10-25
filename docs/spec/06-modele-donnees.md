@@ -10,8 +10,8 @@ idempotent) + **colonnes scalaires promues** pour les axes de filtre/tri chauds 
 |---|---|---|
 | `upload_tokens` | tokens d'upload nominatifs | `token_hash` = SHA-256 hex (jamais le clair) ; `revoked_at` |
 | `uploads` | 1 ligne par fichier reçu (traçabilité) | `fingerprint` (contenu, UNIQUE), `archived_path`, `status` ∈ pending/parsed/duplicate/parse_failed, `error_class`/`error_msg`, `parser_version`, `match_id` → matches (0002) |
-| `matches` | projection d'une partie | `fingerprint` (partie, UNIQUE), scalaires promus (build, mode, map, length, played_at, winner, first_*), **`data` = objet `match` storm-stats complet**, `parser_version` |
-| `match_players` | 10 lignes par match | scalaires promus (hero, team, win, kills…), **`data` = objet `player` complet**, UNIQUE (match_id, toon_handle), CASCADE |
+| `matches` | projection d'une partie | `fingerprint` (partie, UNIQUE), scalaires promus (build, mode, map, length, played_at, winner, first_*), **`data` = objet `match` storm-stats complet** (sauf héros des `takedowns` : héros joué, cf. `04-serveur.md` § Correction du héros joué), `parser_version` |
+| `match_players` | 10 lignes par match | scalaires promus (hero, team, win, kills…), **`data` = objet `player` complet** — `hero` et les héros copiés dans `deaths`/`takedowns` = héros joué (talents), original dans `heroCorrectedFrom` —, UNIQUE (match_id, toon_handle), CASCADE |
 | `players` | référentiel joueurs agrégé | `toon_handle` PK, `last_name`, `names` (alias JSONB) — dénormalisé, best-effort, dérivable de `match_players` |
 
 ## Définitions manuelles (0001, 0004)

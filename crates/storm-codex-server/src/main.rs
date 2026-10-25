@@ -30,7 +30,7 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock, Semaphore};
 
 /// Version du projecteur — bumper quand la projection change ; pilote le re-process idempotent.
-pub const PARSER_VERSION: i32 = 1;
+pub const PARSER_VERSION: i32 = 2;
 
 #[derive(Clone)]
 pub struct AppState {

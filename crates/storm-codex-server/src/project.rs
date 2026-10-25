@@ -42,6 +42,75 @@ fn talent_hero(p: &J, lut: &HashMap<String, String>) -> Option<String> {
     tally.into_iter().max_by_key(|(_, n)| *n).map(|(h, _)| h.to_string())
 }
 
+/// Toon → héros joué, pour les seuls joueurs dont le héros résolu par les talents diffère du
+/// héros du parser (attribut 4002).
+fn hero_corrections(
+    players: &Map<String, J>,
+    lut: &HashMap<String, String>,
+) -> HashMap<String, String> {
+    players
+        .iter()
+        .filter_map(|(toon, p)| {
+            let played = talent_hero(p, lut)?;
+            (p.get("hero").and_then(J::as_str) != Some(played.as_str()))
+                .then(|| (toon.clone(), played))
+        })
+        .collect()
+}
+
+/// Réécrit le héros de chaque copie `victim`/`killers[]` d'un tableau de takedowns, par handle
+/// du joueur (jamais par nom de héros : deux joueurs peuvent partager le même héros parser).
+/// Le killer `player: "0"` (« Nexus Forces ») n'est dans aucune correction → intact.
+fn fix_takedown_heroes(tds: Option<&mut J>, fix: &HashMap<String, String>) {
+    let Some(tds) = tds.and_then(J::as_array_mut) else {
+        return;
+    };
+    let mut fix_one = |who: &mut J| {
+        let hero = who
+            .get("player")
+            .and_then(J::as_str)
+            .and_then(|h| fix.get(h));
+        if let (Some(hero), Some(obj)) = (hero, who.as_object_mut()) {
+            obj.insert("hero".into(), J::from(hero.clone()));
+        }
+    };
+    for td in tds {
+        if let Some(v) = td.get_mut("victim") {
+            fix_one(v);
+        }
+        if let Some(ks) = td.get_mut("killers").and_then(J::as_array_mut) {
+            ks.iter_mut().for_each(&mut fix_one);
+        }
+    }
+}
+
+/// Applique les corrections de héros partout où storm-stats a copié le héros du parser :
+/// `players[].hero` (original tracé dans `heroCorrectedFrom`), `players[].deaths`,
+/// `players[].takedowns` (de **tous** les joueurs : un joueur non corrigé peut avoir un killer
+/// corrigé) et `match.takedowns`. Aucune correction → entrée inchangée.
+fn apply_hero_corrections(
+    match_: &mut Map<String, J>,
+    players: &mut Map<String, J>,
+    fix: &HashMap<String, String>,
+) {
+    if fix.is_empty() {
+        return;
+    }
+    for (toon, p) in players.iter_mut() {
+        let Some(obj) = p.as_object_mut() else {
+            continue;
+        };
+        if let Some(h) = fix.get(toon) {
+            let orig = obj.get("hero").cloned().unwrap_or(J::Null);
+            obj.insert("heroCorrectedFrom".into(), orig);
+            obj.insert("hero".into(), J::from(h.clone()));
+        }
+        fix_takedown_heroes(obj.get_mut("deaths"), fix);
+        fix_takedown_heroes(obj.get_mut("takedowns"), fix);
+    }
+    fix_takedown_heroes(match_.get_mut("takedowns"), fix);
+}
+
 /// `true` si l'erreur est un deadlock (40P01) ou un échec de sérialisation (40001) — transitoire,
 /// donc re-tentable.
 fn is_retryable(e: &sqlx::Error) -> bool {
@@ -77,7 +146,6 @@ async fn project_once(
 ) -> Result<i64, ProjectError> {
     let m = output.match_.as_ref().ok_or(ProjectError::Empty)?;
     let players = output.players.as_ref().ok_or(ProjectError::Empty)?;
-    let match_json = J::Object(m.clone());
 
     let build = m
         .get("version")
@@ -106,6 +174,33 @@ async fn project_once(
         .execute(&mut *tx)
         .await?;
 
+    // Correction héros (cf. talent_hero) : on résout le héros joué via dim_talents pour tous les
+    // talents du match en une requête, AVANT d'écrire `matches.data` (qui porte `takedowns`).
+    // Best-effort — référentiel vide → LUT vide → on garde le héros du parser.
+    let talent_ids: Vec<String> = players
+        .values()
+        .filter_map(|p| p.get("talents").and_then(J::as_object))
+        .flat_map(|t| t.values().filter_map(J::as_str).map(str::to_owned))
+        .collect();
+    let talent_lut: HashMap<String, String> = if talent_ids.is_empty() {
+        HashMap::new()
+    } else {
+        sqlx::query_as::<_, (String, String)>(
+            "SELECT tree_id, hero_id FROM dim_talents WHERE tree_id = ANY($1)",
+        )
+        .bind(&talent_ids)
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .collect()
+    };
+    let corrections = hero_corrections(players, &talent_lut);
+    let mut match_obj = m.clone();
+    let mut players = players.clone();
+    apply_hero_corrections(&mut match_obj, &mut players, &corrections);
+    let match_json = J::Object(match_obj);
+
     let match_id: i64 = sqlx::query_scalar(
         "INSERT INTO matches (fingerprint, build, mode, map, duration_loops, length, played_at,
             winner, first_pick_win, first_objective, first_fort, first_keep, parser_version, data)
@@ -128,48 +223,7 @@ async fn project_once(
     .fetch_one(&mut *tx)
     .await?;
 
-    // Correction héros (cf. talent_hero) : on résout le héros joué via dim_talents pour tous les
-    // talents du match en une requête. Best-effort — référentiel vide → LUT vide → on garde le
-    // héros du parser.
-    let talent_ids: Vec<String> = players
-        .values()
-        .filter_map(|p| p.get("talents").and_then(J::as_object))
-        .flat_map(|t| t.values().filter_map(J::as_str).map(str::to_owned))
-        .collect();
-    let talent_lut: HashMap<String, String> = if talent_ids.is_empty() {
-        HashMap::new()
-    } else {
-        sqlx::query_as::<_, (String, String)>(
-            "SELECT tree_id, hero_id FROM dim_talents WHERE tree_id = ANY($1)",
-        )
-        .bind(&talent_ids)
-        .fetch_all(&mut *tx)
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .collect()
-    };
-
-    for (toon, p) in players {
-        // héros joué (talents) prioritaire ; sinon le héros du parser.
-        let parser_hero = p.get("hero").and_then(J::as_str);
-        let played = talent_hero(p, &talent_lut);
-        let hero: Option<&str> = played.as_deref().or(parser_hero);
-        // si la correction diffère, on réécrit `hero` dans l'objet stocké (data) pour que la fiche
-        // de match — qui relit `data` — concorde avec la colonne ; trace l'original corrigé.
-        let fixed;
-        let p_stored: &J = match &played {
-            Some(h) if Some(h.as_str()) != parser_hero => {
-                let mut c = p.clone();
-                if let Some(obj) = c.as_object_mut() {
-                    obj.insert("heroCorrectedFrom".into(), p.get("hero").cloned().unwrap_or(J::Null));
-                    obj.insert("hero".into(), J::from(h.clone()));
-                }
-                fixed = c;
-                &fixed
-            }
-            _ => p,
-        };
+    for (toon, p) in &players {
         sqlx::query(
             "INSERT INTO match_players (match_id, toon_handle, name, hero, team, win, hero_level,
                 kills, takedowns, deaths, hero_damage, healing, experience, data)
@@ -178,7 +232,7 @@ async fn project_once(
         .bind(match_id)
         .bind(toon)
         .bind(p.get("name").and_then(J::as_str))
-        .bind(hero)
+        .bind(p.get("hero").and_then(J::as_str))
         .bind(p.get("team").and_then(J::as_i64).map(|v| v as i32))
         .bind(p.get("win").and_then(J::as_bool))
         .bind(p.get("heroLevel").and_then(J::as_i64).map(|v| v as i32))
@@ -188,7 +242,7 @@ async fn project_once(
         .bind(gs_i(p, "HeroDamage"))
         .bind(gs_i(p, "Healing"))
         .bind(gs_i(p, "ExperienceContribution"))
-        .bind(p_stored)
+        .bind(p)
         .execute(&mut *tx)
         .await?;
     }
@@ -255,6 +309,71 @@ mod tests {
         assert_eq!(talent_hero(&p2, &lut), None);
         // pas de talents du tout → None.
         assert_eq!(talent_hero(&serde_json::json!({}), &lut), None);
+    }
+
+    /// Régression (ARAM Braxis Outpost, build 98348) : `players[].hero` était corrigé mais les
+    /// copies du héros dans les morts gardaient le héros parser (Kel'Thuzad affiché « Kharazim »).
+    #[test]
+    fn corrections_propagees_aux_morts_et_takedowns() {
+        use serde_json::json;
+        // A et B ont le MÊME héros parser (Stukov) mais jouent Arthas / Rehgar ; C est correct.
+        let td_a_dies = json!({"victim": {"player": "A", "hero": "Stukov"},
+            "killers": [{"player": "C", "hero": "Zagara"}, {"player": "B", "hero": "Stukov"}]});
+        let td_c_dies = json!({"victim": {"player": "C", "hero": "Zagara"},
+            "killers": [{"player": "A", "hero": "Stukov"}]});
+        let td_creep = json!({"victim": {"player": "B", "hero": "Stukov"},
+            "killers": [{"player": "0", "hero": "Nexus Forces"}]});
+        let mut players: Map<String, J> = serde_json::from_value(json!({
+            "A": {"hero": "Stukov", "talents": {"T1": "ArthasT"},
+                  "deaths": [td_a_dies], "takedowns": [td_c_dies]},
+            "B": {"hero": "Stukov", "talents": {"T1": "RehgarT"},
+                  "deaths": [td_creep], "takedowns": [td_a_dies]},
+            "C": {"hero": "Zagara", "talents": {"T1": "ZagaraT"},
+                  "deaths": [td_c_dies], "takedowns": [td_a_dies]},
+        }))
+        .unwrap();
+        let mut match_: Map<String, J> =
+            serde_json::from_value(json!({"takedowns": [td_a_dies, td_c_dies, td_creep]})).unwrap();
+
+        // référentiel vide → aucune correction → entrée strictement inchangée
+        let empty = hero_corrections(&players, &HashMap::new());
+        assert!(empty.is_empty());
+        let (p0, m0) = (players.clone(), match_.clone());
+        apply_hero_corrections(&mut match_, &mut players, &empty);
+        assert_eq!((&players, &match_), (&p0, &m0));
+
+        let lut: HashMap<String, String> = [
+            ("ArthasT", "Arthas"),
+            ("RehgarT", "Rehgar"),
+            ("ZagaraT", "Zagara"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+        let fix = hero_corrections(&players, &lut);
+        assert_eq!(fix.len(), 2, "C est déjà correct : {fix:?}");
+        apply_hero_corrections(&mut match_, &mut players, &fix);
+
+        assert_eq!(players["A"]["hero"], "Arthas");
+        assert_eq!(players["A"]["heroCorrectedFrom"], "Stukov");
+        assert!(players["C"].get("heroCorrectedFrom").is_none());
+        // victime corrigée, killers corrigés par handle (A ≠ B malgré le même héros parser)
+        assert_eq!(players["A"]["deaths"][0]["victim"]["hero"], "Arthas");
+        assert_eq!(players["A"]["deaths"][0]["killers"][1]["hero"], "Rehgar");
+        // joueur non corrigé (C) : ses copies voient quand même le killer corrigé
+        assert_eq!(players["C"]["deaths"][0]["victim"]["hero"], "Zagara");
+        assert_eq!(players["C"]["deaths"][0]["killers"][0]["hero"], "Arthas");
+        assert_eq!(players["C"]["takedowns"][0]["victim"]["hero"], "Arthas");
+        // « Nexus Forces » intact
+        assert_eq!(
+            players["B"]["deaths"][0]["killers"][0]["hero"],
+            "Nexus Forces"
+        );
+        assert_eq!(players["B"]["deaths"][0]["victim"]["hero"], "Rehgar");
+        // match.takedowns aussi
+        assert_eq!(match_["takedowns"][0]["victim"]["hero"], "Arthas");
+        assert_eq!(match_["takedowns"][1]["killers"][0]["hero"], "Arthas");
+        assert_eq!(match_["takedowns"][2]["victim"]["hero"], "Rehgar");
     }
 
     /// Test d'intégration : projette un replay et vérifie l'idempotence. Ignoré si DATABASE_URL
