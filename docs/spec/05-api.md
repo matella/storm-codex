@@ -83,6 +83,20 @@ Chaque mutation → WS `draft.updated` ; l'overlay et la console se re-fetchent.
 serveur, s'arrête à la fin du draft) · `POST …/replay/queue/move {from,to}` · `DELETE …/replay/queue/{i}`.
 Spec : `docs/specs/2026-10-25-draft-replay-design.md`.
 
+## Régie de cast (`cast/api.rs`, mode ouvert)
+
+`GET /api/cast` (→ `Series`) · `POST /api/cast/series {blue:{name}, red:{name}, bo, format, pool:[nom]}`
+(crée/redémarre : `active=true`, parties/score/diaporama remis à zéro, scène conservée) ·
+`PUT /api/cast/teams {blue, red}` · `POST /api/cast/pool/map {name, status: available|banned|picked|decider, by?}` ·
+`POST /api/cast/games/start {map}` → `{number}` · `POST /api/cast/games/{n}/winner {side, takedowns?: [bleu, rouge], duration_secs?}` ·
+`POST /api/cast/score {blue, red}` ou `null` (retour au score calculé) · `POST /api/cast/scene {scene: lineups|series|draft|ingame|hide}` ·
+`POST /api/cast/lineup-mode {mode: auto|a|b}` · `POST /api/cast/slide {game?, index?, auto?, interval_ms?}`
+(partiel ; `interval_ms` borné 500 ms–1 h). Les mutations répondent par la `Series` complète (`games/start` : `{number}`).
+Erreurs `CastError` → `409 {"error": "<Variante>"}` (`UnknownMap`, `NotInPool`, `DuplicateDecider`,
+`MapNotChosen`, `UnknownGame`, `WinnerAlreadySet`, `MapAlreadyPlayed`, `SeriesInactive`), état inchangé.
+Toute mutation sauf `/series` et `/scene` renvoie `409 SeriesInactive` tant que `active=false`.
+Chaque mutation → WS `cast.updated`. Design : `docs/specs/2026-10-25-cast-control-room-design.md`.
+
 ## Feed live d'une partie en cours (`live/api.rs`)
 
 Spec : `docs/specs/2026-10-24-feed-live-en-partie-design.md`. État **en mémoire**, une partie à la

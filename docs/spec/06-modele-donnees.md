@@ -39,6 +39,11 @@ Ces tables sont **reconstruisibles** (refresh complet au démarrage/24 h) — pa
 - `draft_live` : singleton (id=1, CHECK) — tout l'état du simulateur de draft en JSONB
   (config, picks/bans, historique fearless), horodaté.
 
+## Régie de cast (0012)
+
+- `cast_live` : singleton (id=1, CHECK) — toute la série de cast (équipes, pool de cartes, parties,
+  scène, diaporama) en JSONB, horodaté ; `schema_version` dans le JSON, champs manquants → défauts.
+
 ## Scouting (0010)
 
 Rapports de scouting (spec `docs/specs/2026-09-26-rapports-scouting-design.md`). **Isolés** des

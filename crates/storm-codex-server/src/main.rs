@@ -44,6 +44,8 @@ pub struct AppState {
     pub events: broadcast::Sender<serde_json::Value>,
     /// État autoritatif du simulateur de draft (singleton, persisté dans `draft_live`).
     pub draft: Arc<RwLock<draft::DraftState>>,
+    /// Série de la régie de cast (singleton, persisté dans `cast_live`).
+    pub cast: Arc<RwLock<cast::Series>>,
     /// Lobby live courant (singleton, persisté dans `lobby_live`). `None` = aucun lobby.
     pub lobby: Arc<RwLock<Option<lobby::LobbyState>>>,
     /// Partie en cours (feed live, en mémoire, jetable). `None` = aucune.
@@ -123,6 +125,8 @@ async fn run() -> Result<(), String> {
     });
     // Aucune minuterie après un redémarrage : la lecture auto repart en pause (curseur conservé).
     draft.after_restart();
+    // Série de cast : reprise du disque si lisible, sinon état neuf inactif (jamais d'échec au démarrage).
+    let cast_initial = cast::store::load(&db).await.unwrap_or_else(cast::Series::new);
     let lobby_initial = lobby::store::load(&db).await;
     let state = AppState {
         cfg: Arc::new(cfg),
@@ -130,6 +134,7 @@ async fn run() -> Result<(), String> {
         parse_sem: Arc::new(Semaphore::new(cores)),
         events,
         draft: Arc::new(RwLock::new(draft)),
+        cast: Arc::new(RwLock::new(cast_initial)),
         lobby: Arc::new(RwLock::new(lobby_initial)),
         live: Arc::new(RwLock::new(None)),
         replay_timer: Arc::default(),
@@ -244,6 +249,17 @@ fn api_router(state: &AppState) -> Router<AppState> {
         )
         .route("/api/admin/uploads", get(admin::uploads_health))
         .route("/api/admin/reprocess", post(admin::reprocess))
+        // Régie de cast (état autoritatif serveur + broadcast WS cast.updated), mode ouvert
+        .route("/api/cast", get(cast::api::get_cast))
+        .route("/api/cast/series", post(cast::api::start_series))
+        .route("/api/cast/teams", axum::routing::put(cast::api::put_teams))
+        .route("/api/cast/pool/map", post(cast::api::mark_map))
+        .route("/api/cast/games/start", post(cast::api::start_game))
+        .route("/api/cast/games/{n}/winner", post(cast::api::set_winner))
+        .route("/api/cast/score", post(cast::api::set_score))
+        .route("/api/cast/scene", post(cast::api::set_scene))
+        .route("/api/cast/lineup-mode", post(cast::api::set_lineup_mode))
+        .route("/api/cast/slide", post(cast::api::set_slide))
         // Simulateur de draft (état autoritatif serveur + broadcast WS draft.updated)
         .route("/api/draft", get(draft::api::get_draft))
         .route("/api/draft/config", post(draft::api::config))
@@ -358,14 +374,14 @@ async fn health(State(state): State<AppState>) -> (StatusCode, Json<serde_json::
 /// exécutés en CI contre un service Postgres.
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
-mod api_tests {
+pub(crate) mod api_tests {
     use super::*;
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use http_body_util::BodyExt;
     use tower::util::ServiceExt;
 
-    async fn test_state(admin_token: Option<&str>) -> Option<AppState> {
+    pub(crate) async fn test_state(admin_token: Option<&str>) -> Option<AppState> {
         let Ok(url) = std::env::var("DATABASE_URL") else {
             eprintln!("DATABASE_URL absent → test d'intégration API ignoré");
             return None;
@@ -403,6 +419,7 @@ mod api_tests {
             db,
             parse_sem: Arc::new(Semaphore::new(2)),
             events,
+            cast: Arc::new(RwLock::new(cast::Series::new())),
             lobby: Arc::new(RwLock::new(None)),
             live: Arc::new(RwLock::new(None)),
             replay_timer: Arc::default(),
@@ -807,7 +824,7 @@ mod api_tests {
         state.draft.write().await.add_game(g);
     }
 
-    async fn call(state: &AppState, method: &str, path: &str, body: Option<serde_json::Value>) -> (StatusCode, serde_json::Value) {
+    pub(crate) async fn call(state: &AppState, method: &str, path: &str, body: Option<serde_json::Value>) -> (StatusCode, serde_json::Value) {
         let mut req = Request::builder().method(method).uri(path);
         let body = match body {
             Some(b) => {

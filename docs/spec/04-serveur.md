@@ -93,6 +93,19 @@ pseudos), la partie courante, `fearless`, la lecture auto (`playing`, `interval_
 `public()` retire scripts et pseudos des picks non révélés (vue servie par `GET /api/draft`).
 Spec : `docs/specs/2026-10-25-draft-replay-design.md`.
 
+## Régie de cast (`cast/`)
+
+Module `cast/` : `mod.rs` (types `Series`, `Team`, `PoolMap`/`MapStatus`, `GameRecord`, `Scene`,
+`LineupMode`, `SlideState`, `CastError`), `series.rs` (opérations **pures**, zéro I/O : pool, parties,
+score, mode de lineup), `store.rs` (persistance), `api.rs` (routes). Série singleton autoritative en
+mémoire (`AppState.cast`), **persistée** dans `cast_live` (JSONB, id=1), rechargée au démarrage ; tout
+état illisible (non-objet, `players` ≠ 5, scène/format/côté/statut inconnu) → repli sur une série neuve
+inactive, le démarrage n'échoue jamais. Chaque mutation : un seul write-lock sur une copie (une erreur
+`CastError` ne change rien), puis persistance et broadcast `cast.updated` sur `/ws`. Mode ouvert comme
+`/api/draft`. Règles : `mark_map` refuse une carte déjà jouée (`MapAlreadyPlayed`) ; toute mutation sauf
+`POST /api/cast/series` et `/scene` exige `active` (`SeriesInactive`).
+Design : `docs/specs/2026-10-25-cast-control-room-design.md`.
+
 ## Feed live (`live/`)
 
 Partie en cours, alimentée par `POST /api/live/chunk` (blocs de `TempWriteReplayP1`). `mod.rs` :

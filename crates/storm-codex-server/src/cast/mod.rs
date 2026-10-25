@@ -1,12 +1,12 @@
 //! Régie de cast — état de série pur (aucune I/O) : équipes, pool de cartes, parties, score,
 //! scène courante. Sérialisable (persistance, WS). Les types `Side`/`Format` viennent de `draft`
 //! (JSON : `"blue"`/`"red"`, `"standard"`/`"normal"`/`"fearless"`).
-// Module consommé par la persistance/les routes des tâches suivantes.
-#![allow(dead_code)]
 use crate::draft::{Format, Side};
 use serde::{Deserialize, Serialize};
 
+pub mod api;
 mod series;
+pub mod store;
 
 pub const SCHEMA_VERSION: i32 = 1;
 
@@ -36,24 +36,31 @@ pub enum MapStatus {
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
-#[serde(from = "PoolMapRaw")]
+#[serde(try_from = "PoolMapRaw")]
 pub struct PoolMap {
     pub name: String,
     #[serde(flatten)]
     pub status: MapStatus,
 }
 
-/// Forme tolérante en lecture : un `status` absent donne `Available`.
+/// Forme tolérante en lecture : un `status` absent donne `Available`, mais un `status`/`by`
+/// invalide est une erreur (jamais dégradé silencieusement en `Available`).
 #[derive(Deserialize)]
 struct PoolMapRaw {
     #[serde(default)]
     name: String,
     #[serde(flatten)]
-    status: Option<MapStatus>,
+    rest: serde_json::Map<String, serde_json::Value>,
 }
-impl From<PoolMapRaw> for PoolMap {
-    fn from(r: PoolMapRaw) -> Self {
-        Self { name: r.name, status: r.status.unwrap_or_default() }
+impl TryFrom<PoolMapRaw> for PoolMap {
+    type Error = serde_json::Error;
+    fn try_from(r: PoolMapRaw) -> Result<Self, Self::Error> {
+        let status = if r.rest.contains_key("status") {
+            serde_json::from_value(serde_json::Value::Object(r.rest))?
+        } else {
+            MapStatus::default()
+        };
+        Ok(Self { name: r.name, status })
     }
 }
 
@@ -170,6 +177,8 @@ pub enum CastError {
     UnknownGame,
     #[error("winner already set")]
     WinnerAlreadySet,
+    #[error("map already played")]
+    MapAlreadyPlayed,
     #[error("series inactive")]
     SeriesInactive,
 }

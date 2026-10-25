@@ -18,6 +18,9 @@ impl Series {
 
     pub fn mark_map(&mut self, name: &str, status: MapStatus) -> Result<(), CastError> {
         let idx = self.pool.iter().position(|m| m.name == name).ok_or(CastError::NotInPool)?;
+        if self.is_played(name) {
+            return Err(CastError::MapAlreadyPlayed);
+        }
         if status == MapStatus::Decider
             && self.pool.iter().enumerate().any(|(i, m)| i != idx && m.status == MapStatus::Decider)
         {
@@ -146,6 +149,14 @@ mod tests {
         assert_eq!(s.mark_map("B", MapStatus::Decider), Err(CastError::DuplicateDecider));
         assert_eq!(s, before);
         s.mark_map("A", MapStatus::Decider).unwrap();
+    }
+
+    #[test]
+    fn mark_map_refuses_a_map_that_already_has_a_game() {
+        let mut s = with_game();
+        let before = s.clone();
+        assert_eq!(s.mark_map("A", MapStatus::Banned { by: Side::Red }), Err(CastError::MapAlreadyPlayed));
+        assert_eq!(s, before);
     }
 
     #[test]
