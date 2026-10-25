@@ -22,6 +22,7 @@ import { Leagues } from "./pages/Leagues";
 import { Admin } from "./pages/Admin";
 import { Draft } from "./pages/Draft";
 import { DraftOverlay } from "./pages/DraftOverlay";
+import { DraftReplay } from "./pages/DraftReplay";
 import { Scouting } from "./pages/Scouting";
 import { ScoutingReport } from "./pages/ScoutingReport";
 import { Live } from "./pages/Live";
@@ -51,6 +52,7 @@ export default function App() {
         <Route path="trends" element={<Trends />} />
         <Route path="leagues" element={<Leagues />} />
         <Route path="draft" element={<Draft />} />
+        <Route path="draft/replay" element={<DraftReplay />} />
         <Route path="scouting" element={<Scouting />} />
         <Route path="scouting/:id" element={<ScoutingReport />} />
         <Route path="admin" element={<Admin />} />

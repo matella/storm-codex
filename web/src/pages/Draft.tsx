@@ -5,6 +5,7 @@ import {
   draftScore, draftSeriesNext, draftSeriesNew,
   type DraftState, type Side, type DraftFormat, type TeamInfo,
 } from "../api";
+import { Link } from "react-router-dom";
 import { Portrait } from "../components/ds";
 
 const MAPS = [
@@ -72,6 +73,7 @@ function DraftInner({ d, dim, role, setRole, search, setSearch }: {
         <div className="ds-cover-foot">
           <span className="ds-label" style={{ margin: 0 }}>OBS overlay</span>
           <a className="olink" href={overlayUrl} target="_blank" rel="noreferrer">{overlayUrl} ↗</a>
+          <Link className="olink" to="/draft/replay">Draft from a replay →</Link>
           <span className="muted-mono">browser source 1920×1080, transparent · skins <code>nexus · glass · tactical · mono</code></span>
         </div>
       </header>

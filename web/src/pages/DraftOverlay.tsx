@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useDraft, useDimHeroes, sideOfStep, heroIcon, initials, type DraftState, type Side } from "../api";
+import { isReplayReady, timerFraction } from "../draftOverlay";
 import "./draft-overlay.css";
 
 /** Portrait héros qui remplit son conteneur (splash) ; repli sur les initiales si pas d'image. */
@@ -50,6 +51,15 @@ function Timeline({ d }: { d: DraftState }) {
     const id = setInterval(() => setSecs((s) => Math.max(0, s - 1)), 1000);
     return () => clearInterval(id);
   }, [ps]);
+
+  // en mode replay le timer suit le prochain tick de lecture auto : horloge rafraîchie 4×/s
+  const inReplay = d.replay?.current != null;
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!inReplay) return;
+    const id = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(id);
+  }, [inReplay]);
 
   const activeSide: Side | null = d.cursor < d.steps.length ? sideOfStep(d, d.steps[d.cursor]) : null;
 
@@ -102,7 +112,8 @@ function Timeline({ d }: { d: DraftState }) {
           <span className="s">{d.score[0]} — {d.score[1]}</span>
           <span className="r">{d.red.name}{activeSide === "red" && <span className="dot" />}</span>
         </div>
-        <div className="tl-timer"><span style={{ width: `${(secs / PHASE_SECONDS) * 100}%` }} /></div>
+        {isReplayReady(d) && <div className="ready">Draft ready — waiting</div>}
+        <div className="tl-timer"><span style={{ width: `${timerFraction(d, now, secs, PHASE_SECONDS) * 100}%`, transition: inReplay ? "width .25s linear" : undefined }} /></div>
       </div>
 
       {fearless && (

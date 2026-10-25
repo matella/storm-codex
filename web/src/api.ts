@@ -627,6 +627,27 @@ export interface DraftState {
   manual_unavailable: string[];
   series_bans: string[];
   series_games: string[][];
+  /** Draft depuis un replay (vue publique : sans scripts). Absent sur un serveur plus ancien. */
+  replay?: ReplayState;
+}
+
+/** Partie de replay chargée. `script`/`pick_players` ne sont renseignés que par `GET /api/draft/replay`. */
+export interface LoadedGame {
+  source: string;
+  map: string;
+  first_pick: Side;
+  script: (string | null)[];
+  pick_players: (string | null)[];
+  blue_players: string[];
+  red_players: string[];
+}
+export interface ReplayState {
+  queue: LoadedGame[];
+  current: number | null;
+  fearless: boolean;
+  playing: boolean;
+  interval_ms: number;
+  next_at_ms: number | null;
 }
 
 async function post<T>(path: string, body?: unknown): Promise<T> {
@@ -660,6 +681,36 @@ export interface DraftConfig {
   bo?: number;
 }
 export const draftConfig = (cfg: DraftConfig) => post<DraftState>("/api/draft/config", cfg);
+
+// ── draft depuis un replay (/draft/replay) ────────────────────────────────────
+export const fetchDraftReplay = () => get<ReplayState>("/api/draft/replay");
+export const draftReplayNext = () => post<ReplayState>("/api/draft/replay/next");
+export const draftReplayBack = () => post<ReplayState>("/api/draft/replay/back");
+export const draftReplayReset = () => post<ReplayState>("/api/draft/replay/reset");
+export const draftReplaySelect = (index: number) => post<ReplayState>("/api/draft/replay/select", { index });
+export const draftReplayFearless = (value: boolean) => post<ReplayState>("/api/draft/replay/fearless", { value });
+export const draftReplayPlay = (playing: boolean, intervalMs?: number) =>
+  post<ReplayState>("/api/draft/replay/play", { playing, interval_ms: intervalMs });
+export const draftReplayMove = (from: number, to: number) =>
+  post<ReplayState>("/api/draft/replay/queue/move", { from, to });
+export const draftReplayRemove = async (i: number): Promise<ReplayState> => {
+  const r = await fetch(`/api/draft/replay/queue/${i}`, { method: "DELETE" });
+  if (!r.ok) throw new Error(`remove → ${r.status}`);
+  return r.json() as Promise<ReplayState>;
+};
+/** Envoie un `.StormReplay` (octets bruts). Rejette avec `Error(code)` — `not_custom`, `no_draft`… */
+export async function draftReplayLoad(file: File): Promise<ReplayState> {
+  const r = await fetch("/api/draft/replay/load", {
+    method: "POST",
+    headers: { "X-Filename": encodeURIComponent(file.name) },
+    body: file,
+  });
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? `http_${r.status}`);
+  }
+  return r.json() as Promise<ReplayState>;
+}
 
 /** État du draft, rafraîchi en direct via le WS (`draft.updated`). */
 export function useDraft() {
