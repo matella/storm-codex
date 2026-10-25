@@ -4,7 +4,7 @@
 
 **Goal:** Charger un replay Custom, préparer son draft caché, le dérouler phase par phase (manuel ou auto 30 s) sur l'overlay OBS existant, avec file de replays et fearless.
 
-**Architecture:** Le moteur `DraftState` (crate `storm-codex-server`, module `draft`) gagne un `ReplayState` (file de parties chargées + script) et des opérations pures `reveal_phase`/`back_phase`. Un décodage « draft seulement » (storm-stats `process_replay`, rien écrit en base) produit un `LoadedGame`. Les routes `/api/draft/replay/*` mutent l'état, persistent (`draft_live`) et diffusent `draft.updated`. La page React `/draft/replay` est la télécommande ; `/draft/overlay` n'est pas modifié.
+**Architecture:** Le moteur `DraftState` (crate `storm-codex-server`, module `draft`) gagne un `ReplayState` (file de parties chargées + script) et des opérations pures `reveal_phase`/`back_phase`. Un décodage « draft seulement » (storm-stats `process_replay`, rien écrit en base) produit un `LoadedGame`. Les routes `/api/draft/replay/*` mutent l'état, persistent (`draft_live`) et diffusent `draft.updated`. La page React `/draft/replay` est la télécommande ; `/draft/overlay` reçoit seulement de petites retouches (Task 5).
 
 **Tech Stack:** Rust (axum, tokio, serde, sqlx), storm-stats, React + Vite + TS + TanStack Query. Consulter Context7 (axum, TanStack Query) avant d'utiliser leurs API.
 
@@ -47,9 +47,9 @@
   - `impl DraftState { pub fn reveal_phase(&mut self) -> Result<(), DraftError>; pub fn back_phase(&mut self) -> Result<(), DraftError>; pub fn select_game(&mut self, index: usize) -> Result<(), DraftError>; pub fn public(&self) -> DraftState }`
   - `DraftError` gagne `NoGame` ; `DraftError::Complete`/`NothingToUndo` réutilisés.
 
-- [ ] **Step 1: Tests (rouges)** dans `replay.rs` : `reveal_phase_reveals_whole_two_pick_phase` (script 16 héros distincts `h0..h15` ; 4 reveals → curseur 4 ; le 5e → 5 ; le 6e → curseur 7 et `assignments[5..7]` remplis), `twelve_reveals_complete_standard` (12 appels → `is_complete()`, 13e → `Err(Complete)`), `back_phase_undoes_whole_phase` (après 6 reveals, `back_phase` → curseur 5, `assignments[5..7]` = None), `back_phase_at_start_errors` (`NothingToUndo`), `reveal_without_game_errors` (`NoGame`), `none_step_is_skipped` (script avec `None` aux étapes 2,3 : reveal de ces phases avance le curseur, assignation `None`), `duplicate_hero_does_not_fail` (script avec `h0` aux étapes 0 et 5 : 6 reveals OK), `select_game_fearless_seeds_series_bans` (queue de 2 parties, `fearless=true`, `select_game(1)` → `series_bans` == picks (non `None`) de la partie 0, curseur 0, format `Fearless`, équipes/joueurs/map/first_pick de la partie 1), `select_game_non_fearless_has_no_series_bans`, `public_hides_scripts` (`public().replay.queue[i].script` vide, `pick_players` vide).
+- [ ] **Step 1: Tests (rouges)** dans `replay.rs` : `reveal_phase_reveals_whole_two_pick_phase` (script 16 héros distincts `h0..h15` ; 4 reveals → curseur 4 ; le 5e → 5 ; le 6e → curseur 7 et `assignments[5..7]` remplis), `twelve_reveals_complete_standard` (12 appels → `is_complete()`, 13e → `Err(Complete)`), `back_phase_undoes_whole_phase` (après 6 reveals, `back_phase` → curseur 5, `assignments[5..7]` = None), `back_phase_at_start_errors` (`NothingToUndo`), `reveal_without_game_errors` (`NoGame`), `none_step_is_skipped` (script avec `None` aux étapes 2,3 : reveal de ces phases avance le curseur, assignation `None`), `duplicate_hero_does_not_fail` (script avec `h0` aux étapes 0 et 5 : 6 reveals OK), `select_game_fearless_seeds_series_bans` (queue de 2 parties, `fearless=true`, `select_game(1)` → `series_bans` == picks (non `None`) de la partie 0, curseur 0, format `Fearless`, équipes/joueurs/map/first_pick de la partie 1), `select_game_non_fearless_has_no_series_bans`, `public_hides_scripts` (`public().replay.queue[i].script` vide, `pick_players` vide), `public_hides_names_of_unrevealed_picks` (en mode replay, après 1 phase de bans seulement, `public().blue.players` et `.red.players` sont tous vides ; après la révélation du 1er pick Blue, seul `blue.players[0]` est renseigné).
 - [ ] **Step 2:** `cargo test -p storm-codex-server draft::replay` → échec de compilation/tests attendus.
-- [ ] **Step 3: Implémenter** types et méthodes. `reveal_phase` : `len = current_phase_len()`, pour chacune des `len` étapes écrire `script[cursor]` directement dans `assignments` (sans passer par `apply`, donc sans contrôle d'unicité) et avancer ; `back_phase` : reculer jusqu'au début du bloc de phase précédent (calculer les bornes de phases depuis `steps`, pas depuis le curseur seul). `select_game` : `*self = DraftState::new(format, g.first_pick, g.map)` en conservant `score`, `bo`, `manual_unavailable`, `replay`, noms d'équipe ; remplir `blue.players`/`red.players` ; `series_bans` = union des picks de `queue[..index]` si `fearless`. `public()` : clone avec scripts/`pick_players` vidés.
+- [ ] **Step 3: Implémenter** types et méthodes. `reveal_phase` : `len = current_phase_len()`, pour chacune des `len` étapes écrire `script[cursor]` directement dans `assignments` (sans passer par `apply`, donc sans contrôle d'unicité) et avancer ; `back_phase` : reculer jusqu'au début du bloc de phase précédent (calculer les bornes de phases depuis `steps`, pas depuis le curseur seul). `select_game` : `*self = DraftState::new(format, g.first_pick, g.map)` en conservant `score`, `bo`, `manual_unavailable`, `replay`, noms d'équipe ; remplir `blue.players`/`red.players` ; `series_bans` = union des picks de `queue[..index]` si `fearless`. `public()` : clone avec scripts/`pick_players` vidés, et `blue.players[k]`/`red.players[k]` vidés tant que le k-ième pick de ce côté (ordre des étapes) n'est pas révélé — uniquement si `replay.current` est `Some`.
 - [ ] **Step 4:** mêmes tests → PASS ; `cargo clippy -p storm-codex-server --all-targets -- -D warnings`.
 - [ ] **Step 5: Commit** `feat(draft): moteur replay — révélation par phase, file, fearless`
 
@@ -108,3 +108,20 @@
 - [ ] **Step 4:** `npm test`, `npm run build`, `npx tsc --noEmit` → verts.
 - [ ] **Step 5: Vérification navigateur** (preview launch.json :8089) : charger un vrai Custom, vérifier overlay vide → révélation dans l'ordre → comparaison avec la fiche de match ; mesurer le chargement (< 500 ms) ; tester file de 3 replays en fearless, Retour/Reset, lecture auto (réduire l'intervalle à 2 s pour le test), rafraîchissement en pleine lecture, rejet d'un replay QM/ARAM. Consigner les mesures dans `docs/STATUS.md`.
 - [ ] **Step 6: Commit** `feat(web): page /draft/replay — télécommande du draft depuis un replay`
+
+### Task 5: Retouches de l'overlay OBS
+
+**Files:**
+- Modify: `web/src/pages/DraftOverlay.tsx`, `web/src/pages/draft-overlay.css`, `web/src/api.ts` (type `DraftState.replay?`), `docs/spec/08-frontend.md`
+- Test: `web/src/draftOverlay.test.ts` (fonctions pures extraites)
+
+**Interfaces:**
+- Consumes: `DraftState.replay` public (`current`, `playing`, `interval_ms`, `next_at_ms`).
+- Produces: `export function timerFraction(replay: ReplayPublic | undefined, now: number, fallbackSecs: number, secs: number): number` (0 à 1) ; `export function isReplayReady(d: DraftState): boolean` (`replay.current != null && cursor === 0`).
+
+- [ ] **Step 1: Tests (rouges)** : `isReplayReady` vrai à curseur 0 avec partie courante, faux sinon et faux hors mode replay ; `timerFraction` = 0 si replay non en lecture auto, = `(next_at_ms - now) / interval_ms` borné à [0,1] si lecture auto, = `secs/fallbackSecs` hors mode replay.
+- [ ] **Step 2:** `npm test` → échec.
+- [ ] **Step 3: Implémenter** les deux fonctions et brancher `Timeline` : bannière `.ready` (« Draft prêt — en attente », style de la maquette) sous l'en-tête quand `isReplayReady` ; timer via `timerFraction` (rafraîchi chaque seconde) ; bans vides en pointillés (`.bn.hidden`/`.empty` comme la maquette). Aucun autre changement de rendu hors mode replay.
+- [ ] **Step 4:** `npm test`, `npm run build` verts ; comparer visuellement à `docs/draft-replay-mockup.html` (3 états) lors de la vérification navigateur de la Task 4.
+- [ ] **Step 5: Commit** `feat(web): overlay draft — états prêt/replay (bannière, timer de lecture auto)`
+

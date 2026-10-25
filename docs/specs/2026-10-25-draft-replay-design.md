@@ -15,7 +15,7 @@ le public est l'overlay OBS existant `/draft/overlay` ; la nouvelle page n'est q
 
 1. **Page dédiée** `/draft/replay` : on y choisit/dépose un `.StormReplay` ; le draft est préparé à
    l'étape 0 (rien de révélé), puis démarré manuellement.
-2. **Sortie = overlay OBS existant**, réutilisé tel quel (même état de draft, même WS `draft.updated`).
+2. **Sortie = overlay OBS existant**, réutilisé (même état de draft, même WS `draft.updated`) avec les retouches minimes décrites plus bas.
 3. **Dans le périmètre V1** : lecture auto à minuterie, file de plusieurs replays (une série),
    et fearless sur cette série (les picks des parties précédentes deviennent indisponibles).
 
@@ -88,7 +88,7 @@ les étapes sans héros sont **sautées** (voir « étape vide »).
 Nouvelle route `/draft/replay` (React, tokens existants) : zone de dépôt, liste de la file (partie en
 cours en surbrillance), aperçu **non spoilant** de la séquence (étapes numérotées, héros masqués
 jusqu'à révélation), contrôles Suivant/Retour/Reset/Play, bascule fearless, bouton « partie suivante ».
-`/draft/overlay` : **aucun changement attendu** (il lit déjà `assignments`, pseudos, series bans).
+`/draft/overlay` : changements **minimes** (maquettes : `docs/draft-replay-mockup.html`) — bannière « Draft prêt — en attente » tant que le curseur est à 0 en mode replay ; cases de bans vides en pointillés ; barre de timer pilotée par l'intervalle de lecture auto (au lieu des 45 s fixes) et inactive en lecture manuelle. Les **pseudos des joueurs ne s'affichent qu'avec leur héros révélé** (l'API publique `GET /api/draft` masque le pseudo d'un pick non révélé en mode replay **[choix Claude]**) : rien n'est spoilé.
 
 ## Hors périmètre
 
