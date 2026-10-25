@@ -35,7 +35,7 @@ les étapes sans héros sont **sautées** (voir « étape vide »).
 ### Moteur (`draft/mod.rs`) — extension minimale
 
 - `DraftState` gagne `replay: Option<ReplayScript>` (`#[serde(default)]`, `schema_version` 2) :
-  `{ source: String, script: Vec<Option<String>>, players: Vec<Option<String>> , playing: bool, interval_ms: u32 }`
+  `{ source: String, script: Vec<Option<String>>, players: Vec<Option<String>> , playing: bool, interval_ms: u32 /* 30000 par défaut */ }`
   — `script[i]` = héros de l'étape i (`None` = étape vide), `players[i]` = pseudo du joueur du pick.
 - `reveal_next()` : applique `script[cursor]` (ou saute si `None`) ; réutilise `apply`/curseur. `undo`
   et `reset` existants servent de retour arrière. `assignments` ne contient **que le déjà révélé** :
@@ -51,7 +51,8 @@ les étapes sans héros sont **sautées** (voir « étape vide »).
 - `POST /api/draft/replay/load` (octets bruts, comme `/api/upload-raw`) : décode **uniquement** le draft
   (storm-replay + `process_draft`), **sans écrire la partie en base** **[choix Claude]** : charger un
   replay pour caster ne doit pas polluer les stats. Réponse : métadonnées (map, joueurs, build, script).
-- Refus explicite (4xx + message) pour les replays sans draft (Quick Match, ARAM, IA).
+- **Seules les parties personnalisées (Custom) sont acceptées** (décision opérateur) : tout autre mode
+  (Quick Match, ARAM, Unranked/Hero League…) est refusé en 4xx avec un message clair.
 - Budget : < 500 ms pour un replay (parse < 150 ms + marge réseau local).
 
 ### File de replays (série)
@@ -65,15 +66,20 @@ les étapes sans héros sont **sautées** (voir « étape vide »).
 
 ### Lecture
 
-- **Manuel** : bouton Suivant / touche Espace, Retour (undo), Reset. Un clic = une étape révélée.
-- **Auto** : Play/Pause + délai par étape réglable (défaut 3 s **[choix Claude]**), timer côté serveur
-  (autoritatif, comme l'état) pour résister au rafraîchissement ; s'arrête à la fin du draft.
+- Unité de lecture = la **phase** (bloc d'étapes consécutives d'une même équipe, cf.
+  `current_phase_len`). Séquence Standard en 12 phases : ban, ban, ban, ban, 1 pick, 2 picks,
+  2 picks, ban, ban, 2 picks, 2 picks, 1 pick (confirmée par l'opérateur).
+- **Manuel** : bouton Suivant / touche Espace, Retour (undo d'une phase), Reset. Un clic = une phase
+  révélée **[choix Claude : les 2 picks d'une phase apparaissent ensemble]**.
+- **Auto** : Play/Pause, **30 s par phase** (décision opérateur ; réglable, 30 s par défaut), timer côté
+  serveur (autoritatif, comme l'état) pour résister au rafraîchissement ; s'arrête à la fin du draft.
+  Durée totale ≈ 6 min.
 - Raccourcis clavier actifs même quand la page n'a pas le focus OBS (la page replay est dans un
   navigateur à part de la browser source) : rien à faire côté OBS.
 
 ### Routes et événements
 
-`POST /api/draft/replay/load`, `/replay/next`, `/replay/back`, `/replay/play` `{playing, interval_ms}`,
+`POST /api/draft/replay/load`, `/replay/next`, `/replay/back`, `/replay/play` `{playing, interval_ms}` (défaut 30000),
 `/replay/queue/*` ; `GET /api/draft/replay` (script complet, réservé à la page). Aucun nouvel event :
 `draft.updated` suffit. Mode ouvert (comme les routes draft existantes).
 
@@ -86,7 +92,7 @@ jusqu'à révélation), contrôles Suivant/Retour/Reset/Play, bascule fearless, 
 
 ## Hors périmètre
 
-Import de la partie en base depuis cette page, replays sans draft, édition du script, talents,
+Import de la partie en base depuis cette page, replays non Custom, édition du script, talents,
 multi-opérateur, auto-détection des noms d'équipe, overlay dédié « replay ».
 
 ## Critères d'acceptation
@@ -94,10 +100,10 @@ multi-opérateur, auto-détection des noms d'équipe, overlay dédié « replay 
 1. Un replay de draft réel (3 replays de l'opérateur) se charge en < 500 ms ; l'overlay reste **vide**
    jusqu'au premier « Suivant », puis se remplit dans l'ordre exact du draft réel (bans et picks
    alternés conformes à la fiche de match).
-2. Retour/Reset/lecture auto fonctionnent ; un rafraîchissement de la page ou de l'overlay ne perd rien.
+2. Retour/Reset/lecture auto (30 s par phase) fonctionnent ; un rafraîchissement de la page ou de l'overlay ne perd rien.
 3. File de 3 replays en fearless : en partie 2, les picks de la partie 1 sont indisponibles ; les
    pseudos de joueurs sont affichés sur les tuiles de pick.
-4. Un replay QM/ARAM est refusé avec un message clair ; aucune partie n'est ajoutée en base.
+4. Un replay non Custom (QM, ARAM, ligue…) est refusé avec un message clair ; aucune partie n'est ajoutée en base.
 5. Tests : moteur (reveal/skip/undo/fearless), décodage sur mini-corpus, ordre global = `turn` du parser.
 
 ## Docs à mettre à jour avec le code (Règle n° 0)
