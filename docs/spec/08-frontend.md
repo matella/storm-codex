@@ -65,5 +65,6 @@ fallback SPA (`index.html` en `no-cache`). Langue de l'UI : **anglais**.
   fallback initiales.
 - Données du détail de match : **tout vient de `GET /api/matches/{id}`** (l'objet `match`
   storm-stats complet) — pas d'endpoint par sous-bloc ; un nouveau bloc UI se sert dans cet objet.
+- Recherche / comptes liés : `api.ts` (`searchPlayers`, `fetchIdentity`, `putLink` — écriture via le Bearer admin de `scoutingWrite`) ; helpers purs et testés dans `players.ts` (`highlightSegments` littéral sans regex, `recentNames` = 3 plus récents + compte du reste, `seenRange`, `likelyAlias` = lien confirmé sinon 1re suggestion HAUTE, **jamais** une suggestion BASSE). Un lien « même personne » est une note : aucune fusion de profils.
 - Dev : `npm run dev` (port 5180 via `.claude/launch.json`), proxy `/api` + `/ws` → `:8088`
   (`vite.config.ts`). Build : `npm run build` (tsc strict puis Vite).
