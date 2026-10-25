@@ -85,6 +85,13 @@ Moteur **pur, zéro I/O** (`mod.rs`) : un format = liste ordonnée d'étapes `{o
 autoritatif en mémoire (`AppState.draft`), **persisté** dans `draft_live` (JSONB, id=1),
 rechargé au démarrage. Chaque mutation broadcast `draft.updated` sur `/ws`.
 Design : `docs/specs/2026-06-19-draft-simulator-design.md`.
+**Draft depuis un replay** (`draft/replay.rs`, `schema_version` 2) : `DraftState.replay` (`#[serde(default)]`,
+donc les états v1 se rechargent) porte la file de parties Custom chargées (`LoadedGame` : script des 16 étapes,
+pseudos), la partie courante, `fearless`, la lecture auto (`playing`, `interval_ms` 30 000 par défaut,
+`next_at_ms`). `reveal_phase`/`back_phase` avancent par **phase** (bloc d'étapes consécutives de même rôle) ;
+`select_game` prépare un draft vide (fearless : series bans = picks des parties précédentes de la file).
+`public()` retire scripts et pseudos des picks non révélés (vue servie par `GET /api/draft`).
+Spec : `docs/specs/2026-10-25-draft-replay-design.md`.
 
 ## Feed live (`live/`)
 
