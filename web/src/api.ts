@@ -270,6 +270,8 @@ export function useLiveUpdates(onEvent?: (ev: { type?: string; match_id?: number
           } else if (ev.type === "draft.updated") {
             qc.invalidateQueries({ queryKey: ["draft"] });
             onEvent?.(ev);
+          } else if (ev.type === "cast.updated") {
+            qc.invalidateQueries({ queryKey: ["cast"] });
           } else if (ev.type === "live.updated") {
             // Signal sans état : la vue filtrée se relit par GET /api/live. Pas de toast.
             qc.invalidateQueries({ queryKey: ["live"] });
