@@ -13,6 +13,7 @@ import { HeroChanges } from "./pages/HeroChanges";
 const Patch = lazy(() => import("./pages/Patch").then((m) => ({ default: m.Patch })));
 import { Maps } from "./pages/Maps";
 import { Player } from "./pages/Player";
+import { Players } from "./pages/Players";
 import { Widget } from "./pages/Widget";
 import { Queue } from "./pages/Queue";
 import { Ticker } from "./pages/Ticker";
@@ -41,6 +42,7 @@ export default function App() {
         <Route path="live" element={<Live />} />
         <Route path="matches" element={<Matches />} />
         <Route path="match/:id" element={<MatchDetail />} />
+        <Route path="players" element={<Players />} />
         <Route path="player/:toon" element={<Player />} />
         <Route path="heroes" element={<Heroes />} />
         <Route path="hero/:name" element={<Hero />} />

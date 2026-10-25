@@ -12,6 +12,30 @@ Tests : 118 Rust (dont 8 d'intégration sur Postgres local) + 101 web. Hypothès
 équipe 0 = Blue, équipe 1 = Red. Aussi corrigé au passage : lint clippy `chunks_exact` (storm-replay-viewer) qui
 faisait échouer le CI de `main`. **Pas fait** : édition manuelle des noms d'équipe depuis cette page (utiliser `/draft`).
 Replays Custom sans picks (parties sans draft) → refusés (`no_draft`).
+/^>>>>>>> origin/main$/d
+## Recherche de joueurs + comptes liés LIVRÉS le 2026-10-25 (branche `feat/recherche-joueurs`, non mergée)
+Spec `docs/specs/2026-10-25-recherche-joueurs-design.md` (validée + amendée le 2026-10-25) · plan
+`docs/plans/2026-10-25-recherche-joueurs.md`.
+- **Serveur** `src/players/` : `names.rs` (historique **daté** des pseudos — pseudo actuel = dernier vu dans le
+  temps, pas `players.last_name`), `search.rs` (`GET /api/players/search`, anciens pseudos inclus, `_`/`%`
+  littéraux, p95 **20–26 ms** sur 2 723 parties / 7 618 joueurs), `similarity.rs` (scoring **pur**),
+  `features.rs` (cosinus, talents, chevauchements), `identity.rs` (propriétaires de token, présélection
+  bornée à 30, ~400 ms/joueur), `api.rs` (`GET …/identity`, `PUT …/links/{other}` 🔒). Migration `0011_player_links`.
+- **Front** : page `/players`, onglets Stats / Identity sur `/player/:toon`, ligne « Also plays as X → »
+  (lien confirmé ou suggestion HAUTE seulement). Vérifié dans le navigateur (recherche d'un ancien pseudo,
+  onglet Identité, Confirm → lien confirmé, suggestion retirée).
+- **Écarts à la spec, rapportés à l'opérateur** : signal « même uploader » → « propriétaire de token »
+  (principal ≥ 50 % + autres comptes ≥ 10 % jamais dans une partie avec lui) ; opérateur et propriétaires
+  exclus du signal co-équipiers ; routes front `player/:toon` conservée + `players`.
+- **Limites connues** : joueurs vus *seulement* en scouting non cherchables (tables isolées) ; recherche
+  non insensible aux accents ; pas d'« annuler une décision » ; poids/seuils de `similarity.rs` = valeurs de
+  départ — **à relire avec l'opérateur** sur des cas réels (beaucoup de suggestions BAS « co-équipiers + heures »
+  à 40–49 dans les gros cercles sociaux ; les HAUT vus sont plausibles, ex. Argas ↔ lilgas 72).
+- **Tests** : `DATABASE_URL=postgres://storm:storm@localhost:5433/storm_codex cargo test -p storm-codex-server`
+  (sans elle les tests DB s'ignorent en silence). Fixtures de test : `cargo test -p storm-codex-server
+  purge_fixtures -- --ignored` ; mesure : `mesure_p95_recherche`, `sonde_identite_corpus_reel` (`--ignored`).
+- **Prochaine étape** : relecture des seuils avec l'opérateur, merge de la branche.
+>>>>>>> origin/main
 
 ## Feed live en partie — serveur + page `/live` LIVRÉS le 2026-10-24 (vérifié par simulateur)
 Spec `docs/specs/2026-10-24-feed-live-en-partie-design.md` (décisions opérateur du 2026-10-24) ·

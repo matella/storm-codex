@@ -740,6 +740,49 @@ export function scoutingWrite(url: string, init: RequestInit = {}): Promise<Resp
   });
 }
 
+// ── Recherche de joueurs et comptes liés (/api/players/*) ──────────────────────
+
+export interface PlayerHit {
+  toon: string;
+  name: string | null;
+  matched_name: string;
+  /** vrai si `matched_name` n'est plus le pseudo actuel (« was … »). */
+  matched_old: boolean;
+  games: number;
+  wins: number;
+  roles: [string, number][];
+  last_seen: string | null;
+}
+export interface NameSpan { name: string; first_seen: string | null; last_seen: string | null; games: number }
+export interface LinkSuggestion {
+  toon: string;
+  name: string | null;
+  level: "high" | "low";
+  score: number;
+  reasons: { kind: string; text: string }[];
+}
+export interface PlayerIdentity {
+  toon: string;
+  name: string | null;
+  names: NameSpan[];
+  suggestions: LinkSuggestion[];
+  confirmed: { toon: string; name: string | null; decided_at: string }[];
+}
+
+export const searchPlayers = async (q: string): Promise<PlayerHit[]> =>
+  (await get<{ hits: PlayerHit[] }>(`/api/players/search?q=${encodeURIComponent(q)}`)).hits;
+export const fetchIdentity = (toon: string) => get<PlayerIdentity>(`/api/players/${encodeURIComponent(toon)}/identity`);
+
+/** Confirme (« même personne », une note — aucune fusion) ou écarte une suggestion. */
+export async function putLink(toon: string, other: string, status: "confirmed" | "dismissed"): Promise<void> {
+  const r = await scoutingWrite(`/api/players/${encodeURIComponent(toon)}/links/${encodeURIComponent(other)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+  if (!r.ok) throw new Error(r.status === 401 ? "admin token required" : `error ${r.status}`);
+}
+
 export function useScoutingList() {
   return useQuery({
     queryKey: ["scouting"],

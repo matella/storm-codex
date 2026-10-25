@@ -12,6 +12,7 @@ mod jarvis;
 mod live;
 mod lobby;
 mod manage;
+mod players;
 pub mod project;
 mod raw;
 mod read;
@@ -203,7 +204,10 @@ fn api_router(state: &AppState) -> Router<AppState> {
         .route("/api/matches/{id}", get(read::get_match))
         .route("/api/matches/{id}/raw", get(raw::get_raw))
         .route("/api/matches/{id}/replay2d", get(replay2d::get_replay2d))
+        .route("/api/players/search", get(players::api::search))
         .route("/api/players/{toon}", get(read::get_player))
+        .route("/api/players/{toon}/identity", get(players::api::identity))
+        .route("/api/players/{toon}/links/{other}", axum::routing::put(players::api::put_link))
         .route("/api/heroes", get(read::list_heroes))
         .route("/api/hero/{hero}", get(read::hero_detail))
         .route("/api/hero/{hero}/patches", get(read::hero_patches))
@@ -429,6 +433,143 @@ mod api_tests {
         let v = json_body(resp).await;
         assert_eq!(v["status"], "ok");
         assert_eq!(v["parser_version"], PARSER_VERSION);
+    }
+
+    /// `name` = pseudo actuel de l'historique daté (pas `players.last_name`, écrasé dans l'ordre de
+    /// traitement) ; `names` récent d'abord ; les champs historiques du résumé restent présents.
+    #[tokio::test]
+    async fn get_player_pseudo_actuel_vient_de_lhistorique_date() {
+        use crate::players::testutil::{insert_match, row, uid};
+        use chrono::TimeZone;
+        let Some(state) = test_state(None).await else { return };
+        let (toon, u) = (format!("t-{}", uid()), uid());
+        let (old, new) = (format!("Old{u}"), format!("New{u}"));
+        let t = |m| chrono::Utc.with_ymd_and_hms(2025, m, 1, 20, 0, 0).unwrap();
+        insert_match(&state.db, Some(t(9)), &[row(&toon, &new, 0, "Muradin")]).await;
+        insert_match(&state.db, Some(t(1)), &[row(&toon, &old, 0, "Muradin")]).await; // traité en dernier
+        let resp = app(&state)
+            .oneshot(Request::get(format!("/api/players/{toon}")).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = json_body(resp).await;
+        assert_eq!(v["name"], new.as_str());
+        assert_eq!(v["names"], serde_json::json!([new, old]));
+        for k in ["toon", "matches", "wins", "avg_kills", "heroes", "recent"] {
+            assert!(v.get(k).is_some(), "champ {k} manquant");
+        }
+    }
+
+    /// `/api/players/search` (statique) ne doit pas tomber dans `/api/players/{toon}` ; requête
+    /// courte → liste vide ; `_` littéral ; `limit` plafonné.
+    #[tokio::test]
+    async fn players_search_route_dediee_et_litterale() {
+        use crate::players::testutil::{insert_match, row, uid};
+        let Some(state) = test_state(None).await else { return };
+        let (toon, u) = (format!("t-{}", uid()), uid());
+        insert_match(&state.db, None, &[row(&toon, &format!("Kerr{u}_Main"), 0, "Muradin")]).await;
+        let get = |uri: String| {
+            let st = state.clone();
+            async move { app(&st).oneshot(Request::get(uri).body(Body::empty()).unwrap()).await.unwrap() }
+        };
+        let resp = get(format!("/api/players/search?q=Kerr{u}_M")).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = json_body(resp).await;
+        assert!(v["hits"].as_array().unwrap().iter().any(|h| h["toon"] == toon.as_str()));
+        assert!(v.get("toon").is_none(), "tombé dans get_player");
+        let v = json_body(get("/api/players/search?q=a".into()).await).await;
+        assert_eq!(v["hits"], serde_json::json!([]));
+        assert_eq!(get("/api/players/search?q=ab&limit=9999".into()).await.status(), StatusCode::OK);
+    }
+
+    async fn put_link(st: &AppState, a: &str, b: &str, status: &str, bearer: Option<&str>) -> axum::response::Response {
+        let mut req = Request::put(format!("/api/players/{a}/links/{b}"))
+            .header("content-type", "application/json");
+        if let Some(t) = bearer {
+            req = req.header("authorization", format!("Bearer {t}"));
+        }
+        app(st)
+            .oneshot(req.body(Body::from(format!(r#"{{"status":"{status}"}}"#))).unwrap())
+            .await
+            .unwrap()
+    }
+
+    async fn get_identity(st: &AppState, toon: &str) -> axum::response::Response {
+        app(st)
+            .oneshot(Request::get(format!("/api/players/{toon}/identity")).body(Body::empty()).unwrap())
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn identity_inconnu_404_et_put_soi_meme_400() {
+        use crate::players::testutil::{insert_match, row, uid};
+        let Some(state) = test_state(None).await else { return };
+        let resp = get_identity(&state, &format!("t-inconnu-{}", uid())).await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        assert!(json_body(resp).await["error"].is_string(), "404 applicatif, pas route absente");
+        let toon = format!("t-{}", uid());
+        insert_match(&state.db, None, &[row(&toon, "Solo", 0, "Muradin")]).await;
+        assert_eq!(put_link(&state, &toon, &toon, "confirmed", None).await.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn put_link_garde_admin_statut_valide_et_inconnu() {
+        use crate::players::testutil::{insert_match, row, uid};
+        let Some(state) = test_state(Some("sekret")).await else { return };
+        let (a, b) = (format!("t-a{}", uid()), format!("t-b{}", uid()));
+        insert_match(&state.db, None, &[row(&a, "A", 0, "Muradin"), row(&b, "B", 1, "Muradin")]).await;
+        assert_eq!(put_link(&state, &a, &b, "confirmed", None).await.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(put_link(&state, &a, &b, "confirmed", Some("faux")).await.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(put_link(&state, &a, &b, "confirmed", Some("sekret")).await.status(), StatusCode::OK);
+        let bad = put_link(&state, &a, &b, "maybe", Some("sekret")).await.status();
+        assert!(bad.is_client_error(), "statut invalide refusé, reçu {bad}");
+        let ghost = format!("t-ghost-{}", uid());
+        assert_eq!(put_link(&state, &a, &ghost, "confirmed", Some("sekret")).await.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn put_link_est_symetrique_et_idempotent() {
+        use crate::players::testutil::{insert_match, row, uid};
+        let Some(state) = test_state(None).await else { return };
+        let (a, b) = (format!("t-a{}", uid()), format!("t-b{}", uid()));
+        insert_match(&state.db, None, &[row(&a, "NameA", 0, "Muradin"), row(&b, "NameB", 1, "Muradin")]).await;
+        assert_eq!(put_link(&state, &a, &b, "confirmed", None).await.status(), StatusCode::OK);
+        assert_eq!(put_link(&state, &b, &a, "confirmed", None).await.status(), StatusCode::OK);
+        let n: i64 = sqlx::query_scalar("SELECT count(*) FROM player_links WHERE toon_a IN ($1,$2) AND toon_b IN ($1,$2)")
+            .bind(&a)
+            .bind(&b)
+            .fetch_one(&state.db)
+            .await
+            .unwrap();
+        assert_eq!(n, 1, "A→B puis B→A = une seule ligne");
+        for (me, other, other_name) in [(&a, &b, "NameB"), (&b, &a, "NameA")] {
+            let v = json_body(get_identity(&state, me).await).await;
+            let conf = v["confirmed"].as_array().unwrap();
+            assert!(conf.iter().any(|c| c["toon"] == other.as_str() && c["name"] == other_name));
+        }
+    }
+
+    #[tokio::test]
+    async fn identity_historique_suggestions_et_decision() {
+        use crate::players::testutil::smurf_world;
+        let Some(state) = test_state(None).await else { return };
+        let w = smurf_world(&state.db).await;
+        let v = json_body(get_identity(&state, &w.target).await).await;
+        assert_eq!(v["toon"], w.target.as_str());
+        assert!(v["names"].as_array().unwrap().iter().any(|n| n["name"] == "N" && n["games"] == 18));
+        let s = v["suggestions"].as_array().unwrap().iter().find(|s| s["toon"] == w.smurf.as_str()).expect("smurf suggéré");
+        assert_eq!(s["level"], "high");
+        assert!(s["score"].as_u64().unwrap() >= 50);
+        assert!(!s["reasons"].as_array().unwrap().is_empty());
+        // écarter → plus proposé, depuis la cible comme depuis le smurf
+        assert_eq!(put_link(&state, &w.target, &w.smurf, "dismissed", None).await.status(), StatusCode::OK);
+        for me in [&w.target, &w.smurf] {
+            let v = json_body(get_identity(&state, me).await).await;
+            let other = if me == &w.target { &w.smurf } else { &w.target };
+            assert!(v["suggestions"].as_array().unwrap().iter().all(|s| s["toon"] != other.as_str()), "écarté mais reproposé");
+            assert!(v["confirmed"].as_array().unwrap().is_empty());
+        }
     }
 
     /// Codes attribut des bans → noms parser (attr.json), y compris les codes en capitales.

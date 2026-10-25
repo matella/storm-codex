@@ -134,7 +134,10 @@ pub async fn get_match(State(s): State<AppState>, Path(id): Path<i64>) -> Resp {
 
 /// GET /api/players/{toon} — résumé joueur + hero pool.
 pub async fn get_player(State(s): State<AppState>, Path(toon): Path<String>) -> Resp {
-    let v: J = sqlx::query_scalar(
+    // Pseudo actuel et liste des pseudos viennent de l'historique daté (récent d'abord), pas de
+    // `players.last_name`/`names` (ordre de traitement). Repli sur l'ancien comportement si vide.
+    let history = crate::players::names::name_history(&s.db, &toon).await.map_err(db_err)?;
+    let mut v: J = sqlx::query_scalar(
         "SELECT jsonb_build_object(
             'toon', $1::text,
             'name', (SELECT last_name FROM players WHERE toon_handle = $1),
@@ -157,10 +160,14 @@ pub async fn get_player(State(s): State<AppState>, Path(toon): Path<String>) -> 
                 FROM match_players mp JOIN matches m ON m.id = mp.match_id
                 WHERE mp.toon_handle = $1 ORDER BY m.played_at DESC NULLS LAST LIMIT 20) r), '[]'::jsonb))",
     )
-    .bind(toon)
+    .bind(&toon)
     .fetch_one(&s.db)
     .await
     .map_err(db_err)?;
+    if let Some(cur) = history.first() {
+        v["name"] = J::from(cur.name.as_str());
+        v["names"] = history.iter().map(|n| J::from(n.name.as_str())).collect();
+    }
     Ok(Json(v))
 }
 
