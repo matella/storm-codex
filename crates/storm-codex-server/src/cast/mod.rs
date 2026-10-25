@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 pub mod api;
 mod series;
 pub mod store;
+pub mod sync;
 
 pub const SCHEMA_VERSION: i32 = 1;
 

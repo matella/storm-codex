@@ -5,8 +5,10 @@ use super::{store, CastError, LineupMode, MapStatus, Scene, Series, Team};
 use crate::draft::{Format, Side};
 use crate::AppState;
 use axum::{
+    body::Bytes,
     extract::{Path, State},
-    http::StatusCode,
+    http::{header, HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
     Json,
 };
 use serde::Deserialize;
@@ -41,6 +43,18 @@ async fn mutate<T>(
     gated: bool,
     f: impl FnOnce(&mut Series) -> Result<T, CastError>,
 ) -> Result<(T, Series), Resp> {
+    mutate_ex(s, gated, false, f).await
+}
+
+/// Comme `mutate` ; `sync` : recopie ensuite équipes/pseudos/score/Bo dans le draft (sens unique
+/// série → draft) et persiste/diffuse les deux états. Les locks cast et draft ne sont jamais
+/// tenus en même temps (le write-lock cast est relâché avant de prendre celui du draft).
+async fn mutate_ex<T>(
+    s: &AppState,
+    gated: bool,
+    sync: bool,
+    f: impl FnOnce(&mut Series) -> Result<T, CastError>,
+) -> Result<(T, Series), Resp> {
     let out = {
         let mut g = s.cast.write().await;
         if gated && !g.active {
@@ -51,13 +65,29 @@ async fn mutate<T>(
         *g = next.clone();
         (v, next)
     };
+    if sync {
+        {
+            let mut d = s.draft.write().await;
+            super::sync::sync_into_draft(&out.1, &mut d);
+        }
+        crate::draft::api::persist(s).await;
+    }
     persist(s).await;
     Ok(out)
 }
 
 /// Mutation qui répond par la série complète.
 async fn mutate_series(s: &AppState, gated: bool, f: impl FnOnce(&mut Series) -> Result<(), CastError>) -> Resp {
-    match mutate(s, gated, f).await {
+    mutate_series_ex(s, gated, false, f).await
+}
+
+async fn mutate_series_ex(
+    s: &AppState,
+    gated: bool,
+    sync: bool,
+    f: impl FnOnce(&mut Series) -> Result<(), CastError>,
+) -> Resp {
+    match mutate_ex(s, gated, sync, f).await {
         Ok(((), series)) => series_json(&series),
         Err(r) => r,
     }
@@ -87,11 +117,15 @@ pub struct SeriesBody {
 /// POST /api/cast/series — crée/redémarre : parties, score et diaporama remis à zéro (la scène
 /// courante est conservée), `active = true`.
 pub async fn start_series(State(s): State<AppState>, Json(b): Json<SeriesBody>) -> Resp {
-    mutate_series(&s, false, |c| {
+    if !matches!(b.bo, 1 | 3 | 5 | 7) {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "bad_bo" })));
+    }
+    mutate_series_ex(&s, false, true, |c| {
         let mut n = Series::new();
         n.active = true;
-        n.blue = Team { name: b.blue.name, ..Team::default() };
-        n.red = Team { name: b.red.name, ..Team::default() };
+        // les logos (stockés en base) survivent au redémarrage de série
+        n.blue = Team { name: b.blue.name, logo: c.blue.logo.take(), ..Team::default() };
+        n.red = Team { name: b.red.name, logo: c.red.logo.take(), ..Team::default() };
         n.bo = b.bo;
         n.format = b.format;
         n.scene = c.scene;
@@ -110,7 +144,7 @@ pub struct TeamsBody {
 
 /// PUT /api/cast/teams — remplace les deux équipes (nom, logo, bilan, joueurs, capitaine).
 pub async fn put_teams(State(s): State<AppState>, Json(b): Json<TeamsBody>) -> Resp {
-    mutate_series(&s, true, |c| {
+    mutate_series_ex(&s, true, true, |c| {
         c.blue = b.blue;
         c.red = b.red;
         Ok(())
@@ -154,7 +188,7 @@ pub struct WinnerBody {
 
 /// POST /api/cast/games/{n}/winner `{side, takedowns?, duration_secs?}`.
 pub async fn set_winner(State(s): State<AppState>, Path(n): Path<u8>, Json(b): Json<WinnerBody>) -> Resp {
-    mutate_series(&s, true, |c| {
+    mutate_series_ex(&s, true, true, |c| {
         c.set_winner(n, b.side)?;
         if let Some(g) = c.games.iter_mut().find(|g| g.number == n) {
             if let Some(t) = b.takedowns {
@@ -177,7 +211,7 @@ pub struct ScoreBody {
 
 /// POST /api/cast/score `{blue, red}` (override) ou `null` (retour au score calculé).
 pub async fn set_score(State(s): State<AppState>, Json(b): Json<Option<ScoreBody>>) -> Resp {
-    mutate_series(&s, true, |c| {
+    mutate_series_ex(&s, true, true, |c| {
         c.score_override = b.map(|b| [b.blue, b.red]);
         Ok(())
     })
@@ -244,11 +278,91 @@ pub async fn set_slide(State(s): State<AppState>, Json(b): Json<SlideBody>) -> R
     .await
 }
 
+/// Taille maximale d'un logo (octets).
+const LOGO_MAX: usize = 512 * 1024;
+/// Limite de corps de la route d'upload : un peu au-dessus de `LOGO_MAX` pour que le handler
+/// réponde lui-même 413 proprement (au-delà, l'extracteur répond 413).
+pub const LOGO_BODY_LIMIT: usize = LOGO_MAX + 1024;
+const LOGO_MIMES: [&str; 3] = ["image/png", "image/jpeg", "image/webp"];
+
+fn side_str(side: &str) -> Option<&'static str> {
+    match side {
+        "blue" => Some("blue"),
+        "red" => Some("red"),
+        _ => None,
+    }
+}
+
+fn err(code: StatusCode, e: &str) -> Resp {
+    (code, Json(json!({ "error": e })))
+}
+
+/// POST /api/cast/logo/{side} — corps = octets de l'image, `Content-Type` png/jpeg/webp, 1..=512 Ko.
+/// Stocke en base et pose `Team.logo = /api/cast/logo/{side}?v={updated_at_ms}`. Autorisé série inactive.
+pub async fn upload_logo(State(s): State<AppState>, Path(side): Path<String>, headers: HeaderMap, body: Bytes) -> Resp {
+    let Some(side) = side_str(&side) else { return err(StatusCode::NOT_FOUND, "bad_side") };
+    let mime = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.split(';').next().unwrap_or("").trim().to_ascii_lowercase())
+        .unwrap_or_default();
+    if !LOGO_MIMES.contains(&mime.as_str()) {
+        return err(StatusCode::UNSUPPORTED_MEDIA_TYPE, "unsupported_mime");
+    }
+    if body.is_empty() {
+        return err(StatusCode::BAD_REQUEST, "empty_body");
+    }
+    if body.len() > LOGO_MAX {
+        return err(StatusCode::PAYLOAD_TOO_LARGE, "logo_too_large");
+    }
+    let version: Result<i64, sqlx::Error> = sqlx::query_scalar(
+        "INSERT INTO cast_logo (side, mime, bytes, updated_at) VALUES ($1, $2, $3, now())
+         ON CONFLICT (side) DO UPDATE SET mime = EXCLUDED.mime, bytes = EXCLUDED.bytes, updated_at = now()
+         RETURNING (floor(extract(epoch from updated_at) * 1000))::bigint",
+    )
+    .bind(side)
+    .bind(&mime)
+    .bind(body.as_ref())
+    .fetch_one(&s.db)
+    .await;
+    let version = match version {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("cast logo save: {e}");
+            return err(StatusCode::INTERNAL_SERVER_ERROR, "db");
+        }
+    };
+    let url = format!("/api/cast/logo/{side}?v={version}");
+    mutate_series(&s, false, |c| {
+        let team = if side == "blue" { &mut c.blue } else { &mut c.red };
+        team.logo = Some(url);
+        Ok(())
+    })
+    .await
+}
+
+/// GET /api/cast/logo/{side} — octets du logo (404 si aucun).
+pub async fn get_logo(State(s): State<AppState>, Path(side): Path<String>) -> Response {
+    let Some(side) = side_str(&side) else { return err(StatusCode::NOT_FOUND, "bad_side").into_response() };
+    let row: Result<Option<(String, Vec<u8>)>, sqlx::Error> =
+        sqlx::query_as("SELECT mime, bytes FROM cast_logo WHERE side = $1").bind(side).fetch_optional(&s.db).await;
+    match row {
+        Ok(Some((mime, bytes))) => {
+            ([(header::CONTENT_TYPE, mime), (header::CACHE_CONTROL, "public, max-age=86400".to_string())], bytes).into_response()
+        }
+        Ok(None) => err(StatusCode::NOT_FOUND, "no_logo").into_response(),
+        Err(e) => {
+            tracing::error!("cast logo load: {e}");
+            err(StatusCode::INTERNAL_SERVER_ERROR, "db").into_response()
+        }
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-    use crate::api_tests::{call, test_state};
+    use crate::api_tests::{call, call_raw, test_state};
     use serde_json::json;
     use std::time::{Duration, Instant};
 
@@ -420,6 +534,125 @@ mod tests {
         assert!(store::load(&state.db).await.is_none());
         sqlx::query("UPDATE cast_live SET state = '[1]'::jsonb WHERE id = 1").execute(&state.db).await.unwrap();
         assert!(store::load(&state.db).await.is_none());
+    }
+
+    const PNG: [u8; 12] = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 1];
+
+    async fn logo_rows(state: &AppState) -> i64 {
+        sqlx::query_scalar("SELECT count(*) FROM cast_logo").fetch_one(&state.db).await.unwrap()
+    }
+
+    async fn clear_logos(state: &AppState) {
+        sqlx::query("DELETE FROM cast_logo").execute(&state.db).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn logo_upload_stores_and_serves_same_bytes() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        clear_logos(&state).await;
+        let (st, bytes) = call_raw(&state, "POST", "/api/cast/logo/blue", Some("image/png"), PNG.to_vec()).await;
+        assert_eq!(st, StatusCode::OK);
+        let v: J = serde_json::from_slice(&bytes).unwrap();
+        let url = v["blue"]["logo"].as_str().unwrap().to_string();
+        assert!(url.starts_with("/api/cast/logo/blue?v="), "{url}");
+        assert_eq!(state.cast.read().await.blue.logo.as_deref(), Some(url.as_str()));
+        let (st, got) = call_raw(&state, "GET", &url, None, vec![]).await;
+        assert_eq!(st, StatusCode::OK);
+        assert_eq!(got, PNG.to_vec());
+        let (st, _) = call_raw(&state, "GET", "/api/cast/logo/red", None, vec![]).await;
+        assert_eq!(st, StatusCode::NOT_FOUND);
+        // le logo survit au redémarrage de série
+        let (_, v) = call(&state, "POST", "/api/cast/series", Some(start_body())).await;
+        assert_eq!(v["blue"]["logo"].as_str(), Some(url.as_str()));
+        clear_logos(&state).await;
+    }
+
+    #[tokio::test]
+    async fn logo_over_512kb_is_413() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        clear_logos(&state).await;
+        let (st, _) = call_raw(&state, "POST", "/api/cast/logo/red", Some("image/png"), vec![1; 512 * 1024 + 1]).await;
+        assert_eq!(st, StatusCode::PAYLOAD_TOO_LARGE);
+        let (st, _) = call_raw(&state, "POST", "/api/cast/logo/red", Some("image/png"), vec![1; 700 * 1024]).await;
+        assert_eq!(st, StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(logo_rows(&state).await, 0);
+        let (st, _) = call_raw(&state, "POST", "/api/cast/logo/red", Some("image/png"), vec![1; 512 * 1024]).await;
+        assert_eq!(st, StatusCode::OK);
+        clear_logos(&state).await;
+    }
+
+    #[tokio::test]
+    async fn logo_wrong_mime_is_415() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        clear_logos(&state).await;
+        let (st, _) = call_raw(&state, "POST", "/api/cast/logo/blue", Some("image/gif"), PNG.to_vec()).await;
+        assert_eq!(st, StatusCode::UNSUPPORTED_MEDIA_TYPE);
+        let (st, _) = call_raw(&state, "POST", "/api/cast/logo/blue", None, PNG.to_vec()).await;
+        assert_eq!(st, StatusCode::UNSUPPORTED_MEDIA_TYPE);
+        assert_eq!(logo_rows(&state).await, 0);
+    }
+
+    #[tokio::test]
+    async fn logo_empty_body_is_400() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        clear_logos(&state).await;
+        let (st, _) = call_raw(&state, "POST", "/api/cast/logo/blue", Some("image/png"), vec![]).await;
+        assert_eq!(st, StatusCode::BAD_REQUEST);
+        let (st, _) = call_raw(&state, "POST", "/api/cast/logo/green", Some("image/png"), PNG.to_vec()).await;
+        assert_eq!(st, StatusCode::NOT_FOUND);
+        assert_eq!(logo_rows(&state).await, 0);
+    }
+
+    #[tokio::test]
+    async fn post_series_with_bad_bo_is_400_and_leaves_state() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        let before = state.cast.read().await.clone();
+        for bo in [0, 2, 4, 9] {
+            let mut b = start_body();
+            b["bo"] = json!(bo);
+            let (st, v) = call(&state, "POST", "/api/cast/series", Some(b)).await;
+            assert_eq!(st, StatusCode::BAD_REQUEST, "bo={bo}");
+            assert_eq!(v["error"], "bad_bo");
+        }
+        assert_eq!(*state.cast.read().await, before);
+        let mut b = start_body();
+        b["bo"] = json!(7);
+        assert_eq!(call(&state, "POST", "/api/cast/series", Some(b)).await.0, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn mutations_sync_into_draft_and_broadcast() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        call(&state, "POST", "/api/cast/series", Some(start_body())).await;
+        {
+            let d = state.draft.read().await;
+            assert_eq!((d.blue.name.as_str(), d.red.name.as_str(), d.bo, d.score), ("Blue Co", "Red Co", 5, [0, 0]));
+        }
+        let team = json!({"name":"T","players":[{"name":"p1"},{"name":"p2"},{},{},{}]});
+        call(&state, "PUT", "/api/cast/teams", Some(json!({"blue":team,"red":{"name":"R"}}))).await;
+        call(&state, "POST", "/api/cast/pool/map", Some(json!({"name":"A","status":"picked","by":"blue"}))).await;
+        call(&state, "POST", "/api/cast/games/start", Some(json!({"map":"A"}))).await;
+        let mut rx = state.events.subscribe();
+        call(&state, "POST", "/api/cast/games/1/winner", Some(json!({"side":"red"}))).await;
+        {
+            let d = state.draft.read().await;
+            assert_eq!(d.blue.name, "T");
+            assert_eq!(d.blue.players[1], "p2");
+            assert_eq!(d.score, [0, 1]);
+        }
+        let mut seen = vec![];
+        while let Ok(e) = rx.try_recv() {
+            seen.push(e["type"].as_str().unwrap_or("").to_string());
+        }
+        assert!(seen.contains(&"draft.updated".to_string()) && seen.contains(&"cast.updated".to_string()), "{seen:?}");
+        call(&state, "POST", "/api/cast/score", Some(json!({"blue":3,"red":2}))).await;
+        assert_eq!(state.draft.read().await.score, [3, 2]);
     }
 
     #[tokio::test]

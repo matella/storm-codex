@@ -260,6 +260,12 @@ fn api_router(state: &AppState) -> Router<AppState> {
         .route("/api/cast/scene", post(cast::api::set_scene))
         .route("/api/cast/lineup-mode", post(cast::api::set_lineup_mode))
         .route("/api/cast/slide", post(cast::api::set_slide))
+        .route(
+            "/api/cast/logo/{side}",
+            post(cast::api::upload_logo)
+                .layer(axum::extract::DefaultBodyLimit::max(cast::api::LOGO_BODY_LIMIT))
+                .get(cast::api::get_logo),
+        )
         // Simulateur de draft (état autoritatif serveur + broadcast WS draft.updated)
         .route("/api/draft", get(draft::api::get_draft))
         .route("/api/draft/config", post(draft::api::config))
@@ -431,7 +437,7 @@ pub(crate) mod api_tests {
         })
     }
 
-    fn app(state: &AppState) -> Router {
+    pub(crate) fn app(state: &AppState) -> Router {
         api_router(state).with_state(state.clone())
     }
 
@@ -837,6 +843,17 @@ pub(crate) mod api_tests {
         let status = resp.status();
         let bytes = resp.into_body().collect().await.unwrap().to_bytes();
         (status, serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null))
+    }
+
+    /// Requête à corps brut (octets) ; renvoie statut + octets de la réponse.
+    pub(crate) async fn call_raw(state: &AppState, method: &str, path: &str, content_type: Option<&str>, body: Vec<u8>) -> (StatusCode, Vec<u8>) {
+        let mut req = Request::builder().method(method).uri(path);
+        if let Some(ct) = content_type {
+            req = req.header("content-type", ct);
+        }
+        let resp = app(state).oneshot(req.body(Body::from(body)).unwrap()).await.unwrap();
+        let status = resp.status();
+        (status, resp.into_body().collect().await.unwrap().to_bytes().to_vec())
     }
 
     #[tokio::test]

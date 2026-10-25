@@ -72,6 +72,9 @@ jamais dans `uploads`/`matches`/`match_players`. Toute mutation relance le recal
 `GET /api/draft` (état) · `POST /api/draft/config` · `/action` (pick/ban) · `/undo` · `/reset` ·
 `/unavailable` (fearless) · `/score` · `/teams` (noms) · `/series/next` · `/series/new`.
 Chaque mutation → WS `draft.updated` ; l'overlay et la console se re-fetchent.
+**Série de cast active** (`cast.active`) : `/teams` et `/score` répondent `409 {"error":"series_active"}` (la série
+est la source de vérité) ; `/config` reste accepté mais ignore `blue`/`red`/`bo` et force `format = série.format`
+(map et first_pick restent libres). Série inactive : comportement inchangé.
 `GET /api/draft` est la **vue publique** : en mode replay, sans script ni pseudo des picks non révélés.
 
 **Draft depuis un replay** (`draft/replay_api.rs`, mode ouvert) — Custom uniquement, rien écrit en base :
@@ -86,7 +89,8 @@ Spec : `docs/specs/2026-10-25-draft-replay-design.md`.
 ## Régie de cast (`cast/api.rs`, mode ouvert)
 
 `GET /api/cast` (→ `Series`) · `POST /api/cast/series {blue:{name}, red:{name}, bo, format, pool:[nom]}`
-(crée/redémarre : `active=true`, parties/score/diaporama remis à zéro, scène conservée) ·
+(crée/redémarre : `active=true`, parties/score/diaporama remis à zéro, scène et logos conservés ; `bo` ∈ {1,3,5,7}
+sinon `400 {"error":"bad_bo"}`, état inchangé) ·
 `PUT /api/cast/teams {blue, red}` · `POST /api/cast/pool/map {name, status: available|banned|picked|decider, by?}` ·
 `POST /api/cast/games/start {map}` → `{number}` · `POST /api/cast/games/{n}/winner {side, takedowns?: [bleu, rouge], duration_secs?}` ·
 `POST /api/cast/score {blue, red}` ou `null` (retour au score calculé) · `POST /api/cast/scene {scene: lineups|series|draft|ingame|hide}` ·
@@ -95,6 +99,12 @@ Spec : `docs/specs/2026-10-25-draft-replay-design.md`.
 Erreurs `CastError` → `409 {"error": "<Variante>"}` (`UnknownMap`, `NotInPool`, `DuplicateDecider`,
 `MapNotChosen`, `UnknownGame`, `WinnerAlreadySet`, `MapAlreadyPlayed`, `SeriesInactive`), état inchangé.
 Toute mutation sauf `/series` et `/scene` renvoie `409 SeriesInactive` tant que `active=false`.
+`POST /api/cast/logo/{side}` (`blue`|`red` ; corps = octets, `Content-Type` png/jpeg/webp ; 1 octet–512 Ko ;
+`415` mime, `400` corps vide, `413` trop gros, `404` côté inconnu ; autorisé série inactive) → `Series` avec
+`Team.logo = "/api/cast/logo/{side}?v={updated_at_ms}"` · `GET /api/cast/logo/{side}` → octets (`404` si aucun).
+**Synchro série → draft** (sens unique) après `/series`, `/teams`, `/games/{n}/winner`, `/score` : noms, pseudos
+(`Player.name`), score (`Series::score()`) et `bo` copiés dans `DraftState` sans toucher curseur/assignations/file
+replay/fearless ; les deux états sont persistés, WS `draft.updated` + `cast.updated`.
 Chaque mutation → WS `cast.updated`. Design : `docs/specs/2026-10-25-cast-control-room-design.md`.
 
 ## Feed live d'une partie en cours (`live/api.rs`)

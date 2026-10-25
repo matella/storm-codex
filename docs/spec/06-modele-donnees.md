@@ -43,6 +43,8 @@ Ces tables sont **reconstruisibles** (refresh complet au démarrage/24 h) — pa
 
 - `cast_live` : singleton (id=1, CHECK) — toute la série de cast (équipes, pool de cartes, parties,
   scène, diaporama) en JSONB, horodaté ; `schema_version` dans le JSON, champs manquants → défauts.
+- `cast_logo` (0013) : un logo par côté — `side` PK (`blue`|`red`, CHECK), `mime`, `bytes` BYTEA (≤ 512 Ko),
+  `updated_at` (sert de version `?v=` dans `Team.logo`).
 
 ## Scouting (0010)
 
