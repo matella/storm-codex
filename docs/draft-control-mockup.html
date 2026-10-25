@@ -1,0 +1,203 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Draft — console de contrôle (mockup)</title>
+<!--
+  Mockup de la CONSOLE OPÉRATEUR /draft (pas l'overlay OBS). TRACE D'INTENTION (placeholders).
+  Tout se pilote ici : format, map, first-pick, Bo, noms d'équipe + joueurs, score, et surtout la
+  GRILLE de héros (filtrable rôle/univers/recherche) → clic = assigne à l'étape courante.
+  Inspiré du draft-tool LoL (sides blue/red, onglets de rôle, grille centrale).
+-->
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#0c0e13;color:#e7ebf5;font:14px/1.4 "Inter","Segoe UI",system-ui,sans-serif}
+  .app{max-width:1320px;margin:0 auto;padding:16px 18px 28px}
+  h1{font-size:17px;font-weight:700;margin:0 0 12px;letter-spacing:.02em}
+  .dim{color:#9aa3bd}
+  input,select,button{font:inherit;color:inherit}
+  select,input[type=text]{background:#10131c;border:1px solid #2a3142;border-radius:8px;padding:7px 10px;color:#e7ebf5}
+  input[type=text]:focus,select:focus{outline:none;border-color:#7e97ff}
+
+  /* barre de config */
+  .bar{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:flex-end;background:#12151d;border:1px solid #222838;
+    border-radius:12px;padding:12px 14px;margin-bottom:12px}
+  .fld{display:flex;flex-direction:column;gap:4px}
+  .fld>label{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#7c8398}
+  .seg{display:flex;border:1px solid #2a3142;border-radius:8px;overflow:hidden}
+  .seg button{background:#10131c;border:none;padding:7px 13px;color:#9aa3bd;cursor:pointer}
+  .seg button.on{background:#2f6df6;color:#fff} .seg button.on.red{background:#e0414b}
+  .spacer{flex:1}
+  .score{display:flex;align-items:center;gap:6px}
+  .score .v{width:34px;height:34px;display:flex;align-items:center;justify-content:center;background:#10131c;
+    border:1px solid #2a3142;border-radius:8px;font-weight:800;font-variant-numeric:tabular-nums}
+  .stp{display:flex;flex-direction:column}
+  .stp button{background:#10131c;border:1px solid #2a3142;color:#9aa3bd;width:22px;height:18px;line-height:1;cursor:pointer;border-radius:5px}
+  .btn{background:#1b2030;border:1px solid #2f3850;border-radius:8px;padding:8px 13px;color:#cdd4e6;cursor:pointer;font-weight:600}
+  .btn:hover{border-color:#4a5575;color:#fff}
+  .btn.primary{background:#2f6df6;border-color:#2f6df6;color:#fff}
+  .btn.ghost{background:transparent}
+
+  /* phase courante */
+  .phase{display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:10px 14px;border-radius:10px;
+    background:linear-gradient(90deg,#142a63,#12151d 60%);border:1px solid #284089}
+  .phase .dot{width:10px;height:10px;border-radius:50%;background:#2f6df6;animation:blink 1.2s ease-in-out infinite}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+  .phase b{font-size:15px} .phase .step{color:#9aa3bd;font-size:12.5px}
+  .phase .timer{margin-left:auto;display:flex;align-items:center;gap:8px;color:#e8c66a;font-weight:800;font-variant-numeric:tabular-nums}
+  .phase .timer .track{width:120px;height:5px;background:#ffffff1e;border-radius:3px;overflow:hidden}
+  .phase .timer .track i{display:block;height:100%;width:62%;background:#e8c66a;border-radius:3px}
+
+  /* series bans (fearless) */
+  .series{background:#10131c;border:1px solid #222838;border-radius:10px;padding:8px 12px;margin-bottom:12px}
+  .series .lab{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#7c8398;margin-bottom:6px}
+  .series .pool{display:flex;flex-wrap:wrap;gap:4px}
+  .series .si{width:26px;height:26px;border-radius:5px;background:linear-gradient(160deg,hsl(var(--h) 26% 26%),hsl(var(--h) 26% 10%));
+    filter:grayscale(.7) brightness(.6);position:relative;border:1px solid #ffffff10}
+  .series .si::after{content:"";position:absolute;inset:0;background:linear-gradient(135deg,transparent 44%,#cf3b46 46%,#cf3b46 54%,transparent 56%);opacity:.7}
+
+  /* corps : 3 colonnes */
+  .body{display:grid;grid-template-columns:260px 1fr 260px;gap:14px;align-items:start}
+  .team{background:#12151d;border:1px solid #222838;border-radius:12px;padding:12px}
+  .team.b{border-top:3px solid #2f6df6} .team.r{border-top:3px solid #e0414b}
+  .team input.tn{width:100%;font-weight:700;font-size:15px;margin-bottom:4px}
+  .bans{display:flex;gap:6px;margin:10px 0}
+  .bans .bn{width:34px;height:34px;border-radius:7px;background:#0c0e13;border:1px solid #2a3142;position:relative;
+    display:flex;align-items:center;justify-content:center;font-size:9px;color:#5a6275}
+  .bans .bn.filled{background:linear-gradient(160deg,hsl(var(--h) 28% 24%),hsl(var(--h) 28% 9%));filter:grayscale(.6) brightness(.7)}
+  .bans .bn.filled::after{content:"";position:absolute;inset:0;background:linear-gradient(135deg,transparent 44%,#cf3b46 46%,#cf3b46 54%,transparent 56%);opacity:.8}
+  .bans .bn.cur{border-color:#e8c66a;box-shadow:0 0 0 1px #e8c66a}
+  .slot{display:flex;align-items:center;gap:9px;padding:6px;border-radius:9px;margin-bottom:6px;background:#0f121a;border:1px solid #1e2433}
+  .slot.cur{border-color:#2f6df6;box-shadow:0 0 0 1px #2f6df6,0 0 14px #2f6df655}
+  .team.r .slot.cur{border-color:#e0414b;box-shadow:0 0 0 1px #e0414b,0 0 14px #e0414b55}
+  .slot .av{width:40px;height:40px;border-radius:8px;flex-shrink:0;background:linear-gradient(160deg,hsl(var(--h) 52% 34%),hsl(var(--h) 58% 11%));border:1px solid #ffffff1c}
+  .slot .av.none{background:#0c0e13;border:1px dashed #2a3142}
+  .slot .info{min-width:0;flex:1}
+  .slot .hero{font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .slot .hero.none{font-style:italic;font-weight:500;color:#69728c}
+  .slot .pl{width:100%;background:transparent;border:none;border-bottom:1px solid #232a3a;border-radius:0;padding:2px 0;
+    font-size:11.5px;color:#aab2ca}
+  .slot .pl:focus{outline:none;border-color:#7e97ff}
+
+  /* picker central */
+  .picker{background:#12151d;border:1px solid #222838;border-radius:12px;padding:12px}
+  .picker .top{display:flex;gap:10px;margin-bottom:10px}
+  .picker .top input{flex:1}
+  .tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+  .tabs button{background:#10131c;border:1px solid #2a3142;border-radius:999px;padding:6px 12px;color:#9aa3bd;cursor:pointer;font-size:12.5px}
+  .tabs button.on{background:#7e97ff;border-color:#7e97ff;color:#0c0e13;font-weight:700}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(74px,1fr));gap:8px}
+  .h{position:relative;border-radius:9px;overflow:hidden;cursor:pointer;border:1px solid #ffffff14;
+    background:linear-gradient(160deg,hsl(var(--h) 52% 32%),hsl(var(--h) 58% 10%));aspect-ratio:1/1.12}
+  .h:hover{box-shadow:0 0 0 2px #7e97ff}
+  .h .nm{position:absolute;left:0;right:0;bottom:0;padding:11px 3px 3px;font-size:9.5px;font-weight:700;text-align:center;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:linear-gradient(0deg,#000d,transparent)}
+  .h.out{filter:grayscale(.9) brightness(.4);cursor:not-allowed}
+  .h.out::before{content:"indispo";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#cdd4e6;z-index:2}
+  .h.role{display:none}
+</style>
+
+<div class="app">
+  <h1>Draft — console de contrôle <span class="dim">· Sky Temple · Match 7 — Game 3</span></h1>
+
+  <div class="bar">
+    <div class="fld"><label>Format</label>
+      <select><option>Standard</option><option>Normal (sans ban)</option><option selected>Fearless</option></select></div>
+    <div class="fld"><label>Map</label>
+      <select><option selected>Sky Temple</option><option>Cursed Hollow</option><option>Braxis Holdout</option><option>Tomb of the Spider Queen</option></select></div>
+    <div class="fld"><label>First pick</label>
+      <div class="seg"><button class="on">Blue</button><button class="red">Red</button></div></div>
+    <div class="fld"><label>Série</label>
+      <select><option>Bo1</option><option>Bo3</option><option selected>Bo5</option><option>Bo7</option></select></div>
+    <div class="fld"><label>Score</label>
+      <div class="score"><span class="v">1</span><div class="stp"><button>▲</button><button>▼</button></div>
+        <span class="dim">—</span><span class="v">1</span><div class="stp"><button>▲</button><button>▼</button></div></div></div>
+    <div class="spacer"></div>
+    <button class="btn ghost">↶ Undo</button>
+    <button class="btn ghost">⟲ Reset</button>
+    <button class="btn">Partie suivante</button>
+    <button class="btn primary">Nouvelle série</button>
+  </div>
+
+  <div class="phase">
+    <span class="dot"></span>
+    <span><b>Au tour de Blue</b> <span class="step">— Pick (4ᵉ choix)</span></span>
+    <span class="timer"><span class="track"><i></i></span>:38</span>
+  </div>
+
+  <div class="series">
+    <div class="lab">Series bans (fearless) — héros déjà pické dans la série · 18</div>
+    <div class="pool">
+      <span class="si" style="--h:265"></span><span class="si" style="--h:200"></span><span class="si" style="--h:30"></span>
+      <span class="si" style="--h:120"></span><span class="si" style="--h:48"></span><span class="si" style="--h:300"></span>
+      <span class="si" style="--h:18"></span><span class="si" style="--h:160"></span><span class="si" style="--h:90"></span>
+      <span class="si" style="--h:340"></span><span class="si" style="--h:210"></span><span class="si" style="--h:60"></span>
+      <span class="si" style="--h:280"></span><span class="si" style="--h:0"></span><span class="si" style="--h:140"></span>
+      <span class="si" style="--h:240"></span><span class="si" style="--h:75"></span><span class="si" style="--h:180"></span>
+    </div>
+  </div>
+
+  <div class="body">
+    <!-- BLUE -->
+    <div class="team b">
+      <input class="tn" type="text" value="Germany">
+      <div class="bans">
+        <span class="bn filled" style="--h:265"></span><span class="bn filled" style="--h:210"></span><span class="bn cur">ban</span>
+      </div>
+      <div class="slot"><span class="av" style="--h:150"></span><div class="info"><div class="hero">Tyrande</div><input class="pl" type="text" value="HunterOrc"></div></div>
+      <div class="slot"><span class="av" style="--h:30"></span><div class="info"><div class="hero">Hogger</div><input class="pl" type="text" value="Blodcool"></div></div>
+      <div class="slot"><span class="av" style="--h:0"></span><div class="info"><div class="hero">Valla</div><input class="pl" type="text" value="Dynouh"></div></div>
+      <div class="slot cur"><span class="av none"></span><div class="info"><div class="hero none">à choisir…</div><input class="pl" type="text" value="TLHasuObs"></div></div>
+      <div class="slot"><span class="av none"></span><div class="info"><div class="hero none">—</div><input class="pl" type="text" value="CMSkogh"></div></div>
+    </div>
+
+    <!-- PICKER -->
+    <div class="picker">
+      <div class="top">
+        <input type="text" placeholder="Rechercher un héros…">
+      </div>
+      <div class="tabs">
+        <button class="on">Tous</button><button>Tank</button><button>Bruiser</button>
+        <button>Assassin M.</button><button>Assassin D.</button><button>Soigneur</button><button>Soutien</button>
+      </div>
+      <div class="grid">
+        <div class="h" style="--h:150"><span class="nm">Tyrande</span></div>
+        <div class="h out" style="--h:30"><span class="nm">Hogger</span></div>
+        <div class="h" style="--h:265"><span class="nm">Anub'arak</span></div>
+        <div class="h" style="--h:200"><span class="nm">Falstad</span></div>
+        <div class="h" style="--h:48"><span class="nm">Johanna</span></div>
+        <div class="h" style="--h:0"><span class="nm">Garrosh</span></div>
+        <div class="h" style="--h:300"><span class="nm">Kael'thas</span></div>
+        <div class="h out" style="--h:210"><span class="nm">L. Vikings</span></div>
+        <div class="h" style="--h:90"><span class="nm">Malfurion</span></div>
+        <div class="h" style="--h:340"><span class="nm">Sonya</span></div>
+        <div class="h" style="--h:120"><span class="nm">Stitches</span></div>
+        <div class="h" style="--h:60"><span class="nm">Jaina</span></div>
+        <div class="h" style="--h:280"><span class="nm">Zul'jin</span></div>
+        <div class="h" style="--h:18"><span class="nm">Diablo</span></div>
+        <div class="h" style="--h:160"><span class="nm">Lúcio</span></div>
+        <div class="h" style="--h:240"><span class="nm">Greymane</span></div>
+        <div class="h" style="--h:75"><span class="nm">Auriel</span></div>
+        <div class="h" style="--h:180"><span class="nm">Muradin</span></div>
+        <div class="h" style="--h:20"><span class="nm">Raynor</span></div>
+        <div class="h" style="--h:320"><span class="nm">Kerrigan</span></div>
+        <div class="h" style="--h:135"><span class="nm">Uther</span></div>
+        <div class="h" style="--h:255"><span class="nm">Tassadar</span></div>
+        <div class="h" style="--h:105"><span class="nm">Brightwing</span></div>
+        <div class="h" style="--h:0"><span class="nm">Arthas</span></div>
+      </div>
+    </div>
+
+    <!-- RED -->
+    <div class="team r">
+      <input class="tn" type="text" value="France">
+      <div class="bans">
+        <span class="bn filled" style="--h:200"></span><span class="bn filled" style="--h:18"></span><span class="bn" >·</span>
+      </div>
+      <div class="slot"><span class="av" style="--h:0"></span><div class="info"><div class="hero">Malthael</div><input class="pl" type="text" value="Ubi"></div></div>
+      <div class="slot"><span class="av" style="--h:48"></span><div class="info"><div class="hero">Tyrael</div><input class="pl" type="text" value="Krankle123"></div></div>
+      <div class="slot"><span class="av" style="--h:200"></span><div class="info"><div class="hero">Rehgar</div><input class="pl" type="text" value="Vacilisco"></div></div>
+      <div class="slot"><span class="av" style="--h:280"></span><div class="info"><div class="hero">Sylvanas</div><input class="pl" type="text" value="DDXHlopakA"></div></div>
+      <div class="slot"><span class="av none"></span><div class="info"><div class="hero none">—</div><input class="pl" type="text" value="Gwo"></div></div>
+    </div>
+  </div>
+</div>
