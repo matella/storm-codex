@@ -61,7 +61,7 @@ co-équipiers récurrents.
 
 | Signal | Force | Note |
 |---|---|---|
-| **Propriétaire du même token** : le compte principal d'un token (présent dans ≥ 50 % de ses ≥ 50 parties) et tout autre compte présent dans ≥ 10 % de ces parties **sans jamais partager une partie avec le principal** (une personne ne joue pas deux comptes dans la même partie ; les amis fréquents jouent avec le principal, ils ne comptent pas) | forte | « même uploader » brut est inopérant : chaque replay contient les 10 joueurs. Ne prouve pas à lui seul (prêt de PC) |
+| **Propriétaire du même token** : le compte principal d'un token (présent dans ≥ 50 % de ses ≥ 50 parties) et tout autre compte présent dans ≥ 10 % de ces parties **sans jamais partager une partie avec le principal ni avec un autre propriétaire déjà retenu** (traitement du plus gros au plus petit : un ami qui ne fait duo qu'avec le smurf n'est pas propriétaire) (une personne ne joue pas deux comptes dans la même partie ; les amis fréquents jouent avec le principal, ils ne comptent pas) | forte | « même uploader » brut est inopérant : chaque replay contient les 10 joueurs. Ne prouve pas à lui seul (prêt de PC) |
 | Co-équipiers récurrents communs | moyenne | approximation du groupe d'amis ; **hors opérateur (`operator_names`) et propriétaires de token**, sinon tout le monde est lié via eux |
 | Chevauchement du pool de héros | faible-moyenne | seul, ne suffit jamais pour « HAUT » |
 | Habitudes de talents sur mêmes héros | moyenne | |

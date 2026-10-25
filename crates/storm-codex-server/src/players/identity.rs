@@ -32,8 +32,8 @@ pub struct Candidate {
 /// Propriétaires d'un token d'upload, à partir des parties de chaque compte dans les parties du
 /// token (`total` = parties uploadées). Le **compte principal** est présent dans ≥ 50 % d'entre
 /// elles ; un **autre compte de la même personne** est présent dans ≥ 10 % sans jamais partager
-/// une partie avec le principal (une personne ne joue pas deux comptes dans la même partie). Les
-/// amis fréquents jouent *avec* le principal : ils ne sont pas propriétaires.
+/// une partie avec un propriétaire déjà retenu (une personne ne joue pas deux comptes dans la même
+/// partie). Les amis fréquents jouent *avec* le principal ou avec l'autre compte : pas propriétaires.
 pub fn owners_from(per_toon: &HashMap<String, HashSet<i64>>, total: usize) -> HashSet<String> {
     let share = |n: usize| n as f64 / total.max(1) as f64;
     // égalité de parties → pseudo de toon le plus petit (déterministe)
@@ -44,10 +44,18 @@ pub fn owners_from(per_toon: &HashMap<String, HashSet<i64>>, total: usize) -> Ha
     else {
         return HashSet::new();
     };
+    // Autres comptes de la même personne : ≥ 10 % des parties, jamais dans une partie avec un
+    // propriétaire déjà retenu. On traite du plus gros au plus petit : un ami qui ne fait duo qu'avec
+    // l'autre compte (≥ 10 %, disjoint du principal) joue AVEC lui, donc n'est pas retenu.
     let mut owners = HashSet::from([main.clone()]);
-    for (toon, matches) in per_toon {
-        if toon != main && share(matches.len()) >= 0.1 && matches.is_disjoint(main_matches) {
+    let mut taken: Vec<&HashSet<i64>> = vec![main_matches];
+    let mut rest: Vec<(&String, &HashSet<i64>)> =
+        per_toon.iter().filter(|(t, m)| *t != main && share(m.len()) >= 0.1).collect();
+    rest.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then(a.0.cmp(b.0)));
+    for (toon, matches) in rest {
+        if taken.iter().all(|t| t.is_disjoint(matches)) {
             owners.insert(toon.clone());
+            taken.push(matches);
         }
     }
     owners
@@ -138,36 +146,35 @@ pub async fn suggest_with(
     top_mates.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
     let top_mates: Vec<String> = top_mates.into_iter().take(TOP_TEAMMATES).map(|(t, _)| t.clone()).collect();
 
-    let mut ordered: Vec<String> = Vec::new();
-    let mut seen: HashSet<String> = HashSet::from([target.to_owned()]);
-    let mut push = |toon: String, ordered: &mut Vec<String>| {
-        if !co.contains(&toon) && !decided.contains_key(&toon) && seen.insert(toon.clone()) {
-            ordered.push(toon);
-        }
-    };
-    let mut co_owners: Vec<&String> =
-        owners.values().filter(|o| o.contains(target)).flatten().filter(|t| *t != target).collect();
+    // Comptes jamais candidats : la cible, les comptes déjà croisés dans une partie, les paires déjà
+    // décidées, l'opérateur et les propriétaires de token.
+    let mut skip: HashSet<String> = excluded.clone();
+    skip.extend(co.iter().cloned());
+    skip.extend(decided.keys().cloned());
+    skip.insert(target.to_owned());
+
+    // Co-propriétaires de token : candidats même s'ils sont exclus par ailleurs (hors déjà croisés/décidés).
+    let mut co_owners: Vec<String> = owners
+        .values()
+        .filter(|o| o.contains(target))
+        .flatten()
+        .filter(|t| *t != target && !co.contains(*t) && !decided.contains_key(*t))
+        .cloned()
+        .collect();
     co_owners.sort();
-    for t in co_owners {
-        push(t.clone(), &mut ordered);
-    }
-    for t in circle_candidates(db, &top_mates, target).await? {
-        if !excluded.contains(&t) {
-            push(t, &mut ordered);
-        }
-    }
+    co_owners.dedup();
+
+    let circle = circle_candidates(db, &top_mates, target, &skip, 200).await?;
     let all_heroes = all_hero_vectors(db).await?;
     let mut by_cos: Vec<(f32, &String)> = all_heroes
         .iter()
-        .filter(|(t, _)| !excluded.contains(*t))
+        .filter(|(t, _)| !skip.contains(*t))
         .map(|(t, v)| (cosine(&target_heroes, v), t))
         .filter(|(c, _)| *c >= 0.5)
         .collect();
     by_cos.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(b.1)));
-    for (_, t) in by_cos.into_iter().take(MAX_CANDIDATES) {
-        push(t.clone(), &mut ordered);
-    }
-    ordered.truncate(MAX_CANDIDATES);
+    let hero: Vec<String> = by_cos.into_iter().take(MAX_CANDIDATES).map(|(_, t)| t.clone()).collect();
+    let ordered = merge_paths(co_owners, circle, hero, MAX_CANDIDATES);
 
     let windows_t = match_windows(db, target).await?;
     let hours_t = hour_histogram(db, target).await?;
@@ -206,6 +213,32 @@ pub async fn suggest_with(
     }
     out.sort_by(|a, b| b.suggestion.score.cmp(&a.suggestion.score).then(a.toon.cmp(&b.toon)));
     Ok(out)
+}
+
+/// Fusionne les chemins de présélection (déjà filtrés) en au plus `cap` comptes : co-propriétaires de
+/// token d'abord, puis alternance cercle / pool de héros pour qu'aucun chemin n'affame l'autre.
+fn merge_paths(owners: Vec<String>, circle: Vec<String>, hero: Vec<String>, cap: usize) -> Vec<String> {
+    let mut out: Vec<String> = Vec::with_capacity(cap);
+    let mut seen: HashSet<String> = HashSet::new();
+    let (mut c, mut h) = (circle.into_iter(), hero.into_iter());
+    let mut take = |t: String, out: &mut Vec<String>| {
+        if out.len() < cap && seen.insert(t.clone()) {
+            out.push(t);
+        }
+    };
+    for t in owners {
+        take(t, &mut out);
+    }
+    loop {
+        let (a, b) = (c.next(), h.next());
+        if a.is_none() && b.is_none() || out.len() >= cap {
+            break;
+        }
+        for t in a.into_iter().chain(b) {
+            take(t, &mut out);
+        }
+    }
+    out
 }
 
 fn total_games(heroes: &HashMap<String, u32>) -> u32 {
@@ -270,20 +303,29 @@ async fn teammates(db: &PgPool, toon: &str, excluded: &HashSet<String>) -> Resul
     Ok(rows.into_iter().filter(|(t, _)| !excluded.contains(t)).map(|(t, n)| (t, to_u32(n))).collect())
 }
 
-/// Comptes partageant au moins 2 des co-équipiers récurrents donnés (bornés à 200 lignes).
-async fn circle_candidates(db: &PgPool, mates: &[String], target: &str) -> Result<Vec<String>, sqlx::Error> {
+/// Comptes partageant au moins 2 des co-équipiers récurrents donnés, hors `skip` (filtré **avant** la
+/// limite : sinon des comptes à écarter occuperaient les places et masqueraient de vrais candidats).
+async fn circle_candidates(
+    db: &PgPool,
+    mates: &[String],
+    target: &str,
+    skip: &HashSet<String>,
+    limit: i64,
+) -> Result<Vec<String>, sqlx::Error> {
     if mates.len() < 2 {
         return Ok(vec![]);
     }
     sqlx::query_scalar(
         "SELECT b.toon_handle FROM match_players a
          JOIN match_players b ON b.match_id = a.match_id AND b.team = a.team AND b.toon_handle <> a.toon_handle
-         WHERE a.toon_handle = ANY($1) AND b.toon_handle <> $2
+         WHERE a.toon_handle = ANY($1) AND b.toon_handle <> $2 AND NOT (b.toon_handle = ANY($3))
          GROUP BY b.toon_handle HAVING count(DISTINCT a.toon_handle) >= 2
-         ORDER BY count(DISTINCT a.toon_handle) DESC, b.toon_handle LIMIT 200",
+         ORDER BY count(DISTINCT a.toon_handle) DESC, b.toon_handle LIMIT $4",
     )
     .bind(mates)
     .bind(target)
+    .bind(skip.iter().cloned().collect::<Vec<_>>())
+    .bind(limit)
     .fetch_all(db)
     .await
 }
@@ -370,6 +412,50 @@ mod tests {
         per.insert("A".into(), set(&[1, 2, 3]));
         per.insert("B".into(), set(&[4, 5, 6]));
         assert!(owners_from(&per, 10).is_empty());
+    }
+
+    #[test]
+    fn lami_qui_duo_avec_lautre_compte_nest_pas_proprietaire() {
+        // M (principal) dans 1..=14 ; S (autre compte) dans 15..=20 ; F (ami qui ne duo qu'avec S)
+        // dans 15..=18 : disjoint de M, ≥ 10 % — mais il joue AVEC S, donc pas la même personne que M.
+        let mut per: HashMap<String, HashSet<i64>> = HashMap::new();
+        per.insert("M".into(), set(&(1..=14).collect::<Vec<_>>()));
+        per.insert("S".into(), set(&(15..=20).collect::<Vec<_>>()));
+        per.insert("F".into(), set(&(15..=18).collect::<Vec<_>>()));
+        let o = owners_from(&per, 20);
+        assert_eq!(o, HashSet::from(["M".to_owned(), "S".to_owned()]));
+    }
+
+    #[test]
+    fn merge_paths_reserve_des_places_pour_chaque_chemin_et_borne() {
+        let circle: Vec<String> = (0..40).map(|i| format!("c{i}")).collect();
+        let hero: Vec<String> = (0..5).map(|i| format!("h{i}")).collect();
+        let m = merge_paths(vec!["o1".into()], circle, hero, 30);
+        assert_eq!(m.len(), 30);
+        assert_eq!(m[0], "o1", "les co-propriétaires de token passent en premier");
+        assert_eq!(m.iter().filter(|t| t.starts_with('h')).count(), 5, "le pool de héros n'est pas affamé par le cercle");
+        assert_eq!(m.iter().collect::<HashSet<_>>().len(), m.len(), "pas de doublon");
+        // un chemin vide laisse toute la place à l'autre
+        let only: Vec<String> = (0..40).map(|i| format!("c{i}")).collect();
+        assert_eq!(merge_paths(vec![], only, vec![], 30).len(), 30);
+    }
+
+    #[tokio::test]
+    async fn circle_candidates_filtre_avant_la_limite() {
+        let Some(db) = test_pool().await else { return };
+        let w = smurf_world(&db).await;
+        let (d1, d2) = (format!("t-d1{}", uid()), format!("t-d2{}", uid()));
+        let t0 = Utc.with_ymd_and_hms(2025, 6, 1, 20, 0, 0).unwrap();
+        let fr: Vec<&str> = w.friends.iter().map(String::as_str).collect();
+        // deux leurres qui jouent avec les amis, plus souvent que le smurf
+        games(&db, &d1, &fr, &w.opp, 25, t0).await;
+        games(&db, &d2, &fr, &w.opp, 24, t0).await;
+        let mates: Vec<String> = w.friends.iter().take(2).cloned().collect();
+        let skip = HashSet::from([d1.clone(), d2.clone()]);
+        // limite 1 : sans filtrage en SQL, le leurre mieux classé occuperait l'unique place
+        let got = circle_candidates(&db, &mates, "toon-absent", &skip, 1).await.unwrap();
+        assert_eq!(got.len(), 1);
+        assert!(!skip.contains(&got[0]), "un compte à écarter a pris la place : filtrage après la limite");
     }
 
     #[tokio::test]
