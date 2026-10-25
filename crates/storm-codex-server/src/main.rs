@@ -5,6 +5,7 @@ mod admin;
 mod auth;
 mod azure;
 mod builds;
+mod cast;
 mod config;
 mod dim;
 mod draft;
