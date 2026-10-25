@@ -39,11 +39,14 @@ port fidèle ; la correction vit dans la projection :
   `victim.hero` / `killers[].hero` de `players[].deaths`, `players[].takedowns` (de **tous** les
   joueurs) et `match.takedowns`. Remplacement **par handle** (`player`), jamais par nom de héros
   (deux joueurs peuvent avoir le même héros parser) ; le killer `"0"` « Nexus Forces » est intact ;
-- ne couvre pas encore `match.heroes` ni les picks (même cause, encore aux noms `4002`).
+- ne couvre pas encore (même cause, encore aux noms `4002`) : `match.heroes`,
+  `match.teams[].heroes`, `players[].with.heroes`, `players[].against.heroes` et les picks.
 
 Les comptes de morts/takedowns ne changent pas (seuls les noms sont réécrits). Un match projeté
 avant ce correctif se rafraîchit par `POST /api/admin/reprocess` (`PARSER_VERSION` 2), qui re-parse
-aussi les `scouting_games`.
+aussi les `scouting_games` — effet de bord : chaque rapport touché est recalculé
+(`facts_version + 1`), donc une analyse importée passe `stale` alors que ses faits ne dépendent
+pas de cette projection.
 
 ## Scouting (`scouting/`)
 
