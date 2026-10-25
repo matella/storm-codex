@@ -19,10 +19,22 @@ plan `docs/plans/2026-10-24-feed-live.md` · mesures `docs/research/2026-10-24-t
   10 humains (259 blocs) contre le serveur release + Postgres dev ; page vérifiée dans le navigateur
   (repos, en cours, terminé, trois niveaux, 375 px). Constat : en Sandbox, la réinitialisation de
   talents ré-émet tous les `TalentChosen` → le tableau garde le dernier choix par palier.
-- **Reste** : watcher `client-rs` (repo Hots-Overlay) qui poste les blocs pour de vrai ; spike sur une
-  partie matchmakée (critère 3 : ordres des 9 autres en cours de partie, latences avec 10 humains,
-  source du build) ; état « en partie » de `/companion` quand la page existera ; nommage des
-  aptitudes (étape 2). **Pas encore déployé sur le box.**
+- **Watcher `client-rs` ÉCRIT (2026-10-25)** — repo Hots-Overlay, `client-rs/src/live.rs`, commit
+  `ac093e7` (matella/Hots-Overlay `main`) : lobby → `/api/lobby`, blocs pleins de 4 Ko → `/api/live/chunk`
+  (offset tenu par stream, `409` → renvoi, box injoignable → rattrapage), fin → queue + `/end` ;
+  partie déjà finie au démarrage → rien. 12 tests unitaires + 2 runs bout en bout (dont coupure du
+  serveur et redémarrage du watcher).
+- **Spike fait (2026-10-25)** sur une partie **ARAM** à 10 humains avec le vrai watcher :
+  `docs/research/2026-10-25-feed-live-spike-aram.md`. Ordres des **10** joueurs présents en cours de
+  partie ; retard médian **~5 s** pour les aptitudes, **~28 s** pour le tracker (l'inverse de la
+  Sandbox) ; build lisible à mi-partie par le **chemin du process** (`Versions\BaseNNNNN`). **Critère 3
+  tenu** (état final = projection du replay, 10/10 joueurs).
+- **Reste** : point 4 du spike (calage de l'horloge sur l'affichage en jeu) ; re-mesure sur une QM ou
+  SL ; `X-Build` depuis le chemin du process dans `client-rs` ; état « en partie » de `/companion`
+  quand la page existera ; nommage des aptitudes (étape 2). **Pas encore déployé sur le box.**
+- **Bug vu au spike (hors live)** : dans la projection d'un replay ARAM, les héros nommés dans
+  `deaths[].victim/killers` ne sont pas ceux de la partie (`players[].hero` est juste) — à analyser
+  dans `storm-stats`.
 - **Constat annexe** : la partie du 2026-10-24 tournait en build **98348** (2.57.0), plus récent que nos
   tables (96477) ; heroprotocol ne l'a pas publié (vérifié le 2026-10-24). Décodée correctement par le
   repli « dernier protocole connu ».

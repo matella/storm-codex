@@ -14,6 +14,10 @@ jusqu'à ~85 s pour les aptitudes** (game events : 37–72 s derrière le tracke
 des équipes, talents choisis, morts avec les crédités, camps et objectifs, et **les aptitudes que
 tu utilises**. Aujourd'hui tout cela n'existe qu'après la partie, quand le replay remonte.
 
+> **Re-mesuré à 10 humains le 2026-10-25** (ARAM, `docs/research/2026-10-25-feed-live-spike-aram.md`) :
+> l'ordre s'inverse. Aptitudes **~5 s** de retard médian (un bloc de game events toutes les ~2 s),
+> tracker **~28 s** médian, jusqu'à ~50 s. Les chiffres ci-dessus valent pour la Sandbox à un humain.
+
 ## Ce que la mesure a établi (2026-10-24)
 
 Une partie observée : **Sandbox contre l'IA**, Volskaya Foundry, build **98348**.
@@ -96,7 +100,7 @@ avant de trancher.
 | `storm-lobby::parse` + `lobby_live` (`me` = index de l'opérateur) | carte et identification de l'opérateur |
 | `/api/upload-raw` (octets bruts + `Bearer`) | modèle de transport |
 | canal broadcast `/ws` | nouvel event `live.updated` |
-| watcher `client-rs` sur `TempWriteReplayP1` (plan 4 du companion, **pas encore écrit** — absent de `origin/main` de Hots-Overlay au 2026-10-24) | même watcher, élargi aux deux fichiers d'événements |
+| watcher `client-rs` sur `TempWriteReplayP1` (plan 4 du companion ; **écrit le 2026-10-25** : `client-rs/src/live.rs` du repo Hots-Overlay, lobby + deux streams + fin, prouvé sur une partie réelle) | même watcher, élargi aux deux fichiers d'événements |
 
 **Ce qui manque** : le tracker nomme les héros par leur unité (`HeroMonk`, `HeroFaerieDragon`),
 pas par le nom canonique (`Kharazim`, `Brightwing`) utilisé partout ailleurs (`dim_heroes.id`). Aucune
@@ -180,8 +184,10 @@ impl Replay {
 ### Le build, à mi-partie
 
 Inconnu tant que `details`/`initData` n'existent pas (fin de partie). Ordre de résolution :
-1. `X-Build` s'il est fourni (le spike dira d'où `client-rs` peut le tirer : battlelobby, ou dossier
-   d'installation `Versions\BaseNNNNN`) ;
+1. `X-Build` s'il est fourni. **Source trouvée au spike du 2026-10-25** : le chemin du process en
+   cours, `…\Versions\BaseNNNNN\HeroesOfTheStorm_x64.exe` (le battlelobby ne contient pas le build ;
+   le plus haut `BaseNNNNN` du dossier n'est pas fiable, les anciens restent). `client-rs` ne l'envoie
+   pas encore ;
 2. à défaut, **dernier protocole embarqué** — ce qui a marché le 2026-10-24 — avec le repli exposé
    dans l'état (`protocol_fallback`).
 
@@ -268,6 +274,11 @@ existera. Piloté par `live.updated` :
 
 ## Spike (sur le PC de jeu — requis avant de déclarer la feature finie, plus avant de coder)
 
+> **Fait le 2026-10-25** sur une partie **ARAM** à 10 humains (pas QM/SL), avec le vrai watcher
+> `client-rs` : `docs/research/2026-10-25-feed-live-spike-aram.md`. Points **1** (oui, les 10), **2**
+> (aptitudes ~5 s, tracker ~28 s médian) et **3** (chemin du process) tranchés ; **4** (horloge) et
+> **5** (cycle de vie, partiel) restent ouverts ; **6** pas abordé.
+
 1. **Une partie matchmakée** (QM ou Storm League) : les ordres des 10 joueurs sont-ils dans le
    `game.events` temporaire **en cours de partie** ? (Décide si `allies`/`all` montrent réellement
    quelque chose.)
@@ -295,13 +306,15 @@ existera. Piloté par `live.updated` :
 
 ## Critères d'acceptation
 
-1. Spike : points 1 à 4 tranchés, chiffres consignés dans `docs/research/`.
+1. Spike : points 1 à 4 tranchés, chiffres consignés dans `docs/research/`. **Au 2026-10-25 : 1, 2
+   et 3 tranchés ; 4 (calage de l'horloge) reste à faire** → critère pas encore tenu.
 2. Morceau reçu → `live.updated` émis **< 200 ms** (le retard dominant est celui du jeu, ~10 s
    pour le tracker, jusqu'à ~85 s pour les aptitudes, hors de notre contrôle). **Mesuré le
    2026-10-24** (aller-retour `POST /api/live/chunk`, qui répond après le broadcast ; serveur release
    local) : p95 1,7 ms sur 76 blocs, 1,6 ms sur 259 blocs → **tenu**.
 3. En fin de partie, l'état live final concorde avec la projection du replay final (héros, niveaux,
-   talents, morts), vérifié sur une partie réelle.
+   talents, morts), vérifié sur une partie réelle. **Tenu le 2026-10-25** (ARAM, 10 joueurs : héros,
+   équipes, morts, takedowns, 7 talents et niveaux d'équipe identiques ; streams identiques à l'octet).
 4. Aucune aptitude hors niveau dans la vue servie (test automatisé).
 
 ## Hors scope V1
