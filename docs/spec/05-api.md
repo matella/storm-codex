@@ -69,6 +69,16 @@ jamais dans `uploads`/`matches`/`match_players`. Toute mutation relance le recal
 `GET /api/draft` (état) · `POST /api/draft/config` · `/action` (pick/ban) · `/undo` · `/reset` ·
 `/unavailable` (fearless) · `/score` · `/teams` (noms) · `/series/next` · `/series/new`.
 Chaque mutation → WS `draft.updated` ; l'overlay et la console se re-fetchent.
+`GET /api/draft` est la **vue publique** : en mode replay, sans script ni pseudo des picks non révélés.
+
+**Draft depuis un replay** (`draft/replay_api.rs`, mode ouvert) — Custom uniquement, rien écrit en base :
+`POST /api/draft/replay/load` (corps = octets `.StormReplay`, `X-Filename` optionnel ; `201` file publique ;
+`400` corps vide ; `422` `{error: not_custom|no_draft|parse_failed}`) · `GET /api/draft/replay` (file
+**avec scripts**, pour la page télécommande) · `POST …/replay/next` · `/back` · `/reset` (une **phase** à la fois ;
+`409` sans partie / au début / à la fin) · `/select {index}` · `/fearless {value}` ·
+`/play {playing, interval_ms?}` (défaut 30 000 ms par phase ; `400` hors 10 ms–1 h ; la minuterie est côté
+serveur, s'arrête à la fin du draft) · `POST …/replay/queue/move {from,to}` · `DELETE …/replay/queue/{i}`.
+Spec : `docs/specs/2026-10-25-draft-replay-design.md`.
 
 ## Feed live d'une partie en cours (`live/api.rs`)
 

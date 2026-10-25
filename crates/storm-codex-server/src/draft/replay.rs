@@ -172,6 +172,13 @@ impl DraftState {
         }
     }
 
+    /// Après un redémarrage du serveur aucune minuterie ne tourne : la lecture auto repart en pause
+    /// (le curseur et la file sont conservés).
+    pub fn after_restart(&mut self) {
+        self.replay.playing = false;
+        self.replay.next_at_ms = None;
+    }
+
     /// Vue publique (`GET /api/draft`, overlay) : sans script, et sans le pseudo d'un pick non
     /// révélé en mode replay — l'overlay ne spoile rien.
     pub fn public(&self) -> DraftState {
@@ -350,6 +357,17 @@ mod tests {
         let p = d.public();
         assert_eq!(p.blue.players[0], "ab0");
         assert!(p.blue.players[1].is_empty() && p.red.players[0].is_empty());
+    }
+
+    #[test]
+    fn after_restart_pauses_but_keeps_cursor() {
+        let mut d = loaded();
+        d.reveal_phase().unwrap();
+        d.replay.playing = true;
+        d.replay.next_at_ms = Some(5);
+        d.after_restart();
+        assert!(!d.replay.playing && d.replay.next_at_ms.is_none());
+        assert_eq!(d.cursor, 1);
     }
 
     #[test]

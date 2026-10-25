@@ -76,7 +76,7 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
         // Le premier index n'est pas 0 : m_firstUnitIndex donne le point de départ de la
         // somme cumulative des deltas (les triplets suivants sont relatifs au précédent).
         let mut idx = field_int(e, "m_firstUnitIndex").unwrap_or(0);
-        for tri in items.chunks_exact(3) {
+        for tri in items.as_chunks::<3>().0 {
             idx += tri[0]; // index cumulatif
             match unit_player.get(&idx) {
                 Some(&(p, true)) => {

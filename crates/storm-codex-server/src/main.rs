@@ -46,6 +46,8 @@ pub struct AppState {
     pub lobby: Arc<RwLock<Option<lobby::LobbyState>>>,
     /// Partie en cours (feed live, en mémoire, jetable). `None` = aucune.
     pub live: Arc<RwLock<Option<live::LiveSession>>>,
+    /// Minuterie de lecture auto du draft depuis un replay (une seule à la fois).
+    pub replay_timer: Arc<std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
 }
 
 #[tokio::main]
@@ -114,9 +116,11 @@ async fn run() -> Result<(), String> {
         .unwrap_or(4);
     let (events, _) = broadcast::channel(1024);
     // État de draft : repris du disque si présent, sinon neuf (Standard, blue first-pick, Sky Temple).
-    let draft = draft::store::load(&db).await.unwrap_or_else(|| {
+    let mut draft = draft::store::load(&db).await.unwrap_or_else(|| {
         draft::DraftState::new(draft::Format::Standard, draft::Side::Blue, "Sky Temple".into())
     });
+    // Aucune minuterie après un redémarrage : la lecture auto repart en pause (curseur conservé).
+    draft.after_restart();
     let lobby_initial = lobby::store::load(&db).await;
     let state = AppState {
         cfg: Arc::new(cfg),
@@ -126,6 +130,7 @@ async fn run() -> Result<(), String> {
         draft: Arc::new(RwLock::new(draft)),
         lobby: Arc::new(RwLock::new(lobby_initial)),
         live: Arc::new(RwLock::new(None)),
+        replay_timer: Arc::default(),
     };
 
     // Référentiel héros/talents/patches + images (best-effort, refresh 24 h ; chaque nouveau patch →
@@ -245,6 +250,16 @@ fn api_router(state: &AppState) -> Router<AppState> {
         .route("/api/draft/teams", post(draft::api::teams))
         .route("/api/draft/series/next", post(draft::api::series_next))
         .route("/api/draft/series/new", post(draft::api::series_new))
+        .route("/api/draft/replay", get(draft::replay_api::get_replay))
+        .route("/api/draft/replay/load", post(draft::replay_api::load))
+        .route("/api/draft/replay/next", post(draft::replay_api::next))
+        .route("/api/draft/replay/back", post(draft::replay_api::back))
+        .route("/api/draft/replay/reset", post(draft::replay_api::reset))
+        .route("/api/draft/replay/select", post(draft::replay_api::select))
+        .route("/api/draft/replay/fearless", post(draft::replay_api::fearless))
+        .route("/api/draft/replay/play", post(draft::replay_api::play))
+        .route("/api/draft/replay/queue/move", post(draft::replay_api::move_game))
+        .route("/api/draft/replay/queue/{i}", axum::routing::delete(draft::replay_api::remove))
         // Lobby live (companion) : détection pendant l'écran de chargement + broadcast WS lobby.detected
         .route(
             "/api/lobby",
@@ -385,6 +400,7 @@ mod api_tests {
             events,
             lobby: Arc::new(RwLock::new(None)),
             live: Arc::new(RwLock::new(None)),
+            replay_timer: Arc::default(),
             draft: Arc::new(RwLock::new(draft::DraftState::new(
                 draft::Format::Standard,
                 draft::Side::Blue,
@@ -633,5 +649,125 @@ mod api_tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    // ── draft depuis un replay ────────────────────────────────────────────────
+
+    async fn with_game(state: &AppState) {
+        let fx: serde_json::Value = serde_json::from_str(include_str!("draft/fixtures/custom_draft.json")).unwrap();
+        let out = storm_stats::Output {
+            status: 1,
+            match_: fx["match"].as_object().cloned(),
+            players: fx["players"].as_object().cloned(),
+        };
+        let g = draft::replay_extract::loaded_game_from_output(&out, "fx.StormReplay", storm_stats::constants::hero_attribute())
+            .unwrap();
+        state.draft.write().await.add_game(g);
+    }
+
+    async fn call(state: &AppState, method: &str, path: &str, body: Option<serde_json::Value>) -> (StatusCode, serde_json::Value) {
+        let mut req = Request::builder().method(method).uri(path);
+        let body = match body {
+            Some(b) => {
+                req = req.header("content-type", "application/json");
+                Body::from(b.to_string())
+            }
+            None => Body::empty(),
+        };
+        let resp = app(state).oneshot(req.body(body).unwrap()).await.unwrap();
+        let status = resp.status();
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        (status, serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null))
+    }
+
+    #[tokio::test]
+    async fn replay_load_rejects_empty_body() {
+        let Some(state) = test_state(None).await else { return };
+        let resp = app(&state)
+            .oneshot(Request::post("/api/draft/replay/load").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn replay_load_rejects_non_custom_and_garbage_without_touching_db() {
+        let Some(state) = test_state(None).await else { return };
+        let count = || async { sqlx::query_scalar::<_, i64>("SELECT count(*) FROM matches").fetch_one(&state.db).await.unwrap() };
+        let before = count().await;
+        let aram = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../storm-stats/tests/data/silver-city-aram.StormReplay")).unwrap();
+        for bytes in [aram, vec![7u8; 64]] {
+            let resp = app(&state)
+                .oneshot(Request::post("/api/draft/replay/load").body(Body::from(bytes)).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        }
+        assert_eq!(count().await, before);
+        assert!(state.draft.read().await.replay.queue.is_empty());
+    }
+
+    #[tokio::test]
+    async fn replay_next_back_errors_are_409_and_change_nothing() {
+        let Some(state) = test_state(None).await else { return };
+        assert_eq!(call(&state, "POST", "/api/draft/replay/next", None).await.0, StatusCode::CONFLICT); // pas de partie
+        with_game(&state).await;
+        assert_eq!(call(&state, "POST", "/api/draft/replay/back", None).await.0, StatusCode::CONFLICT); // au début
+        for _ in 0..12 {
+            assert_eq!(call(&state, "POST", "/api/draft/replay/next", None).await.0, StatusCode::OK);
+        }
+        assert_eq!(call(&state, "POST", "/api/draft/replay/next", None).await.0, StatusCode::CONFLICT); // fini
+        assert_eq!(state.draft.read().await.cursor, 16);
+    }
+
+    #[tokio::test]
+    async fn public_draft_hides_future_but_replay_route_has_script() {
+        let Some(state) = test_state(None).await else { return };
+        with_game(&state).await;
+        call(&state, "POST", "/api/draft/replay/next", None).await;
+        let (_, public) = call(&state, "GET", "/api/draft", None).await;
+        assert!(public["replay"]["queue"][0]["script"].as_array().unwrap().is_empty());
+        assert_eq!(public["assignments"].as_array().unwrap().iter().filter(|a| !a.is_null()).count(), 1);
+        let (_, full) = call(&state, "GET", "/api/draft/replay", None).await;
+        assert_eq!(full["queue"][0]["script"].as_array().unwrap().len(), 16);
+    }
+
+    #[tokio::test]
+    async fn replay_autoplay_ticks_then_pause_stops() {
+        let Some(state) = test_state(None).await else { return };
+        with_game(&state).await;
+        let (st, _) = call(&state, "POST", "/api/draft/replay/play", Some(serde_json::json!({"playing": true, "interval_ms": 20}))).await;
+        assert_eq!(st, StatusCode::OK);
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        let c = state.draft.read().await.cursor;
+        assert!(c >= 2, "la lecture auto n'avance pas (curseur {c})");
+        call(&state, "POST", "/api/draft/replay/play", Some(serde_json::json!({"playing": false}))).await;
+        let paused = state.draft.read().await.cursor;
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        assert_eq!(state.draft.read().await.cursor, paused);
+        // intervalle absurde → 400
+        let (st, _) = call(&state, "POST", "/api/draft/replay/play", Some(serde_json::json!({"playing": true, "interval_ms": 1}))).await;
+        assert_eq!(st, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn replay_autoplay_stops_itself_at_the_end() {
+        let Some(state) = test_state(None).await else { return };
+        with_game(&state).await;
+        call(&state, "POST", "/api/draft/replay/play", Some(serde_json::json!({"playing": true, "interval_ms": 10}))).await;
+        tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+        let d = state.draft.read().await;
+        assert!(d.is_complete() && !d.replay.playing);
+    }
+
+    #[tokio::test]
+    async fn replay_manual_next_while_playing_never_double_reveals() {
+        let Some(state) = test_state(None).await else { return };
+        with_game(&state).await;
+        call(&state, "POST", "/api/draft/replay/play", Some(serde_json::json!({"playing": true, "interval_ms": 60_000}))).await;
+        call(&state, "POST", "/api/draft/replay/next", None).await;
+        // 1 phase = 1 étape de ban → curseur 1 exactement, le timer 60 s n'a pas tiré
+        assert_eq!(state.draft.read().await.cursor, 1);
+        call(&state, "POST", "/api/draft/replay/play", Some(serde_json::json!({"playing": false}))).await;
     }
 }

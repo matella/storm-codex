@@ -9,6 +9,7 @@ pub use formats::steps_for;
 
 pub mod api;
 mod replay;
+pub mod replay_api;
 pub mod replay_extract;
 pub mod store;
 pub use replay::ReplayState;
