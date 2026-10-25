@@ -241,4 +241,23 @@ mod tests {
         o.match_.as_mut().unwrap().remove("picks");
         assert_eq!(load(&o), Err(ReplayError::NoDraft));
     }
+
+    /// Fixture réelle (Custom, build 98025, pseudos anonymisés) : le script reconstruit doit placer
+    /// chaque héros à l'étape `turn` calculée par le parser (storm-stats `process_draft`).
+    #[test]
+    fn real_custom_fixture_matches_parser_turns() {
+        let fx: J = serde_json::from_str(include_str!("fixtures/custom_draft.json")).unwrap();
+        let out = storm_stats::Output {
+            status: 1,
+            match_: fx["match"].as_object().cloned(),
+            players: fx["players"].as_object().cloned(),
+        };
+        let g = load(&out).unwrap();
+        assert_eq!(g.first_pick, Side::Red); // picks.first = 1 → équipe 1 (Red) draft en premier
+        for p in fx["players"].as_object().unwrap().values() {
+            let (hero, turn) = (p["hero"].as_str().unwrap(), p["turn"].as_i64().unwrap());
+            assert_eq!(g.script.iter().position(|h| h.as_deref() == Some(hero)), Some(turn as usize), "{hero}");
+        }
+        assert_eq!(g.script.iter().flatten().count(), 16);
+    }
 }
