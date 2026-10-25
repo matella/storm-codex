@@ -12,7 +12,7 @@ Tests : 118 Rust (dont 8 d'intégration sur Postgres local) + 101 web. Hypothès
 équipe 0 = Blue, équipe 1 = Red. Aussi corrigé au passage : lint clippy `chunks_exact` (storm-replay-viewer) qui
 faisait échouer le CI de `main`. **Pas fait** : édition manuelle des noms d'équipe depuis cette page (utiliser `/draft`).
 Replays Custom sans picks (parties sans draft) → refusés (`no_draft`).
-/^>>>>>>> origin/main$/d
+
 ## Recherche de joueurs + comptes liés LIVRÉS le 2026-10-25 (branche `feat/recherche-joueurs`, non mergée)
 Spec `docs/specs/2026-10-25-recherche-joueurs-design.md` (validée + amendée le 2026-10-25) · plan
 `docs/plans/2026-10-25-recherche-joueurs.md`.
@@ -35,7 +35,6 @@ Spec `docs/specs/2026-10-25-recherche-joueurs-design.md` (validée + amendée le
   (sans elle les tests DB s'ignorent en silence). Fixtures de test : `cargo test -p storm-codex-server
   purge_fixtures -- --ignored` ; mesure : `mesure_p95_recherche`, `sonde_identite_corpus_reel` (`--ignored`).
 - **Prochaine étape** : relecture des seuils avec l'opérateur, merge de la branche.
->>>>>>> origin/main
 
 ## Feed live en partie — serveur + page `/live` LIVRÉS le 2026-10-24 (vérifié par simulateur)
 Spec `docs/specs/2026-10-24-feed-live-en-partie-design.md` (décisions opérateur du 2026-10-24) ·

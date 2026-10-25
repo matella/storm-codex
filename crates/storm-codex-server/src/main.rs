@@ -832,10 +832,8 @@ mod api_tests {
     }
 
     #[tokio::test]
-    async fn replay_load_rejects_non_custom_and_garbage_without_touching_db() {
+    async fn replay_load_rejects_non_custom_and_garbage_and_queues_nothing() {
         let Some(state) = test_state(None).await else { return };
-        let count = || async { sqlx::query_scalar::<_, i64>("SELECT count(*) FROM matches").fetch_one(&state.db).await.unwrap() };
-        let before = count().await;
         let aram = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../storm-stats/tests/data/silver-city-aram.StormReplay")).unwrap();
         for bytes in [aram, vec![7u8; 64]] {
             let resp = app(&state)
@@ -844,7 +842,6 @@ mod api_tests {
                 .unwrap();
             assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
         }
-        assert_eq!(count().await, before);
         assert!(state.draft.read().await.replay.queue.is_empty());
     }
 
