@@ -1,0 +1,124 @@
+{
+ "match": {
+  "mode": -1,
+  "map": "Cursed Hollow",
+  "version": {
+   "m_build": 98025
+  },
+  "bans": {
+   "0": [
+    {
+     "hero": "Tyrl",
+     "order": 1,
+     "absolute": 1
+    },
+    {
+     "hero": "Faer",
+     "order": 1,
+     "absolute": 2
+    },
+    {
+     "hero": "HOGG",
+     "order": 2,
+     "absolute": 3
+    }
+   ],
+   "1": [
+    {
+     "hero": "Deha",
+     "order": 1,
+     "absolute": 1
+    },
+    {
+     "hero": "YREL",
+     "order": 1,
+     "absolute": 2
+    },
+    {
+     "hero": "Arth",
+     "order": 2,
+     "absolute": 3
+    }
+   ]
+  },
+  "picks": {
+   "0": [
+    "Rehgar",
+    "Blaze",
+    "Hanzo",
+    "Varian",
+    "Malthael"
+   ],
+   "1": [
+    "Sylvanas",
+    "Anduin",
+    "Johanna",
+    "Zeratul",
+    "Deathwing"
+   ],
+   "first": 1
+  }
+ },
+ "players": {
+  "2-Hero-1-12837799": {
+   "team": 1,
+   "hero": "Johanna",
+   "name": "Player4",
+   "turn": 8
+  },
+  "2-Hero-1-2844614": {
+   "team": 0,
+   "hero": "Blaze",
+   "name": "Player8",
+   "turn": 6
+  },
+  "2-Hero-1-12969702": {
+   "team": 0,
+   "hero": "Rehgar",
+   "name": "Player5",
+   "turn": 5
+  },
+  "2-Hero-1-12126682": {
+   "team": 0,
+   "hero": "Malthael",
+   "name": "Player1",
+   "turn": 15
+  },
+  "2-Hero-1-12410437": {
+   "team": 1,
+   "hero": "Sylvanas",
+   "name": "Player2",
+   "turn": 4
+  },
+  "2-Hero-1-4980093": {
+   "team": 1,
+   "hero": "Deathwing",
+   "name": "Player9",
+   "turn": 14
+  },
+  "2-Hero-1-13362372": {
+   "team": 0,
+   "hero": "Hanzo",
+   "name": "Player6",
+   "turn": 11
+  },
+  "2-Hero-1-6598954": {
+   "team": 1,
+   "hero": "Zeratul",
+   "name": "Player10",
+   "turn": 13
+  },
+  "2-Hero-1-12542619": {
+   "team": 0,
+   "hero": "Varian",
+   "name": "Player3",
+   "turn": 12
+  },
+  "2-Hero-1-161480": {
+   "team": 1,
+   "hero": "Anduin",
+   "name": "Player7",
+   "turn": 7
+  }
+ }
+}

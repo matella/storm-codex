@@ -1,5 +1,18 @@
 # STATUS — lire d'abord, mettre à jour en dernier
 
+## Draft depuis un replay — LIVRÉ sur `feat/draft-replay` (2026-10-25, pas encore mergé ni déployé)
+Spec `docs/specs/2026-10-25-draft-replay-design.md`, plan `docs/plans/2026-10-25-draft-replay.md`, maquettes
+`docs/draft-replay-mockup.html`. Page `/draft/replay` (télécommande) + overlay OBS existant : on charge des
+replays **Custom** (rien écrit en base), le draft est préparé caché puis révélé **phase par phase** (12 phases
+Standard), à la main (Espace) ou en auto (**30 s par phase**), avec file de replays et **fearless**.
+Vérifié sur 3 vrais replays Custom (27/09/2026) : chargement 178–340 ms (release, upload local compris, budget
+< 500 ms), scripts conformes aux `turn` du parser (fixture anonymisée committée), fearless (10 picks de la
+partie 1 indisponibles en partie 2), auto-play à 2 s échantillonné, overlay vide → rempli → « prêt » après Reset.
+Tests : 118 Rust (dont 8 d'intégration sur Postgres local) + 101 web. Hypothèse à confirmer en cast réel :
+équipe 0 = Blue, équipe 1 = Red. Aussi corrigé au passage : lint clippy `chunks_exact` (storm-replay-viewer) qui
+faisait échouer le CI de `main`. **Pas fait** : édition manuelle des noms d'équipe depuis cette page (utiliser `/draft`).
+Replays Custom sans picks (parties sans draft) → refusés (`no_draft`).
+
 ## Recherche de joueurs + comptes liés LIVRÉS le 2026-10-25 (branche `feat/recherche-joueurs`, non mergée)
 Spec `docs/specs/2026-10-25-recherche-joueurs-design.md` (validée + amendée le 2026-10-25) · plan
 `docs/plans/2026-10-25-recherche-joueurs.md`.

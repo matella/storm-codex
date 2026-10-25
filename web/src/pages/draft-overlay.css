@@ -71,3 +71,4 @@
 .draft-overlay .bn.active{outline-color:var(--gold);animation:pulse 1.4s ease-in-out infinite}
 .draft-overlay .bn.empty{filter:none;background:#0e1320;border:1px dashed #2a3148}
 .draft-overlay .bn.empty::after{display:none}
+.draft-overlay .ready{display:inline-flex;align-items:center;font-family:var(--label-ff);font-weight:800;font-size:.8vw;letter-spacing:.14em;text-transform:uppercase;padding:.3vw .9vw;border-radius:999px;border:1px solid var(--cardbd);color:var(--gold);margin-top:.6vw;background:#0b0e18cc}

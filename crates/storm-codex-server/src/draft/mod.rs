@@ -8,9 +8,13 @@ mod formats;
 pub use formats::steps_for;
 
 pub mod api;
+mod replay;
+pub mod replay_api;
+pub mod replay_extract;
 pub mod store;
+pub use replay::ReplayState;
 
-pub const SCHEMA_VERSION: i32 = 1;
+pub const SCHEMA_VERSION: i32 = 2;
 
 /// Côté visuel (couleur/position) — INDÉPENDANT de l'ordre de draft.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -63,6 +67,8 @@ pub enum DraftError {
     Unavailable,
     Complete,
     NothingToUndo,
+    /// Aucune partie de replay chargée/sélectionnée (ou index hors file).
+    NoGame,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -94,6 +100,9 @@ pub struct DraftState {
     /// Historique de série (fearless) : picks de chaque partie terminée.
     #[serde(default)]
     pub series_games: Vec<Vec<String>>,
+    /// Draft depuis un replay (file, lecture auto) — vide hors de ce mode. Cf. `replay.rs`.
+    #[serde(default)]
+    pub replay: ReplayState,
 }
 
 impl DraftState {
@@ -115,6 +124,7 @@ impl DraftState {
             manual_unavailable: BTreeSet::new(),
             series_bans: BTreeSet::new(),
             series_games: Vec::new(),
+            replay: ReplayState::default(),
         }
     }
 

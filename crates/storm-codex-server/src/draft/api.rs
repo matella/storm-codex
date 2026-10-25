@@ -7,7 +7,7 @@ use serde::Deserialize;
 use serde_json::{json, Value as J};
 
 /// Persiste l'état courant + diffuse l'event temps réel.
-async fn persist(s: &AppState) {
+pub(super) async fn persist(s: &AppState) {
     let snapshot = { s.draft.read().await.clone() };
     if let Err(e) = store::save(&s.db, &snapshot).await {
         tracing::error!("draft save: {e}");
@@ -17,7 +17,8 @@ async fn persist(s: &AppState) {
 
 /// GET /api/draft — état courant.
 pub async fn get_draft(State(s): State<AppState>) -> Json<DraftState> {
-    Json(s.draft.read().await.clone())
+    // vue publique : sans scripts de replay ni pseudos des picks non révélés
+    Json(s.draft.read().await.public())
 }
 
 #[derive(Deserialize)]
@@ -46,6 +47,8 @@ pub async fn config(State(s): State<AppState>, Json(b): Json<ConfigBody>) -> Jso
     d.series_games = prev.series_games;
     d.series_bans = prev.series_bans;
     d.manual_unavailable = prev.manual_unavailable;
+    // la file de replays survit à une reconfiguration (partie courante désélectionnée, lecture stoppée)
+    d.replay = super::ReplayState { current: None, playing: false, next_at_ms: None, ..prev.replay };
     *s.draft.write().await = d;
     persist(&s).await;
     get_draft(State(s)).await
