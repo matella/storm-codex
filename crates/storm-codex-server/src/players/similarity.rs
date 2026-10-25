@@ -3,8 +3,6 @@
 //! raisons lisibles. Poids et seuils sont des constantes en tête de fichier, à régler sur des cas
 //! réels (plan, tâche 8) — les tests ci-dessous épinglent les comportements, pas les valeurs.
 
-#![allow(dead_code)] // consommé par `identity` (tâche 4)
-
 /// Parties minimales (des deux comptes) pour qu'une suggestion puisse être HAUTE.
 pub const MIN_GAMES_FOR_HIGH: u32 = 15;
 /// Score minimal pour afficher une suggestion (BAS).

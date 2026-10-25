@@ -27,7 +27,6 @@ pub async fn name_history(db: &PgPool, toon: &str) -> Result<Vec<NameSpan>, sqlx
 }
 
 /// Pseudo actuel = premier de `name_history`, sinon `players.last_name`, sinon `None`.
-#[allow(dead_code)] // consommé par la recherche (tâche 2)
 pub async fn current_name(db: &PgPool, toon: &str) -> Result<Option<String>, sqlx::Error> {
     if let Some(first) = name_history(db, toon).await?.into_iter().next() {
         return Ok(Some(first.name));

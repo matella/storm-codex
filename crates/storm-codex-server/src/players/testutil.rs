@@ -2,7 +2,7 @@
 //! Postgres Docker du dev. Base partagée entre tests → toujours des toon/pseudos `uuid`.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, TimeZone, Utc};
 use sqlx::PgPool;
 
 pub async fn test_pool() -> Option<PgPool> {
@@ -117,3 +117,41 @@ async fn purge_fixtures() {
     let Some(db) = test_pool().await else { return };
     eprintln!("{} lignes de fixtures supprimées", purge(&db).await);
 }
+
+/// `n` parties où `me` (équipe 0) joue Muradin avec `mates` (équipe 0) contre 4 adversaires
+/// fixes, à partir de `start` (une partie par jour, 20 h UTC).
+pub async fn games(db: &PgPool, me: &str, mates: &[&str], opp: &[String], n: i64, start: DateTime<Utc>) -> Vec<i64> {
+    let mut ids = Vec::new();
+    for i in 0..n {
+        let when = start + Duration::days(i);
+        let mut rows = vec![Row { talents: serde_json::json!({"Tier1Choice":"A","Tier2Choice":"B"}), ..row(me, "N", 0, "Muradin") }];
+        rows.extend(mates.iter().map(|m| row(m, "Mate", 0, "Kerrigan")));
+        rows.extend(opp.iter().map(|o| row(o, "Opp", 1, "Diablo")));
+        ids.push(insert_match(db, Some(when), &rows).await);
+    }
+    ids
+}
+
+pub struct World {
+    pub db: PgPool,
+    pub target: String,
+    pub smurf: String,
+    pub friends: Vec<String>,
+    pub opp: Vec<String>,
+}
+
+/// Cible et smurf : mêmes héros/talents/horaires, mêmes 3 amis, jamais dans la même partie.
+pub async fn smurf_world(db: &PgPool) -> World {
+    let u = uid();
+    let target = format!("t-tgt{u}");
+    let smurf = format!("t-smu{u}");
+    let friends: Vec<String> = (0..3).map(|i| format!("t-fr{i}{u}")).collect();
+    let opp: Vec<String> = (0..4).map(|i| format!("t-op{i}{u}")).collect();
+    let fr: Vec<&str> = friends.iter().map(String::as_str).collect();
+    let t0 = Utc.with_ymd_and_hms(2025, 3, 1, 20, 0, 0).unwrap();
+    games(db, &target, &fr, &opp, 18, t0).await;
+    // le smurf joue les jours « impairs » (décalé d'un jour entier + 1 h : pas de chevauchement)
+    games(db, &smurf, &fr, &opp, 18, t0 + Duration::hours(24 * 100)).await;
+    World { db: db.clone(), target, smurf, friends, opp }
+}
+
