@@ -51,3 +51,11 @@ export function seriesScore(s: CastSeries): [number, number] {
     s.games.filter((g) => g.winner === "red").length,
   ];
 }
+
+/** Numéro de partie de la pastille : partie en cours (dernière sans vainqueur) sinon max(number)+1 (1 si aucune). */
+export function badgeGameNumber(games: GameRecord[]): number {
+  if (games.length === 0) return 1;
+  const last = games[games.length - 1];
+  if (last.winner === null) return last.number;
+  return Math.max(...games.map((g) => g.number)) + 1;
+}

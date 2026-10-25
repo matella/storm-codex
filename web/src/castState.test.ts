@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CastSeries, CastTeam, GameRecord, PoolMap } from "./castApi";
-import { displayName, effectiveLineupMode, mapCardView } from "./castState";
+import { badgeGameNumber, displayName, effectiveLineupMode, mapCardView, seriesScore } from "./castState";
 
 const game = (map: string, winner: GameRecord["winner"]): GameRecord => ({
   number: 1, map, winner, takedowns: [0, 0], duration_secs: null, summary: null,
@@ -56,4 +56,22 @@ describe("displayName", () => {
     expect(displayName(team("  "), "red")).toBe("Red");
     expect(displayName(team("Nexus"), "blue")).toBe("Nexus");
   });
+});
+
+describe("badgeGameNumber", () => {
+  const g = (number: number, winner: GameRecord["winner"]): GameRecord => ({ ...game("M", winner), number });
+  it("no games -> 1", () => expect(badgeGameNumber([])).toBe(1));
+  it("game in progress -> its number", () => expect(badgeGameNumber([g(1, null)])).toBe(1));
+  it("one finished game -> 2", () => expect(badgeGameNumber([g(1, "blue")])).toBe(2));
+  it("third started without winner -> 3", () =>
+    expect(badgeGameNumber([g(1, "blue"), g(2, "red"), g(3, null)])).toBe(3));
+  it("all finished -> max+1", () => expect(badgeGameNumber([g(1, "blue"), g(2, "red"), g(3, "blue")])).toBe(4));
+});
+
+describe("seriesScore", () => {
+  const g = (winner: GameRecord["winner"]) => game("M", winner);
+  it("counts winners per side", () =>
+    expect(seriesScore(series({ games: [g("blue"), g("blue"), g("red"), g(null)] }))).toEqual([2, 1]));
+  it("override wins", () =>
+    expect(seriesScore(series({ games: [g("red")], score_override: [3, 0] }))).toEqual([3, 0]));
 });

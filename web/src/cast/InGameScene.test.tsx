@@ -32,6 +32,9 @@ describe("InGameScene", () => {
     expect(html).toContain('<span class="s">2</span>');
     expect(html).toContain('<span class="s">1</span>');
     expect(html).toContain("GAME 4");
+    const ip = renderToStaticMarkup(<InGameScene s={series({ games: [g(1, null)] })} />);
+    expect(ip).toContain("GAME 1");
+    expect(ip).not.toContain("GAME 2");
     const o = renderToStaticMarkup(<InGameScene s={series({ score_override: [3, 0] })} />);
     expect(o).toContain('<span class="s">3</span>');
   });
