@@ -3,6 +3,7 @@
 pub mod names;
 pub mod api;
 pub mod search;
+pub mod similarity;
 
 #[cfg(test)]
 pub(crate) mod testutil;
