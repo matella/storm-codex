@@ -12,7 +12,8 @@ idempotent) + **colonnes scalaires promues** pour les axes de filtre/tri chauds 
 | `uploads` | 1 ligne par fichier reçu (traçabilité) | `fingerprint` (contenu, UNIQUE), `archived_path`, `status` ∈ pending/parsed/duplicate/parse_failed, `error_class`/`error_msg`, `parser_version`, `match_id` → matches (0002) |
 | `matches` | projection d'une partie | `fingerprint` (partie, UNIQUE), scalaires promus (build, mode, map, length, played_at, winner, first_*), **`data` = objet `match` storm-stats complet** (sauf héros des `takedowns` : héros joué, cf. `04-serveur.md` § Correction du héros joué), `parser_version` |
 | `match_players` | 10 lignes par match | scalaires promus (hero, team, win, kills…), **`data` = objet `player` complet** — `hero` et les héros copiés dans `deaths`/`takedowns` = héros joué (talents), original dans `heroCorrectedFrom` —, UNIQUE (match_id, toon_handle), CASCADE |
-| `players` | référentiel joueurs agrégé | `toon_handle` PK, `last_name`, `names` (alias JSONB) — dénormalisé, best-effort, dérivable de `match_players` |
+| `players` | référentiel joueurs agrégé | `toon_handle` PK, `last_name`, `names` (alias JSONB) — dénormalisé, best-effort, dérivable de `match_players`. **Ni `last_name` ni l'ordre de `names` ne sont chronologiques** (UPSERT dans l'ordre de traitement) : le pseudo actuel et l'ordre des pseudos viennent de l'**historique daté** `match_players.name` × `matches.played_at` (`players/names.rs` ; `played_at` NULL = le plus ancien) |
+| `player_links` | décisions « même personne » (0011) | `(toon_a, toon_b)` PK avec `CHECK toon_a < toon_b` (paire ordonnée, une ligne par paire), `status` ∈ confirmed/dismissed, `decided_at`. Les suggestions sont calculées à la demande, jamais stockées. Aucun `CREATE EXTENSION` |
 
 ## Définitions manuelles (0001, 0004)
 

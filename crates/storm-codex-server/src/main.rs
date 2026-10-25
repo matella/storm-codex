@@ -12,6 +12,7 @@ mod jarvis;
 mod live;
 mod lobby;
 mod manage;
+mod players;
 pub mod project;
 mod raw;
 mod read;
@@ -413,6 +414,31 @@ mod api_tests {
         let v = json_body(resp).await;
         assert_eq!(v["status"], "ok");
         assert_eq!(v["parser_version"], PARSER_VERSION);
+    }
+
+    /// `name` = pseudo actuel de l'historique daté (pas `players.last_name`, écrasé dans l'ordre de
+    /// traitement) ; `names` récent d'abord ; les champs historiques du résumé restent présents.
+    #[tokio::test]
+    async fn get_player_pseudo_actuel_vient_de_lhistorique_date() {
+        use crate::players::testutil::{insert_match, row, uid};
+        use chrono::TimeZone;
+        let Some(state) = test_state(None).await else { return };
+        let (toon, u) = (format!("t-{}", uid()), uid());
+        let (old, new) = (format!("Old{u}"), format!("New{u}"));
+        let t = |m| chrono::Utc.with_ymd_and_hms(2025, m, 1, 20, 0, 0).unwrap();
+        insert_match(&state.db, Some(t(9)), &[row(&toon, &new, 0, "Muradin")]).await;
+        insert_match(&state.db, Some(t(1)), &[row(&toon, &old, 0, "Muradin")]).await; // traité en dernier
+        let resp = app(&state)
+            .oneshot(Request::get(format!("/api/players/{toon}")).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = json_body(resp).await;
+        assert_eq!(v["name"], new.as_str());
+        assert_eq!(v["names"], serde_json::json!([new, old]));
+        for k in ["toon", "matches", "wins", "avg_kills", "heroes", "recent"] {
+            assert!(v.get(k).is_some(), "champ {k} manquant");
+        }
     }
 
     /// Codes attribut des bans → noms parser (attr.json), y compris les codes en capitales.

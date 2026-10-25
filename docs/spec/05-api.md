@@ -20,7 +20,7 @@ les routes marquées 🔒 exigent `Authorization: Bearer` (token d'upload nomina
 | `GET /api/matches.csv` | export CSV (mêmes filtres ; l'« export JSON » de l'UI = `/api/matches` avec `limit` élevé) |
 | `GET /api/matches/{id}` | détail complet `{id, fingerprint, parser_version, match, players}` — `match` = objet storm-stats intégral (timeline, objectifs, `messages`…) |
 | `GET /api/matches/{id}/raw?stream=…` | dump décodé à la volée (7 streams heroprotocol) + cache LRU |
-| `GET /api/players/{toon}` | résumé joueur + hero pool |
+| `GET /api/players/{toon}` | résumé joueur + hero pool ; `name` = pseudo actuel (historique daté), `names` = tous les pseudos vus, **récent d'abord** |
 | `GET /api/heroes` · `GET /api/hero/{hero}` · `GET /api/hero/{hero}/patches` | agrégats héros ; croisement patch notes |
 | `GET /api/hero-changes` · `GET /api/hero-changes/heroes` | sections héros des patch notes (buff/nerf) |
 | `GET /api/synergies` | paires de héros (winrates ensemble/contre) |
