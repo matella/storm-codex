@@ -20,6 +20,7 @@ les routes marquées 🔒 exigent `Authorization: Bearer` (token d'upload nomina
 | `GET /api/matches.csv` | export CSV (mêmes filtres ; l'« export JSON » de l'UI = `/api/matches` avec `limit` élevé) |
 | `GET /api/matches/{id}` | détail complet `{id, fingerprint, parser_version, match, players}` — `match` = objet storm-stats intégral (timeline, objectifs, `messages`…) |
 | `GET /api/matches/{id}/raw?stream=…` | dump décodé à la volée (7 streams heroprotocol) + cache LRU |
+| `GET /api/players/search?q=&limit=` | recherche de joueurs : `{hits:[{toon, name, matched_name, matched_old, games, wins, roles[2], last_seen}]}`. Cherche le pseudo actuel **et tous les anciens** (sous-chaîne, insensible à la casse, `_`/`%` littéraux) ; < 2 caractères → `hits: []` ; `limit` défaut 20, max 50 ; tri exact > préfixe > sous-chaîne puis parties. Route statique : prioritaire sur `{toon}` (axum). Mesuré sur le corpus dev (2 723 parties, 7 618 joueurs) : p95 26 ms (budget < 100 ms) |
 | `GET /api/players/{toon}` | résumé joueur + hero pool ; `name` = pseudo actuel (historique daté), `names` = tous les pseudos vus, **récent d'abord** |
 | `GET /api/heroes` · `GET /api/hero/{hero}` · `GET /api/hero/{hero}/patches` | agrégats héros ; croisement patch notes |
 | `GET /api/hero-changes` · `GET /api/hero-changes/heroes` | sections héros des patch notes (buff/nerf) |

@@ -199,6 +199,7 @@ fn api_router(state: &AppState) -> Router<AppState> {
         .route("/api/matches/{id}", get(read::get_match))
         .route("/api/matches/{id}/raw", get(raw::get_raw))
         .route("/api/matches/{id}/replay2d", get(replay2d::get_replay2d))
+        .route("/api/players/search", get(players::api::search))
         .route("/api/players/{toon}", get(read::get_player))
         .route("/api/heroes", get(read::list_heroes))
         .route("/api/hero/{hero}", get(read::hero_detail))
@@ -439,6 +440,28 @@ mod api_tests {
         for k in ["toon", "matches", "wins", "avg_kills", "heroes", "recent"] {
             assert!(v.get(k).is_some(), "champ {k} manquant");
         }
+    }
+
+    /// `/api/players/search` (statique) ne doit pas tomber dans `/api/players/{toon}` ; requête
+    /// courte → liste vide ; `_` littéral ; `limit` plafonné.
+    #[tokio::test]
+    async fn players_search_route_dediee_et_litterale() {
+        use crate::players::testutil::{insert_match, row, uid};
+        let Some(state) = test_state(None).await else { return };
+        let (toon, u) = (format!("t-{}", uid()), uid());
+        insert_match(&state.db, None, &[row(&toon, &format!("Kerr{u}_Main"), 0, "Muradin")]).await;
+        let get = |uri: String| {
+            let st = state.clone();
+            async move { app(&st).oneshot(Request::get(uri).body(Body::empty()).unwrap()).await.unwrap() }
+        };
+        let resp = get(format!("/api/players/search?q=Kerr{u}_M")).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = json_body(resp).await;
+        assert!(v["hits"].as_array().unwrap().iter().any(|h| h["toon"] == toon.as_str()));
+        assert!(v.get("toon").is_none(), "tombé dans get_player");
+        let v = json_body(get("/api/players/search?q=a".into()).await).await;
+        assert_eq!(v["hits"], serde_json::json!([]));
+        assert_eq!(get("/api/players/search?q=ab&limit=9999".into()).await.status(), StatusCode::OK);
     }
 
     /// Codes attribut des bans → noms parser (attr.json), y compris les codes en capitales.
