@@ -50,36 +50,66 @@ fn forts_keeps(m: &Map<String, J>) -> Option<[u32; 2]> {
     })
 }
 
-/// Cartes dont `objective[t].events` ne sont pas des objectifs remportés : Sky Temple = un
-/// événement par tir de temple (≈ 1/s, 241 sur une partie), Alterac Pass = une unité de cavalerie
-/// par événement. Ligne retirée plutôt que d'afficher un chiffre trompeur.
-const EVENTS_ARE_NOT_OBJECTIVES: [&str; 2] = ["Sky Temple", "Alterac Pass"];
+/// Cartes (clés `MapType` de storm-stats) dont `objective[t].events` sont des objectifs remportés,
+/// vérifié sur l'événement qui les produit (process.rs) et les comptes du corpus Custom :
+/// TowersOfDoom = `AltarCaptured` ; CursedHollow = `TributeCollected` ; DragonShire =
+/// `DragonKnightActivated` ; HauntedWoods = `GardenTerrorActivated` ; Crypts = `SpidersSpawned` ;
+/// Volskaya = naissance du `Triglav` capturé ; BlackheartsBay = `GhostShipCaptured`.
+/// Toute autre carte → `None` (ligne retirée) : guide de lecture de docs/spec/03-storm-stats.md.
+const OBJECTIVE_EVENT_MAPS: [&str; 7] =
+    ["TowersOfDoom", "CursedHollow", "DragonShire", "HauntedWoods", "Crypts", "Volskaya", "BlackheartsBay"];
+/// Battlefield of Eternity : `objective.results[].winner` (`ImmortalDefeated`).
+const OBJECTIVE_RESULTS_MAP: &str = "BattlefieldOfEternity";
 
-/// Objectifs de carte par équipe — même règle que `objectiveEvents` de la fiche de match :
-/// `objective.results[].winner` (Battlefield) + `objective[t].events.length`. Ni l'un ni l'autre
-/// (ou carte de `EVENTS_ARE_NOT_OBJECTIVES`) → `None`.
+fn is_map(m: &Map<String, J>, key: &str) -> bool {
+    m.get("map").and_then(J::as_str) == Some(storm_stats::constants::rt_str("MapType", key))
+}
+
+/// Objectifs de carte par équipe, cartes de la liste blanche seulement ; comme `objectiveEvents`
+/// de la fiche, un événement sans `time` n'est pas compté.
 fn objectives(m: &Map<String, J>) -> Option<[u32; 2]> {
     let o = m.get("objective")?.as_object()?;
-    if o.get("type").and_then(J::as_str).is_some_and(|t| EVENTS_ARE_NOT_OBJECTIVES.contains(&t)) {
-        return None;
-    }
+    let timed = |e: &&J| e.get("time").is_some_and(|t| !t.is_null());
     let mut n = [0u32; 2];
-    let mut found = false;
-    if let Some(results) = o.get("results").and_then(J::as_array) {
-        found = true;
-        for r in results {
+    if is_map(m, OBJECTIVE_RESULTS_MAP) {
+        for r in o.get("results")?.as_array()?.iter().filter(timed) {
             if let Some(i) = r.get("winner").and_then(J::as_f64).and_then(|w| side_of(w as i64)) {
                 n[i as usize] += 1;
             }
         }
+        return Some(n);
+    }
+    if !OBJECTIVE_EVENT_MAPS.iter().any(|k| is_map(m, k)) {
+        return None;
     }
     for (i, t) in ["0", "1"].into_iter().enumerate() {
-        if let Some(ev) = o.get(t).and_then(|v| v.get("events")).and_then(J::as_array) {
-            found = true;
-            n[i] += u32::try_from(ev.len()).unwrap_or(u32::MAX);
-        }
+        let ev = o.get(t)?.get("events")?.as_array()?;
+        n[i] = u32::try_from(ev.iter().filter(timed).count()).unwrap_or(u32::MAX);
     }
-    found.then_some(n)
+    Some(n)
+}
+
+impl GameSummary {
+    /// Même partie vue de l'autre côté : équipe 0 du replay = Red. Paires et bans échangés,
+    /// vainqueur et côtés des joueurs inversés, avance d'XP négée, joueurs re-triés (Blue d'abord,
+    /// ordre de pick conservé).
+    pub fn swapped(mut self) -> GameSummary {
+        let sw = |p: &mut [u32; 2]| p.swap(0, 1);
+        self.winner = self.winner.other();
+        sw(&mut self.takedowns);
+        for p in [&mut self.team_level, &mut self.structures, &mut self.merc_camps, &mut self.objectives].into_iter().flatten() {
+            sw(p);
+        }
+        self.bans.swap(0, 1);
+        for p in &mut self.players {
+            p.side = p.side.other();
+        }
+        self.players.sort_by_key(|p| p.side == Side::Red);
+        for x in &mut self.xp_lead {
+            x.1 = x.1.saturating_neg();
+        }
+        self
+    }
 }
 
 /// Avance d'XP de Blue par échantillon de `XPBreakdown` : somme des champs numériques de
@@ -290,24 +320,41 @@ mod tests {
         assert_eq!(s.team_level, Some([25, 24]));
     }
 
-    /// Règle de la fiche (`objectiveEvents`) : `results[].winner` (Battlefield) ; cartes sans
-    /// événements par équipe (Haunted Mines : listes nues, Silver City…) → pas de ligne.
+    /// R17 : liste blanche de cartes (`MapType`) ; événements sans `time` non comptés.
     #[test]
-    fn objectives_follow_match_sheet_rule() {
+    fn objectives_follow_allowlist() {
         let mut fx = fixture();
-        fx["match"]["objective"] = json!({"type": "Battlefield of Eternity",
-            "results": [{"winner": 1.0, "time": 272.0}, {"winner": 0.0, "time": 506.0}, {"winner": 1.0, "time": 766.0}]});
-        assert_eq!(summary_from_output(&output(&fx)).unwrap().objectives, Some([1, 2]));
-        fx["match"]["objective"] = json!({"type": "Haunted Mines", "0": [{"team": 0.0}], "1": [{"team": 1.0}]});
-        assert_eq!(summary_from_output(&output(&fx)).unwrap().objectives, None);
-        fx["match"]["objective"] = json!({"type": "Silver City"});
-        assert_eq!(summary_from_output(&output(&fx)).unwrap().objectives, None);
-        // événements qui ne sont pas des objectifs remportés (tirs de temple, unités de cavalerie)
-        fx["match"]["objective"] = json!({"type": "Sky Temple", "0": {"count": 241.0, "events": [{}, {}]}, "1": {"count": 74.0, "events": [{}]}});
-        assert_eq!(summary_from_output(&output(&fx)).unwrap().objectives, None);
-        fx["match"]["objective"] = json!({"type": "Alterac Pass", "0": {"events": [{}, {}, {}]}, "1": {"events": []}});
-        assert_eq!(summary_from_output(&output(&fx)).unwrap().objectives, None);
-        fx["match"]["objective"] = json!({"type": "Cursed Hollow", "0": {"count": 3.0, "events": [{}, {}, {}]}, "1": {"count": 0, "events": []}});
+        let set = |fx: &mut J, map: &str, obj: J| {
+            fx["match"]["map"] = json!(map);
+            fx["match"]["objective"] = obj;
+        };
+        // carte de la liste (Tomb = Crypts) : événements datés seulement
+        set(&mut fx, "Tomb of the Spider Queen", json!({"type": "Tomb of the Spider Queen",
+            "0": {"count": 3.0, "events": [{"time": 1.0}, {"time": 2.0}, {"time": null}]}, "1": {"count": 0, "events": []}}));
+        assert_eq!(summary_from_output(&output(&fx)).unwrap().objectives, Some([2, 0]));
+        set(&mut fx, "Cursed Hollow", json!({"type": "Cursed Hollow", "0": {"count": 3.0, "events": [{"time": 1.0}, {"time": 2.0}, {"time": 3.0}]}, "1": {"count": 0, "events": []}}));
         assert_eq!(summary_from_output(&output(&fx)).unwrap().objectives, Some([3, 0]));
+        set(&mut fx, "Battlefield of Eternity", json!({"type": "Battlefield of Eternity",
+            "results": [{"winner": 1.0, "time": 272.0}, {"winner": 0.0, "time": 506.0}, {"winner": 1.0, "time": 766.0}]}));
+        assert_eq!(summary_from_output(&output(&fx)).unwrap().objectives, Some([1, 2]));
+        // hors liste → pas de ligne, même avec des événements par équipe
+        for map in ["Sky Temple", "Alterac Pass", "Infernal Shrines", "Warhead Junction", "Haunted Mines", "Silver City", "Braxis Holdout"] {
+            set(&mut fx, map, json!({"type": map, "0": {"count": 2.0, "events": [{"time": 1.0}, {"time": 2.0}]}, "1": {"count": 1.0, "events": [{"time": 3.0}]}}));
+            assert_eq!(summary_from_output(&output(&fx)).unwrap().objectives, None, "{map}");
+        }
+    }
+
+    #[test]
+    fn swapped_mirrors_every_pair() {
+        let s = summary_from_output(&output(&fixture())).unwrap();
+        let w = s.clone().swapped();
+        assert_eq!(w.winner, Side::Red);
+        assert_eq!((w.takedowns, w.team_level, w.merc_camps, w.structures, w.objectives),
+            ([15, 28], Some([24, 25]), Some([6, 12]), Some([4, 5]), Some([3, 3])));
+        assert_eq!(w.bans[0], s.bans[1]);
+        assert_eq!(w.xp_lead[0], (60, -710));
+        assert_eq!((w.players[0].side, w.players[0].hero.as_str()), (Side::Blue, "Blaze"));
+        assert_eq!((w.players[5].side, w.players[5].hero.as_str()), (Side::Red, "Hogger"));
+        assert_eq!(w.swapped(), s);
     }
 }

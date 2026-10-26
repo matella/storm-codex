@@ -173,3 +173,12 @@ export function slideIndex(s: CastSeries, tick = 0): number {
   const n = slideCount(s);
   return (s.slide.index + (s.slide.auto ? tick : 0)) % n;
 }
+
+/** Message affiché à l'opérateur pour un refus du dépôt de replay ; `side_mismatch` (R16) reçoit
+ *  une consigne, les autres codes serveur restent tels quels. */
+export function replayErrorText(code: string): string {
+  if (code === "side_mismatch") {
+    return `side_mismatch: the replay's winner contradicts the recorded winner and no linked player tells the sides apart. Tick "Swap sides" if this series' Blue team played as the replay's second team, otherwise check the recorded winner.`;
+  }
+  return code;
+}

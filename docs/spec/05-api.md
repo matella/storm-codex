@@ -116,9 +116,14 @@ vérifié par `EXPLAIN` dans le test) ; budget **< 100 ms pour 10 joueurs** (tes
 `.StormReplay` (comme `draft/replay/load`), décodé à la volée (fichier temporaire supprimé, `spawn_blocking` ; une
 panique du décodeur devient un 422). **Custom uniquement, rien n'est écrit en base** (ni `matches` ni `uploads` :
 seule la ligne `cast_live`). → `201 GameSummary` (cf. [06-modele-donnees.md](06-modele-donnees.md)) ; remplit
-`winner`, `takedowns`, `duration_secs` et `summary` de la partie `n` — le replay fait foi (remplace un vainqueur
-saisi à la main, ou un résumé précédent) ; persistance + synchro draft (score) + WS `cast.updated` comme les autres
-mutations. Erreurs : `400 {"error":"empty_body"}` ; `409 SeriesInactive` / `409 UnknownGame` (partie `n` absente) ;
+`winner`, `takedowns`, `duration_secs` et `summary` de la partie `n`, **orienté sur la série** (R16, sous le
+write-lock) : les joueurs du replay rattachés à ceux de la série (toon lié, puis pseudo exact) décident si l'équipe 0
+du replay est la Blue ou la Red (`GameSummary::swapped()`) ; avec cette preuve le replay fait foi (remplace un
+vainqueur saisi, ou un résumé précédent) ; **sans preuve**, équipe 0 = Blue, mais un vainqueur déjà saisi qui
+contredit le replay → `409 {"error":"side_mismatch"}`, rien ne change. **`?swap=1`** : l'opérateur force l'échange.
+Persistance + synchro draft (score) + WS `cast.updated` comme les autres mutations ; la réponse est le résumé
+orienté. Erreurs : `400 {"error":"empty_body"}` ; `409 SeriesInactive` / `409 UnknownGame` (partie `n` absente) /
+`409 side_mismatch` ;
 `422 {"error", "message"}` avec `error` ∈ `not_custom` (replay non Custom), `parse_failed` (octets illisibles,
 tronqués, statut storm-stats ≠ 1), `incomplete` (vainqueur, durée ou takedowns absents de la sortie) — jamais 500
 sur une entrée invalide. Budget décodage < 500 ms (mesuré : route complète 178–203 ms en release, upload local

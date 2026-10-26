@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { castGameReplay, castSlide } from "../castApi";
 import type { CastSeries, GameRecord } from "../castApi";
-import { shownGame, slideCount, slideIndex } from "../castState";
+import { replayErrorText, shownGame, slideCount, slideIndex } from "../castState";
 
 type Run = (fn: () => Promise<unknown>) => Promise<void>;
 
@@ -13,11 +13,18 @@ const clock = (secs: number) => `${Math.floor(secs / 60)}:${String(Math.floor(se
 
 function GameRow({ g, run }: { g: GameRecord; run: Run }) {
   const [busy, setBusy] = useState(false);
+  const [swap, setSwap] = useState(false);
   const load = async (file: File | undefined) => {
     if (!file) return;
     setBusy(true);
     try {
-      await run(() => castGameReplay(g.number, file));
+      await run(async () => {
+        try {
+          return await castGameReplay(g.number, file, swap);
+        } catch (e) {
+          throw new Error(replayErrorText(e instanceof Error ? e.message : String(e)));
+        }
+      });
     } finally {
       setBusy(false);
     }
@@ -31,6 +38,9 @@ function GameRow({ g, run }: { g: GameRecord; run: Run }) {
           ? `replay loaded · ${sm.winner} won · ${sm.takedowns[0]}–${sm.takedowns[1]} · ${clock(sm.duration_secs)}`
           : g.winner ? `${g.winner} won · no replay` : "no replay"}
       </span>
+      <label className="cr-note" title="The series' Blue team played as the replay's second team">
+        <input type="checkbox" checked={swap} onChange={(e) => setSwap(e.target.checked)} aria-label={`Game ${g.number} swap sides`} /> Swap sides
+      </label>
       <label className="ds-btn small">
         {busy ? "Decoding…" : sm ? "Replace replay" : "Load replay"}
         <input type="file" accept=".StormReplay" hidden disabled={busy} aria-label={`Game ${g.number} replay file`}

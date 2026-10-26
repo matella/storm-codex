@@ -29,7 +29,11 @@ pub(super) async fn persist(s: &AppState) {
 }
 
 pub(super) fn conflict(e: CastError) -> Resp {
-    (StatusCode::CONFLICT, Json(json!({ "error": format!("{e:?}") })))
+    let code = match e {
+        CastError::SideMismatch => "side_mismatch".to_owned(),
+        other => format!("{other:?}"),
+    };
+    (StatusCode::CONFLICT, Json(json!({ "error": code })))
 }
 
 fn series_json(s: &Series) -> Resp {

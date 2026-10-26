@@ -52,10 +52,34 @@ ajoutée à storm-stats** ; un chemin absent donne `None` / vide et l'écran ret
 | `team_level` | `match.teams[t].level` | = max des clés de `match.levelTimes[t]` (source de la fiche) sur tout le corpus |
 | `merc_camps` | `match.teams[t].stats.mercCaptures` | = nb de `match.mercs.captures` de l'équipe. La colonne avancée « Mercs » de la fiche somme `gameStats.MercCampCaptures` (participation, ≈ 2×) : **non utilisée** |
 | `structures` (forts · keeps) | `teams[t].stats.structures.Fort.destroyed + .Keep.destroyed` | bâtiments seuls (sans tours ni puits) ; sous-clé absente = 0, `structures` absent → `None` ; = nb de `match.structures` Fort/Keep détruits chez l'adversaire |
-| `objectives` | règle `objectiveEvents` de la fiche : `match.objective.results[].winner` (Battlefield) + `objective[t].events.length` | `= objective[t].count` quand présent. `None` sans événements par équipe (Haunted Mines : listes nues ; Braxis Holdout ; cartes ARAM) **et** pour Sky Temple (un événement par tir, ≈ 1/s) et Alterac Pass (une unité de cavalerie par événement) |
+| `objectives` | **liste blanche** par clé `MapType` (`rt_str("MapType", …)` comparé à `match.map`) ; événements **datés** seulement (`time` non nul, comme `objectiveEvents` de la fiche) | voir la liste ci-dessous ; toute autre carte → `None` (ligne retirée) |
 | `bans` | `match.bans[t][].hero` (code attribut) → `attr.json` `heroAttribute` | code inconnu ignoré |
 | `players[]` | clé de `players` (= `ToonHandle`) → `toon` ; `name`, `hero`, `team` ; `gameStats.{SoloKill→kills, Takedowns, Deaths, Assists, HeroDamage, SiegeDamage, Healing}` | `players[].deaths` / `.takedowns` (racine) sont des **listes** d'événements, pas des compteurs ; ne jamais dériver un compteur d'un autre (`Takedowns ≠ SoloKill + Assists` sur 7 lignes du corpus). Tri : Blue puis Red, ordre de `match.picks[t]` |
 | `xp_lead` | `match.XPBreakdown[]` apparié par `loop` : Σ champs numériques de `breakdown` hors `*Time*` (comme la courbe « Team XP » de la fiche), Blue − Red, `(time tronqué, arrondi)` | présent sur 100 % du corpus Custom ; pas de repli `levelAdvTimeline` (unité différente : niveaux) |
+
+**Liste blanche des objectifs (R17)** — chaque entrée : l'événement storm-stats (process.rs) qui
+alimente `objective[t].events`, et le recoupement du corpus Custom :
+- `TowersOfDoom` — `AltarCaptured` : un événement par autel capturé (count = events, 10–5, 4–9…).
+- `CursedHollow` — `TributeCollected` : un événement par tribut ramassé par l'équipe (≤ `tributes` apparus : 3–0 sur 4, 4–8 sur 12).
+- `DragonShire` — `DragonKnightActivated` : un événement par Chevalier dragon activé.
+- `HauntedWoods` (Garden of Terror) — `GardenTerrorActivated` : une terreur activée par événement.
+- `Crypts` (Tomb of the Spider Queen) — `SpidersSpawned` : une vague de Tisseuses (gemmes rendues) par événement.
+- `Volskaya` — naissance du `Triglav` contrôlé par l'équipe : un protecteur capturé par événement.
+- `BlackheartsBay` — `GhostShipCaptured` : un navire capturé par événement (corpus mince : une seule partie, en base, 3–2).
+- `BattlefieldOfEternity` — `objective.results[].winner` (`ImmortalDefeated`) : immortel remporté.
+
+**Exclues** (ligne retirée) : `ControlPoints` (Sky Temple, un événement par **tir** de temple, ≈ 241 par
+partie) ; `AlteracPass` (une **unité** de cavalerie par événement) ; `Shrines` (Infernal Shrines :
+`PunisherKilled` = punisseurs **morts** — sous-compte les autels gagnés, `shrines[].team` ≥ events sur
+le corpus, ex. 3 vs 2) ; `Warhead Junction` (bombes **lancées**, pas réussies) ; `HauntedMines` (listes
+de golems, pas d'événements par équipe) ; `BraxisHoldout`, `Hanamura` (pas d'événements par équipe) ;
+cartes ARAM. Dans le doute, une carte reste hors liste.
+
+**Orientation (R16, `Series::orient`)** : l'équipe 0 du replay n'est pas forcément la Blue de la
+série. Les lignes `players[]` sont rattachées aux joueurs de la série (toon lié identique, puis pseudo
+exact) : preuve nette d'un croisement → `GameSummary::swapped()` (paires et bans échangés, vainqueur
+et côtés inversés, `xp_lead` négé) ; sans preuve, équipe 0 = Blue, sauf vainqueur saisi contraire →
+`409 side_mismatch`. `?swap=1` force l'échange.
 
 Comparatifs d'équipe affichés (K/D/A, dégâts héros, dégâts de siège) = sommes des lignes joueurs,
 comme la ligne « Team total » de la fiche.

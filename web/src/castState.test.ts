@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CastSeries, CastTeam, GameRecord, PoolMap } from "./castApi";
-import { badgeGameNumber, canSetWinner, displayName, effectiveLineupMode, MAPS, mapCardView, reconcileTeam, seriesScore, shownGame, slideCount, slideIndex, startableMaps, togglePool } from "./castState";
+import { badgeGameNumber, canSetWinner, displayName, effectiveLineupMode, MAPS, mapCardView, reconcileTeam, replayErrorText, seriesScore, shownGame, slideCount, slideIndex, startableMaps, togglePool } from "./castState";
 
 const game = (map: string, winner: GameRecord["winner"]): GameRecord => ({
   number: 1, map, winner, takedowns: [0, 0], duration_secs: null, summary: null,
@@ -163,5 +163,13 @@ describe("slides (R15: 0 = map strip, 1..4 = breakdown tabs when the shown game 
   it("auto starts at the server index and cycles every available slide", () => {
     const s = series({ games: [withSummary(1, "A")], slide: { game: null, index: 3, auto: true, interval_ms: 1000 } });
     expect([0, 1, 2, 3, 4, 5].map((t) => slideIndex(s, t))).toEqual([3, 4, 0, 1, 2, 3]);
+  });
+});
+
+describe("replayErrorText (R16)", () => {
+  it("side_mismatch gets the Swap sides hint; other codes pass through", () => {
+    expect(replayErrorText("side_mismatch")).toContain('"Swap sides"');
+    expect(replayErrorText("side_mismatch")).toMatch(/^side_mismatch/);
+    expect(replayErrorText("not_custom")).toBe("not_custom");
   });
 });

@@ -238,4 +238,7 @@ pub enum CastError {
     MapAlreadyPlayed,
     #[error("series inactive")]
     SeriesInactive,
+    /// Replay sans preuve d'orientation dont le vainqueur contredit le vainqueur saisi (R16).
+    #[error("replay sides do not match the recorded winner")]
+    SideMismatch,
 }
