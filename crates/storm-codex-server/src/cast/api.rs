@@ -99,15 +99,12 @@ pub async fn get_cast(State(s): State<AppState>) -> Json<Series> {
 }
 
 #[derive(Deserialize)]
-pub struct TeamName {
-    #[serde(default)]
-    name: String,
-}
-
-#[derive(Deserialize)]
 pub struct SeriesBody {
-    blue: TeamName,
-    red: TeamName,
+    /// Équipe complète (nom, bilan, joueurs, capitaine, logo) ; `{name}` seul reste accepté.
+    #[serde(default)]
+    blue: Team,
+    #[serde(default)]
+    red: Team,
     bo: u8,
     format: Format,
     #[serde(default)]
@@ -124,8 +121,10 @@ pub async fn start_series(State(s): State<AppState>, Json(b): Json<SeriesBody>) 
         let mut n = Series::new();
         n.active = true;
         // les logos (stockés en base) survivent au redémarrage de série
-        n.blue = Team { name: b.blue.name, logo: c.blue.logo.take(), ..Team::default() };
-        n.red = Team { name: b.red.name, logo: c.red.logo.take(), ..Team::default() };
+        // logo absent du corps → on garde celui en place (stocké en base)
+        let (old_blue, old_red) = (c.blue.logo.take(), c.red.logo.take());
+        n.blue = Team { logo: b.blue.logo.or(old_blue), ..b.blue };
+        n.red = Team { logo: b.red.logo.or(old_red), ..b.red };
         n.bo = b.bo;
         n.format = b.format;
         n.scene = c.scene;
@@ -406,6 +405,40 @@ mod tests {
         assert_eq!(v["blue"]["name"], "Blue Co");
         assert_eq!(v["pool"].as_array().unwrap().len(), 3);
         assert_eq!(v["pool"][0]["status"], "available");
+    }
+
+    #[tokio::test]
+    async fn post_series_accepts_full_teams_and_players() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        let body = json!({
+            "blue":{"name":"Blue Co","record":"4-1","captain":2,
+                    "players":[{"name":"P1","tagline":"t1"},{"name":"P2"},{"name":"P3"},{"name":"P4"},{"name":"P5"}]},
+            "red":{"name":"Red Co"},"bo":3,"format":"standard","pool":["A","B"]});
+        let (st, v) = call(&state, "POST", "/api/cast/series", Some(body)).await;
+        assert_eq!(st, StatusCode::OK);
+        assert_eq!(v["blue"]["record"], "4-1");
+        assert_eq!(v["blue"]["captain"], 2);
+        assert_eq!(v["blue"]["players"][0]["name"], "P1");
+        assert_eq!(v["blue"]["players"][0]["tagline"], "t1");
+        assert_eq!(v["blue"]["players"][4]["name"], "P5");
+        assert_eq!(v["red"]["name"], "Red Co");
+        assert_eq!(v["red"]["players"].as_array().unwrap().len(), 5);
+    }
+
+    #[tokio::test]
+    async fn post_series_with_name_only_still_works_and_keeps_logos() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        {
+            let mut c = state.cast.write().await;
+            c.blue.logo = Some("/api/cast/logo/blue?v=1".into());
+        }
+        let (st, v) = call(&state, "POST", "/api/cast/series", Some(start_body())).await;
+        assert_eq!(st, StatusCode::OK);
+        assert_eq!(v["blue"]["name"], "Blue Co");
+        assert_eq!(v["blue"]["logo"], "/api/cast/logo/blue?v=1");
+        assert_eq!(v["red"]["logo"], J::Null);
     }
 
     #[tokio::test]

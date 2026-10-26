@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CastSeries, CastTeam, GameRecord, PoolMap } from "./castApi";
-import { badgeGameNumber, canSetWinner, displayName, effectiveLineupMode, MAPS, mapCardView, seriesScore, startableMaps, togglePool } from "./castState";
+import { badgeGameNumber, canSetWinner, displayName, effectiveLineupMode, MAPS, mapCardView, reconcileTeam, seriesScore, startableMaps, togglePool } from "./castState";
 
 const game = (map: string, winner: GameRecord["winner"]): GameRecord => ({
   number: 1, map, winner, takedowns: [0, 0], duration_secs: null, summary: null,
@@ -104,5 +104,24 @@ describe("form helpers", () => {
   it("MAPS is a single, duplicate-free list", () => {
     expect(new Set(MAPS).size).toBe(MAPS.length);
     expect(MAPS).toContain("Dragon Shire");
+  });
+});
+
+describe("reconcileTeam", () => {
+  const mk = (over: Partial<CastTeam>): CastTeam => ({ ...team("Old"), ...over });
+  it("keeps dirty local edits but adopts a newly uploaded server logo", () => {
+    const local = mk({ name: "Typed", record: "2-0", logo: null });
+    const server = mk({ name: "Old", logo: "/api/cast/logo/blue?v=2" });
+    const r = reconcileTeam(local, server, false);
+    expect(r.name).toBe("Typed");
+    expect(r.record).toBe("2-0");
+    expect(r.logo).toBe("/api/cast/logo/blue?v=2");
+  });
+  it("never lets Save send a logo older than the server's (untouched logo field)", () => {
+    const r = reconcileTeam(mk({ logo: "/old" }), mk({ logo: "/new" }), false);
+    expect(r.logo).toBe("/new");
+  });
+  it("keeps a logo URL the operator typed", () => {
+    expect(reconcileTeam(mk({ logo: "https://x/y.png" }), mk({ logo: "/new" }), true).logo).toBe("https://x/y.png");
   });
 });

@@ -67,8 +67,9 @@ export interface CastSeries {
 }
 
 export interface CastSeriesBody {
-  blue: { name: string };
-  red: { name: string };
+  /** Équipe complète (nom, bilan, joueurs, capitaine, logo) ; `{name}` seul reste accepté. Logo null = on garde celui en place. */
+  blue: Partial<CastTeam> & { name: string };
+  red: Partial<CastTeam> & { name: string };
   bo: 1 | 3 | 5 | 7;
   format: DraftFormat;
   pool: string[];

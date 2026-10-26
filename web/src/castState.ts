@@ -85,3 +85,10 @@ export function canSetWinner(s: CastSeries, n: number): boolean {
   const g = s.games.find((x) => x.number === n);
   return g !== undefined && g.winner === null;
 }
+
+/** Réconcilie la saisie locale d'une équipe avec l'état serveur : les modifications locales (nom, joueurs…)
+ *  sont conservées, mais le logo du serveur (envoi de fichier) l'emporte sur un logo local plus ancien.
+ *  `touchedLogo` = l'opérateur a lui-même édité le champ URL du logo depuis la dernière synchro. */
+export function reconcileTeam(local: CastTeam, server: CastTeam, touchedLogo: boolean): CastTeam {
+  return touchedLogo ? local : { ...local, logo: server.logo };
+}

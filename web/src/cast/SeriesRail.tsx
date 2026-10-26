@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { DraftFormat, Side } from "../api";
 import { castLogoUpload, castSeries, castTeams } from "../castApi";
 import type { CastSeries, CastTeam } from "../castApi";
-import { MAPS, seriesScore, togglePool } from "../castState";
+import { MAPS, reconcileTeam, seriesScore, togglePool } from "../castState";
 
 type Run = (fn: () => Promise<unknown>) => Promise<void>;
 const BOS = [1, 3, 5, 7] as const;
@@ -29,28 +29,40 @@ export function SeriesRail({ series, run }: { series: CastSeries; run: Run }) {
     setRed(series.red);
   }, [series.blue, series.red]);
 
+  // un logo envoyé par fichier arrive du serveur : on l'adopte même si la saisie est modifiée
+  const logoTouched = useRef<Record<Side, boolean>>({ blue: false, red: false });
+  useEffect(() => { setBlue((t) => reconcileTeam(t, series.blue, logoTouched.current.blue)); }, [series.blue.logo]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setRed((t) => reconcileTeam(t, series.red, logoTouched.current.red)); }, [series.red.logo]); // eslint-disable-line react-hooks/exhaustive-deps
+  const current = () => ({
+    blue: reconcileTeam(blue, series.blue, logoTouched.current.blue),
+    red: reconcileTeam(red, series.red, logoTouched.current.red),
+  });
+  const clean = () => { dirty.current = false; logoTouched.current = { blue: false, red: false }; };
+
   const edit = (side: Side, t: CastTeam) => {
     dirty.current = true;
     (side === "blue" ? setBlue : setRed)(t);
   };
   const saveTeams = () =>
     run(async () => {
-      const s = await castTeams(blue, red);
-      dirty.current = false;
+      const c = current();
+      const s = await castTeams(c.blue, c.red);
+      clean();
       return s;
     });
   const newSeries = () =>
     run(async () => {
       if (series.active && !window.confirm("Replace the running series? Games and score are reset.")) return null;
-      await castSeries({ blue: { name: blue.name }, red: { name: red.name }, bo, format, pool });
-      // la création remet les équipes à zéro (hors logos) : on réapplique la saisie du rail
-      const s = await castTeams(blue, red);
-      dirty.current = false;
+      const c = current();
+      // un seul appel : équipes complètes + série (pas d'état intermédiaire à l'antenne)
+      const s = await castSeries({ blue: c.blue, red: c.red, bo, format, pool });
+      clean();
       return s;
     });
   const upload = (side: Side, file: File | undefined) => {
     if (!file) return;
     setLogoErr((e) => ({ ...e, [side]: false }));
+    logoTouched.current[side] = false;
     void run(() => castLogoUpload(side, file));
   };
   const setPlayer = (side: Side, t: CastTeam, i: number, patch: Partial<CastTeam["players"][number]>) =>
@@ -103,7 +115,7 @@ export function SeriesRail({ series, run }: { series: CastSeries; run: Run }) {
               onChange={(e) => { upload(side, e.target.files?.[0]); e.target.value = ""; }} />
           </div>
           <input className="ds-input" placeholder="logo URL (optional)" value={t.logo ?? ""} aria-label={`${side} logo URL`}
-            onChange={(e) => edit(side, { ...t, logo: e.target.value.trim() === "" ? null : e.target.value })} />
+            onChange={(e) => { logoTouched.current[side] = true; edit(side, { ...t, logo: e.target.value.trim() === "" ? null : e.target.value }); }} />
           <input className="ds-input" placeholder="record (e.g. 4-1)" value={t.record} aria-label={`${side} record`}
             onChange={(e) => edit(side, { ...t, record: e.target.value })} />
           {t.players.map((p, i) => (
