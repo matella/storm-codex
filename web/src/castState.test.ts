@@ -37,6 +37,18 @@ describe("mapCardView", () => {
   });
 });
 
+describe("mapCardView with team names", () => {
+  const names = { blue: "Team Liquid", red: "Gen.G" };
+  it("uses display names for banned / picked", () => {
+    expect(mapCardView({ name: "B", status: "banned", by: "red" }, [], null, names).label).toBe("banned by Gen.G");
+    expect(mapCardView({ name: "P", status: "picked", by: "blue" }, [], null, names)).toMatchObject({ tone: "blue", label: "picked by Team Liquid" });
+  });
+  it("WON / NEXT / decider unaffected", () => {
+    expect(mapCardView({ name: "A", status: "picked", by: "blue" }, [game("A", "red")], null, names).label).toBe("WON");
+    expect(mapCardView({ name: "D", status: "decider" }, [], "D", names).label).toBe("NEXT");
+  });
+});
+
 describe("effectiveLineupMode", () => {
   it("auto: A until a game has a winner, then B", () => {
     expect(effectiveLineupMode(series({}))).toBe("A");

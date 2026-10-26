@@ -10,8 +10,15 @@ export interface MapCardView {
 
 const sideLabel = (s: Side) => (s === "blue" ? "Blue" : "Red");
 
-/** Rendu d'une carte du bandeau « Series ». Priorité : jouée (WON / PLAYING) > NEXT > statut du pool. */
-export function mapCardView(m: PoolMap, games: GameRecord[], nextMap: string | null): MapCardView {
+/** Rendu d'une carte du bandeau « Series ». Priorité : jouée (WON / PLAYING) > NEXT > statut du pool.
+ *  `names` (optionnel) : noms affichés des équipes pour « banned/picked by … » ; sinon « Blue » / « Red ». */
+export function mapCardView(
+  m: PoolMap,
+  games: GameRecord[],
+  nextMap: string | null,
+  names?: { blue: string; red: string },
+): MapCardView {
+  const by = (s: Side) => (names ? names[s] : sideLabel(s));
   const played = games.find((g) => g.map === m.name);
   if (played) {
     return played.winner
@@ -21,9 +28,9 @@ export function mapCardView(m: PoolMap, games: GameRecord[], nextMap: string | n
   if (nextMap !== null && m.name === nextMap) return { tone: "gold", label: "NEXT", struck: false };
   switch (m.status) {
     case "banned":
-      return { tone: "muted", label: `banned by ${sideLabel(m.by)}`, struck: true };
+      return { tone: "muted", label: `banned by ${by(m.by)}`, struck: true };
     case "picked":
-      return { tone: m.by, label: `picked by ${sideLabel(m.by)}`, struck: false };
+      return { tone: m.by, label: `picked by ${by(m.by)}`, struck: false };
     case "decider":
       return { tone: "none", label: "decider", struck: false };
     default:

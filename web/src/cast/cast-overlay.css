@@ -32,3 +32,35 @@
 .cast-overlay .badge .bo small { display: block; font-size: .55cqw; letter-spacing: .18em; color: var(--gold); margin-top: .1cqw; }
 .cast-overlay .badge .fl { background: var(--gold); color: #1a1230; border-radius: var(--radius); padding: .25cqw 0;
   font-size: .6cqw; letter-spacing: .14em; }
+
+/* Series : en-tête, bandeau des cartes du pool, zone de slides (contenu des slides : tâche 9) */
+.cast-overlay .sr-head { position: absolute; top: 3%; left: 0; right: 0; text-align: center; }
+.cast-overlay .sr-ttl { font-family: var(--label-ff); letter-spacing: .22em; font-size: 1.05cqw; color: #cfe0ff; opacity: .85; }
+.cast-overlay .sr-teams { margin-top: .4cqw; font-family: var(--label-ff); font-weight: 800; font-size: 2cqw; letter-spacing: .05em;
+  display: flex; align-items: baseline; justify-content: center; gap: 1.2cqw; }
+.cast-overlay .sr-teams .b, .cast-overlay .sr-teams .r { max-width: 32cqw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cast-overlay .sr-teams .b { color: var(--blue-soft); } .cast-overlay .sr-teams .r { color: var(--red-soft); }
+.cast-overlay .sr-teams .s { font-family: var(--num-ff); color: #fff; flex: none; }
+
+.cast-overlay .sr-strip { position: absolute; top: 19%; left: 4%; right: 4%; display: grid; gap: .7cqw;
+  grid-template-columns: repeat(var(--n, 6), 1fr); }
+.cast-overlay .sr-strip.two-rows { grid-template-columns: repeat(5, 1fr); }
+.cast-overlay .mc { position: relative; height: 9cqw; border-radius: calc(var(--radius) * 2.5); overflow: hidden; min-width: 0;
+  border: 1px solid var(--cardbd); background: linear-gradient(160deg, #2b2160, #120c2b); }
+.cast-overlay .two-rows .mc { height: 7.4cqw; }
+.cast-overlay .mc .art { position: absolute; inset: 0; opacity: .55; background-size: cover; background-position: center; }
+.cast-overlay .mc .tx { position: absolute; left: 0; right: 0; bottom: 0; padding: .5cqw .6cqw;
+  background: linear-gradient(0deg, #000d 40%, transparent); }
+.cast-overlay .mc b { display: block; font-family: var(--label-ff); font-size: .85cqw; letter-spacing: .04em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cast-overlay .mc .lb { display: block; font-style: normal; font-size: .68cqw; color: #c4cdea; margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cast-overlay .mc.tone-blue { box-shadow: inset 0 4px 0 var(--blue); } .cast-overlay .mc.tone-blue .lb { color: var(--blue-soft); }
+.cast-overlay .mc.tone-red { box-shadow: inset 0 4px 0 var(--red); } .cast-overlay .mc.tone-red .lb { color: var(--red-soft); }
+.cast-overlay .mc.tone-gold { border-color: var(--gold); box-shadow: 0 0 22px #f0d27a55; }
+.cast-overlay .mc.tone-gold .lb { color: var(--gold); font-weight: 700; letter-spacing: .14em; }
+.cast-overlay .mc.struck { filter: grayscale(.8) brightness(.55); }
+.cast-overlay .mc.struck::after { content: ""; position: absolute; inset: 0;
+  background: linear-gradient(135deg, transparent 47%, #ff3b46 48%, #ff3b46 52%, transparent 53%); }
+
+.cast-overlay .sr-slide { position: absolute; left: 4%; right: 4%; top: 52%; bottom: 7%; }

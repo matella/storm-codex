@@ -3,17 +3,19 @@ import { useLiveUpdates } from "../api";
 import { useCast } from "../castApi";
 import type { CastSeries } from "../castApi";
 import { InGameScene } from "../cast/InGameScene";
+import { SeriesScene } from "../cast/SeriesScene";
 import "../cast/cast-overlay.css";
 
 const SKINS = ["nexus", "glass", "tactical", "mono"];
 
-/** Point d'aiguillage des scènes. `draft` / `series` / `lineups` : vides jusqu'aux tâches 7, 8 et 10. */
+/** Point d'aiguillage des scènes. `draft` / `lineups` : vides jusqu'aux tâches 8 et 10. */
 function Scene({ s }: { s: CastSeries }) {
   switch (s.scene) {
     case "ingame":
       return <InGameScene s={s} />;
-    case "draft":
     case "series":
+      return <SeriesScene s={s} />;
+    case "draft":
     case "lineups":
     case "hide":
     default:
