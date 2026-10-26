@@ -97,7 +97,7 @@ Spec : `docs/specs/2026-10-25-draft-replay-design.md`.
 
 Module `cast/` : `mod.rs` (types `Series`, `Team`, `PoolMap`/`MapStatus`, `GameRecord`, `Scene`,
 `LineupMode`, `SlideState`, `CastError`), `series.rs` (opérations **pures**, zéro I/O : pool, parties,
-score, mode de lineup), `store.rs` (persistance), `lineup.rs` (héros récents par joueur, lecture seule de `match_players`), `api.rs` (routes). Série singleton autoritative en
+score, mode de lineup), `store.rs` (persistance), `lineup.rs` (héros récents par joueur, lecture seule de `match_players`), `summary.rs` (`GameSummary` extrait de la sortie storm-stats d'un replay Custom, pur), `replay.rs` (route `POST /api/cast/games/{n}/replay` : décodage à la volée, rien en base hors `cast_live`), `api.rs` (routes). Série singleton autoritative en
 mémoire (`AppState.cast`), **persistée** dans `cast_live` (JSONB, id=1), rechargée au démarrage ; tout
 état illisible (non-objet, `players` ≠ 5, scène/format/côté/statut inconnu) → repli sur une série neuve
 inactive, le démarrage n'échoue jamais. Chaque mutation : un seul write-lock sur une copie (une erreur
