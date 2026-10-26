@@ -83,19 +83,35 @@ describe("LineupsScene mode B", () => {
   });
 });
 
-describe("seriesPlayerHeroes", () => {
-  it("matches by name, then by remaining slot order; tolerates malformed summaries", () => {
-    const s = series({
-      games: [
-        g(1, "blue", { players: [{ side: "blue", name: "b3", hero: "Muradin" }, { side: "blue", name: "?", hero: "Valla" }, { side: "red", name: "R1", hero: "X" }] }),
-        g(2, "red", { players: "nope" }),
-        g(3, "red", {}),
-      ],
-    });
-    const out = seriesPlayerHeroes(s, "blue");
+describe("seriesPlayerHeroes (R14: toon, then exact name, never position)", () => {
+  const row = (side: string, name: string, hero: string, toon?: string) => ({ side, name, hero, ...(toon ? { toon } : {}) });
+  const withRows = (rows: unknown[]) => series({ games: [g(1, "blue", { players: rows })] });
+  it("a row whose name matches no player stays unattributed (no positional fallback)", () => {
+    const out = seriesPlayerHeroes(withRows([row("blue", "Totally Different", "Valla")]), "blue");
+    expect(out.every((l) => l.length === 0)).toBe(true);
+  });
+  it("name match is trimmed and case-insensitive", () => {
+    const out = seriesPlayerHeroes(withRows([row("blue", "  b3 ", "Muradin")]), "blue");
     expect(out[2]).toEqual([{ game: 1, hero: "Muradin" }]);
-    expect(out[0]).toEqual([{ game: 1, hero: "Valla" }]); // 1re place libre
-    expect(out[1]).toEqual([]);
+    expect(out.flat()).toHaveLength(1);
+  });
+  it("toon match wins over a differing name", () => {
+    const rows = [row("blue", "B1", "Valla", "toon-B2"), row("blue", "OtherName", "Jaina", "toon-B1")];
+    const out = seriesPlayerHeroes(withRows(rows), "blue");
+    expect(out[1]).toEqual([{ game: 1, hero: "Valla" }]); // toon-B2 = slot 2 malgré le nom « B1 »
+    expect(out[0]).toEqual([{ game: 1, hero: "Jaina" }]);
+  });
+  it("a same-name row on the other side is not used", () => {
+    const out = seriesPlayerHeroes(withRows([row("red", "B1", "Valla")]), "blue");
+    expect(out.flat()).toHaveLength(0);
+  });
+  it("tolerates malformed summaries; unmatched players render pending", () => {
+    const s = series({ games: [g(1, "blue", { players: "nope" }), g(2, "red", {}), g(3, "red", { players: [row("blue", "Nobody", "Valla")] })] });
+    expect(seriesPlayerHeroes(s, "blue").flat()).toHaveLength(0);
+    const html = renderToStaticMarkup(<LineupsScene s={s} />);
+    expect(html).toContain('data-mode="B"');
+    expect(count(html, "awaiting game data")).toBe(10);
+    expect(html).not.toContain("hp-i");
   });
 });
 
