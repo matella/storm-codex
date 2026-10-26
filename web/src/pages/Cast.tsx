@@ -2,10 +2,12 @@
 // Spec : docs/specs/2026-10-25-cast-control-room-design.md. Les erreurs serveur (409 : NotInPool,
 // SeriesInactive, MapAlreadyPlayed…) sont affichées telles quelles à l'opérateur.
 import { useState } from "react";
+import { useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { castScene, castScore, useCast } from "../castApi";
 import type { CastScene, CastSeries } from "../castApi";
-import { badgeGameNumber, seriesScore } from "../castState";
+import { badgeGameNumber, sceneFromSearch, seriesScore } from "../castState";
+import { DraftWorkspace } from "../cast/DraftWorkspace";
 import { LineupsWorkspace } from "../cast/LineupsWorkspace";
 import { PoolPanel } from "../cast/PoolPanel";
 import { ScenePreview } from "../cast/ScenePreview";
@@ -24,19 +26,12 @@ const sceneLabel = (s: CastScene) => SCENES.find((x) => x.id === s)?.label ?? s;
 
 type Run = (fn: () => Promise<unknown>) => Promise<void>;
 
-function Workspace({ series, run }: { series: CastSeries; run: Run }) {
-  const sc = series.scene;
+/** `scene` = onglet de travail LOCAL (≠ scène à l'antenne `series.scene`). */
+function Workspace({ series, scene: sc, run }: { series: CastSeries; scene: CastScene; run: Run }) {
   if (sc === "hide") return null;
   if (sc === "series") return <SeriesWorkspace series={series} run={run} />;
   if (sc === "lineups") return <LineupsWorkspace series={series} run={run} />;
-  if (sc !== "ingame") {
-    return (
-      <section className="cr-box">
-        <div className="cr-k">{sceneLabel(sc)}</div>
-        <div className="cr-note">Controls for this scene — coming in a later task.</div>
-      </section>
-    );
-  }
+  if (sc === "draft") return <DraftWorkspace series={series} />;
   const [b, r] = seriesScore(series);
   const set = (nb: number, nr: number) => run(() => castScore({ blue: Math.max(0, nb), red: Math.max(0, nr) }));
   return (
@@ -68,6 +63,10 @@ export function Cast() {
   const { data: series, isLoading, error: loadError } = useCast();
   const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
+  // onglet de travail local : `?scene=` à l'arrivée (redirection de /draft), sans toucher à la scène à l'antenne ;
+  // null = suit la scène à l'antenne. Un clic sur une scène la met à l'antenne et rend la main au serveur.
+  const loc = useLocation();
+  const [local, setLocal] = useState<CastScene | null>(() => sceneFromSearch(loc.search));
 
   /** Exécute une action serveur ; une réponse `CastSeries` alimente le cache, toute erreur est affichée. */
   const run: Run = async (fn) => {
@@ -92,8 +91,8 @@ export function Cast() {
         <div className="cr-scenes" role="tablist" aria-label="Scene">
           {SCENES.map((s) => (
             <button key={s.id} type="button" role="tab" aria-selected={series.scene === s.id}
-              className={`cr-scene${series.scene === s.id ? " on" : ""}`}
-              onClick={() => run(() => castScene(s.id))}>
+              className={`cr-scene${series.scene === s.id ? " on" : ""}${local === s.id && local !== series.scene ? " ed" : ""}`}
+              onClick={() => { setLocal(null); void run(() => castScene(s.id)); }}>
               {s.label}{series.scene === s.id && <i className="cr-air">ON AIR</i>}
             </button>
           ))}
@@ -110,7 +109,7 @@ export function Cast() {
         <SeriesRail series={series} run={run} />
         <div className="cr-main">
           <ScenePreview onAir={sceneLabel(series.scene)} />
-          <Workspace series={series} run={run} />
+          <Workspace series={series} scene={local ?? series.scene} run={run} />
           <PoolPanel series={series} run={run} />
         </div>
       </div>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CastSeries, CastTeam, GameRecord, PoolMap } from "./castApi";
-import { badgeGameNumber, canSetWinner, displayName, effectiveLineupMode, MAPS, mapCardView, reconcileTeam, replayErrorText, seriesScore, shownGame, slideCount, slideIndex, startableMaps, togglePool } from "./castState";
+import { badgeGameNumber, canSetWinner, displayName, effectiveLineupMode, MAPS, mapCardView, reconcileTeam, replayErrorText, seriesScore, shownGame, slideCount, slideIndex, startableMaps, togglePool, sceneFromSearch } from "./castState";
 
 const game = (map: string, winner: GameRecord["winner"]): GameRecord => ({
   number: 1, map, winner, takedowns: [0, 0], duration_secs: null, summary: null,
@@ -171,5 +171,18 @@ describe("replayErrorText (R16)", () => {
     expect(replayErrorText("side_mismatch")).toContain('"Swap sides"');
     expect(replayErrorText("side_mismatch")).toMatch(/^side_mismatch/);
     expect(replayErrorText("not_custom")).toBe("not_custom");
+  });
+});
+
+describe("sceneFromSearch", () => {
+  it("accepts the five scene names from ?scene=", () => {
+    for (const s of ["lineups", "series", "draft", "ingame", "hide"]) expect(sceneFromSearch(`?scene=${s}`)).toBe(s);
+    expect(sceneFromSearch("scene=draft&x=1")).toBe("draft");
+  });
+  it("ignores anything else", () => {
+    expect(sceneFromSearch("")).toBeNull();
+    expect(sceneFromSearch("?scene=Draft")).toBeNull();
+    expect(sceneFromSearch("?scene=nope")).toBeNull();
+    expect(sceneFromSearch("?skin=nexus")).toBeNull();
   });
 });

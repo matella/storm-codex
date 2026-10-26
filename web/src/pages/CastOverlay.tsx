@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useDimHeroes, useLiveUpdates } from "../api";
 import { useCast } from "../castApi";
 import type { CastSeries } from "../castApi";
+import { DraftSceneLive } from "../cast/DraftScene";
 import { InGameScene } from "../cast/InGameScene";
 import { LineupsLive } from "../cast/LineupsScene";
 import { SceneBackdrop } from "../cast/SceneBackdrop";
@@ -12,7 +13,7 @@ import "../cast/postgame.css";
 const SKINS = ["nexus", "glass", "tactical", "mono"];
 
 /** Point d'aiguillage des scènes (`series` / `lineups` : plein écran, sur `SceneBackdrop` opaque ; `series` alterne
- *  bandeau des cartes et post-game breakdown, cf. `SeriesScene`). `draft` : vide jusqu'à la tâche 10. */
+ *  bandeau des cartes et post-game breakdown, cf. `SeriesScene`). `draft` : `DraftScene` (fond propre, skins `?skin=`). */
 export function Scene({ s }: { s: CastSeries }) {
   switch (s.scene) {
     case "ingame":
@@ -22,6 +23,7 @@ export function Scene({ s }: { s: CastSeries }) {
     case "lineups":
       return <><SceneBackdrop /><LineupsLive s={s} /></>;
     case "draft":
+      return <DraftSceneLive />; // peint son propre fond (`.stage`) : pas de SceneBackdrop
     case "hide":
     default:
       return null;

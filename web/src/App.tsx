@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { Dashboard } from "./pages/Dashboard";
 import { Matches } from "./pages/Matches";
@@ -21,11 +21,9 @@ import { NowPlaying } from "./pages/NowPlaying";
 import { Trends } from "./pages/Trends";
 import { Leagues } from "./pages/Leagues";
 import { Admin } from "./pages/Admin";
-import { Draft } from "./pages/Draft";
 import { DraftOverlay } from "./pages/DraftOverlay";
 import { CastOverlay } from "./pages/CastOverlay";
 import { Cast } from "./pages/Cast";
-import { DraftReplay } from "./pages/DraftReplay";
 import { Scouting } from "./pages/Scouting";
 import { ScoutingReport } from "./pages/ScoutingReport";
 import { Live } from "./pages/Live";
@@ -56,8 +54,8 @@ export default function App() {
         <Route path="maps" element={<Maps />} />
         <Route path="trends" element={<Trends />} />
         <Route path="leagues" element={<Leagues />} />
-        <Route path="draft" element={<Draft />} />
-        <Route path="draft/replay" element={<DraftReplay />} />
+        <Route path="draft" element={<Navigate to="/cast?scene=draft" replace />} />
+        <Route path="draft/replay" element={<Navigate to="/cast?scene=draft" replace />} />
         <Route path="cast" element={<Cast />} />
         <Route path="scouting" element={<Scouting />} />
         <Route path="scouting/:id" element={<ScoutingReport />} />

@@ -9,6 +9,7 @@
   border: 1px solid var(--hairline-strong); padding: 6px 14px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
 .cr-scene:hover { color: var(--text); border-color: var(--accent); }
 .cr-scene.on { color: var(--gold); border-color: var(--gold); }
+.cr-scene.ed { color: var(--text); border-color: var(--accent); border-style: dashed; }
 .cr-air { font: 700 9px var(--mono); font-style: normal; background: var(--loss); color: #fff; padding: 2px 5px; letter-spacing: .1em; }
 .cr-inactive { font: 11px var(--mono); color: var(--muted-2); margin-left: auto; }
 .cr-err { border: 1px solid var(--loss); background: rgba(226, 75, 74, .1); color: var(--loss-soft); padding: 8px 12px; font: 12px var(--mono); }

@@ -1,6 +1,6 @@
 // Utilitaires purs de la régie de cast (miroir de cast/series.rs : lineup_mode_effective, display_name).
 import type { Side } from "./api";
-import type { CastSeries, CastTeam, GameRecord, PoolMap } from "./castApi";
+import type { CastScene, CastSeries, CastTeam, GameRecord, PoolMap } from "./castApi";
 
 export interface MapCardView {
   tone: "blue" | "red" | "gold" | "muted" | "none";
@@ -181,4 +181,13 @@ export function replayErrorText(code: string): string {
     return `side_mismatch: the replay's winner contradicts the recorded winner and no linked player tells the sides apart. Tick "Swap sides" if this series' Blue team played as the replay's second team, otherwise check the recorded winner.`;
   }
   return code;
+}
+
+const SCENE_NAMES: readonly CastScene[] = ["lineups", "series", "draft", "ingame", "hide"];
+
+/** Scène locale demandée par `?scene=` (cible de la redirection `/draft` → `/cast?scene=draft`) ; tout autre
+ *  valeur est ignorée. Ne change jamais la scène à l'antenne. */
+export function sceneFromSearch(search: string): CastScene | null {
+  const v = new URLSearchParams(search).get("scene");
+  return SCENE_NAMES.find((s) => s === v) ?? null;
 }
