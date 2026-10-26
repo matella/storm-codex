@@ -30,8 +30,40 @@ export interface CastTeam {
   captain: number | null;
 }
 
-/** Résumé de partie : objet vide pour l'instant, champs ajoutés à la tâche 9. */
-export type GameSummary = Record<string, never>;
+/** Ligne joueur du résumé (miroir de `PlayerSummary`, cast/mod.rs ; valeurs `gameStats` storm-stats). */
+export interface PlayerSummary {
+  side: Side;
+  /** ToonHandle storm-stats (rattachement R14). */
+  toon: string;
+  name: string;
+  hero: string;
+  /** `SoloKill` (colonne K de la fiche de match). */
+  kills: number;
+  takedowns: number;
+  deaths: number;
+  assists: number;
+  hero_damage: number;
+  siege_damage: number;
+  healing: number;
+}
+
+/** Résumé d'une partie extrait de son replay Custom (`POST /api/cast/games/{n}/replay`).
+ *  Paires `[blue, red]` ; `null` / vide = valeur absente de storm-stats → ligne retirée de l'écran. */
+export interface GameSummary {
+  duration_secs: number;
+  winner: Side;
+  takedowns: [number, number];
+  team_level: [number, number] | null;
+  /** Forts + keeps détruits par l'équipe. */
+  structures: [number, number] | null;
+  merc_camps: [number, number] | null;
+  objectives: [number, number] | null;
+  bans: [string[], string[]];
+  /** Blue puis Red, ordre de pick. */
+  players: PlayerSummary[];
+  /** [secondes, avance d'XP de Blue] (négatif = Red devant). */
+  xp_lead: [number, number][];
+}
 
 export interface GameRecord {
   number: number;
@@ -130,6 +162,21 @@ export async function castLogoUpload(side: Side, file: File): Promise<CastSeries
     throw new Error((b as { error?: string }).error ?? `http_${r.status}`);
   }
   return r.json() as Promise<CastSeries>;
+}
+
+/** Replay Custom de la partie `n` (octets bruts) → résumé ; rien n'est écrit en base. Erreurs :
+ *  `empty_body`, `SeriesInactive`, `UnknownGame`, `not_custom`, `parse_failed`, `incomplete`. */
+export async function castGameReplay(n: number, file: File): Promise<GameSummary> {
+  const r = await fetch(`/api/cast/games/${n}/replay`, {
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: file,
+  });
+  if (!r.ok) {
+    const b = await r.json().catch(() => ({}));
+    throw new Error((b as { error?: string }).error ?? `http_${r.status}`);
+  }
+  return r.json() as Promise<GameSummary>;
 }
 
 /** État de la série ; invalidé en direct par `useLiveUpdates` (`cast.updated`). */

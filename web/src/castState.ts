@@ -106,8 +106,8 @@ export interface PlayedHero {
   hero: string;
 }
 
-/** Forme lue (tolérante) de `GameRecord.summary.players` : `GameSummary` est encore `{}` côté TS
- *  (la tâche 9 l'étend, `toon` compris) ; on lit donc de façon défensive. */
+/** Forme lue (tolérante) de `GameRecord.summary.players` (`PlayerSummary`) : un état persisté ou
+ *  partiel ne doit jamais casser l'overlay, on lit donc de façon défensive. */
 interface SummaryPlayerLike {
   side?: string;
   name?: string;
@@ -121,7 +121,8 @@ const summaryPlayers = (g: GameRecord): SummaryPlayerLike[] => {
 
 /** Héros joués dans la série, par joueur (indice d'équipe 0-4), dans l'ordre des parties. R14 : une
  *  ligne de résumé (de la même équipe) n'est attribuée à un joueur que par (1) toon lié identique,
- *  puis (2) pseudo identique (trim, insensible à la casse) — JAMAIS par position. Joueur sans
+ *  puis (2) pseudo identique (trim, insensible à la casse), sauf si joueur et ligne ont chacun un
+ *  toon et qu'ils diffèrent (homonyme d'un autre compte) — JAMAIS par position. Joueur sans
  *  ligne correspondante : liste vide (état « en attente »). Parties sans résumé : ignorées. */
 export function seriesPlayerHeroes(s: CastSeries, side: Side): PlayedHero[][] {
   const team = side === "blue" ? s.blue : s.red;
@@ -142,9 +143,33 @@ export function seriesPlayerHeroes(s: CastSeries, side: Side): PlayedHero[][] {
     team.players.forEach((p, i) => {
       const name = p.name.trim().toLowerCase();
       if (done.has(i) || name === "") return;
-      const k = rows.findIndex((r, k) => !used.has(k) && (r.name ?? "").trim().toLowerCase() === name);
+      const k = rows.findIndex(
+        (r, k) => !used.has(k) && !(p.toon && r.toon && r.toon !== p.toon) && (r.name ?? "").trim().toLowerCase() === name,
+      );
       if (k >= 0) attach(i, k);
     });
   }
   return out;
+}
+
+/** Partie montrée par la scène Series : épinglée (`slide.game`, si elle existe) sinon la dernière. */
+export function shownGame(s: CastSeries): GameRecord | null {
+  if (s.slide.game !== null) return s.games.find((g) => g.number === s.slide.game) ?? null;
+  return s.games[s.games.length - 1] ?? null;
+}
+
+/** Onglets du post-game breakdown = slides 1..4 (0 = bandeau des cartes). */
+export const BREAKDOWN_TABS = ["hero_damage", "healing", "siege_damage", "takedowns"] as const;
+export type BreakdownTab = (typeof BREAKDOWN_TABS)[number];
+
+/** Slides disponibles : le bandeau seul, + les 4 onglets du breakdown si la partie montrée a un résumé. */
+export function slideCount(s: CastSeries): number {
+  return shownGame(s)?.summary ? 1 + BREAKDOWN_TABS.length : 1;
+}
+
+/** Slide affichée : manuel = `slide.index` du serveur modulo le nombre de slides ; auto = départ à
+ *  `slide.index`, avancée de `tick` (minuterie de l'overlay, `interval_ms`). */
+export function slideIndex(s: CastSeries, tick = 0): number {
+  const n = slideCount(s);
+  return (s.slide.index + (s.slide.auto ? tick : 0)) % n;
 }

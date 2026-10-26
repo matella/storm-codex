@@ -63,7 +63,8 @@
 .cast-overlay .mc.struck::after { content: ""; position: absolute; inset: 0;
   background: linear-gradient(135deg, transparent 47%, #ff3b46 48%, #ff3b46 52%, transparent 53%); }
 
-.cast-overlay .sr-slide { position: absolute; left: 4%; right: 4%; top: 52%; bottom: 7%; }
+/* une slide de la scène Series (bandeau ou breakdown) occupe tout le cadre ; fondu à chaque changement */
+.cast-overlay .sr-frame { position: absolute; inset: 0; animation: cast-fade .4s ease-out both; }
 
 /* Fond opaque des scènes plein écran (series, lineups) — même ciel nocturne que le skin nexus du draft */
 .cast-overlay .scene-backdrop { position: absolute; inset: 0; background: radial-gradient(130% 100% at 50% 30%, #2a1d5c 0%, #160f30 45%, #070512 100%); }

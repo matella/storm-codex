@@ -101,6 +101,15 @@ describe("seriesPlayerHeroes (R14: toon, then exact name, never position)", () =
     expect(out[1]).toEqual([{ game: 1, hero: "Valla" }]); // toon-B2 = slot 2 malgré le nom « B1 »
     expect(out[0]).toEqual([{ game: 1, hero: "Jaina" }]);
   });
+  it("same name but both toons present and different: not attached (another account)", () => {
+    const out = seriesPlayerHeroes(withRows([row("blue", "B1", "Valla", "toon-SOMEONE-ELSE")]), "blue");
+    expect(out.flat()).toHaveLength(0);
+  });
+  it("same name with only one side having a toon: attached by name", () => {
+    const unlinked = series({ blue: team("Alpha", five("B", false)), games: [g(1, "blue", { players: [row("blue", "B1", "Valla", "toon-X")] })] });
+    expect(seriesPlayerHeroes(unlinked, "blue")[0]).toEqual([{ game: 1, hero: "Valla" }]);
+    expect(seriesPlayerHeroes(withRows([row("blue", "B1", "Valla")]), "blue")[0]).toEqual([{ game: 1, hero: "Valla" }]);
+  });
   it("a same-name row on the other side is not used", () => {
     const out = seriesPlayerHeroes(withRows([row("red", "B1", "Valla")]), "blue");
     expect(out.flat()).toHaveLength(0);

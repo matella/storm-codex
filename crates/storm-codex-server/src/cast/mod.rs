@@ -6,11 +6,17 @@ use serde::{Deserialize, Serialize};
 
 pub mod api;
 pub mod lineup;
+pub mod replay;
 mod series;
 pub mod store;
+pub mod summary;
 pub mod sync;
 
 pub const SCHEMA_VERSION: i32 = 1;
+
+/// Les tests d'intégration partagent la ligne `cast_live` : on les sérialise (api.rs, replay.rs).
+#[cfg(test)]
+pub(crate) static TEST_DB_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -84,9 +90,57 @@ pub struct Team {
     pub captain: Option<u8>,
 }
 
-/// Résumé d'une partie (défini en détail à la tâche 9).
-#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
-pub struct GameSummary {}
+/// Ligne joueur du résumé (valeurs `players[toon].gameStats` de storm-stats, cf. `summary.rs`).
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct PlayerSummary {
+    pub side: Side,
+    /// ToonHandle storm-stats (clé de `players`) : rattachement aux joueurs de la série (R14).
+    pub toon: String,
+    pub name: String,
+    pub hero: String,
+    /// `SoloKill` (colonne K de la fiche de match).
+    pub kills: u32,
+    pub takedowns: u32,
+    pub deaths: u32,
+    pub assists: u32,
+    pub hero_damage: u64,
+    pub siege_damage: u64,
+    pub healing: u64,
+}
+
+/// Résumé compact d'une partie, extrait d'un replay Custom (`POST /api/cast/games/{n}/replay`).
+/// Tableaux `[blue, red]` (équipe 0 du replay = Blue). `None` / vide = valeur absente de la sortie
+/// storm-stats : l'écran retire la ligne, rien n'est inventé (mapping : docs/spec/03-storm-stats.md).
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct GameSummary {
+    pub duration_secs: u32,
+    pub winner: Side,
+    pub takedowns: [u32; 2],
+    #[serde(default)]
+    pub team_level: Option<[u32; 2]>,
+    /// Forts + keeps détruits par l'équipe.
+    #[serde(default)]
+    pub structures: Option<[u32; 2]>,
+    #[serde(default)]
+    pub merc_camps: Option<[u32; 2]>,
+    #[serde(default)]
+    pub objectives: Option<[u32; 2]>,
+    /// Noms canoniques des héros bannis.
+    #[serde(default)]
+    pub bans: [Vec<String>; 2],
+    /// Joueurs Blue puis Red, ordre de pick.
+    #[serde(default)]
+    pub players: Vec<PlayerSummary>,
+    /// (secondes, avance d'XP de Blue) — négatif = Red devant.
+    #[serde(default)]
+    pub xp_lead: Vec<(u32, i32)>,
+}
+
+/// Lecture tolérante d'un résumé persisté : illisible → `None` (la série reste chargeable).
+fn lenient_summary<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<GameSummary>, D::Error> {
+    let v = Option::<serde_json::Value>::deserialize(d)?;
+    Ok(v.and_then(|v| serde_json::from_value(v).ok()))
+}
 
 #[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -97,6 +151,7 @@ pub struct GameRecord {
     /// [blue, red].
     pub takedowns: [u32; 2],
     pub duration_secs: Option<u32>,
+    #[serde(deserialize_with = "lenient_summary")]
     pub summary: Option<GameSummary>,
 }
 

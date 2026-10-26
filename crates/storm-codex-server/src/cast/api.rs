@@ -28,7 +28,7 @@ pub(super) async fn persist(s: &AppState) {
     let _ = s.events.send(json!({ "type": "cast.updated" }));
 }
 
-fn conflict(e: CastError) -> Resp {
+pub(super) fn conflict(e: CastError) -> Resp {
     (StatusCode::CONFLICT, Json(json!({ "error": format!("{e:?}") })))
 }
 
@@ -49,7 +49,7 @@ async fn mutate<T>(
 /// Comme `mutate` ; `sync` : recopie ensuite équipes/pseudos/score/Bo dans le draft (sens unique
 /// série → draft) et persiste/diffuse les deux états. Les locks cast et draft ne sont jamais
 /// tenus en même temps (le write-lock cast est relâché avant de prendre celui du draft).
-async fn mutate_ex<T>(
+pub(super) async fn mutate_ex<T>(
     s: &AppState,
     gated: bool,
     sync: bool,
@@ -403,8 +403,7 @@ mod tests {
     use serde_json::json;
     use std::time::{Duration, Instant};
 
-    /// Les tests d'intégration partagent la ligne `cast_live` : on les sérialise.
-    static DB_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    use crate::cast::TEST_DB_LOCK as DB_LOCK;
 
     fn start_body() -> J {
         json!({"blue":{"name":"Blue Co"},"red":{"name":"Red Co"},"bo":5,"format":"fearless","pool":["A","B","C"]})
@@ -604,6 +603,9 @@ mod tests {
         assert!(store::decode(json!({"scene": "nope"})).is_none());
         assert!(store::decode(json!({"format": "nope"})).is_none());
         assert!(store::decode(json!({"pool": [{"name":"A","status":"banned","by":"green"}]})).is_none());
+        // résumé de partie illisible (ancien `{}`) : ignoré, la série reste chargeable
+        let s = store::decode(json!({"games": [{"number": 1, "map": "A", "summary": {}}]})).unwrap();
+        assert_eq!((s.games.len(), s.games[0].summary.is_none()), (1, true));
     }
 
     #[tokio::test]

@@ -3,13 +3,14 @@
 // SeriesInactive, MapAlreadyPlayed…) sont affichées telles quelles à l'opérateur.
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { castScene, castScore, castSlide, useCast } from "../castApi";
+import { castScene, castScore, useCast } from "../castApi";
 import type { CastScene, CastSeries } from "../castApi";
 import { badgeGameNumber, seriesScore } from "../castState";
 import { LineupsWorkspace } from "../cast/LineupsWorkspace";
 import { PoolPanel } from "../cast/PoolPanel";
 import { ScenePreview } from "../cast/ScenePreview";
 import { SeriesRail } from "../cast/SeriesRail";
+import { SeriesWorkspace } from "../cast/SeriesWorkspace";
 import "../cast/cast.css";
 
 const SCENES: { id: CastScene; label: string }[] = [
@@ -22,44 +23,6 @@ const SCENES: { id: CastScene; label: string }[] = [
 const sceneLabel = (s: CastScene) => SCENES.find((x) => x.id === s)?.label ?? s;
 
 type Run = (fn: () => Promise<unknown>) => Promise<void>;
-
-/** Scène Series : jeu dont les données sont montrées, slide courante, défilement auto/manuel (contenu des slides : tâche 9). */
-function SeriesWorkspace({ series, run }: { series: CastSeries; run: Run }) {
-  const sl = series.slide;
-  const shown = sl.game ?? series.games[series.games.length - 1]?.number ?? null;
-  return (
-    <section className="cr-box">
-      <div className="cr-k">Series · slides</div>
-      <div className="cr-steppers">
-        <label className="cr-note">Game shown{" "}
-          <select className="ds-input" aria-label="Game shown" value={sl.game ?? 0} disabled={series.games.length === 0}
-            onChange={(e) => run(() => castSlide({ game: Number(e.target.value) }))}>
-            <option value={0}>Latest (auto){sl.game === null && shown !== null ? ` · game ${shown}` : ""}</option>
-            {series.games.map((g) => <option key={g.number} value={g.number}>Game {g.number} · {g.map}</option>)}
-          </select>
-        </label>
-        <div className="cr-stepper">
-          <button type="button" className="ds-btn small" aria-label="Previous slide" disabled={sl.index <= 0}
-            onClick={() => run(() => castSlide({ index: Math.max(0, sl.index - 1) }))}>‹</button>
-          <b>{sl.index + 1}</b>
-          <button type="button" className="ds-btn small" aria-label="Next slide"
-            onClick={() => run(() => castSlide({ index: sl.index + 1 }))}>›</button>
-        </div>
-        <button type="button" className={`ds-btn small${sl.auto ? " on" : ""}`} aria-pressed={sl.auto}
-          onClick={() => run(() => castSlide({ auto: !sl.auto }))}>{sl.auto ? "Auto" : "Manual"}</button>
-        <label className="cr-note">Every{" "}
-          <input className="ds-input" type="number" min={2} max={120} step={1} aria-label="Slide interval (seconds)"
-            style={{ width: 70 }} defaultValue={Math.round(sl.interval_ms / 1000)} key={sl.interval_ms}
-            onBlur={(e) => {
-              const n = Math.round(Number(e.target.value));
-              if (Number.isFinite(n) && n >= 1 && n * 1000 !== sl.interval_ms) run(() => castSlide({ interval_ms: n * 1000 }));
-            }} /> s
-        </label>
-      </div>
-      <div className="cr-note">The strip shows every pool map; slide content arrives with the next task.</div>
-    </section>
-  );
-}
 
 function Workspace({ series, run }: { series: CastSeries; run: Run }) {
   const sc = series.scene;

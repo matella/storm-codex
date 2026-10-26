@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useLiveUpdates } from "../api";
+import { useDimHeroes, useLiveUpdates } from "../api";
 import { useCast } from "../castApi";
 import type { CastSeries } from "../castApi";
 import { InGameScene } from "../cast/InGameScene";
@@ -7,10 +7,12 @@ import { LineupsLive } from "../cast/LineupsScene";
 import { SceneBackdrop } from "../cast/SceneBackdrop";
 import { SeriesScene } from "../cast/SeriesScene";
 import "../cast/cast-overlay.css";
+import "../cast/postgame.css";
 
 const SKINS = ["nexus", "glass", "tactical", "mono"];
 
-/** Point d'aiguillage des scènes (`series` / `lineups` : plein écran, sur `SceneBackdrop` opaque). `draft` : vide jusqu'à la tâche 10. */
+/** Point d'aiguillage des scènes (`series` / `lineups` : plein écran, sur `SceneBackdrop` opaque ; `series` alterne
+ *  bandeau des cartes et post-game breakdown, cf. `SeriesScene`). `draft` : vide jusqu'à la tâche 10. */
 export function Scene({ s }: { s: CastSeries }) {
   switch (s.scene) {
     case "ingame":
@@ -29,6 +31,7 @@ export function Scene({ s }: { s: CastSeries }) {
 /** Overlay OBS de la régie de cast. Reflète l'état serveur en direct (WS `cast.updated`). Skin via ?skin=. */
 export function CastOverlay() {
   useLiveUpdates(); // hors Layout : l'overlay ouvre lui-même le WS (cast.updated invalide ["cast"])
+  useDimHeroes(); // portraits (heroIcon) des scènes lineups et post-game
   const { data: s } = useCast();
   const skinParam = new URLSearchParams(window.location.search).get("skin") ?? "nexus";
   const skin = SKINS.includes(skinParam) ? skinParam : "nexus";

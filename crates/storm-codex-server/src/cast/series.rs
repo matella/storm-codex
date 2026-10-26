@@ -1,5 +1,5 @@
 //! Opérations pures sur la série.
-use super::{CastError, GameRecord, LineupMode, MapStatus, PoolMap, Series};
+use super::{CastError, GameRecord, GameSummary, LineupMode, MapStatus, PoolMap, Series};
 use crate::draft::Side;
 
 impl Series {
@@ -58,6 +58,17 @@ impl Series {
             return Err(CastError::WinnerAlreadySet);
         }
         g.winner = Some(side);
+        Ok(())
+    }
+
+    /// Remplit la partie `number` depuis le résumé de son replay (qui fait foi : remplace un
+    /// vainqueur/takedowns/durée saisis à la main, et un résumé précédent).
+    pub fn fill_from_summary(&mut self, number: u8, summary: GameSummary) -> Result<(), CastError> {
+        let g = self.games.iter_mut().find(|g| g.number == number).ok_or(CastError::UnknownGame)?;
+        g.winner = Some(summary.winner);
+        g.takedowns = summary.takedowns;
+        g.duration_secs = Some(summary.duration_secs);
+        g.summary = Some(summary);
         Ok(())
     }
 

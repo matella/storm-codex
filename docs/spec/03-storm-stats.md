@@ -37,6 +37,29 @@ notamment `MessageType` (Chat 0 / Ping 1 / LoadingProgress 2 / PlayerAnnounce 5)
 `MessageTarget` (All 0 / Allies 1 / Observers 4), `GameMode`, `MapType`, `ScoreEventNames`…
 Le front réplique les valeurs qu'il affiche (cf. [08-frontend.md](08-frontend.md)).
 
+## Guide de lecture — résumé de cast (`cast/summary.rs`)
+
+Le post-game breakdown de la régie (`POST /api/cast/games/{n}/replay`) lit ces chemins, vérifiés sur
+≈ 70 replays Custom réels (2026-08 → 10) et recoupés par un second chemin. **Aucune métrique
+ajoutée à storm-stats** ; un chemin absent donne `None` / vide et l'écran retire la ligne.
+Équipe 0 = Blue, 1 = Red. Les nombres peuvent être écrits en flottant (`28.0`).
+
+| Valeur du résumé | Chemin storm-stats | Recoupement / remarque |
+|---|---|---|
+| `winner` (requis) | `match.winner` (0/1) | autre valeur → `incomplete` |
+| `duration_secs` (requis) | `match.length`, tronqué | = `fmtDur` de la fiche (tronque) |
+| `takedowns` (requis) | `match.team0Takedowns` / `team1Takedowns` | en-tête de la fiche ; **pas** `match.takedowns` (liste d'événements) ; ≠ somme des `SoloKill` sur quelques parties |
+| `team_level` | `match.teams[t].level` | = max des clés de `match.levelTimes[t]` (source de la fiche) sur tout le corpus |
+| `merc_camps` | `match.teams[t].stats.mercCaptures` | = nb de `match.mercs.captures` de l'équipe. La colonne avancée « Mercs » de la fiche somme `gameStats.MercCampCaptures` (participation, ≈ 2×) : **non utilisée** |
+| `structures` (forts · keeps) | `teams[t].stats.structures.Fort.destroyed + .Keep.destroyed` | bâtiments seuls (sans tours ni puits) ; sous-clé absente = 0, `structures` absent → `None` ; = nb de `match.structures` Fort/Keep détruits chez l'adversaire |
+| `objectives` | règle `objectiveEvents` de la fiche : `match.objective.results[].winner` (Battlefield) + `objective[t].events.length` | `= objective[t].count` quand présent. `None` sans événements par équipe (Haunted Mines : listes nues ; Braxis Holdout ; cartes ARAM) **et** pour Sky Temple (un événement par tir, ≈ 1/s) et Alterac Pass (une unité de cavalerie par événement) |
+| `bans` | `match.bans[t][].hero` (code attribut) → `attr.json` `heroAttribute` | code inconnu ignoré |
+| `players[]` | clé de `players` (= `ToonHandle`) → `toon` ; `name`, `hero`, `team` ; `gameStats.{SoloKill→kills, Takedowns, Deaths, Assists, HeroDamage, SiegeDamage, Healing}` | `players[].deaths` / `.takedowns` (racine) sont des **listes** d'événements, pas des compteurs ; ne jamais dériver un compteur d'un autre (`Takedowns ≠ SoloKill + Assists` sur 7 lignes du corpus). Tri : Blue puis Red, ordre de `match.picks[t]` |
+| `xp_lead` | `match.XPBreakdown[]` apparié par `loop` : Σ champs numériques de `breakdown` hors `*Time*` (comme la courbe « Team XP » de la fiche), Blue − Red, `(time tronqué, arrondi)` | présent sur 100 % du corpus Custom ; pas de repli `levelAdvTimeline` (unité différente : niveaux) |
+
+Comparatifs d'équipe affichés (K/D/A, dégâts héros, dégâts de siège) = sommes des lignes joueurs,
+comme la ligne « Team total » de la fiche.
+
 ## Performance
 
 133 ms médiane parse complet (decode + stats, mono-thread, `fast-alloc`) — budget < 150 ms.

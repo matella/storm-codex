@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { CastSeries, CastTeam, GameRecord, PoolMap } from "../castApi";
+import type { CastSeries, CastTeam, GameRecord, GameSummary, PoolMap } from "../castApi";
 import { SeriesScene } from "./SeriesScene";
 import { Scene } from "../pages/CastOverlay";
 
@@ -61,5 +61,37 @@ describe("Scene backdrop", () => {
     expect(renderToStaticMarkup(<Scene s={series()} />)).toContain("scene-backdrop");
     expect(renderToStaticMarkup(<Scene s={series({ scene: "ingame" })} />)).not.toContain("scene-backdrop");
     expect(renderToStaticMarkup(<Scene s={series({ scene: "hide" })} />)).not.toContain("scene-backdrop");
+  });
+});
+
+describe("SeriesScene slides (R15)", () => {
+  const sm: GameSummary = {
+    duration_secs: 900, winner: "red", takedowns: [9, 12], team_level: [18, 20], structures: null, merc_camps: [3, 4],
+    objectives: [1, 2], bans: [[], []], xp_lead: [],
+    players: [{ side: "blue", toon: "t1", name: "p1", hero: "Valla", kills: 3, takedowns: 6, deaths: 4, assists: 3, hero_damage: 40000, siege_damage: 50000, healing: 0 }],
+  };
+  const withSummary = (index: number, extra: Partial<CastSeries> = {}) =>
+    series({ games: [g(1, "Cursed Hollow", "blue"), { ...g(2, "Dragon Shire", "red"), summary: sm }], slide: { game: null, index, auto: false, interval_ms: 12000 }, ...extra });
+  it("slide 0 is the map strip", () => {
+    const h = renderToStaticMarkup(<SeriesScene s={withSummary(0)} />);
+    expect(count(h, "<article")).toBe(6);
+    expect(h).not.toContain("pg-hd");
+  });
+  it("slides 1..4 replace the strip with the breakdown of the shown game, tab = index", () => {
+    const h = renderToStaticMarkup(<SeriesScene s={withSummary(2)} />);
+    expect(count(h, "<article")).toBe(0);
+    expect(h).toContain("pg-hd");
+    expect(h).toContain('<span class="on">HEALING</span>');
+    expect(h).toContain("GAME 2 · DRAGON SHIRE");
+    expect(renderToStaticMarkup(<SeriesScene s={withSummary(4)} />)).toContain('<span class="on">TAKEDOWNS</span>');
+  });
+  it("without a summary only the strip exists (index taken modulo 1)", () => {
+    const h = renderToStaticMarkup(<SeriesScene s={withSummary(3, { slide: { game: 1, index: 3, auto: false, interval_ms: 12000 } })} />);
+    expect(count(h, "<article")).toBe(6);
+    expect(h).not.toContain("pg-hd");
+  });
+  it("auto mode starts at the server index", () => {
+    const h = renderToStaticMarkup(<SeriesScene s={withSummary(1, { slide: { game: null, index: 1, auto: true, interval_ms: 12000 } })} />);
+    expect(h).toContain('<span class="on">HERO DAMAGE</span>');
   });
 });
