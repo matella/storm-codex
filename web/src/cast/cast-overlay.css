@@ -64,3 +64,14 @@
   background: linear-gradient(135deg, transparent 47%, #ff3b46 48%, #ff3b46 52%, transparent 53%); }
 
 .cast-overlay .sr-slide { position: absolute; left: 4%; right: 4%; top: 52%; bottom: 7%; }
+
+/* Fond opaque des scènes plein écran (series, lineups) — même ciel nocturne que le skin nexus du draft */
+.cast-overlay .scene-backdrop { position: absolute; inset: 0; background: radial-gradient(130% 100% at 50% 30%, #2a1d5c 0%, #160f30 45%, #070512 100%); }
+.cast-overlay[data-skin=glass] .scene-backdrop { background: linear-gradient(180deg, #0a1326, #0b0e1c); }
+.cast-overlay[data-skin=tactical] .scene-backdrop { background: linear-gradient(180deg, #0c0f14, #070a0e); }
+.cast-overlay[data-skin=mono] .scene-backdrop { background: linear-gradient(180deg, #0e1016, #0a0b10); }
+.cast-overlay .scene-backdrop .stars { position: absolute; inset: 0; opacity: .5; background-image:
+  radial-gradient(1px 1px at 18% 28%, #fff8, transparent), radial-gradient(1px 1px at 68% 58%, #fff6, transparent),
+  radial-gradient(1px 1px at 44% 78%, #fff7, transparent), radial-gradient(1px 1px at 86% 18%, #fff5, transparent); }
+.cast-overlay[data-skin=tactical] .scene-backdrop .stars, .cast-overlay[data-skin=mono] .scene-backdrop .stars { opacity: .12;
+  background-image: linear-gradient(#ffffff08 1px, transparent 1px), linear-gradient(90deg, #ffffff08 1px, transparent 1px); background-size: 38px 38px; }

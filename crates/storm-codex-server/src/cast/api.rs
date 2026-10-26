@@ -260,8 +260,10 @@ pub struct SlideBody {
 /// POST /api/cast/slide — mise à jour partielle du diaporama (champs absents inchangés).
 pub async fn set_slide(State(s): State<AppState>, Json(b): Json<SlideBody>) -> Resp {
     mutate_series(&s, true, |c| {
-        if b.game.is_some() {
-            c.slide.game = b.game;
+        // game: 0 = désépingler (« dernière partie ») ; les numéros de partie commencent à 1.
+        // Autre valeur : posée telle quelle (pas de validation d'existence, comme avant).
+        if let Some(g) = b.game {
+            c.slide.game = if g == 0 { None } else { Some(g) };
         }
         if let Some(i) = b.index {
             c.slide.index = i;
@@ -516,6 +518,19 @@ mod tests {
         assert_eq!(v["slide"]["auto"], true);
         assert_eq!(v["slide"]["interval_ms"], 500);
         assert_eq!(v["slide"]["index"], 0);
+    }
+
+    #[tokio::test]
+    async fn slide_game_zero_clears_pinned_game() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        call(&state, "POST", "/api/cast/series", Some(start_body())).await;
+        let (_, v) = call(&state, "POST", "/api/cast/slide", Some(json!({"game":2}))).await;
+        assert_eq!(v["slide"]["game"], 2);
+        let (st, v) = call(&state, "POST", "/api/cast/slide", Some(json!({"game":0,"auto":true}))).await;
+        assert_eq!(st, StatusCode::OK);
+        assert!(v["slide"]["game"].is_null());
+        assert_eq!(v["slide"]["auto"], true);
     }
 
     #[tokio::test]

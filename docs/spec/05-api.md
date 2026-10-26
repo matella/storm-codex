@@ -95,7 +95,7 @@ sinon `400 {"error":"bad_bo"}`, état inchangé) ·
 `POST /api/cast/games/start {map}` → `{number}` · `POST /api/cast/games/{n}/winner {side, takedowns?: [bleu, rouge], duration_secs?}` ·
 `POST /api/cast/score {blue, red}` ou `null` (retour au score calculé) · `POST /api/cast/scene {scene: lineups|series|draft|ingame|hide}` ·
 `POST /api/cast/lineup-mode {mode: auto|a|b}` · `POST /api/cast/slide {game?, index?, auto?, interval_ms?}`
-(partiel ; `interval_ms` borné 500 ms–1 h). Les mutations répondent par la `Series` complète (`games/start` : `{number}`).
+(partiel ; `game: 0` désépingle la partie affichée → `slide.game` = null, « dernière partie » ; les numéros commencent à 1, les autres valeurs sont posées sans validation d'existence ; `interval_ms` borné 500 ms–1 h). Les mutations répondent par la `Series` complète (`games/start` : `{number}`).
 Erreurs `CastError` → `409 {"error": "<Variante>"}` (`UnknownMap`, `NotInPool`, `DuplicateDecider`,
 `MapNotChosen`, `UnknownGame`, `WinnerAlreadySet`, `MapAlreadyPlayed`, `SeriesInactive`), état inchangé.
 Toute mutation sauf `/series` et `/scene` renvoie `409 SeriesInactive` tant que `active=false`.

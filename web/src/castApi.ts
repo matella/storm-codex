@@ -87,6 +87,7 @@ export interface WinnerBody {
   duration_secs?: number;
 }
 
+/** `game: 0` = désépingler (retour à « dernière partie », `slide.game` = null). */
 export type SlidePatch = Partial<Pick<SlideState, "game" | "index" | "auto" | "interval_ms">>;
 
 /** Les erreurs serveur sont `{"error":"<code>"}` (409 : variante `CastError`, ex. `NotInPool`) :

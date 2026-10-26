@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { CastSeries, CastTeam, GameRecord, PoolMap } from "../castApi";
 import { SeriesScene } from "./SeriesScene";
+import { Scene } from "../pages/CastOverlay";
 
 const team = (name: string): CastTeam => ({ name, logo: null, record: "", players: [], captain: null });
 const g = (n: number, map: string, winner: GameRecord["winner"]): GameRecord => ({
@@ -52,5 +53,13 @@ describe("SeriesScene", () => {
     const h = renderToStaticMarkup(<SeriesScene s={series({ pool: many, games: [] })} />);
     expect(h).toContain("two-rows");
     expect(renderToStaticMarkup(<SeriesScene s={series()} />)).not.toContain("two-rows");
+  });
+});
+
+describe("Scene backdrop", () => {
+  it("series scene paints the opaque backdrop, ingame and hide do not", () => {
+    expect(renderToStaticMarkup(<Scene s={series()} />)).toContain("scene-backdrop");
+    expect(renderToStaticMarkup(<Scene s={series({ scene: "ingame" })} />)).not.toContain("scene-backdrop");
+    expect(renderToStaticMarkup(<Scene s={series({ scene: "hide" })} />)).not.toContain("scene-backdrop");
   });
 });

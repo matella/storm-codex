@@ -31,9 +31,9 @@ function SeriesWorkspace({ series, run }: { series: CastSeries; run: Run }) {
       <div className="cr-k">Series · slides</div>
       <div className="cr-steppers">
         <label className="cr-note">Game shown{" "}
-          <select className="ds-input" aria-label="Game shown" value={shown ?? ""} disabled={series.games.length === 0}
+          <select className="ds-input" aria-label="Game shown" value={sl.game ?? 0} disabled={series.games.length === 0}
             onChange={(e) => run(() => castSlide({ game: Number(e.target.value) }))}>
-            {series.games.length === 0 && <option value="">No game yet</option>}
+            <option value={0}>Latest (auto){sl.game === null && shown !== null ? ` · game ${shown}` : ""}</option>
             {series.games.map((g) => <option key={g.number} value={g.number}>Game {g.number} · {g.map}</option>)}
           </select>
         </label>
