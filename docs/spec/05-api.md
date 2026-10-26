@@ -105,6 +105,13 @@ Toute mutation sauf `/series` et `/scene` renvoie `409 SeriesInactive` tant que 
 **Synchro série → draft** (sens unique) après `/series`, `/teams`, `/games/{n}/winner`, `/score` : noms, pseudos
 (`Player.name`), score (`Series::score()`) et `bo` copiés dans `DraftState` sans toucher curseur/assignations/file
 replay/fearless ; les deux états sont persistés, WS `draft.updated` + `cast.updated`.
+**Héros récents** (`cast/lineup.rs`, lecture seule, aucune mutation ni WS) : `GET /api/cast/lineup?blue=toon,toon,…&red=…`
+→ `{ blue: [[HeroCount]], red: [[HeroCount]] }`, `HeroCount = {hero, games}` ; une liste par joueur **dans l'ordre reçu**
+(toon vide = joueur non lié → `[]`). Par toon : fenêtre des **20 dernières parties tous modes** (`match_players` ⋈ `matches`,
+tri `played_at DESC NULLS LAST, id DESC`), **3 héros** les plus joués (parties, puis récence) ; **`[]` si < 5 parties
+dans la fenêtre** (masqué, jamais partiel). Une seule requête SQL (`unnest … LATERAL`, index `match_players_toon_idx`,
+vérifié par `EXPLAIN` dans le test) ; budget **< 100 ms pour 10 joueurs** (test `lineup_route_under_100ms_for_10_players`).
+`> 10` toons par équipe → `400 {"error":"too_many_players"}` ; erreur SQL → `500 {"error":"db"}`.
 Chaque mutation → WS `cast.updated`. Design : `docs/specs/2026-10-25-cast-control-room-design.md`.
 
 ## Feed live d'une partie en cours (`live/api.rs`)

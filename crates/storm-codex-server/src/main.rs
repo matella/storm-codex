@@ -260,6 +260,7 @@ fn api_router(state: &AppState) -> Router<AppState> {
         .route("/api/cast/scene", post(cast::api::set_scene))
         .route("/api/cast/lineup-mode", post(cast::api::set_lineup_mode))
         .route("/api/cast/slide", post(cast::api::set_slide))
+        .route("/api/cast/lineup", get(cast::api::get_lineup))
         .route(
             "/api/cast/logo/{side}",
             post(cast::api::upload_logo)

@@ -99,3 +99,48 @@ export function canSetWinner(s: CastSeries, n: number): boolean {
 export function reconcileTeam(local: CastTeam, server: CastTeam, touchedLogo: boolean): CastTeam {
   return touchedLogo ? local : { ...local, logo: server.logo };
 }
+
+/** Héros joué par un joueur de la série à une partie donnée. */
+export interface PlayedHero {
+  game: number;
+  hero: string;
+}
+
+/** Forme lue (tolérante) de `GameRecord.summary.players` : `GameSummary` est encore `{}` côté TS
+ *  (la tâche 9 l'étend) ; on lit donc de façon défensive, sans rien supposer d'autre que side/name/hero. */
+interface SummaryPlayerLike {
+  side?: string;
+  name?: string;
+  hero?: string;
+}
+const summaryPlayers = (g: GameRecord): SummaryPlayerLike[] => {
+  const p = (g.summary as { players?: unknown } | null)?.players;
+  return Array.isArray(p) ? (p as SummaryPlayerLike[]) : [];
+};
+
+/** Héros joués dans la série, par joueur (indice d'équipe 0-4), dans l'ordre des parties. Une ligne
+ *  de résumé est rattachée à un joueur par son pseudo (insensible à la casse), sinon aux places
+ *  restantes de l'équipe dans l'ordre. Parties sans résumé : ignorées. */
+export function seriesPlayerHeroes(s: CastSeries, side: Side): PlayedHero[][] {
+  const team = side === "blue" ? s.blue : s.red;
+  const out: PlayedHero[][] = team.players.map(() => []);
+  for (const g of s.games) {
+    const rows = summaryPlayers(g).filter((r) => r.side === side && typeof r.hero === "string" && r.hero !== "");
+    const taken = new Set<number>();
+    const slotOf = rows.map((r) => {
+      const name = (r.name ?? "").trim().toLowerCase();
+      const i = name === "" ? -1 : team.players.findIndex((p, j) => !taken.has(j) && p.name.trim().toLowerCase() === name);
+      if (i >= 0) taken.add(i);
+      return i;
+    });
+    rows.forEach((r, k) => {
+      let i = slotOf[k];
+      if (i < 0) {
+        i = team.players.findIndex((_, j) => !taken.has(j));
+        if (i >= 0) taken.add(i);
+      }
+      if (i >= 0) out[i].push({ game: g.number, hero: r.hero as string });
+    });
+  }
+  return out;
+}

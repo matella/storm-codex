@@ -6,6 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { castScene, castScore, castSlide, useCast } from "../castApi";
 import type { CastScene, CastSeries } from "../castApi";
 import { badgeGameNumber, seriesScore } from "../castState";
+import { LineupsWorkspace } from "../cast/LineupsWorkspace";
 import { PoolPanel } from "../cast/PoolPanel";
 import { ScenePreview } from "../cast/ScenePreview";
 import { SeriesRail } from "../cast/SeriesRail";
@@ -64,6 +65,7 @@ function Workspace({ series, run }: { series: CastSeries; run: Run }) {
   const sc = series.scene;
   if (sc === "hide") return null;
   if (sc === "series") return <SeriesWorkspace series={series} run={run} />;
+  if (sc === "lineups") return <LineupsWorkspace series={series} run={run} />;
   if (sc !== "ingame") {
     return (
       <section className="cr-box">

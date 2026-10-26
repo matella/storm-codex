@@ -5,6 +5,7 @@ use crate::draft::{Format, Side};
 use serde::{Deserialize, Serialize};
 
 pub mod api;
+pub mod lineup;
 mod series;
 pub mod store;
 pub mod sync;

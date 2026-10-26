@@ -1,12 +1,12 @@
 //! Routes REST de la régie de cast. Chaque mutation prend le write-lock une seule fois (sur une
 //! copie : une erreur ne change jamais l'état), puis persiste et diffuse `cast.updated` sur le WS
 //! (les clients refetch `GET /api/cast`). Mode ouvert comme `/api/draft`, pas d'auth.
-use super::{store, CastError, LineupMode, MapStatus, Scene, Series, Team};
+use super::{lineup, store, CastError, LineupMode, MapStatus, Scene, Series, Team};
 use crate::draft::{Format, Side};
 use crate::AppState;
 use axum::{
     body::Bytes,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
@@ -355,6 +355,42 @@ pub async fn get_logo(State(s): State<AppState>, Path(side): Path<String>) -> Re
         Err(e) => {
             tracing::error!("cast logo load: {e}");
             err(StatusCode::INTERNAL_SERVER_ERROR, "db").into_response()
+        }
+    }
+}
+
+#[derive(Deserialize, Default)]
+pub struct LineupQuery {
+    #[serde(default)]
+    blue: String,
+    #[serde(default)]
+    red: String,
+}
+
+/// Une équipe : toons séparés par des virgules, position conservée (champ vide = joueur non lié).
+fn split_toons(s: &str) -> Vec<String> {
+    if s.is_empty() {
+        return Vec::new();
+    }
+    s.split(',').map(|t| t.trim().to_owned()).collect()
+}
+
+/// GET /api/cast/lineup?blue=toon,...&red=toon,... : `{ blue: [[HeroCount]], red: [[HeroCount]] }`,
+/// une liste par joueur dans l'ordre reçu (vide si non lié ou < 5 parties). Une seule requête SQL.
+pub async fn get_lineup(State(s): State<AppState>, Query(q): Query<LineupQuery>) -> Resp {
+    let (blue, red) = (split_toons(&q.blue), split_toons(&q.red));
+    if blue.len() > lineup::MAX_PER_SIDE || red.len() > lineup::MAX_PER_SIDE {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "too_many_players" })));
+    }
+    let all: Vec<String> = blue.iter().chain(red.iter()).cloned().collect();
+    match lineup::recent_heroes_many(&s.db, &all).await {
+        Ok(mut v) => {
+            let red_part = v.split_off(blue.len());
+            (StatusCode::OK, Json(json!({ "blue": v, "red": red_part })))
+        }
+        Err(e) => {
+            tracing::error!("cast lineup: {e}");
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "db" })))
         }
     }
 }

@@ -1,9 +1,10 @@
 // Rail gauche de la régie : Série (Bo, format, pool, « New series »), Teams & lineups (nom, logo, bilan,
-// 5 joueurs saisis + capitaine). Les noms/pseudos sont saisis à la main (pas de sélecteur de joueur ici).
+// 5 joueurs + capitaine). Chaque joueur : pseudo saisi + `PlayerPicker` (recherche → lien toon, sinon « non lié »).
 import { useEffect, useRef, useState } from "react";
 import type { DraftFormat, Side } from "../api";
 import { castLogoUpload, castSeries, castTeams } from "../castApi";
 import type { CastSeries, CastTeam } from "../castApi";
+import { PlayerPicker } from "./PlayerPicker";
 import { MAPS, reconcileTeam, seriesScore, togglePool } from "../castState";
 
 type Run = (fn: () => Promise<unknown>) => Promise<void>;
@@ -120,12 +121,13 @@ export function SeriesRail({ series, run }: { series: CastSeries; run: Run }) {
             onChange={(e) => edit(side, { ...t, record: e.target.value })} />
           {t.players.map((p, i) => (
             <div key={i} className="cr-player">
-              <input className="ds-input" placeholder={`Player ${i + 1}`} value={p.name} aria-label={`${side} player ${i + 1} name`}
-                onChange={(e) => setPlayer(side, t, i, { name: e.target.value })} />
-              <input className="ds-input" placeholder="tagline" value={p.tagline} aria-label={`${side} player ${i + 1} tagline`}
-                onChange={(e) => setPlayer(side, t, i, { tagline: e.target.value })} />
-              <button type="button" className={`ds-btn small${t.captain === i ? " on" : ""}`} title="Captain" aria-pressed={t.captain === i}
-                onClick={() => edit(side, { ...t, captain: t.captain === i ? null : i })}>C</button>
+              <PlayerPicker player={p} label={`${side} player ${i + 1}`} onChange={(patch) => setPlayer(side, t, i, patch)} />
+              <div className="cr-pl2">
+                <input className="ds-input" placeholder="tagline" value={p.tagline} aria-label={`${side} player ${i + 1} tagline`}
+                  onChange={(e) => setPlayer(side, t, i, { tagline: e.target.value })} />
+                <button type="button" className={`ds-btn small${t.captain === i ? " on" : ""}`} title="Captain" aria-pressed={t.captain === i}
+                  onClick={() => edit(side, { ...t, captain: t.captain === i ? null : i })}>C</button>
+              </div>
             </div>
           ))}
         </fieldset>

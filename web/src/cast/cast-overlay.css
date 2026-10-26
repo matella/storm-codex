@@ -75,3 +75,34 @@
   radial-gradient(1px 1px at 44% 78%, #fff7, transparent), radial-gradient(1px 1px at 86% 18%, #fff5, transparent); }
 .cast-overlay[data-skin=tactical] .scene-backdrop .stars, .cast-overlay[data-skin=mono] .scene-backdrop .stars { opacity: .12;
   background-image: linear-gradient(#ffffff08 1px, transparent 1px), linear-gradient(90deg, #ffffff08 1px, transparent 1px); background-size: 38px 38px; }
+
+/* Lineups : deux cartes d'équipe (logo, nom, bilan, 5 joueurs + portraits de héros) — maquette team-cards.html */
+.cast-overlay .lu-title { position: absolute; top: 3.5%; left: 0; right: 0; text-align: center; font-family: var(--label-ff);
+  letter-spacing: .3em; font-size: 1.1cqw; color: #cfe0ff; opacity: .85; }
+.cast-overlay .lu-vs { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-family: var(--label-ff);
+  font-weight: 800; font-size: 2.4cqw; color: var(--gold); }
+.cast-overlay .lu-card { position: absolute; top: 10%; bottom: 6%; width: 42%; box-sizing: border-box; border: 1px solid var(--cardbd);
+  border-radius: 12px; background: #0b0820d0; padding: 1.6cqw 1.8cqw; display: flex; flex-direction: column; }
+.cast-overlay .lu-card.b { left: 4%; box-shadow: inset 0 5px 0 var(--blue); }
+.cast-overlay .lu-card.r { right: 4%; box-shadow: inset 0 5px 0 var(--red); }
+.cast-overlay .lu-top { display: flex; align-items: center; gap: 1.2cqw; margin-bottom: 1.2cqw; min-width: 0; }
+.cast-overlay .lu-card.r .lu-top { flex-direction: row-reverse; text-align: right; }
+.cast-overlay .lu-lg { flex: none; width: 5.5cqw; height: 5.5cqw; border-radius: 50%; border: 2px solid var(--cardbd); background: #120c2b;
+  display: flex; align-items: center; justify-content: center; overflow: hidden; font-family: var(--label-ff); font-weight: 800; font-size: 1.6cqw; }
+.cast-overlay .lu-lg img { width: 100%; height: 100%; object-fit: contain; }
+.cast-overlay .lu-id { min-width: 0; }
+.cast-overlay .lu-nm { font-family: var(--label-ff); font-weight: 800; font-size: 2.1cqw; letter-spacing: .05em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cast-overlay .lu-card.b .lu-nm { color: var(--blue-soft); } .cast-overlay .lu-card.r .lu-nm { color: var(--red-soft); }
+.cast-overlay .lu-sub { font-family: var(--num-ff); font-size: .85cqw; color: #aab3d8; letter-spacing: .08em; margin-top: .2cqw; }
+.cast-overlay .lu-pl { flex: 1; display: flex; align-items: center; gap: 1cqw; border-top: 1px solid #2a2f5a; min-height: 0; }
+.cast-overlay .lu-card.r .lu-pl { flex-direction: row-reverse; text-align: right; }
+.cast-overlay .lu-pn { font-weight: 700; font-size: 1.35cqw; width: 15cqw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cast-overlay .lu-st { display: block; font-family: var(--num-ff); font-size: .8cqw; color: #8f98c0; font-weight: 500; margin-top: .15cqw;
+  overflow: hidden; text-overflow: ellipsis; }
+.cast-overlay .lu-hp { display: flex; gap: .4cqw; }
+.cast-overlay .lu-hp .hp-i { width: 3.1cqw; height: 3.1cqw; border-radius: 5px; object-fit: cover; background: #2b2160; border: 1px solid #ffffff2e; display: block; }
+.cast-overlay .lu-hp .ph { display: flex; align-items: center; justify-content: center; font-style: normal; font-weight: 800; font-size: 1cqw; color: #cfd6f5; }
+.cast-overlay .lu-hp .hp-i.lk { opacity: .4; filter: grayscale(.5); }
+.cast-overlay .lu-hp .hp-i.cur { border-color: var(--gold); box-shadow: 0 0 10px #f0d27a66; }
+.cast-overlay .lu-cap { margin-left: auto; font-family: var(--label-ff); font-size: .65cqw; letter-spacing: .2em; color: var(--gold); }
+.cast-overlay .lu-card.r .lu-cap { margin-left: 0; margin-right: auto; }

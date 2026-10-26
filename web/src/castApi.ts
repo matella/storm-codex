@@ -136,3 +136,33 @@ export async function castLogoUpload(side: Side, file: File): Promise<CastSeries
 export function useCast() {
   return useQuery({ queryKey: ["cast"], queryFn: fetchCast });
 }
+
+/** Héros récent d'un joueur (GET /api/cast/lineup) : ≤ 3 par joueur, liste vide = masqué. */
+export interface HeroCount {
+  hero: string;
+  games: number;
+}
+/** Une liste par joueur, dans l'ordre des toons envoyés. */
+export interface CastLineup {
+  blue: HeroCount[][];
+  red: HeroCount[][];
+}
+
+/** Toon vide = joueur non lié (liste vide renvoyée à sa position). */
+export async function fetchCastLineup(blue: string[], red: string[]): Promise<CastLineup> {
+  const q = `blue=${encodeURIComponent(blue.join(","))}&red=${encodeURIComponent(red.join(","))}`;
+  return send<CastLineup>("GET", `/api/cast/lineup?${q}`);
+}
+
+/** Héros récents des joueurs de la série (rien à chercher si aucun toon n'est lié). */
+export function useCastLineup(s: CastSeries) {
+  const blue = s.blue.players.map((p) => p.toon ?? "");
+  const red = s.red.players.map((p) => p.toon ?? "");
+  const linked = [...blue, ...red].some((t) => t !== "");
+  return useQuery({
+    queryKey: ["cast-lineup", blue, red],
+    queryFn: () => fetchCastLineup(blue, red),
+    enabled: linked,
+    staleTime: 60_000,
+  });
+}

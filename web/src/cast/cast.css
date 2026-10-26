@@ -29,7 +29,24 @@
 .cr-logo { display: flex; align-items: center; gap: 6px; } .cr-logo img { width: 30px; height: 30px; object-fit: contain; }
 .cr-logo input[type=file] { font-size: 10px; width: 100%; min-width: 0; }
 .cr-nologo { font: 10px var(--mono); color: var(--muted-2); white-space: nowrap; }
-.cr-player { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 3px; }
+.cr-player { display: flex; flex-direction: column; gap: 3px; border-top: 1px solid var(--hairline); padding-top: 4px; }
+.cr-pl2 { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px; }
+.cr-picker { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.cr-pk-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px; }
+.cr-pk-st { font: 10px var(--mono); color: var(--muted-2); display: flex; align-items: center; gap: 6px; }
+.cr-pk-st.on { color: var(--win, #6fcf97); }
+.cr-pk-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--hairline-strong); max-height: 180px; overflow: auto; }
+.cr-pk-hit { display: flex; flex-direction: column; align-items: flex-start; width: 100%; text-align: left; background: transparent; color: var(--text);
+  border: 0; border-bottom: 1px solid var(--hairline); padding: 4px 6px; cursor: pointer; font: 12px var(--body); }
+.cr-pk-hit:hover { background: var(--surface-2); }
+.cr-pk-hit span, .cr-pk-hit i { font: 10px var(--mono); color: var(--muted-2); font-style: normal; }
+.cr-lu-prev { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 10px; }
+.cr-lu-h { font: 700 13px var(--display); letter-spacing: .08em; text-transform: uppercase; margin-bottom: 4px; }
+.cr-lu-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 4px 0; border-top: 1px solid var(--hairline); }
+.cr-lu-n { font: 700 13px var(--body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cr-lu-h3 { display: inline-flex; gap: 4px; align-items: center; min-width: 96px; }
+.cr-lu-h3 em { font: 10px var(--mono); color: var(--muted-2); font-style: normal; }
+.cr-lu-h3 .hp-i { width: 28px; height: 28px; }
 .cr-main { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .cr-prev-k { font: 700 10px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--kicker); margin-bottom: 4px; }
 .cr-prev-box { position: relative; width: 100%; overflow: hidden; background: repeating-conic-gradient(#14151c 0% 25%, #0b0c12 0% 50%) 0 0 / 24px 24px; border: 1px solid var(--hairline-strong); }
