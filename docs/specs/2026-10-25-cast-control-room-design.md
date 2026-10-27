@@ -5,7 +5,8 @@
 > et le draft depuis un replay (`2026-10-25-draft-replay-design.md`, mergé sur `main`).
 > Les points marqués **[choix Claude]** sont des décisions prises sans l'opérateur : à relire.
 > Maquettes : `docs/specs/2026-10-25-cast-mockups/` (fragments HTML, à ouvrir dans un navigateur ;
-> les noms, scores et portraits y sont fictifs).
+> les noms, scores et portraits y sont fictifs ; la capture de fond `ingame.webp` ne garde nette que
+> la bande de HUD du haut — tout le reste, minimap et pseudos compris, est flouté).
 
 ## But
 
