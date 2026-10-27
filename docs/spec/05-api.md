@@ -89,7 +89,7 @@ Spec : `docs/specs/2026-10-25-draft-replay-design.md`.
 ## Régie de cast (`cast/api.rs`, mode ouvert)
 
 `GET /api/cast` (→ `Series`) · `POST /api/cast/series {blue:Team, red:Team, bo, format, pool:[nom]}`
-(`blue`/`red` = équipe complète — nom, bilan, joueurs, capitaine, logo — tous champs optionnels, `{name}` seul accepté ; un `logo` absent garde le logo en place ; crée/redémarre en un seul appel : `active=true`, parties/score/diaporama remis à zéro, scène conservée ; `bo` ∈ {1,3,5,7}
+(`blue`/`red` = équipe complète — nom, bilan, joueurs, capitaine, logo — tous champs optionnels, `{name}` seul accepté ; un `logo` absent garde le logo en place ; crée/redémarre en un seul appel : `active=true`, parties/score/diaporama remis à zéro, scène conservée ; **draft aligné (R20)** : le moteur de draft reprend `format` et `steps` de la série, partie neuve (curseur 0) et nouvelle série (historique et series bans vidés), en gardant map, first_pick, prébans manuels, file de replays et équipes synchronisées (`DraftState::align_to_series`) ; `bo` ∈ {1,3,5,7}
 sinon `400 {"error":"bad_bo"}`, état inchangé) ·
 `PUT /api/cast/teams {blue, red}` · `POST /api/cast/pool/map {name, status: available|banned|picked|decider, by?}` ·
 `POST /api/cast/games/start {map}` → `{number}` · `POST /api/cast/games/{n}/winner {side, takedowns?: [bleu, rouge], duration_secs?}` ·

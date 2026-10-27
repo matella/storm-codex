@@ -121,7 +121,8 @@ pub async fn start_series(State(s): State<AppState>, Json(b): Json<SeriesBody>) 
     if !matches!(b.bo, 1 | 3 | 5 | 7) {
         return (StatusCode::BAD_REQUEST, Json(json!({ "error": "bad_bo" })));
     }
-    mutate_series_ex(&s, false, true, |c| {
+    // sync=false ici : la synchro vers le draft est faite plus bas, avec l'alignement du format (R20)
+    let res = mutate_ex(&s, false, false, |c| {
         let mut n = Series::new();
         n.active = true;
         // les logos (stockés en base) survivent au redémarrage de série
@@ -136,7 +137,20 @@ pub async fn start_series(State(s): State<AppState>, Json(b): Json<SeriesBody>) 
         *c = n;
         Ok(())
     })
-    .await
+    .await;
+    let series = match res {
+        Ok(((), series)) => series,
+        Err(r) => return r,
+    };
+    // R20 : démarrer une série remet le moteur de draft sur son format/steps (partie + série neuves) ;
+    // locks cast et draft jamais tenus ensemble (le write-lock cast est déjà relâché).
+    {
+        let mut d = s.draft.write().await;
+        super::sync::sync_into_draft(&series, &mut d);
+        d.align_to_series(series.format);
+    }
+    crate::draft::api::persist(&s).await;
+    series_json(&series)
 }
 
 #[derive(Deserialize)]
@@ -422,6 +436,49 @@ mod tests {
         assert_eq!(v["active"], false);
         assert_eq!(v["scene"], "hide");
         assert_eq!(v["pool"], json!([]));
+    }
+
+    #[tokio::test]
+    async fn start_series_aligns_draft_format_and_steps() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        {
+            let mut d = state.draft.write().await;
+            *d = crate::draft::DraftState::new(Format::Standard, crate::draft::Side::Red, "Sky Temple".into());
+            d.apply("Muradin").unwrap();
+            d.series_bans.insert("Valla".into());
+            d.set_unavailable("Jaina", true);
+        }
+        let (st, _) = call(&state, "POST", "/api/cast/series", Some(start_body())).await;
+        assert_eq!(st, StatusCode::OK);
+        let d = state.draft.read().await;
+        assert_eq!(d.format, Format::Fearless);
+        assert_eq!(d.steps, crate::draft::steps_for(Format::Fearless));
+        assert_eq!(d.cursor, 0);
+        assert!(d.assignments.iter().all(|a| a.is_none()) && d.assignments.len() == d.steps.len());
+        assert!(d.series_bans.is_empty());
+        assert_eq!(d.map, "Sky Temple");
+        assert_eq!(d.first_pick, crate::draft::Side::Red);
+        assert!(d.manual_unavailable.contains("Jaina"));
+        assert_eq!(d.blue.name, "Blue Co");
+    }
+
+    #[tokio::test]
+    async fn start_series_with_same_format_still_resets_game() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        {
+            let mut d = state.draft.write().await;
+            *d = crate::draft::DraftState::new(Format::Fearless, crate::draft::Side::Blue, "Sky Temple".into());
+            d.apply("Muradin").unwrap();
+            d.start_next_game();
+            d.apply("Jaina").unwrap();
+        }
+        call(&state, "POST", "/api/cast/series", Some(start_body())).await;
+        let d = state.draft.read().await;
+        assert_eq!(d.format, Format::Fearless);
+        assert_eq!(d.cursor, 0);
+        assert!(d.series_bans.is_empty() && d.series_games.is_empty());
     }
 
     #[tokio::test]
