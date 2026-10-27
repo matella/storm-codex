@@ -32,6 +32,10 @@ describe("InGameScene", () => {
     expect(html).toContain('<span class="s">2</span>');
     expect(html).toContain('<span class="s">1</span>');
     expect(html).toContain("GAME 4");
+    // R22 : Bo3 décidée 2-1 → dernière partie, jamais GAME 4
+    const done = renderToStaticMarkup(<InGameScene s={series({ bo: 3, games: [g(1, "blue"), g(2, "red"), g(3, "red")] })} />);
+    expect(done).toContain("GAME 3");
+    expect(done).not.toContain("GAME 4");
     const ip = renderToStaticMarkup(<InGameScene s={series({ games: [g(1, null)] })} />);
     expect(ip).toContain("GAME 1");
     expect(ip).not.toContain("GAME 2");

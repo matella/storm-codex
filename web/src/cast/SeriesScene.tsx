@@ -18,7 +18,7 @@ function MapStrip({ s }: { s: CastSeries }) {
   return (
     <>
       <div className="sr-head">
-        <div className="sr-ttl">BEST OF {s.bo} · GAME {badgeGameNumber(s.games)}</div>
+        <div className="sr-ttl">BEST OF {s.bo} · GAME {badgeGameNumber(s)}</div>
         <div className="sr-teams">
           <span className="b">{names.blue}</span>
           <span className="s">{sb} – {sr}</span>

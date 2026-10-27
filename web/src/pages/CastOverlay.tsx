@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useDimHeroes, useLiveUpdates } from "../api";
 import { useCast } from "../castApi";
 import type { CastSeries } from "../castApi";
+import { overlayVisible } from "../castState";
 import { DraftSceneLive } from "../cast/DraftScene";
 import { InGameScene } from "../cast/InGameScene";
 import { LineupsLive } from "../cast/LineupsScene";
@@ -44,10 +45,10 @@ export function CastOverlay() {
     return () => { document.body.style.background = prev; };
   }, []);
 
-  // key = scène → remontage → fondu d'entrée ; `hide` (ou série inactive) ne rend rien
+  // key = scène → remontage → fondu d'entrée ; `hide` (ou série inactive, sauf la scène Draft — R19) ne rend rien
   return (
     <div className="cast-overlay" data-skin={skin}>
-      {s && s.active && <div className="scene" key={s.scene}><Scene s={s} /></div>}
+      {s && overlayVisible(s) && <div className="scene" key={s.scene}><Scene s={s} /></div>}
     </div>
   );
 }

@@ -19,7 +19,7 @@ export function InGameScene({ s, anchors = INGAME_ANCHORS }: { s: CastSeries; an
         <span className="n">{displayName(s.red, "red")}</span>
       </div>
       <div className="badge">
-        <div className="bo">BO{s.bo}<small>GAME {badgeGameNumber(s.games)}</small></div>
+        <div className="bo">BO{s.bo}<small>GAME {badgeGameNumber(s)}</small></div>
         <div className="fl">{s.format.toUpperCase()}</div>
       </div>
     </>

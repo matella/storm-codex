@@ -59,12 +59,26 @@ export function seriesScore(s: CastSeries): [number, number] {
   ];
 }
 
-/** Numéro de partie de la pastille : partie en cours (dernière sans vainqueur) sinon max(number)+1 (1 si aucune). */
-export function badgeGameNumber(games: GameRecord[]): number {
+/** Série décidée (R22) : un camp a atteint ceil(bo/2) victoires au score affiché (forçage compris). */
+export function seriesDecided(s: CastSeries): boolean {
+  const [b, r] = seriesScore(s);
+  return Math.max(b, r) >= Math.ceil(s.bo / 2);
+}
+
+/** Numéro de partie de la pastille. R9 : partie en cours (dernière sans vainqueur) sinon max(number)+1
+ *  (1 si aucune). R22 : série décidée → numéro de la dernière partie (jamais n+1). */
+export function badgeGameNumber(s: CastSeries): number {
+  const games = s.games;
   if (games.length === 0) return 1;
   const last = games[games.length - 1];
-  if (last.winner === null) return last.number;
-  return Math.max(...games.map((g) => g.number)) + 1;
+  const max = Math.max(...games.map((g) => g.number));
+  if (last.winner === null || seriesDecided(s)) return max;
+  return max + 1;
+}
+
+/** L'overlay rend une scène : série active, ou scène Draft (R19 : le draft s'édite sans série). */
+export function overlayVisible(s: CastSeries | undefined | null): boolean {
+  return !!s && (s.active || s.scene === "draft");
 }
 
 /** Cartes sélectionnables (liste unique, partagée avec la console Draft). */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CastSeries, CastTeam, GameRecord, PoolMap } from "./castApi";
-import { badgeGameNumber, canChangeWinner, canRemoveGame, canSetWinner, displayName, effectiveLineupMode, MAPS, mapCardView, reconcileTeam, replayErrorText, seriesScore, shownGame, slideCount, slideIndex, startableMaps, togglePool, sceneFromSearch } from "./castState";
+import { badgeGameNumber, overlayVisible, canChangeWinner, canRemoveGame, canSetWinner, displayName, effectiveLineupMode, MAPS, mapCardView, reconcileTeam, replayErrorText, seriesScore, shownGame, slideCount, slideIndex, startableMaps, togglePool, sceneFromSearch } from "./castState";
 
 const game = (map: string, winner: GameRecord["winner"]): GameRecord => ({
   number: 1, map, winner, takedowns: [0, 0], duration_secs: null, summary: null,
@@ -72,12 +72,21 @@ describe("displayName", () => {
 
 describe("badgeGameNumber", () => {
   const g = (number: number, winner: GameRecord["winner"]): GameRecord => ({ ...game("M", winner), number });
-  it("no games -> 1", () => expect(badgeGameNumber([])).toBe(1));
-  it("game in progress -> its number", () => expect(badgeGameNumber([g(1, null)])).toBe(1));
-  it("one finished game -> 2", () => expect(badgeGameNumber([g(1, "blue")])).toBe(2));
+  const b = (games: GameRecord[], bo = 5, score_override: [number, number] | null = null) =>
+    badgeGameNumber(series({ games, bo, score_override }));
+  it("no games -> 1", () => expect(b([])).toBe(1));
+  it("game in progress -> its number", () => expect(b([g(1, null)])).toBe(1));
+  it("one finished game -> 2", () => expect(b([g(1, "blue")])).toBe(2));
   it("third started without winner -> 3", () =>
-    expect(badgeGameNumber([g(1, "blue"), g(2, "red"), g(3, null)])).toBe(3));
-  it("all finished -> max+1", () => expect(badgeGameNumber([g(1, "blue"), g(2, "red"), g(3, "blue")])).toBe(4));
+    expect(b([g(1, "blue"), g(2, "red"), g(3, null)])).toBe(3));
+  it("Bo5 all finished, undecided (2-1) -> max+1 (R9)", () => expect(b([g(1, "blue"), g(2, "red"), g(3, "blue")])).toBe(4));
+  // R22 : série décidée → numéro de la dernière partie, jamais n+1
+  it("Bo3 decided 2-0 -> 2", () => expect(b([g(1, "blue"), g(2, "blue")], 3)).toBe(2));
+  it("Bo3 decided 2-1 -> 3 (not 4)", () => expect(b([g(1, "blue"), g(2, "red"), g(3, "red")], 3)).toBe(3));
+  it("Bo5 decided 3-1 -> 4", () => expect(b([g(1, "blue"), g(2, "red"), g(3, "blue"), g(4, "blue")], 5)).toBe(4));
+  it("Bo1 decided 1-0 -> 1", () => expect(b([g(1, "red")], 1)).toBe(1));
+  it("score override deciding the series counts", () => expect(b([g(1, "blue")], 3, [2, 0])).toBe(1));
+  it("score override not deciding keeps R9", () => expect(b([g(1, "blue"), g(2, "blue")], 5, [1, 1])).toBe(3));
 });
 
 describe("seriesScore", () => {
@@ -201,5 +210,14 @@ describe("sceneFromSearch", () => {
     expect(sceneFromSearch("?scene=Draft")).toBeNull();
     expect(sceneFromSearch("?scene=nope")).toBeNull();
     expect(sceneFromSearch("?skin=nexus")).toBeNull();
+  });
+});
+
+describe("overlayVisible (I4)", () => {
+  it("inactive series shows nothing except the Draft scene (R19)", () => {
+    expect(overlayVisible(undefined)).toBe(false);
+    expect(overlayVisible(series({ active: false, scene: "series" }))).toBe(false);
+    expect(overlayVisible(series({ active: false, scene: "draft" }))).toBe(true);
+    expect(overlayVisible(series({ active: true, scene: "lineups" }))).toBe(true);
   });
 });

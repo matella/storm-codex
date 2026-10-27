@@ -52,7 +52,7 @@ function Workspace({ series, scene: sc, run }: { series: CastSeries; scene: Cast
         )}
       </div>
       <div className="cr-note">
-        Badge shows: BO {series.bo} · GAME {badgeGameNumber(series.games)} · {series.format.toUpperCase()}
+        Badge shows: BO {series.bo} · GAME {badgeGameNumber(series)} · {series.format.toUpperCase()}
         {series.score_override ? " · score forced by operator" : " · score from game winners"}
       </div>
     </section>
