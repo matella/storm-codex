@@ -464,6 +464,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn start_series_deselects_replay_game_and_stops_autoplay() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        {
+            let mut d = state.draft.write().await;
+            d.replay.current = Some(0);
+            d.replay.playing = true;
+            d.replay.next_at_ms = Some(1);
+            d.replay.interval_ms = 9_000;
+        }
+        call(&state, "POST", "/api/cast/series", Some(start_body())).await;
+        let d = state.draft.read().await;
+        assert_eq!(d.replay.current, None);
+        assert!(!d.replay.playing);
+        assert_eq!(d.replay.next_at_ms, None);
+        assert_eq!(d.replay.interval_ms, 9_000);
+    }
+
+    #[tokio::test]
     async fn start_series_with_same_format_still_resets_game() {
         let _g = DB_LOCK.lock().await;
         let Some(state) = test_state(None).await else { return };

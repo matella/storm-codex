@@ -384,4 +384,22 @@ mod tests {
         assert_eq!(d.replay.current, None);
         assert_eq!(d.remove_game(9), Err(DraftError::NoGame));
     }
+
+    #[test]
+    fn align_to_series_deselects_replay_game_and_stops_autoplay() {
+        let mut d = loaded();
+        d.add_game(game(Side::Red, "b"));
+        d.replay.current = Some(1);
+        d.replay.playing = true;
+        d.replay.next_at_ms = Some(123);
+        d.replay.fearless = true;
+        d.replay.interval_ms = 7_000;
+        d.align_to_series(Format::Fearless);
+        assert_eq!(d.replay.current, None);
+        assert!(!d.replay.playing);
+        assert_eq!(d.replay.next_at_ms, None);
+        assert_eq!(d.replay.queue.len(), 2);
+        assert!(d.replay.fearless);
+        assert_eq!(d.replay.interval_ms, 7_000);
+    }
 }

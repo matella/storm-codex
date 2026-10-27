@@ -202,11 +202,15 @@ impl DraftState {
     }
     /// Aligne le moteur sur le format d'une série de cast qui démarre : `format` + `steps` reconstruits,
     /// partie neuve (curseur 0, assignations vides) et NOUVELLE série (historique et series bans vidés).
-    /// Garde map, first_pick, prébans manuels, file de replays et équipes.
+    /// Garde map, first_pick, prébans manuels, équipes et la file de replays (partie courante désélectionnée, lecture auto stoppée).
     pub fn align_to_series(&mut self, format: Format) {
         self.format = format;
         self.steps = steps_for(format);
         self.new_series();
+        // comme `config` : la file survit (queue, fearless, interval), mais la partie courante est désélectionnée
+        // et la lecture auto stoppée (son script ne correspond plus aux steps reconstruits)
+        let replay = std::mem::take(&mut self.replay);
+        self.replay = ReplayState { current: None, playing: false, next_at_ms: None, ..replay };
     }
     /// Héros pické dans la partie courante (pour alimenter l'historique de série fearless).
     pub fn picked_heroes(&self) -> Vec<String> {

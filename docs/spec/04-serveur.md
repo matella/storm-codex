@@ -104,7 +104,7 @@ inactive, le démarrage n'échoue jamais. Chaque mutation : un seul write-lock s
 `CastError` ne change rien), puis persistance et broadcast `cast.updated` sur `/ws`. Mode ouvert comme
 `/api/draft`. Règles : `mark_map` refuse une carte déjà jouée (`MapAlreadyPlayed`) ; toute mutation sauf
 `POST /api/cast/series` et `/scene` exige `active` (`SeriesInactive`).
-`POST /api/cast/series` aligne aussi le draft (format, steps, partie et série neuves : `DraftState::align_to_series`, après la synchro équipes/score/Bo, locks jamais tenus ensemble) pour que le moteur ne diverge jamais du format de la série.
+`POST /api/cast/series` aligne aussi le draft (format, steps, partie et série neuves : `DraftState::align_to_series`, après la synchro équipes/score/Bo, locks jamais tenus ensemble) la file de replays est conservée mais sa partie courante est désélectionnée et la lecture auto stoppée (comme `/api/draft/config`), pour que le moteur ne diverge jamais du format de la série.
 Design : `docs/specs/2026-10-25-cast-control-room-design.md`.
 
 ## Feed live (`live/`)
