@@ -1,5 +1,49 @@
 # STATUS — lire d'abord, mettre à jour en dernier
 
+## Régie de cast — LIVRÉE le 2026-10-27 (branche `feat/cast-control-room`, non mergée, **pas encore déployée sur le box**)
+Spec `docs/specs/2026-10-25-cast-control-room-design.md` · plan `docs/plans/2026-10-25-cast-control-room.md`.
+Une **série** (Bo1/3/5/7, Fearless/Standard/Normal, pool de cartes, 2 équipes × 5 joueurs, logos) est l'unique source
+de vérité des équipes ; le casteur la pilote depuis `/cast` et OBS lit `/cast/overlay`.
+- **Serveur** `src/cast/` : `series.rs` (moteur pur : veto dans un ordre quelconque, parties, score calculé/forcé),
+  `store.rs` (singleton `cast_live`, migration `0012_cast_live`, repli sur série neuve si le JSON est illisible),
+  `sync.rs` (série → draft, sens unique ; démarrer une série aligne le moteur de draft, R20), `api.rs`
+  (`/api/cast`, `/series`, `/teams`, `/pool/map`, `/games/start`, `/games/{n}/winner`, `/score`, `/scene`,
+  `/lineup-mode`, `/slide`, logos `/logo/{side}`, `GET /api/cast/lineup`), `lineup.rs` (3 héros récents / 20 parties,
+  masqué < 5 parties), `summary.rs` + `replay.rs` (`POST /api/cast/games/{n}/replay` : replay **Custom** décodé à la
+  volée, **rien écrit en base**, orientation Blue/Red prouvée par toon puis pseudo, `?swap=1`). WS `cast.updated`.
+- **Front** : `/cast` (régie : rail série/équipes avec sélecteur de joueurs, pool, aperçu = l'overlay en iframe,
+  onglets Lineups / Series / Draft / In-game, Draft déplacé ici ; `/draft*` redirigent vers `/cast?scene=draft`),
+  `/cast/overlay` (hors Layout, fond transparent pour OBS : scènes `lineups` A/B, `series` + diaporama post-game
+  4 onglets, `draft`, `ingame` avec onglets ancrés sur le HUD 1920×1080, `hide`).
+- **Mesures (build release, Postgres dev, 2026-10-27)** : scène → overlay à jour **7–9 ms** typique, **37 ms** max
+  (12 bascules ; WS `cast.updated` reçu en 4–6 ms ; budget < 500 ms) · `GET /api/cast/lineup` 10 joueurs **médiane 5,9 ms,
+  p95 8,1 ms, 1er appel 40 ms** (budget < 100 ms) · décodage post-game (route complète, upload 1,6 Mo local compris)
+  **417–444 ms** sur un PC chargé à ~70 % par un jeu (mesuré à 178–203 ms au calme pendant le développement ; budget
+  < 500 ms : **marge faible sous charge**, le décodage seul `storm-stats-dump` est à ~177 ms de médiane au calme).
+- **Vérifié bout en bout** (vrai Custom Tomb du 2026-09-27, vrais toons) : série Bo5 Fearless pool 10, veto en désordre,
+  partie 1 + replay → lineups A→B (« awaiting game data » pour les joueurs non rattachés), diaporama post-game
+  concordant avec la sortie storm-stats (takedowns 28/15, dégâts, bans), draft live + replay, scène In-game sur
+  `ingame.webp` (ancres 39,20 % / 59,65 % / 9,90 %, nom de 40 caractères tronqué par « … »), redémarrage du serveur :
+  état cast **et** draft identiques octet pour octet.
+- **Tests** : `DATABASE_URL=postgres://storm:storm@localhost:5433/storm_codex STORM_CAST_CUSTOM_REPLAY=<un .StormReplay
+  Custom> cargo test --workspace` (sans `DATABASE_URL`, les tests DB s'ignorent en silence ; sans
+  `STORM_CAST_CUSTOM_REPLAY`, le test d'octets réels est sauté) → 271 Rust (dont 227 pour le serveur) ;
+  `cd web && npm test && npm run build` → 186 web ; `cargo clippy --all-targets -- -D warnings` propre.
+  Les tests DB laissent des fixtures dans la base dev (`cargo test -p storm-codex-server purge_fixtures -- --ignored`
+  les purge) ; la base dev de cast (`cast_live`, `cast_logo`, `draft_live`) a été **nettoyée** après la vérification.
+- **Limites connues** : objectifs de carte = liste blanche de types de carte vérifiés (R17) — Blackheart's Bay y est
+  gardé sur un corpus mince (1 partie), à re-vérifier ; `POST /series` **garde les logos** existants (R7, effacer via
+  `PUT /teams`) ; `PoolPanel` sous l'espace de travail et non dans le rail gauche (R11) ; pools de 11–14 cartes
+  débordent sur 3 rangées ; mode B n'attribue un héros qu'à un joueur rattaché par toon ou pseudo exact (jamais par
+  position) ; `["cast"]` n'est pas ré-invalidé à la reconnexion WS (une source OBS peut rester périmée jusqu'au
+  prochain événement) ; les boutons draft « Next game »/« New series » agissent sur le moteur de draft seul ;
+  `/cast/overlay` : pas de fondu de sortie ; ancres In-game = constantes (`web/src/cast/anchors.ts`) à ré-étalonner
+  si l'UI du jeu change ; route replay héritant de la limite de corps de 64 Mo ; hypothèse équipe 0 = Blue sans
+  preuve de joueurs (confirmer en cast réel).
+- **Reste** : relecture finale puis merge ; **déploiement sur le box** (rsync + docker compose build, migration
+  `0012_cast_live`) et essai sur une vraie diffusion OBS ; supprimer `pages/Draft.tsx` et `pages/DraftReplay.tsx`
+  (wrappers morts) ; styliser le bascule Live/Replay de la régie ; aria-labels de la régie.
+
 ## Draft depuis un replay — LIVRÉ sur `feat/draft-replay` (2026-10-25, pas encore mergé ni déployé)
 Spec `docs/specs/2026-10-25-draft-replay-design.md`, plan `docs/plans/2026-10-25-draft-replay.md`, maquettes
 `docs/draft-replay-mockup.html`. Page `/draft/replay` (télécommande) + overlay OBS existant : on charge des
