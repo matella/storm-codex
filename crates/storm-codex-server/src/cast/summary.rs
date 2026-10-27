@@ -41,10 +41,16 @@ fn both(f: impl Fn(&str) -> Option<u32>) -> Option<[u32; 2]> {
 }
 
 /// Forts + keeps détruits par l'équipe : `teams[t].stats.structures.{Fort,Keep}.destroyed`
-/// (bâtiments seuls, sans tours ni puits ; sous-clé absente = 0).
+/// (bâtiments seuls, sans tours ni puits). Carte sans aucune sous-clé `Fort`/`Keep` (dans aucune
+/// équipe) → `None` (ligne retirée, pas de 0–0 inventé) ; sinon une sous-clé absente compte 0.
 fn forts_keeps(m: &Map<String, J>) -> Option<[u32; 2]> {
+    let st = |t: &str| m.get("teams")?.get(t)?.get("stats")?.get("structures")?.as_object();
+    let has = |t: &str| st(t).is_some_and(|o| o.contains_key("Fort") || o.contains_key("Keep"));
+    if !has("0") && !has("1") {
+        return None;
+    }
     both(|t| {
-        let st = m.get("teams")?.get(t)?.get("stats")?.get("structures")?.as_object()?;
+        let st = st(t)?;
         let n = |k: &str| u32_of(st.get(k).and_then(|s| s.get("destroyed"))).unwrap_or(0);
         Some(n("Fort") + n("Keep"))
     })
@@ -238,7 +244,8 @@ mod tests {
     /// Fixture = replay Custom réel (Tomb of the Spider Queen, 2026-09-27), réduit et anonymisé.
     /// Les littéraux ont été recoupés par un second chemin de la sortie complète : niveau =
     /// max(`levelTimes`), camps = `mercs.captures` par équipe, forts·keeps = `match.structures`
-    /// (Fort/Keep détruits chez l'adversaire), K = somme des `SoloKill` = `teamNTakedowns`.
+    /// (Fort/Keep détruits chez l'adversaire). Sur CE fixture, la somme des `SoloKill` d'une équipe
+    /// égale `teamNTakedowns` (28 / 15) : vrai ici, pas un invariant général de storm-stats.
     #[test]
     fn summary_matches_match_sheet_values() {
         let s = summary_from_output(&output(&fixture())).unwrap();
@@ -318,6 +325,21 @@ mod tests {
         assert!(s.xp_lead.is_empty());
         assert_eq!(s.bans, [Vec::<String>::new(), Vec::new()]);
         assert_eq!(s.team_level, Some([25, 24]));
+    }
+
+    /// Item 9 : carte sans Fort ni Keep (dans aucune équipe) → pas de ligne forts·keeps, jamais 0–0 ;
+    /// une équipe sans sous-clé quand l'autre en a → 0 pour elle.
+    #[test]
+    fn forts_keeps_absent_on_maps_without_them() {
+        let mut fx = fixture();
+        for t in ["0", "1"] {
+            let st = fx["match"]["teams"][t]["stats"]["structures"].as_object_mut().unwrap();
+            st.remove("Fort");
+            st.remove("Keep");
+        }
+        assert_eq!(summary_from_output(&output(&fx)).unwrap().structures, None);
+        fx["match"]["teams"]["1"]["stats"]["structures"]["Keep"] = json!({"lost": 0, "destroyed": 1});
+        assert_eq!(summary_from_output(&output(&fx)).unwrap().structures, Some([0, 1]));
     }
 
     /// R17 : liste blanche de cartes (`MapType`) ; événements sans `time` non comptés.

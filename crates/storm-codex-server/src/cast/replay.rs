@@ -3,7 +3,7 @@
 //! la série. **Rien n'est écrit en base** hors de la ligne `cast_live`.
 use super::api::{conflict, mutate_ex, DraftSync};
 use super::summary::{summary_from_output, SummaryError};
-use super::{CastError, GameSummary};
+use super::{CastError, GameSummary, Orientation};
 use crate::AppState;
 use axum::{
     body::Bytes,
@@ -68,9 +68,20 @@ async fn decode_in(sem: Arc<Semaphore>, dir: PathBuf, bytes: Bytes) -> Result<Ga
 /// Oriente le résumé sur la série (R16, `Series::fill_from_replay`, sous le write-lock donc sur la
 /// série courante) puis remplit la partie `n` (vainqueur, takedowns, durée, résumé) ; persiste,
 /// synchronise le draft, diffuse `cast.updated`. `409 side_mismatch` : rien ne change.
+/// Réponse : le résumé orienté + `orientation` (`evidence` | `assumed` | `forced`) et, si l'échange
+/// forcé contredit une preuve d'orientation directe, `forced_against_evidence: true`.
 pub(super) async fn apply(s: &AppState, n: u8, summary: GameSummary, force_swap: bool) -> Resp {
-    match mutate_ex(s, true, DraftSync::Sync, |c| c.fill_from_replay(n, summary, force_swap)).await {
-        Ok((stored, _)) => (StatusCode::CREATED, Json(serde_json::to_value(&stored).unwrap_or(J::Null))),
+    match mutate_ex(s, true, DraftSync::Sync, |c| c.fill_from_replay_oriented(n, summary, force_swap)).await {
+        Ok(((stored, how), _)) => {
+            let mut v = serde_json::to_value(&stored).unwrap_or(J::Null);
+            if let Some(o) = v.as_object_mut() {
+                o.insert("orientation".into(), json!(how.code()));
+                if how == (Orientation::Forced { against_evidence: true }) {
+                    o.insert("forced_against_evidence".into(), json!(true));
+                }
+            }
+            (StatusCode::CREATED, Json(v))
+        }
         Err(r) => r,
     }
 }
@@ -259,6 +270,8 @@ mod tests {
         assert_eq!(st, StatusCode::CREATED);
         assert_eq!(v.0["takedowns"], json!([15, 28]));
         assert_eq!(v.0["winner"], "red");
+        assert_eq!(v.0["orientation"], "evidence");
+        assert!(v.0.get("forced_against_evidence").is_none());
         let c = state.cast.read().await.clone();
         let g = &c.games[0];
         assert_eq!((g.winner, g.takedowns, g.duration_secs), (Some(Side::Red), [15, 28], Some(1576)));
@@ -295,6 +308,15 @@ mod tests {
         assert_eq!((v.0["winner"].as_str(), v.0["xp_lead"][0][1].as_i64()), (Some("red"), Some(-710)));
         assert_eq!(v.0["players"][0]["side"], "blue");
         assert_eq!(v.0["players"][0]["name"], "Player6");
+        assert_eq!((v.0["orientation"].as_str(), v.0.get("forced_against_evidence")), (Some("forced"), None));
+
+        // ?swap=1 contre une preuve d'orientation directe : accepté mais signalé
+        with_game(&state).await;
+        name_teams(&state, true).await;
+        let (st, v) = apply(&state, 1, fixture_summary(), true).await;
+        assert_eq!(st, StatusCode::CREATED);
+        assert_eq!((v.0["orientation"].as_str(), v.0["forced_against_evidence"].as_bool()), (Some("forced"), Some(true)));
+        assert_eq!(v.0["winner"], "red");
 
         if let Some(bytes) = real_custom() {
             // HTTP, octets réels : même refus sans preuve, puis ?swap=1

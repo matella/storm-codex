@@ -2,6 +2,26 @@
 use super::{CastError, GameRecord, GameSummary, LineupMode, MapStatus, Player, PoolMap, Series};
 use crate::draft::Side;
 
+/// Comment l'orientation d'un replay a été décidée (R16) : preuve par les joueurs liés, hypothèse
+/// équipe 0 = Blue faute de preuve, ou échange forcé par l'opérateur (`?swap=1`) — éventuellement
+/// **contre** une preuve d'orientation directe.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Orientation {
+    Evidence,
+    Assumed,
+    Forced { against_evidence: bool },
+}
+
+impl Orientation {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::Evidence => "evidence",
+            Self::Assumed => "assumed",
+            Self::Forced { .. } => "forced",
+        }
+    }
+}
+
 impl Series {
     /// Remplace le pool (ordre donné) ; les cartes conservées gardent leur statut, les autres sont retirées.
     pub fn set_pool(&mut self, names: &[String]) {
@@ -97,7 +117,9 @@ impl Series {
     /// un joueur de `blue` ou `red` par la règle R14 (toon lié identique, puis pseudo exact trim /
     /// insensible à la casse — sauf si les deux toons existent et diffèrent). `Some(true)` = l'équipe
     /// 0 du replay est la Red de la série (à échanger), `Some(false)` = orientation directe, `None` =
-    /// pas de preuve nette (aucun rattachement, ou autant dans les deux sens).
+    /// pas de preuve nette (aucun rattachement, ou autant dans les deux sens). Majorité simple :
+    /// une ligne rattachée dans le mauvais sens est compensée par une dans le bon. Un joueur listé
+    /// dans LES DEUX équipes de la série (saisie incohérente) ne prouve rien : sa ligne est ignorée.
     pub fn orient(&self, s: &GameSummary) -> Option<bool> {
         let matches = |p: &Player, row: &super::PlayerSummary| {
             if let Some(t) = p.toon.as_deref().filter(|t| !t.is_empty()) {
@@ -130,20 +152,32 @@ impl Series {
     /// déjà saisi qui contredit le replay → `SideMismatch` (rien ne change) ; sinon équipe 0 = Blue.
     /// Renvoie le résumé tel qu'enregistré.
     pub fn fill_from_replay(&mut self, number: u8, summary: GameSummary, force_swap: bool) -> Result<GameSummary, CastError> {
+        self.fill_from_replay_oriented(number, summary, force_swap).map(|(s, _)| s)
+    }
+
+    /// Comme `fill_from_replay`, et dit comment l'orientation a été décidée (réponse de la route).
+    pub fn fill_from_replay_oriented(
+        &mut self,
+        number: u8,
+        summary: GameSummary,
+        force_swap: bool,
+    ) -> Result<(GameSummary, Orientation), CastError> {
         let manual = self.games.iter().find(|g| g.number == number).ok_or(CastError::UnknownGame)?.winner;
-        let swap = match (force_swap, self.orient(&summary)) {
-            (true, _) => true,
-            (false, Some(swap)) => swap,
+        let evidence = self.orient(&summary);
+        let (swap, how) = match (force_swap, evidence) {
+            // échange forcé alors que les joueurs liés prouvent l'orientation directe
+            (true, e) => (true, Orientation::Forced { against_evidence: e == Some(false) }),
+            (false, Some(swap)) => (swap, Orientation::Evidence),
             (false, None) => {
                 if manual.is_some_and(|w| w != summary.winner) {
                     return Err(CastError::SideMismatch);
                 }
-                false
+                (false, Orientation::Assumed)
             }
         };
         let s = if swap { summary.swapped() } else { summary };
         self.fill_from_summary(number, s.clone())?;
-        Ok(s)
+        Ok((s, how))
     }
 
     /// [blue, red] : override si présent, sinon victoires comptées.
@@ -483,6 +517,60 @@ mod tests {
         // choix explicite de l'opérateur : échange forcé, accepté
         s.fill_from_replay(1, replay_summary(), true).unwrap();
         assert_eq!(s.games[0].winner, Some(Side::Red));
+    }
+
+    /// Preuves mêlées : la majorité décide, l'égalité n'est pas une preuve.
+    #[test]
+    fn orient_mixed_evidence_majority_and_tie() {
+        // 2 rattachements croisés (Beta1, Beta2 dans la Blue) contre 1 direct (Alpha1 dans la Blue) → échange
+        let s = replay_game(team(&[(None, "Beta1"), (None, "Beta2"), (None, "Alpha1")]), team(&[]), None);
+        assert_eq!(s.orient(&replay_summary()), Some(true));
+        // 2 directs (Alpha1, Alpha2) contre 1 croisé (Beta1) → direct
+        let s = replay_game(team(&[(None, "Alpha1"), (None, "Alpha2"), (None, "Beta1")]), team(&[]), None);
+        assert_eq!(s.orient(&replay_summary()), Some(false));
+        // 1 contre 1 → pas de preuve ; avec un vainqueur saisi contraire → SideMismatch
+        let mut s = replay_game(team(&[(None, "Alpha1"), (None, "Beta1")]), team(&[]), Some(Side::Red));
+        assert_eq!(s.orient(&replay_summary()), None);
+        assert_eq!(s.fill_from_replay(1, replay_summary(), false), Err(CastError::SideMismatch));
+    }
+
+    /// Un joueur listé dans les deux équipes de la série est ignoré (pas une preuve).
+    #[test]
+    fn orient_ignores_player_listed_in_both_teams() {
+        let s = replay_game(team(&[(None, "Beta1")]), team(&[(None, "Beta1")]), None);
+        assert_eq!(s.orient(&replay_summary()), None);
+        // la preuve d'un autre joueur reste prise en compte
+        let s = replay_game(team(&[(None, "Beta1"), (None, "Beta2")]), team(&[(None, "Beta1")]), None);
+        assert_eq!(s.orient(&replay_summary()), Some(true));
+    }
+
+    /// Item 12 : la route dit comment l'orientation a été décidée.
+    #[test]
+    fn orientation_reports_evidence_assumed_and_forced() {
+        let mut s = replay_game(team(&[(Some("ta1"), "x")]), team(&[]), None);
+        assert_eq!(s.fill_from_replay_oriented(1, replay_summary(), false).unwrap().1, Orientation::Evidence);
+        let mut s = replay_game(team(&[]), team(&[]), None);
+        assert_eq!(s.fill_from_replay_oriented(1, replay_summary(), false).unwrap().1, Orientation::Assumed);
+        let mut s = replay_game(team(&[]), team(&[]), None);
+        assert_eq!(
+            s.fill_from_replay_oriented(1, replay_summary(), true).unwrap().1,
+            Orientation::Forced { against_evidence: false }
+        );
+        // échange forcé alors que la preuve dit « direct »
+        let mut s = replay_game(team(&[(Some("ta1"), "x")]), team(&[]), None);
+        let (got, how) = s.fill_from_replay_oriented(1, replay_summary(), true).unwrap();
+        assert_eq!(how, Orientation::Forced { against_evidence: true });
+        assert_eq!(got.winner, Side::Red);
+        // échange forcé dans le sens de la preuve : pas « contre »
+        let mut s = replay_game(team(&[(Some("tb1"), "x")]), team(&[]), None);
+        assert_eq!(
+            s.fill_from_replay_oriented(1, replay_summary(), true).unwrap().1,
+            Orientation::Forced { against_evidence: false }
+        );
+        assert_eq!(
+            [Orientation::Evidence, Orientation::Assumed, Orientation::Forced { against_evidence: true }].map(Orientation::code),
+            ["evidence", "assumed", "forced"]
+        );
     }
 
     #[test]

@@ -8,6 +8,7 @@ pub mod api;
 pub mod lineup;
 pub mod replay;
 mod series;
+pub use series::Orientation;
 pub mod store;
 pub mod summary;
 pub mod sync;

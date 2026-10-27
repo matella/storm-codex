@@ -128,8 +128,11 @@ write-lock) : les joueurs du replay rattachés à ceux de la série (toon lié, 
 du replay est la Blue ou la Red (`GameSummary::swapped()`) ; avec cette preuve le replay fait foi (remplace un
 vainqueur saisi, ou un résumé précédent) ; **sans preuve**, équipe 0 = Blue, mais un vainqueur déjà saisi qui
 contredit le replay → `409 {"error":"side_mismatch"}`, rien ne change. **`?swap=1`** : l'opérateur force l'échange.
-Persistance + synchro draft (score) + WS `cast.updated` comme les autres mutations ; la réponse est le résumé
-orienté. Erreurs : `400 {"error":"empty_body"}` ; `409 SeriesInactive` / `409 UnknownGame` (partie `n` absente) /
+Preuve = majorité simple des rattachements (égalité = pas de preuve) ; un joueur listé dans les deux équipes de la
+série est ignoré. Persistance + synchro draft (score) + WS `cast.updated` comme les autres mutations ; la réponse est
+le résumé orienté **plus** `orientation` ∈ `evidence` (preuve par les joueurs) | `assumed` (pas de preuve : équipe 0
+= Blue) | `forced` (`?swap=1`), et `forced_against_evidence: true` quand l'échange forcé contredit une preuve
+d'orientation directe (accepté, la régie l'affiche). Erreurs : `400 {"error":"empty_body"}` ; `409 SeriesInactive` / `409 UnknownGame` (partie `n` absente) /
 `409 side_mismatch` ;
 `422 {"error", "message"}` avec `error` ∈ `not_custom` (replay non Custom), `parse_failed` (octets illisibles,
 tronqués, statut storm-stats ≠ 1), `incomplete` (vainqueur, durée ou takedowns absents de la sortie) — jamais 500
