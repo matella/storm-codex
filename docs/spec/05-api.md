@@ -101,7 +101,7 @@ Erreurs `CastError` → `409 {"error": "<Variante>"}` (`UnknownMap`, `NotInPool`
 Toute mutation sauf `/series` et `/scene` renvoie `409 SeriesInactive` tant que `active=false`.
 `POST /api/cast/logo/{side}` (`blue`|`red` ; corps = octets, `Content-Type` png/jpeg/webp ; 1 octet–512 Ko ;
 `415` mime, `400` corps vide, `413` trop gros, `404` côté inconnu ; autorisé série inactive) → `Series` avec
-`Team.logo = "/api/cast/logo/{side}?v={updated_at_ms}"` · `GET /api/cast/logo/{side}` → octets (`404` si aucun).
+`Team.logo = "/api/cast/logo/{side}?v={updated_at_ms}"` · `GET /api/cast/logo/{side}` → octets (`404` si aucun ; `X-Content-Type-Options: nosniff`).
 **Synchro série → draft** (sens unique) après `/series`, `/teams`, `/games/{n}/winner`, `DELETE /games/{n}`, `/score` : noms, pseudos
 (`Player.name`), score (`Series::score()`) et `bo` copiés dans `DraftState` sans toucher curseur/assignations/file
 replay/fearless ; les deux états sont persistés, WS `draft.updated` + `cast.updated`.
@@ -113,8 +113,9 @@ dans la fenêtre** (masqué, jamais partiel). Une seule requête SQL (`unnest �
 vérifié par `EXPLAIN` dans le test) ; budget **< 100 ms pour 10 joueurs** (test `lineup_route_under_100ms_for_10_players`).
 `> 10` toons par équipe → `400 {"error":"too_many_players"}` ; erreur SQL → `500 {"error":"db"}`.
 **Replay d'une partie** (`cast/replay.rs`) : `POST /api/cast/games/{n}/replay` — corps = octets bruts d'un
-`.StormReplay` (comme `draft/replay/load`), décodé à la volée (fichier temporaire supprimé, `spawn_blocking` ; une
-panique du décodeur devient un 422). **Custom uniquement, rien n'est écrit en base** (ni `matches` ni `uploads` :
+`.StormReplay` (comme `draft/replay/load`), décodé à la volée sous `parse_sem` (écriture du fichier temporaire, décodage et suppression **dans** le
+`spawn_blocking` ; suppression garantie par un garde de destruction — succès, échec, panique, ou client déconnecté
+pendant le décodage ; une panique du décodeur devient un 422). **Custom uniquement, rien n'est écrit en base** (ni `matches` ni `uploads` :
 seule la ligne `cast_live`). → `201 GameSummary` (cf. [06-modele-donnees.md](06-modele-donnees.md)) ; remplit
 `winner`, `takedowns`, `duration_secs` et `summary` de la partie `n`, **orienté sur la série** (R16, sous le
 write-lock) : les joueurs du replay rattachés à ceux de la série (toon lié, puis pseudo exact) décident si l'équipe 0

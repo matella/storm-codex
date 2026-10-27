@@ -13,6 +13,9 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{json, Value as J};
+use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::Semaphore;
 
 type Resp = (StatusCode, Json<J>);
 
@@ -20,17 +23,37 @@ fn unprocessable(code: &str, message: String) -> Resp {
     (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "error": code, "message": message })))
 }
 
-/// Décode les octets d'un `.StormReplay` en résumé (fichier temporaire supprimé dans tous les cas).
-pub(super) async fn decode(bytes: &[u8]) -> Result<GameSummary, Resp> {
-    let path = std::env::temp_dir().join(format!("cast-replay-{}.StormReplay", uuid::Uuid::new_v4()));
-    if std::fs::write(&path, bytes).is_err() {
-        return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "io" }))));
+/// Fichier temporaire supprimé à la destruction (succès, erreur ou panique du décodeur).
+struct TempFile(PathBuf);
+impl Drop for TempFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
     }
-    let p2 = path.clone();
-    let parsed = tokio::task::spawn_blocking(move || storm_stats::process_replay(&p2, &p2.to_string_lossy())).await;
-    let _ = std::fs::remove_file(&path);
-    let Ok(out) = parsed else {
-        return Err(unprocessable("parse_failed", "le décodeur a échoué".into()));
+}
+
+/// Décode les octets d'un `.StormReplay` en résumé, sous `parse_sem` comme les autres routes de parsing.
+pub(super) async fn decode(s: &AppState, bytes: Bytes) -> Result<GameSummary, Resp> {
+    decode_in(s.parse_sem.clone(), std::env::temp_dir(), bytes).await
+}
+
+/// Écriture du fichier temporaire, décodage et suppression se font **dans** le `spawn_blocking`
+/// (rien de bloquant sur l'exécuteur) ; le permis du sémaphore y est déplacé, et la suppression est
+/// garantie par `TempFile` même si le client se déconnecte (la tâche bloquante va à son terme).
+async fn decode_in(sem: Arc<Semaphore>, dir: PathBuf, bytes: Bytes) -> Result<GameSummary, Resp> {
+    let Ok(permit) = sem.acquire_owned().await else {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "pool" }))));
+    };
+    let parsed = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        let tmp = TempFile(dir.join(format!("cast-replay-{}.StormReplay", uuid::Uuid::new_v4())));
+        std::fs::write(&tmp.0, &bytes).ok()?;
+        Some(storm_stats::process_replay(&tmp.0, &tmp.0.to_string_lossy()))
+    })
+    .await;
+    let out = match parsed {
+        Ok(Some(out)) => out,
+        Ok(None) => return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "io" })))),
+        Err(_) => return Err(unprocessable("parse_failed", "le décodeur a échoué".into())),
     };
     summary_from_output(&out).map_err(|e| {
         let code = match e {
@@ -76,7 +99,7 @@ pub async fn load_game_replay(State(s): State<AppState>, Path(n): Path<u8>, Quer
             return conflict(CastError::UnknownGame);
         }
     }
-    match decode(&bytes).await {
+    match decode(&s, bytes).await {
         Ok(summary) => apply(&s, n, summary, force_swap).await,
         Err(r) => r,
     }
@@ -134,6 +157,26 @@ mod tests {
         let out = storm_stats::process_replay(&dir, "x.StormReplay");
         let _ = std::fs::remove_file(&dir);
         crate::upload::game_fingerprint(&out).unwrap()
+    }
+
+    /// M2 : le fichier temporaire disparaît après un décodage réussi (ARAM → `not_custom`) comme
+    /// après un échec (octets illisibles → `parse_failed`) ; le permis est rendu.
+    #[tokio::test]
+    async fn decode_removes_temp_file_on_success_and_failure() {
+        let dir = std::env::temp_dir().join(format!("cast-decode-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let sem = Arc::new(Semaphore::new(1));
+        for (bytes, code) in [(aram(), "not_custom"), (vec![7u8; 64], "parse_failed")] {
+            let r = decode_in(sem.clone(), dir.clone(), Bytes::from(bytes)).await;
+            assert_eq!(r.err().map(|(_, j)| j.0["error"].clone()), Some(json!(code)));
+            assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0, "{code}");
+            assert_eq!(sem.available_permits(), 1);
+        }
+        // dossier absent : erreur io, pas de panique
+        let missing = dir.join("nope");
+        let r = decode_in(sem.clone(), missing, Bytes::from_static(b"x")).await;
+        assert_eq!(r.err().map(|(st, _)| st), Some(StatusCode::INTERNAL_SERVER_ERROR));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[tokio::test]

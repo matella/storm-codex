@@ -367,14 +367,22 @@ pub async fn upload_logo(State(s): State<AppState>, Path(side): Path<String>, he
     .await
 }
 
-/// GET /api/cast/logo/{side} — octets du logo (404 si aucun).
+/// GET /api/cast/logo/{side} — octets du logo (404 si aucun), `X-Content-Type-Options: nosniff`.
 pub async fn get_logo(State(s): State<AppState>, Path(side): Path<String>) -> Response {
     let Some(side) = side_str(&side) else { return err(StatusCode::NOT_FOUND, "bad_side").into_response() };
     let row: Result<Option<(String, Vec<u8>)>, sqlx::Error> =
         sqlx::query_as("SELECT mime, bytes FROM cast_logo WHERE side = $1").bind(side).fetch_optional(&s.db).await;
     match row {
         Ok(Some((mime, bytes))) => {
-            ([(header::CONTENT_TYPE, mime), (header::CACHE_CONTROL, "public, max-age=86400".to_string())], bytes).into_response()
+            (
+                [
+                    (header::CONTENT_TYPE, mime),
+                    (header::CACHE_CONTROL, "public, max-age=86400".to_string()),
+                    (header::X_CONTENT_TYPE_OPTIONS, "nosniff".to_string()),
+                ],
+                bytes,
+            )
+                .into_response()
         }
         Ok(None) => err(StatusCode::NOT_FOUND, "no_logo").into_response(),
         Err(e) => {
@@ -734,6 +742,13 @@ mod tests {
         let (st, got) = call_raw(&state, "GET", &url, None, vec![]).await;
         assert_eq!(st, StatusCode::OK);
         assert_eq!(got, PNG.to_vec());
+        {
+            use tower::util::ServiceExt;
+            let req = axum::http::Request::get(&url).body(axum::body::Body::empty()).unwrap();
+            let resp = crate::api_tests::app(&state).oneshot(req).await.unwrap();
+            assert_eq!(resp.headers()[header::X_CONTENT_TYPE_OPTIONS], "nosniff");
+            assert_eq!(resp.headers()[header::CONTENT_TYPE], "image/png");
+        }
         let (st, _) = call_raw(&state, "GET", "/api/cast/logo/red", None, vec![]).await;
         assert_eq!(st, StatusCode::NOT_FOUND);
         // le logo survit au redémarrage de série
