@@ -84,6 +84,8 @@ export interface SlideState {
 
 export interface CastSeries {
   schema_version: number;
+  /** Identité de la série (uuid posé par « New series » ; "" avant la première). */
+  series_id: string;
   active: boolean;
   blue: CastTeam;
   red: CastTeam;
@@ -167,7 +169,7 @@ export async function castLogoUpload(side: Side, file: File): Promise<CastSeries
 }
 
 /** Replay Custom de la partie `n` (octets bruts) → résumé ; rien n'est écrit en base. Erreurs :
- *  `empty_body`, `SeriesInactive`, `UnknownGame`, `side_mismatch`, `not_custom`, `parse_failed`, `incomplete`.
+ *  `empty_body`, `SeriesInactive`, `UnknownGame`, `side_mismatch`, `series_changed`, `not_custom`, `parse_failed`, `incomplete`.
  *  `swap` : l'opérateur force l'échange des côtés (équipe 1 du replay = Blue de la série). */
 export async function castGameReplay(n: number, file: File, swap = false): Promise<GameSummary> {
   const r = await fetch(`/api/cast/games/${n}/replay${swap ? "?swap=1" : ""}`, {

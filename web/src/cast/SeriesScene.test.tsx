@@ -17,7 +17,7 @@ const pool: PoolMap[] = [
   { name: "Infernal Shrines", status: "banned", by: "blue" },
 ];
 const series = (over: Partial<CastSeries> = {}): CastSeries => ({
-  schema_version: 1, active: true, blue: team("Alpha"), red: team("Omega"), bo: 5, format: "fearless",
+  schema_version: 1, series_id: "s1", active: true, blue: team("Alpha"), red: team("Omega"), bo: 5, format: "fearless",
   score_override: null, pool, games: [g(1, "Cursed Hollow", "blue"), g(2, "Dragon Shire", "red")],
   scene: "series", lineup_mode: "auto", slide: { game: null, index: 0, auto: false, interval_ms: 12000 }, ...over,
 });

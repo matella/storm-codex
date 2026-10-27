@@ -13,7 +13,7 @@ const g = (n: number, winner: GameRecord["winner"], summary: unknown = null): Ga
   number: n, map: "Sky Temple", winner, takedowns: [0, 0], duration_secs: 600, summary: summary as GameRecord["summary"],
 });
 const series = (over: Partial<CastSeries> = {}): CastSeries => ({
-  schema_version: 1, active: true, blue: team("Alpha", five("B")), red: team("Omega", five("R")), bo: 5,
+  schema_version: 1, series_id: "s1", active: true, blue: team("Alpha", five("B")), red: team("Omega", five("R")), bo: 5,
   format: "fearless", score_override: null, pool: [], games: [], scene: "lineups", lineup_mode: "auto",
   slide: { game: null, index: 0, auto: false, interval_ms: 12000 }, ...over,
 });

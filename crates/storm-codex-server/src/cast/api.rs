@@ -168,6 +168,7 @@ pub async fn start_series(State(s): State<AppState>, Json(b): Json<SeriesBody>) 
     // neuves), dans le même passage que la synchro (`DraftSync::Align`).
     mutate_series_ex(&s, false, DraftSync::Align, |c| {
         let mut n = Series::new();
+        n.series_id = uuid::Uuid::new_v4().to_string();
         n.active = true;
         // logo absent du corps → on garde celui en place (stocké en base)
         let (old_blue, old_red) = (c.blue.logo.take(), c.red.logo.take());
@@ -1093,6 +1094,7 @@ mod tests {
             (CastError::MapAlreadyPlayed, "MapAlreadyPlayed"),
             (CastError::SeriesInactive, "SeriesInactive"),
             (CastError::SideMismatch, "side_mismatch"),
+            (CastError::SeriesChanged, "series_changed"),
         ];
         for (e, code) in all {
             assert_eq!(e.code(), code);

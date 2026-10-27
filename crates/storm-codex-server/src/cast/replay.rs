@@ -70,8 +70,17 @@ async fn decode_in(sem: Arc<Semaphore>, dir: PathBuf, bytes: Bytes) -> Result<Ga
 /// synchronise le draft, diffuse `cast.updated`. `409 side_mismatch` : rien ne change.
 /// Réponse : le résumé orienté + `orientation` (`evidence` | `assumed` | `forced`) et, si l'échange
 /// forcé contredit une preuve d'orientation directe, `forced_against_evidence: true`.
-pub(super) async fn apply(s: &AppState, n: u8, summary: GameSummary, force_swap: bool) -> Resp {
-    match mutate_ex(s, true, DraftSync::Sync, |c| c.fill_from_replay_oriented(n, summary, force_swap)).await {
+/// `series_id` : identité de la série relevée AVANT le décodage — si une autre série a été démarrée
+/// entre-temps, `409 series_changed` et rien ne change (TOCTOU).
+pub(super) async fn apply_to(s: &AppState, series_id: &str, n: u8, summary: GameSummary, force_swap: bool) -> Resp {
+    let res = mutate_ex(s, true, DraftSync::Sync, |c| {
+        if c.series_id != series_id {
+            return Err(CastError::SeriesChanged);
+        }
+        c.fill_from_replay_oriented(n, summary, force_swap)
+    })
+    .await;
+    match res {
         Ok(((stored, how), _)) => {
             let mut v = serde_json::to_value(&stored).unwrap_or(J::Null);
             if let Some(o) = v.as_object_mut() {
@@ -94,14 +103,14 @@ pub struct ReplayQuery {
 }
 
 /// POST /api/cast/games/{n}/replay — corps = octets bruts du replay. 201 `GameSummary` ;
-/// 400 `empty_body` ; 409 `SeriesInactive` / `UnknownGame` / `side_mismatch` ; 422 `not_custom` /
+/// 400 `empty_body` ; 409 `SeriesInactive` / `UnknownGame` / `side_mismatch` / `series_changed` ; 422 `not_custom` /
 /// `parse_failed` / `incomplete`. `?swap=1` force l'échange des côtés.
 pub async fn load_game_replay(State(s): State<AppState>, Path(n): Path<u8>, Query(q): Query<ReplayQuery>, bytes: Bytes) -> Resp {
     let force_swap = matches!(q.swap.as_deref(), Some("1" | "true"));
     if bytes.is_empty() {
         return (StatusCode::BAD_REQUEST, Json(json!({ "error": "empty_body" })));
     }
-    {
+    let series_id = {
         let c = s.cast.read().await;
         if !c.active {
             return conflict(CastError::SeriesInactive);
@@ -109,9 +118,10 @@ pub async fn load_game_replay(State(s): State<AppState>, Path(n): Path<u8>, Quer
         if !c.games.iter().any(|g| g.number == n) {
             return conflict(CastError::UnknownGame);
         }
-    }
+        c.series_id.clone()
+    };
     match decode(&s, bytes).await {
-        Ok(summary) => apply(&s, n, summary, force_swap).await,
+        Ok(summary) => apply_to(&s, &series_id, n, summary, force_swap).await,
         Err(r) => r,
     }
 }
@@ -134,6 +144,29 @@ mod tests {
     fn real_custom() -> Option<Vec<u8>> {
         let p = std::env::var_os("STORM_CAST_CUSTOM_REPLAY")?;
         std::fs::read(p).ok()
+    }
+
+    /// Dépôt sur la série courante (identité relue maintenant).
+    async fn apply(state: &AppState, n: u8, summary: GameSummary, force_swap: bool) -> Resp {
+        let id = state.cast.read().await.series_id.clone();
+        apply_to(state, &id, n, summary, force_swap).await
+    }
+
+    /// Item 10 : une autre série démarrée pendant le décodage → 409 `series_changed`, rien ne change.
+    #[tokio::test]
+    async fn replay_for_a_replaced_series_is_409_series_changed() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        with_game(&state).await;
+        let old_id = state.cast.read().await.series_id.clone();
+        assert!(!old_id.is_empty());
+        with_game(&state).await; // nouvelle série (même carte, partie 1)
+        let before = state.cast.read().await.clone();
+        assert_ne!(before.series_id, old_id);
+        let (st, v) = apply_to(&state, &old_id, 1, fixture_summary(), false).await;
+        assert_eq!((st, v.0["error"].as_str()), (StatusCode::CONFLICT, Some("series_changed")));
+        assert_eq!(*state.cast.read().await, before);
+        assert_eq!(apply(&state, 1, fixture_summary(), false).await.0, StatusCode::CREATED);
     }
 
     fn fixture_summary() -> GameSummary {

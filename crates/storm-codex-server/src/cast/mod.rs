@@ -183,6 +183,9 @@ impl Default for SlideState {
 #[serde(default)]
 pub struct Series {
     pub schema_version: i32,
+    /// Identité de la série (uuid, posée par `POST /api/cast/series` ; vide avant la première) :
+    /// une opération longue (dépôt de replay) vérifie qu'elle s'applique encore à la même série.
+    pub series_id: String,
     pub active: bool,
     pub blue: Team,
     pub red: Team,
@@ -201,6 +204,7 @@ impl Series {
     pub fn new() -> Self {
         Self {
             schema_version: SCHEMA_VERSION,
+            series_id: String::new(),
             active: false,
             blue: Team::default(),
             red: Team::default(),
@@ -249,6 +253,9 @@ pub enum CastError {
     /// Replay sans preuve d'orientation dont le vainqueur contredit le vainqueur saisi (R16).
     #[error("replay sides do not match the recorded winner")]
     SideMismatch,
+    /// La série a été remplacée pendant une opération longue (décodage d'un replay).
+    #[error("the series changed while the replay was decoded")]
+    SeriesChanged,
 }
 
 impl CastError {
@@ -267,6 +274,7 @@ impl CastError {
             Self::MapAlreadyPlayed => "MapAlreadyPlayed",
             Self::SeriesInactive => "SeriesInactive",
             Self::SideMismatch => "side_mismatch",
+            Self::SeriesChanged => "series_changed",
         }
     }
 }

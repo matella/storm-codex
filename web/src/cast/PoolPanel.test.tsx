@@ -8,7 +8,7 @@ const g = (n: number, map: string, winner: GameRecord["winner"], summary: GameRe
   number: n, map, winner, takedowns: [0, 0], duration_secs: null, summary,
 });
 const series = (games: GameRecord[]): CastSeries => ({
-  schema_version: 1, active: true, blue: team("A"), red: team("B"), bo: 5, format: "fearless",
+  schema_version: 1, series_id: "s1", active: true, blue: team("A"), red: team("B"), bo: 5, format: "fearless",
   score_override: null, scene: "series", lineup_mode: "auto", slide: { game: null, index: 0, auto: false, interval_ms: 12000 },
   pool: [{ name: "Cursed Hollow", status: "picked", by: "blue" }, { name: "Sky Temple", status: "picked", by: "red" }, { name: "Dragon Shire", status: "decider" }],
   games,

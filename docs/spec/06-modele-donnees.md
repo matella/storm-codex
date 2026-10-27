@@ -43,6 +43,8 @@ Ces tables sont **reconstruisibles** (refresh complet au démarrage/24 h) — pa
 
 - `cast_live` : singleton (id=1, CHECK) — toute la série de cast (équipes, pool de cartes, parties,
   scène, diaporama) en JSONB, horodaté ; `schema_version` dans le JSON, champs manquants → défauts.
+  `series_id` (chaîne uuid, `""` avant la première série) : identité posée par `POST /api/cast/series`, re-vérifiée
+  par le dépôt de replay après le décodage (une série remplacée entre-temps → `409 series_changed`).
   `games[].summary` (`GameSummary`, posé par `POST /api/cast/games/{n}/replay`, jamais re-décodé) :
   `{duration_secs, winner, takedowns:[b,r], team_level, structures, merc_camps, objectives (chacun [b,r] ou null),
   bans:[[héros],[héros]], players:[PlayerSummary], xp_lead:[[s, avance Blue]]}` ;

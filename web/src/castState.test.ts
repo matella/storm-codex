@@ -7,7 +7,7 @@ const game = (map: string, winner: GameRecord["winner"]): GameRecord => ({
 });
 const team = (name: string): CastTeam => ({ name, logo: null, record: "", players: [], captain: null });
 const series = (over: Partial<CastSeries>): CastSeries => ({
-  schema_version: 1, active: true, blue: team(""), red: team(""), bo: 5, format: "fearless",
+  schema_version: 1, series_id: "s1", active: true, blue: team(""), red: team(""), bo: 5, format: "fearless",
   score_override: null, pool: [], games: [], scene: "hide", lineup_mode: "auto",
   slide: { game: null, index: 0, auto: false, interval_ms: 12000 }, ...over,
 });

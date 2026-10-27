@@ -22,7 +22,7 @@ const game = (sm: GameSummary | null): GameRecord => ({
   number: 2, map: "Tomb of the Spider Queen", winner: "blue", takedowns: [28, 15], duration_secs: 1576, summary: sm,
 });
 const series = (): CastSeries => ({
-  schema_version: 1, active: true, blue: team("Alpha"), red: team("Omega"), bo: 5, format: "fearless",
+  schema_version: 1, series_id: "s1", active: true, blue: team("Alpha"), red: team("Omega"), bo: 5, format: "fearless",
   score_override: null, pool: [], games: [game(summary())], scene: "series", lineup_mode: "auto",
   slide: { game: null, index: 1, auto: false, interval_ms: 12000 },
 });

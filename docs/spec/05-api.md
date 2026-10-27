@@ -89,7 +89,7 @@ Spec : `docs/specs/2026-10-25-draft-replay-design.md`.
 ## Régie de cast (`cast/api.rs`, mode ouvert)
 
 `GET /api/cast` (→ `Series`) · `POST /api/cast/series {blue:Team, red:Team, bo, format, pool:[nom]}`
-(`blue`/`red` = équipe complète — nom, bilan, joueurs, capitaine, logo — tous champs optionnels, `{name}` seul accepté ; un `logo` absent garde le logo en place ; crée/redémarre en un seul appel : `active=true`, parties/score/diaporama remis à zéro, scène conservée ; **draft aligné (R20)** : le moteur de draft reprend `format` et `steps` de la série, partie neuve (curseur 0) et nouvelle série (historique et series bans vidés), en gardant map, first_pick, prébans manuels, file de replays (conservée, mais partie courante désélectionnée et lecture auto stoppée, comme `/api/draft/config`) et équipes synchronisées (`DraftState::align_to_series`) ; `bo` ∈ {1,3,5,7}
+(`blue`/`red` = équipe complète — nom, bilan, joueurs, capitaine, logo — tous champs optionnels, `{name}` seul accepté ; un `logo` absent garde le logo en place ; crée/redémarre en un seul appel : nouvelle identité `series_id` (uuid), `active=true`, parties/score/diaporama remis à zéro, scène conservée ; **draft aligné (R20)** : le moteur de draft reprend `format` et `steps` de la série, partie neuve (curseur 0) et nouvelle série (historique et series bans vidés), en gardant map, first_pick, prébans manuels, file de replays (conservée, mais partie courante désélectionnée et lecture auto stoppée, comme `/api/draft/config`) et équipes synchronisées (`DraftState::align_to_series`) ; `bo` ∈ {1,3,5,7}
 sinon `400 {"error":"bad_bo"}`, état inchangé) ·
 `PUT /api/cast/teams {blue, red}` · `POST /api/cast/pool/map {name, status: available|banned|picked|decider, by?}` ·
 `POST /api/cast/games/start {map}` → `{number}` · `POST /api/cast/games/{n}/winner {side, takedowns?: [bleu, rouge], duration_secs?}` (**R21** : un vainqueur saisi à la main se **corrige** par un nouvel appel — score, mode de lineup et synchro draft suivent ; refusé `WinnerAlreadySet` seulement si la partie a un résumé de replay, qui porte son propre vainqueur/orientation) · `DELETE /api/cast/games/{n}` (**R21**, partie lancée par erreur : seulement la **dernière** — sinon `409 NotLastGame` — et sans vainqueur ni résumé — sinon `409 GameHasResult` ; la carte garde son statut picked/decider et redevient lançable, une partie épinglée dans le diaporama est désépinglée ; synchro draft) ·
@@ -98,7 +98,7 @@ sinon `400 {"error":"bad_bo"}`, état inchangé) ·
 (partiel ; `game: 0` désépingle la partie affichée → `slide.game` = null, « dernière partie » ; les numéros commencent à 1 ; **R25** : un autre `game` doit être le numéro d'une partie existante, sinon `409 UnknownGame` ; `index` ≤ 99 sinon `400 {"error":"bad_index"}` (l'overlay le prend modulo le nombre de slides) ; état inchangé sur refus ; `interval_ms` borné 500 ms–1 h, la régie saisit 1–3600 s). Les mutations répondent par la `Series` complète (`games/start` : `{number}`).
 Erreurs `CastError` → `409 {"error": "<code>"}` — codes stables (`CastError::code()`, indépendants du nom Rust) :
 `UnknownMap`, `NotInPool`, `DuplicateDecider`, `MapNotChosen`, `UnknownGame`, `WinnerAlreadySet`, `NotLastGame`,
-`GameHasResult`, `MapAlreadyPlayed`, `SeriesInactive`, `side_mismatch` — état inchangé.
+`GameHasResult`, `MapAlreadyPlayed`, `SeriesInactive`, `side_mismatch`, `series_changed` — état inchangé.
 **R24** : si l'écriture de la série en base échoue, la mutation répond `500 {"error":"persist_failed"}` ; l'état
 reste appliqué en mémoire et `cast.updated` est diffusé (l'opérateur voit l'erreur dans le bandeau de la régie).
 Les écritures sont versionnées : un instantané plus ancien n'écrase jamais un plus récent (cf. 04-serveur).
@@ -133,7 +133,7 @@ série est ignoré. Persistance + synchro draft (score) + WS `cast.updated` comm
 le résumé orienté **plus** `orientation` ∈ `evidence` (preuve par les joueurs) | `assumed` (pas de preuve : équipe 0
 = Blue) | `forced` (`?swap=1`), et `forced_against_evidence: true` quand l'échange forcé contredit une preuve
 d'orientation directe (accepté, la régie l'affiche). Erreurs : `400 {"error":"empty_body"}` ; `409 SeriesInactive` / `409 UnknownGame` (partie `n` absente) /
-`409 side_mismatch` ;
+`409 side_mismatch` / `409 series_changed` (l'identité `series_id` relevée avant le décodage ne correspond plus : une nouvelle série a été démarrée pendant le décodage — rien ne change) ;
 `422 {"error", "message"}` avec `error` ∈ `not_custom` (replay non Custom), `parse_failed` (octets illisibles,
 tronqués, statut storm-stats ≠ 1), `incomplete` (vainqueur, durée ou takedowns absents de la sortie) — jamais 500
 sur une entrée invalide. Budget décodage < 500 ms (mesuré : route complète 178–203 ms en release, upload local
