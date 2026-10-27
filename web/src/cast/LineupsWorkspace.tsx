@@ -5,7 +5,7 @@ import type { Side } from "../api";
 import { castLineupMode, useCastLineup } from "../castApi";
 import type { CastSeries, HeroCount, LineupMode } from "../castApi";
 import { displayName, effectiveLineupMode, seriesPlayerHeroes } from "../castState";
-import { HeroPortrait } from "./LineupsScene";
+import { HeroPortrait } from "./portrait";
 
 type Run = (fn: () => Promise<unknown>) => Promise<void>;
 

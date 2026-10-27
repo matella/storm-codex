@@ -1,18 +1,9 @@
 import type { Side } from "../api";
-import { heroIcon, useDimHeroes } from "../api";
+import { useDimHeroes } from "../api";
 import { useCastLineup } from "../castApi";
 import type { CastLineup, CastSeries, CastTeam, HeroCount } from "../castApi";
 import { displayName, effectiveLineupMode, seriesPlayerHeroes, seriesScore } from "../castState";
-
-const initials = (name: string) => name.replace(/[^A-Za-z0-9]/g, "").slice(0, 2).toUpperCase() || "?";
-
-/** Portrait de héros (repli : initiales si le référentiel ne le connaît pas). */
-export function HeroPortrait({ hero, className = "", title }: { hero: string; className?: string; title?: string }) {
-  const icon = heroIcon(hero);
-  return icon
-    ? <img className={`hp-i ${className}`} src={icon} alt={hero} title={title ?? hero} />
-    : <i className={`hp-i ph ${className}`} title={title ?? hero}>{initials(hero)}</i>;
-}
+import { HeroPortrait, initials } from "./portrait";
 
 function Top({ t, side, sub }: { t: CastTeam; side: Side; sub: string }) {
   const name = displayName(t, side);

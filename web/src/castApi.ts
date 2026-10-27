@@ -1,6 +1,7 @@
 // Couche API de la régie de cast : types miroir de `Series` (crates/storm-codex-server/src/cast/mod.rs)
 // + un fetcher par route de cast/api.rs + `useCast()` (rafraîchi par le WS `cast.updated`, cf. api.ts).
 import { useQuery } from "@tanstack/react-query";
+import { httpError } from "./api";
 import type { DraftFormat, Side } from "./api";
 
 export type CastScene = "lineups" | "series" | "draft" | "ingame" | "hide";
@@ -132,10 +133,7 @@ async function send<T>(method: string, path: string, body?: unknown): Promise<T>
     headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
-  if (!r.ok) {
-    const b = await r.json().catch(() => ({}));
-    throw new Error((b as { error?: string }).error ?? `http_${r.status}`);
-  }
+  if (!r.ok) throw await httpError(r);
   return r.json() as Promise<T>;
 }
 
@@ -161,10 +159,7 @@ export async function castLogoUpload(side: Side, file: File): Promise<CastSeries
     headers: { "Content-Type": file.type },
     body: file,
   });
-  if (!r.ok) {
-    const b = await r.json().catch(() => ({}));
-    throw new Error((b as { error?: string }).error ?? `http_${r.status}`);
-  }
+  if (!r.ok) throw await httpError(r);
   return r.json() as Promise<CastSeries>;
 }
 
@@ -177,10 +172,7 @@ export async function castGameReplay(n: number, file: File, swap = false): Promi
     headers: { "Content-Type": "application/octet-stream" },
     body: file,
   });
-  if (!r.ok) {
-    const b = await r.json().catch(() => ({}));
-    throw new Error((b as { error?: string }).error ?? `http_${r.status}`);
-  }
+  if (!r.ok) throw await httpError(r);
   return r.json() as Promise<GameSummary>;
 }
 

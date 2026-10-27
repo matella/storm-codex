@@ -6,7 +6,8 @@ import type { Side } from "../api";
 import type { CastSeries, CastTeam, GameRecord, GameSummary, PlayerSummary } from "../castApi";
 import type { BreakdownTab } from "../castState";
 import { displayName, seriesScore } from "../castState";
-import { HeroPortrait } from "./LineupsScene";
+import { fmtClock as clock } from "../api";
+import { HeroPortrait, initials } from "./portrait";
 
 const TAB_LABEL: Record<BreakdownTab, string> = {
   hero_damage: "HERO DAMAGE",
@@ -26,8 +27,6 @@ export function fmtBar(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(Math.round(n));
 }
 
-const clock = (secs: number) => `${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, "0")}`;
-const initials = (name: string) => name.replace(/[^A-Za-z0-9]/g, "").slice(0, 2).toUpperCase() || "?";
 
 function Side_({ t, side, won, score }: { t: CastTeam; side: Side; won: boolean; score: number }) {
   const name = displayName(t, side);

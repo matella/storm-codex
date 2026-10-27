@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useDraft, sideOfStep, heroIcon, initials, type DraftState, type Side } from "../api";
 import { isReplayReady, timerFraction } from "../draftOverlay";
-import "../pages/draft-overlay.css";
+import "./draft-overlay.css";
 
 /** Portrait héros qui remplit son conteneur (splash) ; repli sur les initiales si pas d'image. */
 function Portrait({ hero }: { hero: string }) {

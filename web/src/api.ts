@@ -718,16 +718,19 @@ export const draftReplayRemove = async (i: number): Promise<ReplayState> => {
   return r.json() as Promise<ReplayState>;
 };
 /** Envoie un `.StormReplay` (octets bruts). Rejette avec `Error(code)` — `not_custom`, `no_draft`… */
+/** Erreur d'une réponse non-OK : `Error(code)` avec le `{"error": code}` du serveur, sinon `http_<status>`. */
+export async function httpError(r: Response): Promise<Error> {
+  const body = await r.json().catch(() => ({}));
+  return new Error((body as { error?: string }).error ?? `http_${r.status}`);
+}
+
 export async function draftReplayLoad(file: File): Promise<ReplayState> {
   const r = await fetch("/api/draft/replay/load", {
     method: "POST",
     headers: { "X-Filename": encodeURIComponent(file.name) },
     body: file,
   });
-  if (!r.ok) {
-    const body = await r.json().catch(() => ({}));
-    throw new Error((body as { error?: string }).error ?? `http_${r.status}`);
-  }
+  if (!r.ok) throw await httpError(r);
   return r.json() as Promise<ReplayState>;
 }
 

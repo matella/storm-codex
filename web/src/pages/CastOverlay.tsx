@@ -3,15 +3,13 @@ import { useDimHeroes, useLiveUpdates } from "../api";
 import { useCast } from "../castApi";
 import type { CastSeries } from "../castApi";
 import { overlayVisible } from "../castState";
-import { DraftSceneLive } from "../cast/DraftScene";
+import { DraftSceneLive, skinFromSearch } from "../cast/DraftScene";
 import { InGameScene } from "../cast/InGameScene";
 import { LineupsLive } from "../cast/LineupsScene";
 import { SceneBackdrop } from "../cast/SceneBackdrop";
 import { SeriesScene } from "../cast/SeriesScene";
 import "../cast/cast-overlay.css";
 import "../cast/postgame.css";
-
-const SKINS = ["nexus", "glass", "tactical", "mono"];
 
 /** Point d'aiguillage des scènes (`series` / `lineups` : plein écran, sur `SceneBackdrop` opaque ; `series` alterne
  *  bandeau des cartes et post-game breakdown, cf. `SeriesScene`). `draft` : `DraftScene` (fond propre, skins `?skin=`). */
@@ -36,8 +34,7 @@ export function CastOverlay() {
   useLiveUpdates(); // hors Layout : l'overlay ouvre lui-même le WS (cast.updated invalide ["cast"])
   useDimHeroes(); // portraits (heroIcon) des scènes lineups et post-game
   const { data: s } = useCast({ refetchInterval: 10_000 }); // + WS : filet si une coupure passe inaperçue
-  const skinParam = new URLSearchParams(window.location.search).get("skin") ?? "nexus";
-  const skin = SKINS.includes(skinParam) ? skinParam : "nexus";
+  const skin = skinFromSearch(window.location.search);
 
   useEffect(() => {
     const prev = document.body.style.background;

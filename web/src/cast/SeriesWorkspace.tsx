@@ -2,6 +2,7 @@
 // dépôt du replay Custom de chaque partie (→ post-game breakdown). Les erreurs serveur (`not_custom`,
 // `parse_failed`, `incomplete`, `UnknownGame`…) remontent dans le bandeau de la régie via `run`.
 import { useState } from "react";
+import { fmtClock as clock } from "../api";
 import { castGameReplay, castSlide } from "../castApi";
 import type { CastSeries, GameRecord } from "../castApi";
 import { INTERVAL_S, intervalSeconds, replayErrorText, shownGame, slideCount, slideIndex } from "../castState";
@@ -9,7 +10,6 @@ import { INTERVAL_S, intervalSeconds, replayErrorText, shownGame, slideCount, sl
 type Run = (fn: () => Promise<unknown>) => Promise<void>;
 
 const SLIDE_NAMES = ["Maps", "Hero damage", "Healing", "Siege", "Takedowns"];
-const clock = (secs: number) => `${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, "0")}`;
 
 function GameRow({ g, run }: { g: GameRecord; run: Run }) {
   const [busy, setBusy] = useState(false);
