@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CastSeries, CastTeam, GameRecord, PoolMap } from "./castApi";
-import { badgeGameNumber, overlayVisible, canChangeWinner, canRemoveGame, canSetWinner, displayName, effectiveLineupMode, MAPS, mapCardView, reconcileTeam, replayErrorText, seriesScore, shownGame, slideCount, slideIndex, startableMaps, togglePool, sceneFromSearch } from "./castState";
+import { badgeGameNumber, overlayVisible, canChangeWinner, canRemoveGame, canSetWinner, displayName, effectiveLineupMode, MAPS, mapCardView, reconcileTeam, replayErrorText, seriesScore, shownGame, slideCount, slideIndex, startableMaps, togglePool, sceneFromSearch, INTERVAL_S, intervalSeconds } from "./castState";
 
 const game = (map: string, winner: GameRecord["winner"]): GameRecord => ({
   number: 1, map, winner, takedowns: [0, 0], duration_secs: null, summary: null,
@@ -219,5 +219,20 @@ describe("overlayVisible (I4)", () => {
     expect(overlayVisible(series({ active: false, scene: "series" }))).toBe(false);
     expect(overlayVisible(series({ active: false, scene: "draft" }))).toBe(true);
     expect(overlayVisible(series({ active: true, scene: "lineups" }))).toBe(true);
+  });
+});
+
+describe("intervalSeconds (R25: UI accepts what the server clamps, 1–3600 s)", () => {
+  it("rounds and clamps to 1..3600", () => {
+    expect(INTERVAL_S).toEqual({ min: 1, max: 3600 });
+    expect(intervalSeconds("12")).toBe(12);
+    expect(intervalSeconds("2.6")).toBe(3);
+    expect(intervalSeconds("0")).toBe(1);
+    expect(intervalSeconds("-5")).toBe(1);
+    expect(intervalSeconds("99999")).toBe(3600);
+  });
+  it("rejects non-numbers", () => {
+    expect(intervalSeconds("")).toBeNull();
+    expect(intervalSeconds("abc")).toBeNull();
   });
 });

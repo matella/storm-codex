@@ -312,12 +312,22 @@ pub struct SlideBody {
     interval_ms: Option<u32>,
 }
 
+/// Index de slide maximal accepté (R25) ; l'overlay le prend modulo le nombre de slides.
+const SLIDE_INDEX_MAX: u8 = 99;
+
 /// POST /api/cast/slide — mise à jour partielle du diaporama (champs absents inchangés).
+/// R25 : `index` ≤ 99 sinon `400 bad_index` ; `game` = 0 (désépingler) ou un numéro de partie
+/// existant, sinon `409 UnknownGame` (état inchangé).
 pub async fn set_slide(State(s): State<AppState>, Json(b): Json<SlideBody>) -> Resp {
+    if b.index.is_some_and(|i| i > SLIDE_INDEX_MAX) {
+        return err(StatusCode::BAD_REQUEST, "bad_index");
+    }
     mutate_series(&s, true, |c| {
         // game: 0 = désépingler (« dernière partie ») ; les numéros de partie commencent à 1.
-        // Autre valeur : posée telle quelle (pas de validation d'existence, comme avant).
         if let Some(g) = b.game {
+            if g != 0 && !c.games.iter().any(|x| x.number == g) {
+                return Err(CastError::UnknownGame);
+            }
             c.slide.game = if g == 0 { None } else { Some(g) };
         }
         if let Some(i) = b.index {
@@ -340,6 +350,17 @@ const LOGO_MAX: usize = 512 * 1024;
 /// réponde lui-même 413 proprement (au-delà, l'extracteur répond 413).
 pub const LOGO_BODY_LIMIT: usize = LOGO_MAX + 1024;
 const LOGO_MIMES: [&str; 3] = ["image/png", "image/jpeg", "image/webp"];
+
+/// Les octets commencent bien par la signature du type déclaré (PNG `89 50 4E 47`, JPEG `FF D8 FF`,
+/// WebP `RIFF....WEBP`) : un `Content-Type` menteur est refusé.
+fn magic_matches(mime: &str, b: &[u8]) -> bool {
+    match mime {
+        "image/png" => b.starts_with(&[0x89, b'P', b'N', b'G']),
+        "image/jpeg" => b.starts_with(&[0xFF, 0xD8, 0xFF]),
+        "image/webp" => b.len() >= 12 && b.starts_with(b"RIFF") && &b[8..12] == b"WEBP",
+        _ => false,
+    }
+}
 
 fn side_str(side: &str) -> Option<&'static str> {
     match side {
@@ -370,6 +391,9 @@ pub async fn upload_logo(State(s): State<AppState>, Path(side): Path<String>, he
     }
     if body.len() > LOGO_MAX {
         return err(StatusCode::PAYLOAD_TOO_LARGE, "logo_too_large");
+    }
+    if !magic_matches(&mime, &body) {
+        return err(StatusCode::UNSUPPORTED_MEDIA_TYPE, "mime_mismatch");
     }
     let version: Result<i64, sqlx::Error> = sqlx::query_scalar(
         "INSERT INTO cast_logo (side, mime, bytes, updated_at) VALUES ($1, $2, $3, now())
@@ -430,18 +454,24 @@ pub struct LineupQuery {
     red: String,
 }
 
+/// Longueur maximale d'un toon reçu par la route lineup (octets).
+const TOON_MAX: usize = 64;
+
 /// Une équipe : toons séparés par des virgules, position conservée (champ vide = joueur non lié).
-fn split_toons(s: &str) -> Vec<String> {
+/// `None` si une entrée dépasse `TOON_MAX`.
+fn split_toons(s: &str) -> Option<Vec<String>> {
     if s.is_empty() {
-        return Vec::new();
+        return Some(Vec::new());
     }
-    s.split(',').map(|t| t.trim().to_owned()).collect()
+    s.split(',').map(str::trim).map(|t| (t.len() <= TOON_MAX).then(|| t.to_owned())).collect()
 }
 
 /// GET /api/cast/lineup?blue=toon,...&red=toon,... : `{ blue: [[HeroCount]], red: [[HeroCount]] }`,
 /// une liste par joueur dans l'ordre reçu (vide si non lié ou < 5 parties). Une seule requête SQL.
 pub async fn get_lineup(State(s): State<AppState>, Query(q): Query<LineupQuery>) -> Resp {
-    let (blue, red) = (split_toons(&q.blue), split_toons(&q.red));
+    let (Some(blue), Some(red)) = (split_toons(&q.blue), split_toons(&q.red)) else {
+        return err(StatusCode::BAD_REQUEST, "bad_toon");
+    };
     if blue.len() > lineup::MAX_PER_SIDE || red.len() > lineup::MAX_PER_SIDE {
         return (StatusCode::BAD_REQUEST, Json(json!({ "error": "too_many_players" })));
     }
@@ -674,6 +704,8 @@ mod tests {
         assert_eq!(v["blue"]["captain"], 2);
         let (_, v) = call(&state, "POST", "/api/cast/lineup-mode", Some(json!({"mode":"b"}))).await;
         assert_eq!(v["lineup_mode"], "b");
+        call(&state, "POST", "/api/cast/pool/map", Some(json!({"name":"A","status":"picked","by":"blue"}))).await;
+        call(&state, "POST", "/api/cast/games/start", Some(json!({"map":"A"}))).await;
         let (_, v) = call(&state, "POST", "/api/cast/slide", Some(json!({"game":1,"auto":true,"interval_ms":1}))).await;
         assert_eq!(v["slide"]["game"], 1);
         assert_eq!(v["slide"]["auto"], true);
@@ -686,6 +718,10 @@ mod tests {
         let _g = DB_LOCK.lock().await;
         let Some(state) = test_state(None).await else { return };
         call(&state, "POST", "/api/cast/series", Some(start_body())).await;
+        for m in ["A", "B"] {
+            call(&state, "POST", "/api/cast/pool/map", Some(json!({"name":m,"status":"picked","by":"blue"}))).await;
+            call(&state, "POST", "/api/cast/games/start", Some(json!({"map":m}))).await;
+        }
         let (_, v) = call(&state, "POST", "/api/cast/slide", Some(json!({"game":2}))).await;
         assert_eq!(v["slide"]["game"], 2);
         let (st, v) = call(&state, "POST", "/api/cast/slide", Some(json!({"game":0,"auto":true}))).await;
@@ -797,7 +833,9 @@ mod tests {
         let (st, _) = call_raw(&state, "POST", "/api/cast/logo/red", Some("image/png"), vec![1; 700 * 1024]).await;
         assert_eq!(st, StatusCode::PAYLOAD_TOO_LARGE);
         assert_eq!(logo_rows(&state).await, 0);
-        let (st, _) = call_raw(&state, "POST", "/api/cast/logo/red", Some("image/png"), vec![1; 512 * 1024]).await;
+        let mut max = PNG.to_vec();
+        max.resize(512 * 1024, 1);
+        let (st, _) = call_raw(&state, "POST", "/api/cast/logo/red", Some("image/png"), max).await;
         assert_eq!(st, StatusCode::OK);
         clear_logos(&state).await;
     }
@@ -812,6 +850,61 @@ mod tests {
         let (st, _) = call_raw(&state, "POST", "/api/cast/logo/blue", None, PNG.to_vec()).await;
         assert_eq!(st, StatusCode::UNSUPPORTED_MEDIA_TYPE);
         assert_eq!(logo_rows(&state).await, 0);
+    }
+
+    /// Item 5 : signature des octets ≠ type déclaré → 415 `mime_mismatch`, rien n'est stocké.
+    #[tokio::test]
+    async fn logo_magic_bytes_must_match_declared_mime() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        clear_logos(&state).await;
+        let jpeg = vec![0xFF, 0xD8, 0xFF, 0xE0, 0, 0x10];
+        let mut webp = b"RIFF".to_vec();
+        webp.extend([0x10, 0, 0, 0]);
+        webp.extend(b"WEBPVP8 ");
+        let svg = b"<svg onload=x>".to_vec();
+        for (mime, bytes) in [("image/png", jpeg.clone()), ("image/jpeg", PNG.to_vec()), ("image/webp", PNG.to_vec()), ("image/png", svg)] {
+            let (st, b) = call_raw(&state, "POST", "/api/cast/logo/blue", Some(mime), bytes).await;
+            assert_eq!(st, StatusCode::UNSUPPORTED_MEDIA_TYPE, "{mime}");
+            assert_eq!(serde_json::from_slice::<J>(&b).unwrap()["error"], "mime_mismatch");
+        }
+        assert_eq!(logo_rows(&state).await, 0);
+        for (mime, bytes) in [("image/jpeg", jpeg), ("image/webp", webp), ("image/png", PNG.to_vec())] {
+            let (st, _) = call_raw(&state, "POST", "/api/cast/logo/blue", Some(mime), bytes).await;
+            assert_eq!(st, StatusCode::OK, "{mime}");
+        }
+        clear_logos(&state).await;
+    }
+
+    /// Item 6 : une entrée de toon > 64 octets → 400 `bad_toon`.
+    #[tokio::test]
+    async fn lineup_rejects_overlong_toon() {
+        let Some(state) = test_state(None).await else { return };
+        let long = "x".repeat(65);
+        let (st, v) = call(&state, "GET", &format!("/api/cast/lineup?blue=a,{long}&red="), None).await;
+        assert_eq!((st, v["error"].as_str()), (StatusCode::BAD_REQUEST, Some("bad_toon")));
+        let ok = "x".repeat(64);
+        let (st, _) = call(&state, "GET", &format!("/api/cast/lineup?blue={ok}&red="), None).await;
+        assert_eq!(st, StatusCode::OK);
+        assert_eq!(split_toons(""), Some(vec![]));
+        assert_eq!(split_toons(" a , ,b"), Some(vec!["a".to_owned(), String::new(), "b".to_owned()]));
+    }
+
+    /// R25 : `game` doit exister (0 = désépingler), `index` ≤ 99 ; refus → état inchangé.
+    #[tokio::test]
+    async fn slide_rejects_unknown_game_and_index_over_99() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        call(&state, "POST", "/api/cast/series", Some(start_body())).await;
+        let before = state.cast.read().await.clone();
+        let (st, v) = call(&state, "POST", "/api/cast/slide", Some(json!({"game":1}))).await;
+        assert_eq!((st, v["error"].as_str()), (StatusCode::CONFLICT, Some("UnknownGame")));
+        let (st, v) = call(&state, "POST", "/api/cast/slide", Some(json!({"index":100}))).await;
+        assert_eq!((st, v["error"].as_str()), (StatusCode::BAD_REQUEST, Some("bad_index")));
+        assert_eq!(*state.cast.read().await, before);
+        let (st, v) = call(&state, "POST", "/api/cast/slide", Some(json!({"index":99,"game":0}))).await;
+        assert_eq!(st, StatusCode::OK);
+        assert_eq!(v["slide"]["index"], 99);
     }
 
     #[tokio::test]

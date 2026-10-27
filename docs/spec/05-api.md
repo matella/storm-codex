@@ -95,7 +95,7 @@ sinon `400 {"error":"bad_bo"}`, état inchangé) ·
 `POST /api/cast/games/start {map}` → `{number}` · `POST /api/cast/games/{n}/winner {side, takedowns?: [bleu, rouge], duration_secs?}` (**R21** : un vainqueur saisi à la main se **corrige** par un nouvel appel — score, mode de lineup et synchro draft suivent ; refusé `WinnerAlreadySet` seulement si la partie a un résumé de replay, qui porte son propre vainqueur/orientation) · `DELETE /api/cast/games/{n}` (**R21**, partie lancée par erreur : seulement la **dernière** — sinon `409 NotLastGame` — et sans vainqueur ni résumé — sinon `409 GameHasResult` ; la carte garde son statut picked/decider et redevient lançable, une partie épinglée dans le diaporama est désépinglée ; synchro draft) ·
 `POST /api/cast/score {blue, red}` ou `null` (retour au score calculé) · `POST /api/cast/scene {scene: lineups|series|draft|ingame|hide}` ·
 `POST /api/cast/lineup-mode {mode: auto|a|b}` · `POST /api/cast/slide {game?, index?, auto?, interval_ms?}`
-(partiel ; `game: 0` désépingle la partie affichée → `slide.game` = null, « dernière partie » ; les numéros commencent à 1, les autres valeurs sont posées sans validation d'existence ; `interval_ms` borné 500 ms–1 h). Les mutations répondent par la `Series` complète (`games/start` : `{number}`).
+(partiel ; `game: 0` désépingle la partie affichée → `slide.game` = null, « dernière partie » ; les numéros commencent à 1 ; **R25** : un autre `game` doit être le numéro d'une partie existante, sinon `409 UnknownGame` ; `index` ≤ 99 sinon `400 {"error":"bad_index"}` (l'overlay le prend modulo le nombre de slides) ; état inchangé sur refus ; `interval_ms` borné 500 ms–1 h, la régie saisit 1–3600 s). Les mutations répondent par la `Series` complète (`games/start` : `{number}`).
 Erreurs `CastError` → `409 {"error": "<code>"}` — codes stables (`CastError::code()`, indépendants du nom Rust) :
 `UnknownMap`, `NotInPool`, `DuplicateDecider`, `MapNotChosen`, `UnknownGame`, `WinnerAlreadySet`, `NotLastGame`,
 `GameHasResult`, `MapAlreadyPlayed`, `SeriesInactive`, `side_mismatch` — état inchangé.
@@ -104,7 +104,9 @@ reste appliqué en mémoire et `cast.updated` est diffusé (l'opérateur voit l'
 Les écritures sont versionnées : un instantané plus ancien n'écrase jamais un plus récent (cf. 04-serveur).
 Toute mutation sauf `/series` et `/scene` renvoie `409 SeriesInactive` tant que `active=false`.
 `POST /api/cast/logo/{side}` (`blue`|`red` ; corps = octets, `Content-Type` png/jpeg/webp ; 1 octet–512 Ko ;
-`415` mime, `400` corps vide, `413` trop gros, `404` côté inconnu ; autorisé série inactive) → `Series` avec
+`415 unsupported_mime` type non accepté, `400` corps vide, `413` trop gros, `415 mime_mismatch` si les premiers octets ne
+sont pas la signature du type déclaré — PNG `89 50 4E 47`, JPEG `FF D8 FF`, WebP `RIFF....WEBP` — rien n'est stocké ;
+`404` côté inconnu ; autorisé série inactive) → `Series` avec
 `Team.logo = "/api/cast/logo/{side}?v={updated_at_ms}"` · `GET /api/cast/logo/{side}` → octets (`404` si aucun ; `X-Content-Type-Options: nosniff`).
 **Synchro série → draft** (sens unique) après `/series`, `/teams`, `/games/{n}/winner`, `DELETE /games/{n}`, `/score` : noms, pseudos
 (`Player.name`), score (`Series::score()`) et `bo` copiés dans `DraftState` sans toucher curseur/assignations/file
@@ -115,7 +117,7 @@ replay/fearless ; les deux états sont persistés, WS `draft.updated` + `cast.up
 tri `played_at DESC NULLS LAST, id DESC`), **3 héros** les plus joués (parties, puis récence) ; **`[]` si < 5 parties
 dans la fenêtre** (masqué, jamais partiel). Une seule requête SQL (`unnest … LATERAL`, index `match_players_toon_idx`,
 vérifié par `EXPLAIN` dans le test) ; budget **< 100 ms pour 10 joueurs** (test `lineup_route_under_100ms_for_10_players`).
-`> 10` toons par équipe → `400 {"error":"too_many_players"}` ; erreur SQL → `500 {"error":"db"}`.
+`> 10` toons par équipe → `400 {"error":"too_many_players"}` ; un toon de plus de 64 octets → `400 {"error":"bad_toon"}` ; erreur SQL → `500 {"error":"db"}`.
 **Replay d'une partie** (`cast/replay.rs`) : `POST /api/cast/games/{n}/replay` — corps = octets bruts d'un
 `.StormReplay` (comme `draft/replay/load`), décodé à la volée sous `parse_sem` (écriture du fichier temporaire, décodage et suppression **dans** le
 `spawn_blocking` ; suppression garantie par un garde de destruction — succès, échec, panique, ou client déconnecté

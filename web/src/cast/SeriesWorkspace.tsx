@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { castGameReplay, castSlide } from "../castApi";
 import type { CastSeries, GameRecord } from "../castApi";
-import { replayErrorText, shownGame, slideCount, slideIndex } from "../castState";
+import { INTERVAL_S, intervalSeconds, replayErrorText, shownGame, slideCount, slideIndex } from "../castState";
 
 type Run = (fn: () => Promise<unknown>) => Promise<void>;
 
@@ -78,11 +78,12 @@ export function SeriesWorkspace({ series, run }: { series: CastSeries; run: Run 
         <button type="button" className={`ds-btn small${sl.auto ? " on" : ""}`} aria-pressed={sl.auto}
           onClick={() => run(() => castSlide({ auto: !sl.auto }))}>{sl.auto ? "Auto" : "Manual"}</button>
         <label className="cr-note">Every{" "}
-          <input className="ds-input" type="number" min={2} max={120} step={1} aria-label="Slide interval (seconds)"
+          <input className="ds-input" type="number" min={INTERVAL_S.min} max={INTERVAL_S.max} step={1} aria-label="Slide interval (seconds)"
             style={{ width: 70 }} defaultValue={Math.round(sl.interval_ms / 1000)} key={sl.interval_ms}
             onBlur={(e) => {
-              const v = Math.round(Number(e.target.value));
-              if (Number.isFinite(v) && v >= 1 && v * 1000 !== sl.interval_ms) run(() => castSlide({ interval_ms: v * 1000 }));
+              const v = intervalSeconds(e.target.value);
+              if (v === null) { e.target.value = String(Math.round(sl.interval_ms / 1000)); return; }
+              if (v * 1000 !== sl.interval_ms) run(() => castSlide({ interval_ms: v * 1000 }));
             }} /> s
         </label>
       </div>

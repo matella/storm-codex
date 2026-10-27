@@ -201,6 +201,18 @@ export function slideIndex(s: CastSeries, tick = 0): number {
   return (s.slide.index + (s.slide.auto ? tick : 0)) % n;
 }
 
+/** Bornes (s) de l'intervalle du diaporama saisi dans la régie (R25) : dans la plage que le serveur
+ *  accepte (`interval_ms` borné 500 ms–1 h), en secondes entières. */
+export const INTERVAL_S = { min: 1, max: 3600 } as const;
+
+/** Saisie de l'intervalle (s) → entier borné à `INTERVAL_S` ; `null` si ce n'est pas un nombre. */
+export function intervalSeconds(raw: string): number | null {
+  if (raw.trim() === "") return null;
+  const v = Math.round(Number(raw));
+  if (!Number.isFinite(v)) return null;
+  return Math.min(INTERVAL_S.max, Math.max(INTERVAL_S.min, v));
+}
+
 /** Message affiché à l'opérateur pour un refus du dépôt de replay ; `side_mismatch` (R16) reçoit
  *  une consigne, les autres codes serveur restent tels quels. */
 export function replayErrorText(code: string): string {
