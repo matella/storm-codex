@@ -78,7 +78,7 @@ est la source de vérité) ; `/config` reste accepté mais ignore `blue`/`red`/`
 `GET /api/draft` est la **vue publique** : en mode replay, sans script ni pseudo des picks non révélés.
 
 **Draft depuis un replay** (`draft/replay_api.rs`, mode ouvert) — Custom uniquement, rien écrit en base :
-`POST /api/draft/replay/load` (corps = octets `.StormReplay`, `X-Filename` optionnel ; `201` file publique ;
+`POST /api/draft/replay/load` (corps = octets `.StormReplay`, `X-Filename` optionnel ; décodé sous `parse_sem`, écriture du fichier temporaire, décodage et suppression **dans** le `spawn_blocking` avec garde de destruction — fichier supprimé même sur échec, panique ou client déconnecté, comme le replay de cast ; `201` file publique ; `500 {"error":"io"}` si le fichier temporaire ne peut être écrit ;
 `400` corps vide ; `422` `{error: not_custom|no_draft|parse_failed}`) · `GET /api/draft/replay` (file
 **avec scripts**, pour la page télécommande) · `POST …/replay/next` · `/back` · `/reset` (une **phase** à la fois ;
 `409` sans partie / au début / à la fin) · `/select {index}` · `/fearless {value}` (série de cast active : `/select`,

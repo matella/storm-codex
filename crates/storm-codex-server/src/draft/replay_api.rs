@@ -13,7 +13,10 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{json, Value as J};
+use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Semaphore;
 
 type Resp = (StatusCode, Json<J>);
 
@@ -76,6 +79,36 @@ pub async fn get_replay(State(s): State<AppState>) -> Json<ReplayState> {
     Json(s.draft.read().await.replay.clone())
 }
 
+/// Fichier temporaire supprimé à la destruction (succès, erreur ou panique du décodeur).
+struct TempFile(PathBuf);
+impl Drop for TempFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// Décode les octets d'un `.StormReplay` sous `parse_sem`. Écriture du fichier temporaire, décodage
+/// et suppression se font **dans** le `spawn_blocking` (rien de bloquant sur l'exécuteur) ; le permis
+/// y est déplacé et `TempFile` garantit la suppression, même si le client se déconnecte (la tâche
+/// bloquante va à son terme). Même chemin que `cast::replay::decode_in`.
+async fn decode_in(sem: Arc<Semaphore>, dir: PathBuf, bytes: Bytes) -> Result<storm_stats::Output, Resp> {
+    let Ok(permit) = sem.acquire_owned().await else {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "pool" }))));
+    };
+    let parsed = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        let tmp = TempFile(dir.join(format!("draft-replay-{}.StormReplay", uuid::Uuid::new_v4())));
+        std::fs::write(&tmp.0, &bytes).ok()?;
+        Some(storm_stats::process_replay(&tmp.0, &tmp.0.to_string_lossy()))
+    })
+    .await;
+    match parsed {
+        Ok(Some(out)) => Ok(out),
+        Ok(None) => Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "io" })))),
+        Err(_) => Err((StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "error": "parse_failed" })))),
+    }
+}
+
 /// POST /api/draft/replay/load — corps = octets d'un `.StormReplay` (en-tête `X-Filename` optionnel).
 /// Décode uniquement le draft : rien n'est écrit en base. Custom uniquement.
 pub async fn load(State(s): State<AppState>, headers: HeaderMap, bytes: Bytes) -> Resp {
@@ -83,15 +116,9 @@ pub async fn load(State(s): State<AppState>, headers: HeaderMap, bytes: Bytes) -
         return (StatusCode::BAD_REQUEST, Json(json!({ "error": "empty_body" })));
     }
     let name = crate::upload::filename(&headers).unwrap_or_else(|| "replay.StormReplay".into());
-    let path = std::env::temp_dir().join(format!("draft-replay-{}.StormReplay", uuid::Uuid::new_v4()));
-    if std::fs::write(&path, &bytes).is_err() {
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "io" })));
-    }
-    let p2 = path.clone();
-    let parsed = tokio::task::spawn_blocking(move || storm_stats::process_replay(&p2, &p2.to_string_lossy())).await;
-    let _ = std::fs::remove_file(&path);
-    let Ok(out) = parsed else {
-        return (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "error": "parse_failed" })));
+    let out = match decode_in(s.parse_sem.clone(), std::env::temp_dir(), bytes).await {
+        Ok(out) => out,
+        Err(r) => return r,
     };
     match loaded_game_from_output(&out, &name, storm_stats::constants::hero_attribute()) {
         Ok(g) => {
@@ -272,6 +299,7 @@ pub async fn play(State(s): State<AppState>, Json(b): Json<PlayBody>) -> Resp {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
+    use super::*;
     use crate::api_tests::{call, test_state};
     use crate::draft::{Format, Side};
     use crate::draft::replay::LoadedGame;
@@ -288,6 +316,26 @@ mod tests {
             blue_players: Default::default(),
             red_players: Default::default(),
         }
+    }
+
+    /// Item 26 : le fichier temporaire disparaît après un décodage réussi comme après un échec ;
+    /// le permis de `parse_sem` est rendu ; dossier absent → 500 `io`, pas de panique.
+    #[tokio::test]
+    async fn decode_removes_temp_file_on_success_and_failure() {
+        let dir = std::env::temp_dir().join(format!("draft-decode-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let sem = Arc::new(Semaphore::new(1));
+        let aram = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../storm-stats/tests/data/silver-city-aram.StormReplay")).unwrap();
+        for bytes in [aram, vec![7u8; 64]] {
+            let r = decode_in(sem.clone(), dir.clone(), Bytes::from(bytes)).await;
+            assert!(r.is_ok(), "le décodeur répond (statut storm-stats), pas d'erreur d'E/S");
+            assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
+            assert_eq!(sem.available_permits(), 1);
+        }
+        let r = decode_in(sem.clone(), dir.join("nope"), Bytes::from_static(b"x")).await;
+        assert_eq!(r.err().map(|(st, j)| (st, j.0["error"].clone())), Some((StatusCode::INTERNAL_SERVER_ERROR, json!("io"))));
+        assert_eq!(sem.available_permits(), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// M5 : pendant une série de cast active, `select` et `fearless` suivent le format de la série,
