@@ -1,7 +1,7 @@
 // Sélecteur de joueur de la régie : pseudo saisi → GET /api/players/search → liste (pseudo, parties,
 // dernière vue) → l'opérateur choisit. Aucun résultat = joueur « non lié » (le pseudo saisi reste).
 // Le premier résultat n'est JAMAIS pris automatiquement.
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { fmtTime, searchPlayers } from "../api";
 import type { PlayerHit } from "../api";
 import type { CastPlayer } from "../castApi";
@@ -17,29 +17,49 @@ export function linkLabel(p: CastPlayer): string {
 
 type Found = { q: string; hits: PlayerHit[] } | "loading" | "error" | null;
 
+/** Recherche lançable (bouton Find comme touche Entrée) : ≥ 2 caractères et aucune recherche en cours. */
+export function canSearch(q: string, found: Found): boolean {
+  return q.length >= 2 && found !== "loading";
+}
+
+/** Garde « dernière requête émise » : chaque recherche reçoit un numéro ; une réponse n'est appliquée
+ *  que si aucune recherche plus récente (ou frappe dans le champ) n'a été émise depuis. */
+export function latestGuard() {
+  let seq = 0;
+  return { issue: () => ++seq, invalidate: () => { seq += 1; }, isLatest: (id: number) => id === seq };
+}
+
 export function PlayerPicker({ player, label, onChange }: {
   player: CastPlayer;
   label: string;
   onChange: (patch: Partial<CastPlayer>) => void;
 }) {
   const [found, setFound] = useState<Found>(null);
+  const guard = useRef(latestGuard()).current;
   const q = player.name.trim();
   const search = async () => {
-    if (q.length < 2) return;
+    if (!canSearch(q, found)) return;
+    const id = guard.issue();
     setFound("loading");
     try {
-      setFound({ q, hits: await searchPlayers(q) });
+      const hits = await searchPlayers(q);
+      if (guard.isLatest(id)) setFound({ q, hits });
     } catch {
-      setFound("error");
+      if (guard.isLatest(id)) setFound("error");
     }
   };
   return (
     <div className="cr-picker">
       <div className="cr-pk-row">
         <input className="ds-input" placeholder="pseudo" value={player.name} aria-label={`${label} name`}
-          onChange={(e) => onChange({ name: e.target.value, toon: null })} // retaper un pseudo rompt le lien (jamais de toon périmé)
+          onChange={(e) => {
+            // retaper un pseudo rompt le lien (jamais de toon périmé) et périme toute recherche en vol
+            guard.invalidate();
+            setFound(null);
+            onChange({ name: e.target.value, toon: null });
+          }}
           onKeyDown={(e) => { if (e.key === "Enter") void search(); }} />
-        <button type="button" className="ds-btn small" disabled={q.length < 2 || found === "loading"}
+        <button type="button" className="ds-btn small" disabled={!canSearch(q, found)}
           aria-label={`${label} find player`} onClick={() => void search()}>Find</button>
       </div>
       <div className={`cr-pk-st${player.toon ? " on" : ""}`}>

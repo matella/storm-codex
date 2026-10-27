@@ -287,6 +287,9 @@ export function useLiveUpdates(onEvent?: (ev: { type?: string; match_id?: number
             onEvent?.(ev);
           } else if (ev.type === "cast.updated") {
             qc.invalidateQueries({ queryKey: ["cast"] });
+            // héros récents : un joueur lié/délié change la requête, mais une même requête peut aussi
+            // devoir être relue (nouvelles parties) — invalidée ici, `staleTime` 60 s sinon
+            qc.invalidateQueries({ queryKey: ["cast-lineup"] });
           } else if (ev.type === "live.updated") {
             // Signal sans état : la vue filtrée se relit par GET /api/live. Pas de toast.
             qc.invalidateQueries({ queryKey: ["live"] });

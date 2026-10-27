@@ -23,9 +23,9 @@ export function DraftWorkspace({ series }: { series: CastSeries }) {
   const [mode, setMode] = useState<"live" | "replay">("live");
   return (
     <div className="cr-draft">
-      <div className="cr-subtabs seg" role="tablist" aria-label="Draft mode">
-        <button type="button" role="tab" aria-selected={mode === "live"} className={mode === "live" ? "on" : ""} onClick={() => setMode("live")}>Live</button>
-        <button type="button" role="tab" aria-selected={mode === "replay"} className={mode === "replay" ? "on" : ""} onClick={() => setMode("replay")}>Replay</button>
+      <div className="cr-subtabs" role="group" aria-label="Draft mode">
+        <button type="button" aria-pressed={mode === "live"} className={mode === "live" ? "on" : ""} onClick={() => setMode("live")}>Live</button>
+        <button type="button" aria-pressed={mode === "replay"} className={mode === "replay" ? "on" : ""} onClick={() => setMode("replay")}>Replay</button>
       </div>
       {mode === "live"
         ? <DraftConsole locked={series.active} seriesFormat={series.format} onReplay={() => setMode("replay")} />
@@ -286,7 +286,6 @@ const CSS = `
 .draftc .dcover .tb{color:var(--tm-blue)} .draftc .dcover .tr{color:var(--tm-red)}
 .draftc .ro{color:var(--text-2)} .draftc .score .ro{border:none}
 .draftc .linkbtn{background:none;border:none;padding:0;cursor:pointer}
-.cr-draft>.cr-subtabs{width:max-content;margin-bottom:6px}
 .draftc .olink{font:600 12px var(--mono);color:var(--accent-2);text-decoration:none;word-break:break-all}
 .draftc .muted-mono{font:11px var(--mono);color:var(--muted-2)} .draftc .muted-mono code{color:var(--text-2)}
 .draftc .bar{display:flex;flex-wrap:wrap;gap:12px 16px;align-items:flex-end;background:var(--panel);border:1px solid var(--line-2);border-radius:14px;padding:14px 16px;margin:16px 0 12px}

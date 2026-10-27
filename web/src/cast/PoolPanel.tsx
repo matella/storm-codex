@@ -44,6 +44,8 @@ export function PoolPanel({ series, run }: { series: CastSeries; run: Run }) {
                     key={x.label}
                     type="button"
                     className={`ds-btn small ${x.tone}${isActive(m, x.mark) ? " on" : ""}`}
+                    aria-label={`${x.label} ${m.name}`}
+                    aria-pressed={x.mark.status === "available" ? undefined : isActive(m, x.mark)}
                     disabled={played}
                     onClick={() => run(() => castMarkMap(m.name, x.mark))}
                   >{x.label}</button>
@@ -73,6 +75,7 @@ export function PoolPanel({ series, run }: { series: CastSeries; run: Run }) {
                       <button
                         type="button"
                         className="ds-btn small"
+                        aria-label={`Game ${g.number}: change winner to ${g.winner === "blue" ? "Red" : "Blue"}`}
                         title="Misclick? Give the win to the other side (not possible once a replay is loaded)"
                         onClick={() => run(() => castWinner(g.number, { side: g.winner === "blue" ? "red" : "blue" }))}
                       >Change winner</button>
@@ -83,6 +86,7 @@ export function PoolPanel({ series, run }: { series: CastSeries; run: Run }) {
                       key={side}
                       type="button"
                       className={`ds-btn small ${side}`}
+                      aria-label={`Game ${g.number}: ${side === "blue" ? "Blue" : "Red"} won`}
                       disabled={!canSetWinner(series, g.number)}
                       onClick={() => run(() => castWinner(g.number, { side }))}
                     >{side === "blue" ? "Blue" : "Red"} won</button>
@@ -91,6 +95,7 @@ export function PoolPanel({ series, run }: { series: CastSeries; run: Run }) {
                 <button
                   type="button"
                   className="ds-btn small"
+                  aria-label={`Remove game ${g.number}`}
                   title="Started by mistake? Remove this game; its map becomes startable again"
                   onClick={() => {
                     if (window.confirm(`Remove game ${g.number} (${g.map})?`)) void run(() => castRemoveGame(g.number));

@@ -72,4 +72,10 @@
 .cr-game { display: flex; align-items: center; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--hairline); }
 .cr-gn { font: 700 12px var(--mono); color: var(--kicker); width: 64px; } .cr-gm { flex: 1; font: 700 14px var(--display); text-transform: uppercase; }
 .cr-win { font: 700 12px var(--mono); }
+.cr-warn { color: var(--gold); flex-basis: 100%; }
+/* sous-onglets Live / Replay de l'espace Draft (stylés ici : la feuille de la console n'existe qu'en Live) */
+.cr-subtabs { display: flex; width: max-content; margin-bottom: 6px; border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; }
+.cr-subtabs button { background: var(--panel-2); border: none; padding: 7px 13px; color: var(--muted-2); cursor: pointer; font: 600 11px var(--mono); letter-spacing: .06em; }
+.cr-subtabs button:hover { color: var(--text); }
+.cr-subtabs button.on { background: var(--accent); color: #0b0c12; }
 @media (max-width: 900px) { .cr-body { grid-template-columns: 1fr; } .cr-rail { border-right: 0; padding-right: 0; } }

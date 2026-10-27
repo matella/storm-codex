@@ -166,14 +166,20 @@ export async function castLogoUpload(side: Side, file: File): Promise<CastSeries
 /** Replay Custom de la partie `n` (octets bruts) → résumé ; rien n'est écrit en base. Erreurs :
  *  `empty_body`, `SeriesInactive`, `UnknownGame`, `side_mismatch`, `series_changed`, `not_custom`, `parse_failed`, `incomplete`.
  *  `swap` : l'opérateur force l'échange des côtés (équipe 1 du replay = Blue de la série). */
-export async function castGameReplay(n: number, file: File, swap = false): Promise<GameSummary> {
+/** Réponse du dépôt : résumé orienté + `orientation` (`evidence` | `assumed` | `forced`) et
+ *  `forced_against_evidence: true` quand l'échange forcé contredit les joueurs liés. */
+export type GameReplayResult = GameSummary & {
+  orientation?: "evidence" | "assumed" | "forced";
+  forced_against_evidence?: boolean;
+};
+export async function castGameReplay(n: number, file: File, swap = false): Promise<GameReplayResult> {
   const r = await fetch(`/api/cast/games/${n}/replay${swap ? "?swap=1" : ""}`, {
     method: "POST",
     headers: { "Content-Type": "application/octet-stream" },
     body: file,
   });
   if (!r.ok) throw await httpError(r);
-  return r.json() as Promise<GameSummary>;
+  return r.json() as Promise<GameReplayResult>;
 }
 
 /** État de la série ; invalidé en direct par `useLiveUpdates` (`cast.updated`). `refetchInterval` :

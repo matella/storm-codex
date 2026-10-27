@@ -2,19 +2,18 @@ import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { mapImage } from "../api";
 import type { CastSeries } from "../castApi";
-import { BREAKDOWN_TABS, badgeGameNumber, displayName, mapCardView, seriesScore, shownGame, slideCount, slideIndex, startableMaps } from "../castState";
+import { BREAKDOWN_TABS, badgeGameNumber, displayName, mapCardView, seriesScore, shownGame, slideCount, slideIndex, startableMaps, stripLayout } from "../castState";
 import { PostGameSlide } from "./PostGameSlide";
-
-/** Au-delà de 6 cartes le bandeau passe sur deux rangées de cinq (10 cartes max) pour tenir dans le cadre 1920×1080. */
-const ONE_ROW_MAX = 6;
 
 /** Slide 0 : en-tête (équipes + score de série) et bandeau des cartes du pool. */
 function MapStrip({ s }: { s: CastSeries }) {
   const [sb, sr] = seriesScore(s);
   const names = { blue: displayName(s.blue, "blue"), red: displayName(s.red, "red") };
   const next = startableMaps(s)[0] ?? null;
-  const two = s.pool.length > ONE_ROW_MAX;
-  const stripStyle = { "--n": Math.max(1, s.pool.length) } as CSSProperties;
+  // ≤ 6 cartes : une rangée ; 7–10 : deux rangées de cinq ; 11+ : trois rangées (cartes plus basses)
+  const { cols, rows } = stripLayout(s.pool.length);
+  const rowsClass = rows === 2 ? " two-rows" : rows >= 3 ? " three-rows" : "";
+  const stripStyle = { "--n": cols } as CSSProperties;
   return (
     <>
       <div className="sr-head">
@@ -25,7 +24,7 @@ function MapStrip({ s }: { s: CastSeries }) {
           <span className="r">{names.red}</span>
         </div>
       </div>
-      <div className={`sr-strip${two ? " two-rows" : ""}`} style={stripStyle}>
+      <div className={`sr-strip${rowsClass}`} style={stripStyle} data-rows={rows}>
         {s.pool.map((m) => {
           const v = mapCardView(m, s.games, next, names);
           const img = mapImage(m.name);

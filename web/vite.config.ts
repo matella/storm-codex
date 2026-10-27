@@ -11,5 +11,7 @@ export default defineConfig({
     },
   },
   build: { outDir: "dist", emptyOutDir: true },
-  test: { environment: "node" },
+  // `css.include` : les feuilles de web/src/cast/ sont traitées en test, pour que leurs imports `?raw`
+  // (tests de règles CSS) reçoivent le vrai texte — les autres CSS restent vides en test
+  test: { environment: "node", css: { include: [/[\/]cast[\/][\w-]+\.css/] } },
 });

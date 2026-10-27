@@ -230,3 +230,90 @@ export function sceneFromSearch(search: string): CastScene | null {
   const v = new URLSearchParams(search).get("scene");
   return SCENE_NAMES.find((s) => s === v) ?? null;
 }
+
+/** Disposition du bandeau des cartes (scène Series) selon la taille du pool : ≤ 6 cartes = une rangée ;
+ *  7–10 = deux rangées de cinq ; 11 et plus = rangées de cinq (trois pour 11–15) à cartes plus basses,
+ *  pour que tout tienne dans le cadre 1920×1080 sans chevauchement. */
+export function stripLayout(n: number): { cols: number; rows: number } {
+  if (n <= 6) return { cols: Math.max(1, n), rows: 1 };
+  return { cols: 5, rows: Math.ceil(n / 5) };
+}
+
+/** Libellé de la slide dans la régie : en auto, l'overlay OBS et l'aperçu font tourner chacun leur
+ *  propre minuterie — la régie n'affirme donc pas quelle slide est à l'antenne. */
+export function slideLabel(s: CastSeries): { text: string; title: string } {
+  const n = slideCount(s);
+  if (s.slide.auto && n > 1) {
+    return {
+      text: "auto",
+      title: `Rotating ${n} slides every ${Math.round(s.slide.interval_ms / 1000)} s. The preview and the OBS source run independent timers, so they may show different slides; ‹ › set the starting slide.`,
+    };
+  }
+  const i = slideIndex(s);
+  return { text: `${i + 1} / ${n}`, title: SLIDE_NAMES[i] ?? "" };
+}
+export const SLIDE_NAMES = ["Maps", "Hero damage", "Healing", "Siege", "Takedowns"];
+
+/** Réponse du dépôt de replay (résumé orienté + façon dont l'orientation a été décidée). */
+export interface ReplayOrientation {
+  orientation?: "evidence" | "assumed" | "forced";
+  forced_against_evidence?: boolean;
+}
+/** Note visible après un dépôt : l'échange forcé contredit les joueurs liés (accepté, mais à vérifier). */
+export function replayNote(r: ReplayOrientation): string | null {
+  if (r.forced_against_evidence) {
+    return "Sides swapped against the evidence: the linked players say this replay was NOT swapped. Check the winner and the player rows.";
+  }
+  return null;
+}
+
+/** Équipe saisie dans le rail, resynchronisée depuis le serveur (autre onglet, WS) : adoptée si la
+ *  saisie locale n'a pas divergé de la dernière version serveur vue (`base`), sinon conservée. Une
+ *  modification annulée (revenue à `base`) se resynchronise donc à nouveau. */
+export function resyncTeam(local: CastTeam, base: CastTeam, server: CastTeam): CastTeam {
+  return JSON.stringify(local) === JSON.stringify(base) ? server : local;
+}
+
+/** Navigation clavier de la barre de scènes (activation manuelle : les flèches déplacent seulement le
+ *  focus — jamais une scène à l'antenne). `null` = touche sans effet. */
+export function tabKeyTarget(i: number, key: string, n: number): number | null {
+  switch (key) {
+    case "ArrowRight": return (i + 1) % n;
+    case "ArrowLeft": return (i + n - 1) % n;
+    case "Home": return 0;
+    case "End": return n - 1;
+    default: return null;
+  }
+}
+
+/** Texte d'un joueur en mode A dans l'aperçu de la régie, selon l'état de la requête des héros récents. */
+export function modeAHint(linked: boolean, heroes: number, q: { isLoading: boolean; isError: boolean }): string | null {
+  if (!linked) return "hidden (unlinked)";
+  if (q.isLoading) return "loading…";
+  if (q.isError) return "recent heroes unavailable (error)";
+  return heroes > 0 ? null : "hidden (under 5 recent games)";
+}
+
+/** Une couche de l'overlay : la scène affichée et l'état de série qui la rend. */
+export interface SceneLayer {
+  key: CastScene;
+  s: CastSeries;
+}
+/** Scène rendue par l'overlay (`null` = rien : hide, ou série inactive hors scène Draft). */
+export function shownScene(s: CastSeries | undefined | null): SceneLayer | null {
+  return s && overlayVisible(s) && s.scene !== "hide" ? { key: s.scene, s } : null;
+}
+/** Fondu de sortie : quand la scène change, l'ancienne couche reste montée (instantané de l'état qui
+ *  la rendait — jamais la nouvelle série dans l'ancienne scène) le temps du fondu. Renvoie `st` tel
+ *  quel si rien ne change (stable pour un setState pendant le rendu). */
+export function sceneTransition(
+  st: { cur: SceneLayer | null; leaving: SceneLayer | null },
+  s: CastSeries | undefined | null,
+): { cur: SceneLayer | null; leaving: SceneLayer | null } {
+  const next = shownScene(s);
+  if (next?.key === st.cur?.key) {
+    if (next === null || next.s === st.cur?.s) return st;
+    return { cur: next, leaving: st.leaving };
+  }
+  return { cur: next, leaving: st.cur };
+}

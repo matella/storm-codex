@@ -12,9 +12,12 @@
 .cast-overlay[data-skin=mono]{ --blue:#6ea8ff; --red:#ff7a85; --blue-soft:#9cc4ff; --red-soft:#ffa0a8; --gold:#cdd3e2;
   --panel:linear-gradient(180deg,#0e1016f5,#0a0b10f5); --cardbd:rgba(255,255,255,.1); }
 
-/* une scène à la fois ; fondu ≈ 300 ms à l'entrée (la scène sortante est démontée) */
+/* une scène à la fois ; fondu ≈ 300 ms à l'entrée, et à la sortie : la scène sortante reste montée
+   (classe .out, instantané de son état) le temps du fondu puis est démontée */
 .cast-overlay .scene { position: absolute; inset: 0; animation: cast-fade .3s ease-out both; }
+.cast-overlay .scene.out { animation: cast-fade-out .3s ease-in both; pointer-events: none; }
 @keyframes cast-fade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes cast-fade-out { from { opacity: 1 } to { opacity: 0 } }
 
 /* In-game : onglets rectangulaires (arête intérieure verticale, coins carrés) */
 .cast-overlay .tab { position: absolute; display: flex; align-items: center; gap: 1.2cqw; padding: 0 1.6cqw;
@@ -44,10 +47,13 @@
 
 .cast-overlay .sr-strip { position: absolute; top: 19%; left: 4%; right: 4%; display: grid; gap: .7cqw;
   grid-template-columns: repeat(var(--n, 6), 1fr); }
-.cast-overlay .sr-strip.two-rows { grid-template-columns: repeat(5, 1fr); }
+.cast-overlay .sr-strip.two-rows, .cast-overlay .sr-strip.three-rows { grid-template-columns: repeat(5, 1fr); }
 .cast-overlay .mc { position: relative; height: 9cqw; border-radius: calc(var(--radius) * 2.5); overflow: hidden; min-width: 0;
   border: 1px solid var(--cardbd); background: linear-gradient(160deg, #2b2160, #120c2b); }
 .cast-overlay .two-rows .mc { height: 7.4cqw; }
+/* 11–15 cartes : trois rangées plus basses (19 % + 3 × 6.2cqw + gaps ≈ 63 % du cadre) */
+.cast-overlay .three-rows .mc { height: 6.2cqw; }
+.cast-overlay .three-rows .mc .tx { padding: .35cqw .5cqw; }
 .cast-overlay .mc .art { position: absolute; inset: 0; opacity: .55; background-size: cover; background-position: center; }
 .cast-overlay .mc .tx { position: absolute; left: 0; right: 0; bottom: 0; padding: .5cqw .6cqw;
   background: linear-gradient(0deg, #000d 40%, transparent); }

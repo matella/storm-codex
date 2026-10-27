@@ -1,11 +1,11 @@
-// Rail gauche de la régie : Série (Bo, format, pool, « New series »), Teams & lineups (nom, logo, bilan,
-// 5 joueurs + capitaine). Chaque joueur : pseudo saisi + `PlayerPicker` (recherche → lien toon, sinon « non lié »).
+// Rail gauche de la régie : Série (Bo, format, pool, « New series »), Teams & lineups (`TeamEditor` par côté :
+// nom, logo, bilan, 5 joueurs + capitaine ; chaque joueur : pseudo saisi + `PlayerPicker`).
 import { useEffect, useRef, useState } from "react";
 import type { DraftFormat, Side } from "../api";
 import { castLogoUpload, castSeries, castTeams } from "../castApi";
 import type { CastSeries, CastTeam } from "../castApi";
-import { PlayerPicker } from "./PlayerPicker";
-import { MAPS, reconcileTeam, seriesScore, togglePool } from "../castState";
+import { MAPS, reconcileTeam, resyncTeam, seriesScore, togglePool } from "../castState";
+import { TeamEditor } from "./TeamEditor";
 
 type Run = (fn: () => Promise<unknown>) => Promise<void>;
 const BOS = [1, 3, 5, 7] as const;
@@ -20,30 +20,26 @@ export function SeriesRail({ series, run }: { series: CastSeries; run: Run }) {
   const [bo, setBo] = useState<Bo>(BOS.find((n) => n === series.bo) ?? 5);
   const [format, setFormat] = useState<DraftFormat>(series.format);
   const [pool, setPool] = useState<string[]>(series.pool.map((m) => m.name));
-  const dirty = useRef(false);
-  const [logoErr, setLogoErr] = useState<Record<Side, boolean>>({ blue: false, red: false });
 
-  // resynchronise depuis le serveur (autre onglet, WS) tant que l'opérateur n'a rien modifié
-  useEffect(() => {
-    if (dirty.current) return;
-    setBlue(series.blue);
-    setRed(series.red);
-  }, [series.blue, series.red]);
-
+  // dernière version serveur vue : une saisie égale à `base` (rien modifié, ou modification annulée)
+  // adopte la nouvelle version du serveur (autre onglet, WS) ; une saisie qui a divergé est conservée
+  const base = useRef({ blue: series.blue, red: series.red });
   // un logo envoyé par fichier arrive du serveur : on l'adopte même si la saisie est modifiée
   const logoTouched = useRef<Record<Side, boolean>>({ blue: false, red: false });
-  useEffect(() => { setBlue((t) => reconcileTeam(t, series.blue, logoTouched.current.blue)); }, [series.blue.logo]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { setRed((t) => reconcileTeam(t, series.red, logoTouched.current.red)); }, [series.red.logo]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const old = base.current;
+    base.current = { blue: series.blue, red: series.red };
+    setBlue((t) => reconcileTeam(resyncTeam(t, old.blue, series.blue), series.blue, logoTouched.current.blue));
+    setRed((t) => reconcileTeam(resyncTeam(t, old.red, series.red), series.red, logoTouched.current.red));
+  }, [series.blue, series.red]);
+
   const current = () => ({
     blue: reconcileTeam(blue, series.blue, logoTouched.current.blue),
     red: reconcileTeam(red, series.red, logoTouched.current.red),
   });
-  const clean = () => { dirty.current = false; logoTouched.current = { blue: false, red: false }; };
+  const clean = () => { logoTouched.current = { blue: false, red: false }; };
 
-  const edit = (side: Side, t: CastTeam) => {
-    dirty.current = true;
-    (side === "blue" ? setBlue : setRed)(t);
-  };
+  const edit = (side: Side, t: CastTeam) => (side === "blue" ? setBlue : setRed)(t);
   const saveTeams = () =>
     run(async () => {
       const c = current();
@@ -60,14 +56,10 @@ export function SeriesRail({ series, run }: { series: CastSeries; run: Run }) {
       clean();
       return s;
     });
-  const upload = (side: Side, file: File | undefined) => {
-    if (!file) return;
-    setLogoErr((e) => ({ ...e, [side]: false }));
+  const upload = (side: Side, file: File) => {
     logoTouched.current[side] = false;
     void run(() => castLogoUpload(side, file));
   };
-  const setPlayer = (side: Side, t: CastTeam, i: number, patch: Partial<CastTeam["players"][number]>) =>
-    edit(side, { ...t, players: t.players.map((q, j) => (j === i ? { ...q, ...patch } : q)) });
 
   const [sb, sr] = seriesScore(series);
   const unsaved = !sameTeam(blue, series.blue) || !sameTeam(red, series.red);
@@ -104,33 +96,8 @@ export function SeriesRail({ series, run }: { series: CastSeries; run: Run }) {
 
       <div className="cr-k">Teams &amp; lineups</div>
       {([["blue", blue], ["red", red]] as [Side, CastTeam][]).map(([side, t]) => (
-        <fieldset key={side} className={`cr-team tone-${side}`}>
-          <legend>{side === "blue" ? "Blue" : "Red"}</legend>
-          <input className="ds-input" placeholder={side === "blue" ? "Team Blue" : "Team Red"} value={t.name}
-            onChange={(e) => edit(side, { ...t, name: e.target.value })} aria-label={`${side} team name`} />
-          <div className="cr-logo">
-            {t.logo && !logoErr[side]
-              ? <img src={t.logo} alt="" onError={() => setLogoErr((e) => ({ ...e, [side]: true }))} />
-              : <span className="cr-nologo">no logo</span>}
-            <input type="file" accept="image/png,image/jpeg,image/webp" aria-label={`${side} logo file`}
-              onChange={(e) => { upload(side, e.target.files?.[0]); e.target.value = ""; }} />
-          </div>
-          <input className="ds-input" placeholder="logo URL (optional)" value={t.logo ?? ""} aria-label={`${side} logo URL`}
-            onChange={(e) => { logoTouched.current[side] = true; edit(side, { ...t, logo: e.target.value.trim() === "" ? null : e.target.value }); }} />
-          <input className="ds-input" placeholder="record (e.g. 4-1)" value={t.record} aria-label={`${side} record`}
-            onChange={(e) => edit(side, { ...t, record: e.target.value })} />
-          {t.players.map((p, i) => (
-            <div key={i} className="cr-player">
-              <PlayerPicker player={p} label={`${side} player ${i + 1}`} onChange={(patch) => setPlayer(side, t, i, patch)} />
-              <div className="cr-pl2">
-                <input className="ds-input" placeholder="tagline" value={p.tagline} aria-label={`${side} player ${i + 1} tagline`}
-                  onChange={(e) => setPlayer(side, t, i, { tagline: e.target.value })} />
-                <button type="button" className={`ds-btn small${t.captain === i ? " on" : ""}`} title="Captain" aria-pressed={t.captain === i}
-                  onClick={() => edit(side, { ...t, captain: t.captain === i ? null : i })}>C</button>
-              </div>
-            </div>
-          ))}
-        </fieldset>
+        <TeamEditor key={side} side={side} team={t} onEdit={(nt) => edit(side, nt)} onUpload={(f) => upload(side, f)}
+          onLogoTyped={() => { logoTouched.current[side] = true; }} />
       ))}
       <button type="button" className="ds-btn cr-wide" disabled={!unsaved} onClick={saveTeams}>
         {unsaved ? "Save teams" : "Teams saved"}

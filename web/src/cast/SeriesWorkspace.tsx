@@ -4,29 +4,33 @@
 import { useState } from "react";
 import { fmtClock as clock } from "../api";
 import { castGameReplay, castSlide } from "../castApi";
-import type { CastSeries, GameRecord } from "../castApi";
-import { INTERVAL_S, intervalSeconds, replayErrorText, shownGame, slideCount, slideIndex } from "../castState";
+import type { CastSeries, GameRecord, GameReplayResult } from "../castApi";
+import { INTERVAL_S, SLIDE_NAMES, intervalSeconds, replayErrorText, replayNote, shownGame, slideCount, slideIndex, slideLabel } from "../castState";
 
 type Run = (fn: () => Promise<unknown>) => Promise<void>;
-
-const SLIDE_NAMES = ["Maps", "Hero damage", "Healing", "Siege", "Takedowns"];
 
 function GameRow({ g, run }: { g: GameRecord; run: Run }) {
   const [busy, setBusy] = useState(false);
   const [swap, setSwap] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
   const load = async (file: File | undefined) => {
     if (!file) return;
     setBusy(true);
+    setNote(null);
+    let res: GameReplayResult | null = null;
     try {
       await run(async () => {
         try {
-          return await castGameReplay(g.number, file, swap);
+          res = await castGameReplay(g.number, file, swap);
+          return res;
         } catch (e) {
           throw new Error(replayErrorText(e instanceof Error ? e.message : String(e)));
         }
       });
+      setNote(res ? replayNote(res) : null);
     } finally {
       setBusy(false);
+      setSwap(false); // « Swap sides » vaut pour UN dépôt : décoché après chaque tentative
     }
   };
   const sm = g.summary;
@@ -46,6 +50,7 @@ function GameRow({ g, run }: { g: GameRecord; run: Run }) {
         <input type="file" accept=".StormReplay" hidden disabled={busy} aria-label={`Game ${g.number} replay file`}
           onChange={(e) => { void load(e.target.files?.[0]); e.target.value = ""; }} />
       </label>
+      {note && <div className="cr-note cr-warn" role="status">{note}</div>}
     </div>
   );
 }
@@ -56,6 +61,7 @@ export function SeriesWorkspace({ series, run }: { series: CastSeries; run: Run 
   const shown = shownGame(series);
   const n = slideCount(series);
   const idx = slideIndex(series);
+  const label = slideLabel(series);
   return (
     <section className="cr-box">
       <div className="cr-k">Series · slides</div>
@@ -70,11 +76,11 @@ export function SeriesWorkspace({ series, run }: { series: CastSeries; run: Run 
         <div className="cr-stepper">
           <button type="button" className="ds-btn small" aria-label="Previous slide" disabled={n <= 1}
             onClick={() => run(() => castSlide({ index: (idx + n - 1) % n }))}>‹</button>
-          <b title={SLIDE_NAMES[idx]}>{idx + 1} / {n}</b>
+          <b title={label.title}>{label.text}</b>
           <button type="button" className="ds-btn small" aria-label="Next slide" disabled={n <= 1}
             onClick={() => run(() => castSlide({ index: (idx + 1) % n }))}>›</button>
         </div>
-        <span className="cr-note">{SLIDE_NAMES[idx]}</span>
+        <span className="cr-note" title={label.title}>{sl.auto && n > 1 ? `rotating ${n} slides · preview and OBS timers are independent` : SLIDE_NAMES[idx]}</span>
         <button type="button" className={`ds-btn small${sl.auto ? " on" : ""}`} aria-pressed={sl.auto}
           onClick={() => run(() => castSlide({ auto: !sl.auto }))}>{sl.auto ? "Auto" : "Manual"}</button>
         <label className="cr-note">Every{" "}

@@ -27,6 +27,7 @@ import { Cast } from "./pages/Cast";
 import { Scouting } from "./pages/Scouting";
 import { ScoutingReport } from "./pages/ScoutingReport";
 import { Live } from "./pages/Live";
+import { LEGACY_REDIRECTS } from "./legacyRoutes";
 
 export default function App() {
   return (
@@ -54,8 +55,7 @@ export default function App() {
         <Route path="maps" element={<Maps />} />
         <Route path="trends" element={<Trends />} />
         <Route path="leagues" element={<Leagues />} />
-        <Route path="draft" element={<Navigate to="/cast?scene=draft" replace />} />
-        <Route path="draft/replay" element={<Navigate to="/cast?scene=draft" replace />} />
+        {LEGACY_REDIRECTS.map((r) => <Route key={r.path} path={r.path} element={<Navigate to={r.to} replace />} />)}
         <Route path="cast" element={<Cast />} />
         <Route path="scouting" element={<Scouting />} />
         <Route path="scouting/:id" element={<ScoutingReport />} />

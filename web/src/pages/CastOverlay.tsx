@@ -1,8 +1,8 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useDimHeroes, useLiveUpdates } from "../api";
 import { useCast } from "../castApi";
 import type { CastSeries } from "../castApi";
-import { overlayVisible } from "../castState";
+import { sceneTransition, shownScene } from "../castState";
 import { DraftSceneLive, skinFromSearch } from "../cast/DraftScene";
 import { InGameScene } from "../cast/InGameScene";
 import { LineupsLive } from "../cast/LineupsScene";
@@ -29,6 +29,9 @@ export function Scene({ s }: { s: CastSeries }) {
   }
 }
 
+/** Durée du fondu de sortie (ms), égale au fondu d'entrée de `cast-overlay.css`. */
+const FADE_MS = 300;
+
 /** Overlay OBS de la régie de cast. Reflète l'état serveur en direct (WS `cast.updated`). Skin via ?skin=. */
 export function CastOverlay() {
   useLiveUpdates(); // hors Layout : l'overlay ouvre lui-même le WS (cast.updated invalide ["cast"])
@@ -42,10 +45,21 @@ export function CastOverlay() {
     return () => { document.body.style.background = prev; };
   }, []);
 
-  // key = scène → remontage → fondu d'entrée ; `hide` (ou série inactive, sauf la scène Draft — R19) ne rend rien
+  // couche courante (key = scène → remontage → fondu d'entrée) + couche sortante gardée le temps du fondu
+  // de sortie, rendue avec l'instantané qui l'affichait ; `hide` (ou série inactive, sauf Draft — R19) = rien
+  const [st, setSt] = useState(() => ({ cur: shownScene(s), leaving: null as ReturnType<typeof shownScene> }));
+  const next = sceneTransition(st, s);
+  if (next !== st) setSt(next); // mise à jour pendant le rendu : pas d'image intermédiaire sans l'ancienne scène
+  const { cur, leaving } = next;
+  useEffect(() => {
+    if (!leaving) return;
+    const id = window.setTimeout(() => setSt((x) => (x.leaving === leaving ? { ...x, leaving: null } : x)), FADE_MS);
+    return () => window.clearTimeout(id);
+  }, [leaving]);
   return (
     <div className="cast-overlay" data-skin={skin}>
-      {s && overlayVisible(s) && <div className="scene" key={s.scene}><Scene s={s} /></div>}
+      {leaving && <div className="scene out" key={`out-${leaving.key}`} aria-hidden="true"><Scene s={leaving.s} /></div>}
+      {cur && <div className="scene" key={cur.key}><Scene s={cur.s} /></div>}
     </div>
   );
 }

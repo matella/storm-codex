@@ -1,12 +1,12 @@
 // Régie de cast (/cast) — disposition B : rail série à gauche, barre de scènes, aperçu OBS, espace de travail.
 // Spec : docs/specs/2026-10-25-cast-control-room-design.md. Les erreurs serveur (409 : NotInPool,
 // SeriesInactive, MapAlreadyPlayed…) sont affichées telles quelles à l'opérateur.
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { castScene, castScore, useCast } from "../castApi";
 import type { CastScene, CastSeries } from "../castApi";
-import { badgeGameNumber, sceneFromSearch, seriesScore } from "../castState";
+import { badgeGameNumber, sceneFromSearch, seriesScore, tabKeyTarget } from "../castState";
 import { DraftWorkspace } from "../cast/DraftWorkspace";
 import { LineupsWorkspace } from "../cast/LineupsWorkspace";
 import { PoolPanel } from "../cast/PoolPanel";
@@ -59,6 +59,32 @@ function Workspace({ series, scene: sc, run }: { series: CastSeries; scene: Cast
   );
 }
 
+/** Barre de scènes (motif onglets, activation manuelle) : `aria-selected` = onglet de travail local ;
+ *  la scène à l'antenne est dite en texte (« ON AIR »). Clic / Entrée / Espace = met la scène à l'antenne
+ *  (R26 : choix de conception conservé) ; les flèches, Début et Fin ne font que déplacer le focus. */
+export function SceneTabs({ onAir, local, onPick }: { onAir: CastScene; local: CastScene; onPick: (s: CastScene) => void }) {
+  const refs = useRef<(HTMLButtonElement | null)[]>([]);
+  return (
+    <div className="cr-scenes" role="tablist" aria-label="Scene (click puts it on air)">
+      {SCENES.map((s, i) => (
+        <button key={s.id} type="button" role="tab" id={`cr-tab-${s.id}`} aria-controls="cr-workspace"
+          aria-selected={local === s.id} tabIndex={local === s.id ? 0 : -1}
+          ref={(el) => { refs.current[i] = el; }}
+          className={`cr-scene${onAir === s.id ? " on" : ""}${local === s.id && local !== onAir ? " ed" : ""}`}
+          onKeyDown={(e) => {
+            const t = tabKeyTarget(i, e.key, SCENES.length);
+            if (t === null) return;
+            e.preventDefault();
+            refs.current[t]?.focus();
+          }}
+          onClick={() => onPick(s.id)}>
+          {s.label}{onAir === s.id && <i className="cr-air">ON AIR</i>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function Cast() {
   const { data: series, isLoading, error: loadError } = useCast();
   const qc = useQueryClient();
@@ -88,15 +114,8 @@ export function Cast() {
     <div className="cr">
       <div className="cr-top">
         <span className="cr-br">CAST <b>CONTROL ROOM</b></span>
-        <div className="cr-scenes" role="tablist" aria-label="Scene">
-          {SCENES.map((s) => (
-            <button key={s.id} type="button" role="tab" aria-selected={series.scene === s.id}
-              className={`cr-scene${series.scene === s.id ? " on" : ""}${local === s.id && local !== series.scene ? " ed" : ""}`}
-              onClick={() => { setLocal(null); void run(() => castScene(s.id)); }}>
-              {s.label}{series.scene === s.id && <i className="cr-air">ON AIR</i>}
-            </button>
-          ))}
-        </div>
+        <SceneTabs onAir={series.scene} local={local ?? series.scene}
+          onPick={(sc) => { setLocal(null); void run(() => castScene(sc)); }} />
         {!series.active && <span className="cr-inactive">no active series</span>}
       </div>
       {err && (
@@ -109,7 +128,9 @@ export function Cast() {
         <SeriesRail series={series} run={run} />
         <div className="cr-main">
           <ScenePreview onAir={sceneLabel(series.scene)} />
-          <Workspace series={series} scene={local ?? series.scene} run={run} />
+          <div role="tabpanel" id="cr-workspace" aria-labelledby={`cr-tab-${local ?? series.scene}`}>
+            <Workspace series={series} scene={local ?? series.scene} run={run} />
+          </div>
           <PoolPanel series={series} run={run} />
         </div>
       </div>

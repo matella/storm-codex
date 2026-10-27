@@ -4,7 +4,7 @@ import { useDimHeroes } from "../api";
 import type { Side } from "../api";
 import { castLineupMode, useCastLineup } from "../castApi";
 import type { CastSeries, HeroCount, LineupMode } from "../castApi";
-import { displayName, effectiveLineupMode, seriesPlayerHeroes } from "../castState";
+import { displayName, effectiveLineupMode, modeAHint, seriesPlayerHeroes } from "../castState";
 import { HeroPortrait } from "./portrait";
 
 type Run = (fn: () => Promise<unknown>) => Promise<void>;
@@ -15,7 +15,9 @@ const MODES: { id: LineupMode; label: string; hint: string }[] = [
   { id: "b", label: "B · series heroes", hint: "between games: heroes played so far, Fearless-locked dimmed" },
 ];
 
-function SideRows({ s, side, heroes }: { s: CastSeries; side: Side; heroes: HeroCount[][] }) {
+type QState = { isLoading: boolean; isError: boolean };
+
+function SideRows({ s, side, heroes, q }: { s: CastSeries; side: Side; heroes: HeroCount[][]; q: QState }) {
   const t = side === "blue" ? s.blue : s.red;
   const mode = effectiveLineupMode(s);
   const played = seriesPlayerHeroes(s, side);
@@ -25,14 +27,15 @@ function SideRows({ s, side, heroes }: { s: CastSeries; side: Side; heroes: Hero
       {t.players.map((p, i) => {
         const hs = heroes[i] ?? [];
         const pl = played[i] ?? [];
+        const hint = modeAHint(!!p.toon, hs.length, q);
         return (
           <div key={i} className="cr-lu-row">
             <span className="cr-lu-n">{p.name.trim() === "" ? `Player ${i + 1}` : p.name}</span>
             <span className={`cr-pk-st${p.toon ? " on" : ""}`}>{p.toon ? "linked" : "unlinked"}</span>
             <span className="cr-lu-h3">
-              {mode === "A" && (p.toon && hs.length > 0
+              {mode === "A" && (hint === null
                 ? hs.map((h) => <HeroPortrait key={h.hero} hero={h.hero} title={`${h.hero} · ${h.games} games`} />)
-                : <em>{p.toon ? "hidden (under 5 recent games)" : "hidden (unlinked)"}</em>)}
+                : <em>{hint}</em>)}
               {mode === "B" && (pl.length > 0
                 ? pl.map((h) => <HeroPortrait key={h.game} hero={h.hero} title={`G${h.game} ${h.hero}`} />)
                 : <em>awaiting game data</em>)}
@@ -46,7 +49,8 @@ function SideRows({ s, side, heroes }: { s: CastSeries; side: Side; heroes: Hero
 
 export function LineupsWorkspace({ series, run }: { series: CastSeries; run: Run }) {
   useDimHeroes();
-  const { data } = useCastLineup(series);
+  const { data, isLoading, isError } = useCastLineup(series);
+  const q = { isLoading, isError };
   const eff = effectiveLineupMode(series);
   return (
     <section className="cr-box">
@@ -62,8 +66,8 @@ export function LineupsWorkspace({ series, run }: { series: CastSeries; run: Run
         {MODES.find((m) => m.id === (eff === "A" ? "a" : "b"))?.hint}. Link players in the rail (Find) to get their recent heroes.
       </div>
       <div className="cr-lu-prev" aria-label="Lineup preview">
-        <SideRows s={series} side="blue" heroes={data?.blue ?? []} />
-        <SideRows s={series} side="red" heroes={data?.red ?? []} />
+        <SideRows s={series} side="blue" heroes={data?.blue ?? []} q={q} />
+        <SideRows s={series} side="red" heroes={data?.red ?? []} q={q} />
       </div>
     </section>
   );
