@@ -81,7 +81,8 @@ est la source de vérité) ; `/config` reste accepté mais ignore `blue`/`red`/`
 `POST /api/draft/replay/load` (corps = octets `.StormReplay`, `X-Filename` optionnel ; `201` file publique ;
 `400` corps vide ; `422` `{error: not_custom|no_draft|parse_failed}`) · `GET /api/draft/replay` (file
 **avec scripts**, pour la page télécommande) · `POST …/replay/next` · `/back` · `/reset` (une **phase** à la fois ;
-`409` sans partie / au début / à la fin) · `/select {index}` · `/fearless {value}` ·
+`409` sans partie / au début / à la fin) · `/select {index}` · `/fearless {value}` (série de cast active : `/select`,
+`/fearless` et la sélection d'office de `/load` suivent le **format de la série**, pas `replay.fearless` — M5) ·
 `/play {playing, interval_ms?}` (défaut 30 000 ms par phase ; `400` hors 10 ms–1 h ; la minuterie est côté
 serveur, s'arrête à la fin du draft) · `POST …/replay/queue/move {from,to}` · `DELETE …/replay/queue/{i}`.
 Spec : `docs/specs/2026-10-25-draft-replay-design.md`.

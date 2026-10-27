@@ -89,7 +89,10 @@ Design : `docs/specs/2026-06-19-draft-simulator-design.md`.
 donc les états v1 se rechargent) porte la file de parties Custom chargées (`LoadedGame` : script des 16 étapes,
 pseudos), la partie courante, `fearless`, la lecture auto (`playing`, `interval_ms` 30 000 par défaut,
 `next_at_ms`). `reveal_phase`/`back_phase` avancent par **phase** (bloc d'étapes consécutives de même rôle) ;
-`select_game` prépare un draft vide (fearless : series bans = picks des parties précédentes de la file).
+`select_game` prépare un draft vide (fearless : series bans = picks des parties précédentes de la file) ;
+`select_game_with` / `add_game_with` / `set_fearless_with` prennent le format d'une série de cast active, qui
+l'emporte sur `replay.fearless` (M5 : Fearless → Fearless + series bans ; Standard/Normal → Standard, les scripts
+de replay suivant l'ordre Standard à 16 étapes).
 `public()` retire scripts et pseudos des picks non révélés (vue servie par `GET /api/draft`).
 Spec : `docs/specs/2026-10-25-draft-replay-design.md`.
 

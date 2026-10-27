@@ -17,7 +17,7 @@ pub(crate) async fn persist(s: &AppState) {
 
 /// Format imposé par la série de cast quand elle est active (`None` sinon). Le verrou cast est
 /// relâché avant tout verrou draft (jamais les deux en même temps).
-async fn series_format(s: &AppState) -> Option<Format> {
+pub(crate) async fn series_format(s: &AppState) -> Option<Format> {
     let c = s.cast.read().await;
     c.active.then_some(c.format)
 }

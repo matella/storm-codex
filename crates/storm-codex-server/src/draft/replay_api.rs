@@ -1,7 +1,7 @@
 //! Routes REST du draft depuis un replay + minuterie de lecture auto. Chaque mutation prend le
 //! write-lock une seule fois (donc un « Suivant » manuel et un tick ne se télescopent jamais),
 //! persiste, puis diffuse `draft.updated`. Mode ouvert comme le reste de `/api/draft`.
-use super::api::persist;
+use super::api::{persist, series_format};
 use super::replay_extract::{loaded_game_from_output, ReplayError};
 use super::{DraftError, ReplayState};
 use crate::AppState;
@@ -95,9 +95,10 @@ pub async fn load(State(s): State<AppState>, headers: HeaderMap, bytes: Bytes) -
     };
     match loaded_game_from_output(&out, &name, storm_stats::constants::hero_attribute()) {
         Ok(g) => {
+            let over = series_format(&s).await;
             let r = {
                 let mut d = s.draft.write().await;
-                d.add_game(g);
+                d.add_game_with(g, over);
                 d.public().replay
             };
             persist(&s).await;
@@ -188,10 +189,12 @@ pub struct IndexBody {
     index: usize,
 }
 
-/// POST /api/draft/replay/select — prépare la partie `index` de la file.
+/// POST /api/draft/replay/select — prépare la partie `index` de la file ; une série de cast active
+/// impose son format (M5, `select_game_with`).
 pub async fn select(State(s): State<AppState>, Json(b): Json<IndexBody>) -> Resp {
     cancel_timer(&s);
-    mutate(&s, |d| d.select_game(b.index)).await
+    let over = series_format(&s).await;
+    mutate(&s, |d| d.select_game_with(b.index, over)).await
 }
 
 /// DELETE /api/draft/replay/queue/{i}
@@ -219,8 +222,9 @@ pub struct FearlessBody {
 /// POST /api/draft/replay/fearless — re-prépare la partie courante (ses series bans changent).
 pub async fn fearless(State(s): State<AppState>, Json(b): Json<FearlessBody>) -> Resp {
     cancel_timer(&s);
+    let over = series_format(&s).await;
     mutate(&s, |d| {
-        d.set_fearless(b.value);
+        d.set_fearless_with(b.value, over);
         Ok(())
     })
     .await
@@ -263,4 +267,56 @@ pub async fn play(State(s): State<AppState>, Json(b): Json<PlayBody>) -> Resp {
         }
     }
     r
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use crate::api_tests::{call, test_state};
+    use crate::draft::{Format, Side};
+    use crate::draft::replay::LoadedGame;
+    use axum::http::StatusCode;
+    use serde_json::json;
+
+    fn game(tag: &str) -> LoadedGame {
+        LoadedGame {
+            source: format!("{tag}.StormReplay"),
+            map: format!("Map {tag}"),
+            first_pick: Side::Blue,
+            script: (0..16).map(|i| Some(format!("{tag}h{i}"))).collect(),
+            pick_players: vec![None; 16],
+            blue_players: Default::default(),
+            red_players: Default::default(),
+        }
+    }
+
+    /// M5 : pendant une série de cast active, `select` et `fearless` suivent le format de la série,
+    /// pas `replay.fearless` (dans les deux sens).
+    #[tokio::test]
+    async fn replay_select_follows_active_series_format() {
+        let Some(state) = test_state(None).await else { return };
+        {
+            let mut c = state.cast.write().await;
+            c.active = true;
+            c.format = Format::Fearless;
+            let mut d = state.draft.write().await;
+            d.add_game(game("a"));
+            d.add_game(game("b"));
+            d.replay.fearless = false;
+        }
+        let (st, _) = call(&state, "POST", "/api/draft/replay/select", Some(json!({"index": 1}))).await;
+        assert_eq!(st, StatusCode::OK);
+        {
+            let d = state.draft.read().await;
+            assert_eq!(d.format, Format::Fearless);
+            assert!(d.series_bans.contains("ah4"));
+        }
+        state.cast.write().await.format = Format::Standard;
+        let (st, _) = call(&state, "POST", "/api/draft/replay/fearless", Some(json!({"value": true}))).await;
+        assert_eq!(st, StatusCode::OK);
+        let d = state.draft.read().await;
+        assert!(d.replay.fearless);
+        assert_eq!(d.format, Format::Standard);
+        assert!(d.series_bans.is_empty());
+    }
 }
