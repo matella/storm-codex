@@ -115,8 +115,8 @@ replay/fearless ; les deux états sont persistés, WS `draft.updated` + `cast.up
 → `{ blue: [[HeroCount]], red: [[HeroCount]] }`, `HeroCount = {hero, games}` ; une liste par joueur **dans l'ordre reçu**
 (toon vide = joueur non lié → `[]`). Par toon : fenêtre des **20 dernières parties tous modes** (`match_players` ⋈ `matches`,
 tri `played_at DESC NULLS LAST, id DESC`), **3 héros** les plus joués (parties, puis récence) ; **`[]` si < 5 parties
-dans la fenêtre** (masqué, jamais partiel). Une seule requête SQL (`unnest … LATERAL`, index `match_players_toon_idx`,
-vérifié par `EXPLAIN` dans le test) ; budget **< 100 ms pour 10 joueurs** (test `lineup_route_under_100ms_for_10_players`).
+dans la fenêtre** (masqué, jamais partiel) ; une partie au héros NULL compte dans ce seuil de 5 (partie jouée) mais pas dans le décompte des héros. Une seule requête SQL (`unnest … LATERAL`, index `match_players_toon_idx`,
+vérifié par `EXPLAIN` dans le test : le plan doit nommer cet index, scan séquentiel désactivé sur la connexion ; lignes du test nettoyées même en cas d'échec) ; budget **< 100 ms pour 10 joueurs** (test `lineup_route_under_100ms_for_10_players`).
 `> 10` toons par équipe → `400 {"error":"too_many_players"}` ; un toon de plus de 64 octets → `400 {"error":"bad_toon"}` ; erreur SQL → `500 {"error":"db"}`.
 **Replay d'une partie** (`cast/replay.rs`) : `POST /api/cast/games/{n}/replay` — corps = octets bruts d'un
 `.StormReplay` (comme `draft/replay/load`), décodé à la volée sous `parse_sem` (écriture du fichier temporaire, décodage et suppression **dans** le

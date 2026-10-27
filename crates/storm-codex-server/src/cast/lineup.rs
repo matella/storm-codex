@@ -42,7 +42,8 @@ CROSS JOIN LATERAL (
 WHERE t.toon <> ''
 ORDER BY t.ord, w.played_at DESC NULLS LAST, w.id DESC";
 
-/// `rows` : `(position 1-based, héros)` triés par position puis récence décroissante.
+/// `rows` : `(position 1-based, héros)` triés par position puis récence décroissante. Une ligne au
+/// héros NULL compte dans le seuil `MIN_GAMES` (c'est une partie jouée) mais pas dans le décompte.
 fn tally(n: usize, rows: &[(i32, Option<String>)]) -> Vec<Vec<HeroCount>> {
     let mut games = vec![0usize; n];
     // par position : (héros, parties, rang de la 1re apparition = récence)
@@ -149,27 +150,54 @@ mod tests {
         assert_eq!(got, vec![vec![hc("Jaina", 7)], vec![], vec![hc("Valla", 6)], vec![]]);
     }
 
+    /// Nettoyage des lignes insérées par le test, même s'il panique : `Drop` ne peut pas `.await`,
+    /// on supprime donc depuis un thread dédié (runtime et connexion propres).
+    struct Cleanup {
+        ids: Vec<i64>,
+        toons: Vec<String>,
+    }
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let (ids, toons) = (std::mem::take(&mut self.ids), std::mem::take(&mut self.toons));
+            let Ok(url) = std::env::var("DATABASE_URL") else { return };
+            let _ = std::thread::spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime");
+                rt.block_on(async {
+                    let db = PgPool::connect(&url).await.expect("connexion");
+                    sqlx::query("DELETE FROM matches WHERE id = ANY($1)").bind(&ids).execute(&db).await.expect("delete matches");
+                    sqlx::query("DELETE FROM players WHERE toon_handle = ANY($1)").bind(&toons).execute(&db).await.expect("delete players");
+                });
+            })
+            .join();
+        }
+    }
+
     #[tokio::test]
     async fn lineup_route_under_100ms_for_10_players() {
         let Some(state) = test_state(None).await else { return };
         let toons: Vec<String> = (0..10).map(|_| format!("t-lu{}", uid())).collect();
+        let mut cleanup = Cleanup { ids: Vec::new(), toons: toons.clone() };
         let t0 = Utc.with_ymd_and_hms(2025, 1, 1, 20, 0, 0).unwrap();
         let heroes = ["Valla", "Jaina", "Diablo", "Arthas", "Zeratul"];
-        let mut ids = Vec::new();
         for g in 0..30 {
             let rows: Vec<_> = toons.iter().enumerate().map(|(i, t)| row(t, "Casteur", (i % 2) as i32, heroes[(g + i) % 5])).collect();
-            ids.push(insert_match(&state.db, Some(t0 + Duration::days(g as i64)), &rows).await);
+            cleanup.ids.push(insert_match(&state.db, Some(t0 + Duration::days(g as i64)), &rows).await);
         }
-        // EXPLAIN : le plan doit passer par un index (match_players_toon_idx)
+        // EXPLAIN : le plan doit passer par l'index `match_players_toon_idx` (scan séquentiel désactivé
+        // sur cette connexion : le test ne dépend pas de la taille de la base de dev/CI)
+        let mut conn = state.db.acquire().await.unwrap();
+        sqlx::query("SET enable_seqscan = off").execute(&mut *conn).await.unwrap();
         let plan: Vec<(String,)> = sqlx::query_as(&format!("EXPLAIN {LINEUP_SQL}"))
             .bind(&toons)
             .bind(WINDOW)
-            .fetch_all(&state.db)
+            .fetch_all(&mut *conn)
             .await
             .unwrap();
+        sqlx::query("RESET enable_seqscan").execute(&mut *conn).await.unwrap();
+        drop(conn);
         let plan = plan.into_iter().map(|r| r.0).collect::<Vec<_>>().join("\n");
         eprintln!("{plan}");
-        assert!(plan.contains("Index"), "plan sans index :\n{plan}");
+        assert!(plan.contains("match_players_toon_idx"), "plan sans match_players_toon_idx :\n{plan}");
 
         let q = format!("/api/cast/lineup?blue={}&red={}", toons[..5].join(","), toons[5..].join(","));
         let t = Instant::now();
@@ -180,9 +208,15 @@ mod tests {
         assert_eq!(v["red"][0].as_array().unwrap().len(), 3);
         assert_eq!(v["blue"][0][0]["games"], 4); // 20 parties, 5 héros en rotation
         assert!(elapsed < StdDuration::from_millis(100), "{elapsed:?}");
+        // nettoyage des lignes insérées : `cleanup` (Drop), aussi en cas de panique
+    }
 
-        // nettoyage des lignes insérées
-        sqlx::query("DELETE FROM matches WHERE id = ANY($1)").bind(&ids).execute(&state.db).await.unwrap();
-        sqlx::query("DELETE FROM players WHERE toon_handle = ANY($1)").bind(&toons).execute(&state.db).await.unwrap();
+    /// Une partie au héros NULL compte dans le seuil des 5 parties mais pas dans le décompte.
+    #[test]
+    fn null_hero_counts_toward_threshold_not_tally() {
+        let rows: Vec<(i32, Option<String>)> =
+            vec![(1, Some("Valla".into())), (1, None), (1, None), (1, Some("Valla".into())), (1, None)];
+        assert_eq!(tally(1, &rows), vec![vec![hc("Valla", 2)]]);
+        assert_eq!(tally(1, &rows[..4]), vec![Vec::<HeroCount>::new()]);
     }
 }
