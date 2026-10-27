@@ -247,16 +247,31 @@ export function fetchHeroChanges(p: HeroChangesParams = {}): Promise<HeroPatchSe
   return get<HeroPatchSection[]>(`/api/hero-changes?${q.toString()}`);
 }
 
+/** Requêtes à relire à l'ouverture du WS : rien à la première ouverture ; à toute ouverture qui suit
+ *  une coupure (`hadDisconnect`, y compris un 1er échec de connexion), l'état temps réel de la régie
+ *  (`cast` et `draft`, la scène Draft de l'overlay en dépend) — les events manqués ne sont pas rejoués. */
+export function reopenInvalidations(hadDisconnect: boolean): string[][] {
+  return hadDisconnect ? [["cast"], ["draft"]] : [];
+}
+
 /** WS `/ws` : `match.parsed` invalide les listes de matchs ; `patch.new` invalide les patches. Le
- *  callback reçoit l'événement brut (avec `.type`) pour piloter les toasts. */
+ *  callback reçoit l'événement brut (avec `.type`) pour piloter les toasts. Reconnexion après 2 s ;
+ *  à la réouverture, `reopenInvalidations` rattrape l'état manqué. */
 export function useLiveUpdates(onEvent?: (ev: { type?: string; match_id?: number; map?: string; name?: string; internalId?: string }) => void) {
   const qc = useQueryClient();
   useEffect(() => {
     const proto = location.protocol === "https:" ? "wss" : "ws";
     let ws: WebSocket | null = null;
     let closed = false;
+    let hadDisconnect = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const connect = () => {
+      if (closed) return; // démonté pendant l'attente de reconnexion
       ws = new WebSocket(`${proto}://${location.host}/ws`);
+      ws.onopen = () => {
+        for (const queryKey of reopenInvalidations(hadDisconnect)) qc.invalidateQueries({ queryKey });
+        hadDisconnect = false;
+      };
       ws.onmessage = (e) => {
         try {
           const ev = JSON.parse(e.data);
@@ -281,12 +296,14 @@ export function useLiveUpdates(onEvent?: (ev: { type?: string; match_id?: number
         }
       };
       ws.onclose = () => {
-        if (!closed) setTimeout(connect, 2000); // reconnexion
+        hadDisconnect = true;
+        if (!closed) timer = setTimeout(connect, 2000); // reconnexion
       };
     };
     connect();
     return () => {
       closed = true;
+      clearTimeout(timer);
       ws?.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

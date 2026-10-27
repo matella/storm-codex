@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import {
   announceLabel,
+  reopenInvalidations,
   awardLabel,
   banHero,
   classBadge,
@@ -212,4 +213,10 @@ describe("banHero", () => {
     expect(banHero(null, attrs)).toBeNull();
     expect(banHero({}, attrs)).toBeNull();
   });
+});
+
+describe("reopenInvalidations (WS reconnect catch-up)", () => {
+  it("first open refetches nothing", () => expect(reopenInvalidations(false)).toEqual([]));
+  it("reopen after a disconnect refetches cast and draft (overlay scenes)", () =>
+    expect(reopenInvalidations(true)).toEqual([["cast"], ["draft"]]));
 });

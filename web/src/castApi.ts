@@ -182,9 +182,10 @@ export async function castGameReplay(n: number, file: File, swap = false): Promi
   return r.json() as Promise<GameSummary>;
 }
 
-/** État de la série ; invalidé en direct par `useLiveUpdates` (`cast.updated`). */
-export function useCast() {
-  return useQuery({ queryKey: ["cast"], queryFn: fetchCast });
+/** État de la série ; invalidé en direct par `useLiveUpdates` (`cast.updated`). `refetchInterval` :
+ *  filet de sécurité de l'overlay OBS (WS coupé sans reconnexion détectée). */
+export function useCast(opts: { refetchInterval?: number } = {}) {
+  return useQuery({ queryKey: ["cast"], queryFn: fetchCast, refetchInterval: opts.refetchInterval });
 }
 
 /** Héros récent d'un joueur (GET /api/cast/lineup) : ≤ 3 par joueur, liste vide = masqué. */

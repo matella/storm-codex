@@ -35,7 +35,7 @@ export function Scene({ s }: { s: CastSeries }) {
 export function CastOverlay() {
   useLiveUpdates(); // hors Layout : l'overlay ouvre lui-même le WS (cast.updated invalide ["cast"])
   useDimHeroes(); // portraits (heroIcon) des scènes lineups et post-game
-  const { data: s } = useCast();
+  const { data: s } = useCast({ refetchInterval: 10_000 }); // + WS : filet si une coupure passe inaperçue
   const skinParam = new URLSearchParams(window.location.search).get("skin") ?? "nexus";
   const skin = SKINS.includes(skinParam) ? skinParam : "nexus";
 
