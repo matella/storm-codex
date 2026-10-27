@@ -5,9 +5,9 @@ Spec `docs/specs/2026-10-25-cast-control-room-design.md` · plan `docs/plans/202
 Une **série** (Bo1/3/5/7, Fearless/Standard/Normal, pool de cartes, 2 équipes × 5 joueurs, logos) est l'unique source
 de vérité des équipes ; le casteur la pilote depuis `/cast` et OBS lit `/cast/overlay`.
 - **Serveur** `src/cast/` : `series.rs` (moteur pur : veto dans un ordre quelconque, parties, score calculé/forcé),
-  `store.rs` (singleton `cast_live`, migration `0012_cast_live`, repli sur série neuve si le JSON est illisible),
+  `store.rs` (singleton `cast_live`, migrations `0012_cast_live` + `0013_cast_logo`, repli sur série neuve si le JSON est illisible),
   `sync.rs` (série → draft, sens unique ; démarrer une série aligne le moteur de draft, R20), `api.rs`
-  (`/api/cast`, `/series`, `/teams`, `/pool/map`, `/games/start`, `/games/{n}/winner`, `/score`, `/scene`,
+  (`/api/cast`, `/series`, `/teams`, `/pool/map`, `/games/start`, `/games/{n}/winner`, `DELETE /games/{n}`, `/score`, `/scene`,
   `/lineup-mode`, `/slide`, logos `/logo/{side}`, `GET /api/cast/lineup`), `lineup.rs` (3 héros récents / 20 parties,
   masqué < 5 parties), `summary.rs` + `replay.rs` (`POST /api/cast/games/{n}/replay` : replay **Custom** décodé à la
   volée, **rien écrit en base**, orientation Blue/Red prouvée par toon puis pseudo, `?swap=1`). WS `cast.updated`.
@@ -21,14 +21,22 @@ de vérité des équipes ; le casteur la pilote depuis `/cast` et OBS lit `/cast
   **décodage post-game : 417–444 ms** (route complète, upload local de 1,6 Mo compris, replay Custom Tomb) — mesuré
   **sous charge** (un jeu tournait, CPU ~68 %) ; la marge vers le budget de 500 ms est **mince** et **aucune
   re-mesure à vide n'a été faite** : on ne sait pas séparer la charge machine d'une régression éventuelle (ex. construction
-  du résumé de la tâche 9). Pour mémoire, un run antérieur pendant le développement (autres replays, machine au calme)
+  du résumé de la tâche 9). Pour mémoire, un run antérieur pendant le développement (autres replays, conditions non documentées)
   donnait 178–203 ms pour la route ; `docs/spec/05-api.md` cite aussi un bench `storm-stats-dump --bench` (6 replays
   Custom, médiane 177 ms) — mesures **différentes**, non comparables à celle-ci.
+  **Mesurer sur `127.0.0.1`, jamais `localhost`** : sous Windows, `localhost` tente d'abord IPv6 et ajoute ~2 s
+  de repli par requête, ce qui fausse tous les temps.
 - **Vérifié bout en bout** (vrai Custom Tomb du 2026-09-27, vrais toons) : série Bo5 Fearless pool 10, veto en désordre,
   partie 1 + replay → lineups A→B (« awaiting game data » pour les joueurs non rattachés), diaporama post-game
   concordant avec la sortie brute storm-stats (takedowns 28/15, dégâts, bans), draft live + replay, scène In-game sur
   `ingame.webp` (ancres 39,20 % / 59,65 % / 9,90 %, nom de 40 caractères tronqué par « … »), redémarrage du serveur :
   état cast **et** draft identiques octet pour octet.
+- **Vague de correctifs (relecture finale, 2026-10-27)** vérifiée dans le navigateur sur 127.0.0.1 (build release) :
+  R21 « Remove game » puis « Change winner » depuis `/cast` (carte de nouveau lançable, score draft suivi) ; R22
+  Bo3 2-0 → « GAME 2 » (In-game et Series) ; scène Draft rendue série inactive, Series masquée ; reconnexion WS :
+  serveur arrêté, scène changée **en base** (aucun event), serveur relancé → `GET /api/cast` émis à la milliseconde
+  de réouverture du WS, overlay à jour ≈ 1 s après le redémarrage (sur 3 essais, le filet 10 s / les retries de
+  TanStack ont parfois livré l'état avant le WS — les deux chemins mènent au même état). Pas dans OBS.
 - **Non vérifié / réserves** : temps scène → overlay mesuré dans un navigateur sur 127.0.0.1, **pas dans OBS** ;
   la scène In-game a été contrôlée sur une **image fixe** dans une iframe, pas sur une capture en direct ; l'atténuation
   Fearless des lineups n'a **pas été vue à l'écran** (seulement le bandeau « HEROES LOCKED » et les libellés G1 en DOM) ;
@@ -37,8 +45,10 @@ de vérité des équipes ; le casteur la pilote depuis `/cast` et OBS lit `/cast
   comptes matches/uploads/match_players identiques avant/après deux uploads : 6593/2862/51050).
 - **Tests** : `DATABASE_URL=postgres://storm:storm@localhost:5433/storm_codex STORM_CAST_CUSTOM_REPLAY=<un .StormReplay
   Custom> cargo test --workspace` (sans `DATABASE_URL`, les tests DB s'ignorent en silence ; sans
-  `STORM_CAST_CUSTOM_REPLAY`, le test d'octets réels est sauté) → **271 passés, 3 ignorés** (serveur : 227) ;
-  `cd web && npm test && npm run build` → 186 web ; `cargo clippy --all-targets -- -D warnings` propre.
+  `STORM_CAST_CUSTOM_REPLAY`, le test d'octets réels est sauté) → **271 passés, 3 ignorés** (serveur : 227) ; après la
+  vague de correctifs de la relecture finale : serveur **230 passés, 3 ignorés** (`cargo test -p storm-codex-server`),
+  web **201** ;
+  `cd web && npm test && npm run build` → 186 web avant cette vague ; `cargo clippy --all-targets -- -D warnings` propre.
   Les tests DB du dépôt laissent des fixtures dans la base dev (un run : matches +454, uploads +10, match_players
   +2 912) : comportement **préexistant** (surtout `players/`) ; les tests `cast/lineup.rs` utilisent aussi le helper
   `insert_match` (quelques lignes, part exacte non mesurée). Purge : `cargo test -p storm-codex-server purge_fixtures --
@@ -46,27 +56,32 @@ de vérité des équipes ; le casteur la pilote depuis `/cast` et OBS lit `/cast
 - **Limites connues** :
   - *Draft* : **démarrer une série (`POST /api/cast/series`) réinitialise le moteur de draft** (format/étapes reconstruits,
     curseur 0, series bans vidés, partie de replay désélectionnée, lecture auto stoppée) et **efface donc un draft en
-    cours** (R20) ; les boutons draft « Next game »/« New series » agissent sur le moteur de draft seul.
+    cours** (R20) ; pendant une série active, « New series » du draft est **désactivé** (la série se gère depuis le
+    rail) ; « Next game › » reste actif et n'agit que sur le moteur de draft (cumul des bans Fearless) — « Start game »
+    de la régie n'avance pas le draft.
   - *Replay d'une partie* : orientation Blue/Red par toon puis pseudo (R16) ; sans preuve, équipe 0 = Blue, mais un
     vainqueur saisi qui contredit → `409 side_mismatch` ; `?swap=1` forcé est **silencieux même contre une preuve
-    contraire** ; fichier temporaire non supprimé si le client coupe pendant le décodage, corps jusqu'à 64 Mo écrit sur
-    l'exécuteur async ; fenêtre TOCTOU (série remplacée pendant le décodage) ; forts·keeps affiche 0–0 sur les cartes
+    contraire** ; écriture/décodage/suppression du fichier temporaire dans le `spawn_blocking` sous `parse_sem`
+    (supprimé aussi si le client coupe) ; fenêtre TOCTOU (série remplacée pendant le décodage) ; forts·keeps affiche 0–0 sur les cartes
     sans structures ; objectifs de carte = liste blanche (R17), Blackheart's Bay gardé sur un corpus mince (1 partie) —
     l'opérateur peut préférer le retirer (une constante + une ligne de doc, R18).
   - *Diaporama* (R15) : slide 0 = bandeau des cartes, slides 1–4 = onglets du breakdown (dégâts, soins, siège,
     takedowns), seule la slide 0 existe sans résumé ; le numéro de partie et l'index/intervalle d'un slide ne sont pas
     validés côté serveur (UI 2–120 s, serveur 0,5 s–1 h) ; pools de 11–14 cartes débordent sur 3 rangées.
-  - *Overlay* : le badge affiche GAME n+1 une fois la série terminée ; pas de fondu de sortie ; ancres In-game =
+  - *Overlay* : pastille « GAME k » — R9 (partie en cours, sinon dernière + 1) et **R22** (série décidée, un camp à
+    ⌈bo/2⌉ : numéro de la dernière partie) ; la scène Draft s'affiche même sans série active (R19) ; le WS relit
+    `cast`/`draft` à chaque reconnexion (+ filet 10 s) ; pas de fondu de sortie ; ancres In-game =
     constantes (`web/src/cast/anchors.ts`) à ré-étalonner si l'UI du jeu change ; mode B n'attribue un héros qu'à un joueur
     rattaché par toon ou pseudo exact (jamais par position).
-  - *Régie* : `POST /series` **garde les logos** existants (R7, effacer via `PUT /teams`) ; `PoolPanel` sous l'espace de
+  - *Régie* : erreur de clic récupérable (**R21**) : « Change winner » sur un vainqueur saisi sans résumé de replay,
+    « Remove game » (`DELETE /api/cast/games/{n}`) sur la dernière partie sans résultat ; un vainqueur venu d'un replay
+    ne se corrige qu'en rechargeant le bon replay. `POST /series` **garde les logos** existants (R7, effacer via `PUT /teams`) ; `PoolPanel` sous l'espace de
     travail et non dans le rail gauche (R11) ; bascule Live/Replay non stylée ; aria-labels incomplets.
 - **Reste** : relecture finale puis merge ; **re-mesurer le décodage post-game sur machine au repos avant déploiement**
-  (417–444 ms mesurés sous charge) ; purger les fixtures de la base dev (`purge_fixtures`, voir Tests) ; invalider la
-  requête `["cast"]` à la reconnexion WS (une source OBS peut rester périmée jusqu'au prochain événement — candidat
-  correctif) ; confirmer en cast réel « équipe 0 du replay = Blue » quand aucune preuve de joueurs ; **déploiement sur le
-  box** (rsync + docker compose build, migration `0012_cast_live`) et essai sur une vraie diffusion OBS ; supprimer
-  `pages/Draft.tsx` et `pages/DraftReplay.tsx` (wrappers morts).
+  (417–444 ms mesurés sous charge) ; purger les fixtures de la base dev (`purge_fixtures`, voir Tests) ; confirmer en cast réel « équipe 0 du replay = Blue » quand aucune preuve de joueurs ; **déploiement sur le
+  box** (rsync + docker compose build, migrations `0012_cast_live` **et** `0013_cast_logo`) et essai sur une vraie diffusion
+  OBS ; trancher avec l'opérateur la réécriture d'historique pour l'ancienne capture `ingame.webp` (commit `cf372fa`,
+  pseudos réels visibles ; la version courante est floutée sous la bande de HUD).
 
 ## Draft depuis un replay — LIVRÉ sur `feat/draft-replay` (2026-10-25, pas encore mergé ni déployé)
 Spec `docs/specs/2026-10-25-draft-replay-design.md`, plan `docs/plans/2026-10-25-draft-replay.md`, maquettes
