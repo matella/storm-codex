@@ -71,7 +71,7 @@ export function DraftConsoleView({ d, dim, role, setRole, search, setSearch, loc
     if (mode === "preban") { draftUnavailable(name, !d.manual_unavailable.includes(name)); return; }
     if (!used.has(name) && d.cursor < d.steps.length) draftAction(name);
   };
-  const overlayUrl = `${typeof window === "undefined" ? "" : window.location.origin}/draft/overlay?skin=nexus`;
+  const overlayUrl = `${typeof window === "undefined" ? "" : window.location.origin}/cast/overlay?skin=nexus`;
   const cfg = { format: d.format, map: d.map, first_pick: d.first_pick, blue: d.blue, red: d.red, bo: d.bo };
 
   return (
@@ -140,7 +140,9 @@ export function DraftConsoleView({ d, dim, role, setRole, search, setSearch, loc
         </Field>
         <div className="spacer" />
         <button className="ds-btn" onClick={() => draftSeriesNext()}>Next game ›</button>
-        <button className="ds-btn primary" onClick={() => { if (confirm("Start a new series? (clears the fearless history)")) draftSeriesNew(); }}>New series</button>
+        <button className="ds-btn primary" disabled={locked}
+          title={locked ? "The active series is managed from the series rail (New series there resets the draft too)" : undefined}
+          onClick={() => { if (confirm("Start a new series? (clears the fearless history)")) draftSeriesNew(); }}>New series</button>
       </div>
 
       <div className={`phase ${curSide ?? "done"}`}>

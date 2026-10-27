@@ -23,8 +23,8 @@ pub async fn recent_heroes_many(db: &PgPool, toons: &[String]) -> Result<Vec<Vec
     Ok(tally(toons.len(), &rows))
 }
 
-/// API à un seul toon (la route passe par `recent_heroes_many`).
-#[allow(dead_code)]
+/// API à un seul toon, pour les tests (la route passe par `recent_heroes_many`).
+#[cfg(test)]
 pub async fn recent_heroes(db: &PgPool, toon: &str) -> Result<Vec<HeroCount>, sqlx::Error> {
     Ok(recent_heroes_many(db, &[toon.to_owned()]).await?.into_iter().next().unwrap_or_default())
 }

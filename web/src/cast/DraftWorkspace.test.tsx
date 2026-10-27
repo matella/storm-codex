@@ -34,6 +34,15 @@ describe("DraftConsoleView", () => {
     expect(html).toMatch(/<option[^>]*>Bo5</);
     expect(html).not.toContain(`disabled=""`);
   });
+  it("M3: active series disables the draft's New series (the rail owns the series), Next game stays usable", () => {
+    expect(view(true)).toMatch(/<button[^>]*disabled=""[^>]*>New series</);
+    expect(view(true)).not.toMatch(/<button[^>]*disabled=""[^>]*>Next game/);
+    expect(view(false)).not.toMatch(/<button[^>]*disabled=""[^>]*>New series</);
+  });
+  it("M4: the OBS overlay link points at the cast overlay", () => {
+    expect(view(false)).toContain("/cast/overlay?skin=nexus");
+    expect(view(false)).not.toContain("/draft/overlay");
+  });
 });
 
 describe("format selector", () => {
