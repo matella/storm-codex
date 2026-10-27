@@ -19,21 +19,67 @@ type Resp = (StatusCode, Json<J>);
 /// Bornes de l'intervalle du diaporama (ms).
 const INTERVAL_RANGE: std::ops::RangeInclusive<u32> = 500..=3_600_000;
 
-/// Persiste la série courante + diffuse l'event temps réel (sans état : les clients refetch).
-pub(super) async fn persist(s: &AppState) {
-    let snapshot = { s.cast.read().await.clone() };
-    if let Err(e) = store::save(&s.db, &snapshot).await {
+/// Version suivante de l'état en mémoire — appelée sous le write-lock de la mutation qui le produit.
+fn next_version(s: &AppState) -> u64 {
+    s.cast_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1
+}
+
+/// Écrit `snapshot` (l'état produit par la mutation de version `v`), sauf si une version plus
+/// récente est déjà en base : deux persistances concurrentes ne peuvent jamais finir sur l'ancien
+/// état (écritures sérialisées par `cast_saved`, qui retient la dernière version écrite).
+async fn save_versioned(s: &AppState, snapshot: &Series, v: u64) -> Result<(), sqlx::Error> {
+    let mut last = s.cast_saved.lock().await;
+    if v <= *last {
+        return Ok(());
+    }
+    store::save(&s.db, snapshot).await?;
+    *last = v;
+    Ok(())
+}
+
+/// Persiste l'instantané de la mutation puis diffuse `cast.updated` (toujours, même si l'écriture
+/// échoue : l'état en mémoire a changé). Erreur d'écriture → `Err` (la route répond 500, R24).
+pub(super) async fn persist(s: &AppState, snapshot: &Series, v: u64) -> Result<(), sqlx::Error> {
+    let res = save_versioned(s, snapshot, v).await;
+    if let Err(e) = &res {
         tracing::error!("cast save: {e}");
     }
     let _ = s.events.send(json!({ "type": "cast.updated" }));
+    res
+}
+
+/// R24 : l'écriture en base a échoué — état appliqué en mémoire et diffusé, mais non persisté.
+fn persist_failed() -> Resp {
+    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "persist_failed" })))
 }
 
 pub(super) fn conflict(e: CastError) -> Resp {
-    let code = match e {
-        CastError::SideMismatch => "side_mismatch".to_owned(),
-        other => format!("{other:?}"),
-    };
-    (StatusCode::CONFLICT, Json(json!({ "error": code })))
+    (StatusCode::CONFLICT, Json(json!({ "error": e.code() })))
+}
+
+/// Synchro série → draft après une mutation.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum DraftSync {
+    No,
+    /// Équipes, pseudos, score, Bo.
+    Sync,
+    /// `Sync` + alignement du moteur sur le format de la série (R20, `POST /api/cast/series`).
+    Align,
+}
+
+/// Recopie l'état de cast **courant** (relu sous read-lock pendant que le write-lock du draft est
+/// tenu) dans le draft, puis persiste le draft : une mutation concurrente plus récente ne peut pas
+/// être écrasée par l'instantané d'une plus ancienne. Jamais les deux write-locks ensemble.
+pub(super) async fn sync_draft(s: &AppState, align: bool) {
+    {
+        let mut d = s.draft.write().await;
+        let c = s.cast.read().await;
+        super::sync::sync_into_draft(&c, &mut d);
+        if align {
+            d.align_to_series(c.format);
+        }
+    }
+    crate::draft::api::persist(s).await;
 }
 
 fn series_json(s: &Series) -> Resp {
@@ -47,19 +93,20 @@ async fn mutate<T>(
     gated: bool,
     f: impl FnOnce(&mut Series) -> Result<T, CastError>,
 ) -> Result<(T, Series), Resp> {
-    mutate_ex(s, gated, false, f).await
+    mutate_ex(s, gated, DraftSync::No, f).await
 }
 
-/// Comme `mutate` ; `sync` : recopie ensuite équipes/pseudos/score/Bo dans le draft (sens unique
-/// série → draft) et persiste/diffuse les deux états. Les locks cast et draft ne sont jamais
-/// tenus en même temps (le write-lock cast est relâché avant de prendre celui du draft).
+/// Comme `mutate` ; `sync` : recopie ensuite l'état courant dans le draft (sens unique série →
+/// draft, `sync_draft`) et persiste/diffuse les deux états. Les write-locks cast et draft ne sont
+/// jamais tenus en même temps. Échec d'écriture de la série → `500 persist_failed` (R24 : l'état
+/// reste appliqué en mémoire et `cast.updated` est diffusé).
 pub(super) async fn mutate_ex<T>(
     s: &AppState,
     gated: bool,
-    sync: bool,
+    sync: DraftSync,
     f: impl FnOnce(&mut Series) -> Result<T, CastError>,
 ) -> Result<(T, Series), Resp> {
-    let out = {
+    let (out, version) = {
         let mut g = s.cast.write().await;
         if gated && !g.active {
             return Err(conflict(CastError::SeriesInactive));
@@ -67,28 +114,24 @@ pub(super) async fn mutate_ex<T>(
         let mut next = g.clone();
         let v = f(&mut next).map_err(conflict)?;
         *g = next.clone();
-        (v, next)
+        ((v, next), next_version(s))
     };
-    if sync {
-        {
-            let mut d = s.draft.write().await;
-            super::sync::sync_into_draft(&out.1, &mut d);
-        }
-        crate::draft::api::persist(s).await;
+    if sync != DraftSync::No {
+        sync_draft(s, sync == DraftSync::Align).await;
     }
-    persist(s).await;
+    persist(s, &out.1, version).await.map_err(|_| persist_failed())?;
     Ok(out)
 }
 
 /// Mutation qui répond par la série complète.
 async fn mutate_series(s: &AppState, gated: bool, f: impl FnOnce(&mut Series) -> Result<(), CastError>) -> Resp {
-    mutate_series_ex(s, gated, false, f).await
+    mutate_series_ex(s, gated, DraftSync::No, f).await
 }
 
 async fn mutate_series_ex(
     s: &AppState,
     gated: bool,
-    sync: bool,
+    sync: DraftSync,
     f: impl FnOnce(&mut Series) -> Result<(), CastError>,
 ) -> Resp {
     match mutate_ex(s, gated, sync, f).await {
@@ -121,11 +164,11 @@ pub async fn start_series(State(s): State<AppState>, Json(b): Json<SeriesBody>) 
     if !matches!(b.bo, 1 | 3 | 5 | 7) {
         return (StatusCode::BAD_REQUEST, Json(json!({ "error": "bad_bo" })));
     }
-    // sync=false ici : la synchro vers le draft est faite plus bas, avec l'alignement du format (R20)
-    let res = mutate_ex(&s, false, false, |c| {
+    // R20 : démarrer une série remet aussi le moteur de draft sur son format/steps (partie + série
+    // neuves), dans le même passage que la synchro (`DraftSync::Align`).
+    mutate_series_ex(&s, false, DraftSync::Align, |c| {
         let mut n = Series::new();
         n.active = true;
-        // les logos (stockés en base) survivent au redémarrage de série
         // logo absent du corps → on garde celui en place (stocké en base)
         let (old_blue, old_red) = (c.blue.logo.take(), c.red.logo.take());
         n.blue = Team { logo: b.blue.logo.or(old_blue), ..b.blue };
@@ -137,20 +180,7 @@ pub async fn start_series(State(s): State<AppState>, Json(b): Json<SeriesBody>) 
         *c = n;
         Ok(())
     })
-    .await;
-    let series = match res {
-        Ok(((), series)) => series,
-        Err(r) => return r,
-    };
-    // R20 : démarrer une série remet le moteur de draft sur son format/steps (partie + série neuves) ;
-    // locks cast et draft jamais tenus ensemble (le write-lock cast est déjà relâché).
-    {
-        let mut d = s.draft.write().await;
-        super::sync::sync_into_draft(&series, &mut d);
-        d.align_to_series(series.format);
-    }
-    crate::draft::api::persist(&s).await;
-    series_json(&series)
+    .await
 }
 
 #[derive(Deserialize)]
@@ -161,7 +191,7 @@ pub struct TeamsBody {
 
 /// PUT /api/cast/teams — remplace les deux équipes (nom, logo, bilan, joueurs, capitaine).
 pub async fn put_teams(State(s): State<AppState>, Json(b): Json<TeamsBody>) -> Resp {
-    mutate_series_ex(&s, true, true, |c| {
+    mutate_series_ex(&s, true, DraftSync::Sync, |c| {
         c.blue = b.blue;
         c.red = b.red;
         Ok(())
@@ -205,7 +235,7 @@ pub struct WinnerBody {
 
 /// POST /api/cast/games/{n}/winner `{side, takedowns?, duration_secs?}`.
 pub async fn set_winner(State(s): State<AppState>, Path(n): Path<u8>, Json(b): Json<WinnerBody>) -> Resp {
-    mutate_series_ex(&s, true, true, |c| {
+    mutate_series_ex(&s, true, DraftSync::Sync, |c| {
         c.set_winner(n, b.side)?;
         if let Some(g) = c.games.iter_mut().find(|g| g.number == n) {
             if let Some(t) = b.takedowns {
@@ -224,7 +254,7 @@ pub async fn set_winner(State(s): State<AppState>, Path(n): Path<u8>, Json(b): J
 /// ni résumé (sinon 409 `GameHasResult`), la dernière seulement (409 `NotLastGame`). La carte garde
 /// son statut et redevient lançable ; synchro draft comme `/winner`.
 pub async fn remove_game(State(s): State<AppState>, Path(n): Path<u8>) -> Resp {
-    mutate_series_ex(&s, true, true, |c| c.remove_game(n)).await
+    mutate_series_ex(&s, true, DraftSync::Sync, |c| c.remove_game(n)).await
 }
 
 #[derive(Deserialize)]
@@ -235,7 +265,7 @@ pub struct ScoreBody {
 
 /// POST /api/cast/score `{blue, red}` (override) ou `null` (retour au score calculé).
 pub async fn set_score(State(s): State<AppState>, Json(b): Json<Option<ScoreBody>>) -> Resp {
-    mutate_series_ex(&s, true, true, |c| {
+    mutate_series_ex(&s, true, DraftSync::Sync, |c| {
         c.score_override = b.map(|b| [b.blue, b.red]);
         Ok(())
     })
@@ -889,6 +919,102 @@ mod tests {
         // la carte B se relance avec le même numéro
         let (_, g) = call(&state, "POST", "/api/cast/games/start", Some(json!({"map":"B"}))).await;
         assert_eq!(g["number"], 2);
+    }
+
+    /// Item 1 : un instantané plus ancien (version inférieure) écrit après un plus récent est ignoré.
+    #[tokio::test]
+    async fn older_snapshot_never_overwrites_newer_one() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        let (mut old, mut new) = (Series::new(), Series::new());
+        old.scene = Scene::Series;
+        new.scene = Scene::Draft;
+        persist(&state, &new, 2).await.unwrap();
+        persist(&state, &old, 1).await.unwrap();
+        assert_eq!(store::load(&state.db).await, Some(new.clone()));
+        // même version rejouée : ignorée aussi
+        persist(&state, &old, 2).await.unwrap();
+        assert_eq!(store::load(&state.db).await, Some(new));
+    }
+
+    /// Items 1 + 4 : deux mutations concurrentes (avec synchro draft) — la base et le draft finissent
+    /// sur l'état en mémoire le plus récent, quel que soit l'ordre des persistances.
+    #[tokio::test]
+    async fn interleaved_mutations_persist_and_sync_latest_state() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        call(&state, "POST", "/api/cast/series", Some(start_body())).await;
+        for round in 0..20u8 {
+            let (a, b) = (state.clone(), state.clone());
+            let ta = tokio::spawn(async move { call(&a, "POST", "/api/cast/score", Some(json!({"blue": round, "red": 0}))).await });
+            let tb = tokio::spawn(async move { call(&b, "POST", "/api/cast/score", Some(json!({"blue": 0, "red": round}))).await });
+            assert_eq!(ta.await.unwrap().0, StatusCode::OK);
+            assert_eq!(tb.await.unwrap().0, StatusCode::OK);
+            let mem = state.cast.read().await.clone();
+            assert_eq!(store::load(&state.db).await.as_ref(), Some(&mem), "round {round}");
+            assert_eq!(state.draft.read().await.score, mem.score(), "round {round}");
+        }
+    }
+
+    /// Item 4 : la synchro relit l'état de cast COURANT (pas l'instantané d'une mutation antérieure).
+    #[tokio::test]
+    async fn sync_draft_copies_current_cast_state() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        call(&state, "POST", "/api/cast/series", Some(start_body())).await;
+        {
+            let mut c = state.cast.write().await;
+            c.score_override = Some([3, 1]);
+            c.blue.name = "Newer".into();
+        }
+        sync_draft(&state, false).await;
+        let d = state.draft.read().await;
+        assert_eq!((d.score, d.blue.name.as_str()), ([3, 1], "Newer"));
+    }
+
+    /// R24 : écriture en base impossible → 500 `persist_failed`, état appliqué en mémoire, diffusé.
+    #[tokio::test]
+    async fn failed_save_answers_500_persist_failed_but_applies_and_broadcasts() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        state.db.close().await;
+        let mut rx = state.events.subscribe();
+        let (st, v) = call(&state, "POST", "/api/cast/scene", Some(json!({"scene":"lineups"}))).await;
+        assert_eq!((st, v["error"].as_str()), (StatusCode::INTERNAL_SERVER_ERROR, Some("persist_failed")));
+        assert_eq!(state.cast.read().await.scene, Scene::Lineups);
+        assert_eq!(rx.recv().await.unwrap(), json!({"type":"cast.updated"}));
+    }
+
+    /// Item 2 : codes d'erreur stables (contrat 05-api), indépendants du nom Rust.
+    #[test]
+    fn cast_error_codes_are_stable() {
+        let all = [
+            (CastError::UnknownMap, "UnknownMap"),
+            (CastError::NotInPool, "NotInPool"),
+            (CastError::DuplicateDecider, "DuplicateDecider"),
+            (CastError::MapNotChosen, "MapNotChosen"),
+            (CastError::UnknownGame, "UnknownGame"),
+            (CastError::WinnerAlreadySet, "WinnerAlreadySet"),
+            (CastError::NotLastGame, "NotLastGame"),
+            (CastError::GameHasResult, "GameHasResult"),
+            (CastError::MapAlreadyPlayed, "MapAlreadyPlayed"),
+            (CastError::SeriesInactive, "SeriesInactive"),
+            (CastError::SideMismatch, "side_mismatch"),
+        ];
+        for (e, code) in all {
+            assert_eq!(e.code(), code);
+            assert_eq!(conflict(e).1 .0, json!({"error": code}));
+        }
+    }
+
+    /// Item 3 : un `schema_version` plus récent est signalé mais l'état reste chargeable.
+    #[test]
+    fn newer_schema_is_detected_and_still_loads() {
+        assert_eq!(store::newer_schema(&json!({"schema_version": 99})), Some(99));
+        assert_eq!(store::newer_schema(&json!({"schema_version": crate::cast::SCHEMA_VERSION})), None);
+        assert_eq!(store::newer_schema(&json!({})), None);
+        let s = store::decode(json!({"schema_version": 99, "bo": 3})).unwrap();
+        assert_eq!((s.schema_version, s.bo), (99, 3));
     }
 
     #[tokio::test]

@@ -1,7 +1,7 @@
 //! POST /api/cast/games/{n}/replay — dépose le replay Custom d'une partie de la série : décodé à la
 //! volée (même chemin que `draft::replay_api::load`), résumé (`summary.rs`) conservé dans l'état de
 //! la série. **Rien n'est écrit en base** hors de la ligne `cast_live`.
-use super::api::{conflict, mutate_ex};
+use super::api::{conflict, mutate_ex, DraftSync};
 use super::summary::{summary_from_output, SummaryError};
 use super::{CastError, GameSummary};
 use crate::AppState;
@@ -69,7 +69,7 @@ async fn decode_in(sem: Arc<Semaphore>, dir: PathBuf, bytes: Bytes) -> Result<Ga
 /// série courante) puis remplit la partie `n` (vainqueur, takedowns, durée, résumé) ; persiste,
 /// synchronise le draft, diffuse `cast.updated`. `409 side_mismatch` : rien ne change.
 pub(super) async fn apply(s: &AppState, n: u8, summary: GameSummary, force_swap: bool) -> Resp {
-    match mutate_ex(s, true, true, |c| c.fill_from_replay(n, summary, force_swap)).await {
+    match mutate_ex(s, true, DraftSync::Sync, |c| c.fill_from_replay(n, summary, force_swap)).await {
         Ok((stored, _)) => (StatusCode::CREATED, Json(serde_json::to_value(&stored).unwrap_or(J::Null))),
         Err(r) => r,
     }

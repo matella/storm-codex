@@ -46,6 +46,10 @@ pub struct AppState {
     pub draft: Arc<RwLock<draft::DraftState>>,
     /// Série de la régie de cast (singleton, persisté dans `cast_live`).
     pub cast: Arc<RwLock<cast::Series>>,
+    /// Version de l'état de cast en mémoire (attribuée sous le write-lock de chaque mutation) et
+    /// dernière version écrite en base : un instantané plus ancien n'écrase jamais un plus récent.
+    pub cast_version: Arc<std::sync::atomic::AtomicU64>,
+    pub cast_saved: Arc<tokio::sync::Mutex<u64>>,
     /// Lobby live courant (singleton, persisté dans `lobby_live`). `None` = aucun lobby.
     pub lobby: Arc<RwLock<Option<lobby::LobbyState>>>,
     /// Partie en cours (feed live, en mémoire, jetable). `None` = aucune.
@@ -135,6 +139,8 @@ async fn run() -> Result<(), String> {
         events,
         draft: Arc::new(RwLock::new(draft)),
         cast: Arc::new(RwLock::new(cast_initial)),
+        cast_version: Arc::default(),
+        cast_saved: Arc::default(),
         lobby: Arc::new(RwLock::new(lobby_initial)),
         live: Arc::new(RwLock::new(None)),
         replay_timer: Arc::default(),
@@ -429,6 +435,8 @@ pub(crate) mod api_tests {
             parse_sem: Arc::new(Semaphore::new(2)),
             events,
             cast: Arc::new(RwLock::new(cast::Series::new())),
+            cast_version: Arc::default(),
+            cast_saved: Arc::default(),
             lobby: Arc::new(RwLock::new(None)),
             live: Arc::new(RwLock::new(None)),
             replay_timer: Arc::default(),

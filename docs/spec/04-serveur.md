@@ -101,7 +101,17 @@ score, mode de lineup), `store.rs` (persistance), `lineup.rs` (héros récents p
 mémoire (`AppState.cast`), **persistée** dans `cast_live` (JSONB, id=1), rechargée au démarrage ; tout
 état illisible (non-objet, `players` ≠ 5, scène/format/côté/statut inconnu) → repli sur une série neuve
 inactive, le démarrage n'échoue jamais. Chaque mutation : un seul write-lock sur une copie (une erreur
-`CastError` ne change rien), puis persistance et broadcast `cast.updated` sur `/ws`. Mode ouvert comme
+`CastError` ne change rien), puis persistance et broadcast `cast.updated` sur `/ws`. **Persistance
+versionnée** : chaque mutation reçoit une version (`AppState.cast_version`, attribuée sous le write-lock) et
+persiste **son** instantané ; les écritures sont sérialisées (`AppState.cast_saved` = dernière version écrite)
+et un instantané plus ancien que le dernier écrit est ignoré — deux mutations concurrentes ne peuvent jamais
+laisser l'ancien état en base. Échec d'écriture → la route répond `500 persist_failed` (R24 ; l'état reste
+appliqué en mémoire et `cast.updated` est diffusé). **Synchro draft** (`api::sync_draft`) : relit l'état de
+cast **courant** sous read-lock pendant que le write-lock du draft est tenu (jamais les deux write-locks),
+pour qu'une mutation plus récente ne soit pas écrasée par l'instantané d'une plus ancienne. Chargement
+(`store::load`) : erreur de lecture en base journalisée en `error`, JSON illisible en `warn`, `schema_version`
+plus récent que le code en `warn` (chargé quand même, lecture tolérante). Erreurs : `CastError::code()` donne
+le code stable renvoyé par les routes. Mode ouvert comme
 `/api/draft`. Règles : `mark_map` refuse une carte déjà jouée (`MapAlreadyPlayed`) ; toute mutation sauf
 `POST /api/cast/series` et `/scene` exige `active` (`SeriesInactive`).
 `POST /api/cast/series` aligne aussi le draft (format, steps, partie et série neuves : `DraftState::align_to_series`, après la synchro équipes/score/Bo, locks jamais tenus ensemble) la file de replays est conservée mais sa partie courante est désélectionnée et la lecture auto stoppée (comme `/api/draft/config`), pour que le moteur ne diverge jamais du format de la série.

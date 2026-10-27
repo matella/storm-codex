@@ -249,3 +249,23 @@ pub enum CastError {
     #[error("replay sides do not match the recorded winner")]
     SideMismatch,
 }
+
+impl CastError {
+    /// Code stable renvoyé par les routes (`409 {"error": code}`) — contrat de l'API (docs/spec/05-api.md),
+    /// indépendant du nom Rust de la variante.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::UnknownMap => "UnknownMap",
+            Self::NotInPool => "NotInPool",
+            Self::DuplicateDecider => "DuplicateDecider",
+            Self::MapNotChosen => "MapNotChosen",
+            Self::UnknownGame => "UnknownGame",
+            Self::WinnerAlreadySet => "WinnerAlreadySet",
+            Self::NotLastGame => "NotLastGame",
+            Self::GameHasResult => "GameHasResult",
+            Self::MapAlreadyPlayed => "MapAlreadyPlayed",
+            Self::SeriesInactive => "SeriesInactive",
+            Self::SideMismatch => "side_mismatch",
+        }
+    }
+}
