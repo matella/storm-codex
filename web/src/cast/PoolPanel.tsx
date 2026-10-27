@@ -2,9 +2,9 @@
 import { useState } from "react";
 import { mapImage } from "../api";
 import type { Side } from "../api";
-import { castMarkMap, castStartGame, castWinner } from "../castApi";
+import { castMarkMap, castRemoveGame, castStartGame, castWinner } from "../castApi";
 import type { CastSeries, MapMark, PoolMap } from "../castApi";
-import { canSetWinner, mapCardView, startableMaps } from "../castState";
+import { canChangeWinner, canRemoveGame, canSetWinner, mapCardView, startableMaps } from "../castState";
 
 type Run = (fn: () => Promise<unknown>) => Promise<void>;
 
@@ -67,7 +67,17 @@ export function PoolPanel({ series, run }: { series: CastSeries; run: Run }) {
               <span className="cr-gn">Game {g.number}</span>
               <span className="cr-gm">{g.map}</span>
               {g.winner
-                ? <span className={`cr-win tone-${g.winner}`}>{g.winner === "blue" ? "Blue" : "Red"} won</span>
+                ? <>
+                    <span className={`cr-win tone-${g.winner}`}>{g.winner === "blue" ? "Blue" : "Red"} won</span>
+                    {canChangeWinner(series, g.number) && (
+                      <button
+                        type="button"
+                        className="ds-btn small"
+                        title="Misclick? Give the win to the other side (not possible once a replay is loaded)"
+                        onClick={() => run(() => castWinner(g.number, { side: g.winner === "blue" ? "red" : "blue" }))}
+                      >Change winner</button>
+                    )}
+                  </>
                 : (["blue", "red"] as Side[]).map((side) => (
                     <button
                       key={side}
@@ -77,6 +87,16 @@ export function PoolPanel({ series, run }: { series: CastSeries; run: Run }) {
                       onClick={() => run(() => castWinner(g.number, { side }))}
                     >{side === "blue" ? "Blue" : "Red"} won</button>
                   ))}
+              {canRemoveGame(series, g.number) && (
+                <button
+                  type="button"
+                  className="ds-btn small"
+                  title="Started by mistake? Remove this game; its map becomes startable again"
+                  onClick={() => {
+                    if (window.confirm(`Remove game ${g.number} (${g.map})?`)) void run(() => castRemoveGame(g.number));
+                  }}
+                >Remove game</button>
+              )}
             </div>
           ))}
         </div>

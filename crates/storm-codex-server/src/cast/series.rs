@@ -52,12 +52,33 @@ impl Series {
         Ok(number)
     }
 
+    /// Pose (ou corrige, R21 : erreur de clic) le vainqueur saisi à la main ; refusé si la partie a
+    /// un résumé de replay (il porte son propre vainqueur et son orientation).
     pub fn set_winner(&mut self, number: u8, side: Side) -> Result<(), CastError> {
         let g = self.games.iter_mut().find(|g| g.number == number).ok_or(CastError::UnknownGame)?;
-        if g.winner.is_some() {
+        if g.summary.is_some() {
             return Err(CastError::WinnerAlreadySet);
         }
         g.winner = Some(side);
+        Ok(())
+    }
+
+    /// Retire la partie `number` lancée par erreur (R21) : seulement la dernière, et seulement
+    /// sans vainqueur ni résumé. Le statut de la carte (pickée/decider) est inchangé : elle redevient
+    /// lançable. Une partie épinglée dans le diaporama est désépinglée.
+    pub fn remove_game(&mut self, number: u8) -> Result<(), CastError> {
+        let idx = self.games.iter().position(|g| g.number == number).ok_or(CastError::UnknownGame)?;
+        if self.games.iter().any(|g| g.number > number) {
+            return Err(CastError::NotLastGame);
+        }
+        let g = &self.games[idx];
+        if g.winner.is_some() || g.summary.is_some() {
+            return Err(CastError::GameHasResult);
+        }
+        self.games.remove(idx);
+        if self.slide.game == Some(number) {
+            self.slide.game = None;
+        }
         Ok(())
     }
 
@@ -267,11 +288,49 @@ mod tests {
         assert_eq!(s.set_winner(9, Side::Blue), Err(CastError::UnknownGame));
     }
 
+    /// R21 : sans résumé, un second vainqueur corrige le premier (score et lineup suivent) ;
+    /// avec un résumé de replay, refus `WinnerAlreadySet`, état inchangé.
     #[test]
-    fn set_winner_twice() {
+    fn set_winner_overwrites_manual_winner_but_not_replay_summary() {
         let mut s = with_game();
         s.set_winner(1, Side::Blue).unwrap();
+        assert_eq!(s.score(), [1, 0]);
+        s.set_winner(1, Side::Red).unwrap();
+        assert_eq!(s.games[0].winner, Some(Side::Red));
+        assert_eq!(s.score(), [0, 1]);
+        assert_eq!(s.lineup_mode_effective(), LineupMode::B);
+        let mut s = replay_game(team(&[]), team(&[]), None);
+        s.fill_from_replay(1, replay_summary(), false).unwrap();
+        let before = s.clone();
         assert_eq!(s.set_winner(1, Side::Red), Err(CastError::WinnerAlreadySet));
+        assert_eq!(s, before);
+    }
+
+    #[test]
+    fn remove_game_only_last_without_result_and_map_becomes_startable_again() {
+        let mut s = series(&["A", "B"]);
+        s.mark_map("A", MapStatus::Picked { by: Side::Blue }).unwrap();
+        s.mark_map("B", MapStatus::Decider).unwrap();
+        s.start_game("A").unwrap();
+        s.start_game("B").unwrap();
+        s.slide.game = Some(2);
+        assert_eq!(s.remove_game(9), Err(CastError::UnknownGame));
+        assert_eq!(s.remove_game(1), Err(CastError::NotLastGame));
+        s.remove_game(2).unwrap();
+        assert_eq!(s.games.len(), 1);
+        assert_eq!(s.slide.game, None);
+        assert_eq!(status(&s, "B"), MapStatus::Decider);
+        assert_eq!(s.next_map(), Some("B"));
+        assert_eq!(s.start_game("B"), Ok(2));
+        // vainqueur posé : non retirable
+        s.set_winner(2, Side::Red).unwrap();
+        let before = s.clone();
+        assert_eq!(s.remove_game(2), Err(CastError::GameHasResult));
+        assert_eq!(s, before);
+        // résumé sans vainqueur saisi (cas théorique) : non retirable non plus
+        let mut s = with_game();
+        s.games[0].summary = Some(replay_summary());
+        assert_eq!(s.remove_game(1), Err(CastError::GameHasResult));
     }
 
     #[test]

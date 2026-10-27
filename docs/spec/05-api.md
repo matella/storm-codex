@@ -92,17 +92,17 @@ Spec : `docs/specs/2026-10-25-draft-replay-design.md`.
 (`blue`/`red` = équipe complète — nom, bilan, joueurs, capitaine, logo — tous champs optionnels, `{name}` seul accepté ; un `logo` absent garde le logo en place ; crée/redémarre en un seul appel : `active=true`, parties/score/diaporama remis à zéro, scène conservée ; **draft aligné (R20)** : le moteur de draft reprend `format` et `steps` de la série, partie neuve (curseur 0) et nouvelle série (historique et series bans vidés), en gardant map, first_pick, prébans manuels, file de replays (conservée, mais partie courante désélectionnée et lecture auto stoppée, comme `/api/draft/config`) et équipes synchronisées (`DraftState::align_to_series`) ; `bo` ∈ {1,3,5,7}
 sinon `400 {"error":"bad_bo"}`, état inchangé) ·
 `PUT /api/cast/teams {blue, red}` · `POST /api/cast/pool/map {name, status: available|banned|picked|decider, by?}` ·
-`POST /api/cast/games/start {map}` → `{number}` · `POST /api/cast/games/{n}/winner {side, takedowns?: [bleu, rouge], duration_secs?}` ·
+`POST /api/cast/games/start {map}` → `{number}` · `POST /api/cast/games/{n}/winner {side, takedowns?: [bleu, rouge], duration_secs?}` (**R21** : un vainqueur saisi à la main se **corrige** par un nouvel appel — score, mode de lineup et synchro draft suivent ; refusé `WinnerAlreadySet` seulement si la partie a un résumé de replay, qui porte son propre vainqueur/orientation) · `DELETE /api/cast/games/{n}` (**R21**, partie lancée par erreur : seulement la **dernière** — sinon `409 NotLastGame` — et sans vainqueur ni résumé — sinon `409 GameHasResult` ; la carte garde son statut picked/decider et redevient lançable, une partie épinglée dans le diaporama est désépinglée ; synchro draft) ·
 `POST /api/cast/score {blue, red}` ou `null` (retour au score calculé) · `POST /api/cast/scene {scene: lineups|series|draft|ingame|hide}` ·
 `POST /api/cast/lineup-mode {mode: auto|a|b}` · `POST /api/cast/slide {game?, index?, auto?, interval_ms?}`
 (partiel ; `game: 0` désépingle la partie affichée → `slide.game` = null, « dernière partie » ; les numéros commencent à 1, les autres valeurs sont posées sans validation d'existence ; `interval_ms` borné 500 ms–1 h). Les mutations répondent par la `Series` complète (`games/start` : `{number}`).
 Erreurs `CastError` → `409 {"error": "<Variante>"}` (`UnknownMap`, `NotInPool`, `DuplicateDecider`,
-`MapNotChosen`, `UnknownGame`, `WinnerAlreadySet`, `MapAlreadyPlayed`, `SeriesInactive`), état inchangé.
+`MapNotChosen`, `UnknownGame`, `WinnerAlreadySet`, `NotLastGame`, `GameHasResult`, `MapAlreadyPlayed`, `SeriesInactive`), état inchangé.
 Toute mutation sauf `/series` et `/scene` renvoie `409 SeriesInactive` tant que `active=false`.
 `POST /api/cast/logo/{side}` (`blue`|`red` ; corps = octets, `Content-Type` png/jpeg/webp ; 1 octet–512 Ko ;
 `415` mime, `400` corps vide, `413` trop gros, `404` côté inconnu ; autorisé série inactive) → `Series` avec
 `Team.logo = "/api/cast/logo/{side}?v={updated_at_ms}"` · `GET /api/cast/logo/{side}` → octets (`404` si aucun).
-**Synchro série → draft** (sens unique) après `/series`, `/teams`, `/games/{n}/winner`, `/score` : noms, pseudos
+**Synchro série → draft** (sens unique) après `/series`, `/teams`, `/games/{n}/winner`, `DELETE /games/{n}`, `/score` : noms, pseudos
 (`Player.name`), score (`Series::score()`) et `bo` copiés dans `DraftState` sans toucher curseur/assignations/file
 replay/fearless ; les deux états sont persistés, WS `draft.updated` + `cast.updated`.
 **Héros récents** (`cast/lineup.rs`, lecture seule, aucune mutation ni WS) : `GET /api/cast/lineup?blue=toon,toon,…&red=…`

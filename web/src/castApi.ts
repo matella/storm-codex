@@ -144,6 +144,8 @@ export const castMarkMap = (name: string, mark: MapMark) =>
   send<CastSeries>("POST", "/api/cast/pool/map", { name, ...mark });
 export const castStartGame = (map: string) => send<{ number: number }>("POST", "/api/cast/games/start", { map });
 export const castWinner = (n: number, b: WinnerBody) => send<CastSeries>("POST", `/api/cast/games/${n}/winner`, b);
+/** Retire la dernière partie lancée par erreur (R21 ; 409 `NotLastGame` / `GameHasResult`). */
+export const castRemoveGame = (n: number) => send<CastSeries>("DELETE", `/api/cast/games/${n}`);
 /** `null` = retour au score calculé. */
 export const castScore = (score: { blue: number; red: number } | null) =>
   send<CastSeries>("POST", "/api/cast/score", score);

@@ -87,10 +87,23 @@ export function startableMaps(s: CastSeries): string[] {
     .map((m) => m.name);
 }
 
-/** Vainqueur posable : la partie `n` existe et n'en a pas encore (le serveur refuse WinnerAlreadySet). */
+/** Vainqueur posable : la partie `n` existe et n'en a pas encore. */
 export function canSetWinner(s: CastSeries, n: number): boolean {
   const g = s.games.find((x) => x.number === n);
   return g !== undefined && g.winner === null;
+}
+
+/** R21 : vainqueur saisi à la main corrigeable tant que la partie n'a pas de résumé de replay
+ *  (le serveur refuse alors `WinnerAlreadySet`). */
+export function canChangeWinner(s: CastSeries, n: number): boolean {
+  const g = s.games.find((x) => x.number === n);
+  return g !== undefined && g.winner !== null && !g.summary;
+}
+
+/** R21 : partie retirable = la dernière, sans vainqueur ni résumé (sinon 409 `NotLastGame` / `GameHasResult`). */
+export function canRemoveGame(s: CastSeries, n: number): boolean {
+  const g = s.games.find((x) => x.number === n);
+  return g !== undefined && !s.games.some((x) => x.number > n) && g.winner === null && !g.summary;
 }
 
 /** Réconcilie la saisie locale d'une équipe avec l'état serveur : les modifications locales (nom, joueurs…)

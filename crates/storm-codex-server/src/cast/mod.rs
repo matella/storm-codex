@@ -232,8 +232,15 @@ pub enum CastError {
     MapNotChosen,
     #[error("unknown game")]
     UnknownGame,
-    #[error("winner already set")]
+    /// Le vainqueur vient du résumé du replay (qui porte sa propre orientation) : non modifiable à la main.
+    #[error("winner already set by the game's replay")]
     WinnerAlreadySet,
+    /// Seule la dernière partie peut être retirée (R21).
+    #[error("only the last game can be removed")]
+    NotLastGame,
+    /// Partie avec vainqueur ou résumé : non retirable (R21).
+    #[error("game already has a result")]
+    GameHasResult,
     #[error("map already played")]
     MapAlreadyPlayed,
     #[error("series inactive")]

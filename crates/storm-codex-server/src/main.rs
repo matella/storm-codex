@@ -256,6 +256,7 @@ fn api_router(state: &AppState) -> Router<AppState> {
         .route("/api/cast/pool/map", post(cast::api::mark_map))
         .route("/api/cast/games/start", post(cast::api::start_game))
         .route("/api/cast/games/{n}/winner", post(cast::api::set_winner))
+        .route("/api/cast/games/{n}", axum::routing::delete(cast::api::remove_game))
         .route("/api/cast/games/{n}/replay", post(cast::replay::load_game_replay))
         .route("/api/cast/score", post(cast::api::set_score))
         .route("/api/cast/scene", post(cast::api::set_scene))

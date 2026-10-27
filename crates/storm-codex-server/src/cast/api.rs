@@ -220,6 +220,13 @@ pub async fn set_winner(State(s): State<AppState>, Path(n): Path<u8>, Json(b): J
     .await
 }
 
+/// DELETE /api/cast/games/{n} — retire la dernière partie lancée par erreur (R21) : sans vainqueur
+/// ni résumé (sinon 409 `GameHasResult`), la dernière seulement (409 `NotLastGame`). La carte garde
+/// son statut et redevient lançable ; synchro draft comme `/winner`.
+pub async fn remove_game(State(s): State<AppState>, Path(n): Path<u8>) -> Resp {
+    mutate_series_ex(&s, true, true, |c| c.remove_game(n)).await
+}
+
 #[derive(Deserialize)]
 pub struct ScoreBody {
     blue: u8,
@@ -593,6 +600,7 @@ mod tests {
             ("POST", "/api/cast/pool/map", json!({"name":"A","status":"banned","by":"red"})),
             ("POST", "/api/cast/games/start", json!({"map":"A"})),
             ("POST", "/api/cast/games/1/winner", json!({"side":"blue"})),
+            ("DELETE", "/api/cast/games/1", J::Null),
             ("POST", "/api/cast/score", json!({"blue":1,"red":0})),
             ("POST", "/api/cast/lineup-mode", json!({"mode":"a"})),
             ("POST", "/api/cast/slide", json!({"index":2})),
@@ -819,6 +827,53 @@ mod tests {
         assert!(seen.contains(&"draft.updated".to_string()) && seen.contains(&"cast.updated".to_string()), "{seen:?}");
         call(&state, "POST", "/api/cast/score", Some(json!({"blue":3,"red":2}))).await;
         assert_eq!(state.draft.read().await.score, [3, 2]);
+    }
+
+    /// R21 : corriger un vainqueur (score, lineup B, synchro draft suivent) et retirer la dernière
+    /// partie lancée par erreur (la carte redevient lançable) ; refus typés, état inchangé.
+    #[tokio::test]
+    async fn change_winner_and_remove_last_game() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        call(&state, "POST", "/api/cast/series", Some(start_body())).await;
+        for (m, by) in [("A", "blue"), ("B", "red")] {
+            call(&state, "POST", "/api/cast/pool/map", Some(json!({"name":m,"status":"picked","by":by}))).await;
+        }
+        call(&state, "POST", "/api/cast/games/start", Some(json!({"map":"A"}))).await;
+        call(&state, "POST", "/api/cast/games/1/winner", Some(json!({"side":"blue"}))).await;
+        assert_eq!(state.draft.read().await.score, [1, 0]);
+        let (st, v) = call(&state, "POST", "/api/cast/games/1/winner", Some(json!({"side":"red"}))).await;
+        assert_eq!(st, StatusCode::OK);
+        assert_eq!(v["games"][0]["winner"], "red");
+        assert_eq!(state.draft.read().await.score, [0, 1]);
+        assert_eq!(state.cast.read().await.lineup_mode_effective(), LineupMode::B);
+
+        call(&state, "POST", "/api/cast/games/start", Some(json!({"map":"B"}))).await;
+        // partie 1 : pas la dernière ; partie 2 inconnue après retrait
+        let (st, v) = call(&state, "DELETE", "/api/cast/games/1", None).await;
+        assert_eq!((st, v["error"].as_str()), (StatusCode::CONFLICT, Some("NotLastGame")));
+        let mut rx = state.events.subscribe();
+        let (st, v) = call(&state, "DELETE", "/api/cast/games/2", None).await;
+        assert_eq!(st, StatusCode::OK);
+        assert_eq!(v["games"].as_array().map(Vec::len), Some(1));
+        assert_eq!(v["pool"][1]["status"], "picked");
+        assert_eq!(state.cast.read().await.next_map(), Some("B"));
+        assert_eq!(state.draft.read().await.score, [0, 1]);
+        let mut seen = vec![];
+        while let Ok(e) = rx.try_recv() {
+            seen.push(e["type"].as_str().unwrap_or("").to_string());
+        }
+        assert!(seen.contains(&"cast.updated".to_string()), "{seen:?}");
+        let (st, v) = call(&state, "DELETE", "/api/cast/games/2", None).await;
+        assert_eq!((st, v["error"].as_str()), (StatusCode::CONFLICT, Some("UnknownGame")));
+        // partie 1 a un vainqueur : non retirable
+        let before = state.cast.read().await.clone();
+        let (st, v) = call(&state, "DELETE", "/api/cast/games/1", None).await;
+        assert_eq!((st, v["error"].as_str()), (StatusCode::CONFLICT, Some("GameHasResult")));
+        assert_eq!(*state.cast.read().await, before);
+        // la carte B se relance avec le même numéro
+        let (_, g) = call(&state, "POST", "/api/cast/games/start", Some(json!({"map":"B"}))).await;
+        assert_eq!(g["number"], 2);
     }
 
     #[tokio::test]

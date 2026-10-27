@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CastSeries, CastTeam, GameRecord, PoolMap } from "./castApi";
-import { badgeGameNumber, canSetWinner, displayName, effectiveLineupMode, MAPS, mapCardView, reconcileTeam, replayErrorText, seriesScore, shownGame, slideCount, slideIndex, startableMaps, togglePool, sceneFromSearch } from "./castState";
+import { badgeGameNumber, canChangeWinner, canRemoveGame, canSetWinner, displayName, effectiveLineupMode, MAPS, mapCardView, reconcileTeam, replayErrorText, seriesScore, shownGame, slideCount, slideIndex, startableMaps, togglePool, sceneFromSearch } from "./castState";
 
 const game = (map: string, winner: GameRecord["winner"]): GameRecord => ({
   number: 1, map, winner, takedowns: [0, 0], duration_secs: null, summary: null,
@@ -112,6 +112,23 @@ describe("form helpers", () => {
     expect(canSetWinner(s, 1)).toBe(false);
     expect(canSetWinner(s, 2)).toBe(true);
     expect(canSetWinner(s, 3)).toBe(false);
+  });
+  it("R21: canChangeWinner only for a manual winner without replay summary", () => {
+    const withSummary = { ...game("C", "red"), number: 3, summary: {} as GameRecord["summary"] };
+    const s = series({ games: [{ ...game("A", "blue"), number: 1 }, { ...game("B", null), number: 2 }, withSummary] });
+    expect(canChangeWinner(s, 1)).toBe(true);
+    expect(canChangeWinner(s, 2)).toBe(false);
+    expect(canChangeWinner(s, 3)).toBe(false);
+    expect(canChangeWinner(s, 9)).toBe(false);
+  });
+  it("R21: canRemoveGame only for the last game without winner nor summary", () => {
+    const g1 = { ...game("A", null), number: 1 };
+    const g2 = { ...game("B", null), number: 2 };
+    expect(canRemoveGame(series({ games: [g1, g2] }), 1)).toBe(false);
+    expect(canRemoveGame(series({ games: [g1, g2] }), 2)).toBe(true);
+    expect(canRemoveGame(series({ games: [g1, { ...g2, winner: "red" }] }), 2)).toBe(false);
+    expect(canRemoveGame(series({ games: [g1, { ...g2, summary: {} as GameRecord["summary"] }] }), 2)).toBe(false);
+    expect(canRemoveGame(series({ games: [] }), 1)).toBe(false);
   });
   it("MAPS is a single, duplicate-free list", () => {
     expect(new Set(MAPS).size).toBe(MAPS.length);
