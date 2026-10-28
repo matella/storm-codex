@@ -37,6 +37,30 @@ de vérité des équipes ; le casteur la pilote depuis `/cast` et OBS lit `/cast
   serveur arrêté, scène changée **en base** (aucun event), serveur relancé → `GET /api/cast` émis à la milliseconde
   de réouverture du WS, overlay à jour ≈ 1 s après le redémarrage (sur 3 essais, le filet 10 s / les retries de
   TanStack ont parfois livré l'état avant le WS — les deux chemins mènent au même état). Pas dans OBS.
+- **Vague de correctifs 2 (« Fix it all », 2026-10-28)** — tout ce qui était différé ou « ship as is », sauf les
+  choix de conception R26 (ci-dessous) : persistance de cast **versionnée** (un instantané ancien n'écrase jamais un
+  récent) et `500 persist_failed` si l'écriture échoue (R24) ; synchro draft sur l'état cast **courant** ; codes
+  d'erreur stables (`CastError::code`) ; `store::load` distingue erreur DB / JSON illisible / schéma plus récent ;
+  logos : signature des octets vérifiée (`415 mime_mismatch`) ; lineup : toon > 64 octets → `400 bad_toon`, `EXPLAIN`
+  doit nommer `match_players_toon_idx`, nettoyage du test garanti ; diaporama validé (R25 : `game` existant sinon
+  `409 UnknownGame`, `index` ≤ 99 sinon `400 bad_index`, régie 1–3600 s) ; forts·keeps `null` sans Fort/Keep ;
+  `series_id` re-vérifié après le décodage d'un replay (`409 series_changed`) ; la file de replays du draft suit le
+  format d'une série active (M5) ; réponse du replay avec `orientation` et `forced_against_evidence` (note visible
+  dans la régie) ; `draft/replay/load` décodé comme le replay de cast (M2 : `spawn_blocking` + garde + `parse_sem`).
+  Front : fondu de sortie de l'overlay, bandeau 11–14 cartes sur trois rangées, aperçu sans image à 0,4, motif
+  onglets complet (flèches = focus seul), aria des cartes/vainqueurs, rail resynchronisé par version serveur vue +
+  `TeamEditor`, garde « dernière recherche » du sélecteur de joueur, « loading… »/erreur dans l'aperçu lineups,
+  libellé « auto » du diaporama, « Swap sides » décoché après dépôt, Live/Replay stylé, helpers partagés.
+  Vérifié dans le navigateur (build release, 127.0.0.1:8089, DOM) : pool 14 cartes = 3 rangées sans chevauchement
+  (bas à 589 px / 1080) ; changement de scène → couche sortante gardée ≈ 300 ms avec l'ancienne scène puis démontée
+  (opacités non observables : volet d'aperçu en arrière-plan, animations figées) ; onglets (`aria-selected` local,
+  tabpanel, → déplace le focus sans changer la scène à l'antenne) ; Live/Replay stylé dans les deux sous-modes ;
+  recherche de joueur : Find désactivé pendant la requête, frappe pendant la requête → aucune liste périmée. Pas dans OBS.
+- **Non changé exprès (R26, choix de conception à trancher par l'opérateur)** : un clic sur un onglet de scène la
+  met à l'antenne **et** ouvre son espace de travail ; « Start game » de la régie n'avance pas le draft et ne pose pas
+  sa carte ; pas de proposition automatique du decider quand il ne reste qu'une carte ; polices Google Fonts en
+  `@import` (Fontsource = décision de dépendance, cohérent avec l'overlay de draft) ; R7 logos conservés par une
+  nouvelle série ; R18 Blackheart's Bay dans la liste blanche ; écritures en mode ouvert ; `PoolPanel` hors du rail (R11).
 - **Non vérifié / réserves** : temps scène → overlay mesuré dans un navigateur sur 127.0.0.1, **pas dans OBS** ;
   la scène In-game a été contrôlée sur une **image fixe** dans une iframe, pas sur une capture en direct ; l'atténuation
   Fearless des lineups n'a **pas été vue à l'écran** (seulement le bandeau « HEROES LOCKED » et les libellés G1 en DOM) ;
@@ -47,7 +71,8 @@ de vérité des équipes ; le casteur la pilote depuis `/cast` et OBS lit `/cast
   Custom> cargo test --workspace` (sans `DATABASE_URL`, les tests DB s'ignorent en silence ; sans
   `STORM_CAST_CUSTOM_REPLAY`, le test d'octets réels est sauté) → **271 passés, 3 ignorés** (serveur : 227) ; après la
   vague de correctifs de la relecture finale : serveur **230 passés, 3 ignorés** (`cargo test -p storm-codex-server`),
-  web **201** ;
+  web **201** ; après la vague 2 : serveur **248 passés, 3 ignorés** (+ test d'octets réels Custom Tomb vert avec
+  `STORM_CAST_CUSTOM_REPLAY`), web **238** (22 fichiers) ;
   `cd web && npm test && npm run build` → 186 web avant cette vague ; `cargo clippy --all-targets -- -D warnings` propre.
   Les tests DB du dépôt laissent des fixtures dans la base dev (un run : matches +454, uploads +10, match_players
   +2 912) : comportement **préexistant** (surtout `players/`) ; les tests `cast/lineup.rs` utilisent aussi le helper
@@ -60,23 +85,23 @@ de vérité des équipes ; le casteur la pilote depuis `/cast` et OBS lit `/cast
     rail) ; « Next game › » reste actif et n'agit que sur le moteur de draft (cumul des bans Fearless) — « Start game »
     de la régie n'avance pas le draft.
   - *Replay d'une partie* : orientation Blue/Red par toon puis pseudo (R16) ; sans preuve, équipe 0 = Blue, mais un
-    vainqueur saisi qui contredit → `409 side_mismatch` ; `?swap=1` forcé est **silencieux même contre une preuve
-    contraire** ; écriture/décodage/suppression du fichier temporaire dans le `spawn_blocking` sous `parse_sem`
-    (supprimé aussi si le client coupe) ; fenêtre TOCTOU (série remplacée pendant le décodage) ; forts·keeps affiche 0–0 sur les cartes
-    sans structures ; objectifs de carte = liste blanche (R17), Blackheart's Bay gardé sur un corpus mince (1 partie) —
+    vainqueur saisi qui contredit → `409 side_mismatch` ; `?swap=1` forcé contre une preuve contraire est **accepté
+    mais signalé** (`forced_against_evidence`, note dans la régie) ; série remplacée pendant le décodage →
+    `409 series_changed` ; forts·keeps retiré sur les cartes sans Fort/Keep ; objectifs de carte = liste blanche (R17), Blackheart's Bay gardé sur un corpus mince (1 partie) —
     l'opérateur peut préférer le retirer (une constante + une ligne de doc, R18).
   - *Diaporama* (R15) : slide 0 = bandeau des cartes, slides 1–4 = onglets du breakdown (dégâts, soins, siège,
-    takedowns), seule la slide 0 existe sans résumé ; le numéro de partie et l'index/intervalle d'un slide ne sont pas
-    validés côté serveur (UI 2–120 s, serveur 0,5 s–1 h) ; pools de 11–14 cartes débordent sur 3 rangées.
+    takedowns), seule la slide 0 existe sans résumé ; en auto, l'aperçu et la source OBS ont chacun leur minuterie
+    (la régie affiche « auto », sans prétendre connaître la slide à l'antenne).
   - *Overlay* : pastille « GAME k » — R9 (partie en cours, sinon dernière + 1) et **R22** (série décidée, un camp à
     ⌈bo/2⌉ : numéro de la dernière partie) ; la scène Draft s'affiche même sans série active (R19) ; le WS relit
-    `cast`/`draft` à chaque reconnexion (+ filet 10 s) ; pas de fondu de sortie ; ancres In-game =
+    `cast`/`draft` à chaque reconnexion (+ filet 10 s) ; fondu d'entrée et de sortie ≈ 300 ms ; ancres In-game =
     constantes (`web/src/cast/anchors.ts`) à ré-étalonner si l'UI du jeu change ; mode B n'attribue un héros qu'à un joueur
     rattaché par toon ou pseudo exact (jamais par position).
   - *Régie* : erreur de clic récupérable (**R21**) : « Change winner » sur un vainqueur saisi sans résumé de replay,
     « Remove game » (`DELETE /api/cast/games/{n}`) sur la dernière partie sans résultat ; un vainqueur venu d'un replay
     ne se corrige qu'en rechargeant le bon replay. `POST /series` **garde les logos** existants (R7, effacer via `PUT /teams`) ; `PoolPanel` sous l'espace de
-    travail et non dans le rail gauche (R11) ; bascule Live/Replay non stylée ; aria-labels incomplets.
+    travail et non dans le rail gauche (R11). Échec d'écriture en base = bandeau `persist_failed` (état appliqué en mémoire
+    seulement, il sera perdu au redémarrage si la base reste indisponible).
 - **Reste** : relecture finale puis merge ; **re-mesurer le décodage post-game sur machine au repos avant déploiement**
   (417–444 ms mesurés sous charge) ; purger les fixtures de la base dev (`purge_fixtures`, voir Tests) ; confirmer en cast réel « équipe 0 du replay = Blue » quand aucune preuve de joueurs ; **déploiement sur le
   box** (rsync + docker compose build, migrations `0012_cast_live` **et** `0013_cast_logo`) et essai sur une vraie diffusion
