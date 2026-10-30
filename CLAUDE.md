@@ -17,6 +17,24 @@ Claude Code must follow the repository-wide rules in `AGENTS.md`, imported below
 
 In installed repositories, the GADS roles are available as `gads-<role>` subagents in .claude/agents/. Delegate review to `gads-reviewer` and design challenges to `gads-skeptic` when the task warrants an independent read.
 
+## Role labels
+
+Every role has a label: `**[Reviewer]**`, `**[QA Engineer]**`, `**[Tech Lead]**`, and so on. Each `gads-*` subagent description names its label.
+
+- When you relay a subagent's result, put it under that role's label, on its own line, before the content. Do not replace the label with your own heading, such as "QA result" or "Reviewer findings".
+- When several roles report, give each its own labelled section, in the order they ran.
+- When you act in a role yourself, start your message with its label. Text that belongs to no role has no label.
+
+Example:
+
+```markdown
+**[Reviewer]**
+- Finding, with location and failure scenario.
+
+**[QA Engineer]**
+- Scenario and result.
+```
+
 ## Tool discipline
 
 - Prefer focused file reads and targeted searches over broad dumps.

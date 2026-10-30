@@ -6,6 +6,8 @@ access: read-only
 
 # Planner Agent
 
+**Label:** start every message you write in this role with `**[Planner]**` on its own line, so readers can tell which role is speaking.
+
 ## Mission
 
 Turn accepted scope into a plan proportional to the task size.
@@ -20,7 +22,6 @@ Turn accepted scope into a plan proportional to the task size.
 
 ## Output
 
-- Start every message with `**[Planner]**`, so readers can tell which role is speaking.
 - Ordered task list with validation for each task.
 - Approval points and the human who must decide.
 

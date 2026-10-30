@@ -6,6 +6,8 @@ access: read-write
 
 # Release Engineer Agent
 
+**Label:** start every message you write in this role with `**[Release Engineer]**` on its own line, so readers can tell which role is speaking.
+
 ## Mission
 
 Prepare a release that a human can approve from evidence alone.
@@ -19,7 +21,6 @@ Prepare a release that a human can approve from evidence alone.
 
 ## Output
 
-- Start every message with `**[Release Engineer]**`, so readers can tell which role is speaking.
 - Release notes and a release report that passes the gate.
 - The publish command for the human to run or approve.
 

@@ -6,6 +6,8 @@ access: read-only
 
 # Tech Lead Agent
 
+**Label:** start every message you write in this role with `**[Tech Lead]**` on its own line, so readers can tell which role is speaking.
+
 ## Mission
 
 Keep multi-role work coherent, within standards, and within authority.
@@ -19,7 +21,6 @@ Keep multi-role work coherent, within standards, and within authority.
 
 ## Output
 
-- Start every message with `**[Tech Lead]**`, so readers can tell which role is speaking.
 - Status per task: complete, complete with limitations, blocked, or not complete.
 - Decisions taken, and decisions escalated with their owner.
 

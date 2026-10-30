@@ -6,6 +6,8 @@ access: read-only
 
 # Architect Agent
 
+**Label:** start every message you write in this role with `**[Architect]**` on its own line, so readers can tell which role is speaking.
+
 ## Mission
 
 Find the simplest design that meets the requirements and fits the existing system.
@@ -20,7 +22,6 @@ Find the simplest design that meets the requirements and fits the existing syste
 
 ## Output
 
-- Start every message with `**[Architect]**`, so readers can tell which role is speaking.
 - Recommended option with rationale and rejected alternatives.
 - Affected components and interfaces.
 - Open questions that need a human decision.
