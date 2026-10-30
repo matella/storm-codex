@@ -5,6 +5,7 @@ mod admin;
 mod auth;
 mod azure;
 mod builds;
+mod cast;
 mod config;
 mod dim;
 mod draft;
@@ -43,6 +44,12 @@ pub struct AppState {
     pub events: broadcast::Sender<serde_json::Value>,
     /// État autoritatif du simulateur de draft (singleton, persisté dans `draft_live`).
     pub draft: Arc<RwLock<draft::DraftState>>,
+    /// Série de la régie de cast (singleton, persisté dans `cast_live`).
+    pub cast: Arc<RwLock<cast::Series>>,
+    /// Version de l'état de cast en mémoire (attribuée sous le write-lock de chaque mutation) et
+    /// dernière version écrite en base : un instantané plus ancien n'écrase jamais un plus récent.
+    pub cast_version: Arc<std::sync::atomic::AtomicU64>,
+    pub cast_saved: Arc<tokio::sync::Mutex<u64>>,
     /// Lobby live courant (singleton, persisté dans `lobby_live`). `None` = aucun lobby.
     pub lobby: Arc<RwLock<Option<lobby::LobbyState>>>,
     /// Partie en cours (feed live, en mémoire, jetable). `None` = aucune.
@@ -122,6 +129,8 @@ async fn run() -> Result<(), String> {
     });
     // Aucune minuterie après un redémarrage : la lecture auto repart en pause (curseur conservé).
     draft.after_restart();
+    // Série de cast : reprise du disque si lisible, sinon état neuf inactif (jamais d'échec au démarrage).
+    let cast_initial = cast::store::load(&db).await.unwrap_or_else(cast::Series::new);
     let lobby_initial = lobby::store::load(&db).await;
     let state = AppState {
         cfg: Arc::new(cfg),
@@ -129,6 +138,9 @@ async fn run() -> Result<(), String> {
         parse_sem: Arc::new(Semaphore::new(cores)),
         events,
         draft: Arc::new(RwLock::new(draft)),
+        cast: Arc::new(RwLock::new(cast_initial)),
+        cast_version: Arc::default(),
+        cast_saved: Arc::default(),
         lobby: Arc::new(RwLock::new(lobby_initial)),
         live: Arc::new(RwLock::new(None)),
         replay_timer: Arc::default(),
@@ -243,6 +255,53 @@ fn api_router(state: &AppState) -> Router<AppState> {
         )
         .route("/api/admin/uploads", get(admin::uploads_health))
         .route("/api/admin/reprocess", post(admin::reprocess))
+        // Régie de cast (état autoritatif serveur + broadcast WS cast.updated), mode ouvert
+        .route("/api/cast", get(cast::api::get_cast))
+        .route(
+            "/api/cast/series",
+            post(cast::api::start_series).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+        )
+        .route(
+            "/api/cast/teams",
+            axum::routing::put(cast::api::put_teams).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+        )
+        .route(
+            "/api/cast/pool/map",
+            post(cast::api::mark_map).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+        )
+        .route(
+            "/api/cast/games/start",
+            post(cast::api::start_game).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+        )
+        .route(
+            "/api/cast/games/{n}/winner",
+            post(cast::api::set_winner).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+        )
+        .route("/api/cast/games/{n}", axum::routing::delete(cast::api::remove_game))
+        .route("/api/cast/games/{n}/replay", post(cast::replay::load_game_replay))
+        .route(
+            "/api/cast/score",
+            post(cast::api::set_score).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+        )
+        .route(
+            "/api/cast/scene",
+            post(cast::api::set_scene).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+        )
+        .route(
+            "/api/cast/lineup-mode",
+            post(cast::api::set_lineup_mode).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+        )
+        .route(
+            "/api/cast/slide",
+            post(cast::api::set_slide).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+        )
+        .route("/api/cast/lineup", get(cast::api::get_lineup))
+        .route(
+            "/api/cast/logo/{side}",
+            post(cast::api::upload_logo)
+                .layer(axum::extract::DefaultBodyLimit::max(cast::api::LOGO_BODY_LIMIT))
+                .get(cast::api::get_logo),
+        )
         // Simulateur de draft (état autoritatif serveur + broadcast WS draft.updated)
         .route("/api/draft", get(draft::api::get_draft))
         .route("/api/draft/config", post(draft::api::config))
@@ -357,14 +416,14 @@ async fn health(State(state): State<AppState>) -> (StatusCode, Json<serde_json::
 /// exécutés en CI contre un service Postgres.
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
-mod api_tests {
+pub(crate) mod api_tests {
     use super::*;
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use http_body_util::BodyExt;
     use tower::util::ServiceExt;
 
-    async fn test_state(admin_token: Option<&str>) -> Option<AppState> {
+    pub(crate) async fn test_state(admin_token: Option<&str>) -> Option<AppState> {
         let Ok(url) = std::env::var("DATABASE_URL") else {
             eprintln!("DATABASE_URL absent → test d'intégration API ignoré");
             return None;
@@ -402,6 +461,9 @@ mod api_tests {
             db,
             parse_sem: Arc::new(Semaphore::new(2)),
             events,
+            cast: Arc::new(RwLock::new(cast::Series::new())),
+            cast_version: Arc::default(),
+            cast_saved: Arc::default(),
             lobby: Arc::new(RwLock::new(None)),
             live: Arc::new(RwLock::new(None)),
             replay_timer: Arc::default(),
@@ -413,7 +475,7 @@ mod api_tests {
         })
     }
 
-    fn app(state: &AppState) -> Router {
+    pub(crate) fn app(state: &AppState) -> Router {
         api_router(state).with_state(state.clone())
     }
 
@@ -806,7 +868,7 @@ mod api_tests {
         state.draft.write().await.add_game(g);
     }
 
-    async fn call(state: &AppState, method: &str, path: &str, body: Option<serde_json::Value>) -> (StatusCode, serde_json::Value) {
+    pub(crate) async fn call(state: &AppState, method: &str, path: &str, body: Option<serde_json::Value>) -> (StatusCode, serde_json::Value) {
         let mut req = Request::builder().method(method).uri(path);
         let body = match body {
             Some(b) => {
@@ -819,6 +881,17 @@ mod api_tests {
         let status = resp.status();
         let bytes = resp.into_body().collect().await.unwrap().to_bytes();
         (status, serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null))
+    }
+
+    /// Requête à corps brut (octets) ; renvoie statut + octets de la réponse.
+    pub(crate) async fn call_raw(state: &AppState, method: &str, path: &str, content_type: Option<&str>, body: Vec<u8>) -> (StatusCode, Vec<u8>) {
+        let mut req = Request::builder().method(method).uri(path);
+        if let Some(ct) = content_type {
+            req = req.header("content-type", ct);
+        }
+        let resp = app(state).oneshot(req.body(Body::from(body)).unwrap()).await.unwrap();
+        let status = resp.status();
+        (status, resp.into_body().collect().await.unwrap().to_bytes().to_vec())
     }
 
     #[tokio::test]

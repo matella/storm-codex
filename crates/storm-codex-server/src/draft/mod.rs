@@ -200,6 +200,18 @@ impl DraftState {
         self.series_bans.clear();
         self.reset();
     }
+    /// Aligne le moteur sur le format d'une série de cast qui démarre : `format` + `steps` reconstruits,
+    /// partie neuve (curseur 0, assignations vides) et NOUVELLE série (historique et series bans vidés).
+    /// Garde map, first_pick, prébans manuels, équipes et la file de replays (partie courante désélectionnée, lecture auto stoppée).
+    pub fn align_to_series(&mut self, format: Format) {
+        self.format = format;
+        self.steps = steps_for(format);
+        self.new_series();
+        // comme `config` : la file survit (queue, fearless, interval), mais la partie courante est désélectionnée
+        // et la lecture auto stoppée (son script ne correspond plus aux steps reconstruits)
+        let replay = std::mem::take(&mut self.replay);
+        self.replay = ReplayState { current: None, playing: false, next_at_ms: None, ..replay };
+    }
     /// Héros pické dans la partie courante (pour alimenter l'historique de série fearless).
     pub fn picked_heroes(&self) -> Vec<String> {
         self.steps
@@ -258,6 +270,24 @@ mod tests {
         assert_eq!(d.undo(), Ok(()));
         d.undo().unwrap_err();
         assert_eq!(d.undo(), Err(DraftError::NothingToUndo));
+    }
+
+    #[test]
+    fn align_to_series_rebuilds_steps_and_clears_series() {
+        let mut d = new_standard();
+        d.set_unavailable("Valla", true);
+        d.apply("Muradin").unwrap();
+        d.start_next_game();
+        d.apply("Jaina").unwrap();
+        d.blue.name = "Germany".into();
+        d.align_to_series(Format::Fearless);
+        assert_eq!(d.format, Format::Fearless);
+        assert_eq!(d.steps, steps_for(Format::Fearless));
+        assert_eq!(d.cursor, 0);
+        assert_eq!(d.assignments, vec![None; d.steps.len()]);
+        assert!(d.series_bans.is_empty() && d.series_games.is_empty());
+        assert!(d.manual_unavailable.contains("Valla"));
+        assert_eq!(d.blue.name, "Germany");
     }
 
     #[test]

@@ -1,0 +1,84 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>postgame-breakdown.html</title></head><body style="background:#0b0b10;color:#e8eaf2;font-family:sans-serif;max-width:1400px;margin:20px auto;padding:0 16px">
+<style>
+@import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@700;800&family=Figtree:wght@400;600;700&family=JetBrains+Mono:wght@500;700&display=swap");
+.pg{--blue:#2f6df6;--red:#e0414b;--bs:#7fa6ff;--rs:#ff8088;--gold:#f0d27a;--bd:#5a4aa0;position:relative;aspect-ratio:16/9;width:100%;overflow:hidden;color:#eef2fc;font-family:Figtree,sans-serif;
+ background:radial-gradient(130% 100% at 50% 30%,#2a1d5c 0%,#160f30 45%,#070512 100%);border-radius:6px}
+.pg .hd{position:absolute;top:2.5%;left:3%;right:3%;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:2vw}
+.pg .side{display:flex;align-items:center;gap:1.2vw}.pg .side.r{flex-direction:row-reverse}
+.pg .logo{width:4.4vw;height:4.4vw;border-radius:50%;border:2px solid var(--bd);background:#120c2b;display:flex;align-items:center;justify-content:center;font-family:Cinzel,serif;font-weight:800;font-size:1.3vw}
+.pg .nm{font-family:Cinzel,serif;font-weight:800;font-size:1.8vw;letter-spacing:.05em}
+.pg .tag{font-family:"JetBrains Mono",monospace;font-size:.9vw;letter-spacing:.2em;padding:.2vw .8vw;border-radius:99px;border:1px solid}
+.pg .w{color:#5dcaa5;border-color:#5dcaa5}.pg .l{color:#e24b4a;border-color:#e24b4a}
+.pg .sc{font-family:"JetBrains Mono",monospace;font-weight:700;font-size:3.6vw}
+.pg .ctr{text-align:center;background:#0b0820cc;border:1px solid var(--bd);border-radius:10px;padding:.5vw 2vw}
+.pg .ctr .t{font-family:"JetBrains Mono",monospace;font-weight:700;font-size:2.8vw}
+.pg .ctr .m{font-family:Cinzel,serif;letter-spacing:.25em;font-size:.8vw;color:var(--gold)}
+.pg .bar1{position:absolute;top:19%;left:3%;right:3%;text-align:center;font-family:Cinzel,serif;letter-spacing:.3em;font-size:.85vw;color:#cfe0ff;border-top:1px solid #5a4aa066;border-bottom:1px solid #5a4aa066;padding:.4vw 0;background:#0b082066}
+.pg .left{position:absolute;top:25%;left:3%;width:41%;bottom:3%;display:flex;flex-direction:column;gap:.3vw}
+.pg .st{display:grid;grid-template-columns:1fr 9vw 1fr;align-items:center;flex:1;background:#0b0820b0;border:1px solid #2a2f5a;border-radius:6px;padding:0 1.2vw}
+.pg .st b{font-family:"JetBrains Mono",monospace;font-size:1.5vw;font-weight:700}.pg .st b.a{color:var(--bs);text-align:left}.pg .st b.c{color:var(--rs);text-align:right}
+.pg .st span{text-align:center;font-family:Cinzel,serif;font-size:.8vw;letter-spacing:.18em;color:#aab3d8}
+.pg .bans{display:grid;grid-template-columns:1fr 9vw 1fr;align-items:center;background:#0b0820b0;border:1px solid #2a2f5a;border-radius:6px;padding:.4vw 1.2vw}
+.pg .bans div{display:flex;gap:.3vw}.pg .bans div.c{justify-content:flex-end}
+.pg .bn{width:2.1vw;height:2.1vw;border-radius:4px;background:#2b2160;border:1px solid #ffffff22;filter:grayscale(.7);position:relative}
+.pg .bn::after{content:"";position:absolute;inset:0;background:linear-gradient(135deg,transparent 46%,#ff3b46 47%,#ff3b46 53%,transparent 54%)}
+.pg .bans span{text-align:center;font-family:Cinzel,serif;font-size:.8vw;letter-spacing:.18em;color:#aab3d8}
+.pg .right{position:absolute;top:25%;right:3%;width:51.5%;bottom:3%;display:flex;flex-direction:column;gap:.5vw}
+.pg .panel{background:#0b0820b0;border:1px solid #2a2f5a;border-radius:6px;padding:.7vw 1.2vw}
+.pg .panel h4{margin:0 0 .5vw;text-align:center;font-family:Cinzel,serif;font-size:.8vw;letter-spacing:.22em;color:var(--gold)}
+.pg .dm{display:grid;grid-template-columns:1fr 2.4vw 1fr;align-items:center;gap:.5vw;margin:.28vw 0}
+.pg .dm .bl{display:flex;align-items:center;gap:.5vw;justify-content:flex-end}.pg .dm .rd{display:flex;align-items:center;gap:.5vw}
+.pg .dm i{height:1.1vw;border-radius:2px;display:block}
+.pg .dm em{font-style:normal;font-family:"JetBrains Mono",monospace;font-size:.85vw;width:3vw}.pg .dm .bl em{text-align:right}
+.pg .por{width:2.4vw;height:2.4vw;border-radius:4px;background:#2b2160;border:1px solid #ffffff33}
+.pg .gr{flex:1}.pg .gr svg{width:100%;height:100%}
+.pg .tabs{display:flex;justify-content:center;gap:.4vw;margin-bottom:.4vw}
+.pg .tabs span{font-family:Cinzel,serif;font-size:.62vw;letter-spacing:.14em;padding:.15vw .6vw;border:1px solid #5a4aa0;border-radius:99px;color:#aab3d8}.pg .tabs span.on{background:var(--gold);color:#1a1230;border-color:var(--gold)}
+</style>
+
+<h2>Post-game breakdown, LoL style, built from HotS data</h2>
+<p class="subtitle">Everything on this screen comes from the decoded replay we already store (damage, takedowns, forts and keeps, merc camps, objectives, XP over time, bans). Placeholder names and numbers.</p>
+
+<div class="pg">
+  <div class="hd">
+    <div class="side"><div class="logo">TB</div><div><div class="nm" style="color:var(--bs)">TEAM BLUE</div><span class="tag w">WIN</span></div><div class="sc" style="margin-left:auto;color:#fff">18</div></div>
+    <div class="ctr"><div class="t">17:42</div><div class="m">GAME 2 · TOMB OF THE SPIDER QUEEN</div></div>
+    <div class="side r"><div class="logo">TR</div><div style="text-align:right"><div class="nm" style="color:var(--rs)">TEAM RED</div><span class="tag l">LOSS</span></div><div class="sc" style="margin-right:auto;color:#fff">11</div></div>
+  </div>
+  <div class="bar1">BEST OF 5 · SERIES 1 – 1 · TAKEDOWNS</div>
+
+  <div class="left">
+    <div class="st"><b class="a">18 / 9 / 41</b><span>K / D / A</span><b class="c">11 / 18 / 22</b></div>
+    <div class="st"><b class="a">21</b><span>TEAM LEVEL</span><b class="c">19</b></div>
+    <div class="st"><b class="a">3</b><span>FORTS · KEEPS</span><b class="c">1</b></div>
+    <div class="st"><b class="a">4</b><span>MERC CAMPS</span><b class="c">2</b></div>
+    <div class="st"><b class="a">2</b><span>MAP OBJECTIVES</span><b class="c">1</b></div>
+    <div class="st"><b class="a">214k</b><span>SIEGE DAMAGE</span><b class="c">168k</b></div>
+    <div class="st"><b class="a">212k</b><span>HERO DAMAGE</span><b class="c">185k</b></div>
+    <div class="bans"><div><i class="bn"></i><i class="bn"></i><i class="bn"></i></div><span>BANS</span><div class="c"><i class="bn"></i><i class="bn"></i><i class="bn"></i></div></div>
+  </div>
+
+  <div class="right">
+    <div class="panel">
+      <div class="tabs"><span class="on">HERO DAMAGE</span><span>HEALING</span><span>SIEGE</span><span>TAKEDOWNS</span></div>
+      <div class="dm"><div class="bl"><em>82.4k</em><i style="width:12vw;background:var(--blue)"></i></div><div class="por"></div><div class="rd"><i style="width:7vw;background:var(--red)"></i><em>47.3k</em></div></div>
+      <div class="dm"><div class="bl"><em>64.1k</em><i style="width:9.4vw;background:var(--blue)"></i></div><div class="por"></div><div class="rd"><i style="width:13vw;background:var(--red)"></i><em>88.9k</em></div></div>
+      <div class="dm"><div class="bl"><em>50.2k</em><i style="width:7.4vw;background:var(--blue)"></i></div><div class="por"></div><div class="rd"><i style="width:10vw;background:var(--red)"></i><em>70.2k</em></div></div>
+      <div class="dm"><div class="bl"><em>31.0k</em><i style="width:4.5vw;background:var(--blue)"></i></div><div class="por"></div><div class="rd"><i style="width:5vw;background:var(--red)"></i><em>36.5k</em></div></div>
+      <div class="dm"><div class="bl"><em>12.3k</em><i style="width:2vw;background:var(--blue)"></i></div><div class="por"></div><div class="rd"><i style="width:2.4vw;background:var(--red)"></i><em>16.4k</em></div></div>
+    </div>
+    <div class="panel gr">
+      <h4>EXPERIENCE ADVANTAGE OVER TIME</h4>
+      <svg viewBox="0 0 400 110" preserveAspectRatio="none">
+        <line x1="0" y1="55" x2="400" y2="55" stroke="#5a4aa0" stroke-dasharray="3 3"/>
+        <path d="M0 55 L40 60 L80 48 L120 52 L160 36 L200 40 L240 22 L280 30 L320 14 L360 10 L400 4 L400 55 L0 55Z" fill="#2f6df655"/>
+        <path d="M0 55 L40 60 L80 48 L120 52 L160 36 L200 40 L240 22 L280 30 L320 14 L360 10 L400 4" fill="none" stroke="#7fa6ff" stroke-width="2"/>
+        <g fill="#f0d27a"><circle cx="160" cy="36" r="3"/><circle cx="240" cy="22" r="3"/><circle cx="320" cy="14" r="3"/></g>
+      </svg>
+      <div style="text-align:center;font-size:.65vw;color:#8f86c8">gold dots = objectives and boss captures · 0:00 → 17:42</div>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:16px">Mapping from the LoL layout: gold lead becomes experience advantage, turrets become forts and keeps, drakes and barons become merc camps and map objectives (the map decides which, for example Tomb of the Spider Queen gems or Cursed Hollow tributes). The four tabs on the damage panel are the other slides of the slideshow. Is this the screen you imagined?</p>
+</body></html>

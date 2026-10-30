@@ -39,6 +39,21 @@ Ces tables sont **reconstruisibles** (refresh complet au démarrage/24 h) — pa
 - `draft_live` : singleton (id=1, CHECK) — tout l'état du simulateur de draft en JSONB
   (config, picks/bans, historique fearless), horodaté.
 
+## Régie de cast (0012)
+
+- `cast_live` : singleton (id=1, CHECK) — toute la série de cast (équipes, pool de cartes, parties,
+  scène, diaporama) en JSONB, horodaté ; `schema_version` dans le JSON, champs manquants → défauts.
+  `series_id` (chaîne uuid, `""` avant la première série) : identité posée par `POST /api/cast/series`, re-vérifiée
+  par le dépôt de replay après le décodage (une série remplacée entre-temps → `409 series_changed`).
+  `games[].summary` (`GameSummary`, posé par `POST /api/cast/games/{n}/replay`, jamais re-décodé) :
+  `{duration_secs, winner, takedowns:[b,r], team_level, structures, merc_camps, objectives (chacun [b,r] ou null),
+  bans:[[héros],[héros]], players:[PlayerSummary], xp_lead:[[s, avance Blue]]}` ;
+  `PlayerSummary = {side, toon, name, hero, kills, takedowns, deaths, assists, hero_damage, siege_damage, healing}`
+  (chemins storm-stats : [03-storm-stats.md](03-storm-stats.md) « Guide de lecture »). Un `summary` illisible
+  à la relecture devient `null` (la série reste chargeable).
+- `cast_logo` (0013) : un logo par côté — `side` PK (`blue`|`red`, CHECK), `mime`, `bytes` BYTEA (≤ 512 Ko),
+  `updated_at` (sert de version `?v=` dans `Team.logo`).
+
 ## Scouting (0010)
 
 Rapports de scouting (spec `docs/specs/2026-09-26-rapports-scouting-design.md`). **Isolés** des

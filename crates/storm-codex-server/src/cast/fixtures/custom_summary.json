@@ -1,0 +1,1084 @@
+{
+ "match": {
+  "mode": -1,
+  "map": "Tomb of the Spider Queen",
+  "winner": 0,
+  "length": 1576.125,
+  "team0Takedowns": 28,
+  "team1Takedowns": 15,
+  "bans": {
+   "0": [
+    {
+     "hero": "Crus",
+     "order": 1,
+     "absolute": 1
+    },
+    {
+     "hero": "YREL",
+     "order": 1,
+     "absolute": 2
+    },
+    {
+     "hero": "WHIT",
+     "order": 2,
+     "absolute": 3
+    }
+   ],
+   "1": [
+    {
+     "hero": "Fals",
+     "order": 1,
+     "absolute": 1
+    },
+    {
+     "hero": "Guld",
+     "order": 1,
+     "absolute": 2
+    },
+    {
+     "hero": "Tra0",
+     "order": 2,
+     "absolute": 3
+    }
+   ]
+  },
+  "picks": {
+   "0": [
+    "Hogger",
+    "Malfurion",
+    "Arthas",
+    "Maiev",
+    "Junkrat"
+   ],
+   "1": [
+    "Blaze",
+    "Garrosh",
+    "Mephisto",
+    "Alexstrasza",
+    "Greymane"
+   ],
+   "first": 1
+  },
+  "objective": {
+   "type": "Tomb of the Spider Queen",
+   "0": {
+    "count": 3.0,
+    "events": [
+     {
+      "team": 0.0,
+      "time": 226.9375
+     },
+     {
+      "team": 0.0,
+      "time": 431.0625
+     },
+     {
+      "team": 0.0,
+      "time": 744.875
+     }
+    ]
+   },
+   "1": {
+    "count": 3.0,
+    "events": [
+     {
+      "team": 1.0,
+      "time": 621.4375
+     },
+     {
+      "team": 1.0,
+      "time": 1146.0625
+     },
+     {
+      "team": 1.0,
+      "time": 1386.1875
+     }
+    ]
+   }
+  },
+  "teams": {
+   "0": {
+    "level": 25,
+    "stats": {
+     "mercCaptures": 12,
+     "structures": {
+      "Keep Tower": {
+       "lost": 6,
+       "destroyed": 6,
+       "first": 405.9375
+      },
+      "Fort Tower": {
+       "lost": 6,
+       "destroyed": 6,
+       "first": 78.5625
+      },
+      "Fort Well": {
+       "lost": 3,
+       "destroyed": 3,
+       "first": 387.3125
+      },
+      "Fort": {
+       "lost": 3,
+       "destroyed": 3,
+       "first": 387.3125
+      },
+      "Keep Well": {
+       "lost": 1,
+       "destroyed": 2,
+       "first": 807.8125
+      },
+      "Keep": {
+       "lost": 1,
+       "destroyed": 2,
+       "first": 807.8125
+      }
+     }
+    }
+   },
+   "1": {
+    "level": 24,
+    "stats": {
+     "mercCaptures": 6,
+     "structures": {
+      "Keep Tower": {
+       "lost": 6,
+       "destroyed": 6,
+       "first": 1199.3125
+      },
+      "Fort Tower": {
+       "lost": 6,
+       "destroyed": 6,
+       "first": 518.75
+      },
+      "Fort Well": {
+       "lost": 3,
+       "destroyed": 3,
+       "first": 1183.9375
+      },
+      "Fort": {
+       "lost": 3,
+       "destroyed": 3,
+       "first": 1183.9375
+      },
+      "Keep Well": {
+       "lost": 2,
+       "destroyed": 1,
+       "first": 1218.375
+      },
+      "Keep": {
+       "lost": 2,
+       "destroyed": 1,
+       "first": 1218.375
+      }
+     }
+    }
+   }
+  },
+  "XPBreakdown": [
+   {
+    "loop": 1570,
+    "time": 60.0,
+    "team": 0.0,
+    "breakdown": {
+     "GameTime": 60.0,
+     "PreviousGameTime": 0.0,
+     "MinionXP": 1224.0,
+     "CreepXP": 280.0,
+     "StructureXP": 0.0,
+     "HeroXP": 293.84765625,
+     "TrickleXP": 575.0
+    }
+   },
+   {
+    "loop": 1570,
+    "time": 60.0,
+    "team": 1.0,
+    "breakdown": {
+     "GameTime": 60.0,
+     "PreviousGameTime": 0.0,
+     "MinionXP": 1088.0,
+     "CreepXP": 0.0,
+     "StructureXP": 0.0,
+     "HeroXP": 0.0,
+     "TrickleXP": 575.0
+    }
+   },
+   {
+    "loop": 2530,
+    "time": 120.0,
+    "team": 0.0,
+    "breakdown": {
+     "GameTime": 120.0,
+     "PreviousGameTime": 60.0,
+     "MinionXP": 3744.0,
+     "CreepXP": 730.0,
+     "StructureXP": 125.0,
+     "HeroXP": 635.38818359375,
+     "TrickleXP": 1955.0
+    }
+   },
+   {
+    "loop": 2530,
+    "time": 120.0,
+    "team": 1.0,
+    "breakdown": {
+     "GameTime": 120.0,
+     "PreviousGameTime": 60.0,
+     "MinionXP": 3048.0,
+     "CreepXP": 450.0,
+     "StructureXP": 0.0,
+     "HeroXP": 477.4658203125,
+     "TrickleXP": 1955.0
+    }
+   },
+   {
+    "loop": 3490,
+    "time": 180.0,
+    "team": 0.0,
+    "breakdown": {
+     "GameTime": 180.0,
+     "PreviousGameTime": 120.0,
+     "MinionXP": 6120.0,
+     "CreepXP": 730.0,
+     "StructureXP": 125.0,
+     "HeroXP": 635.38818359375,
+     "TrickleXP": 3335.0
+    }
+   },
+   {
+    "loop": 3490,
+    "time": 180.0,
+    "team": 1.0,
+    "breakdown": {
+     "GameTime": 180.0,
+     "PreviousGameTime": 120.0,
+     "MinionXP": 5280.0,
+     "CreepXP": 450.0,
+     "StructureXP": 0.0,
+     "HeroXP": 477.4658203125,
+     "TrickleXP": 3335.0
+    }
+   },
+   {
+    "loop": 4450,
+    "time": 240.0,
+    "team": 0.0,
+    "breakdown": {
+     "GameTime": 240.0,
+     "PreviousGameTime": 180.0,
+     "MinionXP": 8562.0,
+     "CreepXP": 730.0,
+     "StructureXP": 125.0,
+     "HeroXP": 1169.4091796875,
+     "TrickleXP": 4715.0
+    }
+   },
+   {
+    "loop": 4450,
+    "time": 240.0,
+    "team": 1.0,
+    "breakdown": {
+     "GameTime": 240.0,
+     "PreviousGameTime": 180.0,
+     "MinionXP": 7498.0,
+     "CreepXP": 450.0,
+     "StructureXP": 0.0,
+     "HeroXP": 477.4658203125,
+     "TrickleXP": 4715.0
+    }
+   },
+   {
+    "loop": 5410,
+    "time": 300.0,
+    "team": 0.0,
+    "breakdown": {
+     "GameTime": 300.0,
+     "PreviousGameTime": 240.0,
+     "MinionXP": 10082.0,
+     "CreepXP": 730.0,
+     "StructureXP": 500.0,
+     "HeroXP": 1169.4091796875,
+     "TrickleXP": 6095.0
+    }
+   },
+   {
+    "loop": 5410,
+    "time": 300.0,
+    "team": 1.0,
+    "breakdown": {
+     "GameTime": 300.0,
+     "PreviousGameTime": 240.0,
+     "MinionXP": 10310.0,
+     "CreepXP": 450.0,
+     "StructureXP": 0.0,
+     "HeroXP": 477.4658203125,
+     "TrickleXP": 6095.0
+    }
+   },
+   {
+    "loop": 6370,
+    "time": 360.0,
+    "team": 0.0,
+    "breakdown": {
+     "GameTime": 360.0,
+     "PreviousGameTime": 300.0,
+     "MinionXP": 12656.0,
+     "CreepXP": 1496.0,
+     "StructureXP": 500.0,
+     "HeroXP": 2412.59765625,
+     "TrickleXP": 7475.0
+    }
+   },
+   {
+    "loop": 6370,
+    "time": 360.0,
+    "team": 1.0,
+    "breakdown": {
+     "GameTime": 360.0,
+     "PreviousGameTime": 300.0,
+     "MinionXP": 12260.0,
+     "CreepXP": 450.0,
+     "StructureXP": 0.0,
+     "HeroXP": 477.4658203125,
+     "TrickleXP": 7475.0
+    }
+   },
+   {
+    "loop": 7330,
+    "time": 420.0,
+    "team": 0.0,
+    "breakdown": {
+     "GameTime": 420.0,
+     "PreviousGameTime": 360.0,
+     "MinionXP": 14336.0,
+     "CreepXP": 1982.0,
+     "StructureXP": 1300.0,
+     "HeroXP": 4143.798828125,
+     "TrickleXP": 9006.762939453125
+    }
+   },
+   {
+    "loop": 7330,
+    "time": 420.0,
+    "team": 1.0,
+    "breakdown": {
+     "GameTime": 420.0,
+     "PreviousGameTime": 360.0,
+     "MinionXP": 13940.0,
+     "CreepXP": 450.0,
+     "StructureXP": 0.0,
+     "HeroXP": 477.4658203125,
+     "TrickleXP": 8855.0
+    }
+   },
+   {
+    "loop": 8290,
+    "time": 480.0,
+    "team": 0.0,
+    "breakdown": {
+     "GameTime": 480.0,
+     "PreviousGameTime": 420.0,
+     "MinionXP": 16222.0,
+     "CreepXP": 1982.0,
+     "StructureXP": 1425.0,
+     "HeroXP": 4844.189453125,
+     "TrickleXP": 10662.695556640625
+    }
+   },
+   {
+    "loop": 8290,
+    "time": 480.0,
+    "team": 1.0,
+    "breakdown": {
+     "GameTime": 480.0,
+     "PreviousGameTime": 420.0,
+     "MinionXP": 16810.0,
+     "CreepXP": 450.0,
+     "StructureXP": 0.0,
+     "HeroXP": 1537.4755859375,
+     "TrickleXP": 10235.0
+    }
+   },
+   {
+    "loop": 9250,
+    "time": 540.0,
+    "team": 0.0,
+    "breakdown": {
+     "GameTime": 540.0,
+     "PreviousGameTime": 480.0,
+     "MinionXP": 18658.0,
+     "CreepXP": 1982.0,
+     "StructureXP": 1950.0,
+     "HeroXP": 4844.189453125,
+     "TrickleXP": 12548.572021484375
+    }
+   },
+   {
+    "loop": 9250,
+    "time": 540.0,
+    "team": 1.0,
+    "breakdown": {
+     "GameTime": 540.0,
+     "PreviousGameTime": 480.0,
+     "MinionXP": 19246.0,
+     "CreepXP": 450.0,
+     "StructureXP": 250.0,
+     "HeroXP": 1537.4755859375,
+     "TrickleXP": 11615.0
+    }
+   },
+   {
+    "loop": 10210,
+    "time": 600.0,
+    "team": 0.0,
+    "breakdown": {
+     "GameTime": 600.0,
+     "PreviousGameTime": 540.0,
+     "MinionXP": 20206.0,
+     "CreepXP": 2262.0,
+     "StructureXP": 1950.0,
+     "HeroXP": 6906.982421875,
+     "TrickleXP": 14577.013671875
+    }
+   },
+   {
+    "loop": 10210,
+    "time": 600.0,
+    "team": 1.0,
+    "breakdown": {
+     "GameTime": 600.0,
+     "PreviousGameTime": 540.0,
+     "MinionXP": 21482.0,
+     "CreepXP": 450.0,
+     "StructureXP": 250.0,
+     "HeroXP": 1537.4755859375,
+     "TrickleXP": 12995.0
+    }
+   },
+   {
+    "loop": 11170,
+    "time": 660.0,
+    "team": 0.0,
+    "breakdown": {
+     "GameTime": 660.0,
+     "PreviousGameTime": 600.0,
+     "MinionXP": 22934.0,
+     "CreepXP": 2262.0,
+     "StructureXP": 2750.0,
+     "HeroXP": 6906.982421875,
+     "TrickleXP": 16784.8115234375
+    }
+   },
+   {
+    "loop": 11170,
+    "time": 660.0,
+    "team": 1.0,
+    "breakdown": {
+     "GameTime": 660.0,
+     "PreviousGameTime": 600.0,
+     "MinionXP": 23682.0,
+     "CreepXP": 450.0,
+     "StructureXP": 250.0,
+     "HeroXP": 1537.4755859375,
+     "TrickleXP": 14375.0
+    }
+   },
+   {
+    "loop": 12130,
+    "time": 720.0,
+    "team": 0.0,
+    "breakdown": {
+     "GameTime": 720.0,
+     "PreviousGameTime": 660.0,
+     "MinionXP": 25634.0,
+     "CreepXP": 2262.0,
+     "StructureXP": 2750.0,
+     "HeroXP": 8105.1513671875,
+     "TrickleXP": 18992.609375
+    }
+   },
+   {
+    "loop": 12130,
+    "time": 720.0,
+    "team": 1.0,
+    "breakdown": {
+     "GameTime": 720.0,
+     "PreviousGameTime": 660.0,
+     "MinionXP": 23682.0,
+     "CreepXP": 450.0,
+     "StructureXP": 250.0,
+     "HeroXP": 1537.4755859375,
+     "TrickleXP": 15755.0
+    }
+   },
+   {
+    "loop": 13090,
+    "time": 780.0,
+    "team": 0.0,
+    "breakdown": {
+     "GameTime": 780.0,
+     "PreviousGameTime": 720.0,
+     "MinionXP": 25818.0,
+     "CreepXP": 3112.0,
+     "StructureXP": 2750.0,
+     "HeroXP": 8105.1513671875,
+     "TrickleXP": 21200.4072265625
+    }
+   },
+   {
+    "loop": 13090,
+    "time": 780.0,
+    "team": 1.0,
+    "breakdown": {
+     "GameTime": 780.0,
+     "PreviousGameTime": 720.0,
+     "MinionXP": 25062.0,
+     "CreepXP": 1539.0,
+     "StructureXP": 250.0,
+     "HeroXP": 3318.26171875,
+     "TrickleXP": 17135.0
+    }
+   },
+   {
+    "loop": 14050,
+    "time": 840.0,
+    "team": 0.0,
+    "breakdown": {
+     "GameTime": 840.0,
+     "PreviousGameTime": 780.0,
+     "MinionXP": 26664.0,
+     "CreepXP": 3112.0,
+     "StructureXP": 3150.0,
+     "HeroXP": 8105.1513671875,
+     "TrickleXP": 23559.968017578125
+    }
+   },
+   {
+    "loop": 14050,
+    "time": 840.0,
+    "team": 1.0,
+    "breakdown": {
+     "GameTime": 840.0,
+     "PreviousGameTime": 780.0,
+     "MinionXP": 28634.0,
+     "CreepXP": 1539.0,
+     "StructureXP": 375.0,
+     "HeroXP": 5093.2373046875,
+     "TrickleXP": 18515.0
+    }
+   },
+   {
+    "loop": 15010,
+    "time": 900.0,
+    "team": 0.0,
+    "breakdown": {
+     "GameTime": 900.0,
+     "PreviousGameTime": 840.0,
+     "MinionXP": 28392.0,
+     "CreepXP": 3392.0,
+     "StructureXP": 3150.0,
+     "HeroXP": 8953.7841796875,
+     "TrickleXP": 26043.698486328125
+    }
+   },
+   {
+    "loop": 15010,
+    "time": 900.0,
+    "team": 1.0,
+    "breakdown": {
+     "GameTime": 900.0,
+     "PreviousGameTime": 840.0,
+     "MinionXP": 30746.0,
+     "CreepXP": 1539.0,
+     "StructureXP": 375.0,
+     "HeroXP": 8269.0185546875,
+     "TrickleXP": 19895.0
+    }
+   },
+   {
+    "loop": 15970,
+    "time": 960.0,
+    "team": 0.0,
+    "breakdown": {
+     "GameTime": 960.0,
+     "PreviousGameTime": 900.0,
+     "MinionXP": 29274.0,
+     "CreepXP": 3392.0,
+     "StructureXP": 3150.0,
+     "HeroXP": 10839.3798828125,
+     "TrickleXP": 28527.428955078125
+    }
+   },
+   {
+    "loop": 15970,
+    "time": 960.0,
+    "team": 1.0,
+    "breakdown": {
+     "GameTime": 960.0,
+     "PreviousGameTime": 900.0,
+     "MinionXP": 32804.0,
+     "CreepXP": 1539.0,
+     "StructureXP": 375.0,
+     "HeroXP": 12652.4658203125,
+     "TrickleXP": 21275.0
+    }
+   },
+   {
+    "loop": 16930,
+    "time": 1020.0,
+    "team": 0.0,
+    "breakdown": {
+     "GameTime": 1020.0,
+     "PreviousGameTime": 960.0,
+     "MinionXP": 29274.0,
+     "CreepXP": 3392.0,
+     "StructureXP": 3150.0,
+     "HeroXP": 15301.0498046875,
+     "TrickleXP": 31070.94482421875
+    }
+   },
+   {
+    "loop": 16930,
+    "time": 1020.0,
+    "team": 1.0,
+    "breakdown": {
+     "GameTime": 1020.0,
+     "PreviousGameTime": 960.0,
+     "MinionXP": 34304.0,
+     "CreepXP": 1539.0,
+     "StructureXP": 375.0,
+     "HeroXP": 15405.1513671875,
+     "TrickleXP": 22655.0
+    }
+   },
+   {
+    "loop": 17890,
+    "time": 1080.0,
+    "team": 0.0,
+    "breakdown": {
+     "GameTime": 1080.0,
+     "PreviousGameTime": 1020.0,
+     "MinionXP": 29988.0,
+     "CreepXP": 4851.0,
+     "StructureXP": 3150.0,
+     "HeroXP": 15301.0498046875,
+     "TrickleXP": 33830.60791015625
+    }
+   },
+   {
+    "loop": 17890,
+    "time": 1080.0,
+    "team": 1.0,
+    "breakdown": {
+     "GameTime": 1080.0,
+     "PreviousGameTime": 1020.0,
+     "MinionXP": 38384.0,
+     "CreepXP": 1539.0,
+     "StructureXP": 375.0,
+     "HeroXP": 16801.953125,
+     "TrickleXP": 24035.0
+    }
+   },
+   {
+    "loop": 18850,
+    "time": 1140.0,
+    "team": 0.0,
+    "breakdown": {
+     "GameTime": 1140.0,
+     "PreviousGameTime": 1080.0,
+     "MinionXP": 31236.0,
+     "CreepXP": 4851.0,
+     "StructureXP": 3150.0,
+     "HeroXP": 15301.0498046875,
+     "TrickleXP": 36590.27099609375
+    }
+   },
+   {
+    "loop": 18850,
+    "time": 1140.0,
+    "team": 1.0,
+    "breakdown": {
+     "GameTime": 1140.0,
+     "PreviousGameTime": 1080.0,
+     "MinionXP": 41296.0,
+     "CreepXP": 1539.0,
+     "StructureXP": 375.0,
+     "HeroXP": 19553.3447265625,
+     "TrickleXP": 25415.0
+    }
+   },
+   {
+    "loop": 19810,
+    "time": 1200.0,
+    "team": 0.0,
+    "breakdown": {
+     "GameTime": 1200.0,
+     "PreviousGameTime": 1140.0,
+     "MinionXP": 33250.0,
+     "CreepXP": 4851.0,
+     "StructureXP": 3150.0,
+     "HeroXP": 15301.0498046875,
+     "TrickleXP": 39349.93408203125
+    }
+   },
+   {
+    "loop": 19810,
+    "time": 1200.0,
+    "team": 1.0,
+    "breakdown": {
+     "GameTime": 1200.0,
+     "PreviousGameTime": 1140.0,
+     "MinionXP": 44370.0,
+     "CreepXP": 2459.0,
+     "StructureXP": 1425.0,
+     "HeroXP": 19553.3447265625,
+     "TrickleXP": 26868.58203125
+    }
+   },
+   {
+    "loop": 20770,
+    "time": 1260.0,
+    "team": 0.0,
+    "breakdown": {
+     "GameTime": 1260.0,
+     "PreviousGameTime": 1200.0,
+     "MinionXP": 37030.0,
+     "CreepXP": 4851.0,
+     "StructureXP": 3150.0,
+     "HeroXP": 15301.0498046875,
+     "TrickleXP": 42109.59716796875
+    }
+   },
+   {
+    "loop": 20770,
+    "time": 1260.0,
+    "team": 1.0,
+    "breakdown": {
+     "GameTime": 1260.0,
+     "PreviousGameTime": 1200.0,
+     "MinionXP": 45774.0,
+     "CreepXP": 2459.0,
+     "StructureXP": 1550.0,
+     "HeroXP": 19553.3447265625,
+     "TrickleXP": 29021.193359375
+    }
+   },
+   {
+    "loop": 21730,
+    "time": 1320.0,
+    "team": 0.0,
+    "breakdown": {
+     "GameTime": 1320.0,
+     "PreviousGameTime": 1260.0,
+     "MinionXP": 39780.0,
+     "CreepXP": 5481.0,
+     "StructureXP": 3150.0,
+     "HeroXP": 15301.0498046875,
+     "TrickleXP": 44869.26025390625
+    }
+   },
+   {
+    "loop": 21730,
+    "time": 1320.0,
+    "team": 1.0,
+    "breakdown": {
+     "GameTime": 1320.0,
+     "PreviousGameTime": 1260.0,
+     "MinionXP": 47094.0,
+     "CreepXP": 3369.0,
+     "StructureXP": 1550.0,
+     "HeroXP": 19553.3447265625,
+     "TrickleXP": 31504.923828125
+    }
+   },
+   {
+    "loop": 22690,
+    "time": 1380.0,
+    "team": 0.0,
+    "breakdown": {
+     "GameTime": 1380.0,
+     "PreviousGameTime": 1320.0,
+     "MinionXP": 42692.0,
+     "CreepXP": 5481.0,
+     "StructureXP": 3150.0,
+     "HeroXP": 15301.0498046875,
+     "TrickleXP": 47628.92333984375
+    }
+   },
+   {
+    "loop": 22690,
+    "time": 1380.0,
+    "team": 1.0,
+    "breakdown": {
+     "GameTime": 1380.0,
+     "PreviousGameTime": 1320.0,
+     "MinionXP": 50006.0,
+     "CreepXP": 3369.0,
+     "StructureXP": 1550.0,
+     "HeroXP": 19553.3447265625,
+     "TrickleXP": 33988.654296875
+    }
+   },
+   {
+    "loop": 23650,
+    "time": 1440.0,
+    "team": 0.0,
+    "breakdown": {
+     "GameTime": 1440.0,
+     "PreviousGameTime": 1380.0,
+     "MinionXP": 44516.0,
+     "CreepXP": 5481.0,
+     "StructureXP": 3150.0,
+     "HeroXP": 15301.0498046875,
+     "TrickleXP": 50388.58642578125
+    }
+   },
+   {
+    "loop": 23650,
+    "time": 1440.0,
+    "team": 1.0,
+    "breakdown": {
+     "GameTime": 1440.0,
+     "PreviousGameTime": 1380.0,
+     "MinionXP": 52628.0,
+     "CreepXP": 3369.0,
+     "StructureXP": 2350.0,
+     "HeroXP": 19553.3447265625,
+     "TrickleXP": 36472.384765625
+    }
+   },
+   {
+    "loop": 24610,
+    "time": 1500.0,
+    "team": 0.0,
+    "breakdown": {
+     "GameTime": 1500.0,
+     "PreviousGameTime": 1440.0,
+     "MinionXP": 46488.0,
+     "CreepXP": 5481.0,
+     "StructureXP": 3150.0,
+     "HeroXP": 16713.17138671875,
+     "TrickleXP": 53148.24951171875
+    }
+   },
+   {
+    "loop": 24610,
+    "time": 1500.0,
+    "team": 1.0,
+    "breakdown": {
+     "GameTime": 1500.0,
+     "PreviousGameTime": 1440.0,
+     "MinionXP": 53556.0,
+     "CreepXP": 3369.0,
+     "StructureXP": 3150.0,
+     "HeroXP": 19553.3447265625,
+     "TrickleXP": 38956.115234375
+    }
+   },
+   {
+    "loop": 25570,
+    "time": 1560.0,
+    "team": 0.0,
+    "breakdown": {
+     "GameTime": 1560.0,
+     "PreviousGameTime": 1500.0,
+     "MinionXP": 47668.0,
+     "CreepXP": 5481.0,
+     "StructureXP": 3150.0,
+     "HeroXP": 22204.47998046875,
+     "TrickleXP": 55907.91259765625
+    }
+   },
+   {
+    "loop": 25570,
+    "time": 1560.0,
+    "team": 1.0,
+    "breakdown": {
+     "GameTime": 1560.0,
+     "PreviousGameTime": 1500.0,
+     "MinionXP": 53910.0,
+     "CreepXP": 3369.0,
+     "StructureXP": 3150.0,
+     "HeroXP": 21079.8095703125,
+     "TrickleXP": 41439.845703125
+    }
+   },
+   {
+    "loop": 25941,
+    "time": 1583.1875,
+    "team": 0,
+    "breakdown": {
+     "MinionXP": 47908.0,
+     "CreepXP": 5481.0,
+     "StructureXP": 3150.0,
+     "HeroXP": 23548.27880859375,
+     "TrickleXP": 56643.82275390625
+    }
+   },
+   {
+    "loop": 25941,
+    "time": 1583.1875,
+    "team": 1,
+    "breakdown": {
+     "MinionXP": 53910.0,
+     "CreepXP": 3369.0,
+     "StructureXP": 3150.0,
+     "HeroXP": 21079.8095703125,
+     "TrickleXP": 42102.173828125
+    }
+   }
+  ]
+ },
+ "players": {
+  "1-Hero-1-1001": {
+   "team": 0,
+   "hero": "Hogger",
+   "name": "Player1",
+   "ToonHandle": "1-Hero-1-1001",
+   "gameStats": {
+    "HeroDamage": 47487,
+    "SiegeDamage": 119533,
+    "Healing": 0,
+    "Deaths": 6,
+    "SoloKill": 6,
+    "Takedowns": 13,
+    "Assists": 7
+   }
+  },
+  "1-Hero-1-1002": {
+   "team": 0,
+   "hero": "Malfurion",
+   "name": "Player2",
+   "ToonHandle": "1-Hero-1-1002",
+   "gameStats": {
+    "HeroDamage": 27020,
+    "SiegeDamage": 12226,
+    "Healing": 161589,
+    "Deaths": 3,
+    "SoloKill": 3,
+    "Takedowns": 25,
+    "Assists": 22
+   }
+  },
+  "1-Hero-1-1003": {
+   "team": 0,
+   "hero": "Arthas",
+   "name": "Player3",
+   "ToonHandle": "1-Hero-1-1003",
+   "gameStats": {
+    "HeroDamage": 77391,
+    "SiegeDamage": 63483,
+    "Healing": 0,
+    "Deaths": 1,
+    "SoloKill": 2,
+    "Takedowns": 27,
+    "Assists": 25
+   }
+  },
+  "1-Hero-1-1004": {
+   "team": 0,
+   "hero": "Maiev",
+   "name": "Player4",
+   "ToonHandle": "1-Hero-1-1004",
+   "gameStats": {
+    "HeroDamage": 79441,
+    "SiegeDamage": 152259,
+    "Healing": 0,
+    "Deaths": 2,
+    "SoloKill": 9,
+    "Takedowns": 27,
+    "Assists": 18
+   }
+  },
+  "1-Hero-1-1005": {
+   "team": 0,
+   "hero": "Junkrat",
+   "name": "Player5",
+   "ToonHandle": "1-Hero-1-1005",
+   "gameStats": {
+    "HeroDamage": 109595,
+    "SiegeDamage": 230562,
+    "Healing": 0,
+    "Deaths": 3,
+    "SoloKill": 8,
+    "Takedowns": 23,
+    "Assists": 15
+   }
+  },
+  "1-Hero-1-1006": {
+   "team": 1,
+   "hero": "Blaze",
+   "name": "Player6",
+   "ToonHandle": "1-Hero-1-1006",
+   "gameStats": {
+    "HeroDamage": 46264,
+    "SiegeDamage": 214437,
+    "Healing": 0,
+    "Deaths": 3,
+    "SoloKill": 2,
+    "Takedowns": 10,
+    "Assists": 8
+   }
+  },
+  "1-Hero-1-1007": {
+   "team": 1,
+   "hero": "Garrosh",
+   "name": "Player7",
+   "ToonHandle": "1-Hero-1-1007",
+   "gameStats": {
+    "HeroDamage": 44692,
+    "SiegeDamage": 24342,
+    "Healing": 0,
+    "Deaths": 7,
+    "SoloKill": 3,
+    "Takedowns": 11,
+    "Assists": 8
+   }
+  },
+  "1-Hero-1-1008": {
+   "team": 1,
+   "hero": "Mephisto",
+   "name": "Player8",
+   "ToonHandle": "1-Hero-1-1008",
+   "gameStats": {
+    "HeroDamage": 104147,
+    "SiegeDamage": 210978,
+    "Healing": 0,
+    "Deaths": 7,
+    "SoloKill": 2,
+    "Takedowns": 9,
+    "Assists": 7
+   }
+  },
+  "1-Hero-1-1009": {
+   "team": 1,
+   "hero": "Alexstrasza",
+   "name": "Player9",
+   "ToonHandle": "1-Hero-1-1009",
+   "gameStats": {
+    "HeroDamage": 14337,
+    "SiegeDamage": 33473,
+    "Healing": 137188,
+    "Deaths": 5,
+    "SoloKill": 1,
+    "Takedowns": 14,
+    "Assists": 13
+   }
+  },
+  "1-Hero-1-1010": {
+   "team": 1,
+   "hero": "Greymane",
+   "name": "Player10",
+   "ToonHandle": "1-Hero-1-1010",
+   "gameStats": {
+    "HeroDamage": 70690,
+    "SiegeDamage": 194640,
+    "Healing": 0,
+    "Deaths": 6,
+    "SoloKill": 7,
+    "Takedowns": 13,
+    "Assists": 6
+   }
+  }
+ }
+}

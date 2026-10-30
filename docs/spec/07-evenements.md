@@ -8,6 +8,7 @@ Canal `AppState.events` (tokio broadcast, capacité 1024). Types émis aujourd'h
 |---|---|---|---|
 | `match.parsed` | projection d'un match réussie | `match_id`, `map`… | SPA (invalide les queries TanStack), widget OBS |
 | `draft.updated` | toute mutation du simulateur de draft | (re-fetch `/api/draft`) | console `/draft`, page `/draft/replay`, overlay `/draft/overlay` |
+| `cast.updated` | toute mutation de la régie de cast | (**aucun état** : re-fetch `/api/cast`) | pages de la régie de cast |
 | `patch.new` | nouveau patch détecté par le job référentiel | `internalId`, `name` | notif in-app (WhatsNew) |
 | `live.updated` | morceau du feed live qui ajoute des événements, nouvelle session, fin, fermeture | `session` (**aucun état** : la vue filtrée se lit par `GET /api/live`, pour que rien hors niveau de visibilité ne passe par le WS) | page `/live` |
 

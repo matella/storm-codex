@@ -1,0 +1,36 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ingame-bar-v6.html</title></head><body style="background:#0b0b10;color:#e8eaf2;font-family:sans-serif;max-width:1400px;margin:20px auto;padding:0 16px">
+<style>
+@import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@700;800&family=JetBrains+Mono:wght@700&display=swap");
+.ig{position:relative;aspect-ratio:16/9;width:100%;overflow:hidden;border-radius:6px;background:#1b1626 url(ingame.webp) center/cover;color:#eef2fc;container-type:size;margin-bottom:14px}
+/* anchors = your red dots: inner TOP corner of each tab at x=39.2% (blue) and x=59.65% (red), y=9.9% */
+.ig .tab{position:absolute;top:9.9%;height:4.6%;max-width:26cqw;display:flex;align-items:center;gap:1.2cqw;padding:0 1.6cqw;background:linear-gradient(180deg,#160f30f5,#0b0820f5);font-family:Cinzel,serif;font-weight:800;font-size:1.15cqw;letter-spacing:.06em;white-space:nowrap}
+.ig .tab .n{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.ig .tab .s{font-family:"JetBrains Mono",monospace;font-size:1.5cqw;color:#fff;flex:none}
+.ig .tab.b{right:59.45%;color:#7fa6ff;border-bottom:3px solid #2f6df6;clip-path:polygon(0 0,calc(100% - 1.35cqw) 0,100% 100%,0 100%)}
+.ig .tab.r{left:58.3%;color:#ff8088;border-bottom:3px solid #e0414b;clip-path:polygon(1.35cqw 0,100% 0,100% 100%,0 100%)}
+.ig .dot{position:absolute;width:.5cqw;height:.5cqw;border-radius:50%;background:#ff2d2d;transform:translate(-50%,-50%);top:9.9%}
+.ig .badge{position:absolute;top:1%;right:.6%;width:5.6cqw;display:flex;flex-direction:column;gap:.3cqw;text-align:center;font-family:Cinzel,serif;font-weight:800}
+.ig .badge .bo{background:linear-gradient(180deg,#160f30f5,#0b0820f5);border:1px solid #5a4aa0;border-radius:4px;padding:.35cqw 0;font-size:.95cqw;letter-spacing:.1em;color:#fff}
+.ig .badge .bo small{display:block;font-size:.55cqw;letter-spacing:.18em;color:#f0d27a;margin-top:.1cqw}
+.ig .badge .fl{background:#f0d27a;color:#1a1230;border-radius:4px;padding:.25cqw 0;font-size:.6cqw;letter-spacing:.14em}
+</style>
+
+<h2>In-game bar v6: anchored on your two red dots</h2>
+<p class="subtitle">The inner top corner of each tab sits exactly on your dots (shown here as small red markers, which won't be in the real overlay). The slanted edge then runs parallel to the game's \ and /.</p>
+
+<div class="ig">
+  <div class="tab b"><span class="n">TEAM BLUE</span> <span class="s">1</span></div>
+  <div class="tab r"><span class="s">1</span> <span class="n">TEAM RED</span></div>
+  <div class="dot" style="left:39.2%"></div><div class="dot" style="left:59.65%"></div>
+  <div class="badge"><div class="bo">BO5<small>GAME 3</small></div><div class="fl">FEARLESS</div></div>
+</div>
+
+<div class="ig">
+  <div class="tab b"><span class="n">THE ELITE NEXUS CHAMPIONS</span> <span class="s">1</span></div>
+  <div class="tab r"><span class="s">1</span> <span class="n">STORMBORN ESPORTS CLUB</span></div>
+  <div class="dot" style="left:39.2%"></div><div class="dot" style="left:59.65%"></div>
+  <div class="badge"><div class="bo">BO5<small>GAME 3</small></div><div class="fl">FEARLESS</div></div>
+</div>
+
+<p class="subtitle">Top: default names. Bottom: long names, which still grow outward from the dots. Is that the anchoring you meant?</p>
+</body></html>

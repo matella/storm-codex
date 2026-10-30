@@ -5,15 +5,10 @@ import {
   draftScore, draftSeriesNext, draftSeriesNew,
   type DraftState, type Side, type DraftFormat, type TeamInfo,
 } from "../api";
-import { Link } from "react-router-dom";
 import { Portrait } from "../components/ds";
-
-const MAPS = [
-  "Alterac Pass", "Battlefield of Eternity", "Braxis Holdout", "Blackheart's Bay",
-  "Cursed Hollow", "Dragon Shire", "Garden of Terror", "Hanamura Temple",
-  "Infernal Shrines", "Sky Temple", "Tomb of the Spider Queen", "Towers of Doom",
-  "Volskaya Foundry", "Warhead Junction",
-];
+import { MAPS } from "../castState";
+import type { CastSeries } from "../castApi";
+import { DraftReplayPanel } from "./DraftReplayPanel";
 
 const FORMATS: { v: DraftFormat; label: string }[] = [
   { v: "standard", label: "Standard" }, { v: "normal", label: "Normal (no bans)" }, { v: "fearless", label: "Fearless" },
@@ -21,22 +16,42 @@ const FORMATS: { v: DraftFormat; label: string }[] = [
 
 const ALL = "All";
 
+/** Espace de travail Draft de la régie (`/cast`, scène Draft) : deux sous-modes — Live (console opérateur) et
+ *  Replay (télécommande du draft depuis un replay). `series.active` verrouille nom/pseudos/score/Bo (la série
+ *  en est propriétaire : édition dans le rail). */
+export function DraftWorkspace({ series }: { series: CastSeries }) {
+  const [mode, setMode] = useState<"live" | "replay">("live");
+  return (
+    <div className="cr-draft">
+      <div className="cr-subtabs" role="group" aria-label="Draft mode">
+        <button type="button" aria-pressed={mode === "live"} className={mode === "live" ? "on" : ""} onClick={() => setMode("live")}>Live</button>
+        <button type="button" aria-pressed={mode === "replay"} className={mode === "replay" ? "on" : ""} onClick={() => setMode("replay")}>Replay</button>
+      </div>
+      {mode === "live"
+        ? <DraftConsole locked={series.active} seriesFormat={series.format} onReplay={() => setMode("replay")} />
+        : <DraftReplayPanel />}
+    </div>
+  );
+}
+
 /** Console opérateur du simulateur de draft (design « dossier »). Pilote l'état serveur (REST) ;
  *  l'overlay /draft/overlay (OBS, inchangé) reflète tout en direct via WS. */
-export function Draft() {
+export function DraftConsole({ locked = false, seriesFormat, onReplay }: { locked?: boolean; seriesFormat?: DraftFormat; onReplay?: () => void }) {
   const { data: d } = useDraft();
   const dim = useDimHeroes();
   const [role, setRole] = useState(ALL);
   const [search, setSearch] = useState("");
 
   if (!d) return <div className="ds-page"><div className="ds-empty" style={{ marginTop: 24 }}>loading…</div></div>;
-  return <DraftInner d={d} dim={dim} role={role} setRole={setRole} search={search} setSearch={setSearch} />;
+  return <DraftConsoleView d={d} dim={dim} role={role} setRole={setRole} search={search} setSearch={setSearch} locked={locked} seriesFormat={seriesFormat} onReplay={onReplay} />;
 }
 
 type Dim = ReturnType<typeof useDimHeroes>;
 
-function DraftInner({ d, dim, role, setRole, search, setSearch }: {
+/** Corps de la console. `locked` (série de la régie active) : nom, pseudos, score et Bo en lecture seule, format figé sur `seriesFormat`. */
+export function DraftConsoleView({ d, dim, role, setRole, search, setSearch, locked = false, seriesFormat, onReplay }: {
   d: DraftState; dim: Dim; role: string; setRole: (s: string) => void; search: string; setSearch: (s: string) => void;
+  locked?: boolean; seriesFormat?: DraftFormat; onReplay?: () => void;
 }) {
   const heroes = useMemo(() => Object.entries(dim ?? {}).map(([name, h]) => ({ name, ...h })), [dim]);
   const roles = useMemo(() => [ALL, ...Array.from(new Set(heroes.map((h) => h.role).filter(Boolean))) as string[]], [heroes]);
@@ -56,7 +71,7 @@ function DraftInner({ d, dim, role, setRole, search, setSearch }: {
     if (mode === "preban") { draftUnavailable(name, !d.manual_unavailable.includes(name)); return; }
     if (!used.has(name) && d.cursor < d.steps.length) draftAction(name);
   };
-  const overlayUrl = `${window.location.origin}/draft/overlay?skin=nexus`;
+  const overlayUrl = `${typeof window === "undefined" ? "" : window.location.origin}/cast/overlay?skin=nexus`;
   const cfg = { format: d.format, map: d.map, first_pick: d.first_pick, blue: d.blue, red: d.red, bo: d.bo };
 
   return (
@@ -73,14 +88,15 @@ function DraftInner({ d, dim, role, setRole, search, setSearch }: {
         <div className="ds-cover-foot">
           <span className="ds-label" style={{ margin: 0 }}>OBS overlay</span>
           <a className="olink" href={overlayUrl} target="_blank" rel="noreferrer">{overlayUrl} ↗</a>
-          <Link className="olink" to="/draft/replay">Draft from a replay →</Link>
+          {onReplay && <button type="button" className="olink linkbtn" onClick={onReplay}>Draft from a replay →</button>}
           <span className="muted-mono">browser source 1920×1080, transparent · skins <code>nexus · glass · tactical · mono</code></span>
         </div>
       </header>
 
       <div className="bar">
         <Field label="Format">
-          <select value={d.format} onChange={(e) => draftConfig({ ...cfg, format: e.target.value as DraftFormat })}>
+          <select value={locked ? seriesFormat ?? d.format : d.format} disabled={locked} title={locked ? "Fixed by the active series" : undefined}
+            onChange={(e) => draftConfig({ ...cfg, format: e.target.value as DraftFormat })}>
             {FORMATS.map((f) => <option key={f.v} value={f.v}>{f.label}</option>)}
           </select>
         </Field>
@@ -99,20 +115,34 @@ function DraftInner({ d, dim, role, setRole, search, setSearch }: {
           </div>
         </Field>
         <Field label="Series">
-          <select value={d.bo} onChange={(e) => draftConfig({ ...cfg, bo: Number(e.target.value) })}>
-            {[1, 3, 5, 7].map((b) => <option key={b} value={b}>Bo{b}</option>)}
-          </select>
+          {locked
+            ? <span className="ro" title="Edit in the series rail">Bo{d.bo}</span>
+            : (
+              <select value={d.bo} onChange={(e) => draftConfig({ ...cfg, bo: Number(e.target.value) })}>
+                {[1, 3, 5, 7].map((b) => <option key={b} value={b}>Bo{b}</option>)}
+              </select>
+            )}
         </Field>
         <Field label="Score">
-          <div className="score">
-            <Stepper v={d.score[0]} side="blue" on={(n) => draftScore(n, d.score[1])} />
-            <span className="dash">–</span>
-            <Stepper v={d.score[1]} side="red" on={(n) => draftScore(d.score[0], n)} />
-          </div>
+          {locked ? (
+            <div className="score" title="Edit in the series rail">
+              <span className="v blue">{d.score[0]}</span>
+              <span className="dash">–</span>
+              <span className="v red">{d.score[1]}</span>
+            </div>
+          ) : (
+            <div className="score">
+              <Stepper v={d.score[0]} side="blue" on={(n) => draftScore(n, d.score[1])} />
+              <span className="dash">–</span>
+              <Stepper v={d.score[1]} side="red" on={(n) => draftScore(d.score[0], n)} />
+            </div>
+          )}
         </Field>
         <div className="spacer" />
         <button className="ds-btn" onClick={() => draftSeriesNext()}>Next game ›</button>
-        <button className="ds-btn primary" onClick={() => { if (confirm("Start a new series? (clears the fearless history)")) draftSeriesNew(); }}>New series</button>
+        <button className="ds-btn primary" disabled={locked}
+          title={locked ? "The active series is managed from the series rail (New series there resets the draft too)" : undefined}
+          onClick={() => { if (confirm("Start a new series? (clears the fearless history)")) draftSeriesNew(); }}>New series</button>
       </div>
 
       <div className={`phase ${curSide ?? "done"}`}>
@@ -150,7 +180,7 @@ function DraftInner({ d, dim, role, setRole, search, setSearch }: {
       )}
 
       <div className="body">
-        <TeamColumn d={d} side="blue" />
+        <TeamColumn d={d} side="blue" locked={locked} />
         <div className="picker">
           <div className="ptop">
             <input type="text" placeholder="Search a hero…" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -178,13 +208,13 @@ function DraftInner({ d, dim, role, setRole, search, setSearch }: {
           </div>
           <p className="hint"><b>Pick</b> mode: click = assign to the current step. <b>Pre-ban</b> mode: click = manually (un)ban. Right-click = quick toggle in both modes.</p>
         </div>
-        <TeamColumn d={d} side="red" />
+        <TeamColumn d={d} side="red" locked={locked} />
       </div>
     </div>
   );
 }
 
-function TeamColumn({ d, side }: { d: DraftState; side: Side }) {
+function TeamColumn({ d, side, locked }: { d: DraftState; side: Side; locked: boolean }) {
   const team = side === "blue" ? d.blue : d.red;
   const [name, setName] = useState(team.name);
   const [players, setPlayers] = useState<string[]>(team.players);
@@ -202,8 +232,10 @@ function TeamColumn({ d, side }: { d: DraftState; side: Side }) {
   return (
     <div className={`team ${side}`}>
       <div className="ds-label">{side === "blue" ? "Blue side" : "Red side"}</div>
-      <input className="tn" value={name} placeholder="Team name" title="Team name (editable)"
-        onChange={(e) => setName(e.target.value)} onBlur={() => push(name, players)} />
+      {locked
+        ? <div className="tn ro" title="Edit in the series rail">{team.name || (side === "blue" ? "Blue" : "Red")}</div>
+        : <input className="tn" value={name} placeholder="Team name" title="Team name (editable)"
+            onChange={(e) => setName(e.target.value)} onBlur={() => push(name, players)} />}
       {bans.length > 0 && (
         <div className="bans">
           {bans.map(({ i }, k) => {
@@ -219,9 +251,11 @@ function TeamColumn({ d, side }: { d: DraftState; side: Side }) {
             {hero ? <Portrait hero={hero} size={46} tone={side} /> : <span className="av none" />}
             <div className="info">
               <div className={`hero ${hero ? "" : "none"}`}>{hero ?? (i === d.cursor ? "picking…" : "—")}</div>
-              <input className="pl" value={players[k] ?? ""} placeholder={`player ${k + 1}`}
-                onChange={(e) => { const p = [...players]; p[k] = e.target.value; setPlayers(p); }}
-                onBlur={() => push(name, players)} />
+              {locked
+                ? <div className="pl ro" title="Edit in the series rail">{team.players[k] || `player ${k + 1}`}</div>
+                : <input className="pl" value={players[k] ?? ""} placeholder={`player ${k + 1}`}
+                    onChange={(e) => { const p = [...players]; p[k] = e.target.value; setPlayers(p); }}
+                    onBlur={() => push(name, players)} />}
             </div>
           </div>
         );
@@ -250,6 +284,8 @@ const CSS = `
 .draftc .dcover{margin-top:18px;background:radial-gradient(700px 320px at 0% 0%,rgba(133,183,235,.16),transparent 60%),radial-gradient(700px 320px at 100% 100%,rgba(240,149,149,.14),transparent 60%),var(--panel)}
 .draftc .dcover .ds-title i{font-style:normal;color:var(--muted-2);font-size:.45em;vertical-align:middle;margin:0 8px}
 .draftc .dcover .tb{color:var(--tm-blue)} .draftc .dcover .tr{color:var(--tm-red)}
+.draftc .ro{color:var(--text-2)} .draftc .score .ro{border:none}
+.draftc .linkbtn{background:none;border:none;padding:0;cursor:pointer}
 .draftc .olink{font:600 12px var(--mono);color:var(--accent-2);text-decoration:none;word-break:break-all}
 .draftc .muted-mono{font:11px var(--mono);color:var(--muted-2)} .draftc .muted-mono code{color:var(--text-2)}
 .draftc .bar{display:flex;flex-wrap:wrap;gap:12px 16px;align-items:flex-end;background:var(--panel);border:1px solid var(--line-2);border-radius:14px;padding:14px 16px;margin:16px 0 12px}

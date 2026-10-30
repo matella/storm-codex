@@ -1,0 +1,70 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>team-cards.html</title></head><body style="background:#0b0b10;color:#e8eaf2;font-family:sans-serif;max-width:1400px;margin:20px auto;padding:0 16px">
+<style>
+@import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@700;800&family=Figtree:wght@400;600;700&family=JetBrains+Mono:wght@500;700&display=swap");
+.tc{--blue:#2f6df6;--red:#e0414b;--bs:#7fa6ff;--rs:#ff8088;--gold:#f0d27a;--bd:#5a4aa0;position:relative;aspect-ratio:16/9;width:100%;overflow:hidden;color:#eef2fc;font-family:Figtree,sans-serif;container-type:size;margin-bottom:14px;
+ background:radial-gradient(130% 100% at 50% 30%,#2a1d5c 0%,#160f30 45%,#070512 100%);border-radius:6px}
+.tc .stars{position:absolute;inset:0;opacity:.5;background-image:radial-gradient(1px 1px at 18% 28%,#fff8,transparent),radial-gradient(1px 1px at 68% 58%,#fff6,transparent),radial-gradient(1px 1px at 44% 78%,#fff7,transparent),radial-gradient(1px 1px at 86% 18%,#fff5,transparent)}
+.tc .title{position:absolute;top:3.5%;left:0;right:0;text-align:center;font-family:Cinzel,serif;letter-spacing:.3em;font-size:1.1cqw;color:#cfe0ff;opacity:.85}
+.tc .vs{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-family:Cinzel,serif;font-weight:800;font-size:2.4cqw;color:var(--gold)}
+.tc .card{position:absolute;top:10%;bottom:6%;width:42%;border:1px solid var(--bd);border-radius:12px;background:#0b0820d0;padding:1.6cqw 1.8cqw;display:flex;flex-direction:column}
+.tc .card.b{left:4%;box-shadow:inset 0 5px 0 var(--blue)}.tc .card.r{right:4%;box-shadow:inset 0 5px 0 var(--red)}
+.tc .top{display:flex;align-items:center;gap:1.2cqw;margin-bottom:1.2cqw}.tc .card.r .top{flex-direction:row-reverse;text-align:right}
+.tc .lg{width:5.5cqw;height:5.5cqw;border-radius:50%;border:2px solid var(--bd);background:#120c2b;display:flex;align-items:center;justify-content:center;font-family:Cinzel,serif;font-weight:800;font-size:1.6cqw}
+.tc .nm{font-family:Cinzel,serif;font-weight:800;font-size:2.1cqw;letter-spacing:.05em}.tc .card.b .nm{color:var(--bs)}.tc .card.r .nm{color:var(--rs)}
+.tc .sub{font-family:"JetBrains Mono",monospace;font-size:.85cqw;color:#aab3d8;letter-spacing:.08em;margin-top:.2cqw}
+.tc .pl{flex:1;display:flex;align-items:center;gap:1cqw;border-top:1px solid #2a2f5a}
+.tc .card.r .pl{flex-direction:row-reverse;text-align:right}
+.tc .pn{font-weight:700;font-size:1.35cqw;width:13cqw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tc .st{font-family:"JetBrains Mono",monospace;font-size:.8cqw;color:#8f98c0;display:block;font-weight:500;margin-top:.15cqw}
+.tc .hp{display:flex;gap:.4cqw}.tc .hp i{width:3.1cqw;height:3.1cqw;border-radius:5px;background:#2b2160;border:1px solid #ffffff2e;display:block}
+.tc .hp i.pl1{border-color:var(--gold);box-shadow:0 0 10px #f0d27a66}
+.tc .cap{margin-left:auto;font-family:Cinzel,serif;font-size:.65cqw;letter-spacing:.2em;color:var(--gold)}.tc .card.r .cap{margin-left:0;margin-right:auto}
+</style>
+
+<h2>Team cards and lineups</h2>
+<p class="subtitle">Two versions of the same idea. Players, stats and hero pools come from what Storm Codex already knows about each BattleTag. Everything here is placeholder.</p>
+
+<div class="options"><div class="option" data-choice="a" onclick="toggleSelect(this)"><div class="letter">A</div><div class="content"><h3>Lineup scene, before the series</h3><p>Full-screen. Each team's logo, name, record, five players with their top 3 heroes.</p></div></div></div>
+<div class="tc">
+  <div class="stars"></div><div class="title">BEST OF 5 · FEARLESS · LINEUPS</div><div class="vs">VS</div>
+  <div class="card b">
+    <div class="top"><div class="lg">TB</div><div><div class="nm">TEAM BLUE</div><div class="sub">LEAGUE RANK #3 · 14W – 6L</div></div></div>
+    <div class="pl"><div class="pn">Player1<span class="st">412 games · 58% win</span></div><div class="hp"><i></i><i></i><i></i></div><span class="cap">CAPTAIN</span></div>
+    <div class="pl"><div class="pn">Player2<span class="st">1,204 games · 55% win</span></div><div class="hp"><i></i><i></i><i></i></div></div>
+    <div class="pl"><div class="pn">Player3<span class="st">730 games · 52% win</span></div><div class="hp"><i></i><i></i><i></i></div></div>
+    <div class="pl"><div class="pn">Player4<span class="st">96 games · 61% win</span></div><div class="hp"><i></i><i></i><i></i></div></div>
+    <div class="pl"><div class="pn">Player5<span class="st">558 games · 54% win</span></div><div class="hp"><i></i><i></i><i></i></div></div>
+  </div>
+  <div class="card r">
+    <div class="top"><div class="lg">TR</div><div><div class="nm">TEAM RED</div><div class="sub">LEAGUE RANK #5 · 11W – 9L</div></div></div>
+    <div class="pl"><div class="pn">Player6<span class="st">880 games · 53% win</span></div><div class="hp"><i></i><i></i><i></i></div><span class="cap">CAPTAIN</span></div>
+    <div class="pl"><div class="pn">Player7<span class="st">345 games · 56% win</span></div><div class="hp"><i></i><i></i><i></i></div></div>
+    <div class="pl"><div class="pn">Player8<span class="st">1,020 games · 51% win</span></div><div class="hp"><i></i><i></i><i></i></div></div>
+    <div class="pl"><div class="pn">Player9<span class="st">270 games · 49% win</span></div><div class="hp"><i></i><i></i><i></i></div></div>
+    <div class="pl"><div class="pn">Player10<span class="st">601 games · 57% win</span></div><div class="hp"><i></i><i></i><i></i></div></div>
+  </div>
+</div>
+
+<div class="options" style="margin-top:20px"><div class="option" data-choice="b" onclick="toggleSelect(this)"><div class="letter">B</div><div class="content"><h3>Between games: lineup with this series' heroes</h3><p>The same card, but the portraits are the heroes each player has actually played so far in the series, in order. Fearless-locked ones are dimmed.</p></div></div></div>
+<div class="tc">
+  <div class="stars"></div><div class="title">AFTER GAME 2 · SERIES 1 – 1 · FEARLESS HEROES LOCKED</div><div class="vs">1 – 1</div>
+  <div class="card b">
+    <div class="top"><div class="lg">TB</div><div><div class="nm">TEAM BLUE</div><div class="sub">GAME 1 ✓ WON · GAME 2 ✗ LOST</div></div></div>
+    <div class="pl"><div class="pn">Player1<span class="st">G1 Valla · G2 Tychus</span></div><div class="hp"><i style="opacity:.4"></i><i style="opacity:.4"></i><i class="pl1"></i></div></div>
+    <div class="pl"><div class="pn">Player2<span class="st">G1 Jaina · G2 Kael'thas</span></div><div class="hp"><i style="opacity:.4"></i><i style="opacity:.4"></i><i class="pl1"></i></div></div>
+    <div class="pl"><div class="pn">Player3<span class="st">G1 Muradin · G2 Diablo</span></div><div class="hp"><i style="opacity:.4"></i><i style="opacity:.4"></i><i class="pl1"></i></div></div>
+    <div class="pl"><div class="pn">Player4<span class="st">G1 Lt. Morales · G2 Li Li</span></div><div class="hp"><i style="opacity:.4"></i><i style="opacity:.4"></i><i class="pl1"></i></div></div>
+    <div class="pl"><div class="pn">Player5<span class="st">G1 Illidan · G2 Zeratul</span></div><div class="hp"><i style="opacity:.4"></i><i style="opacity:.4"></i><i class="pl1"></i></div></div>
+  </div>
+  <div class="card r">
+    <div class="top"><div class="lg">TR</div><div><div class="nm">TEAM RED</div><div class="sub">GAME 1 ✗ LOST · GAME 2 ✓ WON</div></div></div>
+    <div class="pl"><div class="pn">Player6<span class="st">G1 Li-Ming · G2 Greymane</span></div><div class="hp"><i style="opacity:.4"></i><i style="opacity:.4"></i><i class="pl1"></i></div></div>
+    <div class="pl"><div class="pn">Player7<span class="st">G1 Genji · G2 Raynor</span></div><div class="hp"><i style="opacity:.4"></i><i style="opacity:.4"></i><i class="pl1"></i></div></div>
+    <div class="pl"><div class="pn">Player8<span class="st">G1 Arthas · G2 ETC</span></div><div class="hp"><i style="opacity:.4"></i><i style="opacity:.4"></i><i class="pl1"></i></div></div>
+    <div class="pl"><div class="pn">Player9<span class="st">G1 Rehgar · G2 Brightwing</span></div><div class="hp"><i style="opacity:.4"></i><i style="opacity:.4"></i><i class="pl1"></i></div></div>
+    <div class="pl"><div class="pn">Player10<span class="st">G1 Tracer · G2 Falstad</span></div><div class="hp"><i style="opacity:.4"></i><i style="opacity:.4"></i><i class="pl1"></i></div></div>
+  </div>
+</div>
+
+<p class="subtitle">Which do you want, A, B, or both? And what should appear under a player's name: games and win rate from our database, or something you type in yourself?</p>
+</body></html>

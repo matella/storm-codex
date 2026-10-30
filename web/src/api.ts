@@ -247,16 +247,31 @@ export function fetchHeroChanges(p: HeroChangesParams = {}): Promise<HeroPatchSe
   return get<HeroPatchSection[]>(`/api/hero-changes?${q.toString()}`);
 }
 
+/** Requêtes à relire à l'ouverture du WS : rien à la première ouverture ; à toute ouverture qui suit
+ *  une coupure (`hadDisconnect`, y compris un 1er échec de connexion), l'état temps réel de la régie
+ *  (`cast` et `draft`, la scène Draft de l'overlay en dépend) — les events manqués ne sont pas rejoués. */
+export function reopenInvalidations(hadDisconnect: boolean): string[][] {
+  return hadDisconnect ? [["cast"], ["draft"]] : [];
+}
+
 /** WS `/ws` : `match.parsed` invalide les listes de matchs ; `patch.new` invalide les patches. Le
- *  callback reçoit l'événement brut (avec `.type`) pour piloter les toasts. */
+ *  callback reçoit l'événement brut (avec `.type`) pour piloter les toasts. Reconnexion après 2 s ;
+ *  à la réouverture, `reopenInvalidations` rattrape l'état manqué. */
 export function useLiveUpdates(onEvent?: (ev: { type?: string; match_id?: number; map?: string; name?: string; internalId?: string }) => void) {
   const qc = useQueryClient();
   useEffect(() => {
     const proto = location.protocol === "https:" ? "wss" : "ws";
     let ws: WebSocket | null = null;
     let closed = false;
+    let hadDisconnect = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const connect = () => {
+      if (closed) return; // démonté pendant l'attente de reconnexion
       ws = new WebSocket(`${proto}://${location.host}/ws`);
+      ws.onopen = () => {
+        for (const queryKey of reopenInvalidations(hadDisconnect)) qc.invalidateQueries({ queryKey });
+        hadDisconnect = false;
+      };
       ws.onmessage = (e) => {
         try {
           const ev = JSON.parse(e.data);
@@ -270,6 +285,11 @@ export function useLiveUpdates(onEvent?: (ev: { type?: string; match_id?: number
           } else if (ev.type === "draft.updated") {
             qc.invalidateQueries({ queryKey: ["draft"] });
             onEvent?.(ev);
+          } else if (ev.type === "cast.updated") {
+            qc.invalidateQueries({ queryKey: ["cast"] });
+            // héros récents : un joueur lié/délié change la requête, mais une même requête peut aussi
+            // devoir être relue (nouvelles parties) — invalidée ici, `staleTime` 60 s sinon
+            qc.invalidateQueries({ queryKey: ["cast-lineup"] });
           } else if (ev.type === "live.updated") {
             // Signal sans état : la vue filtrée se relit par GET /api/live. Pas de toast.
             qc.invalidateQueries({ queryKey: ["live"] });
@@ -279,12 +299,14 @@ export function useLiveUpdates(onEvent?: (ev: { type?: string; match_id?: number
         }
       };
       ws.onclose = () => {
-        if (!closed) setTimeout(connect, 2000); // reconnexion
+        hadDisconnect = true;
+        if (!closed) timer = setTimeout(connect, 2000); // reconnexion
       };
     };
     connect();
     return () => {
       closed = true;
+      clearTimeout(timer);
       ws?.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -699,16 +721,19 @@ export const draftReplayRemove = async (i: number): Promise<ReplayState> => {
   return r.json() as Promise<ReplayState>;
 };
 /** Envoie un `.StormReplay` (octets bruts). Rejette avec `Error(code)` — `not_custom`, `no_draft`… */
+/** Erreur d'une réponse non-OK : `Error(code)` avec le `{"error": code}` du serveur, sinon `http_<status>`. */
+export async function httpError(r: Response): Promise<Error> {
+  const body = await r.json().catch(() => ({}));
+  return new Error((body as { error?: string }).error ?? `http_${r.status}`);
+}
+
 export async function draftReplayLoad(file: File): Promise<ReplayState> {
   const r = await fetch("/api/draft/replay/load", {
     method: "POST",
     headers: { "X-Filename": encodeURIComponent(file.name) },
     body: file,
   });
-  if (!r.ok) {
-    const body = await r.json().catch(() => ({}));
-    throw new Error((body as { error?: string }).error ?? `http_${r.status}`);
-  }
+  if (!r.ok) throw await httpError(r);
   return r.json() as Promise<ReplayState>;
 }
 

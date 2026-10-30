@@ -1,0 +1,115 @@
+@import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@700;800&family=JetBrains+Mono:wght@700&display=swap");
+
+/* Overlay de cast OBS (1920×1080, fond transparent). Skin via data-skin (même jeu de variables que le draft). */
+.cast-overlay { position: fixed; inset: 0; overflow: hidden; container-type: size; color: #eef2fc;
+  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+  --blue:#2f6df6; --red:#e0414b; --blue-soft:#7fa6ff; --red-soft:#ff8088; --gold:#f0d27a;
+  --panel:linear-gradient(180deg,#160f30f5,#0b0820f5); --cardbd:#5a4aa0; --radius:4px;
+  --label-ff:"Cinzel","Trajan Pro",serif; --num-ff:"JetBrains Mono",ui-monospace,monospace; }
+.cast-overlay[data-skin=glass]{ --panel:linear-gradient(180deg,#0a1326f2,#0b0e1cf2); --cardbd:rgba(255,255,255,.14); --gold:#d8c089; }
+.cast-overlay[data-skin=tactical]{ --blue:#2ee6d6; --red:#ff4655; --blue-soft:#7ff0e6; --red-soft:#ff7a85; --gold:#ffd36b; --radius:0;
+  --panel:linear-gradient(180deg,#0c0f14f5,#070a0ef5); --cardbd:#243038; --label-ff:"Oswald","Arial Narrow",sans-serif; }
+.cast-overlay[data-skin=mono]{ --blue:#6ea8ff; --red:#ff7a85; --blue-soft:#9cc4ff; --red-soft:#ffa0a8; --gold:#cdd3e2;
+  --panel:linear-gradient(180deg,#0e1016f5,#0a0b10f5); --cardbd:rgba(255,255,255,.1); }
+
+/* une scène à la fois ; fondu ≈ 300 ms à l'entrée, et à la sortie : la scène sortante reste montée
+   (classe .out, instantané de son état) le temps du fondu puis est démontée */
+.cast-overlay .scene { position: absolute; inset: 0; animation: cast-fade .3s ease-out both; }
+.cast-overlay .scene.out { animation: cast-fade-out .3s ease-in both; pointer-events: none; }
+@keyframes cast-fade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes cast-fade-out { from { opacity: 1 } to { opacity: 0 } }
+
+/* In-game : onglets rectangulaires (arête intérieure verticale, coins carrés) */
+.cast-overlay .tab { position: absolute; display: flex; align-items: center; gap: 1.2cqw; padding: 0 1.6cqw;
+  box-sizing: border-box; background: var(--panel); font-family: var(--label-ff); font-weight: 800;
+  font-size: 1.15cqw; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+.cast-overlay .tab .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.cast-overlay .tab .s { font-family: var(--num-ff); font-size: 1.5cqw; color: #fff; flex: none; }
+.cast-overlay .tab.b { color: var(--blue-soft); border-bottom: 3px solid var(--blue); justify-content: flex-end; }
+.cast-overlay .tab.r { color: var(--red-soft); border-bottom: 3px solid var(--red); }
+
+.cast-overlay .badge { position: absolute; top: 1%; right: .6%; width: 5.6cqw; display: flex; flex-direction: column;
+  gap: .3cqw; text-align: center; font-family: var(--label-ff); font-weight: 800; }
+.cast-overlay .badge .bo { background: var(--panel); border: 1px solid var(--cardbd); border-radius: var(--radius);
+  padding: .35cqw 0; font-size: .95cqw; letter-spacing: .1em; color: #fff; }
+.cast-overlay .badge .bo small { display: block; font-size: .55cqw; letter-spacing: .18em; color: var(--gold); margin-top: .1cqw; }
+.cast-overlay .badge .fl { background: var(--gold); color: #1a1230; border-radius: var(--radius); padding: .25cqw 0;
+  font-size: .6cqw; letter-spacing: .14em; }
+
+/* Series : en-tête, bandeau des cartes du pool, zone de slides (contenu des slides : tâche 9) */
+.cast-overlay .sr-head { position: absolute; top: 3%; left: 0; right: 0; text-align: center; }
+.cast-overlay .sr-ttl { font-family: var(--label-ff); letter-spacing: .22em; font-size: 1.05cqw; color: #cfe0ff; opacity: .85; }
+.cast-overlay .sr-teams { margin-top: .4cqw; font-family: var(--label-ff); font-weight: 800; font-size: 2cqw; letter-spacing: .05em;
+  display: flex; align-items: baseline; justify-content: center; gap: 1.2cqw; }
+.cast-overlay .sr-teams .b, .cast-overlay .sr-teams .r { max-width: 32cqw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cast-overlay .sr-teams .b { color: var(--blue-soft); } .cast-overlay .sr-teams .r { color: var(--red-soft); }
+.cast-overlay .sr-teams .s { font-family: var(--num-ff); color: #fff; flex: none; }
+
+.cast-overlay .sr-strip { position: absolute; top: 19%; left: 4%; right: 4%; display: grid; gap: .7cqw;
+  grid-template-columns: repeat(var(--n, 6), 1fr); }
+.cast-overlay .sr-strip.two-rows, .cast-overlay .sr-strip.three-rows { grid-template-columns: repeat(5, 1fr); }
+.cast-overlay .mc { position: relative; height: 9cqw; border-radius: calc(var(--radius) * 2.5); overflow: hidden; min-width: 0;
+  border: 1px solid var(--cardbd); background: linear-gradient(160deg, #2b2160, #120c2b); }
+.cast-overlay .two-rows .mc { height: 7.4cqw; }
+/* 11–15 cartes : trois rangées plus basses (19 % + 3 × 6.2cqw + gaps ≈ 63 % du cadre) */
+.cast-overlay .three-rows .mc { height: 6.2cqw; }
+.cast-overlay .three-rows .mc .tx { padding: .35cqw .5cqw; }
+.cast-overlay .mc .art { position: absolute; inset: 0; opacity: .55; background-size: cover; background-position: center; }
+.cast-overlay .mc .tx { position: absolute; left: 0; right: 0; bottom: 0; padding: .5cqw .6cqw;
+  background: linear-gradient(0deg, #000d 40%, transparent); }
+.cast-overlay .mc b { display: block; font-family: var(--label-ff); font-size: .85cqw; letter-spacing: .04em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cast-overlay .mc .lb { display: block; font-style: normal; font-size: .68cqw; color: #c4cdea; margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cast-overlay .mc.tone-blue { box-shadow: inset 0 4px 0 var(--blue); } .cast-overlay .mc.tone-blue .lb { color: var(--blue-soft); }
+.cast-overlay .mc.tone-red { box-shadow: inset 0 4px 0 var(--red); } .cast-overlay .mc.tone-red .lb { color: var(--red-soft); }
+.cast-overlay .mc.tone-gold { border-color: var(--gold); box-shadow: 0 0 22px #f0d27a55; }
+.cast-overlay .mc.tone-gold .lb { color: var(--gold); font-weight: 700; letter-spacing: .14em; }
+.cast-overlay .mc.struck { filter: grayscale(.8) brightness(.55); }
+.cast-overlay .mc.struck::after { content: ""; position: absolute; inset: 0;
+  background: linear-gradient(135deg, transparent 47%, #ff3b46 48%, #ff3b46 52%, transparent 53%); }
+
+/* une slide de la scène Series (bandeau ou breakdown) occupe tout le cadre ; fondu à chaque changement */
+.cast-overlay .sr-frame { position: absolute; inset: 0; animation: cast-fade .4s ease-out both; }
+
+/* Fond opaque des scènes plein écran (series, lineups) — même ciel nocturne que le skin nexus du draft */
+.cast-overlay .scene-backdrop { position: absolute; inset: 0; background: radial-gradient(130% 100% at 50% 30%, #2a1d5c 0%, #160f30 45%, #070512 100%); }
+.cast-overlay[data-skin=glass] .scene-backdrop { background: linear-gradient(180deg, #0a1326, #0b0e1c); }
+.cast-overlay[data-skin=tactical] .scene-backdrop { background: linear-gradient(180deg, #0c0f14, #070a0e); }
+.cast-overlay[data-skin=mono] .scene-backdrop { background: linear-gradient(180deg, #0e1016, #0a0b10); }
+.cast-overlay .scene-backdrop .stars { position: absolute; inset: 0; opacity: .5; background-image:
+  radial-gradient(1px 1px at 18% 28%, #fff8, transparent), radial-gradient(1px 1px at 68% 58%, #fff6, transparent),
+  radial-gradient(1px 1px at 44% 78%, #fff7, transparent), radial-gradient(1px 1px at 86% 18%, #fff5, transparent); }
+.cast-overlay[data-skin=tactical] .scene-backdrop .stars, .cast-overlay[data-skin=mono] .scene-backdrop .stars { opacity: .12;
+  background-image: linear-gradient(#ffffff08 1px, transparent 1px), linear-gradient(90deg, #ffffff08 1px, transparent 1px); background-size: 38px 38px; }
+
+/* Lineups : deux cartes d'équipe (logo, nom, bilan, 5 joueurs + portraits de héros) — maquette team-cards.html */
+.cast-overlay .lu-title { position: absolute; top: 3.5%; left: 0; right: 0; text-align: center; font-family: var(--label-ff);
+  letter-spacing: .3em; font-size: 1.1cqw; color: #cfe0ff; opacity: .85; }
+.cast-overlay .lu-vs { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-family: var(--label-ff);
+  font-weight: 800; font-size: 2.4cqw; color: var(--gold); }
+.cast-overlay .lu-card { position: absolute; top: 10%; bottom: 6%; width: 42%; box-sizing: border-box; border: 1px solid var(--cardbd);
+  border-radius: 12px; background: #0b0820d0; padding: 1.6cqw 1.8cqw; display: flex; flex-direction: column; }
+.cast-overlay .lu-card.b { left: 4%; box-shadow: inset 0 5px 0 var(--blue); }
+.cast-overlay .lu-card.r { right: 4%; box-shadow: inset 0 5px 0 var(--red); }
+.cast-overlay .lu-top { display: flex; align-items: center; gap: 1.2cqw; margin-bottom: 1.2cqw; min-width: 0; }
+.cast-overlay .lu-card.r .lu-top { flex-direction: row-reverse; text-align: right; }
+.cast-overlay .lu-lg { flex: none; width: 5.5cqw; height: 5.5cqw; border-radius: 50%; border: 2px solid var(--cardbd); background: #120c2b;
+  display: flex; align-items: center; justify-content: center; overflow: hidden; font-family: var(--label-ff); font-weight: 800; font-size: 1.6cqw; }
+.cast-overlay .lu-lg img { width: 100%; height: 100%; object-fit: contain; }
+.cast-overlay .lu-id { min-width: 0; }
+.cast-overlay .lu-nm { font-family: var(--label-ff); font-weight: 800; font-size: 2.1cqw; letter-spacing: .05em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cast-overlay .lu-card.b .lu-nm { color: var(--blue-soft); } .cast-overlay .lu-card.r .lu-nm { color: var(--red-soft); }
+.cast-overlay .lu-sub { font-family: var(--num-ff); font-size: .85cqw; color: #aab3d8; letter-spacing: .08em; margin-top: .2cqw; }
+.cast-overlay .lu-pl { flex: 1; display: flex; align-items: center; gap: 1cqw; border-top: 1px solid #2a2f5a; min-height: 0; }
+.cast-overlay .lu-card.r .lu-pl { flex-direction: row-reverse; text-align: right; }
+.cast-overlay .lu-pn { font-weight: 700; font-size: 1.35cqw; width: 15cqw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cast-overlay .lu-st { display: block; font-family: var(--num-ff); font-size: .8cqw; color: #8f98c0; font-weight: 500; margin-top: .15cqw;
+  overflow: hidden; text-overflow: ellipsis; }
+.cast-overlay .lu-hp { display: flex; gap: .4cqw; }
+.cast-overlay .lu-hp .hp-i { width: 3.1cqw; height: 3.1cqw; border-radius: 5px; object-fit: cover; background: #2b2160; border: 1px solid #ffffff2e; display: block; }
+.cast-overlay .lu-hp .ph { display: flex; align-items: center; justify-content: center; font-style: normal; font-weight: 800; font-size: 1cqw; color: #cfd6f5; }
+.cast-overlay .lu-hp .hp-i.lk { opacity: .4; filter: grayscale(.5); }
+.cast-overlay .lu-hp .hp-i.cur { border-color: var(--gold); box-shadow: 0 0 10px #f0d27a66; }
+.cast-overlay .lu-cap { margin-left: auto; font-family: var(--label-ff); font-size: .65cqw; letter-spacing: .2em; color: var(--gold); }
+.cast-overlay .lu-card.r .lu-cap { margin-left: 0; margin-right: auto; }

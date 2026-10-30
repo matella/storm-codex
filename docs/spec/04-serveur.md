@@ -89,9 +89,36 @@ Design : `docs/specs/2026-06-19-draft-simulator-design.md`.
 donc les états v1 se rechargent) porte la file de parties Custom chargées (`LoadedGame` : script des 16 étapes,
 pseudos), la partie courante, `fearless`, la lecture auto (`playing`, `interval_ms` 30 000 par défaut,
 `next_at_ms`). `reveal_phase`/`back_phase` avancent par **phase** (bloc d'étapes consécutives de même rôle) ;
-`select_game` prépare un draft vide (fearless : series bans = picks des parties précédentes de la file).
+`select_game` prépare un draft vide (fearless : series bans = picks des parties précédentes de la file) ;
+`select_game_with` / `add_game_with` / `set_fearless_with` prennent le format d'une série de cast active, qui
+l'emporte sur `replay.fearless` (M5 : Fearless → Fearless + series bans ; Standard/Normal → Standard, les scripts
+de replay suivant l'ordre Standard à 16 étapes).
 `public()` retire scripts et pseudos des picks non révélés (vue servie par `GET /api/draft`).
 Spec : `docs/specs/2026-10-25-draft-replay-design.md`.
+
+## Régie de cast (`cast/`)
+
+Module `cast/` : `mod.rs` (types `Series`, `Team`, `PoolMap`/`MapStatus`, `GameRecord`, `Scene`,
+`LineupMode`, `SlideState`, `CastError`), `series.rs` (opérations **pures**, zéro I/O : pool, parties,
+score, mode de lineup), `store.rs` (persistance), `lineup.rs` (héros récents par joueur, lecture seule de `match_players`), `summary.rs` (`GameSummary` extrait de la sortie storm-stats d'un replay Custom, pur), `replay.rs` (route `POST /api/cast/games/{n}/replay` : décodage à la volée, rien en base hors `cast_live`), `api.rs` (routes). Série singleton autoritative en
+mémoire (`AppState.cast`), **persistée** dans `cast_live` (JSONB, id=1), rechargée au démarrage ; tout
+état illisible (non-objet, `players` ≠ 5, scène/format/côté/statut inconnu) → repli sur une série neuve
+inactive, le démarrage n'échoue jamais. Chaque mutation : un seul write-lock sur une copie (une erreur
+`CastError` ne change rien), puis persistance et broadcast `cast.updated` sur `/ws`. **Persistance
+versionnée** : chaque mutation reçoit une version (`AppState.cast_version`, attribuée sous le write-lock) et
+persiste **son** instantané ; les écritures sont sérialisées (`AppState.cast_saved` = dernière version écrite)
+et un instantané plus ancien que le dernier écrit est ignoré — deux mutations concurrentes ne peuvent jamais
+laisser l'ancien état en base. Échec d'écriture → la route répond `500 persist_failed` (R24 ; l'état reste
+appliqué en mémoire et `cast.updated` est diffusé ; cas limite : si la sauvegarde v2 échoue puis qu'une sauvegarde v1 concurrente réussit, la base garde v1 et la mémoire v2 — l'appelant de v2 a reçu `500 persist_failed`, cohérent avec R24, un redémarrage rechargerait v1). **Synchro draft** (`api::sync_draft`) : relit l'état de
+cast **courant** sous read-lock pendant que le write-lock du draft est tenu (jamais les deux write-locks),
+pour qu'une mutation plus récente ne soit pas écrasée par l'instantané d'une plus ancienne. Chargement
+(`store::load`) : erreur de lecture en base journalisée en `error`, JSON illisible en `warn`, `schema_version`
+plus récent que le code en `warn` (chargé quand même, lecture tolérante). Erreurs : `CastError::code()` donne
+le code stable renvoyé par les routes. Mode ouvert comme
+`/api/draft`. Règles : `mark_map` refuse une carte déjà jouée (`MapAlreadyPlayed`) ; toute mutation sauf
+`POST /api/cast/series` et `/scene` exige `active` (`SeriesInactive`).
+`POST /api/cast/series` aligne aussi le draft (format, steps, partie et série neuves : `DraftState::align_to_series`, après la synchro équipes/score/Bo, locks jamais tenus ensemble) la file de replays est conservée mais sa partie courante est désélectionnée et la lecture auto stoppée (comme `/api/draft/config`), pour que le moteur ne diverge jamais du format de la série.
+Design : `docs/specs/2026-10-25-cast-control-room-design.md`.
 
 ## Feed live (`live/`)
 

@@ -97,8 +97,16 @@ impl DraftState {
     /// du replay ; en fearless, les picks des parties précédentes de la file sont indisponibles.
     /// Conserve score, Bo, noms d'équipe, prébans manuels et la file.
     pub fn select_game(&mut self, index: usize) -> Result<(), DraftError> {
+        self.select_game_with(index, None)
+    }
+
+    /// Comme `select_game`, avec le format imposé par une série de cast active (`Some`) : il
+    /// l'emporte sur `replay.fearless` (M5 — la file de replays ne contourne pas le format de la
+    /// série). Fearless → Fearless + series bans de la file ; Standard/Normal → Standard (les
+    /// scripts de replay suivent l'ordre Standard à 16 étapes, bans compris).
+    pub fn select_game_with(&mut self, index: usize, series_format: Option<Format>) -> Result<(), DraftError> {
         let g = self.replay.queue.get(index).ok_or(DraftError::NoGame)?.clone();
-        let fearless = self.replay.fearless;
+        let fearless = series_format.map_or(self.replay.fearless, |f| f == Format::Fearless);
         let mut d = DraftState::new(if fearless { Format::Fearless } else { Format::Standard }, g.first_pick, g.map);
         d.blue = crate::draft::TeamInfo { name: self.blue.name.clone(), players: g.blue_players };
         d.red = crate::draft::TeamInfo { name: self.red.name.clone(), players: g.red_players };
@@ -115,10 +123,15 @@ impl DraftState {
 
     /// Ajoute une partie ; la première ajoutée est sélectionnée d'office.
     pub fn add_game(&mut self, g: LoadedGame) {
+        self.add_game_with(g, None);
+    }
+
+    /// `add_game` ; la sélection d'office suit le format de la série active (cf. `select_game_with`).
+    pub fn add_game_with(&mut self, g: LoadedGame, series_format: Option<Format>) {
         self.replay.queue.push(g);
         if self.replay.current.is_none() {
             let last = self.replay.queue.len() - 1;
-            let _ = self.select_game(last);
+            let _ = self.select_game_with(last, series_format);
         }
     }
 
@@ -166,9 +179,15 @@ impl DraftState {
 
     /// Bascule fearless et re-prépare la partie courante (ses series bans changent).
     pub fn set_fearless(&mut self, value: bool) {
+        self.set_fearless_with(value, None);
+    }
+
+    /// `set_fearless` ; la re-préparation suit le format de la série active (cf. `select_game_with`) :
+    /// le drapeau est mémorisé mais ne change pas le format tant que la série l'impose.
+    pub fn set_fearless_with(&mut self, value: bool, series_format: Option<Format>) {
         self.replay.fearless = value;
         if let Some(c) = self.replay.current {
-            let _ = self.select_game(c);
+            let _ = self.select_game_with(c, series_format);
         }
     }
 
@@ -329,6 +348,32 @@ mod tests {
         assert_eq!(d.series_bans, want);
     }
 
+    /// M5 : une série de cast active impose son format à la file de replays, dans les deux sens.
+    #[test]
+    fn select_game_with_series_format_overrides_replay_fearless() {
+        let mut d = loaded();
+        d.add_game(game(Side::Red, "b"));
+        assert!(!d.replay.fearless);
+        d.select_game_with(1, Some(Format::Fearless)).unwrap();
+        assert_eq!(d.format, Format::Fearless);
+        assert!(d.series_bans.contains("ah4"));
+        let mut d = loaded();
+        d.add_game(game(Side::Red, "b"));
+        d.replay.fearless = true;
+        d.select_game_with(1, Some(Format::Standard)).unwrap();
+        assert_eq!(d.format, Format::Standard);
+        assert!(d.series_bans.is_empty());
+        // Normal (sans bans) → Standard : les scripts de replay ont 16 étapes
+        d.select_game_with(1, Some(Format::Normal)).unwrap();
+        assert_eq!((d.format, d.steps.len()), (Format::Standard, 16));
+        // set_fearless / add_game suivent aussi la série
+        d.set_fearless_with(false, Some(Format::Fearless));
+        assert_eq!(d.format, Format::Fearless);
+        let mut e = DraftState::new(Format::Standard, Side::Blue, "x".into());
+        e.add_game_with(game(Side::Blue, "a"), Some(Format::Fearless));
+        assert_eq!(e.format, Format::Fearless);
+    }
+
     #[test]
     fn select_game_non_fearless_has_no_series_bans() {
         let mut d = loaded();
@@ -383,5 +428,23 @@ mod tests {
         d.remove_game(1).unwrap();
         assert_eq!(d.replay.current, None);
         assert_eq!(d.remove_game(9), Err(DraftError::NoGame));
+    }
+
+    #[test]
+    fn align_to_series_deselects_replay_game_and_stops_autoplay() {
+        let mut d = loaded();
+        d.add_game(game(Side::Red, "b"));
+        d.replay.current = Some(1);
+        d.replay.playing = true;
+        d.replay.next_at_ms = Some(123);
+        d.replay.fearless = true;
+        d.replay.interval_ms = 7_000;
+        d.align_to_series(Format::Fearless);
+        assert_eq!(d.replay.current, None);
+        assert!(!d.replay.playing);
+        assert_eq!(d.replay.next_at_ms, None);
+        assert_eq!(d.replay.queue.len(), 2);
+        assert!(d.replay.fearless);
+        assert_eq!(d.replay.interval_ms, 7_000);
     }
 }

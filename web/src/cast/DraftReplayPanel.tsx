@@ -9,9 +9,9 @@ import {
 } from "../api";
 import { currentPhase, loadErrorMessage, phaseLabel, phasesOf, secondsLeft } from "../draftReplay";
 
-/** Télécommande du draft depuis un replay. Le public voit l'overlay OBS `/draft/overlay` ; cette page
+/** Télécommande du draft depuis un replay (ancienne page `/draft/replay` supprimée : ce panneau est monté dans la régie). Le public voit l'overlay OBS `/draft/overlay` ; cette page
  *  charge des replays Custom, prépare leur draft caché, puis le révèle phase par phase (manuel ou auto). */
-export function DraftReplay() {
+export function DraftReplayPanel() {
   const { data: d } = useDraft();
   const qc = useQueryClient();
   const { data: rs } = useQuery({ queryKey: ["draft", "replay"], queryFn: fetchDraftReplay });

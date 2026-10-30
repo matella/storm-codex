@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import {
   announceLabel,
+  reopenInvalidations,
   awardLabel,
   banHero,
   classBadge,
@@ -211,5 +212,19 @@ describe("banHero", () => {
     expect(banHero({ hero: "" }, attrs)).toBeNull();
     expect(banHero(null, attrs)).toBeNull();
     expect(banHero({}, attrs)).toBeNull();
+  });
+});
+
+describe("reopenInvalidations (WS reconnect catch-up)", () => {
+  it("first open refetches nothing", () => expect(reopenInvalidations(false)).toEqual([]));
+  it("reopen after a disconnect refetches cast and draft (overlay scenes)", () =>
+    expect(reopenInvalidations(true)).toEqual([["cast"], ["draft"]]));
+});
+
+describe("httpError", () => {
+  it("uses the server's error code, else http_<status>", async () => {
+    const { httpError } = await import("./api");
+    expect((await httpError(new Response(JSON.stringify({ error: "NotInPool" }), { status: 409 }))).message).toBe("NotInPool");
+    expect((await httpError(new Response("oops", { status: 502 }))).message).toBe("http_502");
   });
 });

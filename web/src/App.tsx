@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { Dashboard } from "./pages/Dashboard";
 import { Matches } from "./pages/Matches";
@@ -21,12 +21,13 @@ import { NowPlaying } from "./pages/NowPlaying";
 import { Trends } from "./pages/Trends";
 import { Leagues } from "./pages/Leagues";
 import { Admin } from "./pages/Admin";
-import { Draft } from "./pages/Draft";
 import { DraftOverlay } from "./pages/DraftOverlay";
-import { DraftReplay } from "./pages/DraftReplay";
+import { CastOverlay } from "./pages/CastOverlay";
+import { Cast } from "./pages/Cast";
 import { Scouting } from "./pages/Scouting";
 import { ScoutingReport } from "./pages/ScoutingReport";
 import { Live } from "./pages/Live";
+import { LEGACY_REDIRECTS } from "./legacyRoutes";
 
 export default function App() {
   return (
@@ -37,6 +38,7 @@ export default function App() {
       <Route path="ticker" element={<Ticker />} />
       <Route path="now-playing" element={<NowPlaying />} />
       <Route path="draft/overlay" element={<DraftOverlay />} />
+      <Route path="cast/overlay" element={<CastOverlay />} />
       <Route element={<Layout />}>
         <Route index element={<Dashboard />} />
         <Route path="live" element={<Live />} />
@@ -53,8 +55,8 @@ export default function App() {
         <Route path="maps" element={<Maps />} />
         <Route path="trends" element={<Trends />} />
         <Route path="leagues" element={<Leagues />} />
-        <Route path="draft" element={<Draft />} />
-        <Route path="draft/replay" element={<DraftReplay />} />
+        {LEGACY_REDIRECTS.map((r) => <Route key={r.path} path={r.path} element={<Navigate to={r.to} replace />} />)}
+        <Route path="cast" element={<Cast />} />
         <Route path="scouting" element={<Scouting />} />
         <Route path="scouting/:id" element={<ScoutingReport />} />
         <Route path="admin" element={<Admin />} />
