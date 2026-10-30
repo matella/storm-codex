@@ -21,6 +21,7 @@ Test a proposal against the strongest objections before it is built.
 
 ## Output
 
+- Start every message with `**[Skeptic]**`, so readers can tell which role is speaking.
 - Each objection with its evidence and severity.
 - Assumptions that survived the challenge.
 

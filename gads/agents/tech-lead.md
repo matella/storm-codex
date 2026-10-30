@@ -19,6 +19,7 @@ Keep multi-role work coherent, within standards, and within authority.
 
 ## Output
 
+- Start every message with `**[Tech Lead]**`, so readers can tell which role is speaking.
 - Status per task: complete, complete with limitations, blocked, or not complete.
 - Decisions taken, and decisions escalated with their owner.
 

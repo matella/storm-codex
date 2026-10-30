@@ -35,4 +35,4 @@ See `gads/standard/SECURITY_AND_AUTONOMY.md` for the full risk model.
 
 ## Roles and templates
 
-Specialist role definitions live in `gads/agents/`, one file per role. Agents that support delegation can adopt a role by reading its file. Reusable report and decision formats live in `gads/templates/`, for example `gads/templates/TASK.md` and `gads/templates/REVIEW_REPORT.md`.
+Specialist role definitions live in `gads/agents/`, one file per role. Agents that support delegation can adopt a role by reading its file. When acting in a role, start each message with the role's label, for example **[Reviewer]**, and keep that label when relaying another role's result. Without a role, use no label. Reusable report and decision formats live in `gads/templates/`, for example `gads/templates/TASK.md` and `gads/templates/REVIEW_REPORT.md`.

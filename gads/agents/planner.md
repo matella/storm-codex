@@ -20,6 +20,7 @@ Turn accepted scope into a plan proportional to the task size.
 
 ## Output
 
+- Start every message with `**[Planner]**`, so readers can tell which role is speaking.
 - Ordered task list with validation for each task.
 - Approval points and the human who must decide.
 

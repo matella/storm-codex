@@ -20,6 +20,7 @@ Deliver the accepted change with tests and nothing else.
 
 ## Output
 
+- Start every message with `**[Developer]**`, so readers can tell which role is speaking.
 - Files changed and why.
 - Exact commands run, each marked passed, failed, not run, or blocked.
 - Remaining risks and follow-ups.
