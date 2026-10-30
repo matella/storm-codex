@@ -1,6 +1,7 @@
 //! Opérations pures sur la série.
 use super::{CastError, GameRecord, GameSummary, LineupMode, MapStatus, Player, PoolMap, Series};
 use crate::draft::Side;
+use std::collections::{HashMap, HashSet};
 
 /// Comment l'orientation d'un replay a été décidée (R16) : preuve par les joueurs liés, hypothèse
 /// équipe 0 = Blue faute de preuve, ou échange forcé par l'opérateur (`?swap=1`) — éventuellement
@@ -25,12 +26,15 @@ impl Orientation {
 impl Series {
     /// Remplace le pool (ordre donné) ; les cartes conservées gardent leur statut, les autres sont retirées.
     pub fn set_pool(&mut self, names: &[String]) {
+        // Linéaire (HashMap/HashSet) : un pool énorme ne doit pas coûter du quadratique sous verrou.
+        let old: HashMap<&str, MapStatus> = self.pool.iter().map(|m| (m.name.as_str(), m.status)).collect();
+        let mut seen: HashSet<&str> = HashSet::with_capacity(names.len());
         let mut pool: Vec<PoolMap> = Vec::with_capacity(names.len());
         for n in names {
-            if pool.iter().any(|m| &m.name == n) {
+            if !seen.insert(n.as_str()) {
                 continue;
             }
-            let status = self.pool.iter().find(|m| &m.name == n).map(|m| m.status).unwrap_or_default();
+            let status = old.get(n.as_str()).copied().unwrap_or_default();
             pool.push(PoolMap { name: n.clone(), status });
         }
         self.pool = pool;
@@ -251,6 +255,18 @@ mod tests {
         assert_eq!(order, ["B", "D", "A"]);
         assert_eq!(status(&s, "B"), MapStatus::Picked { by: Side::Blue });
         assert_eq!(status(&s, "D"), MapStatus::Available);
+        assert_eq!(status(&s, "A"), MapStatus::Banned { by: Side::Red });
+    }
+
+    #[test]
+    fn set_pool_dedups_a_huge_list_and_keeps_first_occurrence_order() {
+        let mut s = series(&["A"]);
+        s.mark_map("A", MapStatus::Banned { by: Side::Red }).unwrap();
+        let mut names: Vec<String> = (0..50_000).map(|_| "A".to_string()).collect();
+        names.extend((0..50_000).map(|i| format!("M{}", i % 3)));
+        s.set_pool(&names);
+        let order: Vec<_> = s.pool.iter().map(|m| m.name.as_str()).collect();
+        assert_eq!(order, ["A", "M0", "M1", "M2"]);
         assert_eq!(status(&s, "A"), MapStatus::Banned { by: Side::Red });
     }
 

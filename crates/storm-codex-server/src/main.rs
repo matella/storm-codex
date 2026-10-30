@@ -257,17 +257,44 @@ fn api_router(state: &AppState) -> Router<AppState> {
         .route("/api/admin/reprocess", post(admin::reprocess))
         // Régie de cast (état autoritatif serveur + broadcast WS cast.updated), mode ouvert
         .route("/api/cast", get(cast::api::get_cast))
-        .route("/api/cast/series", post(cast::api::start_series))
-        .route("/api/cast/teams", axum::routing::put(cast::api::put_teams))
-        .route("/api/cast/pool/map", post(cast::api::mark_map))
-        .route("/api/cast/games/start", post(cast::api::start_game))
-        .route("/api/cast/games/{n}/winner", post(cast::api::set_winner))
+        .route(
+            "/api/cast/series",
+            post(cast::api::start_series).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+        )
+        .route(
+            "/api/cast/teams",
+            axum::routing::put(cast::api::put_teams).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+        )
+        .route(
+            "/api/cast/pool/map",
+            post(cast::api::mark_map).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+        )
+        .route(
+            "/api/cast/games/start",
+            post(cast::api::start_game).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+        )
+        .route(
+            "/api/cast/games/{n}/winner",
+            post(cast::api::set_winner).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+        )
         .route("/api/cast/games/{n}", axum::routing::delete(cast::api::remove_game))
         .route("/api/cast/games/{n}/replay", post(cast::replay::load_game_replay))
-        .route("/api/cast/score", post(cast::api::set_score))
-        .route("/api/cast/scene", post(cast::api::set_scene))
-        .route("/api/cast/lineup-mode", post(cast::api::set_lineup_mode))
-        .route("/api/cast/slide", post(cast::api::set_slide))
+        .route(
+            "/api/cast/score",
+            post(cast::api::set_score).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+        )
+        .route(
+            "/api/cast/scene",
+            post(cast::api::set_scene).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+        )
+        .route(
+            "/api/cast/lineup-mode",
+            post(cast::api::set_lineup_mode).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+        )
+        .route(
+            "/api/cast/slide",
+            post(cast::api::set_slide).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+        )
         .route("/api/cast/lineup", get(cast::api::get_lineup))
         .route(
             "/api/cast/logo/{side}",

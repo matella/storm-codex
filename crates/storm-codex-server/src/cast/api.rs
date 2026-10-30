@@ -145,6 +145,32 @@ pub async fn get_cast(State(s): State<AppState>) -> Json<Series> {
     Json(s.cast.read().await.clone())
 }
 
+/// Corps JSON des routes de la régie : 64 Kio suffisent (série complète ≈ quelques Ko) ; l'API est
+/// en mode ouvert, donc on borne ce qu'un client peut faire avaler au serveur.
+pub const JSON_BODY_LIMIT: usize = 64 * 1024;
+/// Bornes de saisie (caractères) : pool de cartes, noms/bilans/pseudos, ligne libre, URL de logo.
+const MAX_POOL: usize = 32;
+const MAX_TEXT: usize = 64;
+const MAX_TAGLINE: usize = 120;
+const MAX_URL: usize = 512;
+
+fn bad_input(code: &'static str) -> Resp {
+    (StatusCode::BAD_REQUEST, Json(json!({ "error": code })))
+}
+
+/// Une équipe respecte les bornes de saisie (nom, bilan, logo, pseudos, lignes libres, toons).
+fn team_within_limits(t: &Team) -> bool {
+    let len = |x: &str| x.chars().count();
+    len(&t.name) <= MAX_TEXT
+        && len(&t.record) <= MAX_TEXT
+        && t.logo.as_deref().is_none_or(|l| len(l) <= MAX_URL)
+        && t.players.iter().all(|p| {
+            len(&p.name) <= MAX_TEXT
+                && len(&p.tagline) <= MAX_TAGLINE
+                && p.toon.as_deref().is_none_or(|x| len(x) <= MAX_TEXT)
+        })
+}
+
 #[derive(Deserialize)]
 pub struct SeriesBody {
     /// Équipe complète (nom, bilan, joueurs, capitaine, logo) ; `{name}` seul reste accepté.
@@ -163,6 +189,12 @@ pub struct SeriesBody {
 pub async fn start_series(State(s): State<AppState>, Json(b): Json<SeriesBody>) -> Resp {
     if !matches!(b.bo, 1 | 3 | 5 | 7) {
         return (StatusCode::BAD_REQUEST, Json(json!({ "error": "bad_bo" })));
+    }
+    if b.pool.len() > MAX_POOL || b.pool.iter().any(|n| n.chars().count() > MAX_TEXT) {
+        return bad_input("bad_pool");
+    }
+    if !team_within_limits(&b.blue) || !team_within_limits(&b.red) {
+        return bad_input("bad_team");
     }
     // R20 : démarrer une série remet aussi le moteur de draft sur son format/steps (partie + série
     // neuves), dans le même passage que la synchro (`DraftSync::Align`).
@@ -192,6 +224,9 @@ pub struct TeamsBody {
 
 /// PUT /api/cast/teams — remplace les deux équipes (nom, logo, bilan, joueurs, capitaine).
 pub async fn put_teams(State(s): State<AppState>, Json(b): Json<TeamsBody>) -> Resp {
+    if !team_within_limits(&b.blue) || !team_within_limits(&b.red) {
+        return bad_input("bad_team");
+    }
     mutate_series_ex(&s, true, DraftSync::Sync, |c| {
         c.blue = b.blue;
         c.red = b.red;
@@ -505,6 +540,55 @@ mod tests {
 
     fn start_body() -> J {
         json!({"blue":{"name":"Blue Co"},"red":{"name":"Red Co"},"bo":5,"format":"fearless","pool":["A","B","C"]})
+    }
+
+    #[tokio::test]
+    async fn post_series_rejects_oversized_pool_and_long_names_without_changing_state() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        call(&state, "POST", "/api/cast/series", Some(start_body())).await;
+        let before = call(&state, "GET", "/api/cast", None).await.1;
+        let too_many: Vec<String> = (0..33).map(|i| format!("Map{i}")).collect();
+        let mut body = start_body();
+        body["pool"] = json!(too_many);
+        let (st, v) = call(&state, "POST", "/api/cast/series", Some(body)).await;
+        assert_eq!((st, v["error"].as_str()), (StatusCode::BAD_REQUEST, Some("bad_pool")));
+        let mut body = start_body();
+        body["pool"] = json!(["x".repeat(65)]);
+        let (st, v) = call(&state, "POST", "/api/cast/series", Some(body)).await;
+        assert_eq!((st, v["error"].as_str()), (StatusCode::BAD_REQUEST, Some("bad_pool")));
+        let after = call(&state, "GET", "/api/cast", None).await.1;
+        assert_eq!(before, after, "un refus ne change rien");
+        // 32 cartes de 64 caractères : à la borne, accepté
+        let mut body = start_body();
+        body["pool"] = json!((0..32).map(|i| format!("{i:0>64}")).collect::<Vec<_>>());
+        let (st, _) = call(&state, "POST", "/api/cast/series", Some(body)).await;
+        assert_eq!(st, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn teams_with_overlong_text_are_400_bad_team() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        let mut body = start_body();
+        body["blue"] = json!({"name": "n".repeat(65)});
+        let (st, v) = call(&state, "POST", "/api/cast/series", Some(body)).await;
+        assert_eq!((st, v["error"].as_str()), (StatusCode::BAD_REQUEST, Some("bad_team")));
+        call(&state, "POST", "/api/cast/series", Some(start_body())).await;
+        let long_tag = json!({"name":"B","players":[{"name":"p","tagline":"t".repeat(121)},{},{},{},{}]});
+        let ok_team = json!({"name":"R"});
+        let (st, v) = call(&state, "PUT", "/api/cast/teams", Some(json!({"blue": long_tag, "red": ok_team}))).await;
+        assert_eq!((st, v["error"].as_str()), (StatusCode::BAD_REQUEST, Some("bad_team")));
+    }
+
+    #[tokio::test]
+    async fn json_body_over_64_kib_is_413() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        let mut body = start_body();
+        body["pool"] = json!(["z".repeat(70 * 1024)]);
+        let (st, _) = call(&state, "POST", "/api/cast/series", Some(body)).await;
+        assert_eq!(st, StatusCode::PAYLOAD_TOO_LARGE);
     }
 
     #[tokio::test]
