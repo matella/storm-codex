@@ -318,8 +318,12 @@ const SLIDE_INDEX_MAX: u8 = 99;
 
 /// POST /api/cast/slide — mise à jour partielle du diaporama (champs absents inchangés).
 /// R25 : `index` ≤ 99 sinon `400 bad_index` ; `game` = 0 (désépingler) ou un numéro de partie
-/// existant, sinon `409 UnknownGame` (état inchangé).
+/// existant, sinon `409 UnknownGame` (état inchangé). La garde `SeriesInactive` (409) passe avant la
+/// validation de `index` (400).
 pub async fn set_slide(State(s): State<AppState>, Json(b): Json<SlideBody>) -> Resp {
+    if !s.cast.read().await.active {
+        return conflict(CastError::SeriesInactive);
+    }
     if b.index.is_some_and(|i| i > SLIDE_INDEX_MAX) {
         return err(StatusCode::BAD_REQUEST, "bad_index");
     }
@@ -892,6 +896,15 @@ mod tests {
     }
 
     /// R25 : `game` doit exister (0 = désépingler), `index` ≤ 99 ; refus → état inchangé.
+    #[tokio::test]
+    async fn slide_on_inactive_series_is_409_even_with_bad_index() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        *state.cast.write().await = crate::cast::Series::new();
+        let (st, v) = call(&state, "POST", "/api/cast/slide", Some(json!({"index":100}))).await;
+        assert_eq!((st, v["error"].as_str()), (StatusCode::CONFLICT, Some("SeriesInactive")));
+    }
+
     #[tokio::test]
     async fn slide_rejects_unknown_game_and_index_over_99() {
         let _g = DB_LOCK.lock().await;

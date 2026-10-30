@@ -70,11 +70,12 @@ async fn decode_in(sem: Arc<Semaphore>, dir: PathBuf, bytes: Bytes) -> Result<Ga
 /// synchronise le draft, diffuse `cast.updated`. `409 side_mismatch` : rien ne change.
 /// Réponse : le résumé orienté + `orientation` (`evidence` | `assumed` | `forced`) et, si l'échange
 /// forcé contredit une preuve d'orientation directe, `forced_against_evidence: true`.
-/// `series_id` : identité de la série relevée AVANT le décodage — si une autre série a été démarrée
+/// `series_id` et `map` : identité de la série et carte de la partie `n` relevées AVANT le décodage — si une
+/// autre série a été démarrée, ou si la partie `n` a été retirée (R21) puis relancée sur une autre carte
 /// entre-temps, `409 series_changed` et rien ne change (TOCTOU).
-pub(super) async fn apply_to(s: &AppState, series_id: &str, n: u8, summary: GameSummary, force_swap: bool) -> Resp {
+pub(super) async fn apply_to(s: &AppState, series_id: &str, map: &str, n: u8, summary: GameSummary, force_swap: bool) -> Resp {
     let res = mutate_ex(s, true, DraftSync::Sync, |c| {
-        if c.series_id != series_id {
+        if c.series_id != series_id || !c.games.iter().any(|g| g.number == n && g.map == map) {
             return Err(CastError::SeriesChanged);
         }
         c.fill_from_replay_oriented(n, summary, force_swap)
@@ -110,18 +111,18 @@ pub async fn load_game_replay(State(s): State<AppState>, Path(n): Path<u8>, Quer
     if bytes.is_empty() {
         return (StatusCode::BAD_REQUEST, Json(json!({ "error": "empty_body" })));
     }
-    let series_id = {
+    let (series_id, map) = {
         let c = s.cast.read().await;
         if !c.active {
             return conflict(CastError::SeriesInactive);
         }
-        if !c.games.iter().any(|g| g.number == n) {
+        let Some(g) = c.games.iter().find(|g| g.number == n) else {
             return conflict(CastError::UnknownGame);
-        }
-        c.series_id.clone()
+        };
+        (c.series_id.clone(), g.map.clone())
     };
     match decode(&s, bytes).await {
-        Ok(summary) => apply_to(&s, &series_id, n, summary, force_swap).await,
+        Ok(summary) => apply_to(&s, &series_id, &map, n, summary, force_swap).await,
         Err(r) => r,
     }
 }
@@ -148,8 +149,11 @@ mod tests {
 
     /// Dépôt sur la série courante (identité relue maintenant).
     async fn apply(state: &AppState, n: u8, summary: GameSummary, force_swap: bool) -> Resp {
-        let id = state.cast.read().await.series_id.clone();
-        apply_to(state, &id, n, summary, force_swap).await
+        let (id, map) = {
+            let c = state.cast.read().await;
+            (c.series_id.clone(), c.games.iter().find(|g| g.number == n).map(|g| g.map.clone()).unwrap_or_default())
+        };
+        apply_to(state, &id, &map, n, summary, force_swap).await
     }
 
     /// Item 10 : une autre série démarrée pendant le décodage → 409 `series_changed`, rien ne change.
@@ -163,10 +167,29 @@ mod tests {
         with_game(&state).await; // nouvelle série (même carte, partie 1)
         let before = state.cast.read().await.clone();
         assert_ne!(before.series_id, old_id);
-        let (st, v) = apply_to(&state, &old_id, 1, fixture_summary(), false).await;
+        let (st, v) = apply_to(&state, &old_id, MAP, 1, fixture_summary(), false).await;
         assert_eq!((st, v.0["error"].as_str()), (StatusCode::CONFLICT, Some("series_changed")));
         assert_eq!(*state.cast.read().await, before);
         assert_eq!(apply(&state, 1, fixture_summary(), false).await.0, StatusCode::CREATED);
+    }
+
+    /// Réutilisation du numéro après R21 : partie 1 retirée puis relancée sur une autre carte pendant le
+    /// décodage → 409 `series_changed`, état inchangé ; la carte relevée au pré-contrôle reste applicable.
+    #[tokio::test]
+    async fn replay_for_a_removed_and_restarted_game_is_409_series_changed() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        with_game(&state).await;
+        let id = state.cast.read().await.series_id.clone();
+        assert_eq!(call(&state, "DELETE", "/api/cast/games/1", None).await.0, StatusCode::OK);
+        call(&state, "POST", "/api/cast/pool/map", Some(json!({"name":"Sky Temple","status":"picked","by":"red"}))).await;
+        let (_, g) = call(&state, "POST", "/api/cast/games/start", Some(json!({"map":"Sky Temple"}))).await;
+        assert_eq!(g["number"], 1);
+        let before = state.cast.read().await.clone();
+        let (st, v) = apply_to(&state, &id, MAP, 1, fixture_summary(), false).await;
+        assert_eq!((st, v.0["error"].as_str()), (StatusCode::CONFLICT, Some("series_changed")));
+        assert_eq!(*state.cast.read().await, before);
+        assert_eq!(apply_to(&state, &id, "Sky Temple", 1, fixture_summary(), false).await.0, StatusCode::CREATED);
     }
 
     fn fixture_summary() -> GameSummary {

@@ -298,10 +298,12 @@ export function modeAHint(linked: boolean, heroes: number, q: { isLoading: boole
 export interface SceneLayer {
   key: CastScene;
   s: CastSeries;
+  /** Identité stable de la couche (clé React) : attribuée quand elle devient courante, conservée quand elle part. */
+  id: number;
 }
 /** Scène rendue par l'overlay (`null` = rien : hide, ou série inactive hors scène Draft). */
-export function shownScene(s: CastSeries | undefined | null): SceneLayer | null {
-  return s && overlayVisible(s) && s.scene !== "hide" ? { key: s.scene, s } : null;
+export function shownScene(s: CastSeries | undefined | null, id = 1): SceneLayer | null {
+  return s && overlayVisible(s) && s.scene !== "hide" ? { key: s.scene, s, id } : null;
 }
 /** Fondu de sortie : quand la scène change, l'ancienne couche reste montée (instantané de l'état qui
  *  la rendait — jamais la nouvelle série dans l'ancienne scène) le temps du fondu. Renvoie `st` tel
@@ -312,8 +314,10 @@ export function sceneTransition(
 ): { cur: SceneLayer | null; leaving: SceneLayer | null } {
   const next = shownScene(s);
   if (next?.key === st.cur?.key) {
-    if (next === null || next.s === st.cur?.s) return st;
-    return { cur: next, leaving: st.leaving };
+    if (next === null || !st.cur || next.s === st.cur.s) return st;
+    return { cur: { ...next, id: st.cur.id }, leaving: st.leaving }; // même couche : même id (pas de remontage)
   }
-  return { cur: next, leaving: st.cur };
+  // nouvelle couche courante : id neuf, strictement supérieur à ceux des couches encore montées
+  const id = Math.max(st.cur?.id ?? 0, st.leaving?.id ?? 0) + 1;
+  return { cur: shownScene(s, id), leaving: st.cur };
 }

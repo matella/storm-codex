@@ -45,7 +45,8 @@ export function CastOverlay() {
     return () => { document.body.style.background = prev; };
   }, []);
 
-  // couche courante (key = scène → remontage → fondu d'entrée) + couche sortante gardée le temps du fondu
+  // couche courante (key = id de couche → montage neuf à chaque changement de scène → fondu d'entrée ; la couche qui part
+  // garde son id, donc la MÊME instance, seule la classe `out` change) + couche sortante gardée le temps du fondu
   // de sortie, rendue avec l'instantané qui l'affichait ; `hide` (ou série inactive, sauf Draft — R19) = rien
   const [st, setSt] = useState(() => ({ cur: shownScene(s), leaving: null as ReturnType<typeof shownScene> }));
   const next = sceneTransition(st, s);
@@ -58,8 +59,8 @@ export function CastOverlay() {
   }, [leaving]);
   return (
     <div className="cast-overlay" data-skin={skin}>
-      {leaving && <div className="scene out" key={`out-${leaving.key}`} aria-hidden="true"><Scene s={leaving.s} /></div>}
-      {cur && <div className="scene" key={cur.key}><Scene s={cur.s} /></div>}
+      {leaving && <div className="scene out" key={leaving.id} aria-hidden="true"><Scene s={leaving.s} /></div>}
+      {cur && <div className="scene" key={cur.id}><Scene s={cur.s} /></div>}
     </div>
   );
 }

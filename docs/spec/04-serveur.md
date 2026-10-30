@@ -109,7 +109,7 @@ versionnée** : chaque mutation reçoit une version (`AppState.cast_version`, at
 persiste **son** instantané ; les écritures sont sérialisées (`AppState.cast_saved` = dernière version écrite)
 et un instantané plus ancien que le dernier écrit est ignoré — deux mutations concurrentes ne peuvent jamais
 laisser l'ancien état en base. Échec d'écriture → la route répond `500 persist_failed` (R24 ; l'état reste
-appliqué en mémoire et `cast.updated` est diffusé). **Synchro draft** (`api::sync_draft`) : relit l'état de
+appliqué en mémoire et `cast.updated` est diffusé ; cas limite : si la sauvegarde v2 échoue puis qu'une sauvegarde v1 concurrente réussit, la base garde v1 et la mémoire v2 — l'appelant de v2 a reçu `500 persist_failed`, cohérent avec R24, un redémarrage rechargerait v1). **Synchro draft** (`api::sync_draft`) : relit l'état de
 cast **courant** sous read-lock pendant que le write-lock du draft est tenu (jamais les deux write-locks),
 pour qu'une mutation plus récente ne soit pas écrasée par l'instantané d'une plus ancienne. Chargement
 (`store::load`) : erreur de lecture en base journalisée en `error`, JSON illisible en `warn`, `schema_version`

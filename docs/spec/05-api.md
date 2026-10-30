@@ -79,7 +79,7 @@ est la source de vérité) ; `/config` reste accepté mais ignore `blue`/`red`/`
 
 **Draft depuis un replay** (`draft/replay_api.rs`, mode ouvert) — Custom uniquement, rien écrit en base :
 `POST /api/draft/replay/load` (corps = octets `.StormReplay`, `X-Filename` optionnel ; décodé sous `parse_sem`, écriture du fichier temporaire, décodage et suppression **dans** le `spawn_blocking` avec garde de destruction — fichier supprimé même sur échec, panique ou client déconnecté, comme le replay de cast ; `201` file publique ; `500 {"error":"io"}` si le fichier temporaire ne peut être écrit ;
-`400` corps vide ; `422` `{error: not_custom|no_draft|parse_failed}`) · `GET /api/draft/replay` (file
+`400` corps vide ; `422` `{error: not_custom|no_draft|parse_failed}` ; `500` `{error: pool|io}` : sémaphore de parsing fermé / fichier temporaire non écrit) · `GET /api/draft/replay` (file
 **avec scripts**, pour la page télécommande) · `POST …/replay/next` · `/back` · `/reset` (une **phase** à la fois ;
 `409` sans partie / au début / à la fin) · `/select {index}` · `/fearless {value}` (série de cast active : `/select`,
 `/fearless` et la sélection d'office de `/load` suivent le **format de la série**, pas `replay.fearless` — M5) ·
@@ -96,12 +96,12 @@ sinon `400 {"error":"bad_bo"}`, état inchangé) ·
 `POST /api/cast/games/start {map}` → `{number}` · `POST /api/cast/games/{n}/winner {side, takedowns?: [bleu, rouge], duration_secs?}` (**R21** : un vainqueur saisi à la main se **corrige** par un nouvel appel — score, mode de lineup et synchro draft suivent ; refusé `WinnerAlreadySet` seulement si la partie a un résumé de replay, qui porte son propre vainqueur/orientation) · `DELETE /api/cast/games/{n}` (**R21**, partie lancée par erreur : seulement la **dernière** — sinon `409 NotLastGame` — et sans vainqueur ni résumé — sinon `409 GameHasResult` ; la carte garde son statut picked/decider et redevient lançable, une partie épinglée dans le diaporama est désépinglée ; synchro draft) ·
 `POST /api/cast/score {blue, red}` ou `null` (retour au score calculé) · `POST /api/cast/scene {scene: lineups|series|draft|ingame|hide}` ·
 `POST /api/cast/lineup-mode {mode: auto|a|b}` · `POST /api/cast/slide {game?, index?, auto?, interval_ms?}`
-(partiel ; `game: 0` désépingle la partie affichée → `slide.game` = null, « dernière partie » ; les numéros commencent à 1 ; **R25** : un autre `game` doit être le numéro d'une partie existante, sinon `409 UnknownGame` ; `index` ≤ 99 sinon `400 {"error":"bad_index"}` (l'overlay le prend modulo le nombre de slides) ; état inchangé sur refus ; `interval_ms` borné 500 ms–1 h, la régie saisit 1–3600 s). Les mutations répondent par la `Series` complète (`games/start` : `{number}`).
+(partiel ; `game: 0` désépingle la partie affichée → `slide.game` = null, « dernière partie » ; les numéros commencent à 1 ; **R25** : un autre `game` doit être le numéro d'une partie existante, sinon `409 UnknownGame` ; `index` ≤ 99 sinon `400 {"error":"bad_index"}` (vérifié **après** la garde `409 SeriesInactive` : une série inactive répond 409 même avec un `index` invalide ; l'overlay le prend modulo le nombre de slides) ; état inchangé sur refus ; `interval_ms` borné 500 ms–1 h, la régie saisit 1–3600 s). Les mutations répondent par la `Series` complète (`games/start` : `{number}`).
 Erreurs `CastError` → `409 {"error": "<code>"}` — codes stables (`CastError::code()`, indépendants du nom Rust) :
 `UnknownMap`, `NotInPool`, `DuplicateDecider`, `MapNotChosen`, `UnknownGame`, `WinnerAlreadySet`, `NotLastGame`,
 `GameHasResult`, `MapAlreadyPlayed`, `SeriesInactive`, `side_mismatch`, `series_changed` — état inchangé.
 **R24** : si l'écriture de la série en base échoue, la mutation répond `500 {"error":"persist_failed"}` ; l'état
-reste appliqué en mémoire et `cast.updated` est diffusé (l'opérateur voit l'erreur dans le bandeau de la régie).
+reste appliqué en mémoire et `cast.updated` est diffusé (l'opérateur voit l'erreur dans le bandeau de la régie). Cas limite : si l'écriture v2 échoue puis qu'une sauvegarde v1 concurrente réussit, la base garde v1 alors que la mémoire garde v2 ; l'appelant de v2 a reçu `500 persist_failed` (cohérent avec R24 ; un redémarrage rechargerait v1).
 Les écritures sont versionnées : un instantané plus ancien n'écrase jamais un plus récent (cf. 04-serveur).
 Toute mutation sauf `/series` et `/scene` renvoie `409 SeriesInactive` tant que `active=false`.
 `POST /api/cast/logo/{side}` (`blue`|`red` ; corps = octets, `Content-Type` png/jpeg/webp ; 1 octet–512 Ko ;
@@ -134,11 +134,11 @@ série est ignoré. Persistance + synchro draft (score) + WS `cast.updated` comm
 le résumé orienté **plus** `orientation` ∈ `evidence` (preuve par les joueurs) | `assumed` (pas de preuve : équipe 0
 = Blue) | `forced` (`?swap=1`), et `forced_against_evidence: true` quand l'échange forcé contredit une preuve
 d'orientation directe (accepté, la régie l'affiche). Erreurs : `400 {"error":"empty_body"}` ; `409 SeriesInactive` / `409 UnknownGame` (partie `n` absente) /
-`409 side_mismatch` / `409 series_changed` (l'identité `series_id` relevée avant le décodage ne correspond plus : une nouvelle série a été démarrée pendant le décodage — rien ne change) ;
+`409 side_mismatch` / `409 series_changed` (l'identité `series_id` **ou la carte de la partie `n`** relevées avant le décodage ne correspondent plus : une nouvelle série a été démarrée, ou la partie `n` a été retirée (R21) puis relancée sur une autre carte pendant le décodage — rien ne change) ;
 `422 {"error", "message"}` avec `error` ∈ `not_custom` (replay non Custom), `parse_failed` (octets illisibles,
 tronqués, statut storm-stats ≠ 1), `incomplete` (vainqueur, durée ou takedowns absents de la sortie) — jamais 500
-sur une entrée invalide. Budget décodage < 500 ms (mesuré : route complète 178–203 ms en release, upload local
-compris ; `storm-stats-dump --bench` sur 6 replays Custom : médiane 177 ms, max 319 ms).
+sur une entrée invalide ; `500 {"error":"pool"}` (sémaphore de parsing fermé) ou `500 {"error":"io"}` (fichier temporaire non écrit) sont des défaillances serveur. Budget décodage < 500 ms (mesuré : route complète 178–203 ms en release, upload local
+compris, conditions non documentées — un run ultérieur sous charge a donné 417–444 ms, cf. `docs/STATUS.md` ; `storm-stats-dump --bench` sur 6 replays Custom : médiane 177 ms, max 319 ms).
 Chaque mutation → WS `cast.updated`. Design : `docs/specs/2026-10-25-cast-control-room-design.md`.
 
 ## Feed live d'une partie en cours (`live/api.rs`)

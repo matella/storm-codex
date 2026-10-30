@@ -1,6 +1,7 @@
 // Tests de la vague de corrections 2 de la régie de cast (items 15–25) : helpers purs + rendus statiques.
 import { describe, expect, it } from "vitest";
 import castStateSrc from "./castState.ts?raw";
+import overlaySrc from "./pages/CastOverlay.tsx?raw";
 import apiSrc from "./api.ts?raw";
 import appSrc from "./App.tsx?raw";
 import draftWsSrc from "./cast/DraftWorkspace.tsx?raw";
@@ -109,7 +110,7 @@ describe("15 · MAPS is a single list", () => {
 describe("16 · overlay scene transition (fade-out keeps the previous snapshot)", () => {
   const a = series({ scene: "series" });
   it("first scene: no leaving layer", () => {
-    expect(sceneTransition({ cur: null, leaving: null }, a)).toEqual({ cur: { key: "series", s: a }, leaving: null });
+    expect(sceneTransition({ cur: null, leaving: null }, a)).toEqual({ cur: { key: "series", s: a, id: 1 }, leaving: null });
   });
   it("same scene, same state: returns the same object (stable)", () => {
     const st = { cur: shownScene(a), leaving: null };
@@ -118,19 +119,38 @@ describe("16 · overlay scene transition (fade-out keeps the previous snapshot)"
   it("same scene, new state: current layer updated, nothing leaves", () => {
     const st = { cur: shownScene(a), leaving: null };
     const b = { ...a, bo: 3 };
-    expect(sceneTransition(st, b)).toEqual({ cur: { key: "series", s: b }, leaving: null });
+    expect(sceneTransition(st, b)).toEqual({ cur: { key: "series", s: b, id: 1 }, leaving: null });
   });
   it("scene change: the old layer leaves with ITS snapshot", () => {
     const st = { cur: shownScene(a), leaving: null };
     const b = { ...a, scene: "lineups" as const };
     const next = sceneTransition(st, b);
-    expect(next.cur).toEqual({ key: "lineups", s: b });
-    expect(next.leaving).toEqual({ key: "series", s: a });
+    expect(next.cur).toEqual({ key: "lineups", s: b, id: 2 });
+    expect(next.leaving).toEqual({ key: "series", s: a, id: 1 });
   });
   it("to hide / inactive: fades out to nothing", () => {
     const st = { cur: shownScene(a), leaving: null };
-    expect(sceneTransition(st, { ...a, scene: "hide" })).toEqual({ cur: null, leaving: { key: "series", s: a } });
-    expect(sceneTransition(st, { ...a, active: false })).toEqual({ cur: null, leaving: { key: "series", s: a } });
+    expect(sceneTransition(st, { ...a, scene: "hide" })).toEqual({ cur: null, leaving: { key: "series", s: a, id: 1 } });
+    expect(sceneTransition(st, { ...a, active: false })).toEqual({ cur: null, leaving: { key: "series", s: a, id: 1 } });
+  });
+  it("the leaving layer keeps the id of the layer that was current; a new current layer gets a new id", () => {
+    const st = { cur: shownScene(a), leaving: null };
+    const lineups = { ...a, scene: "lineups" as const };
+    const n1 = sceneTransition(st, lineups);
+    expect(n1.leaving?.id).toBe(st.cur?.id);
+    expect(n1.cur?.id).not.toBe(st.cur?.id);
+    // same-scene update keeps the id (no remount)
+    expect(sceneTransition(n1, { ...lineups, bo: 3 }).cur?.id).toBe(n1.cur?.id);
+    // second change while the first still fades: ids never collide
+    const n2 = sceneTransition(n1, { ...a, scene: "draft" as const });
+    expect(n2.leaving?.id).toBe(n1.cur?.id);
+    expect(n2.cur?.id).not.toBe(n2.leaving?.id);
+    // back to the first scene: fresh id, not the dropped one
+    expect(new Set([n2.cur?.id, n2.leaving?.id]).size).toBe(2);
+  });
+  it("overlay keys both layer divs by the layer id (same instance while fading)", () => {
+    expect(overlaySrc).toMatch(/className="scene out" key=\{leaving\.id\}/);
+    expect(overlaySrc).toMatch(/className="scene" key=\{cur\.id\}/);
   });
   it("draft scene stays visible without an active series (R19)", () => {
     expect(shownScene({ ...a, active: false, scene: "draft" })?.key).toBe("draft");

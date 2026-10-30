@@ -51,6 +51,10 @@ de vérité des équipes ; le casteur la pilote depuis `/cast` et OBS lit `/cast
   onglets complet (flèches = focus seul), aria des cartes/vainqueurs, rail resynchronisé par version serveur vue +
   `TeamEditor`, garde « dernière recherche » du sélecteur de joueur, « loading… »/erreur dans l'aperçu lineups,
   libellé « auto » du diaporama, « Swap sides » décoché après dépôt, Live/Replay stylé, helpers partagés.
+  Vague 3 : la couche sortante de l'overlay garde la MÊME instance (id de couche stable utilisé comme `key`,
+  `sceneTransition`) — son tick de diaporama n'est plus remis à zéro pendant le fondu ; le replay re-vérifie aussi la
+  carte de la partie `n` (numéro réutilisé après R21 → `409 series_changed`) ; `/slide` : garde `SeriesInactive` avant
+  `bad_index` ; `500 pool|io` documentés ; cas limite persistance v2/v1 documenté.
   Vérifié dans le navigateur (build release, 127.0.0.1:8089, DOM) : pool 14 cartes = 3 rangées sans chevauchement
   (bas à 589 px / 1080) ; changement de scène → couche sortante gardée ≈ 300 ms avec l'ancienne scène puis démontée
   (opacités non observables : volet d'aperçu en arrière-plan, animations figées) ; onglets (`aria-selected` local,
