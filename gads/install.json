@@ -1,0 +1,42 @@
+{
+  "version": "1.1.0",
+  "files": {
+    ".claude/agents/gads-architect.md": "3a44ffba685c119c31ce9afc423373eb9c60d85779040309bb6b56803b922338",
+    ".claude/agents/gads-developer.md": "8c33ebdd8f94aa7b980059c59c266f0aa06f191a4569c38a1ada9976aab07df7",
+    ".claude/agents/gads-librarian.md": "92c009e4141b4bbe6a1942796437f0da70f4205a08e92db8e9608365fd6d2e73",
+    ".claude/agents/gads-planner.md": "a13ecf99f21c761b8bf39498a2a28c14bffb02e16208a81a34607c46edc20a46",
+    ".claude/agents/gads-product-owner.md": "0e1ab4ef7b794ea3679322ae4387d10e04400dd42155d50d1cd3c68cb48398a7",
+    ".claude/agents/gads-qa-engineer.md": "8b0ceb4981b45f06a5fe0636d0e6745056f4b738b86024810f06c20fa98e10e0",
+    ".claude/agents/gads-release-engineer.md": "607305356cb8eb8714d3b939b9656e32e45950a73957e48a9eecabbef4e24124",
+    ".claude/agents/gads-reviewer.md": "00f3021d75e968030442d587b6a5b9600fe4144ef909dafe2350d5a2f39c2c48",
+    ".claude/agents/gads-skeptic.md": "0e66b20e06c7293dc41d24370a8f7de1276ac84a901caea07518e69eb28bb789",
+    ".claude/agents/gads-tech-lead.md": "76e8976a250f66a6b1c193d5fa54405d4e4639498886f39a11ad3a1fcd99e4d3",
+    ".claude/settings.json": "f141dd9351a1d7c93677186816b99ff0f138f2399a25b05a51a743468e1ecfa0",
+    "AGENTS.md": "ad6a67fd10ce8504de53601fa928777ac7c53828ab1071669b32e1065e2eb09f",
+    "CLAUDE.md": "32dd796af7ad83795d60c80dcf93adf03df5bafd0b39a1a13c43ab8b8146474e",
+    "gads/agents/architect.md": "93a1c33321d2a7fbb8084ef5e7f64f8f91b253da60a8632c75f64fd6c1716e24",
+    "gads/agents/developer.md": "73239dfe183ff7d663e24f2263d7d6d81550d6d778a2ed262d6eca6dd114fb48",
+    "gads/agents/librarian.md": "2726c857424654fe6811868862a3afabad724d3c86ae886e714985da9a369d36",
+    "gads/agents/planner.md": "4b6d78e1c99e90408d8532c2e3739c1a4f98d360f6459fa40dfbbd5b7cbd7cfd",
+    "gads/agents/product-owner.md": "a32b54cca7cc004e0bcf223f12d5bf7c78fd6cc8950c7d7fdbe24ad499090234",
+    "gads/agents/qa-engineer.md": "203a2a6ea7fdd9923f4f353910c3559d055f42a79bf8dea4815f53844dff54fd",
+    "gads/agents/release-engineer.md": "885666f9f542116cef5b1ba43bf9700e7a9b49e86442dc427427856704b5fb0d",
+    "gads/agents/reviewer.md": "85b6bda950dbdeda52040b98352412a746f702ebb935cecb3eec3a8e2f7ef94a",
+    "gads/agents/skeptic.md": "572427b54af522644f32e1a2d4bbc05b7674c5555eab3acf7c3427fbd80ae212",
+    "gads/agents/tech-lead.md": "f8fba9c286d96884bc54acc740f4bd5e3a61caf0f01640ba9c956ab6ecb9bf1b",
+    "gads/hooks/guard_bash.py": "802ba6c5d22001102661d23c4f0719bb80057c5820c46a9edd31e71d493c93da",
+    "gads/standard/DECISION_POLICY.md": "48d57eed932ef143735b482cc60db9d96a3e8ab486a88b8cc7f6e547f2495fb2",
+    "gads/standard/OPERATING_STANDARD.md": "d74bd42b4b59036f080ecd92e67960bc84d5320af7caadf966717df057cbed8c",
+    "gads/standard/SECURITY_AND_AUTONOMY.md": "66e6abed2f69c3d330b49ce71ea541004fd259d8e7f00e85285ddf2f77daf7ec",
+    "gads/standard/WORKFLOW_AND_GATES.md": "a489ea3d628b83e717f2e963e591bccd2d0e62ca69819ae65f4c222432530343",
+    "gads/templates/ADR.md": "c447dc5675eefce2faa128158418ee011245bfb0fddb46111247aa25e2d257f0",
+    "gads/templates/LESSON.md": "5db279be9d5df2f0680f8d8c3a4b8541d002d70c9d7b97474b562c07b1405759",
+    "gads/templates/PROJECT.md": "dcd95848e3a980ed06022d09ec666bd294cbc713ffd9ffa90c4871a7f3558355",
+    "gads/templates/QA_REPORT.md": "a3d98e45e9e2a325cf60c7ce1088d009df7daafbd862c35977791f628a26806b",
+    "gads/templates/REVIEW_REPORT.md": "d28eefec550fe99784e877d048f077d017e346a9bcbfeaecf84c832d04152aca",
+    "gads/templates/TASK.md": "7ffe29f6a9d1b84de5318a5bd56b102b83b24aadedd89d2d2ce1432cd2c726e4"
+  },
+  "seeds": [
+    "gads/PROJECT.md"
+  ]
+}
