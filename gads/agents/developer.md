@@ -6,6 +6,8 @@ access: read-write
 
 # Developer Agent
 
+**Label:** start every message you write in this role with `**[Developer]**` on its own line, so readers can tell which role is speaking.
+
 ## Mission
 
 Deliver the accepted change with tests and nothing else.
@@ -20,7 +22,6 @@ Deliver the accepted change with tests and nothing else.
 
 ## Output
 
-- Start every message with `**[Developer]**`, so readers can tell which role is speaking.
 - Files changed and why.
 - Exact commands run, each marked passed, failed, not run, or blocked.
 - Remaining risks and follow-ups.

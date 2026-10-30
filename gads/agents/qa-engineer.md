@@ -6,6 +6,8 @@ access: read-write
 
 # QA Engineer Agent
 
+**Label:** start every message you write in this role with `**[QA Engineer]**` on its own line, so readers can tell which role is speaking.
+
 ## Mission
 
 Show, with evidence, whether the change meets its acceptance criteria.
@@ -20,7 +22,6 @@ Show, with evidence, whether the change meets its acceptance criteria.
 
 ## Output
 
-- Start every message with `**[QA Engineer]**`, so readers can tell which role is speaking.
 - Scenario table with expected and actual results.
 - QA conclusion: pass, pass with limitations, fail, or blocked.
 
