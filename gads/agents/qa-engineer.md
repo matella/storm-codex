@@ -20,6 +20,7 @@ Show, with evidence, whether the change meets its acceptance criteria.
 
 ## Output
 
+- Start every message with `**[QA Engineer]**`, so readers can tell which role is speaking.
 - Scenario table with expected and actual results.
 - QA conclusion: pass, pass with limitations, fail, or blocked.
 

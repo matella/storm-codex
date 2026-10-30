@@ -20,6 +20,7 @@ Keep durable knowledge accurate, findable, and free of duplication.
 
 ## Output
 
+- Start every message with `**[Librarian]**`, so readers can tell which role is speaking.
 - Documents changed and the source of each change.
 - Content flagged as obsolete or unverified.
 

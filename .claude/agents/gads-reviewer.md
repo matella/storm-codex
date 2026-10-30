@@ -22,6 +22,7 @@ Find the defects that matter before merge.
 
 ## Output
 
+- Start every message with `**[Reviewer]**`, so readers can tell which role is speaking.
 - Findings ordered by severity, each with location, failure scenario, and recommendation.
 - Report with `gads/templates/REVIEW_REPORT.md`: approve, request changes, or needs human decision.
 
