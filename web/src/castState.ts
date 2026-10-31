@@ -276,6 +276,35 @@ export function replayNote(r: ReplayOrientation): string | null {
   return null;
 }
 
+/** Ordre d'import d'un lot de replays : date de partie croissante, sans date en dernier, à égalité
+ *  l'ordre de dépôt. Renvoie les indices du lot dans l'ordre d'import. */
+export function replayImportOrder(playedAt: (string | null)[]): number[] {
+  const idx = playedAt.map((_, i) => i);
+  return idx.sort((a, b) => {
+    const [da, db] = [playedAt[a], playedAt[b]];
+    if (da === db) return a - b;
+    if (da === null) return 1;
+    if (db === null) return -1;
+    return da < db ? -1 : 1;
+  });
+}
+
+/** Affectation proposée d'un lot de replays à des parties : chaque replay vise sa carte si elle est
+ *  encore lançable (`candidates`, cf. `startableMaps`) et pas déjà proposée à un replay antérieur ;
+ *  sinon `null` (l'opérateur choisit, ou passe ce replay). */
+export function proposeImports(items: { map: string | null; played_at: string | null }[], candidates: string[]): (string | null)[] {
+  const out: (string | null)[] = items.map(() => null);
+  const used = new Set<string>();
+  for (const i of replayImportOrder(items.map((it) => it.played_at))) {
+    const m = items[i].map;
+    if (m && candidates.includes(m) && !used.has(m)) {
+      out[i] = m;
+      used.add(m);
+    }
+  }
+  return out;
+}
+
 /** Équipe saisie dans le rail, resynchronisée depuis le serveur (autre onglet, WS) : adoptée si la
  *  saisie locale n'a pas divergé de la dernière version serveur vue (`base`), sinon conservée. Une
  *  modification annulée (revenue à `base`) se resynchronise donc à nouveau. */

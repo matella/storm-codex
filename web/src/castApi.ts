@@ -51,6 +51,10 @@ export interface PlayerSummary {
 /** Résumé d'une partie extrait de son replay Custom (`POST /api/cast/games/{n}/replay`).
  *  Paires `[blue, red]` ; `null` / vide = valeur absente de storm-stats → ligne retirée de l'écran. */
 export interface GameSummary {
+  /** Carte du replay (nom storm-stats) ; `null` pour un résumé ancien. */
+  map: string | null;
+  /** Date de la partie (ISO 8601 UTC) ; `null` si storm-stats ne l'a pas. */
+  played_at: string | null;
   duration_secs: number;
   winner: Side;
   takedowns: [number, number];
@@ -182,6 +186,34 @@ export async function castGameReplay(n: number, file: File, swap = false): Promi
   });
   if (!r.ok) throw await httpError(r);
   return r.json() as Promise<GameReplayResult>;
+}
+
+/** Import groupé, étape 1 : décode un replay Custom **sans rien écrire** (carte, date, résumé). */
+export async function castReplayInspect(file: File): Promise<GameSummary> {
+  const r = await fetch("/api/cast/replays/inspect", {
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: file,
+  });
+  if (!r.ok) throw await httpError(r);
+  return r.json() as Promise<GameSummary>;
+}
+
+/** Import groupé, étape 2 : crée la partie `map` (carte du pool choisie, pas encore jouée) et la remplit
+ *  depuis le replay, en une mutation. Erreurs : `map_mismatch`, `MapNotChosen`, `SeriesInactive`, `side_mismatch`… */
+export type ReplayImportResult = GameRecord & {
+  orientation?: "evidence" | "assumed" | "forced";
+  forced_against_evidence?: boolean;
+};
+export async function castReplayImport(map: string, file: File, swap = false): Promise<ReplayImportResult> {
+  const q = new URLSearchParams({ map, ...(swap ? { swap: "1" } : {}) });
+  const r = await fetch(`/api/cast/replays/import?${q}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: file,
+  });
+  if (!r.ok) throw await httpError(r);
+  return r.json() as Promise<ReplayImportResult>;
 }
 
 /** État de la série ; invalidé en direct par `useLiveUpdates` (`cast.updated`). `refetchInterval` :

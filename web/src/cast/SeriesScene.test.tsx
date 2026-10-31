@@ -66,6 +66,7 @@ describe("Scene backdrop", () => {
 
 describe("SeriesScene slides (R15)", () => {
   const sm: GameSummary = {
+    map: null, played_at: null,
     duration_secs: 900, winner: "red", takedowns: [9, 12], team_level: [18, 20], structures: null, merc_camps: [3, 4],
     objectives: [1, 2], bans: [[], []], xp_lead: [],
     players: [{ side: "blue", toon: "t1", name: "p1", hero: "Valla", kills: 3, takedowns: 6, deaths: 4, assists: 3, hero_damage: 40000, siege_damage: 50000, healing: 0 }],

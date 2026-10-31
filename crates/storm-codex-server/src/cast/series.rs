@@ -467,6 +467,7 @@ mod tests {
     /// Résumé où l'équipe 0 du replay (Blue) a gagné, joueurs `a*` en équipe 0 et `b*` en équipe 1.
     fn replay_summary() -> GameSummary {
         GameSummary {
+            map: None, played_at: None,
             duration_secs: 600, winner: Side::Blue, takedowns: [10, 4], team_level: Some([20, 18]), structures: Some([3, 1]),
             merc_camps: Some([5, 2]), objectives: None, bans: [vec!["X".into()], vec!["Y".into()]],
             players: vec![row(Side::Blue, "ta1", "Alpha1"), row(Side::Blue, "ta2", "Alpha2"), row(Side::Red, "tb1", "Beta1"), row(Side::Red, "tb2", "Beta2")],

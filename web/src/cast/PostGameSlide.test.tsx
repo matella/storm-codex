@@ -9,6 +9,7 @@ const p = (side: "blue" | "red", i: number, hero: string, v: Partial<PlayerSumma
   hero_damage: 10_000 * i, siege_damage: 20_000 * i, healing: 0, ...v,
 });
 const summary =(over: Partial<GameSummary> = {}): GameSummary => ({
+  map: null, played_at: null,
   duration_secs: 1576, winner: "blue", takedowns: [28, 15], team_level: [25, 24], structures: [5, 4],
   merc_camps: [12, 6], objectives: [3, 3], bans: [["Johanna", "Yrel"], ["Falstad"]],
   players: [

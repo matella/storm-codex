@@ -279,6 +279,8 @@ fn api_router(state: &AppState) -> Router<AppState> {
         )
         .route("/api/cast/games/{n}", axum::routing::delete(cast::api::remove_game))
         .route("/api/cast/games/{n}/replay", post(cast::replay::load_game_replay))
+        .route("/api/cast/replays/inspect", post(cast::replay::inspect))
+        .route("/api/cast/replays/import", post(cast::replay::import_replay))
         .route(
             "/api/cast/score",
             post(cast::api::set_score).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
@@ -868,6 +870,19 @@ pub(crate) mod api_tests {
         state.draft.write().await.add_game(g);
     }
 
+    /// Attend (au plus 5 s) que l'état de draft vérifie `ok`, et renvoie le curseur observé.
+    async fn wait_until(state: &AppState, ok: impl Fn(&draft::DraftState) -> bool) -> usize {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            let d = state.draft.read().await;
+            if ok(&d) || std::time::Instant::now() >= deadline {
+                return d.cursor;
+            }
+            drop(d);
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    }
+
     pub(crate) async fn call(state: &AppState, method: &str, path: &str, body: Option<serde_json::Value>) -> (StatusCode, serde_json::Value) {
         let mut req = Request::builder().method(method).uri(path);
         let body = match body {
@@ -949,8 +964,8 @@ pub(crate) mod api_tests {
         with_game(&state).await;
         let (st, _) = call(&state, "POST", "/api/draft/replay/play", Some(serde_json::json!({"playing": true, "interval_ms": 20}))).await;
         assert_eq!(st, StatusCode::OK);
-        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-        let c = state.draft.read().await.cursor;
+        // attente bornée au lieu d'un sommeil fixe : un runner CI chargé peut retarder les ticks
+        let c = wait_until(&state, |d| d.cursor >= 2).await;
         assert!(c >= 2, "la lecture auto n'avance pas (curseur {c})");
         call(&state, "POST", "/api/draft/replay/play", Some(serde_json::json!({"playing": false}))).await;
         let paused = state.draft.read().await.cursor;
@@ -966,7 +981,7 @@ pub(crate) mod api_tests {
         let Some(state) = test_state(None).await else { return };
         with_game(&state).await;
         call(&state, "POST", "/api/draft/replay/play", Some(serde_json::json!({"playing": true, "interval_ms": 10}))).await;
-        tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+        wait_until(&state, |d| d.is_complete() && !d.replay.playing).await;
         let d = state.draft.read().await;
         assert!(d.is_complete() && !d.replay.playing);
     }

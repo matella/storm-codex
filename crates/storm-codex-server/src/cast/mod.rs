@@ -114,6 +114,12 @@ pub struct PlayerSummary {
 /// storm-stats : l'écran retire la ligne, rien n'est inventé (mapping : docs/spec/03-storm-stats.md).
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct GameSummary {
+    /// Carte du replay (nom storm-stats, ex. « Tomb of the Spider Queen »). Sert à l'import groupé.
+    #[serde(default)]
+    pub map: Option<String>,
+    /// Date de la partie (ISO 8601 UTC, storm-stats `date`) : ordre de l'import groupé.
+    #[serde(default)]
+    pub played_at: Option<String>,
     pub duration_secs: u32,
     pub winner: Side,
     pub takedowns: [u32; 2],
