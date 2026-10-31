@@ -249,6 +249,11 @@ async fn project_once(
 
     tx.commit().await?;
 
+    // lectures de rang rattachées à l'empreinte : retrouvent leur partie après un re-process (best-effort)
+    if let Err(e) = crate::rank::attach_by_fingerprint(db, fingerprint, match_id).await {
+        tracing::error!("rank attach (empreinte): {e}");
+    }
+
     // Référentiel joueurs (agrégat dénormalisé, dérivable de match_players) : UPSERT HORS de la
     // transaction du match, en statements autonomes. Toutes les parties partagent des joueurs
     // (le propriétaire de l'archive est dans toutes) ; garder ces UPSERT dans la transaction
