@@ -45,7 +45,7 @@ En partie de placement, aucun rang n'est affiché : on ne lit rien et on ne publ
 
 ### storm-codex : le serveur
 
-- Nouvelle table `ranked_results` (migration suivante) : `session_id`, `match_id` (renseigné quand la partie est parsée), `rank_name`, `total_points`, `points_delta` (nullable), `promotion_required`, `status` (`valide` | `indisponible`, sans accent : valeur de la base), `reason`, `read_at`. Une seule lecture par session : la dernière remplace les précédentes.
+- Nouvelle table `ranked_results` (migration suivante) : `session_id`, `match_id` (renseigné quand la partie est parsée), `rank_name`, `total_points`, `points_delta` (nullable), `promotion_required`, `status` (`valide` | `indisponible`, sans accent : valeur de la base), `reason`, `read_at`. Une seule lecture par session : la dernière lecture **valide** l'emporte ; une lecture `indisponible` n'écrase jamais une `valide`.
 - Routes :
   - `POST /api/rank/result` (Aegis, token du box) ;
   - `GET /api/rank/recent?player=<toon>&limit=10` : dix dernières parties du compte avec KDA et résultat de rang quand connu.

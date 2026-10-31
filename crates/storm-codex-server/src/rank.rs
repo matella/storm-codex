@@ -86,6 +86,9 @@ pub fn validate(b: &RankResultBody) -> Result<(), &'static str> {
             if b.total_points.is_some() || b.promotion_required.is_some() || b.points_delta.is_some() {
                 return Err("numbers_on_unavailable");
             }
+            if b.rank_name.is_some() {
+                return Err("rank_on_unavailable");
+            }
             Ok(())
         }
         Status::Valide => {
@@ -143,9 +146,11 @@ fn reply(code: StatusCode, body: J) -> (StatusCode, Json<J>) {
     (code, Json(body))
 }
 
-/// POST /api/rank/result — en-tête `X-Session`, corps JSON `RankResultBody`. 201 `{id}` ; 401 sans
-/// token valide (vérifié avant de lire le corps) ; 422 `{error}` si la session ou le corps est
-/// incohérent (rien n'est écrit) ; 500 `{error: "db"}` si la base échoue.
+/// POST /api/rank/result — en-tête `X-Session`, corps JSON `RankResultBody`. Règle de la spec : la dernière
+/// lecture **valide** de la session l'emporte ; une lecture `indisponible` n'écrase jamais une `valide`.
+/// 201 `{id}` (lecture enregistrée) ; 200 `{id, kept: true}` (lecture `indisponible` ignorée, une `valide`
+/// existe) ; 401 sans token valide ; 422 `{error}` si la session ou le corps est incohérent (rien n'est écrit) ;
+/// 500 `{error: "db"}` si la base échoue. Le token est contrôlé avant tout traitement du corps.
 pub async fn post_result(State(s): State<AppState>, headers: HeaderMap, body: Bytes) -> (StatusCode, Json<J>) {
     let Some(token) = token_id(&s.db, &headers).await else {
         return reply(StatusCode::UNAUTHORIZED, json!({ "error": "unauthorized" }));
@@ -170,35 +175,33 @@ pub async fn post_result(State(s): State<AppState>, headers: HeaderMap, body: By
         tracing::error!("rank insert: {e}");
         reply(StatusCode::INTERNAL_SERVER_ERROR, json!({ "error": "db" }))
     };
-    let mut tx = match s.db.begin().await {
-        Ok(tx) => tx,
-        Err(e) => return db_error(e),
-    };
-    // dernière lecture gagnante : on remplace les précédentes, en gardant leur rattachement éventuel
-    let previous: Vec<Option<i64>> = match sqlx::query_scalar("DELETE FROM ranked_results WHERE session_id = $1 RETURNING match_id")
-        .bind(&session)
-        .fetch_all(&mut *tx)
-        .await
-    {
-        Ok(rows) => rows,
-        Err(e) => return db_error(e),
-    };
-    let match_id = linked.or_else(|| previous.into_iter().flatten().next());
-    let fingerprint: Option<String> = match match_id {
-        Some(m) => match sqlx::query_scalar::<_, Option<String>>("SELECT fingerprint FROM matches WHERE id = $1")
+    // Un match lié qui n'existe plus (re-process en cours ou terminé) ne doit pas être posé : clé étrangère cassée.
+    let (match_id, fingerprint) = match linked {
+        Some(m) => match sqlx::query_scalar::<_, String>("SELECT fingerprint FROM matches WHERE id = $1")
             .bind(m)
-            .fetch_optional(&mut *tx)
+            .fetch_optional(&s.db)
             .await
         {
-            Ok(fp) => fp.flatten(),
+            Ok(Some(fp)) => (Some(m), Some(fp)),
+            Ok(None) => (None, None),
             Err(e) => return db_error(e),
         },
-        None => None,
+        None => (None, None),
     };
-    let inserted: Result<i64, sqlx::Error> = sqlx::query_scalar(
+    // Upsert atomique sur la session (contrainte UNIQUE) : deux POST simultanés ne créent pas deux lignes.
+    // La mise à jour ne s'applique que si la nouvelle lecture est `valide`, ou si l'existante ne l'est pas.
+    let written: Result<Option<i64>, sqlx::Error> = sqlx::query_scalar(
         "INSERT INTO ranked_results
             (session_id, status, rank_name, total_points, promotion_required, points_delta, reason, token_id, match_id, match_fingerprint)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id",
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         ON CONFLICT (session_id) DO UPDATE SET
+            status = EXCLUDED.status, rank_name = EXCLUDED.rank_name, total_points = EXCLUDED.total_points,
+            promotion_required = EXCLUDED.promotion_required, points_delta = EXCLUDED.points_delta,
+            reason = EXCLUDED.reason, token_id = EXCLUDED.token_id, read_at = now(),
+            match_id = COALESCE(EXCLUDED.match_id, ranked_results.match_id),
+            match_fingerprint = COALESCE(EXCLUDED.match_fingerprint, ranked_results.match_fingerprint)
+         WHERE EXCLUDED.status = 'valide' OR ranked_results.status <> 'valide'
+         RETURNING id",
     )
     .bind(&session)
     .bind(b.status.as_str())
@@ -210,17 +213,24 @@ pub async fn post_result(State(s): State<AppState>, headers: HeaderMap, body: By
     .bind(token)
     .bind(match_id)
     .bind(fingerprint)
-    .fetch_one(&mut *tx)
+    .fetch_optional(&s.db)
     .await;
-    let id = match inserted {
-        Ok(id) => id,
-        Err(e) => return db_error(e),
-    };
-    if let Err(e) = tx.commit().await {
-        return db_error(e);
-    }
     drop(lobby);
-    reply(StatusCode::CREATED, json!({ "id": id }))
+    match written {
+        Ok(Some(id)) => reply(StatusCode::CREATED, json!({ "id": id })),
+        // indisponible reçue après une valide : rien n'est écrit, la valide reste
+        Ok(None) => {
+            let id: Result<i64, sqlx::Error> = sqlx::query_scalar("SELECT id FROM ranked_results WHERE session_id = $1")
+                .bind(&session)
+                .fetch_one(&s.db)
+                .await;
+            match id {
+                Ok(id) => reply(StatusCode::OK, json!({ "id": id, "kept": true })),
+                Err(e) => db_error(e),
+            }
+        }
+        Err(e) => db_error(e),
+    }
 }
 
 #[cfg(test)]
@@ -280,6 +290,13 @@ mod tests {
         assert_eq!(validate(&b), Ok(()));
         b.points_delta = Some(i32::MIN);
         assert_eq!(validate(&b), Err("bad_points"));
+    }
+
+    #[test]
+    fn unavailable_has_no_rank_name_either() {
+        let mut b = unavailable(Some("titre non lu"));
+        b.rank_name = Some("Diamond 1".into());
+        assert_eq!(validate(&b), Err("rank_on_unavailable"));
     }
 
     #[test]
@@ -363,7 +380,7 @@ mod db_tests {
     }
 
     #[tokio::test]
-    async fn post_result_needs_token_before_reading_the_body() {
+    async fn post_result_needs_token_even_with_a_bad_body() {
         let Some(state) = test_state(None).await else { return };
         let sid = session();
         let (st, _) = post_result(State(state.clone()), headers(None, &sid), body(535, 465)).await;
@@ -382,6 +399,33 @@ mod db_tests {
         assert_eq!(st, StatusCode::CREATED, "{v:?}");
         let (st, _) = post_result(State(state.clone()), headers(Some(&clear), &sid), body(535, 465)).await;
         assert_eq!(st, StatusCode::CREATED);
+        assert_eq!(rows_for(&state.db, &sid).await, vec![("valide".into(), 535, None)]);
+    }
+
+    /// Règle de la spec : une `indisponible` reçue après une `valide` ne l'écrase pas (200, `kept`).
+    #[tokio::test]
+    async fn unavailable_never_overwrites_a_valid_reading() {
+        let Some(state) = test_state(None).await else { return };
+        let clear = token(&state.db).await;
+        let sid = session();
+        let (st, _) = post_result(State(state.clone()), headers(Some(&clear), &sid), body(535, 465)).await;
+        assert_eq!(st, StatusCode::CREATED);
+        let unavailable = Bytes::from_static(br#"{"status":"indisponible","reason":"titre non lu"}"#);
+        let (st, v) = post_result(State(state.clone()), headers(Some(&clear), &sid), unavailable).await;
+        assert_eq!((st, v.0["kept"].as_bool()), (StatusCode::OK, Some(true)));
+        assert_eq!(rows_for(&state.db, &sid).await, vec![("valide".into(), 535, None)]);
+    }
+
+    /// Deux envois de la même session (ex. relance après timeout) : une seule ligne.
+    #[tokio::test]
+    async fn same_session_twice_keeps_one_row() {
+        let Some(state) = test_state(None).await else { return };
+        let clear = token(&state.db).await;
+        let sid = session();
+        for total in [500, 535] {
+            let (st, _) = post_result(State(state.clone()), headers(Some(&clear), &sid), body(total, 1000 - total)).await;
+            assert_eq!(st, StatusCode::CREATED);
+        }
         assert_eq!(rows_for(&state.db, &sid).await, vec![("valide".into(), 535, None)]);
     }
 
