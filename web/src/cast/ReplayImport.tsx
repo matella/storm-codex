@@ -74,8 +74,9 @@ export function ReplayImport({ series, run }: { series: CastSeries; run: Run }) 
   // changer la carte d'un replay en échec le remet prêt à être importé
   const setMap = (key: number, map: string | null) =>
     setItems((prev) => prev.map((it) => (it.key === key ? { ...it, map, state: it.state === "failed" ? "ready" : it.state, error: undefined } : it)));
+  // cocher Swap sur un replay en échec le remet prêt à importer, comme changer sa carte
   const setSwap = (key: number, swap: boolean) =>
-    setItems((prev) => prev.map((it) => (it.key === key ? { ...it, swap } : it)));
+    setItems((prev) => prev.map((it) => (it.key === key ? { ...it, swap, state: it.state === "failed" ? "ready" : it.state, error: undefined } : it)));
 
   const importAll = () =>
     run(async () => {
@@ -131,14 +132,14 @@ export function ReplayImport({ series, run }: { series: CastSeries; run: Run }) 
               {it.summary && (it.state === "ready" || it.state === "failed") && (
                 <>
                   <label className="cr-note">{" "}Game{" "}
-                    <select className="ds-input" aria-label={`Game for ${it.file.name}`} value={it.map ?? ""}
+                    <select className="ds-input" aria-label={`Game for ${it.file.name}`} value={it.map ?? ""} disabled={busy}
                       onChange={(e) => setMap(it.key, e.target.value || null)}>
                       <option value="">skip</option>
                       {optionsFor(it).map((m) => <option key={m} value={m}>{m}</option>)}
                     </select>
                   </label>
                   <label className="cr-note" title="The series' Blue team played as the replay's second team">
-                    <input type="checkbox" checked={it.swap} aria-label={`Swap sides for ${it.file.name}`}
+                    <input type="checkbox" checked={it.swap} disabled={busy} aria-label={`Swap sides for ${it.file.name}`}
                       onChange={(e) => setSwap(it.key, e.target.checked)} /> Swap sides
                   </label>
                 </>

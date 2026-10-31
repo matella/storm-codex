@@ -118,7 +118,7 @@ export function Cast() {
         <SceneTabs onAir={series.scene} local={local ?? series.scene}
           onPick={(sc) => setLocal(sc === series.scene ? null : sc)} />
         {local && local !== series.scene && (
-          <button type="button" className="ds-btn primary small" onClick={() => { const next = local; void run(async () => { await castScene(next); setLocal(null); }); }}>
+          <button type="button" className="ds-btn primary small" onClick={() => { const next = local; void run(async () => { const r = await castScene(next); setLocal(null); return r; }); }}>
             Put {sceneLabel(local)} on air
           </button>
         )}

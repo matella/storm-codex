@@ -143,10 +143,10 @@ compris, conditions non documentées — un run ultérieur sous charge a donné 
 **Import groupé des replays d'une série** (`cast/replay.rs`, spec `docs/specs/2026-10-31-cast-batch-replay-import-design.md`) :
 `POST /api/cast/replays/inspect` — corps = octets bruts d'un `.StormReplay` ; décode **sans rien écrire** → `200 GameSummary`
 (avec `map` = carte storm-stats et `played_at` = date ISO UTC, `null` si absente). `400 empty_body` ; `422` comme la route de partie.
-`POST /api/cast/replays/import?map=<carte>[&swap=1]` — corps = octets bruts ; crée la partie de la carte `map` (pool `picked`/`decider`,
+`POST /api/cast/replays/import?map=<carte>&series_id=<id>[&swap=1]` — corps = octets bruts ; `series_id` = identité de la série lue à l'inspection (requis : sans lui, `400` texte brut de l'extracteur). Crée la partie de la carte `map` (pool `picked`/`decider`,
 non jouée, numéro suivant) et la remplit depuis le replay, en **une seule mutation** (replay refusé → aucune partie créée).
 `201` = la partie (`GameRecord`) + `orientation`, `forced_against_evidence`, `summary`. `409 map_mismatch` (carte du replay ≠ `map`) ;
-`409` `MapNotChosen` / `UnknownMap` / `SeriesInactive` (erreurs `CastError`) ; `400 empty_body` ; `422` comme la route de partie.
+`409 series_changed` (la série a été remplacée depuis l'inspection : rien n'est créé) ; `409` `MapNotChosen` / `UnknownMap` / `SeriesInactive` (erreurs `CastError`) ; `400 empty_body` ; `422` comme la route de partie.
 L'import se fait fichier par fichier, dans l'ordre de date (le client trie) : un échec n'annule pas les autres (import partiel).
 Chaque mutation → WS `cast.updated`. Design : `docs/specs/2026-10-25-cast-control-room-design.md`.
 
