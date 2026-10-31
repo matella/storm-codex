@@ -5,9 +5,11 @@ import type { DraftFormat, Side } from "../api";
 import { castLogoUpload, castSeries, castTeams } from "../castApi";
 import type { CastSeries, CastTeam } from "../castApi";
 import { MAPS, nextHint, reconcileTeam, resyncTeam, seriesScore, setupSteps, togglePool } from "../castState";
+import { ReplayImport } from "./ReplayImport";
 import { TeamEditor } from "./TeamEditor";
 
 type Run = (fn: () => Promise<unknown>) => Promise<void>;
+type ReplayMode = "manual" | "batch";
 const BOS = [1, 3, 5, 7] as const;
 type Bo = (typeof BOS)[number];
 const FORMATS: DraftFormat[] = ["fearless", "standard", "normal"];
@@ -20,6 +22,7 @@ export function SeriesRail({ series, run }: { series: CastSeries; run: Run }) {
   const [bo, setBo] = useState<Bo>(BOS.find((n) => n === series.bo) ?? 5);
   const [format, setFormat] = useState<DraftFormat>(series.format);
   const [pool, setPool] = useState<string[]>(series.pool.map((m) => m.name));
+  const [replayMode, setReplayMode] = useState<ReplayMode>("manual");
 
   // dernière version serveur vue : une saisie égale à `base` (rien modifié, ou modification annulée)
   // adopte la nouvelle version du serveur (autre onglet, WS) ; une saisie qui a divergé est conservée
@@ -101,6 +104,15 @@ export function SeriesRail({ series, run }: { series: CastSeries; run: Run }) {
       </button>
       {pool.length === 0 && <div className="cr-note">Tick at least one map to create a series.</div>}
       {unsaved && <div className="cr-note">Unsaved team changes will be sent with the new series.</div>}
+      <label className="cr-note">Replays{" "}
+        <select className="ds-input" aria-label="Replay loading" value={replayMode} onChange={(e) => setReplayMode(e.target.value as ReplayMode)}>
+          <option value="manual">Per game (one file each)</option>
+          <option value="batch">Batch import (all the series' files)</option>
+        </select>
+      </label>
+      {replayMode === "batch" && (series.active
+        ? <ReplayImport series={series} run={run} />
+        : <div className="cr-note">Create the series first, then add its replays here.</div>)}
 
       <div className="cr-k">Teams &amp; lineups</div>
       {([["blue", blue], ["red", red]] as [Side, CastTeam][]).map(([side, t]) => (

@@ -139,6 +139,15 @@ d'orientation directe (accepté, la régie l'affiche). Erreurs : `400 {"error":"
 tronqués, statut storm-stats ≠ 1), `incomplete` (vainqueur, durée ou takedowns absents de la sortie) — jamais 500
 sur une entrée invalide ; `500 {"error":"pool"}` (sémaphore de parsing fermé) ou `500 {"error":"io"}` (fichier temporaire non écrit) sont des défaillances serveur. Budget décodage < 500 ms (mesuré : route complète 178–203 ms en release, upload local
 compris, conditions non documentées — un run ultérieur sous charge a donné 417–444 ms, cf. `docs/STATUS.md` ; `storm-stats-dump --bench` sur 6 replays Custom : médiane 177 ms, max 319 ms).
+
+**Import groupé des replays d'une série** (`cast/replay.rs`, spec `docs/specs/2026-10-31-cast-batch-replay-import-design.md`) :
+`POST /api/cast/replays/inspect` — corps = octets bruts d'un `.StormReplay` ; décode **sans rien écrire** → `200 GameSummary`
+(avec `map` = carte storm-stats et `played_at` = date ISO UTC, `null` si absente). `400 empty_body` ; `422` comme la route de partie.
+`POST /api/cast/replays/import?map=<carte>[&swap=1]` — corps = octets bruts ; crée la partie de la carte `map` (pool `picked`/`decider`,
+non jouée, numéro suivant) et la remplit depuis le replay, en **une seule mutation** (replay refusé → aucune partie créée).
+`201` = la partie (`GameRecord`) + `orientation`, `forced_against_evidence`, `summary`. `409 map_mismatch` (carte du replay ≠ `map`) ;
+`409` `MapNotChosen` / `UnknownMap` / `SeriesInactive` (erreurs `CastError`) ; `400 empty_body` ; `422` comme la route de partie.
+L'import se fait fichier par fichier, dans l'ordre de date (le client trie) : un échec n'annule pas les autres (import partiel).
 Chaque mutation → WS `cast.updated`. Design : `docs/specs/2026-10-25-cast-control-room-design.md`.
 
 ## Feed live d'une partie en cours (`live/api.rs`)

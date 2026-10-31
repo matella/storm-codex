@@ -127,6 +127,74 @@ pub async fn load_game_replay(State(s): State<AppState>, Path(n): Path<u8>, Quer
     }
 }
 
+/// POST /api/cast/replays/inspect — corps = octets bruts d'un `.StormReplay`. Décode sans rien écrire
+/// ni toucher à la série : 200 `GameSummary` (carte et date pour l'import groupé). 400 `empty_body` ;
+/// 422 comme la route de partie.
+pub async fn inspect(State(s): State<AppState>, bytes: Bytes) -> Resp {
+    if bytes.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "empty_body" })));
+    }
+    match decode(&s, bytes).await {
+        Ok(summary) => (StatusCode::OK, Json(serde_json::to_value(&summary).unwrap_or(J::Null))),
+        Err(r) => r,
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ImportQuery {
+    /// Carte du pool à créer comme partie (`picked`/`decider`, pas encore jouée).
+    map: String,
+    /// `?swap=1` : même sens que `ReplayQuery`.
+    #[serde(default)]
+    swap: Option<String>,
+}
+
+/// Crée la partie `map` puis la remplit depuis `summary`, en une seule mutation : si le replay est
+/// refusé, aucune partie n'est créée. La carte du replay doit être `map` (sinon `409 map_mismatch`).
+pub(super) async fn import_to(s: &AppState, map: &str, summary: GameSummary, force_swap: bool) -> Resp {
+    if summary.map.as_deref() != Some(map) {
+        return conflict_code("map_mismatch");
+    }
+    let res = mutate_ex(s, true, DraftSync::Sync, |c| {
+        let n = c.start_game(map)?;
+        let (stored, how) = c.fill_from_replay_oriented(n, summary, force_swap)?;
+        Ok((n, stored, how))
+    })
+    .await;
+    match res {
+        Ok(((n, stored, how), series)) => {
+            let game = series.games.iter().find(|g| g.number == n);
+            let mut v = serde_json::to_value(game).unwrap_or(J::Null);
+            if let Some(o) = v.as_object_mut() {
+                o.insert("orientation".into(), json!(how.code()));
+                o.insert("forced_against_evidence".into(), json!(how == (Orientation::Forced { against_evidence: true })));
+                o.insert("summary".into(), serde_json::to_value(&stored).unwrap_or(J::Null));
+            }
+            (StatusCode::CREATED, Json(v))
+        }
+        Err(r) => r,
+    }
+}
+
+fn conflict_code(code: &str) -> Resp {
+    (StatusCode::CONFLICT, Json(json!({ "error": code })))
+}
+
+/// POST /api/cast/replays/import?map=…&swap=… — corps = octets bruts. Crée la partie de la carte
+/// `map` (numéro suivant) et la remplit depuis le replay. 201 = la partie (`GameRecord`) +
+/// `orientation`, `forced_against_evidence`, `summary` ; 409 `map_mismatch` / `SeriesInactive` /
+/// `MapNotChosen` / `UnknownMap` / `side_mismatch`… ; 400 `empty_body` ; 422 comme la route de partie.
+pub async fn import_replay(State(s): State<AppState>, Query(q): Query<ImportQuery>, bytes: Bytes) -> Resp {
+    let force_swap = matches!(q.swap.as_deref(), Some("1" | "true"));
+    if bytes.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "empty_body" })));
+    }
+    match decode(&s, bytes).await {
+        Ok(summary) => import_to(&s, &q.map, summary, force_swap).await,
+        Err(r) => r,
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -244,6 +312,67 @@ mod tests {
         let r = decode_in(sem.clone(), missing, Bytes::from_static(b"x")).await;
         assert_eq!(r.err().map(|(st, _)| st), Some(StatusCode::INTERNAL_SERVER_ERROR));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Série active, pool `[MAP, Sky Temple]`, MAP choisie, aucune partie lancée.
+    async fn with_pool(state: &AppState) {
+        let body = json!({"blue":{"name":"Blue Co"},"red":{"name":"Red Co"},"bo":3,"format":"fearless","pool":[MAP, "Sky Temple"]});
+        assert_eq!(call(state, "POST", "/api/cast/series", Some(body)).await.0, StatusCode::OK);
+        call(state, "POST", "/api/cast/pool/map", Some(json!({"name":MAP,"status":"picked","by":"blue"}))).await;
+    }
+
+    /// Import groupé : la partie est créée (numéro suivant) et remplie d'un coup ; sans preuve
+    /// d'orientation, équipe 0 = Blue.
+    #[tokio::test]
+    async fn import_creates_and_fills_the_game() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        with_pool(&state).await;
+        let (st, v) = import_to(&state, MAP, fixture_summary(), false).await;
+        assert_eq!(st, StatusCode::CREATED, "{:?}", v.0);
+        assert_eq!((v.0["number"].as_u64(), v.0["winner"].as_str(), v.0["orientation"].as_str()), (Some(1), Some("blue"), Some("assumed")));
+        let c = state.cast.read().await.clone();
+        assert_eq!(c.games.len(), 1);
+        assert!(c.games[0].summary.is_some());
+        assert_eq!(crate::cast::store::load(&state.db).await, Some(c));
+    }
+
+    /// Carte du replay ≠ carte demandée → 409 `map_mismatch`, rien ne change.
+    #[tokio::test]
+    async fn import_refuses_a_replay_of_another_map() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        with_pool(&state).await;
+        let before = state.cast.read().await.clone();
+        let (st, v) = import_to(&state, "Sky Temple", fixture_summary(), false).await;
+        assert_eq!((st, v.0["error"].as_str()), (StatusCode::CONFLICT, Some("map_mismatch")));
+        assert_eq!(*state.cast.read().await, before);
+    }
+
+    /// Carte déjà jouée : refus, et aucune seconde partie n'est créée.
+    #[tokio::test]
+    async fn import_of_an_already_played_map_creates_nothing() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        with_pool(&state).await;
+        assert_eq!(import_to(&state, MAP, fixture_summary(), false).await.0, StatusCode::CREATED);
+        let before = state.cast.read().await.clone();
+        let (st, _) = import_to(&state, MAP, fixture_summary(), false).await;
+        assert_eq!(st, StatusCode::CONFLICT);
+        assert_eq!(*state.cast.read().await, before);
+    }
+
+    #[tokio::test]
+    async fn inspect_route_writes_nothing_and_rejects_bad_bytes() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        with_pool(&state).await;
+        let before = state.cast.read().await.clone();
+        let (st, b) = call_raw(&state, "POST", "/api/cast/replays/inspect", Some("application/octet-stream"), vec![]).await;
+        assert_eq!(st, StatusCode::BAD_REQUEST, "{}", String::from_utf8_lossy(&b));
+        let (st, b) = call_raw(&state, "POST", "/api/cast/replays/inspect", Some("application/octet-stream"), vec![7u8; 64]).await;
+        assert_eq!(st, StatusCode::UNPROCESSABLE_ENTITY, "{}", String::from_utf8_lossy(&b));
+        assert_eq!(*state.cast.read().await, before);
     }
 
     #[tokio::test]

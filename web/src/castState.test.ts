@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CastSeries, CastTeam, GameRecord, PoolMap } from "./castApi";
-import { badgeGameNumber, overlayVisible, canChangeWinner, canRemoveGame, canSetWinner, displayName, effectiveLineupMode, MAPS, mapCardView, reconcileTeam, replayErrorText, seriesScore, shownGame, slideCount, slideIndex, slideTick, startableMaps, togglePool, sceneFromSearch, INTERVAL_S, intervalSeconds } from "./castState";
+import { badgeGameNumber, overlayVisible, canChangeWinner, canRemoveGame, canSetWinner, displayName, effectiveLineupMode, MAPS, mapCardView, proposeImports, reconcileTeam, replayErrorText, replayImportOrder, seriesScore, shownGame, slideCount, slideIndex, slideTick, startableMaps, togglePool, sceneFromSearch, INTERVAL_S, intervalSeconds } from "./castState";
 
 const game = (map: string, winner: GameRecord["winner"]): GameRecord => ({
   number: 1, map, winner, takedowns: [0, 0], duration_secs: null, summary: null,
@@ -242,5 +242,21 @@ describe("intervalSeconds (R25: UI accepts what the server clamps, 1–3600 s)",
   it("rejects non-numbers", () => {
     expect(intervalSeconds("")).toBeNull();
     expect(intervalSeconds("abc")).toBeNull();
+  });
+});
+
+describe("replay batch import", () => {
+  it("orders by played_at, nulls last, ties by drop order", () => {
+    expect(replayImportOrder(["2026-10-01T10:00:00Z", null, "2026-09-30T10:00:00Z", null])).toEqual([2, 0, 1, 3]);
+  });
+
+  it("proposes each replay's map when it is a startable map, once", () => {
+    const items = [
+      { map: "Sky Temple", played_at: "2026-10-02T00:00:00Z" },
+      { map: "Sky Temple", played_at: "2026-10-01T00:00:00Z" },
+      { map: "Dragon Shire", played_at: null },
+    ];
+    // Sky Temple proposée au replay le plus ancien ; le doublon et la carte absente du pool restent sans affectation
+    expect(proposeImports(items, ["Sky Temple"])).toEqual([null, "Sky Temple", null]);
   });
 });

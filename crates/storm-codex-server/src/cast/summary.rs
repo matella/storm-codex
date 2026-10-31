@@ -214,6 +214,8 @@ pub fn summary_from_output(out: &storm_stats::Output) -> Result<GameSummary, Sum
     }
     let team_stat = |k: &'static str| both(|t| u32_of(m.get("teams")?.get(t)?.get("stats")?.get(k)));
     Ok(GameSummary {
+        map: m.get("map").and_then(J::as_str).map(str::to_owned),
+        played_at: m.get("date").and_then(J::as_str).map(str::to_owned),
         duration_secs: length as u32,
         winner,
         takedowns,
