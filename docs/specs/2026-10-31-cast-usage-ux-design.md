@@ -1,6 +1,6 @@
 # Régie de cast — ergonomie d'utilisation (URL overlay, parcours, mise à l'antenne)
 
-> Spec storm-codex, **validée par l'opérateur le 2026-10-31 (choix recommandés : C = bouton explicite, D = horloge serveur)**. Langue : anglais conservé (F, non tranché explicitement — à confirmer). Règle n° 0.
+> Spec storm-codex, **validée par l'opérateur le 2026-10-31 (choix recommandés : C = bouton explicite, D = horloge serveur)**. Langue : anglais confirmé par l'opérateur le 2026-10-31 (point F). Règle n° 0.
 > Suite de `2026-10-25-cast-control-room-design.md` (régie livrée, PR #5 mergée sur `main`).
 > Les points marqués **[choix Claude]** sont des propositions à relire ; ceux marqués **[à trancher]**
 > remettent en cause une décision déjà actée et exigent une réponse explicite de l'opérateur.
