@@ -205,8 +205,8 @@ export type ReplayImportResult = GameRecord & {
   orientation?: "evidence" | "assumed" | "forced";
   forced_against_evidence?: boolean;
 };
-export async function castReplayImport(map: string, file: File, swap = false): Promise<ReplayImportResult> {
-  const q = new URLSearchParams({ map, ...(swap ? { swap: "1" } : {}) });
+export async function castReplayImport(map: string, file: File, swap: boolean, seriesId: string): Promise<ReplayImportResult> {
+  const q = new URLSearchParams({ map, series_id: seriesId, ...(swap ? { swap: "1" } : {}) });
   const r = await fetch(`/api/cast/replays/import?${q}`, {
     method: "POST",
     headers: { "Content-Type": "application/octet-stream" },

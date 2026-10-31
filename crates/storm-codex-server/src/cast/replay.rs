@@ -142,6 +142,8 @@ pub async fn inspect(State(s): State<AppState>, bytes: Bytes) -> Resp {
 
 #[derive(Deserialize)]
 pub struct ImportQuery {
+    /// Identité de la série au moment de l'inspection : si la série a changé, `409 series_changed`.
+    series_id: String,
     /// Carte du pool à créer comme partie (`picked`/`decider`, pas encore jouée).
     map: String,
     /// `?swap=1` : même sens que `ReplayQuery`.
@@ -151,11 +153,14 @@ pub struct ImportQuery {
 
 /// Crée la partie `map` puis la remplit depuis `summary`, en une seule mutation : si le replay est
 /// refusé, aucune partie n'est créée. La carte du replay doit être `map` (sinon `409 map_mismatch`).
-pub(super) async fn import_to(s: &AppState, map: &str, summary: GameSummary, force_swap: bool) -> Resp {
+pub(super) async fn import_to(s: &AppState, series_id: &str, map: &str, summary: GameSummary, force_swap: bool) -> Resp {
     if summary.map.as_deref() != Some(map) {
         return conflict_code("map_mismatch");
     }
     let res = mutate_ex(s, true, DraftSync::Sync, |c| {
+        if c.series_id != series_id {
+            return Err(CastError::SeriesChanged);
+        }
         let n = c.start_game(map)?;
         let (stored, how) = c.fill_from_replay_oriented(n, summary, force_swap)?;
         Ok((n, stored, how))
@@ -190,7 +195,7 @@ pub async fn import_replay(State(s): State<AppState>, Query(q): Query<ImportQuer
         return (StatusCode::BAD_REQUEST, Json(json!({ "error": "empty_body" })));
     }
     match decode(&s, bytes).await {
-        Ok(summary) => import_to(&s, &q.map, summary, force_swap).await,
+        Ok(summary) => import_to(&s, &q.series_id, &q.map, summary, force_swap).await,
         Err(r) => r,
     }
 }
@@ -314,6 +319,24 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    async fn series_of(state: &AppState) -> String {
+        state.cast.read().await.series_id.clone()
+    }
+
+    /// Une série démarrée entre l'inspection et l'import : 409 `series_changed`, rien ne change.
+    #[tokio::test]
+    async fn import_for_a_replaced_series_is_409_series_changed() {
+        let _g = DB_LOCK.lock().await;
+        let Some(state) = test_state(None).await else { return };
+        with_pool(&state).await;
+        let old = series_of(&state).await;
+        with_pool(&state).await; // nouvelle série (même carte)
+        let before = state.cast.read().await.clone();
+        let (st, v) = import_to(&state, &old, MAP, fixture_summary(), false).await;
+        assert_eq!((st, v.0["error"].as_str()), (StatusCode::CONFLICT, Some("series_changed")));
+        assert_eq!(*state.cast.read().await, before);
+    }
+
     /// Série active, pool `[MAP, Sky Temple]`, MAP choisie, aucune partie lancée.
     async fn with_pool(state: &AppState) {
         let body = json!({"blue":{"name":"Blue Co"},"red":{"name":"Red Co"},"bo":3,"format":"fearless","pool":[MAP, "Sky Temple"]});
@@ -328,7 +351,7 @@ mod tests {
         let _g = DB_LOCK.lock().await;
         let Some(state) = test_state(None).await else { return };
         with_pool(&state).await;
-        let (st, v) = import_to(&state, MAP, fixture_summary(), false).await;
+        let (st, v) = import_to(&state, &series_of(&state).await, MAP, fixture_summary(), false).await;
         assert_eq!(st, StatusCode::CREATED, "{:?}", v.0);
         assert_eq!((v.0["number"].as_u64(), v.0["winner"].as_str(), v.0["orientation"].as_str()), (Some(1), Some("blue"), Some("assumed")));
         let c = state.cast.read().await.clone();
@@ -344,7 +367,7 @@ mod tests {
         let Some(state) = test_state(None).await else { return };
         with_pool(&state).await;
         let before = state.cast.read().await.clone();
-        let (st, v) = import_to(&state, "Sky Temple", fixture_summary(), false).await;
+        let (st, v) = import_to(&state, &series_of(&state).await, "Sky Temple", fixture_summary(), false).await;
         assert_eq!((st, v.0["error"].as_str()), (StatusCode::CONFLICT, Some("map_mismatch")));
         assert_eq!(*state.cast.read().await, before);
     }
@@ -355,9 +378,9 @@ mod tests {
         let _g = DB_LOCK.lock().await;
         let Some(state) = test_state(None).await else { return };
         with_pool(&state).await;
-        assert_eq!(import_to(&state, MAP, fixture_summary(), false).await.0, StatusCode::CREATED);
+        assert_eq!(import_to(&state, &series_of(&state).await, MAP, fixture_summary(), false).await.0, StatusCode::CREATED);
         let before = state.cast.read().await.clone();
-        let (st, _) = import_to(&state, MAP, fixture_summary(), false).await;
+        let (st, _) = import_to(&state, &series_of(&state).await, MAP, fixture_summary(), false).await;
         assert_eq!(st, StatusCode::CONFLICT);
         assert_eq!(*state.cast.read().await, before);
     }
