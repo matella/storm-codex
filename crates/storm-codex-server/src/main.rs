@@ -15,6 +15,7 @@ mod lobby;
 mod manage;
 mod players;
 pub mod project;
+mod rank;
 mod raw;
 mod read;
 mod replay2d;
@@ -279,6 +280,7 @@ fn api_router(state: &AppState) -> Router<AppState> {
         )
         .route("/api/cast/games/{n}", axum::routing::delete(cast::api::remove_game))
         .route("/api/cast/games/{n}/replay", post(cast::replay::load_game_replay))
+        .route("/api/rank/result", post(rank::post_result))
         .route("/api/cast/replays/inspect", post(cast::replay::inspect))
         .route("/api/cast/replays/import", post(cast::replay::import_replay))
         .route(

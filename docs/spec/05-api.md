@@ -147,6 +147,9 @@ compris, conditions non documentées — un run ultérieur sous charge a donné 
 non jouée, numéro suivant) et la remplit depuis le replay, en **une seule mutation** (replay refusé → aucune partie créée).
 `201` = la partie (`GameRecord`) + `orientation`, `forced_against_evidence`, `summary`. `409 map_mismatch` (carte du replay ≠ `map`) ;
 `409` `MapNotChosen` / `UnknownMap` / `SeriesInactive` (erreurs `CastError`) ; `400 empty_body` ; `422` comme la route de partie.
+**Rang de fin de partie (OCR, Aegis)** (`rank.rs`, spec `docs/specs/2026-10-31-ocr-rang-fin-de-partie-design.md`) :
+`POST /api/rank/result` 🔒 (token d'upload) — corps JSON `{session_id, status: valide|indisponible, rank_name?, total_points?, promotion_required?, points_delta?, reason?}`. `session_id` = SHA-256 hex du battlelobby (64 caractères). `valide` : `rank_name` et `total_points` ∈ [0, 1000] requis ; si `promotion_required` est fourni, `total_points + promotion_required = 1000` (sinon `422 scale_mismatch`). `indisponible` : `reason` requis, aucun chiffre. `201 {id}` ; `401` sans token valide ; `422 {error}` (`bad_session`, `bad_text`, `rank_required`, `total_required`, `bad_points`, `scale_mismatch`, `reason_required`, `numbers_on_unavailable`). Table `ranked_results` (migration 0014). Pas encore rattaché au `match_id` ni exposé en lecture : étapes suivantes.
+
 L'import se fait fichier par fichier, dans l'ordre de date (le client trie) : un échec n'annule pas les autres (import partiel).
 Chaque mutation → WS `cast.updated`. Design : `docs/specs/2026-10-25-cast-control-room-design.md`.
 
