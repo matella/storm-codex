@@ -201,10 +201,10 @@ describe("slides (R15: 0 = map strip, 1..4 = breakdown tabs when the shown game 
 });
 
 describe("replayErrorText (R16)", () => {
-  it("side_mismatch gets the Swap sides hint; other codes pass through", () => {
+  it("side_mismatch gets the Swap sides hint; other codes get a readable text", () => {
     expect(replayErrorText("side_mismatch")).toContain('"Swap sides"');
     expect(replayErrorText("side_mismatch")).toMatch(/^side_mismatch/);
-    expect(replayErrorText("not_custom")).toBe("not_custom");
+    expect(replayErrorText("not_custom")).toMatch(/^not_custom:/);
   });
 });
 
@@ -258,5 +258,13 @@ describe("replay batch import", () => {
     ];
     // Sky Temple proposée au replay le plus ancien ; le doublon et la carte absente du pool restent sans affectation
     expect(proposeImports(items, ["Sky Temple"])).toEqual([null, "Sky Temple", null]);
+  });
+});
+
+describe("replay error texts", () => {
+  it("explains the codes the batch import can return", () => {
+    for (const code of ["series_changed", "map_mismatch", "MapNotChosen", "UnknownMap", "SeriesInactive", "not_custom", "parse_failed", "incomplete"]) {
+      expect(replayErrorText(code)).toMatch(new RegExp(`^${code}:`));
+    }
   });
 });

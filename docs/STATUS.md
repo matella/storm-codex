@@ -1,13 +1,9 @@
 # STATUS — lire d'abord, mettre à jour en dernier
 
-## Régie de cast — import groupé des replays (2026-10-31, branche `feat/cast-usage-ux`, **non commitée**)
-Spec `docs/specs/2026-10-31-cast-batch-replay-import-design.md` (validée : créer les parties, date si dispo, commit partiel).
-Livré : `POST /api/cast/replays/inspect` (décodage sans écriture, `GameSummary` enrichi de `map` et `played_at`) ;
-`POST /api/cast/replays/import?map=` (crée la partie + la remplit en une mutation, `409 map_mismatch`) ; rail « Replays :
-batch import » (`web/src/cast/ReplayImport.tsx`, affectation proposée par `proposeImports`, ordre par date). Vérifié : clippy
-`-D warnings` vert, `cargo test --workspace` vert **mais** les tests de la route import/inspect se sont court-circuités
-(`DATABASE_URL` absent, Docker arrêté) : **à relancer avec Postgres**. Vitest 249 passés, `tsc --noEmit` propre. **Non vérifié** :
-parcours navigateur de l'import groupé.
+## Régie de cast — import groupé des replays (2026-10-31, mergé dans `main`, PR #10)
+Spec `docs/specs/2026-10-31-cast-batch-replay-import-design.md` (validée, amendée 2026-11-01 : routes par fichier,
+garde `series_changed`, option Swap sides). Vérifié : `cargo test --workspace` avec Postgres, `tsc`, vitest.
+**Non vérifié** : parcours navigateur de l'import groupé.
 
 ## Régie de cast — ergonomie d'utilisation (2026-10-31, branche `feat/cast-usage-ux`, **non commitée**)
 Spec `docs/specs/2026-10-31-cast-usage-ux-design.md` (validée par l'opérateur, choix recommandés). Livré dans l'arbre de travail : `since_ms` (ancre de rotation serveur, `POST /api/cast/slide`) ; URL OBS permanente + skin + copie ; mise à l'antenne explicite ; étapes et prochaine action dans le rail ; erreurs en clair ; libellés. Vérifié : clippy `-D warnings` vert, `cargo test -p storm-codex-server` 254 passés, vitest 247 passés, `npm run build` OK. **Non vérifié** : parcours manuel dans le navigateur (critère 3 de la spec) et rotation mesurée sur deux onglets (critère 5). Non déployé sur le box.

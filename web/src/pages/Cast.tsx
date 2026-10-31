@@ -61,12 +61,12 @@ function Workspace({ series, scene: sc, run }: { series: CastSeries; scene: Cast
 }
 
 /** Barre de scènes (motif onglets, activation manuelle) : `aria-selected` = onglet de travail local ;
- *  la scène à l'antenne est dite en texte (« ON AIR »). Clic / Entrée / Espace = met la scène à l'antenne
- *  (R26 : choix de conception conservé) ; les flèches, Début et Fin ne font que déplacer le focus. */
+ *  la scène à l'antenne est dite en texte (« ON AIR »). Clic / Entrée / Espace = sélectionne l'onglet de travail
+ *  seulement ; la diffusion passe par le bouton « Put … on air » (R26). Les flèches, Début et Fin ne font que déplacer le focus. */
 export function SceneTabs({ onAir, local, onPick }: { onAir: CastScene; local: CastScene; onPick: (s: CastScene) => void }) {
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   return (
-    <div className="cr-scenes" role="tablist" aria-label="Scene (click puts it on air)">
+    <div className="cr-scenes" role="tablist" aria-label="Scene (selects the working tab; the button puts it on air)">
       {SCENES.map((s, i) => (
         <button key={s.id} type="button" role="tab" id={`cr-tab-${s.id}`} aria-controls="cr-workspace"
           aria-selected={local === s.id} tabIndex={local === s.id ? 0 : -1}
@@ -91,7 +91,7 @@ export function Cast() {
   const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
   // onglet de travail local : `?scene=` à l'arrivée (redirection de /draft), sans toucher à la scène à l'antenne ;
-  // null = suit la scène à l'antenne. Un clic sur une scène la met à l'antenne et rend la main au serveur.
+  // null = suit la scène à l'antenne. Choisir un onglet ne diffuse rien ; le bouton « Put … on air » diffuse.
   const loc = useLocation();
   const [local, setLocal] = useState<CastScene | null>(() => sceneFromSearch(loc.search));
 
@@ -118,7 +118,7 @@ export function Cast() {
         <SceneTabs onAir={series.scene} local={local ?? series.scene}
           onPick={(sc) => setLocal(sc === series.scene ? null : sc)} />
         {local && local !== series.scene && (
-          <button type="button" className="ds-btn primary small" onClick={() => { setLocal(null); void run(() => castScene(local)); }}>
+          <button type="button" className="ds-btn primary small" onClick={() => { const next = local; void run(async () => { await castScene(next); setLocal(null); }); }}>
             Put {sceneLabel(local)} on air
           </button>
         )}

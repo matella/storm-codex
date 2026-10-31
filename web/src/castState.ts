@@ -224,6 +224,30 @@ export function intervalSeconds(raw: string): number | null {
 /** Message affiché à l'opérateur pour un refus du dépôt de replay ; `side_mismatch` (R16) reçoit
  *  une consigne, les autres codes serveur restent tels quels. */
 export function replayErrorText(code: string): string {
+  if (code === "series_changed") {
+    return "series_changed: the series was replaced after these replays were read. Read them again for the current series.";
+  }
+  if (code === "map_mismatch") {
+    return "map_mismatch: this replay is not from the map chosen for its game. Pick the replay's own map in the list.";
+  }
+  if (code === "MapNotChosen") {
+    return "MapNotChosen: this map is not picked or decider in the pool, or it is already played.";
+  }
+  if (code === "UnknownMap") {
+    return "UnknownMap: this map is not in the series pool.";
+  }
+  if (code === "SeriesInactive") {
+    return "SeriesInactive: create or start a series first.";
+  }
+  if (code === "not_custom") {
+    return "not_custom: only Custom games can be read from a replay.";
+  }
+  if (code === "parse_failed") {
+    return "parse_failed: the replay could not be decoded.";
+  }
+  if (code === "incomplete") {
+    return "incomplete: the replay lacks the winner, duration or takedowns.";
+  }
   if (code === "side_mismatch") {
     return `side_mismatch: the replay's winner contradicts the recorded winner and no linked player tells the sides apart. Tick "Swap sides" if this series' Blue team played as the replay's second team, otherwise check the recorded winner.`;
   }

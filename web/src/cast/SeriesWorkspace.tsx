@@ -84,14 +84,14 @@ export function SeriesWorkspace({ series, run }: { series: CastSeries; run: Run 
         </div>
         <span className="cr-note" title={label.title}>{sl.auto && n > 1 ? `rotating ${n} slides · same clock as the preview and OBS` : SLIDE_NAMES[idx]}</span>
         <button type="button" className={`ds-btn small${sl.auto ? " on" : ""}`} aria-pressed={sl.auto}
-          onClick={() => run(() => castSlide({ auto: !sl.auto }))}>{sl.auto ? "Auto" : "Manual"}</button>
+          onClick={() => run(() => castSlide({ auto: !sl.auto, index: idx }))}>{sl.auto ? "Auto" : "Manual"}</button>
         <label className="cr-note">Every{" "}
           <input className="ds-input" type="number" min={INTERVAL_S.min} max={INTERVAL_S.max} step={1} aria-label="Slide interval (seconds)"
             style={{ width: 70 }} defaultValue={Math.round(sl.interval_ms / 1000)} key={sl.interval_ms}
             onBlur={(e) => {
               const v = intervalSeconds(e.target.value);
               if (v === null) { e.target.value = String(Math.round(sl.interval_ms / 1000)); return; }
-              if (v * 1000 !== sl.interval_ms) run(() => castSlide({ interval_ms: v * 1000 }));
+              if (v * 1000 !== sl.interval_ms) run(() => castSlide({ interval_ms: v * 1000, index: idx }));
             }} /> s
         </label>
       </div>
