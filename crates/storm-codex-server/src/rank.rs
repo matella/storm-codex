@@ -1,9 +1,11 @@
 //! Résultats de rang lus à l'écran de fin de partie — `POST /api/rank/result` (Aegis, token d'upload).
 //! Spec : `docs/specs/2026-10-31-ocr-rang-fin-de-partie-design.md`. Le serveur ne devine rien : une
 //! lecture `valide` doit être cohérente (total + requis pour la promotion = 1000 quand le requis existe).
+//! Une seule lecture par session : la dernière gagne, et garde le rattachement déjà acquis.
 use crate::upload::token_id;
 use crate::AppState;
 use axum::{
+    body::Bytes,
     extract::State,
     http::{HeaderMap, StatusCode},
     Json,
@@ -32,9 +34,9 @@ impl Status {
     }
 }
 
+/// Corps JSON de la route. La session n'y figure pas : elle vient de l'en-tête `X-Session`.
 #[derive(Debug, Deserialize)]
 pub struct RankResultBody {
-    pub session_id: String,
     pub status: Status,
     #[serde(default)]
     pub rank_name: Option<String>,
@@ -48,30 +50,46 @@ pub struct RankResultBody {
     pub reason: Option<String>,
 }
 
+/// Session depuis `X-Session` : SHA-256 hex du battlelobby (64 caractères), normalisée en minuscules.
+pub fn session_from_headers(headers: &HeaderMap) -> Result<String, &'static str> {
+    let raw = headers.get("x-session").ok_or("missing_session")?.to_str().map_err(|_| "bad_session")?;
+    let s = raw.trim();
+    if s.len() == 64 && s.bytes().all(|c| c.is_ascii_hexdigit()) {
+        Ok(s.to_ascii_lowercase())
+    } else {
+        Err("bad_session")
+    }
+}
+
+/// Un texte fourni mais vide (ou que des espaces) est refusé : il ne dit rien.
+fn blank(s: &Option<String>) -> bool {
+    s.as_deref().is_some_and(|t| t.trim().is_empty())
+}
+
 /// Code d'erreur (stable, lisible par Aegis) si le corps est incohérent ; `Ok` sinon.
 pub fn validate(b: &RankResultBody) -> Result<(), &'static str> {
-    let hex_session = b.session_id.len() == 64 && b.session_id.bytes().all(|c| c.is_ascii_hexdigit());
-    if !hex_session {
-        return Err("bad_session");
-    }
     if b.rank_name.as_deref().is_some_and(|s| s.chars().count() > MAX_TEXT)
         || b.reason.as_deref().is_some_and(|s| s.chars().count() > MAX_REASON)
     {
         return Err("bad_text");
     }
+    if let Some(d) = b.points_delta {
+        if d.unsigned_abs() > RANK_SCALE as u32 {
+            return Err("bad_points");
+        }
+    }
     match b.status {
         Status::Indisponible => {
-            let no_numbers = b.total_points.is_none() && b.promotion_required.is_none() && b.points_delta.is_none();
-            if b.reason.is_none() {
+            if blank(&b.reason) || b.reason.is_none() {
                 return Err("reason_required");
             }
-            if !no_numbers {
+            if b.total_points.is_some() || b.promotion_required.is_some() || b.points_delta.is_some() {
                 return Err("numbers_on_unavailable");
             }
             Ok(())
         }
         Status::Valide => {
-            if b.rank_name.is_none() {
+            if blank(&b.rank_name) || b.rank_name.is_none() {
                 return Err("rank_required");
             }
             let total = b.total_points.ok_or("total_required")?;
@@ -79,7 +97,7 @@ pub fn validate(b: &RankResultBody) -> Result<(), &'static str> {
                 return Err("bad_points");
             }
             if let Some(req) = b.promotion_required {
-                if total + req != RANK_SCALE {
+                if total.checked_add(req) != Some(RANK_SCALE) {
                     return Err("scale_mismatch");
                 }
             }
@@ -94,66 +112,142 @@ pub fn linked_match(lobby: Option<(&str, Option<i64>)>, session: &str) -> Option
     lobby.filter(|(hash, _)| *hash == session).and_then(|(_, m)| m)
 }
 
-/// Rattache les lectures en attente de la session au match `match_id` (appelé quand le lobby est lié).
-/// Renvoie le nombre de lignes rattachées ; sans effet sur celles déjà liées.
+/// Rattache les lectures en attente de la session au match `match_id` (lobby lié à l'upload) et
+/// mémorise l'empreinte du match, pour retrouver le rattachement après un re-process. Idempotent.
 pub async fn attach_to_match(db: &sqlx::PgPool, session: &str, match_id: i64) -> Result<u64, sqlx::Error> {
-    let done = sqlx::query("UPDATE ranked_results SET match_id = $2 WHERE session_id = $1 AND match_id IS NULL")
-        .bind(session.to_ascii_lowercase())
+    let done = sqlx::query(
+        "UPDATE ranked_results
+         SET match_id = $2, match_fingerprint = (SELECT fingerprint FROM matches WHERE id = $2)
+         WHERE session_id = $1 AND match_id IS NULL",
+    )
+    .bind(session.to_ascii_lowercase())
+    .bind(match_id)
+    .execute(db)
+    .await?;
+    Ok(done.rows_affected())
+}
+
+/// Rattache les lectures liées à l'empreinte `fingerprint` au match `match_id`. Appelé à chaque
+/// projection de partie : un re-process supprime et recrée le match (nouvel id), et `ON DELETE SET NULL`
+/// détache les lectures ; l'empreinte, elle, est stable et permet de les rattacher à nouveau.
+pub async fn attach_by_fingerprint(db: &sqlx::PgPool, fingerprint: &str, match_id: i64) -> Result<u64, sqlx::Error> {
+    let done = sqlx::query("UPDATE ranked_results SET match_id = $2 WHERE match_fingerprint = $1 AND match_id IS NULL")
+        .bind(fingerprint)
         .bind(match_id)
         .execute(db)
         .await?;
     Ok(done.rows_affected())
 }
 
-/// POST /api/rank/result — corps JSON `RankResultBody`. 201 `{id}` ; 401 sans token valide ;
-/// 422 `{error}` si le corps est incohérent (rien n'est écrit).
-pub async fn post_result(State(s): State<AppState>, headers: HeaderMap, Json(b): Json<RankResultBody>) -> (StatusCode, Json<J>) {
+fn reply(code: StatusCode, body: J) -> (StatusCode, Json<J>) {
+    (code, Json(body))
+}
+
+/// POST /api/rank/result — en-tête `X-Session`, corps JSON `RankResultBody`. 201 `{id}` ; 401 sans
+/// token valide (vérifié avant de lire le corps) ; 422 `{error}` si la session ou le corps est
+/// incohérent (rien n'est écrit) ; 500 `{error: "db"}` si la base échoue.
+pub async fn post_result(State(s): State<AppState>, headers: HeaderMap, body: Bytes) -> (StatusCode, Json<J>) {
     let Some(token) = token_id(&s.db, &headers).await else {
-        return (StatusCode::UNAUTHORIZED, Json(json!({ "error": "unauthorized" })));
+        return reply(StatusCode::UNAUTHORIZED, json!({ "error": "unauthorized" }));
+    };
+    let session = match session_from_headers(&headers) {
+        Ok(s) => s,
+        Err(code) => return reply(StatusCode::UNPROCESSABLE_ENTITY, json!({ "error": code })),
+    };
+    let b: RankResultBody = match serde_json::from_slice(&body) {
+        Ok(b) => b,
+        Err(_) => return reply(StatusCode::UNPROCESSABLE_ENTITY, json!({ "error": "bad_json" })),
     };
     if let Err(code) = validate(&b) {
-        return (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "error": code })));
+        return reply(StatusCode::UNPROCESSABLE_ENTITY, json!({ "error": code }));
     }
-    let session = b.session_id.to_ascii_lowercase();
-    let match_id = {
-        let lobby = s.lobby.read().await;
-        linked_match(lobby.as_ref().map(|l| (l.content_hash.as_str(), l.match_id)), &session)
+
+    // Le verrou de lecture du lobby reste tenu jusqu'au commit : `run_parse` ne peut pas lier le lobby
+    // entre le contrôle du `match_id` et l'écriture (sinon la lecture resterait orpheline).
+    let lobby = s.lobby.read().await;
+    let linked = linked_match(lobby.as_ref().map(|l| (l.content_hash.as_str(), l.match_id)), &session);
+    let db_error = |e: sqlx::Error| {
+        tracing::error!("rank insert: {e}");
+        reply(StatusCode::INTERNAL_SERVER_ERROR, json!({ "error": "db" }))
+    };
+    let mut tx = match s.db.begin().await {
+        Ok(tx) => tx,
+        Err(e) => return db_error(e),
+    };
+    // dernière lecture gagnante : on remplace les précédentes, en gardant leur rattachement éventuel
+    let previous: Vec<Option<i64>> = match sqlx::query_scalar("DELETE FROM ranked_results WHERE session_id = $1 RETURNING match_id")
+        .bind(&session)
+        .fetch_all(&mut *tx)
+        .await
+    {
+        Ok(rows) => rows,
+        Err(e) => return db_error(e),
+    };
+    let match_id = linked.or_else(|| previous.into_iter().flatten().next());
+    let fingerprint: Option<String> = match match_id {
+        Some(m) => match sqlx::query_scalar::<_, Option<String>>("SELECT fingerprint FROM matches WHERE id = $1")
+            .bind(m)
+            .fetch_optional(&mut *tx)
+            .await
+        {
+            Ok(fp) => fp.flatten(),
+            Err(e) => return db_error(e),
+        },
+        None => None,
     };
     let inserted: Result<i64, sqlx::Error> = sqlx::query_scalar(
-        "INSERT INTO ranked_results (session_id, status, rank_name, total_points, promotion_required, points_delta, reason, token_id, match_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id",
+        "INSERT INTO ranked_results
+            (session_id, status, rank_name, total_points, promotion_required, points_delta, reason, token_id, match_id, match_fingerprint)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id",
     )
     .bind(&session)
     .bind(b.status.as_str())
-    .bind(&b.rank_name)
+    .bind(b.rank_name.as_deref().map(str::trim))
     .bind(b.total_points)
     .bind(b.promotion_required)
     .bind(b.points_delta)
-    .bind(&b.reason)
+    .bind(b.reason.as_deref().map(str::trim))
     .bind(token)
     .bind(match_id)
-    .fetch_one(&s.db)
+    .bind(fingerprint)
+    .fetch_one(&mut *tx)
     .await;
-    match inserted {
-        Ok(id) => (StatusCode::CREATED, Json(json!({ "id": id }))),
-        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "db" }))),
+    let id = match inserted {
+        Ok(id) => id,
+        Err(e) => return db_error(e),
+    };
+    if let Err(e) = tx.commit().await {
+        return db_error(e);
     }
+    drop(lobby);
+    reply(StatusCode::CREATED, json!({ "id": id }))
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+    use axum::http::HeaderValue;
 
     fn valid(total: i32, req: Option<i32>) -> RankResultBody {
         RankResultBody {
-            session_id: "a".repeat(64),
             status: Status::Valide,
             rank_name: Some("Diamond 1".into()),
             total_points: Some(total),
             promotion_required: req,
             points_delta: None,
             reason: None,
+        }
+    }
+
+    fn unavailable(reason: Option<&str>) -> RankResultBody {
+        RankResultBody {
+            status: Status::Indisponible,
+            rank_name: None,
+            total_points: None,
+            promotion_required: None,
+            points_delta: None,
+            reason: reason.map(Into::into),
         }
     }
 
@@ -164,6 +258,8 @@ mod tests {
         assert_eq!(validate(&valid(535, Some(460))), Err("scale_mismatch"));
         // pas de seuil affiché (ex. Grandmaster) : pas de contrôle croisé
         assert_eq!(validate(&valid(535, None)), Ok(()));
+        // addition qui déborde : refus, pas de panique
+        assert_eq!(validate(&valid(1000, Some(i32::MAX))), Err("scale_mismatch"));
     }
 
     #[test]
@@ -171,24 +267,28 @@ mod tests {
         let mut b = valid(535, Some(465));
         b.rank_name = None;
         assert_eq!(validate(&b), Err("rank_required"));
+        b.rank_name = Some("   ".into());
+        assert_eq!(validate(&b), Err("rank_required"));
         assert_eq!(validate(&valid(1001, None)), Err("bad_points"));
         assert_eq!(validate(&valid(-1, None)), Err("bad_points"));
     }
 
     #[test]
-    fn unavailable_has_reason_and_no_numbers() {
-        let mut b = RankResultBody {
-            session_id: "b".repeat(64),
-            status: Status::Indisponible,
-            rank_name: None,
-            total_points: None,
-            promotion_required: None,
-            points_delta: None,
-            reason: None,
-        };
-        assert_eq!(validate(&b), Err("reason_required"));
-        b.reason = Some("titre non lu".into());
+    fn points_delta_is_bounded() {
+        let mut b = valid(535, Some(465));
+        b.points_delta = Some(486);
         assert_eq!(validate(&b), Ok(()));
+        b.points_delta = Some(i32::MIN);
+        assert_eq!(validate(&b), Err("bad_points"));
+    }
+
+    #[test]
+    fn unavailable_has_non_blank_reason_and_no_numbers() {
+        assert_eq!(validate(&unavailable(None)), Err("reason_required"));
+        assert_eq!(validate(&unavailable(Some(""))), Err("reason_required"));
+        assert_eq!(validate(&unavailable(Some("   "))), Err("reason_required"));
+        assert_eq!(validate(&unavailable(Some("titre non lu"))), Ok(()));
+        let mut b = unavailable(Some("titre non lu"));
         b.points_delta = Some(12);
         assert_eq!(validate(&b), Err("numbers_on_unavailable"));
     }
@@ -203,12 +303,14 @@ mod tests {
     }
 
     #[test]
-    fn session_must_be_sha256_hex() {
-        let mut b = valid(535, Some(465));
-        b.session_id = "xyz".into();
-        assert_eq!(validate(&b), Err("bad_session"));
-        b.session_id = "g".repeat(64);
-        assert_eq!(validate(&b), Err("bad_session"));
+    fn session_header_must_be_sha256_hex_and_is_lowercased() {
+        let mut h = HeaderMap::new();
+        assert_eq!(session_from_headers(&h), Err("missing_session"));
+        h.insert("x-session", HeaderValue::from_static("xyz"));
+        assert_eq!(session_from_headers(&h), Err("bad_session"));
+        let upper = "AB".repeat(32);
+        h.insert("x-session", HeaderValue::from_str(&upper).unwrap());
+        assert_eq!(session_from_headers(&h), Ok("ab".repeat(32)));
     }
 }
 
@@ -232,9 +334,12 @@ mod db_tests {
         clear
     }
 
-    fn bearer(t: &str) -> HeaderMap {
+    fn headers(token: Option<&str>, session: &str) -> HeaderMap {
         let mut h = HeaderMap::new();
-        h.insert("authorization", HeaderValue::from_str(&format!("Bearer {t}")).unwrap());
+        if let Some(t) = token {
+            h.insert("authorization", HeaderValue::from_str(&format!("Bearer {t}")).unwrap());
+        }
+        h.insert("x-session", HeaderValue::from_str(session).unwrap());
         h
     }
 
@@ -242,59 +347,56 @@ mod db_tests {
         format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple())
     }
 
-    #[tokio::test]
-    async fn post_result_needs_token_and_stores_valid_reading() {
-        let Some(state) = test_state(None).await else { return };
-        let body = || RankResultBody {
-            session_id: session(),
-            status: Status::Valide,
-            rank_name: Some("Diamond 1".into()),
-            total_points: Some(535),
-            promotion_required: Some(465),
-            points_delta: Some(486),
-            reason: None,
-        };
-        let sid = body().session_id;
-        let (st, _) = post_result(State(state.clone()), HeaderMap::new(), Json(body())).await;
-        assert_eq!(st, StatusCode::UNAUTHORIZED);
-
-        let clear = token(&state.db).await;
-        let mut b = body();
-        b.session_id = sid.clone();
-        let (st, v) = post_result(State(state.clone()), bearer(&clear), Json(b)).await;
-        assert_eq!(st, StatusCode::CREATED, "{v:?}");
-        let row: (String, i32, i32) = sqlx::query_as(
-            "SELECT status, total_points, promotion_required FROM ranked_results WHERE session_id = $1",
+    fn body(total: i32, req: i32) -> Bytes {
+        Bytes::from(
+            json!({ "status": "valide", "rank_name": "Diamond 1", "total_points": total, "promotion_required": req, "points_delta": 486 })
+                .to_string(),
         )
-        .bind(&sid)
-        .fetch_one(&state.db)
-        .await
-        .unwrap();
-        assert_eq!(row, ("valide".into(), 535, 465));
+    }
+
+    async fn rows_for(db: &sqlx::PgPool, sid: &str) -> Vec<(String, i32, Option<i64>)> {
+        sqlx::query_as("SELECT status, total_points, match_id FROM ranked_results WHERE session_id = $1")
+            .bind(sid)
+            .fetch_all(db)
+            .await
+            .unwrap()
     }
 
     #[tokio::test]
-    async fn post_result_rejects_incoherent_body_and_writes_nothing() {
+    async fn post_result_needs_token_before_reading_the_body() {
+        let Some(state) = test_state(None).await else { return };
+        let sid = session();
+        let (st, _) = post_result(State(state.clone()), headers(None, &sid), body(535, 465)).await;
+        assert_eq!(st, StatusCode::UNAUTHORIZED);
+        // corps invalide sans token : 401, pas 422 (le token passe avant le corps)
+        let (st, _) = post_result(State(state.clone()), headers(None, &sid), Bytes::from_static(b"nope")).await;
+        assert_eq!(st, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn post_result_stores_reading_and_last_one_wins() {
         let Some(state) = test_state(None).await else { return };
         let clear = token(&state.db).await;
         let sid = session();
-        let b = RankResultBody {
-            session_id: sid.clone(),
-            status: Status::Valide,
-            rank_name: Some("Diamond 1".into()),
-            total_points: Some(535),
-            promotion_required: Some(460),
-            points_delta: None,
-            reason: None,
-        };
-        let (st, v) = post_result(State(state.clone()), bearer(&clear), Json(b)).await;
+        let (st, v) = post_result(State(state.clone()), headers(Some(&clear), &sid), body(500, 500)).await;
+        assert_eq!(st, StatusCode::CREATED, "{v:?}");
+        let (st, _) = post_result(State(state.clone()), headers(Some(&clear), &sid), body(535, 465)).await;
+        assert_eq!(st, StatusCode::CREATED);
+        assert_eq!(rows_for(&state.db, &sid).await, vec![("valide".into(), 535, None)]);
+    }
+
+    #[tokio::test]
+    async fn post_result_rejects_bad_session_body_and_writes_nothing() {
+        let Some(state) = test_state(None).await else { return };
+        let clear = token(&state.db).await;
+        let sid = session();
+        let (st, v) = post_result(State(state.clone()), headers(Some(&clear), &sid), body(535, 460)).await;
         assert_eq!((st, v.0["error"].as_str()), (StatusCode::UNPROCESSABLE_ENTITY, Some("scale_mismatch")));
-        let n: i64 = sqlx::query_scalar("SELECT count(*) FROM ranked_results WHERE session_id = $1")
-            .bind(&sid)
-            .fetch_one(&state.db)
-            .await
-            .unwrap();
-        assert_eq!(n, 0);
+        let (st, v) = post_result(State(state.clone()), headers(Some(&clear), &sid), Bytes::from_static(b"{")).await;
+        assert_eq!((st, v.0["error"].as_str()), (StatusCode::UNPROCESSABLE_ENTITY, Some("bad_json")));
+        let (st, v) = post_result(State(state.clone()), headers(Some(&clear), "xyz"), body(535, 465)).await;
+        assert_eq!((st, v.0["error"].as_str()), (StatusCode::UNPROCESSABLE_ENTITY, Some("bad_session")));
+        assert!(rows_for(&state.db, &sid).await.is_empty());
     }
 
     #[tokio::test]
@@ -302,25 +404,37 @@ mod db_tests {
         let Some(state) = test_state(None).await else { return };
         let clear = token(&state.db).await;
         let sid = session();
-        let b = RankResultBody {
-            session_id: sid.clone(),
-            status: Status::Valide,
-            rank_name: Some("Diamond 1".into()),
-            total_points: Some(535),
-            promotion_required: Some(465),
-            points_delta: None,
-            reason: None,
-        };
-        let (st, _) = post_result(State(state.clone()), bearer(&clear), Json(b)).await;
+        let (st, _) = post_result(State(state.clone()), headers(Some(&clear), &sid), body(535, 465)).await;
         assert_eq!(st, StatusCode::CREATED);
         let match_id = crate::players::testutil::insert_match(&state.db, None, &[]).await;
         assert_eq!(attach_to_match(&state.db, &sid, match_id).await.unwrap(), 1);
         assert_eq!(attach_to_match(&state.db, &sid, match_id).await.unwrap(), 0);
-        let got: Option<i64> = sqlx::query_scalar("SELECT match_id FROM ranked_results WHERE session_id = $1")
-            .bind(&sid)
+        assert_eq!(rows_for(&state.db, &sid).await, vec![("valide".into(), 535, Some(match_id))]);
+    }
+
+    /// Re-process : la partie est supprimée puis recréée (nouvel id) avec la même empreinte. Le rattachement
+    /// doit revenir par l'empreinte, sans passer par le lobby.
+    #[tokio::test]
+    async fn link_survives_a_reprocess_through_the_fingerprint() {
+        let Some(state) = test_state(None).await else { return };
+        let clear = token(&state.db).await;
+        let sid = session();
+        let (st, _) = post_result(State(state.clone()), headers(Some(&clear), &sid), body(535, 465)).await;
+        assert_eq!(st, StatusCode::CREATED);
+        let first = crate::players::testutil::insert_match(&state.db, None, &[]).await;
+        assert_eq!(attach_to_match(&state.db, &sid, first).await.unwrap(), 1);
+        let fp: String = sqlx::query_scalar("SELECT fingerprint FROM matches WHERE id = $1")
+            .bind(first)
             .fetch_one(&state.db)
             .await
             .unwrap();
-        assert_eq!(got, Some(match_id));
+        // suppression : ON DELETE SET NULL détache la lecture
+        sqlx::query("DELETE FROM matches WHERE id = $1").bind(first).execute(&state.db).await.unwrap();
+        assert_eq!(rows_for(&state.db, &sid).await, vec![("valide".into(), 535, None)]);
+        // recréation avec la même empreinte, puis rattachement par empreinte
+        let second = crate::players::testutil::insert_match(&state.db, None, &[]).await;
+        sqlx::query("UPDATE matches SET fingerprint = $1 WHERE id = $2").bind(&fp).bind(second).execute(&state.db).await.unwrap();
+        assert_eq!(attach_by_fingerprint(&state.db, &fp, second).await.unwrap(), 1);
+        assert_eq!(rows_for(&state.db, &sid).await, vec![("valide".into(), 535, Some(second))]);
     }
 }

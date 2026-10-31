@@ -280,7 +280,10 @@ fn api_router(state: &AppState) -> Router<AppState> {
         )
         .route("/api/cast/games/{n}", axum::routing::delete(cast::api::remove_game))
         .route("/api/cast/games/{n}/replay", post(cast::replay::load_game_replay))
-        .route("/api/rank/result", post(rank::post_result))
+        .route(
+            "/api/rank/result",
+            post(rank::post_result).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+        )
         .route("/api/cast/replays/inspect", post(cast::replay::inspect))
         .route("/api/cast/replays/import", post(cast::replay::import_replay))
         .route(
