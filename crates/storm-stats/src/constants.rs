@@ -46,3 +46,14 @@ pub mod status {
     pub const TOO_OLD: i64 = -6;
     pub const UNVERIFIED: i64 = -7;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::hero_attribute;
+
+    /// Xal'atath (ajouté après hots-parser 7.55.7) : code d'attribut `HXAL` relevé sur des replays réels.
+    #[test]
+    fn xalatath_attribute_maps_to_its_name() {
+        assert_eq!(hero_attribute()["HXAL"].as_str(), Some("Xal'atath"));
+    }
+}
