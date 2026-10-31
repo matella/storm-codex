@@ -68,3 +68,24 @@ Au moment de créer une série, proposer à l'opérateur :
 1. **Créer les parties depuis les replays** : chaque fichier crée sa partie (carte du pool `picked`/`decider`, non encore jouée).
 2. **Ordre** : date de partie si le replay la fournit, sinon ordre de dépôt.
 3. **Commit partiel** accepté : chaque partie réussit ou échoue seule, le résultat est renvoyé par fichier.
+
+## Amendement du 2026-11-01 (validé par l'opérateur)
+
+Constats de la revue de `main` (merge #10) et décisions de l'opérateur. Ce qui suit remplace les passages
+correspondants ci-dessus.
+
+1. **Routes livrées** : au lieu d'un `preview` et d'un `commit` groupés, deux routes **par fichier** :
+   - `POST /api/cast/replays/inspect` : décode sans rien écrire, renvoie le `GameSummary` (carte, date).
+   - `POST /api/cast/replays/import?map=…&series_id=…[&swap=1]` : crée la partie de la carte puis la remplit,
+     en une mutation. Un échec n'annule que son fichier.
+2. **Format de `GameSummary`** : il gagne `map` et `played_at` (`null` si absents). Les anciens états se chargent
+   avec `null`. La phrase « pas de changement du format » ne tient plus.
+3. **Tri par date** : fait côté client (`replayImportOrder`), à partir de `played_at` ; à défaut, ordre de dépôt.
+4. **Garde de série** : l'import porte l'identité de la série lue à l'inspection (`series_id`). Si la série a
+   changé, `409 series_changed`, rien n'est créé. Le client vide le lot quand la série change.
+5. **Option « Swap sides » par replay** (décision de l'opérateur, 2026-11-01) : elle est proposée dans le lot,
+   et transmise à l'import (`?swap=1`), comme dans la route par partie.
+6. **Replay en échec** : il ne bloque plus sa carte. Changer sa carte le remet prêt à importer.
+7. **Textes d'erreur** : `series_changed`, `map_mismatch`, `MapNotChosen`, `UnknownMap`, `SeriesInactive`,
+   `not_custom`, `parse_failed`, `incomplete` ont un texte lisible (`replayErrorText`).
+8. **Date affichée** : suffixée « UTC ».
