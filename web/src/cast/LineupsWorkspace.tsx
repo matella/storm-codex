@@ -10,9 +10,9 @@ import { HeroPortrait } from "./portrait";
 type Run = (fn: () => Promise<unknown>) => Promise<void>;
 
 const MODES: { id: LineupMode; label: string; hint: string }[] = [
-  { id: "auto", label: "Auto", hint: "A until a game has a winner, then B" },
-  { id: "a", label: "A · recent heroes", hint: "before the series: top 3 recent heroes per linked player" },
-  { id: "b", label: "B · series heroes", hint: "between games: heroes played so far, Fearless-locked dimmed" },
+  { id: "auto", label: "Auto", hint: "Before the first game winner: recent heroes; after that: heroes played in this series" },
+  { id: "a", label: "Before series", hint: "Top 3 recent heroes per linked player (before any game)" },
+  { id: "b", label: "Between games", hint: "Heroes played so far in this series, Fearless-locked dimmed" },
 ];
 
 type QState = { isLoading: boolean; isError: boolean };

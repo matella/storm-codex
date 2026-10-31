@@ -172,10 +172,13 @@ pub struct SlideState {
     pub index: u8,
     pub auto: bool,
     pub interval_ms: u32,
+    /// Instant (ms depuis l'epoch, horloge serveur) où la slide `index` a été posée : la rotation
+    /// auto de l'overlay et de l'aperçu se calcule à partir de cette ancre (même horloge → même slide).
+    pub since_ms: i64,
 }
 impl Default for SlideState {
     fn default() -> Self {
-        Self { game: None, index: 0, auto: false, interval_ms: 12_000 }
+        Self { game: None, index: 0, auto: false, interval_ms: 12_000, since_ms: 0 }
     }
 }
 

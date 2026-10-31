@@ -32,7 +32,7 @@ const g = (n: number, map: string, winner: GameRecord["winner"], summary: GameRe
 const series = (over: Partial<CastSeries> = {}): CastSeries => ({
   schema_version: 1, series_id: "s1", active: true, blue: team("Alpha"), red: team("Omega"), bo: 5, format: "fearless",
   score_override: null, pool: [], games: [], scene: "series", lineup_mode: "auto",
-  slide: { game: null, index: 0, auto: false, interval_ms: 12000 }, ...over,
+  slide: { game: null, index: 0, auto: false, interval_ms: 12000, since_ms: 0 }, ...over,
 });
 const count = (html: string, needle: string) => html.split(needle).length - 1;
 const card = (html: string, map: string) => (html.match(/<article[\s\S]*?<\/article>/g) ?? []).find((c) => c.includes(`<b>${map}</b>`)) ?? "";
@@ -238,14 +238,14 @@ describe("20 · preview first frame", () => {
 
 describe("21 · slide label in auto mode", () => {
   const withSummary = series({ games: [g(1, "A", "blue", {} as GameRecord["summary"])] });
-  it("auto: says auto, never claims the on-air index; tooltip explains independent timers", () => {
-    const l = slideLabel({ ...withSummary, slide: { ...withSummary.slide, auto: true, index: 3 } });
-    expect(l.text).toBe("auto");
-    expect(l.title).toMatch(/independent timers/);
+  it("auto: shows the slide really on air (server clock) with an auto tag", () => {
+    const l = slideLabel({ ...withSummary, slide: { ...withSummary.slide, auto: true, index: 3 } }, 2);
+    expect(l.text).toBe("1 / 5 · auto");
+    expect(l.title).toMatch(/server/);
   });
   it("manual: k / n", () => {
     expect(slideLabel({ ...withSummary, slide: { ...withSummary.slide, index: 2 } }).text).toBe("3 / 5");
-    expect(slideLabel(series({ slide: { game: null, index: 0, auto: true, interval_ms: 12000 } })).text).toBe("1 / 1");
+    expect(slideLabel(series({ slide: { game: null, index: 0, auto: true, interval_ms: 12000, since_ms: 0 } })).text).toBe("1 / 1");
   });
 });
 

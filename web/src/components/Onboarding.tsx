@@ -33,7 +33,9 @@ export function Onboarding({ force, onClose }: { force?: boolean; onClose?: () =
           and watches new games automatically.
         </Step>
         <Step n={3} title="Add the OBS overlays (optional)">
-          Add these as Browser Sources (1920×1080, transparent):
+          Cast control room: add <span className="mono">{origin}/cast/overlay</span> as a Browser Source
+          (1920×1080, transparent). Its URL is always shown at the top of <span className="mono">/cast</span>.
+          Other overlays, optional:
           <div className="mono" style={{ fontSize: 11, marginTop: 6, lineHeight: 1.8 }}>
             {origin}/queue · {origin}/ticker · {origin}/widget?me=&lt;name&gt; · {origin}/now-playing
           </div>

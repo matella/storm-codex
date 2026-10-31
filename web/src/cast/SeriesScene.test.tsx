@@ -19,7 +19,7 @@ const pool: PoolMap[] = [
 const series = (over: Partial<CastSeries> = {}): CastSeries => ({
   schema_version: 1, series_id: "s1", active: true, blue: team("Alpha"), red: team("Omega"), bo: 5, format: "fearless",
   score_override: null, pool, games: [g(1, "Cursed Hollow", "blue"), g(2, "Dragon Shire", "red")],
-  scene: "series", lineup_mode: "auto", slide: { game: null, index: 0, auto: false, interval_ms: 12000 }, ...over,
+  scene: "series", lineup_mode: "auto", slide: { game: null, index: 0, auto: false, interval_ms: 12000, since_ms: 0 }, ...over,
 });
 
 const count = (html: string, needle: string) => html.split(needle).length - 1;
@@ -71,7 +71,7 @@ describe("SeriesScene slides (R15)", () => {
     players: [{ side: "blue", toon: "t1", name: "p1", hero: "Valla", kills: 3, takedowns: 6, deaths: 4, assists: 3, hero_damage: 40000, siege_damage: 50000, healing: 0 }],
   };
   const withSummary = (index: number, extra: Partial<CastSeries> = {}) =>
-    series({ games: [g(1, "Cursed Hollow", "blue"), { ...g(2, "Dragon Shire", "red"), summary: sm }], slide: { game: null, index, auto: false, interval_ms: 12000 }, ...extra });
+    series({ games: [g(1, "Cursed Hollow", "blue"), { ...g(2, "Dragon Shire", "red"), summary: sm }], slide: { game: null, index, auto: false, interval_ms: 12000, since_ms: 0 }, ...extra });
   it("slide 0 is the map strip", () => {
     const h = renderToStaticMarkup(<SeriesScene s={withSummary(0)} />);
     expect(count(h, "<article")).toBe(6);
@@ -86,12 +86,12 @@ describe("SeriesScene slides (R15)", () => {
     expect(renderToStaticMarkup(<SeriesScene s={withSummary(4)} />)).toContain('<span class="on">TAKEDOWNS</span>');
   });
   it("without a summary only the strip exists (index taken modulo 1)", () => {
-    const h = renderToStaticMarkup(<SeriesScene s={withSummary(3, { slide: { game: 1, index: 3, auto: false, interval_ms: 12000 } })} />);
+    const h = renderToStaticMarkup(<SeriesScene s={withSummary(3, { slide: { game: 1, index: 3, auto: false, interval_ms: 12000, since_ms: 0 } })} />);
     expect(count(h, "<article")).toBe(6);
     expect(h).not.toContain("pg-hd");
   });
   it("auto mode starts at the server index", () => {
-    const h = renderToStaticMarkup(<SeriesScene s={withSummary(1, { slide: { game: null, index: 1, auto: true, interval_ms: 12000 } })} />);
+    const h = renderToStaticMarkup(<SeriesScene s={withSummary(1, { slide: { game: null, index: 1, auto: true, interval_ms: 12000, since_ms: Date.now() } })} />);
     expect(h).toContain('<span class="on">HERO DAMAGE</span>');
   });
 });

@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { fmtClock as clock } from "../api";
 import { castGameReplay, castSlide } from "../castApi";
+import { useSlideTick } from "./useSlideTick";
 import type { CastSeries, GameRecord, GameReplayResult } from "../castApi";
 import { INTERVAL_S, SLIDE_NAMES, intervalSeconds, replayErrorText, replayNote, shownGame, slideCount, slideIndex, slideLabel } from "../castState";
 
@@ -60,8 +61,9 @@ export function SeriesWorkspace({ series, run }: { series: CastSeries; run: Run 
   const sl = series.slide;
   const shown = shownGame(series);
   const n = slideCount(series);
-  const idx = slideIndex(series);
-  const label = slideLabel(series);
+  const tick = useSlideTick(series);
+  const idx = slideIndex(series, tick);
+  const label = slideLabel(series, tick);
   return (
     <section className="cr-box">
       <div className="cr-k">Series · slides</div>
@@ -80,7 +82,7 @@ export function SeriesWorkspace({ series, run }: { series: CastSeries; run: Run 
           <button type="button" className="ds-btn small" aria-label="Next slide" disabled={n <= 1}
             onClick={() => run(() => castSlide({ index: (idx + 1) % n }))}>›</button>
         </div>
-        <span className="cr-note" title={label.title}>{sl.auto && n > 1 ? `rotating ${n} slides · preview and OBS timers are independent` : SLIDE_NAMES[idx]}</span>
+        <span className="cr-note" title={label.title}>{sl.auto && n > 1 ? `rotating ${n} slides · same clock as the preview and OBS` : SLIDE_NAMES[idx]}</span>
         <button type="button" className={`ds-btn small${sl.auto ? " on" : ""}`} aria-pressed={sl.auto}
           onClick={() => run(() => castSlide({ auto: !sl.auto }))}>{sl.auto ? "Auto" : "Manual"}</button>
         <label className="cr-note">Every{" "}

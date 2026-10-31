@@ -71,14 +71,13 @@ export function DraftConsoleView({ d, dim, role, setRole, search, setSearch, loc
     if (mode === "preban") { draftUnavailable(name, !d.manual_unavailable.includes(name)); return; }
     if (!used.has(name) && d.cursor < d.steps.length) draftAction(name);
   };
-  const overlayUrl = `${typeof window === "undefined" ? "" : window.location.origin}/cast/overlay?skin=nexus`;
   const cfg = { format: d.format, map: d.map, first_pick: d.first_pick, blue: d.blue, red: d.red, bo: d.bo };
 
   return (
     <div className="draftc ds-page">
       <style>{CSS}</style>
       <header className="ds-cover dcover">
-        <div className="ds-kicker">Draft simulator · operator console</div>
+        <div className="ds-kicker">Draft · live</div>
         <h1 className="ds-title" style={{ cursor: "default", fontSize: "clamp(40px, 6vw, 76px)" }}>
           <span className="tb">{d.blue.name || "Blue"}</span> <i>vs</i> <span className="tr">{d.red.name || "Red"}</span>
         </h1>
@@ -86,10 +85,7 @@ export function DraftConsoleView({ d, dim, role, setRole, search, setSearch, loc
           {d.map} · {FORMATS.find((f) => f.v === d.format)?.label} · Bo{d.bo} · series {d.score[0]}–{d.score[1]}
         </div>
         <div className="ds-cover-foot">
-          <span className="ds-label" style={{ margin: 0 }}>OBS overlay</span>
-          <a className="olink" href={overlayUrl} target="_blank" rel="noreferrer">{overlayUrl} ↗</a>
           {onReplay && <button type="button" className="olink linkbtn" onClick={onReplay}>Draft from a replay →</button>}
-          <span className="muted-mono">browser source 1920×1080, transparent · skins <code>nexus · glass · tactical · mono</code></span>
         </div>
       </header>
 

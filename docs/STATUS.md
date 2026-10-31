@@ -1,6 +1,9 @@
 # STATUS — lire d'abord, mettre à jour en dernier
 
-## Régie de cast — LIVRÉE le 2026-10-27 (branche `feat/cast-control-room`, non mergée, **pas encore déployée sur le box**)
+## Régie de cast — ergonomie d'utilisation (2026-10-31, branche `feat/cast-usage-ux`, **non commitée**)
+Spec `docs/specs/2026-10-31-cast-usage-ux-design.md` (validée par l'opérateur, choix recommandés). Livré dans l'arbre de travail : `since_ms` (ancre de rotation serveur, `POST /api/cast/slide`) ; URL OBS permanente + skin + copie ; mise à l'antenne explicite ; étapes et prochaine action dans le rail ; erreurs en clair ; libellés. Vérifié : clippy `-D warnings` vert, `cargo test -p storm-codex-server` 254 passés, vitest 247 passés, `npm run build` OK. **Non vérifié** : parcours manuel dans le navigateur (critère 3 de la spec) et rotation mesurée sur deux onglets (critère 5). Non déployé sur le box.
+
+## Régie de cast — LIVRÉE le 2026-10-27 (PR #5 mergée sur `main` ; **pas encore déployée sur le box**)
 Spec `docs/specs/2026-10-25-cast-control-room-design.md` · plan `docs/plans/2026-10-25-cast-control-room.md`.
 Une **série** (Bo1/3/5/7, Fearless/Standard/Normal, pool de cartes, 2 équipes × 5 joueurs, logos) est l'unique source
 de vérité des équipes ; le casteur la pilote depuis `/cast` et OBS lit `/cast/overlay`.

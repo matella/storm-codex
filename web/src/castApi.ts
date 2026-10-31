@@ -81,6 +81,8 @@ export interface SlideState {
   index: number;
   auto: boolean;
   interval_ms: number;
+  /** Ancre de la rotation auto (ms, horloge serveur) : posée à chaque modification du diaporama. */
+  since_ms: number;
 }
 
 export interface CastSeries {
