@@ -39,8 +39,8 @@ describe("DraftConsoleView", () => {
     expect(view(true)).not.toMatch(/<button[^>]*disabled=""[^>]*>Next game/);
     expect(view(false)).not.toMatch(/<button[^>]*disabled=""[^>]*>New series</);
   });
-  it("M4: the OBS overlay link points at the cast overlay", () => {
-    expect(view(false)).toContain("/cast/overlay?skin=nexus");
+  it("M4: the Draft tab no longer repeats the OBS link (it lives in the régie header)", () => {
+    expect(view(false)).not.toContain("/cast/overlay");
     expect(view(false)).not.toContain("/draft/overlay");
   });
 });

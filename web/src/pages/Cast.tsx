@@ -6,7 +6,8 @@ import { useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { castScene, castScore, useCast } from "../castApi";
 import type { CastScene, CastSeries } from "../castApi";
-import { badgeGameNumber, sceneFromSearch, seriesScore, tabKeyTarget } from "../castState";
+import { badgeGameNumber, friendlyError, sceneFromSearch, seriesScore, tabKeyTarget } from "../castState";
+import { ObsSource } from "../cast/ObsSource";
 import { DraftWorkspace } from "../cast/DraftWorkspace";
 import { LineupsWorkspace } from "../cast/LineupsWorkspace";
 import { PoolPanel } from "../cast/PoolPanel";
@@ -52,8 +53,8 @@ function Workspace({ series, scene: sc, run }: { series: CastSeries; scene: Cast
         )}
       </div>
       <div className="cr-note">
-        Badge shows: BO {series.bo} · GAME {badgeGameNumber(series)} · {series.format.toUpperCase()}
-        {series.score_override ? " · score forced by operator" : " · score from game winners"}
+        On-screen badge: BO {series.bo} · GAME {badgeGameNumber(series)} · {series.format.toUpperCase()}
+        {series.score_override ? " · score set by you" : " · score from game winners"}
       </div>
     </section>
   );
@@ -115,12 +116,18 @@ export function Cast() {
       <div className="cr-top">
         <span className="cr-br">CAST <b>CONTROL ROOM</b></span>
         <SceneTabs onAir={series.scene} local={local ?? series.scene}
-          onPick={(sc) => { setLocal(null); void run(() => castScene(sc)); }} />
+          onPick={(sc) => setLocal(sc === series.scene ? null : sc)} />
+        {local && local !== series.scene && (
+          <button type="button" className="ds-btn primary small" onClick={() => { setLocal(null); void run(() => castScene(local)); }}>
+            Put {sceneLabel(local)} on air
+          </button>
+        )}
         {!series.active && <span className="cr-inactive">no active series</span>}
       </div>
+      <ObsSource />
       {err && (
         <div className="cr-err" role="alert">
-          Server refused: <b>{err}</b>
+          {friendlyError(err)}{friendlyError(err) !== err && <span className="cr-note"> ({err})</span>}
           <button type="button" className="ds-btn small" onClick={() => setErr(null)}>dismiss</button>
         </div>
       )}

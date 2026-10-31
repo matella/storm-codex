@@ -7,7 +7,7 @@ const team = (name: string): CastTeam => ({ name, logo: null, record: "", player
 const series = (over: Partial<CastSeries> = {}): CastSeries => ({
   schema_version: 1, series_id: "s1", active: true, blue: team(""), red: team(""), bo: 5, format: "fearless",
   score_override: null, pool: [], games: [], scene: "ingame", lineup_mode: "auto",
-  slide: { game: null, index: 0, auto: false, interval_ms: 12000 }, ...over,
+  slide: { game: null, index: 0, auto: false, interval_ms: 12000, since_ms: 0 }, ...over,
 });
 
 describe("InGameScene", () => {

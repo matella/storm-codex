@@ -24,7 +24,7 @@ const game = (sm: GameSummary | null): GameRecord => ({
 const series = (): CastSeries => ({
   schema_version: 1, series_id: "s1", active: true, blue: team("Alpha"), red: team("Omega"), bo: 5, format: "fearless",
   score_override: null, pool: [], games: [game(summary())], scene: "series", lineup_mode: "auto",
-  slide: { game: null, index: 1, auto: false, interval_ms: 12000 },
+  slide: { game: null, index: 1, auto: false, interval_ms: 12000, since_ms: 0 },
 });
 const render = (sm: GameSummary, tab: Parameters<typeof PostGameSlide>[0]["tab"] = "hero_damage") =>
   renderToStaticMarkup(<PostGameSlide s={series()} game={game(sm)} summary={sm} tab={tab} />);

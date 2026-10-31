@@ -194,8 +194,16 @@ export function slideCount(s: CastSeries): number {
   return shownGame(s)?.summary ? 1 + BREAKDOWN_TABS.length : 1;
 }
 
+/** Crans de rotation écoulés depuis l'ancre serveur (`slide.since_ms`) : 0 hors mode auto. L'overlay OBS et
+ *  l'aperçu calculent la même valeur à partir de la même ancre (horloge serveur), donc montrent la même slide. */
+export function slideTick(s: CastSeries, nowMs: number): number {
+  const { auto, interval_ms, since_ms } = s.slide;
+  if (!auto || interval_ms <= 0) return 0;
+  return Math.max(0, Math.floor((nowMs - since_ms) / interval_ms));
+}
+
 /** Slide affichée : manuel = `slide.index` du serveur modulo le nombre de slides ; auto = départ à
- *  `slide.index`, avancée de `tick` (minuterie de l'overlay, `interval_ms`). */
+ *  `slide.index`, avancée de `tick` crans (`slideTick`). */
 export function slideIndex(s: CastSeries, tick = 0): number {
   const n = slideCount(s);
   return (s.slide.index + (s.slide.auto ? tick : 0)) % n;
@@ -239,18 +247,19 @@ export function stripLayout(n: number): { cols: number; rows: number } {
   return { cols: 5, rows: Math.ceil(n / 5) };
 }
 
-/** Libellé de la slide dans la régie : en auto, l'overlay OBS et l'aperçu font tourner chacun leur
- *  propre minuterie — la régie n'affirme donc pas quelle slide est à l'antenne. */
-export function slideLabel(s: CastSeries): { text: string; title: string } {
+/** Libellé de la slide dans la régie : la slide réellement à l'antenne (même calcul que l'overlay, `tick`
+ *  = `slideTick`), avec le rappel « auto » quand la rotation tourne. */
+export function slideLabel(s: CastSeries, tick = 0): { text: string; title: string } {
   const n = slideCount(s);
+  const i = slideIndex(s, tick);
+  const name = SLIDE_NAMES[i] ?? "";
   if (s.slide.auto && n > 1) {
     return {
-      text: "auto",
-      title: `Rotating ${n} slides every ${Math.round(s.slide.interval_ms / 1000)} s. The preview and the OBS source run independent timers, so they may show different slides; ‹ › set the starting slide.`,
+      text: `${i + 1} / ${n} · auto`,
+      title: `${name}. Rotation every ${Math.round(s.slide.interval_ms / 1000)} s, driven by the server: the preview and the OBS source show the same slide.`,
     };
   }
-  const i = slideIndex(s);
-  return { text: `${i + 1} / ${n}`, title: SLIDE_NAMES[i] ?? "" };
+  return { text: `${i + 1} / ${n}`, title: name };
 }
 export const SLIDE_NAMES = ["Maps", "Hero damage", "Healing", "Siege", "Takedowns"];
 
@@ -320,4 +329,46 @@ export function sceneTransition(
   // nouvelle couche courante : id neuf, strictement supérieur à ceux des couches encore montées
   const id = Math.max(st.cur?.id ?? 0, st.leaving?.id ?? 0) + 1;
   return { cur: shownScene(s, id), leaving: st.cur };
+}
+
+/** Messages en clair pour les codes d'erreur de l'API cast (le code brut reste affiché en repli). */
+const ERROR_TEXT: Record<string, string> = {
+  NotInPool: "This map is not in the series pool.",
+  SeriesInactive: "No series is running. Create one first.",
+  MapAlreadyPlayed: "This map has already been played in this series.",
+  MapNotChosen: "Pick or decide the map before starting the game.",
+  DuplicateDecider: "A decider map is already set.",
+  UnknownMap: "Unknown map.",
+  UnknownGame: "No game with this number.",
+  WinnerAlreadySet: "This game already has a winner.",
+  GameHasResult: "This game already has a result.",
+  NotLastGame: "Only the last game can be changed or removed.",
+  series_changed: "The series changed while the replay was decoding. Load the replay again.",
+  persist_failed: "The server could not save the change. Try again.",
+  bad_index: "Slide number out of range.",
+  series_active: "The series is running: edit teams and score in the rail.",
+};
+
+/** Message affiché au caster pour une erreur serveur : phrase claire si connue, sinon le code brut. */
+export function friendlyError(code: string): string {
+  return ERROR_TEXT[code] ?? replayErrorText(code);
+}
+
+/** Étapes de mise en place d'une série, dans l'ordre (rail de la régie). */
+export function setupSteps(s: CastSeries): { id: "series" | "teams" | "games"; label: string; done: boolean }[] {
+  const teamsReady = [s.blue, s.red].every((t) => t.name.trim() !== "" && t.players.every((p) => p.name.trim() !== ""));
+  return [
+    { id: "series", label: "Series", done: s.active },
+    { id: "teams", label: "Teams & players", done: s.active && teamsReady },
+    { id: "games", label: "Maps & games", done: s.games.length > 0 },
+  ];
+}
+
+/** Ce qu'il reste à faire, en une phrase ; `null` quand tout est fait. */
+export function nextHint(s: CastSeries): string | null {
+  const step = setupSteps(s).find((x) => !x.done);
+  if (!step) return null;
+  if (step.id === "series") return "Next: choose the map pool and Best-of, then press New series.";
+  if (step.id === "teams") return "Next: name both teams and fill in the five players of each (Save teams).";
+  return "Next: pick a map from the pool and press Start game.";
 }

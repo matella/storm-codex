@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { DraftFormat, Side } from "../api";
 import { castLogoUpload, castSeries, castTeams } from "../castApi";
 import type { CastSeries, CastTeam } from "../castApi";
-import { MAPS, reconcileTeam, resyncTeam, seriesScore, togglePool } from "../castState";
+import { MAPS, nextHint, reconcileTeam, resyncTeam, seriesScore, setupSteps, togglePool } from "../castState";
 import { TeamEditor } from "./TeamEditor";
 
 type Run = (fn: () => Promise<unknown>) => Promise<void>;
@@ -67,6 +67,12 @@ export function SeriesRail({ series, run }: { series: CastSeries; run: Run }) {
   return (
     <aside className="cr-rail">
       <div className="cr-k">Series</div>
+      <ol className="cr-steps" aria-label="Setup steps">
+        {setupSteps(series).map((st, i) => (
+          <li key={st.id} className={st.done ? "done" : ""}>{i + 1}. {st.label}{st.done ? " ✓" : ""}</li>
+        ))}
+      </ol>
+      {nextHint(series) && <div className="cr-note cr-hint">{nextHint(series)}</div>}
       <div className="cr-score">
         <span className="tone-blue">{blue.name.trim() || "Blue"}</span><b>{sb}</b>
         <b>{sr}</b><span className="tone-red">{red.name.trim() || "Red"}</span>
@@ -93,6 +99,8 @@ export function SeriesRail({ series, run }: { series: CastSeries; run: Run }) {
       <button type="button" className="ds-btn primary cr-wide" disabled={pool.length === 0} onClick={newSeries}>
         New series ({pool.length} maps)
       </button>
+      {pool.length === 0 && <div className="cr-note">Tick at least one map to create a series.</div>}
+      {unsaved && <div className="cr-note">Unsaved team changes will be sent with the new series.</div>}
 
       <div className="cr-k">Teams &amp; lineups</div>
       {([["blue", blue], ["red", red]] as [Side, CastTeam][]).map(([side, t]) => (

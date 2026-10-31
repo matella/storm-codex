@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CastSeries, CastTeam, GameRecord, PoolMap } from "./castApi";
-import { badgeGameNumber, overlayVisible, canChangeWinner, canRemoveGame, canSetWinner, displayName, effectiveLineupMode, MAPS, mapCardView, reconcileTeam, replayErrorText, seriesScore, shownGame, slideCount, slideIndex, startableMaps, togglePool, sceneFromSearch, INTERVAL_S, intervalSeconds } from "./castState";
+import { badgeGameNumber, overlayVisible, canChangeWinner, canRemoveGame, canSetWinner, displayName, effectiveLineupMode, MAPS, mapCardView, reconcileTeam, replayErrorText, seriesScore, shownGame, slideCount, slideIndex, slideTick, startableMaps, togglePool, sceneFromSearch, INTERVAL_S, intervalSeconds } from "./castState";
 
 const game = (map: string, winner: GameRecord["winner"]): GameRecord => ({
   number: 1, map, winner, takedowns: [0, 0], duration_secs: null, summary: null,
@@ -9,7 +9,7 @@ const team = (name: string): CastTeam => ({ name, logo: null, record: "", player
 const series = (over: Partial<CastSeries>): CastSeries => ({
   schema_version: 1, series_id: "s1", active: true, blue: team(""), red: team(""), bo: 5, format: "fearless",
   score_override: null, pool: [], games: [], scene: "hide", lineup_mode: "auto",
-  slide: { game: null, index: 0, auto: false, interval_ms: 12000 }, ...over,
+  slide: { game: null, index: 0, auto: false, interval_ms: 12000, since_ms: 0 }, ...over,
 });
 
 describe("mapCardView", () => {
@@ -170,25 +170,33 @@ describe("slides (R15: 0 = map strip, 1..4 = breakdown tabs when the shown game 
   it("shown game: pinned if it exists, else the latest; unknown pin = none", () => {
     const games = [withSummary(1, "A"), plain(2, "B")];
     expect(shownGame(series({ games }))?.number).toBe(2);
-    expect(shownGame(series({ games, slide: { game: 1, index: 0, auto: false, interval_ms: 1000 } }))?.number).toBe(1);
-    expect(shownGame(series({ games, slide: { game: 9, index: 0, auto: false, interval_ms: 1000 } }))).toBeNull();
+    expect(shownGame(series({ games, slide: { game: 1, index: 0, auto: false, interval_ms: 1000, since_ms: 0 } }))?.number).toBe(1);
+    expect(shownGame(series({ games, slide: { game: 9, index: 0, auto: false, interval_ms: 1000, since_ms: 0 } }))).toBeNull();
     expect(shownGame(series({}))).toBeNull();
   });
   it("count: 5 with a summary, 1 without (latest game has none, or no game)", () => {
     expect(slideCount(series({ games: [withSummary(1, "A")] }))).toBe(5);
     expect(slideCount(series({ games: [withSummary(1, "A"), plain(2, "B")] }))).toBe(1);
-    expect(slideCount(series({ games: [withSummary(1, "A"), plain(2, "B")], slide: { game: 1, index: 0, auto: false, interval_ms: 1000 } }))).toBe(5);
+    expect(slideCount(series({ games: [withSummary(1, "A"), plain(2, "B")], slide: { game: 1, index: 0, auto: false, interval_ms: 1000, since_ms: 0 } }))).toBe(5);
     expect(slideCount(series({}))).toBe(1);
   });
   it("manual index is the server index modulo the slide count; tick is ignored", () => {
-    const s = (index: number) => series({ games: [withSummary(1, "A")], slide: { game: null, index, auto: false, interval_ms: 1000 } });
+    const s = (index: number) => series({ games: [withSummary(1, "A")], slide: { game: null, index, auto: false, interval_ms: 1000, since_ms: 0 } });
     expect(slideIndex(s(3), 7)).toBe(3);
     expect(slideIndex(s(6))).toBe(1);
-    expect(slideIndex(series({ games: [plain(1, "A")], slide: { game: null, index: 4, auto: false, interval_ms: 1000 } }))).toBe(0);
+    expect(slideIndex(series({ games: [plain(1, "A")], slide: { game: null, index: 4, auto: false, interval_ms: 1000, since_ms: 0 } }))).toBe(0);
   });
   it("auto starts at the server index and cycles every available slide", () => {
-    const s = series({ games: [withSummary(1, "A")], slide: { game: null, index: 3, auto: true, interval_ms: 1000 } });
+    const s = series({ games: [withSummary(1, "A")], slide: { game: null, index: 3, auto: true, interval_ms: 1000, since_ms: 0 } });
     expect([0, 1, 2, 3, 4, 5].map((t) => slideIndex(s, t))).toEqual([3, 4, 0, 1, 2, 3]);
+  });
+  it("slideTick counts intervals since the server anchor; 0 when manual or before the anchor", () => {
+    const base = { game: null, index: 0, interval_ms: 1000, since_ms: 10_000 };
+    const auto = series({ slide: { ...base, auto: true } });
+    expect(slideTick(auto, 10_000)).toBe(0);
+    expect(slideTick(auto, 12_500)).toBe(2);
+    expect(slideTick(auto, 9_000)).toBe(0);
+    expect(slideTick(series({ slide: { ...base, auto: false } }), 12_500)).toBe(0);
   });
 });
 

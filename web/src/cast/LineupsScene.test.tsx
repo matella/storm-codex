@@ -15,7 +15,7 @@ const g = (n: number, winner: GameRecord["winner"], summary: unknown = null): Ga
 const series = (over: Partial<CastSeries> = {}): CastSeries => ({
   schema_version: 1, series_id: "s1", active: true, blue: team("Alpha", five("B")), red: team("Omega", five("R")), bo: 5,
   format: "fearless", score_override: null, pool: [], games: [], scene: "lineups", lineup_mode: "auto",
-  slide: { game: null, index: 0, auto: false, interval_ms: 12000 }, ...over,
+  slide: { game: null, index: 0, auto: false, interval_ms: 12000, since_ms: 0 }, ...over,
 });
 const heroes = (): CastLineup => ({
   blue: [[{ hero: "Valla", games: 9 }, { hero: "Jaina", games: 6 }, { hero: "Diablo", games: 3 }], [], [], [], []],

@@ -351,6 +351,13 @@ pub struct SlideBody {
 /// Index de slide maximal accepté (R25) ; l'overlay le prend modulo le nombre de slides.
 const SLIDE_INDEX_MAX: u8 = 99;
 
+/// Horloge murale du serveur (ms depuis l'epoch) : ancre de la rotation auto du diaporama.
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
+}
+
 /// POST /api/cast/slide — mise à jour partielle du diaporama (champs absents inchangés).
 /// R25 : `index` ≤ 99 sinon `400 bad_index` ; `game` = 0 (désépingler) ou un numéro de partie
 /// existant, sinon `409 UnknownGame` (état inchangé). La garde `SeriesInactive` (409) passe avant la
@@ -379,6 +386,8 @@ pub async fn set_slide(State(s): State<AppState>, Json(b): Json<SlideBody>) -> R
         if let Some(ms) = b.interval_ms {
             c.slide.interval_ms = ms.clamp(*INTERVAL_RANGE.start(), *INTERVAL_RANGE.end());
         }
+        // toute modification repart de la slide montrée à cet instant (rotation auto relancée)
+        c.slide.since_ms = now_ms();
         Ok(())
     })
     .await
@@ -800,6 +809,7 @@ mod tests {
         assert_eq!(v["slide"]["auto"], true);
         assert_eq!(v["slide"]["interval_ms"], 500);
         assert_eq!(v["slide"]["index"], 0);
+        assert!(v["slide"]["since_ms"].as_i64().is_some_and(|t| t > 0), "ancre de rotation posée");
     }
 
     #[tokio::test]
