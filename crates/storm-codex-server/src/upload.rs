@@ -307,6 +307,10 @@ async fn run_parse(
                     if let Err(e) = crate::lobby::store::save(&state.db, st).await {
                         tracing::error!("lobby save: {e}");
                     }
+                    // lectures de rang en attente de cette session (le hash du lobby = id de session)
+                    if let Err(e) = crate::rank::attach_to_match(&state.db, &st.content_hash, match_id).await {
+                        tracing::error!("rank attach: {e}");
+                    }
                     lobby_lie = true;
                 }
             }

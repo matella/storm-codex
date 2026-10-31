@@ -40,12 +40,12 @@ En partie de placement, aucun rang n'est affiché : on ne lit rien et on ne publ
   - Sortie possible à tout moment : `Indisponible` après un délai de 60 s sans lecture stable.
 - Contrôle de cohérence avant publication : **total + requis pour la promotion = 1000** lus sur la page Play. Si la vérification échoue, on publie `indisponible` avec la raison, jamais une valeur estimée.
 - Gardé en mémoire jusqu'à la fin de la partie : les lectures (et les images d'échantillon) ne sont **pas** envoyées tant que le mode de la partie n'est pas connu. Seul le mode Storm League (ou classé) déclenche l'envoi ; les autres modes sont jetés (idée reprise de Heroes Profile).
-- Envoi : `POST /api/rank/result` avec `X-Session` = SHA-256 du `battlelobby` (même identifiant que le feed live), donc storm-codex rattache le résultat à la partie même si l'OCR finit avant le parse.
+- Envoi : `POST /api/rank/result` avec l'en-tête `X-Session` = SHA-256 du `battlelobby` (même identifiant que le feed live), donc storm-codex rattache le résultat à la partie même si l'OCR finit avant le parse.
 - Échantillons (opt-in, désactivé par défaut) : Aegis peut envoyer quelques captures étiquetées pour calibrer les gabarits. Jamais automatique.
 
 ### storm-codex : le serveur
 
-- Nouvelle table `ranked_results` (migration suivante) : `session_id`, `match_id` (renseigné quand la partie est parsée), `rank_name`, `total_points`, `points_delta` (nullable), `promotion_required`, `status` (`validé` | `indisponible`), `reason`, `read_at`. Une lecture par session, la dernière valide l'emporte.
+- Nouvelle table `ranked_results` (migration suivante) : `session_id`, `match_id` (renseigné quand la partie est parsée), `rank_name`, `total_points`, `points_delta` (nullable), `promotion_required`, `status` (`valide` | `indisponible`, sans accent : valeur de la base), `reason`, `read_at`. Une seule lecture par session : la dernière lecture **valide** l'emporte ; une lecture `indisponible` n'écrase jamais une `valide`.
 - Routes :
   - `POST /api/rank/result` (Aegis, token du box) ;
   - `GET /api/rank/recent?player=<toon>&limit=10` : dix dernières parties du compte avec KDA et résultat de rang quand connu.
