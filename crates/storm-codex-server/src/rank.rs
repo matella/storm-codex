@@ -88,6 +88,23 @@ pub fn validate(b: &RankResultBody) -> Result<(), &'static str> {
     }
 }
 
+/// Match de la session, si le lobby courant est déjà lié à un match (`content_hash` = session,
+/// `match_id` posé par `lobby::lier_match` à l'upload). `None` sinon : la lecture reste en attente.
+pub fn linked_match(lobby: Option<(&str, Option<i64>)>, session: &str) -> Option<i64> {
+    lobby.filter(|(hash, _)| *hash == session).and_then(|(_, m)| m)
+}
+
+/// Rattache les lectures en attente de la session au match `match_id` (appelé quand le lobby est lié).
+/// Renvoie le nombre de lignes rattachées ; sans effet sur celles déjà liées.
+pub async fn attach_to_match(db: &sqlx::PgPool, session: &str, match_id: i64) -> Result<u64, sqlx::Error> {
+    let done = sqlx::query("UPDATE ranked_results SET match_id = $2 WHERE session_id = $1 AND match_id IS NULL")
+        .bind(session.to_ascii_lowercase())
+        .bind(match_id)
+        .execute(db)
+        .await?;
+    Ok(done.rows_affected())
+}
+
 /// POST /api/rank/result — corps JSON `RankResultBody`. 201 `{id}` ; 401 sans token valide ;
 /// 422 `{error}` si le corps est incohérent (rien n'est écrit).
 pub async fn post_result(State(s): State<AppState>, headers: HeaderMap, Json(b): Json<RankResultBody>) -> (StatusCode, Json<J>) {
@@ -97,11 +114,16 @@ pub async fn post_result(State(s): State<AppState>, headers: HeaderMap, Json(b):
     if let Err(code) = validate(&b) {
         return (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "error": code })));
     }
+    let session = b.session_id.to_ascii_lowercase();
+    let match_id = {
+        let lobby = s.lobby.read().await;
+        linked_match(lobby.as_ref().map(|l| (l.content_hash.as_str(), l.match_id)), &session)
+    };
     let inserted: Result<i64, sqlx::Error> = sqlx::query_scalar(
-        "INSERT INTO ranked_results (session_id, status, rank_name, total_points, promotion_required, points_delta, reason, token_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id",
+        "INSERT INTO ranked_results (session_id, status, rank_name, total_points, promotion_required, points_delta, reason, token_id, match_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id",
     )
-    .bind(b.session_id.to_ascii_lowercase())
+    .bind(&session)
     .bind(b.status.as_str())
     .bind(&b.rank_name)
     .bind(b.total_points)
@@ -109,6 +131,7 @@ pub async fn post_result(State(s): State<AppState>, headers: HeaderMap, Json(b):
     .bind(b.points_delta)
     .bind(&b.reason)
     .bind(token)
+    .bind(match_id)
     .fetch_one(&s.db)
     .await;
     match inserted {
@@ -168,6 +191,15 @@ mod tests {
         assert_eq!(validate(&b), Ok(()));
         b.points_delta = Some(12);
         assert_eq!(validate(&b), Err("numbers_on_unavailable"));
+    }
+
+    #[test]
+    fn linked_match_only_when_the_lobby_is_this_session() {
+        let me = "c".repeat(64);
+        assert_eq!(linked_match(Some((&me, Some(7))), &me), Some(7));
+        assert_eq!(linked_match(Some((&me, None)), &me), None);
+        assert_eq!(linked_match(Some(("d".repeat(64).as_str(), Some(7))), &me), None);
+        assert_eq!(linked_match(None, &me), None);
     }
 
     #[test]
@@ -263,5 +295,32 @@ mod db_tests {
             .await
             .unwrap();
         assert_eq!(n, 0);
+    }
+
+    #[tokio::test]
+    async fn pending_reading_attaches_once_to_its_match() {
+        let Some(state) = test_state(None).await else { return };
+        let clear = token(&state.db).await;
+        let sid = session();
+        let b = RankResultBody {
+            session_id: sid.clone(),
+            status: Status::Valide,
+            rank_name: Some("Diamond 1".into()),
+            total_points: Some(535),
+            promotion_required: Some(465),
+            points_delta: None,
+            reason: None,
+        };
+        let (st, _) = post_result(State(state.clone()), bearer(&clear), Json(b)).await;
+        assert_eq!(st, StatusCode::CREATED);
+        let match_id = crate::players::testutil::insert_match(&state.db, None, &[]).await;
+        assert_eq!(attach_to_match(&state.db, &sid, match_id).await.unwrap(), 1);
+        assert_eq!(attach_to_match(&state.db, &sid, match_id).await.unwrap(), 0);
+        let got: Option<i64> = sqlx::query_scalar("SELECT match_id FROM ranked_results WHERE session_id = $1")
+            .bind(&sid)
+            .fetch_one(&state.db)
+            .await
+            .unwrap();
+        assert_eq!(got, Some(match_id));
     }
 }

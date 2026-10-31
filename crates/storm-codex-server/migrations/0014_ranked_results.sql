@@ -11,7 +11,9 @@ CREATE TABLE ranked_results (
     points_delta        INT,
     reason              TEXT,
     token_id            BIGINT REFERENCES upload_tokens(id),
+    match_id            BIGINT REFERENCES matches(id) ON DELETE SET NULL,
     read_at             TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX ranked_results_session_idx ON ranked_results (session_id, read_at DESC);
+CREATE INDEX ranked_results_match_idx ON ranked_results (match_id);
