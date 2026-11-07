@@ -36,7 +36,7 @@ Ce fichier est le **contrat de travail** de tout intervenant, humain ou IA. La r
 | Endpoint REST/WS (ajout/modif/suppression) | `05-api.md` (+ `07-evenements.md` si event) | test ou curl vérifié |
 | Migration SQL | `06-modele-donnees.md` | migration appliquée sur le Postgres dev |
 | Forme de la projection (`project.rs`, storm-stats output) | `06-modele-donnees.md` + bump `PARSER_VERSION` + `04-serveur.md` si pipeline | reprocess vérifié idempotent |
-| Logique de stats (`storm-stats/process.rs`) | `03-storm-stats.md` (toute divergence → tolerances.json) | **diff de parité re-vert** (`tools/parity-harness/`) |
+| Logique de stats (`storm-stats/src/process/`) | `03-storm-stats.md` (toute divergence → tolerances.json) | **diff de parité re-vert** (`tools/parity-harness/`) |
 | Décodage (`storm-replay`) | `02-storm-replay.md` | crosscheck heroprotocol + mini-corpus |
 | Page/route/overlay front | `08-frontend.md` | `npm test` + `npm run build` verts + vérif navigateur sur données réelles |
 | Helper pur de `web/src/api.ts` | — (si le contrat UI ne change pas) | test vitest dans `api.test.ts` |
@@ -52,6 +52,7 @@ changement d'API — le commit le dit explicitement (« aucun contrat modifié �
 
 - Critère d'acceptation mesurable vérifié (pas « ça devrait marcher »).
 - Tests verts (`cargo test`, build front) ; parité/bench si concernés.
+- `cargo fmt --all` appliqué (la CI échoue sur `cargo fmt --check`).
 - `docs/spec/` à jour ; `docs/STATUS.md` à jour en fin de session.
 - Poussé sur `main` ; si l'utilisateur le demande, déployé sur le box **et vérifié par HTTP**
   (hash du bundle changé, `/api/health` 200).
@@ -62,4 +63,7 @@ changement d'API — le commit le dit explicitement (« aucun contrat modifié �
 - Casser un budget perf ou introduire une divergence de parité non documentée.
 - `cargo publish`, création de repos publics, bascule/décommission de services du box.
 - Toucher aux services voisins du box (Jarvis, HotsPatchNotes, overlay Node) hors lecture.
-- Modifier une migration déjà appliquée (toujours une nouvelle migration).
+- Modifier une migration déjà appliquée (toujours une nouvelle migration). La CI le refuse
+  (`scripts/check-migrations.sh`). Si une base de **dev** a appliqué une version intermédiaire
+  d'une migration encore en PR, la réparer (schéma + somme de contrôle dans `_sqlx_migrations`)
+  plutôt que de réécrire l'historique.

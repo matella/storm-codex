@@ -62,10 +62,18 @@ impl Config {
             redis_url: std::env::var("REDIS_URL").ok().filter(|s| !s.is_empty()),
             jarvis_channel: std::env::var("JARVIS_CHANNEL")
                 .unwrap_or_else(|_| "jarvis:events".into()),
-            azure_push_url: std::env::var("AZURE_PUSH_URL").ok().filter(|s| !s.is_empty()),
-            azure_push_token: std::env::var("AZURE_PUSH_TOKEN").ok().filter(|s| !s.is_empty()),
-            hotspatchnotes_url: std::env::var("HOTSPATCHNOTES_URL").ok().filter(|s| !s.is_empty()),
-            referential_url: std::env::var("REFERENTIAL_URL").ok().filter(|s| !s.is_empty()),
+            azure_push_url: std::env::var("AZURE_PUSH_URL")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            azure_push_token: std::env::var("AZURE_PUSH_TOKEN")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            hotspatchnotes_url: std::env::var("HOTSPATCHNOTES_URL")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            referential_url: std::env::var("REFERENTIAL_URL")
+                .ok()
+                .filter(|s| !s.is_empty()),
             images_dir: PathBuf::from(
                 std::env::var("IMAGES_DIR").unwrap_or_else(|_| "./.images".into()),
             ),
@@ -73,7 +81,9 @@ impl Config {
                 std::env::var("MINIMAPS_BUNDLE_DIR").unwrap_or_else(|_| "assets/minimaps".into()),
             ),
             orpheus_url: std::env::var("ORPHEUS_URL").ok().filter(|s| !s.is_empty()),
-            patch_webhook_url: std::env::var("PATCH_WEBHOOK_URL").ok().filter(|s| !s.is_empty()),
+            patch_webhook_url: std::env::var("PATCH_WEBHOOK_URL")
+                .ok()
+                .filter(|s| !s.is_empty()),
         })
     }
 }

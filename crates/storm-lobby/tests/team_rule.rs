@@ -27,7 +27,8 @@ fn dix_joueurs_donnent_deux_equipes_de_cinq() {
     for (i, p) in lobby.players.iter().enumerate() {
         let attendu = if i < 5 { Some(0) } else { Some(1) };
         assert_eq!(
-            p.team, attendu,
+            p.team,
+            attendu,
             "joueur {i} ({}) : équipe attendue {attendu:?}, obtenue {:?}",
             p.battletag(),
             p.team

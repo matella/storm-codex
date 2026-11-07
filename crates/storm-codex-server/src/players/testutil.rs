@@ -10,8 +10,14 @@ pub async fn test_pool() -> Option<PgPool> {
         eprintln!("DATABASE_URL absent → test d'intégration joueurs ignoré");
         return None;
     };
-    let db = sqlx::postgres::PgPoolOptions::new().connect(&url).await.expect("connexion");
-    sqlx::migrate!("./migrations").run(&db).await.expect("migrations");
+    let db = sqlx::postgres::PgPoolOptions::new()
+        .connect(&url)
+        .await
+        .expect("connexion");
+    sqlx::migrate!("./migrations")
+        .run(&db)
+        .await
+        .expect("migrations");
     Some(db)
 }
 
@@ -28,7 +34,13 @@ pub struct Row<'a> {
 }
 
 pub fn row<'a>(toon: &'a str, name: &'a str, team: i32, hero: &'a str) -> Row<'a> {
-    Row { toon, name, team, hero, talents: serde_json::json!({}) }
+    Row {
+        toon,
+        name,
+        team,
+        hero,
+        talents: serde_json::json!({}),
+    }
 }
 
 /// Insère une partie et ses joueurs (+ l'UPSERT `players` comme `project.rs`). Renvoie `matches.id`.
@@ -120,11 +132,21 @@ async fn purge_fixtures() {
 
 /// `n` parties où `me` (équipe 0) joue Muradin avec `mates` (équipe 0) contre 4 adversaires
 /// fixes, à partir de `start` (une partie par jour, 20 h UTC).
-pub async fn games(db: &PgPool, me: &str, mates: &[&str], opp: &[String], n: i64, start: DateTime<Utc>) -> Vec<i64> {
+pub async fn games(
+    db: &PgPool,
+    me: &str,
+    mates: &[&str],
+    opp: &[String],
+    n: i64,
+    start: DateTime<Utc>,
+) -> Vec<i64> {
     let mut ids = Vec::new();
     for i in 0..n {
         let when = start + Duration::days(i);
-        let mut rows = vec![Row { talents: serde_json::json!({"Tier1Choice":"A","Tier2Choice":"B"}), ..row(me, "N", 0, "Muradin") }];
+        let mut rows = vec![Row {
+            talents: serde_json::json!({"Tier1Choice":"A","Tier2Choice":"B"}),
+            ..row(me, "N", 0, "Muradin")
+        }];
         rows.extend(mates.iter().map(|m| row(m, "Mate", 0, "Kerrigan")));
         rows.extend(opp.iter().map(|o| row(o, "Opp", 1, "Diablo")));
         ids.push(insert_match(db, Some(when), &rows).await);
@@ -152,6 +174,11 @@ pub async fn smurf_world(db: &PgPool) -> World {
     games(db, &target, &fr, &opp, 18, t0).await;
     // le smurf joue les jours « impairs » (décalé d'un jour entier + 1 h : pas de chevauchement)
     games(db, &smurf, &fr, &opp, 18, t0 + Duration::hours(24 * 100)).await;
-    World { db: db.clone(), target, smurf, friends, opp }
+    World {
+        db: db.clone(),
+        target,
+        smurf,
+        friends,
+        opp,
+    }
 }
-

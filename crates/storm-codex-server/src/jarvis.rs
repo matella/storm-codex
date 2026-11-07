@@ -68,7 +68,11 @@ async fn try_publish(redis_url: &str, channel: &str, event: &J) -> redis::RedisR
     let client = redis::Client::open(redis_url)?;
     let mut conn = client.get_multiplexed_async_connection().await?;
     let payload = event.to_string();
-    redis::cmd("PUBLISH").arg(channel).arg(payload).query_async::<()>(&mut conn).await?;
+    redis::cmd("PUBLISH")
+        .arg(channel)
+        .arg(payload)
+        .query_async::<()>(&mut conn)
+        .await?;
     Ok(())
 }
 
@@ -92,7 +96,11 @@ mod tests {
                                "HeroDamage": 15000.0, "Healing": 30000.0} },
         }))
         .unwrap();
-        storm_stats::Output { status: 1, match_: Some(match_), players: Some(players) }
+        storm_stats::Output {
+            status: 1,
+            match_: Some(match_),
+            players: Some(players),
+        }
     }
 
     /// Invariants spine (règle dure n° 6) : schema_version, type `entity.verb` au passé,

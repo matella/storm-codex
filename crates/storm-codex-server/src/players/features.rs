@@ -7,9 +7,20 @@ use std::hash::Hash;
 
 /// Cosinus de deux distributions de comptes (héros, heures…), 0..1. 0 si l'une est vide.
 pub fn cosine<K: Hash + Eq>(a: &HashMap<K, u32>, b: &HashMap<K, u32>) -> f32 {
-    let dot: f64 = a.iter().filter_map(|(k, x)| b.get(k).map(|y| f64::from(*x) * f64::from(*y))).sum();
-    let na: f64 = a.values().map(|x| f64::from(*x).powi(2)).sum::<f64>().sqrt();
-    let nb: f64 = b.values().map(|x| f64::from(*x).powi(2)).sum::<f64>().sqrt();
+    let dot: f64 = a
+        .iter()
+        .filter_map(|(k, x)| b.get(k).map(|y| f64::from(*x) * f64::from(*y)))
+        .sum();
+    let na: f64 = a
+        .values()
+        .map(|x| f64::from(*x).powi(2))
+        .sum::<f64>()
+        .sqrt();
+    let nb: f64 = b
+        .values()
+        .map(|x| f64::from(*x).powi(2))
+        .sum::<f64>()
+        .sqrt();
     if na == 0.0 || nb == 0.0 {
         0.0
     } else {
@@ -47,12 +58,20 @@ type HeroTalents = (u32, BTreeMap<String, String>);
 fn modal_talents(games: &[(String, J)]) -> HashMap<&str, HeroTalents> {
     let mut counts: HashMap<&str, (u32, TierCounts)> = HashMap::new();
     for (hero, talents) in games {
-        let Some(obj) = talents.as_object() else { continue };
+        let Some(obj) = talents.as_object() else {
+            continue;
+        };
         let e = counts.entry(hero.as_str()).or_default();
         e.0 += 1;
         for (tier, choice) in obj {
-            if let Some(c) = choice.as_str().filter(|_| tier.starts_with("Tier") && tier.ends_with("Choice")) {
-                *e.1.entry(tier.clone()).or_default().entry(c.to_owned()).or_default() += 1;
+            if let Some(c) = choice
+                .as_str()
+                .filter(|_| tier.starts_with("Tier") && tier.ends_with("Choice"))
+            {
+                *e.1.entry(tier.clone())
+                    .or_default()
+                    .entry(c.to_owned())
+                    .or_default() += 1;
             }
         }
     }
@@ -63,7 +82,9 @@ fn modal_talents(games: &[(String, J)]) -> HashMap<&str, HeroTalents> {
                 .into_iter()
                 .filter_map(|(tier, cs)| {
                     // égalité → choix lexicographiquement le plus petit (déterministe)
-                    cs.into_iter().max_by(|x, y| x.1.cmp(&y.1).then(y.0.cmp(&x.0))).map(|(c, _)| (tier, c))
+                    cs.into_iter()
+                        .max_by(|x, y| x.1.cmp(&y.1).then(y.0.cmp(&x.0)))
+                        .map(|(c, _)| (tier, c))
                 })
                 .collect();
             (h, (n, modal))
@@ -78,7 +99,9 @@ pub fn talent_agreement(a: &[(String, J)], b: &[(String, J)]) -> Option<f32> {
     let (ma, mb) = (modal_talents(a), modal_talents(b));
     let (mut same, mut total) = (0u32, 0u32);
     for (hero, (na, ta)) in &ma {
-        let Some((nb, tb)) = mb.get(hero) else { continue };
+        let Some((nb, tb)) = mb.get(hero) else {
+            continue;
+        };
         if *na < MIN_HERO_GAMES || *nb < MIN_HERO_GAMES {
             continue;
         }
@@ -116,14 +139,23 @@ mod tests {
     fn chevauchement_detecte_meme_decale_ou_inclus() {
         assert!(intervals_overlap(&[(0, 100)], &[(50, 150)]));
         assert!(intervals_overlap(&[(0, 1000)], &[(10, 20)])); // inclus
-        assert!(intervals_overlap(&[(0, 10), (500, 600)], &[(20, 30), (550, 560)])); // 2e paire
-        assert!(!intervals_overlap(&[(0, 10), (100, 110)], &[(20, 30), (200, 210)]));
+        assert!(intervals_overlap(
+            &[(0, 10), (500, 600)],
+            &[(20, 30), (550, 560)]
+        )); // 2e paire
+        assert!(!intervals_overlap(
+            &[(0, 10), (100, 110)],
+            &[(20, 30), (200, 210)]
+        ));
         assert!(!intervals_overlap(&[], &[(0, 1)]));
         assert!(intervals_overlap(&[(5, 5)], &[(5, 5)])); // même instant (ex. même partie, durée inconnue)
     }
 
     fn g(hero: &str, t1: &str, t2: &str) -> (String, J) {
-        (hero.to_owned(), json!({ "Tier1Choice": t1, "Tier2Choice": t2 }))
+        (
+            hero.to_owned(),
+            json!({ "Tier1Choice": t1, "Tier2Choice": t2 }),
+        )
     }
 
     #[test]
@@ -137,7 +169,13 @@ mod tests {
         let few: Vec<_> = (0..2).map(|_| g("Muradin", "A", "B")).collect();
         assert_eq!(talent_agreement(&a, &few), None);
         // aucun héros en commun
-        assert_eq!(talent_agreement(&a, &(0..3).map(|_| g("Diablo", "A", "B")).collect::<Vec<_>>()), None);
+        assert_eq!(
+            talent_agreement(
+                &a,
+                &(0..3).map(|_| g("Diablo", "A", "B")).collect::<Vec<_>>()
+            ),
+            None
+        );
     }
 
     #[test]

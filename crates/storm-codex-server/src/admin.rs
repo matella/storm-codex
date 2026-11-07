@@ -71,11 +71,27 @@ pub async fn revoke_token(
     if !is_admin(&headers, &s) {
         return forbidden();
     }
-    let _ = sqlx::query("UPDATE upload_tokens SET revoked_at = now() WHERE id = $1")
-        .bind(id)
-        .execute(&s.db)
-        .await;
-    (StatusCode::OK, Json(serde_json::json!({"revoked": id})))
+    // `COALESCE` : révoquer deux fois garde la date de la première révocation (idempotent).
+    match sqlx::query(
+        "UPDATE upload_tokens SET revoked_at = COALESCE(revoked_at, now()) WHERE id = $1",
+    )
+    .bind(id)
+    .execute(&s.db)
+    .await
+    {
+        Ok(r) if r.rows_affected() == 0 => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "token inconnu"})),
+        ),
+        Ok(_) => (StatusCode::OK, Json(serde_json::json!({"revoked": id}))),
+        Err(e) => {
+            tracing::error!("revoke_token {id} : {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "db"})),
+            )
+        }
+    }
 }
 
 /// GET /api/admin/uploads — santé : compte par statut + échecs par classe + derniers échecs.
@@ -112,7 +128,7 @@ pub async fn reprocess(State(s): State<AppState>, headers: HeaderMap) -> (Status
         return forbidden();
     }
     // uploads à reprendre : parsés avec une version de parser périmée, ou échecs re-tentables
-    let targets: Vec<(i64, String)> = sqlx::query_as(
+    let targets: Vec<(i64, String)> = match sqlx::query_as(
         "SELECT id, archived_path FROM uploads
          WHERE archived_path IS NOT NULL
            AND (status = 'parse_failed' OR (status = 'parsed' AND parser_version < $1))",
@@ -120,7 +136,16 @@ pub async fn reprocess(State(s): State<AppState>, headers: HeaderMap) -> (Status
     .bind(PARSER_VERSION)
     .fetch_all(&s.db)
     .await
-    .unwrap_or_default();
+    {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::error!("reprocess : sélection impossible : {e}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "db"})),
+            );
+        }
+    };
 
     let queued = targets.len();
     let state = s.clone();
@@ -146,22 +171,31 @@ async fn reprocess_one(state: &AppState, upload_id: i64, path: &str) {
     let out =
         match tokio::task::spawn_blocking(move || storm_stats::process_replay(&p, &fname)).await {
             Ok(out) => out,
-            Err(_) => return,
+            Err(e) => {
+                tracing::error!("reprocess upload {upload_id} : worker en échec : {e}");
+                return;
+            }
         };
     if out.status != 1 {
         return; // l'échec reste classé tel quel
     }
     if let Some(fp) = crate::upload::game_fingerprint(&out) {
-        if let Ok(match_id) = project::project_match(&state.db, &fp, PARSER_VERSION, &out).await {
-            let _ = sqlx::query(
-                "UPDATE uploads SET status='parsed', parser_version=$2, match_id=$3,
-                 error_class=NULL, error_msg=NULL, parsed_at=now() WHERE id=$1",
-            )
-            .bind(upload_id)
-            .bind(PARSER_VERSION)
-            .bind(match_id)
-            .execute(&state.db)
-            .await;
+        match project::project_match(&state.db, &fp, PARSER_VERSION, &out).await {
+            Ok(match_id) => {
+                if let Err(e) = sqlx::query(
+                    "UPDATE uploads SET status='parsed', parser_version=$2, match_id=$3,
+                     error_class=NULL, error_msg=NULL, parsed_at=now() WHERE id=$1",
+                )
+                .bind(upload_id)
+                .bind(PARSER_VERSION)
+                .bind(match_id)
+                .execute(&state.db)
+                .await
+                {
+                    tracing::error!("reprocess upload {upload_id} : statut non écrit : {e}");
+                }
+            }
+            Err(e) => tracing::error!("reprocess upload {upload_id} : projection : {e}"),
         }
     }
 }

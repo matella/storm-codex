@@ -81,29 +81,49 @@ pub fn score(f: &PairFeatures) -> Option<Suggestion> {
     if f.same_token_owner {
         points += TOKEN_POINTS;
         strong_or_moderate = true;
-        reasons.push(Reason { kind: "token", text: "Both accounts own the same upload token (same machine)".into() });
+        reasons.push(Reason {
+            kind: "token",
+            text: "Both accounts own the same upload token (same machine)".into(),
+        });
     }
     if f.shared_teammates >= TEAMMATES_MIN {
-        let p = (7.0 * f.shared_teammates.min(5) as f32 + (f.shared_teammate_games / 3).min(10) as f32).min(TEAMMATES_MAX);
+        let p = (7.0 * f.shared_teammates.min(5) as f32
+            + (f.shared_teammate_games / 3).min(10) as f32)
+            .min(TEAMMATES_MAX);
         points += p;
         strong_or_moderate = true;
         reasons.push(Reason {
             kind: "teammates",
-            text: format!("{} recurring teammates in common ({} games together)", f.shared_teammates, f.shared_teammate_games),
+            text: format!(
+                "{} recurring teammates in common ({} games together)",
+                f.shared_teammates, f.shared_teammate_games
+            ),
         });
     }
     if let Some(a) = f.talent_agreement.filter(|a| *a >= TALENTS_MIN) {
         points += TALENTS_MAX * a.min(1.0);
         strong_or_moderate = true;
-        reasons.push(Reason { kind: "talents", text: format!("Same talent choices on shared heroes ({}% agreement)", pct(a)) });
+        reasons.push(Reason {
+            kind: "talents",
+            text: format!(
+                "Same talent choices on shared heroes ({}% agreement)",
+                pct(a)
+            ),
+        });
     }
     if f.hero_cosine >= HEROES_MIN {
         points += ramp(f.hero_cosine, HEROES_MIN, HEROES_MAX);
-        reasons.push(Reason { kind: "heroes", text: format!("Similar hero pool ({}% overlap)", pct(f.hero_cosine)) });
+        reasons.push(Reason {
+            kind: "heroes",
+            text: format!("Similar hero pool ({}% overlap)", pct(f.hero_cosine)),
+        });
     }
     if f.hour_cosine >= HOURS_MIN {
         points += ramp(f.hour_cosine, HOURS_MIN, HOURS_MAX);
-        reasons.push(Reason { kind: "hours", text: format!("Plays at similar hours ({}% match)", pct(f.hour_cosine)) });
+        reasons.push(Reason {
+            kind: "hours",
+            text: format!("Plays at similar hours ({}% match)", pct(f.hour_cosine)),
+        });
     }
 
     let raw = points.round().clamp(0.0, 100.0) as u8;
@@ -115,8 +135,16 @@ pub fn score(f: &PairFeatures) -> Option<Suggestion> {
         && strong_or_moderate
         && f.games_a.min(f.games_b) >= MIN_GAMES_FOR_HIGH;
     // Un score affiché sous le seuil HAUT ne peut pas être étiqueté HAUT, et réciproquement.
-    let (level, score) = if high { (Level::High, raw) } else { (Level::Low, raw.min(HIGH_MIN_SCORE - 1)) };
-    Some(Suggestion { level, score, reasons })
+    let (level, score) = if high {
+        (Level::High, raw)
+    } else {
+        (Level::Low, raw.min(HIGH_MIN_SCORE - 1))
+    };
+    Some(Suggestion {
+        level,
+        score,
+        reasons,
+    })
 }
 
 #[cfg(test)]
@@ -125,7 +153,11 @@ mod tests {
     use super::*;
 
     fn base() -> PairFeatures {
-        PairFeatures { games_a: 100, games_b: 100, ..Default::default() }
+        PairFeatures {
+            games_a: 100,
+            games_b: 100,
+            ..Default::default()
+        }
     }
     fn level(f: &PairFeatures) -> Option<Level> {
         score(f).map(|s| s.level)
@@ -148,10 +180,17 @@ mod tests {
 
     #[test]
     fn heroes_seuls_jamais_haut() {
-        let f = PairFeatures { hero_cosine: 0.99, ..base() };
+        let f = PairFeatures {
+            hero_cosine: 0.99,
+            ..base()
+        };
         assert_ne!(level(&f), Some(Level::High));
         // héros + heures (deux signaux faibles) : jamais HAUT non plus, il manque un signal moyen/fort
-        let f = PairFeatures { hero_cosine: 1.0, hour_cosine: 1.0, ..base() };
+        let f = PairFeatures {
+            hero_cosine: 1.0,
+            hour_cosine: 1.0,
+            ..base()
+        };
         assert_eq!(level(&f), Some(Level::Low));
     }
 
@@ -167,12 +206,19 @@ mod tests {
         };
         let s = score(&f).unwrap();
         assert_eq!(s.level, Level::Low);
-        assert!(s.score < HIGH_MIN_SCORE, "le score affiché ne doit pas dépasser le seuil HAUT");
+        assert!(
+            s.score < HIGH_MIN_SCORE,
+            "le score affiché ne doit pas dépasser le seuil HAUT"
+        );
     }
 
     #[test]
     fn token_plus_heures_donne_haut() {
-        let f = PairFeatures { same_token_owner: true, hour_cosine: 0.95, ..base() };
+        let f = PairFeatures {
+            same_token_owner: true,
+            hour_cosine: 0.95,
+            ..base()
+        };
         let s = score(&f).unwrap();
         assert_eq!(s.level, Level::High);
         assert!(s.reasons.iter().any(|r| r.kind == "token"));
@@ -181,7 +227,10 @@ mod tests {
 
     #[test]
     fn token_seul_nest_pas_haut() {
-        let f = PairFeatures { same_token_owner: true, ..base() };
+        let f = PairFeatures {
+            same_token_owner: true,
+            ..base()
+        };
         assert_ne!(level(&f), Some(Level::High));
     }
 
@@ -205,7 +254,11 @@ mod tests {
     fn deux_comptes_ne_partageant_que_loperateur_aucun_lien() {
         // L'opérateur est exclu en amont : 0 co-équipier commun, pas de token commun ; seul un
         // pool de héros moyen subsiste.
-        let f = PairFeatures { hero_cosine: 0.5, hour_cosine: 0.5, ..base() };
+        let f = PairFeatures {
+            hero_cosine: 0.5,
+            hour_cosine: 0.5,
+            ..base()
+        };
         assert_eq!(score(&f), None);
     }
 
@@ -233,14 +286,31 @@ mod tests {
         let mut prev = [0u8; 4];
         for x in steps {
             let probes = [
-                PairFeatures { hero_cosine: x, ..base() },
-                PairFeatures { hour_cosine: x, ..base() },
-                PairFeatures { talent_agreement: Some(x), ..base() },
-                PairFeatures { shared_teammates: (x * 6.0) as u32, shared_teammate_games: (x * 30.0) as u32, ..base() },
+                PairFeatures {
+                    hero_cosine: x,
+                    ..base()
+                },
+                PairFeatures {
+                    hour_cosine: x,
+                    ..base()
+                },
+                PairFeatures {
+                    talent_agreement: Some(x),
+                    ..base()
+                },
+                PairFeatures {
+                    shared_teammates: (x * 6.0) as u32,
+                    shared_teammate_games: (x * 30.0) as u32,
+                    ..base()
+                },
             ];
             for (i, p) in probes.iter().enumerate() {
                 let s = sc(p);
-                assert!(s >= prev[i], "signal {i} : le score baisse ({} → {s}) à x={x}", prev[i]);
+                assert!(
+                    s >= prev[i],
+                    "signal {i} : le score baisse ({} → {s}) à x={x}",
+                    prev[i]
+                );
                 prev[i] = s;
             }
         }

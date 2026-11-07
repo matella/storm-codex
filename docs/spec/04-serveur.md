@@ -24,6 +24,27 @@ POST /api/upload(-raw)  [Bearer token nominatif]
 - **Corps limité à 64 Mo** (`DefaultBodyLimit`) : le défaut axum (2 Mo) rejetait en 413 muet les
   replays longs (> 2 Mo) et faisait boucler l'uploader.
 - `X-Filename` est **percent-décodé** (apostrophes de cartes : Blackheart's Bay).
+- **Archive écrite de façon atomique** (fichier temporaire puis renommage) : un arrêt en pleine
+  écriture ne laisse jamais un replay tronqué comme source de vérité.
+- **Reprise au démarrage** (`upload::resume_pending`) : un `202 accepted` met le parse en file
+  d'attente en mémoire ; les uploads restés `pending` (redémarrage avant la fin du parse) sont
+  remis en file au démarrage depuis leur archive. Le client ne renvoie jamais un fichier accepté,
+  sans cette reprise ils restaient bloqués.
+- **Écritures de statut journalisées** : un échec d'écriture de `uploads.status` (parsed ou
+  parse_failed) est logué en `error`, jamais avalé.
+
+## Cycle de vie du processus (`main.rs`)
+
+- **Arrêt propre** : Ctrl-C ou SIGTERM (`docker stop`) → le serveur n'accepte plus de connexions
+  et laisse finir les requêtes en cours (`with_graceful_shutdown`). Mesuré dans le conteneur :
+  arrêt en ~0,5 s, code de sortie 0 (avant : SIGTERM ignoré, SIGKILL au bout de 10 s). Les parses
+  non terminés sont repris au démarrage suivant (ci-dessus).
+- **Compression** : `CompressionLayer` (gzip / brotli selon `Accept-Encoding`) sur toutes les
+  réponses ; le prédicat par défaut saute les petites réponses, les images et les flux.
+- **Cache HTTP du SPA** : `/assets/*` (noms fingerprintés par Vite) en
+  `Cache-Control: public, max-age=31536000, immutable` — un asset absent répond 404, jamais
+  `index.html` ; `index.html` et les routes du SPA en `no-cache`.
+- **Garde des écritures cast/draft** : middleware `auth::guard_writes` (voir 05-api.md).
 
 ## Correction du héros joué (`project.rs`)
 
@@ -68,7 +89,9 @@ faits sous verrou de ligne du rapport (`SELECT … FOR UPDATE`) à chaque mutati
 
 ## Référentiel (`dim.rs`) — deux sources mutuellement exclusives
 
-Tâche de fond au démarrage puis toutes les 24 h, **best-effort** :
+Tâche de fond au démarrage puis toutes les 24 h, **best-effort** ; tant que `dim_heroes` est
+vide (source injoignable au démarrage, ex. box éteint), nouvel essai toutes les **10 min**.
+Les écritures en échec sont journalisées (`warn`) :
 - `REFERENTIAL_URL` (**prioritaire**) : snapshot publié `referential.tar.gz` → bundle autonome
   sans HotsPatchNotes live (`dim::ingest_snapshot`).
 - `HOTSPATCHNOTES_URL` : API live (setup mainteneur) → `sync_heroes`, `sync_talents`,

@@ -3,6 +3,16 @@
 Crate : `crates/storm-stats` (bibliothèque publique, MIT). Port Rust **1:1** de
 [hots-parser](https://github.com/ebshimizu/hots-parser) (`parser.js`, 3 360 lignes), bugs compris.
 
+## Organisation du code (`src/process/`)
+
+`mod.rs` (`process_replay`, chargement, phases principales) et six sous-modules, découpés du
+fichier unique `process.rs` (4 700 lignes) le 2026-11-07 sans changement de logique : `js.rs`
+(sémantique JavaScript : dates, nombres, `for…in`, accès JSON), `teams.rs` (agrégats d'équipe,
+présence des héros), `messages.rs` (chat, pings, BM, taunts), `draft.rs` (bans, picks, score
+screen), `objectives.rs` (objectifs de carte), `events.rs` (XP, morts, camps, niveaux, unités,
+talents). Preuve du découpage : sorties de `storm-stats-dump` **identiques octet pour octet**
+avant/après sur les 114 replays du corpus local, et diff de parité re-vert (114/114).
+
 ## Contrat
 
 - **Entrée** : chemin d'un `.StormReplay` + nom de fichier (utilisé par certaines heuristiques).
@@ -19,7 +29,10 @@ Crate : `crates/storm-stats` (bibliothèque publique, MIT). Port Rust **1:1** de
 **Prouvée, pas déclarée.** Le harnais `tools/parity-harness/` (`dump.js` côté Node, `diff.py`,
 `tolerances.json`) diffe champ par champ contre hots-parser 7.55.7 sur le corpus de référence :
 **114/114 verts** (79 parse complet identique, 25 extension ARAM, 10 rejets brawls identiques).
-Toute modification de `process.rs` re-passe le diff avant merge.
+Toute modification de `src/process/` re-passe le diff avant merge. Lancer `diff.py` avec le
+**chemin absolu** du corpus si les références `.ref/` ont été produites ainsi (sinon seul
+`match.filename` diffère). Dernier passage : 2026-11-07, 114/114 (`diff.py` trouve le binaire
+`storm-stats-dump` sous Linux comme sous Windows).
 
 ## Divergences assumées (les SEULES — toute nouvelle divergence se documente ici + tolerances.json)
 

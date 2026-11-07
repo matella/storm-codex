@@ -1,0 +1,8 @@
+# Configuration de `cargo audit` (job `audit` de la CI).
+[advisories]
+ignore = [
+  # rsa (Marvin Attack) : aucun correctif publié. Le crate n'est que dans Cargo.lock (tiré par
+  # sqlx-mysql) et n'est compilé sur aucune cible : `cargo tree -i rsa --target all` est vide.
+  # À retirer dès qu'un correctif existe ou que le crate sort du lockfile.
+  "RUSTSEC-2023-0071",
+]

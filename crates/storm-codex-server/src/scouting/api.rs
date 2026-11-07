@@ -52,12 +52,11 @@ const STATUS_SQL: &str = "CASE
 
 /// Rôle par héros (slug du nom → rôle moderne `expandedRole`, repli sur le rôle historique).
 async fn load_roles(db: &sqlx::PgPool) -> HashMap<String, String> {
-    let rows: Vec<(String, String, Option<String>)> = sqlx::query_as(
-        "SELECT id, name, COALESCE(data->>'expandedRole', role) FROM dim_heroes",
-    )
-    .fetch_all(db)
-    .await
-    .unwrap_or_default();
+    let rows: Vec<(String, String, Option<String>)> =
+        sqlx::query_as("SELECT id, name, COALESCE(data->>'expandedRole', role) FROM dim_heroes")
+            .fetch_all(db)
+            .await
+            .unwrap_or_default();
     let mut m = HashMap::new();
     for (id, name, role) in rows {
         if let Some(role) = role {
@@ -70,7 +69,11 @@ async fn load_roles(db: &sqlx::PgPool) -> HashMap<String, String> {
 
 fn strings(v: &J) -> Vec<String> {
     v.as_array()
-        .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(str::to_string))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -107,7 +110,10 @@ pub async fn recompute(db: &sqlx::PgPool, report_id: i64) -> Result<(), sqlx::Er
     let mut sides: Vec<Option<u8>> = Vec::with_capacity(games.len());
     for (gid, g, team, src) in &games {
         let (new_team, new_src) = if src.as_deref() == Some(Source::Manual.as_str()) {
-            (team.and_then(|t| u8::try_from(t).ok()), Some(Source::Manual))
+            (
+                team.and_then(|t| u8::try_from(t).ok()),
+                Some(Source::Manual),
+            )
         } else {
             match side::detect(g, &effective, &anchors) {
                 Some((t, s)) => (Some(t), Some(s)),
@@ -117,12 +123,14 @@ pub async fn recompute(db: &sqlx::PgPool, report_id: i64) -> Result<(), sqlx::Er
         let new_team_i = new_team.map(i32::from);
         let new_src_s = new_src.map(|s| s.as_str().to_string());
         if new_team_i != *team || new_src_s != *src {
-            sqlx::query("UPDATE scouting_games SET target_team = $2, target_source = $3 WHERE id = $1")
-                .bind(gid)
-                .bind(new_team_i)
-                .bind(new_src_s)
-                .execute(&mut *tx)
-                .await?;
+            sqlx::query(
+                "UPDATE scouting_games SET target_team = $2, target_source = $3 WHERE id = $1",
+            )
+            .bind(gid)
+            .bind(new_team_i)
+            .bind(new_src_s)
+            .execute(&mut *tx)
+            .await?;
         }
         sides.push(new_team);
     }
@@ -130,7 +138,13 @@ pub async fn recompute(db: &sqlx::PgPool, report_id: i64) -> Result<(), sqlx::Er
     let inputs: Vec<GameInput> = games
         .iter()
         .zip(&sides)
-        .filter_map(|((gid, g, _, _), s)| s.map(|side| GameInput { gid: *gid, summary: g, side }))
+        .filter_map(|((gid, g, _, _), s)| {
+            s.map(|side| GameInput {
+                gid: *gid,
+                summary: g,
+                side,
+            })
+        })
         .collect();
     let excluded = (games.len() - inputs.len()) as u32;
     let computed = facts::compute(&inputs, &effective, excluded, &roles);
@@ -183,13 +197,21 @@ pub struct CreateBody {
 }
 
 /// POST /api/scouting — crée un rapport vide.
-pub async fn create(State(s): State<AppState>, headers: HeaderMap, Json(b): Json<CreateBody>) -> Result<(StatusCode, Json<J>), Err> {
+pub async fn create(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Json(b): Json<CreateBody>,
+) -> Result<(StatusCode, Json<J>), Err> {
     guard(&headers, &s)?;
     let title = b.title.trim();
     if title.is_empty() {
         return Err(err(StatusCode::BAD_REQUEST, "title requis"));
     }
-    let target = b.target_name.as_deref().map(str::trim).filter(|t| !t.is_empty());
+    let target = b
+        .target_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|t| !t.is_empty());
     let id: i64 = sqlx::query_scalar(
         "INSERT INTO scouting_reports (title, target_name) VALUES ($1, $2) RETURNING id",
     )
@@ -234,7 +256,9 @@ pub async fn get(State(s): State<AppState>, Path(id): Path<i64>) -> Resp {
     .fetch_optional(&s.db)
     .await
     .map_err(db_err)?;
-    let Some(mut v) = v else { return Err(not_found()) };
+    let Some(mut v) = v else {
+        return Err(not_found());
+    };
     if let Ok(a) = serde_json::from_value::<analysis::Analysis>(v["analysis"].clone()) {
         if !v["analysis"].is_null() {
             let (resolved, tally) = analysis::resolve(&a, &index_of(&v["snapshot"]));
@@ -254,7 +278,12 @@ pub struct PatchBody {
 }
 
 /// PATCH /api/scouting/{id} — titre, équipe, roster, ancres (les deux derniers → recalcul).
-pub async fn patch(State(s): State<AppState>, Path(id): Path<i64>, headers: HeaderMap, Json(b): Json<PatchBody>) -> Resp {
+pub async fn patch(
+    State(s): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+    Json(b): Json<PatchBody>,
+) -> Resp {
     guard(&headers, &s)?;
     let clean = |v: Vec<String>| -> J {
         let mut out: Vec<String> = Vec::new();
@@ -295,7 +324,11 @@ pub async fn patch(State(s): State<AppState>, Path(id): Path<i64>, headers: Head
 }
 
 /// DELETE /api/scouting/{id} — les parties partent en cascade ; les bruts archivés restent.
-pub async fn delete(State(s): State<AppState>, Path(id): Path<i64>, headers: HeaderMap) -> Result<StatusCode, Err> {
+pub async fn delete(
+    State(s): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+) -> Result<StatusCode, Err> {
     guard(&headers, &s)?;
     let done = sqlx::query("DELETE FROM scouting_reports WHERE id = $1")
         .bind(id)
@@ -311,8 +344,16 @@ pub async fn delete(State(s): State<AppState>, Path(id): Path<i64>, headers: Hea
 // ── replays ──────────────────────────────────────────────────────────────────
 
 /// Parse + résumé d'un replay archivé (CPU, hors thread HTTP).
-async fn parse(s: &AppState, path: std::path::PathBuf, name: String) -> Result<(storm_stats::Output, GameSummary, String), String> {
-    let _permit = s.parse_sem.acquire().await.map_err(|_| "pool".to_string())?;
+async fn parse(
+    s: &AppState,
+    path: std::path::PathBuf,
+    name: String,
+) -> Result<(storm_stats::Output, GameSummary, String), String> {
+    let _permit = s
+        .parse_sem
+        .acquire()
+        .await
+        .map_err(|_| "pool".to_string())?;
     let out = tokio::task::spawn_blocking(move || storm_stats::process_replay(&path, &name))
         .await
         .map_err(|_| "panic".to_string())?;
@@ -326,7 +367,12 @@ async fn parse(s: &AppState, path: std::path::PathBuf, name: String) -> Result<(
 
 /// POST /api/scouting/{id}/replays — ajoute un replay (octets bruts, header `X-Filename`), même
 /// contrat que `/api/upload`. Réponse : `added` / `duplicate` / `parse_failed`.
-pub async fn add_replay(State(s): State<AppState>, Path(id): Path<i64>, headers: HeaderMap, bytes: Bytes) -> Resp {
+pub async fn add_replay(
+    State(s): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> Resp {
     guard(&headers, &s)?;
     let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM scouting_reports WHERE id = $1")
         .bind(id)
@@ -346,7 +392,9 @@ pub async fn add_replay(State(s): State<AppState>, Path(id): Path<i64>, headers:
     .await
     .map_err(db_err)?;
     if let Some(gid) = dup {
-        return Ok(Json(serde_json::json!({ "status": "duplicate", "gid": gid })));
+        return Ok(Json(
+            serde_json::json!({ "status": "duplicate", "gid": gid }),
+        ));
     }
 
     // archive d'abord (source de vérité), comme l'upload principal
@@ -361,10 +409,20 @@ pub async fn add_replay(State(s): State<AppState>, Path(id): Path<i64>, headers:
         return Err(err(StatusCode::INTERNAL_SERVER_ERROR, "io"));
     }
     let filename = crate::upload::filename(&headers);
-    let (out, sum, fp) = match parse(&s, path.clone(), filename.clone().unwrap_or_else(|| path.to_string_lossy().into())).await {
+    let (out, sum, fp) = match parse(
+        &s,
+        path.clone(),
+        filename
+            .clone()
+            .unwrap_or_else(|| path.to_string_lossy().into()),
+    )
+    .await
+    {
         Ok(x) => x,
         Err(class) => {
-            return Ok(Json(serde_json::json!({ "status": "parse_failed", "error_class": class })))
+            return Ok(Json(
+                serde_json::json!({ "status": "parse_failed", "error_class": class }),
+            ))
         }
     };
     let gid: Option<i64> = sqlx::query_scalar(
@@ -412,7 +470,12 @@ pub struct SideBody {
 }
 
 /// PATCH /api/scouting/{id}/replays/{gid} — côté cible manuel (ou retour à l'automatique).
-pub async fn set_side(State(s): State<AppState>, Path((id, gid)): Path<(i64, i64)>, headers: HeaderMap, Json(b): Json<SideBody>) -> Resp {
+pub async fn set_side(
+    State(s): State<AppState>,
+    Path((id, gid)): Path<(i64, i64)>,
+    headers: HeaderMap,
+    Json(b): Json<SideBody>,
+) -> Resp {
     guard(&headers, &s)?;
     if b.target_team.is_some_and(|t| t > 1) {
         return Err(err(StatusCode::BAD_REQUEST, "target_team ∈ {0, 1, null}"));
@@ -439,7 +502,11 @@ pub async fn set_side(State(s): State<AppState>, Path((id, gid)): Path<(i64, i64
 }
 
 /// DELETE /api/scouting/{id}/replays/{gid}
-pub async fn delete_replay(State(s): State<AppState>, Path((id, gid)): Path<(i64, i64)>, headers: HeaderMap) -> Resp {
+pub async fn delete_replay(
+    State(s): State<AppState>,
+    Path((id, gid)): Path<(i64, i64)>,
+    headers: HeaderMap,
+) -> Resp {
     guard(&headers, &s)?;
     let done = sqlx::query("DELETE FROM scouting_games WHERE id = $2 AND report_id = $1")
         .bind(id)
@@ -464,7 +531,9 @@ async fn load_pack(s: &AppState, id: i64) -> Result<(String, Option<String>, i32
     .fetch_optional(&s.db)
     .await
     .map_err(db_err)?;
-    let Some((title, target, fv, snap)) = row else { return Err(not_found()) };
+    let Some((title, target, fv, snap)) = row else {
+        return Err(not_found());
+    };
     let facts: Facts = snap
         .and_then(|v| serde_json::from_value(v["facts"].clone()).ok())
         .ok_or_else(|| err(StatusCode::CONFLICT, "faits pas encore calculés"))?;
@@ -473,18 +542,36 @@ async fn load_pack(s: &AppState, id: i64) -> Result<(String, Option<String>, i32
 
 fn file_name(title: &str, ext: &str) -> String {
     let base = slug(title);
-    format!("scouting-{}.{ext}", if base.is_empty() { "report".into() } else { base })
+    format!(
+        "scouting-{}.{ext}",
+        if base.is_empty() {
+            "report".into()
+        } else {
+            base
+        }
+    )
 }
 
 /// GET /api/scouting/{id}/pack.md
 pub async fn pack_md(State(s): State<AppState>, Path(id): Path<i64>) -> Result<Response, Err> {
     let (title, target, fv, facts) = load_pack(&s, id).await?;
-    let meta = PackMeta { report_id: id, facts_version: fv, title: &title, target_name: target.as_deref() };
+    let meta = PackMeta {
+        report_id: id,
+        facts_version: fv,
+        title: &title,
+        target_name: target.as_deref(),
+    };
     let body = pack::markdown(&meta, &facts);
     Ok((
         [
-            (header::CONTENT_TYPE, "text/markdown; charset=utf-8".to_string()),
-            (header::CONTENT_DISPOSITION, format!("inline; filename=\"{}\"", file_name(&title, "md"))),
+            (
+                header::CONTENT_TYPE,
+                "text/markdown; charset=utf-8".to_string(),
+            ),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("inline; filename=\"{}\"", file_name(&title, "md")),
+            ),
         ],
         body,
     )
@@ -494,7 +581,12 @@ pub async fn pack_md(State(s): State<AppState>, Path(id): Path<i64>) -> Result<R
 /// GET /api/scouting/{id}/pack.xlsx
 pub async fn pack_xlsx(State(s): State<AppState>, Path(id): Path<i64>) -> Result<Response, Err> {
     let (title, target, fv, facts) = load_pack(&s, id).await?;
-    let meta = PackMeta { report_id: id, facts_version: fv, title: &title, target_name: target.as_deref() };
+    let meta = PackMeta {
+        report_id: id,
+        facts_version: fv,
+        title: &title,
+        target_name: target.as_deref(),
+    };
     let bytes = super::xlsx::workbook(&meta, &facts).map_err(|e| {
         tracing::error!("xlsx : {e}");
         err(StatusCode::INTERNAL_SERVER_ERROR, "xlsx")
@@ -505,7 +597,10 @@ pub async fn pack_xlsx(State(s): State<AppState>, Path(id): Path<i64>) -> Result
                 header::CONTENT_TYPE,
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".to_string(),
             ),
-            (header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", file_name(&title, "xlsx"))),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{}\"", file_name(&title, "xlsx")),
+            ),
         ],
         bytes,
     )
@@ -516,7 +611,12 @@ pub async fn pack_xlsx(State(s): State<AppState>, Path(id): Path<i64>) -> Result
 
 /// PUT /api/scouting/{id}/analysis — corps = texte brut de la réponse du LLM. Écrase l'analyse
 /// existante (décision opérateur) ; refus sans rien écraser si le JSON est invalide.
-pub async fn put_analysis(State(s): State<AppState>, Path(id): Path<i64>, headers: HeaderMap, body: String) -> Resp {
+pub async fn put_analysis(
+    State(s): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+    body: String,
+) -> Resp {
     guard(&headers, &s)?;
     let row: Option<(i32, Option<J>)> =
         sqlx::query_as("SELECT facts_version, facts FROM scouting_reports WHERE id = $1")
@@ -524,7 +624,9 @@ pub async fn put_analysis(State(s): State<AppState>, Path(id): Path<i64>, header
             .fetch_optional(&s.db)
             .await
             .map_err(db_err)?;
-    let Some((fv, snap)) = row else { return Err(not_found()) };
+    let Some((fv, snap)) = row else {
+        return Err(not_found());
+    };
     let imported = analysis::import(&body, id, i64::from(fv))
         .map_err(|e| err(StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))?;
     let stored_fv = imported
@@ -544,11 +646,17 @@ pub async fn put_analysis(State(s): State<AppState>, Path(id): Path<i64>, header
     .await
     .map_err(db_err)?;
     let (_, tally) = analysis::resolve(a, &snap.as_ref().map(index_of).unwrap_or_default());
-    Ok(Json(serde_json::json!({ "imported": true, "warnings": imported.warnings, "tally": tally })))
+    Ok(Json(
+        serde_json::json!({ "imported": true, "warnings": imported.warnings, "tally": tally }),
+    ))
 }
 
 /// DELETE /api/scouting/{id}/analysis
-pub async fn delete_analysis(State(s): State<AppState>, Path(id): Path<i64>, headers: HeaderMap) -> Result<StatusCode, Err> {
+pub async fn delete_analysis(
+    State(s): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+) -> Result<StatusCode, Err> {
     guard(&headers, &s)?;
     let done = sqlx::query(
         "UPDATE scouting_reports SET analysis = NULL, analysis_facts_version = NULL, analysis_model = NULL,
@@ -582,7 +690,7 @@ pub async fn reprocess_stale(s: &AppState) -> usize {
         let p = std::path::PathBuf::from(&path);
         match parse(s, p, name.unwrap_or(path)).await {
             Ok((out, sum, _)) => {
-                let _ = sqlx::query(
+                match sqlx::query(
                     "UPDATE scouting_games SET summary = $2, data = $3, parser_version = $4 WHERE id = $1",
                 )
                 .bind(gid)
@@ -590,8 +698,13 @@ pub async fn reprocess_stale(s: &AppState) -> usize {
                 .bind(out.to_json())
                 .bind(PARSER_VERSION)
                 .execute(&s.db)
-                .await;
-                reports.insert(rid);
+                .await
+                {
+                    Ok(_) => {
+                        reports.insert(rid);
+                    }
+                    Err(e) => tracing::error!("reprocess scouting {gid} : écriture : {e}"),
+                }
             }
             Err(class) => tracing::warn!("reprocess scouting {gid} : {class}"),
         }

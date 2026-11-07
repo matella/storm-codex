@@ -17,7 +17,11 @@ use crate::lobby::LobbyState;
 /// `nom#tag` → `toon_handle` pour tous les joueurs du lobby en une requête (LATERAL join sur un
 /// `UNNEST` des deux colonnes) : un seul aller-retour quel que soit le nombre de joueurs. L'ordre
 /// du résultat suit celui des tableaux d'entrée (`WITH ORDINALITY`).
-async fn resoudre_tout(db: &PgPool, names: &[String], discriminants: &[String]) -> Vec<Option<String>> {
+async fn resoudre_tout(
+    db: &PgPool,
+    names: &[String],
+    discriminants: &[String],
+) -> Vec<Option<String>> {
     if names.is_empty() {
         return Vec::new();
     }
@@ -204,7 +208,11 @@ pub async fn enrich(db: &PgPool, state: &mut LobbyState) {
 
     // Résolution d'identité : une requête pour tout le lobby (pas une par joueur).
     let names: Vec<String> = state.players.iter().map(|p| p.name.clone()).collect();
-    let discriminants: Vec<String> = state.players.iter().map(|p| p.discriminant.clone()).collect();
+    let discriminants: Vec<String> = state
+        .players
+        .iter()
+        .map(|p| p.discriminant.clone())
+        .collect();
     let toons = resoudre_tout(db, &names, &discriminants).await;
     for (p, toon) in state.players.iter_mut().zip(toons) {
         p.toon_handle = toon;

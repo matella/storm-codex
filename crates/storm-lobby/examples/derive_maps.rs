@@ -25,15 +25,23 @@ fn main() -> anyhow::Result<()> {
         if path.extension().and_then(|e| e.to_str()) != Some("StormReplay") {
             continue;
         }
-        let Some(filename) = path.file_name().and_then(|s| s.to_str()) else { continue };
-        let Ok(replay) = storm_replay::Replay::open(&path) else { continue };
-        let Ok(blob) = replay.battlelobby_raw() else { continue };
+        let Some(filename) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let Ok(replay) = storm_replay::Replay::open(&path) else {
+            continue;
+        };
+        let Ok(blob) = replay.battlelobby_raw() else {
+            continue;
+        };
         let out = storm_stats::process_replay(&path, filename);
         if out.status != 1 {
             continue;
         }
         let json = out.to_json();
-        let Some(carte) = json["match"]["map"].as_str() else { continue };
+        let Some(carte) = json["match"]["map"].as_str() else {
+            continue;
+        };
         let carte = carte.to_string();
 
         *replays_par_carte.entry(carte.clone()).or_default() += 1;
@@ -54,14 +62,18 @@ fn main() -> anyhow::Result<()> {
         if cartes.len() != 1 {
             continue;
         }
-        let Some(carte) = cartes.iter().next() else { continue };
+        let Some(carte) = cartes.iter().next() else {
+            continue;
+        };
         table.push((hash.clone(), carte.clone()));
     }
     table.sort();
 
     println!("//! Table `hash .s2ma → nom de carte`, GÉNÉRÉE — ne pas éditer à la main.");
     println!("//!");
-    println!("//! Produite par `cargo run --release -p storm-lobby --example derive_maps -- <dossier>`");
+    println!(
+        "//! Produite par `cargo run --release -p storm-lobby --example derive_maps -- <dossier>`"
+    );
     println!("//! sur l'archive du box. Un hash n'est retenu que s'il n'a JAMAIS été observé sur une autre");
     println!("//! carte. Une même carte a plusieurs hashes : Blizzard republie ses fichiers `.s2ma` à chaque");
     println!("//! patch, donc exiger qu'un seul hash couvre tous les replays d'une carte éliminerait les cartes");
@@ -70,15 +82,19 @@ fn main() -> anyhow::Result<()> {
     println!("//! ailleurs) validait les 19. Ce critère de couverture totale n'existe plus dans le code — le");
     println!("//! chiffre n'est donc pas rejouable, seulement attesté par cette run de dérivation initiale.");
     println!();
-    println!("/// `(hash, nom de carte)`, trié par hash — les noms sont ceux que `matches.map` stocke.");
+    println!(
+        "/// `(hash, nom de carte)`, trié par hash — les noms sont ceux que `matches.map` stocke."
+    );
     println!("pub(crate) const MAP_BY_HASH: &[(&str, &str)] = &[");
     for (h, c) in &table {
         println!("    ({h:?}, {c:?}),");
     }
     println!("];");
 
-    eprintln!("cartes couvertes : {}",
-        table.iter().map(|(_, c)| c).collect::<BTreeSet<_>>().len());
+    eprintln!(
+        "cartes couvertes : {}",
+        table.iter().map(|(_, c)| c).collect::<BTreeSet<_>>().len()
+    );
     eprintln!("hashes retenus   : {}", table.len());
     eprintln!("cartes vues      : {}", replays_par_carte.len());
     Ok(())

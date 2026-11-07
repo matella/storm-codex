@@ -672,10 +672,23 @@ export interface ReplayState {
   next_at_ms: number | null;
 }
 
+/** `Authorization: Bearer <admin_token>` si un token admin a été saisi (page Admin, localStorage),
+ *  sinon rien. Le serveur l'exige pour les écritures admin, scouting, cast et draft quand
+ *  `ADMIN_TOKEN` est défini ; en mode ouvert, l'en-tête est ignoré. */
+export function authHeaders(): Record<string, string> {
+  let token = "";
+  try {
+    token = localStorage.getItem("admin_token") ?? "";
+  } catch {
+    /* stockage indisponible (navigation privée, source OBS) : pas de token */
+  }
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function post<T>(path: string, body?: unknown): Promise<T> {
   const r = await fetch(path, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (!r.ok) throw new Error(`${path} → ${r.status}`);
@@ -716,7 +729,7 @@ export const draftReplayPlay = (playing: boolean, intervalMs?: number) =>
 export const draftReplayMove = (from: number, to: number) =>
   post<ReplayState>("/api/draft/replay/queue/move", { from, to });
 export const draftReplayRemove = async (i: number): Promise<ReplayState> => {
-  const r = await fetch(`/api/draft/replay/queue/${i}`, { method: "DELETE" });
+  const r = await fetch(`/api/draft/replay/queue/${i}`, { method: "DELETE", headers: authHeaders() });
   if (!r.ok) throw new Error(`remove → ${r.status}`);
   return r.json() as Promise<ReplayState>;
 };
@@ -730,7 +743,7 @@ export async function httpError(r: Response): Promise<Error> {
 export async function draftReplayLoad(file: File): Promise<ReplayState> {
   const r = await fetch("/api/draft/replay/load", {
     method: "POST",
-    headers: { "X-Filename": encodeURIComponent(file.name) },
+    headers: { "X-Filename": encodeURIComponent(file.name), ...authHeaders() },
     body: file,
   });
   if (!r.ok) throw await httpError(r);
@@ -758,10 +771,9 @@ export function sideOfStep(d: DraftState, step: DraftStep): Side {
 /** Écriture authentifiée : Bearer du token admin saisi dans Admin (localStorage), s'il existe.
  *  En mode ouvert (pas d'ADMIN_TOKEN serveur), l'en-tête est simplement ignoré. */
 export function scoutingWrite(url: string, init: RequestInit = {}): Promise<Response> {
-  const token = localStorage.getItem("admin_token") ?? "";
   return fetch(url, {
     ...init,
-    headers: { ...(init.headers ?? {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { ...(init.headers ?? {}), ...authHeaders() },
   });
 }
 

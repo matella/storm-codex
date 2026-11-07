@@ -21,13 +21,27 @@ services:
       timeout: 3s
       retries: 10
 
+  # Une fois par démarrage : /data appartient à l'utilisateur non root du serveur (uid 10001).
+  # Nécessaire pour un volume créé par une image plus ancienne qui tournait en root ; sans effet sinon.
+  storm-codex-init:
+    image: busybox:1.37
+    user: "0:0"
+    command: ["chown", "-R", "10001:10001", "/data"]
+    volumes:
+      - storm-codex-data:/data
+    restart: "no"
+
   server:
     build: .
     container_name: storm-codex-server
     restart: unless-stopped
+    # `docker stop` : SIGTERM → fin des requêtes en cours (arrêt propre), puis SIGKILL après ce délai.
+    stop_grace_period: 20s
     depends_on:
       postgres:
         condition: service_healthy
+      storm-codex-init:
+        condition: service_completed_successfully
     ports:
       - "${STORM_CODEX_PORT:-8088}:8088"
     environment:

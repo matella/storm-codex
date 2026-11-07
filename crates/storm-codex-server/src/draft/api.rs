@@ -23,7 +23,10 @@ pub(crate) async fn series_format(s: &AppState) -> Option<Format> {
 }
 
 fn series_active() -> (StatusCode, Json<J>) {
-    (StatusCode::CONFLICT, Json(json!({ "error": "series_active" })))
+    (
+        StatusCode::CONFLICT,
+        Json(json!({ "error": "series_active" })),
+    )
 }
 
 /// GET /api/draft — état courant.
@@ -69,7 +72,12 @@ pub async fn config(State(s): State<AppState>, Json(b): Json<ConfigBody>) -> Jso
     d.series_bans = prev.series_bans;
     d.manual_unavailable = prev.manual_unavailable;
     // la file de replays survit à une reconfiguration (partie courante désélectionnée, lecture stoppée)
-    d.replay = super::ReplayState { current: None, playing: false, next_at_ms: None, ..prev.replay };
+    d.replay = super::ReplayState {
+        current: None,
+        playing: false,
+        next_at_ms: None,
+        ..prev.replay
+    };
     *s.draft.write().await = d;
     persist(&s).await;
     get_draft(State(s)).await
@@ -88,7 +96,10 @@ pub async fn action(State(s): State<AppState>, Json(b): Json<HeroBody>) -> (Stat
             persist(&s).await;
             (StatusCode::OK, Json(json!({ "ok": true })))
         }
-        Err(e) => (StatusCode::CONFLICT, Json(json!({ "error": format!("{e:?}") }))),
+        Err(e) => (
+            StatusCode::CONFLICT,
+            Json(json!({ "error": format!("{e:?}") })),
+        ),
     }
 }
 
@@ -100,7 +111,10 @@ pub async fn undo(State(s): State<AppState>) -> (StatusCode, Json<J>) {
             persist(&s).await;
             (StatusCode::OK, Json(json!({ "ok": true })))
         }
-        Err(e) => (StatusCode::CONFLICT, Json(json!({ "error": format!("{e:?}") }))),
+        Err(e) => (
+            StatusCode::CONFLICT,
+            Json(json!({ "error": format!("{e:?}") })),
+        ),
     }
 }
 
@@ -118,7 +132,10 @@ pub struct UnavailableBody {
 }
 
 /// POST /api/draft/unavailable — override manuel de la disponibilité d'un héros.
-pub async fn unavailable(State(s): State<AppState>, Json(b): Json<UnavailableBody>) -> Json<DraftState> {
+pub async fn unavailable(
+    State(s): State<AppState>,
+    Json(b): Json<UnavailableBody>,
+) -> Json<DraftState> {
     s.draft.write().await.set_unavailable(&b.hero, b.value);
     persist(&s).await;
     get_draft(State(s)).await
@@ -131,7 +148,10 @@ pub struct ScoreBody {
 }
 
 /// POST /api/draft/score — 409 `series_active` tant qu'une série de cast est active.
-pub async fn score(State(s): State<AppState>, Json(b): Json<ScoreBody>) -> Result<Json<DraftState>, (StatusCode, Json<J>)> {
+pub async fn score(
+    State(s): State<AppState>,
+    Json(b): Json<ScoreBody>,
+) -> Result<Json<DraftState>, (StatusCode, Json<J>)> {
     if series_format(&s).await.is_some() {
         return Err(series_active());
     }
@@ -151,7 +171,10 @@ pub struct TeamsBody {
 
 /// POST /api/draft/teams — met à jour noms + pseudos SANS réinitialiser le draft en cours.
 /// 409 `series_active` tant qu'une série de cast est active (la série est la source de vérité).
-pub async fn teams(State(s): State<AppState>, Json(b): Json<TeamsBody>) -> Result<Json<DraftState>, (StatusCode, Json<J>)> {
+pub async fn teams(
+    State(s): State<AppState>,
+    Json(b): Json<TeamsBody>,
+) -> Result<Json<DraftState>, (StatusCode, Json<J>)> {
     if series_format(&s).await.is_some() {
         return Err(series_active());
     }
@@ -191,11 +214,16 @@ mod tests {
 
     #[tokio::test]
     async fn draft_teams_route_returns_409_when_series_active() {
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         state.cast.write().await.active = true;
         let before = state.draft.read().await.blue.name.clone();
         for (path, body) in [
-            ("/api/draft/teams", json!({"blue": team("X"), "red": team("Y")})),
+            (
+                "/api/draft/teams",
+                json!({"blue": team("X"), "red": team("Y")}),
+            ),
             ("/api/draft/score", json!({"blue": 2, "red": 1})),
         ] {
             let (st, v) = call(&state, "POST", path, Some(body)).await;
@@ -209,11 +237,25 @@ mod tests {
 
     #[tokio::test]
     async fn draft_teams_route_returns_200_when_series_inactive() {
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         assert!(!state.cast.read().await.active);
-        let (st, _) = call(&state, "POST", "/api/draft/teams", Some(json!({"blue": team("X"), "red": team("Y")}))).await;
+        let (st, _) = call(
+            &state,
+            "POST",
+            "/api/draft/teams",
+            Some(json!({"blue": team("X"), "red": team("Y")})),
+        )
+        .await;
         assert_eq!(st, StatusCode::OK);
-        let (st, _) = call(&state, "POST", "/api/draft/score", Some(json!({"blue": 2, "red": 1}))).await;
+        let (st, _) = call(
+            &state,
+            "POST",
+            "/api/draft/score",
+            Some(json!({"blue": 2, "red": 1})),
+        )
+        .await;
         assert_eq!(st, StatusCode::OK);
         let d = state.draft.read().await;
         assert_eq!((d.blue.name.as_str(), d.score), ("X", [2, 1]));
@@ -221,7 +263,9 @@ mod tests {
 
     #[tokio::test]
     async fn draft_config_in_active_series_keeps_series_owned_fields() {
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         {
             let mut c = state.cast.write().await;
             c.active = true;
@@ -245,11 +289,20 @@ mod tests {
 
     #[tokio::test]
     async fn draft_config_inactive_series_behaves_as_before() {
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         let body = json!({"format": "fearless", "map": "Sky Temple", "first_pick": "blue",
             "blue": team("Mine"), "bo": 3});
         let (st, v) = call(&state, "POST", "/api/draft/config", Some(body)).await;
         assert_eq!(st, StatusCode::OK);
-        assert_eq!((v["format"].as_str(), v["blue"]["name"].as_str(), v["bo"].as_u64()), (Some("fearless"), Some("Mine"), Some(3)));
+        assert_eq!(
+            (
+                v["format"].as_str(),
+                v["blue"]["name"].as_str(),
+                v["bo"].as_u64()
+            ),
+            (Some("fearless"), Some("Mine"), Some(3))
+        );
     }
 }

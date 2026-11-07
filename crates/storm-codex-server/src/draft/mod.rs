@@ -114,8 +114,14 @@ impl DraftState {
             format,
             first_pick,
             map,
-            blue: TeamInfo { name: "Blue".into(), players: Default::default() },
-            red: TeamInfo { name: "Red".into(), players: Default::default() },
+            blue: TeamInfo {
+                name: "Blue".into(),
+                players: Default::default(),
+            },
+            red: TeamInfo {
+                name: "Red".into(),
+                players: Default::default(),
+            },
             score: [0, 0],
             bo: 5,
             steps,
@@ -150,7 +156,9 @@ impl DraftState {
         self.assignments.iter().flatten().any(|h| h == hero)
     }
     pub fn is_unavailable(&self, hero: &str) -> bool {
-        self.manual_unavailable.contains(hero) || self.series_bans.contains(hero) || self.is_used(hero)
+        self.manual_unavailable.contains(hero)
+            || self.series_bans.contains(hero)
+            || self.is_used(hero)
     }
 
     pub fn apply(&mut self, hero: &str) -> Result<(), DraftError> {
@@ -210,7 +218,12 @@ impl DraftState {
         // comme `config` : la file survit (queue, fearless, interval), mais la partie courante est désélectionnée
         // et la lecture auto stoppée (son script ne correspond plus aux steps reconstruits)
         let replay = std::mem::take(&mut self.replay);
-        self.replay = ReplayState { current: None, playing: false, next_at_ms: None, ..replay };
+        self.replay = ReplayState {
+            current: None,
+            playing: false,
+            next_at_ms: None,
+            ..replay
+        };
     }
     /// Héros pické dans la partie courante (pour alimenter l'historique de série fearless).
     pub fn picked_heroes(&self) -> Vec<String> {

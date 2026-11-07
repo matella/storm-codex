@@ -265,8 +265,14 @@ fn talents_and_levels() {
 #[test]
 fn objectives_framework() {
     let m = model();
-    assert!(m.objectives.is_empty(), "silver-city (ARAM) ne doit produire aucun objectif");
-    assert!(m.warnings.is_empty(), "silver-city n'est pas une gap map connue");
+    assert!(
+        m.objectives.is_empty(),
+        "silver-city (ARAM) ne doit produire aucun objectif"
+    );
+    assert!(
+        m.warnings.is_empty(),
+        "silver-city n'est pas une gap map connue"
+    );
     for o in &m.objectives {
         assert!(
             (0.0..=m.meta.duration_sec).contains(&o.t),
@@ -283,7 +289,11 @@ fn objectives_framework() {
 #[test]
 fn minions_bounded() {
     let m = model();
-    assert!(m.minions.len() < 20000, "trop de minions: {}", m.minions.len());
+    assert!(
+        m.minions.len() < 20000,
+        "trop de minions: {}",
+        m.minions.len()
+    );
     for ms in &m.minions {
         assert!(
             (0.0..=1.0).contains(&ms.x) && (0.0..=1.0).contains(&ms.y),

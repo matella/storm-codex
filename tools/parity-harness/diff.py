@@ -14,10 +14,10 @@ ROOT = Path(__file__).parent.parent.parent
 NODE_DUMP = Path(__file__).parent / "dump.js"
 
 # Cartes ARAM récentes supportées par storm-stats au-delà de hots-parser 7.55.7 (divergence
-# assumée, cf. EXTRA_MAPS dans crates/storm-stats/src/process.rs). hots-parser les rejette ;
+# assumée, cf. EXTRA_MAPS dans crates/storm-stats/src/process/mod.rs). hots-parser les rejette ;
 # storm-stats les parse → pas de baseline Node, on valide juste l'invariant structurel.
 EXTENDED_MAPS = {"Silver City", "Lost Cavern", "Braxis Outpost", "Industrial District"}
-RUST_DUMP = ROOT / "target" / "release" / "storm-stats-dump.exe"
+RUST_DUMP = ROOT / "target" / "release" / ("storm-stats-dump.exe" if sys.platform == "win32" else "storm-stats-dump")
 TOLERANCES = Path(__file__).parent / "tolerances.json"
 
 

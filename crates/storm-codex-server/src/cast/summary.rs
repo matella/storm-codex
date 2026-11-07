@@ -28,7 +28,11 @@ fn side_of(team: i64) -> Option<Side> {
 /// Entier positif d'un nombre JSON (entier ou flottant ; storm-stats écrit parfois `28.0`).
 fn uint(v: Option<&J>) -> Option<u64> {
     let v = v?;
-    v.as_u64().or_else(|| v.as_f64().filter(|f| f.is_finite() && *f >= 0.0).map(|f| f as u64))
+    v.as_u64().or_else(|| {
+        v.as_f64()
+            .filter(|f| f.is_finite() && *f >= 0.0)
+            .map(|f| f as u64)
+    })
 }
 
 fn u32_of(v: Option<&J>) -> Option<u32> {
@@ -44,7 +48,13 @@ fn both(f: impl Fn(&str) -> Option<u32>) -> Option<[u32; 2]> {
 /// (bâtiments seuls, sans tours ni puits). Carte sans aucune sous-clé `Fort`/`Keep` (dans aucune
 /// équipe) → `None` (ligne retirée, pas de 0–0 inventé) ; sinon une sous-clé absente compte 0.
 fn forts_keeps(m: &Map<String, J>) -> Option<[u32; 2]> {
-    let st = |t: &str| m.get("teams")?.get(t)?.get("stats")?.get("structures")?.as_object();
+    let st = |t: &str| {
+        m.get("teams")?
+            .get(t)?
+            .get("stats")?
+            .get("structures")?
+            .as_object()
+    };
     let has = |t: &str| st(t).is_some_and(|o| o.contains_key("Fort") || o.contains_key("Keep"));
     if !has("0") && !has("1") {
         return None;
@@ -62,8 +72,15 @@ fn forts_keeps(m: &Map<String, J>) -> Option<[u32; 2]> {
 /// `DragonKnightActivated` ; HauntedWoods = `GardenTerrorActivated` ; Crypts = `SpidersSpawned` ;
 /// Volskaya = naissance du `Triglav` capturé ; BlackheartsBay = `GhostShipCaptured`.
 /// Toute autre carte → `None` (ligne retirée) : guide de lecture de docs/spec/03-storm-stats.md.
-const OBJECTIVE_EVENT_MAPS: [&str; 7] =
-    ["TowersOfDoom", "CursedHollow", "DragonShire", "HauntedWoods", "Crypts", "Volskaya", "BlackheartsBay"];
+const OBJECTIVE_EVENT_MAPS: [&str; 7] = [
+    "TowersOfDoom",
+    "CursedHollow",
+    "DragonShire",
+    "HauntedWoods",
+    "Crypts",
+    "Volskaya",
+    "BlackheartsBay",
+];
 /// Battlefield of Eternity : `objective.results[].winner` (`ImmortalDefeated`).
 const OBJECTIVE_RESULTS_MAP: &str = "BattlefieldOfEternity";
 
@@ -79,7 +96,11 @@ fn objectives(m: &Map<String, J>) -> Option<[u32; 2]> {
     let mut n = [0u32; 2];
     if is_map(m, OBJECTIVE_RESULTS_MAP) {
         for r in o.get("results")?.as_array()?.iter().filter(timed) {
-            if let Some(i) = r.get("winner").and_then(J::as_f64).and_then(|w| side_of(w as i64)) {
+            if let Some(i) = r
+                .get("winner")
+                .and_then(J::as_f64)
+                .and_then(|w| side_of(w as i64))
+            {
                 n[i as usize] += 1;
             }
         }
@@ -103,7 +124,15 @@ impl GameSummary {
         let sw = |p: &mut [u32; 2]| p.swap(0, 1);
         self.winner = self.winner.other();
         sw(&mut self.takedowns);
-        for p in [&mut self.team_level, &mut self.structures, &mut self.merc_camps, &mut self.objectives].into_iter().flatten() {
+        for p in [
+            &mut self.team_level,
+            &mut self.structures,
+            &mut self.merc_camps,
+            &mut self.objectives,
+        ]
+        .into_iter()
+        .flatten()
+        {
             sw(p);
         }
         self.bans.swap(0, 1);
@@ -122,17 +151,25 @@ impl GameSummary {
 /// `breakdown` hors champs de temps (même calcul que la courbe « Team XP » de la fiche),
 /// équipes appariées par `loop`.
 fn xp_lead(m: &Map<String, J>) -> Vec<(u32, i32)> {
-    let Some(rows) = m.get("XPBreakdown").and_then(J::as_array) else { return Vec::new() };
+    let Some(rows) = m.get("XPBreakdown").and_then(J::as_array) else {
+        return Vec::new();
+    };
     let mut by_loop: BTreeMap<i64, (f64, [Option<f64>; 2])> = BTreeMap::new();
     for r in rows {
         let (Some(lp), Some(team), Some(b)) = (
             r.get("loop").and_then(J::as_f64),
-            r.get("team").and_then(J::as_f64).and_then(|t| side_of(t as i64)),
+            r.get("team")
+                .and_then(J::as_f64)
+                .and_then(|t| side_of(t as i64)),
             r.get("breakdown").and_then(J::as_object),
         ) else {
             continue;
         };
-        let xp: f64 = b.iter().filter(|(k, _)| !k.to_ascii_lowercase().contains("time")).filter_map(|(_, v)| v.as_f64()).sum();
+        let xp: f64 = b
+            .iter()
+            .filter(|(k, _)| !k.to_ascii_lowercase().contains("time"))
+            .filter_map(|(_, v)| v.as_f64())
+            .sum();
         let e = by_loop.entry(lp as i64).or_insert((0.0, [None, None]));
         e.0 = r.get("time").and_then(J::as_f64).unwrap_or(0.0);
         e.1[team as usize] = Some(xp);
@@ -182,7 +219,10 @@ fn player(toon: &str, p: &J) -> Option<PlayerSummary> {
 
 /// Joueurs Blue puis Red, dans l'ordre de pick de `match.picks[t]` (héros absent des picks : à la fin).
 fn players(m: &Map<String, J>, players: &Map<String, J>) -> Vec<PlayerSummary> {
-    let mut v: Vec<PlayerSummary> = players.iter().filter_map(|(toon, p)| player(toon, p)).collect();
+    let mut v: Vec<PlayerSummary> = players
+        .iter()
+        .filter_map(|(toon, p)| player(toon, p))
+        .collect();
     let pick_pos = |p: &PlayerSummary| {
         let t = if p.side == Side::Blue { "0" } else { "1" };
         m.get("picks")
@@ -202,17 +242,29 @@ pub fn summary_from_output(out: &storm_stats::Output) -> Result<GameSummary, Sum
     let (Some(m), Some(ps)) = (out.match_.as_ref(), out.players.as_ref()) else {
         return Err(SummaryError::Parse(out.status));
     };
-    if m.get("mode").and_then(J::as_i64) != Some(storm_stats::constants::rt_int("GameMode", "Custom")) {
+    if m.get("mode").and_then(J::as_i64)
+        != Some(storm_stats::constants::rt_int("GameMode", "Custom"))
+    {
         return Err(SummaryError::NotCustom);
     }
-    let winner = m.get("winner").and_then(J::as_f64).and_then(|w| side_of(w as i64)).ok_or(SummaryError::Missing("winner"))?;
-    let length = m.get("length").and_then(J::as_f64).filter(|l| l.is_finite() && *l >= 0.0).ok_or(SummaryError::Missing("length"))?;
-    let takedowns = both(|t| u32_of(m.get(&format!("team{t}Takedowns")))).ok_or(SummaryError::Missing("teamNTakedowns"))?;
+    let winner = m
+        .get("winner")
+        .and_then(J::as_f64)
+        .and_then(|w| side_of(w as i64))
+        .ok_or(SummaryError::Missing("winner"))?;
+    let length = m
+        .get("length")
+        .and_then(J::as_f64)
+        .filter(|l| l.is_finite() && *l >= 0.0)
+        .ok_or(SummaryError::Missing("length"))?;
+    let takedowns = both(|t| u32_of(m.get(&format!("team{t}Takedowns"))))
+        .ok_or(SummaryError::Missing("teamNTakedowns"))?;
     let players = players(m, ps);
     if players.is_empty() {
         return Err(SummaryError::Missing("players"));
     }
-    let team_stat = |k: &'static str| both(|t| u32_of(m.get("teams")?.get(t)?.get("stats")?.get(k)));
+    let team_stat =
+        |k: &'static str| both(|t| u32_of(m.get("teams")?.get(t)?.get("stats")?.get(k)));
     Ok(GameSummary {
         map: m.get("map").and_then(J::as_str).map(str::to_owned),
         played_at: m.get("date").and_then(J::as_str).map(str::to_owned),
@@ -240,7 +292,11 @@ mod tests {
     }
 
     fn output(fx: &J) -> storm_stats::Output {
-        storm_stats::Output { status: 1, match_: fx["match"].as_object().cloned(), players: fx["players"].as_object().cloned() }
+        storm_stats::Output {
+            status: 1,
+            match_: fx["match"].as_object().cloned(),
+            players: fx["players"].as_object().cloned(),
+        }
     }
 
     /// Fixture = replay Custom réel (Tomb of the Spider Queen, 2026-09-27), réduit et anonymisé.
@@ -258,7 +314,13 @@ mod tests {
         assert_eq!(s.merc_camps, Some([12, 6]));
         assert_eq!(s.structures, Some([5, 4]));
         assert_eq!(s.objectives, Some([3, 3]));
-        assert_eq!(s.bans, [vec!["Johanna", "Yrel", "Whitemane"], vec!["Falstad", "Gul'dan", "Tracer"]]);
+        assert_eq!(
+            s.bans,
+            [
+                vec!["Johanna", "Yrel", "Whitemane"],
+                vec!["Falstad", "Gul'dan", "Tracer"]
+            ]
+        );
         assert_eq!(s.players.len(), 10);
         let p = &s.players[0];
         assert_eq!(
@@ -266,17 +328,37 @@ mod tests {
             (Side::Blue, "1-Hero-1-1001", "Player1", "Hogger")
         );
         assert_eq!((p.kills, p.takedowns, p.deaths, p.assists), (6, 13, 6, 7));
-        assert_eq!((p.hero_damage, p.siege_damage, p.healing), (47487, 119533, 0));
+        assert_eq!(
+            (p.hero_damage, p.siege_damage, p.healing),
+            (47487, 119533, 0)
+        );
         let heal = s.players.iter().find(|p| p.hero == "Malfurion").unwrap();
         assert_eq!(heal.healing, 161589);
         // Blue puis Red, ordre de pick de chaque équipe
-        let heroes: Vec<_> = s.players.iter().map(|p| (p.side, p.hero.as_str())).collect();
+        let heroes: Vec<_> = s
+            .players
+            .iter()
+            .map(|p| (p.side, p.hero.as_str()))
+            .collect();
         assert_eq!(heroes[4], (Side::Blue, "Junkrat"));
         assert_eq!(heroes[5], (Side::Red, "Blaze"));
         assert_eq!(heroes[9], (Side::Red, "Greymane"));
         // K/D/A d'équipe = sommes des joueurs (ligne « Team total » de la fiche)
-        let sum = |side: Side, f: fn(&PlayerSummary) -> u32| s.players.iter().filter(|p| p.side == side).map(f).sum::<u32>();
-        assert_eq!((sum(Side::Blue, |p| p.kills), sum(Side::Blue, |p| p.deaths), sum(Side::Blue, |p| p.assists)), (28, 15, 87));
+        let sum = |side: Side, f: fn(&PlayerSummary) -> u32| {
+            s.players
+                .iter()
+                .filter(|p| p.side == side)
+                .map(f)
+                .sum::<u32>()
+        };
+        assert_eq!(
+            (
+                sum(Side::Blue, |p| p.kills),
+                sum(Side::Blue, |p| p.deaths),
+                sum(Side::Blue, |p| p.assists)
+            ),
+            (28, 15, 87)
+        );
         // avance d'XP : 27 échantillons appariés par `loop`, (s, Blue − Red)
         assert_eq!(s.xp_lead.len(), 27);
         assert_eq!(s.xp_lead[0], (60, 710));
@@ -287,7 +369,10 @@ mod tests {
     fn summary_rejects_non_custom() {
         let mut fx = fixture();
         fx["match"]["mode"] = json!(storm_stats::constants::rt_int("GameMode", "StormLeague"));
-        assert_eq!(summary_from_output(&output(&fx)), Err(SummaryError::NotCustom));
+        assert_eq!(
+            summary_from_output(&output(&fx)),
+            Err(SummaryError::NotCustom)
+        );
     }
 
     #[test]
@@ -295,7 +380,11 @@ mod tests {
         let mut o = output(&fixture());
         o.status = -2;
         assert_eq!(summary_from_output(&o), Err(SummaryError::Parse(-2)));
-        let empty = storm_stats::Output { status: 1, match_: None, players: None };
+        let empty = storm_stats::Output {
+            status: 1,
+            match_: None,
+            players: None,
+        };
         assert_eq!(summary_from_output(&empty), Err(SummaryError::Parse(1)));
     }
 
@@ -304,11 +393,20 @@ mod tests {
         for key in ["winner", "length", "team0Takedowns"] {
             let mut fx = fixture();
             fx["match"].as_object_mut().unwrap().remove(key);
-            assert!(matches!(summary_from_output(&output(&fx)), Err(SummaryError::Missing(_))), "{key}");
+            assert!(
+                matches!(
+                    summary_from_output(&output(&fx)),
+                    Err(SummaryError::Missing(_))
+                ),
+                "{key}"
+            );
         }
         let mut fx = fixture();
         fx["match"]["winner"] = json!(-1);
-        assert_eq!(summary_from_output(&output(&fx)), Err(SummaryError::Missing("winner")));
+        assert_eq!(
+            summary_from_output(&output(&fx)),
+            Err(SummaryError::Missing("winner"))
+        );
     }
 
     #[test]
@@ -319,11 +417,20 @@ mod tests {
         m.remove("XPBreakdown");
         m.remove("bans");
         for t in ["0", "1"] {
-            m["teams"][t]["stats"].as_object_mut().unwrap().remove("structures");
-            m["teams"][t]["stats"].as_object_mut().unwrap().remove("mercCaptures");
+            m["teams"][t]["stats"]
+                .as_object_mut()
+                .unwrap()
+                .remove("structures");
+            m["teams"][t]["stats"]
+                .as_object_mut()
+                .unwrap()
+                .remove("mercCaptures");
         }
         let s = summary_from_output(&output(&fx)).unwrap();
-        assert_eq!((s.structures, s.merc_camps, s.objectives), (None, None, None));
+        assert_eq!(
+            (s.structures, s.merc_camps, s.objectives),
+            (None, None, None)
+        );
         assert!(s.xp_lead.is_empty());
         assert_eq!(s.bans, [Vec::<String>::new(), Vec::new()]);
         assert_eq!(s.team_level, Some([25, 24]));
@@ -335,13 +442,19 @@ mod tests {
     fn forts_keeps_absent_on_maps_without_them() {
         let mut fx = fixture();
         for t in ["0", "1"] {
-            let st = fx["match"]["teams"][t]["stats"]["structures"].as_object_mut().unwrap();
+            let st = fx["match"]["teams"][t]["stats"]["structures"]
+                .as_object_mut()
+                .unwrap();
             st.remove("Fort");
             st.remove("Keep");
         }
         assert_eq!(summary_from_output(&output(&fx)).unwrap().structures, None);
-        fx["match"]["teams"]["1"]["stats"]["structures"]["Keep"] = json!({"lost": 0, "destroyed": 1});
-        assert_eq!(summary_from_output(&output(&fx)).unwrap().structures, Some([0, 1]));
+        fx["match"]["teams"]["1"]["stats"]["structures"]["Keep"] =
+            json!({"lost": 0, "destroyed": 1});
+        assert_eq!(
+            summary_from_output(&output(&fx)).unwrap().structures,
+            Some([0, 1])
+        );
     }
 
     /// R17 : liste blanche de cartes (`MapType`) ; événements sans `time` non comptés.
@@ -353,18 +466,55 @@ mod tests {
             fx["match"]["objective"] = obj;
         };
         // carte de la liste (Tomb = Crypts) : événements datés seulement
-        set(&mut fx, "Tomb of the Spider Queen", json!({"type": "Tomb of the Spider Queen",
-            "0": {"count": 3.0, "events": [{"time": 1.0}, {"time": 2.0}, {"time": null}]}, "1": {"count": 0, "events": []}}));
-        assert_eq!(summary_from_output(&output(&fx)).unwrap().objectives, Some([2, 0]));
-        set(&mut fx, "Cursed Hollow", json!({"type": "Cursed Hollow", "0": {"count": 3.0, "events": [{"time": 1.0}, {"time": 2.0}, {"time": 3.0}]}, "1": {"count": 0, "events": []}}));
-        assert_eq!(summary_from_output(&output(&fx)).unwrap().objectives, Some([3, 0]));
-        set(&mut fx, "Battlefield of Eternity", json!({"type": "Battlefield of Eternity",
-            "results": [{"winner": 1.0, "time": 272.0}, {"winner": 0.0, "time": 506.0}, {"winner": 1.0, "time": 766.0}]}));
-        assert_eq!(summary_from_output(&output(&fx)).unwrap().objectives, Some([1, 2]));
+        set(
+            &mut fx,
+            "Tomb of the Spider Queen",
+            json!({"type": "Tomb of the Spider Queen",
+            "0": {"count": 3.0, "events": [{"time": 1.0}, {"time": 2.0}, {"time": null}]}, "1": {"count": 0, "events": []}}),
+        );
+        assert_eq!(
+            summary_from_output(&output(&fx)).unwrap().objectives,
+            Some([2, 0])
+        );
+        set(
+            &mut fx,
+            "Cursed Hollow",
+            json!({"type": "Cursed Hollow", "0": {"count": 3.0, "events": [{"time": 1.0}, {"time": 2.0}, {"time": 3.0}]}, "1": {"count": 0, "events": []}}),
+        );
+        assert_eq!(
+            summary_from_output(&output(&fx)).unwrap().objectives,
+            Some([3, 0])
+        );
+        set(
+            &mut fx,
+            "Battlefield of Eternity",
+            json!({"type": "Battlefield of Eternity",
+            "results": [{"winner": 1.0, "time": 272.0}, {"winner": 0.0, "time": 506.0}, {"winner": 1.0, "time": 766.0}]}),
+        );
+        assert_eq!(
+            summary_from_output(&output(&fx)).unwrap().objectives,
+            Some([1, 2])
+        );
         // hors liste → pas de ligne, même avec des événements par équipe
-        for map in ["Sky Temple", "Alterac Pass", "Infernal Shrines", "Warhead Junction", "Haunted Mines", "Silver City", "Braxis Holdout"] {
-            set(&mut fx, map, json!({"type": map, "0": {"count": 2.0, "events": [{"time": 1.0}, {"time": 2.0}]}, "1": {"count": 1.0, "events": [{"time": 3.0}]}}));
-            assert_eq!(summary_from_output(&output(&fx)).unwrap().objectives, None, "{map}");
+        for map in [
+            "Sky Temple",
+            "Alterac Pass",
+            "Infernal Shrines",
+            "Warhead Junction",
+            "Haunted Mines",
+            "Silver City",
+            "Braxis Holdout",
+        ] {
+            set(
+                &mut fx,
+                map,
+                json!({"type": map, "0": {"count": 2.0, "events": [{"time": 1.0}, {"time": 2.0}]}, "1": {"count": 1.0, "events": [{"time": 3.0}]}}),
+            );
+            assert_eq!(
+                summary_from_output(&output(&fx)).unwrap().objectives,
+                None,
+                "{map}"
+            );
         }
     }
 
@@ -373,12 +523,32 @@ mod tests {
         let s = summary_from_output(&output(&fixture())).unwrap();
         let w = s.clone().swapped();
         assert_eq!(w.winner, Side::Red);
-        assert_eq!((w.takedowns, w.team_level, w.merc_camps, w.structures, w.objectives),
-            ([15, 28], Some([24, 25]), Some([6, 12]), Some([4, 5]), Some([3, 3])));
+        assert_eq!(
+            (
+                w.takedowns,
+                w.team_level,
+                w.merc_camps,
+                w.structures,
+                w.objectives
+            ),
+            (
+                [15, 28],
+                Some([24, 25]),
+                Some([6, 12]),
+                Some([4, 5]),
+                Some([3, 3])
+            )
+        );
         assert_eq!(w.bans[0], s.bans[1]);
         assert_eq!(w.xp_lead[0], (60, -710));
-        assert_eq!((w.players[0].side, w.players[0].hero.as_str()), (Side::Blue, "Blaze"));
-        assert_eq!((w.players[5].side, w.players[5].hero.as_str()), (Side::Red, "Hogger"));
+        assert_eq!(
+            (w.players[0].side, w.players[0].hero.as_str()),
+            (Side::Blue, "Blaze")
+        );
+        assert_eq!(
+            (w.players[5].side, w.players[5].hero.as_str()),
+            (Side::Red, "Hogger")
+        );
         assert_eq!(w.swapped(), s);
     }
 }

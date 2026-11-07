@@ -199,19 +199,28 @@ fn int(v: Option<&J>) -> Option<i64> {
 
 /// Texte collé → analyse validée. `current_facts_version` sert à avertir d'une analyse faite sur
 /// un état antérieur du rapport ; elle est tout de même acceptée.
-pub fn import(text: &str, report_id: i64, current_facts_version: i64) -> Result<Imported, ImportError> {
+pub fn import(
+    text: &str,
+    report_id: i64,
+    current_facts_version: i64,
+) -> Result<Imported, ImportError> {
     let v = extract(text)?;
     match int(v.get("format_version")) {
         Some(FORMAT_VERSION) => {}
         _ => {
-            let got = v.get("format_version").map_or("missing".to_string(), J::to_string);
+            let got = v
+                .get("format_version")
+                .map_or("missing".to_string(), J::to_string);
             return Err(ImportError::FormatVersion(got));
         }
     }
     let mut warnings = Vec::new();
     match int(v.get("report_id")) {
         Some(got) if got != report_id => {
-            return Err(ImportError::WrongReport { expected: report_id, got })
+            return Err(ImportError::WrongReport {
+                expected: report_id,
+                got,
+            })
         }
         Some(_) => {}
         None => warnings.push("report_id missing — assumed to be this report".to_string()),
@@ -226,7 +235,11 @@ pub fn import(text: &str, report_id: i64, current_facts_version: i64) -> Result<
     }
     let analysis: Analysis =
         serde_json::from_value(v).map_err(|e| ImportError::Invalid(e.to_string()))?;
-    Ok(Imported { analysis, facts_version, warnings })
+    Ok(Imported {
+        analysis,
+        facts_version,
+        warnings,
+    })
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -301,7 +314,10 @@ mod tests {
         let r = import(&text, 7, 3).unwrap();
         assert_eq!(r.analysis.summary, "s");
         assert_eq!(r.analysis.maps[0].bans[0].phase.as_deref(), Some("first"));
-        assert_eq!(r.analysis.maps[0].their_picks[0].player.as_deref(), Some("p3"));
+        assert_eq!(
+            r.analysis.maps[0].their_picks[0].player.as_deref(),
+            Some("p3")
+        );
         assert!(r.warnings.is_empty(), "{:?}", r.warnings);
     }
 
@@ -316,14 +332,26 @@ mod tests {
     fn json_casse_refuse() {
         let e = import("```json\n{\"format_version\": 2, \"summary\": }\n```", 7, 3).unwrap_err();
         assert!(matches!(e, ImportError::Invalid(_)), "{e:?}");
-        assert_eq!(import("no json here", 7, 3).unwrap_err(), ImportError::NoJson);
+        assert_eq!(
+            import("no json here", 7, 3).unwrap_err(),
+            ImportError::NoJson
+        );
     }
 
     #[test]
     fn mauvais_rapport_ou_ancien_format_refuses() {
-        assert_eq!(import(OK, 8, 3).unwrap_err(), ImportError::WrongReport { expected: 8, got: 7 });
+        assert_eq!(
+            import(OK, 8, 3).unwrap_err(),
+            ImportError::WrongReport {
+                expected: 8,
+                got: 7
+            }
+        );
         let v1 = OK.replace("\"format_version\":2", "\"format_version\":1");
-        assert!(matches!(import(&v1, 7, 3).unwrap_err(), ImportError::FormatVersion(_)));
+        assert!(matches!(
+            import(&v1, 7, 3).unwrap_err(),
+            ImportError::FormatVersion(_)
+        ));
     }
 
     #[test]
@@ -338,13 +366,24 @@ mod tests {
         let r = import(OK, 7, 3).unwrap();
         let mut ix = BTreeMap::new();
         for id in ["p1.record", "map.braxis_holdout.record"] {
-            ix.insert(id.to_string(), FactRef { label: "rec".into(), text: "2/3 (67%)".into(), n: 3, low: false });
+            ix.insert(
+                id.to_string(),
+                FactRef {
+                    label: "rec".into(),
+                    text: "2/3 (67%)".into(),
+                    n: 3,
+                    low: false,
+                },
+            );
         }
         let (v, t) = resolve(&r.analysis, &ix);
         assert_eq!(v["maps"][0]["bans"][0]["evidence"][0]["text"], "2/3 (67%)");
         assert_eq!(v["maps"][0]["unsupported"], false);
         assert_eq!(v["maps"][0]["their_picks"][0]["unsupported"], true);
-        assert_eq!(v["maps"][0]["their_picks"][0]["evidence"][0]["known"], false);
+        assert_eq!(
+            v["maps"][0]["their_picks"][0]["evidence"][0]["known"],
+            false
+        );
         assert_eq!(v["general"]["considerations"][0]["unsupported"], true);
         // map_choice.pick, maps[0], maps[0].bans, maps[0].their_picks, general.considerations
         assert_eq!(t.claims, 5);

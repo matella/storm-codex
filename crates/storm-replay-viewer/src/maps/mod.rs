@@ -14,7 +14,10 @@ pub(crate) fn objectives(map_name: &str, tracker: &[Value]) -> (Vec<Objective>, 
         return braxis::waves(tracker);
     }
     if m.contains("blackheart") || m.contains("volskaya") {
-        return (Vec::new(), vec![format!("objective data unavailable: {map_name}")]);
+        return (
+            Vec::new(),
+            vec![format!("objective data unavailable: {map_name}")],
+        );
     }
     (Vec::new(), Vec::new()) // générique : rien en V1
 }

@@ -288,7 +288,10 @@ fn diff_at(g: &GameSummary, side: u8, t: f64) -> Option<f64> {
 }
 
 fn role_of<'a>(roles: &'a HashMap<String, String>, hero: &str) -> &'a str {
-    roles.get(&slug(hero)).map(String::as_str).unwrap_or("Unknown")
+    roles
+        .get(&slug(hero))
+        .map(String::as_str)
+        .unwrap_or("Unknown")
 }
 
 fn mine<'a>(g: &GameInput<'a>) -> &'a [Player] {
@@ -334,7 +337,11 @@ pub fn compute(
         first_date: dates.first().map(|s| s.to_string()),
         last_date: dates.last().map(|s| s.to_string()),
         builds,
-        avg_length_s: if n_games > 0 { total_len / f64::from(n_games) } else { 0.0 },
+        avg_length_s: if n_games > 0 {
+            total_len / f64::from(n_games)
+        } else {
+            0.0
+        },
     };
 
     // ── joueurs : p1…pN, roster d'abord puis remplaçants, par nombre de parties ──
@@ -413,7 +420,11 @@ pub fn compute(
                 healing_pm: per_min(a.sums.healing_pm),
                 damage_taken_pm: per_min(a.sums.damage_taken_pm),
                 xp_pm: per_min(a.sums.xp_pm),
-                time_dead_pct: if a.seconds > 0.0 { a.seconds_dead * 100.0 / a.seconds } else { 0.0 },
+                time_dead_pct: if a.seconds > 0.0 {
+                    a.seconds_dead * 100.0 / a.seconds
+                } else {
+                    0.0
+                },
             },
         });
     }
@@ -427,17 +438,24 @@ pub fn compute(
         .into_iter()
         .map(|(map, gs)| {
             let n = gs.len() as u32;
-            let (mut record, mut picks, mut bans, mut against) =
-                (Rate::default(), Tally::default(), Tally::default(), Tally::default());
+            let (mut record, mut picks, mut bans, mut against) = (
+                Rate::default(),
+                Tally::default(),
+                Tally::default(),
+                Tally::default(),
+            );
             let mut by: BTreeMap<&str, Vec<String>> = BTreeMap::new();
             for g in &gs {
                 let w = won(g);
                 record.add(w);
                 for p in mine(g) {
                     picks.hit(&p.hero, w);
-                    by.entry(p.hero.as_str())
-                        .or_default()
-                        .push(pid_of.get(p.toon.as_str()).cloned().unwrap_or_else(|| p.name.clone()));
+                    by.entry(p.hero.as_str()).or_default().push(
+                        pid_of
+                            .get(p.toon.as_str())
+                            .cloned()
+                            .unwrap_or_else(|| p.name.clone()),
+                    );
                 }
                 for b in &g.summary.bans[g.side as usize] {
                     bans.hit(&b.hero, w);
@@ -563,8 +581,16 @@ pub fn compute(
             }
         }
         let sign = if g.side == 0 { 1.0 } else { -1.0 };
-        let max_ahead = s.level_diff.iter().map(|x| x.diff * sign).fold(0.0, f64::max);
-        let max_behind = s.level_diff.iter().map(|x| -x.diff * sign).fold(0.0, f64::max);
+        let max_ahead = s
+            .level_diff
+            .iter()
+            .map(|x| x.diff * sign)
+            .fold(0.0, f64::max);
+        let max_behind = s
+            .level_diff
+            .iter()
+            .map(|x| -x.diff * sign)
+            .fold(0.0, f64::max);
         if max_behind >= 2.0 {
             flow.comebacks.add(w);
         }
@@ -581,7 +607,11 @@ pub fn compute(
         flow.level_diff.push(LevelDiffAt {
             id: format!("flow.level_diff.{minute}"),
             minute,
-            avg: if n > 0 { vals.iter().sum::<f64>() / f64::from(n) } else { 0.0 },
+            avg: if n > 0 {
+                vals.iter().sum::<f64>() / f64::from(n)
+            } else {
+                0.0
+            },
             n,
         });
     }
@@ -593,10 +623,17 @@ pub fn compute(
     ];
     for (key, label, lo, hi) in buckets {
         let mut r = Rate::default();
-        for g in games.iter().filter(|g| g.summary.length_s >= lo && g.summary.length_s < hi) {
+        for g in games
+            .iter()
+            .filter(|g| g.summary.length_s >= lo && g.summary.length_s < hi)
+        {
             r.add(won(g));
         }
-        flow.length.push(Bucket { id: format!("flow.length.{key}"), label: label.into(), record: r });
+        flow.length.push(Bucket {
+            id: format!("flow.length.{key}"),
+            label: label.into(),
+            record: r,
+        });
     }
 
     // ── parties ──
@@ -620,7 +657,12 @@ pub fn compute(
                         player: team
                             .iter()
                             .find(|p| p.hero == h)
-                            .map(|p| pid_of.get(p.toon.as_str()).cloned().unwrap_or_else(|| p.name.clone()))
+                            .map(|p| {
+                                pid_of
+                                    .get(p.toon.as_str())
+                                    .cloned()
+                                    .unwrap_or_else(|| p.name.clone())
+                            })
                             .unwrap_or_default(),
                     })
                     .collect()
@@ -657,7 +699,12 @@ pub fn compute(
 }
 
 fn rate_ref(label: String, r: Rate) -> FactRef {
-    FactRef { label, text: r.text(), n: r.n, low: r.n < LOW_SAMPLE }
+    FactRef {
+        label,
+        text: r.text(),
+        n: r.n,
+        low: r.n < LOW_SAMPLE,
+    }
 }
 
 fn games(n: u32) -> String {
@@ -681,14 +728,25 @@ pub fn ordered_index(f: &Facts) -> Vec<(String, FactRef)> {
         ix.push((id.to_string(), r));
     };
     let o = &f.overview;
-    put("overview.record", rate_ref("Overall record (wins/games)".into(), o.record));
+    put(
+        "overview.record",
+        rate_ref("Overall record (wins/games)".into(), o.record),
+    );
     put(
         "overview.avg_length",
-        FactRef { label: "Average game length".into(), text: fmt_len(o.avg_length_s), n: o.games, low: o.games < LOW_SAMPLE },
+        FactRef {
+            label: "Average game length".into(),
+            text: fmt_len(o.avg_length_s),
+            n: o.games,
+            low: o.games < LOW_SAMPLE,
+        },
     );
     for p in &f.players {
         let who = format!("{} ({})", p.name, p.pid);
-        put(&format!("{}.record", p.pid), rate_ref(format!("{who} — record"), p.record));
+        put(
+            &format!("{}.record", p.pid),
+            rate_ref(format!("{who} — record"), p.record),
+        );
         for h in &p.heroes {
             let r = h.record;
             put(
@@ -702,7 +760,10 @@ pub fn ordered_index(f: &Facts) -> Vec<(String, FactRef)> {
             );
         }
         for r in &p.roles {
-            put(&r.id, rate_ref(format!("{who} — games as {}", r.key), r.count));
+            put(
+                &r.id,
+                rate_ref(format!("{who} — games as {}", r.key), r.count),
+            );
         }
         let s = &p.stats;
         put(
@@ -720,7 +781,10 @@ pub fn ordered_index(f: &Facts) -> Vec<(String, FactRef)> {
         );
     }
     for m in &f.maps {
-        let wil = m.wilson.map(|(a, b)| format!(", 95% CI {a:.0}–{b:.0}%")).unwrap_or_default();
+        let wil = m
+            .wilson
+            .map(|(a, b)| format!(", 95% CI {a:.0}–{b:.0}%"))
+            .unwrap_or_default();
         put(
             &format!("{}.record", m.id),
             FactRef {
@@ -734,13 +798,20 @@ pub fn ordered_index(f: &Facts) -> Vec<(String, FactRef)> {
             put(
                 &h.id,
                 FactRef {
-                    label: format!("{} — {} picked by them (games, record, players)", m.map, h.hero),
+                    label: format!(
+                        "{} — {} picked by them (games, record, players)",
+                        m.map, h.hero
+                    ),
                     text: format!(
                         "{} of {}, {}{}",
                         h.picks.k,
                         games(h.picks.n),
                         h.record.text(),
-                        if h.by.is_empty() { String::new() } else { format!(", played by {}", h.by.join(", ")) }
+                        if h.by.is_empty() {
+                            String::new()
+                        } else {
+                            format!(", played by {}", h.by.join(", "))
+                        }
                     ),
                     n: h.picks.n,
                     low: h.picks.n < LOW_SAMPLE,
@@ -748,16 +819,34 @@ pub fn ordered_index(f: &Facts) -> Vec<(String, FactRef)> {
             );
         }
         for c in &m.bans {
-            put(&c.id, rate_ref(format!("{} — {} banned by them", m.map, c.key), c.count));
+            put(
+                &c.id,
+                rate_ref(format!("{} — {} banned by them", m.map, c.key), c.count),
+            );
         }
         for c in &m.bans_against {
-            put(&c.id, rate_ref(format!("{} — {} banned against them", m.map, c.key), c.count));
+            put(
+                &c.id,
+                rate_ref(
+                    format!("{} — {} banned against them", m.map, c.key),
+                    c.count,
+                ),
+            );
         }
     }
     let d = &f.draft;
-    put("draft.first_pick", rate_ref("Had first pick".into(), d.first_pick));
-    put("draft.first_pick.record", rate_ref("Record with first pick".into(), d.first_pick_record));
-    put("draft.second_pick.record", rate_ref("Record with second pick".into(), d.second_pick_record));
+    put(
+        "draft.first_pick",
+        rate_ref("Had first pick".into(), d.first_pick),
+    );
+    put(
+        "draft.first_pick.record",
+        rate_ref("Record with first pick".into(), d.first_pick_record),
+    );
+    put(
+        "draft.second_pick.record",
+        rate_ref("Record with second pick".into(), d.second_pick_record),
+    );
     for (list, what) in [
         (&d.bans_first, "first-phase ban"),
         (&d.bans_mid, "mid-draft ban"),
@@ -774,22 +863,54 @@ pub fn ordered_index(f: &Facts) -> Vec<(String, FactRef)> {
         put(
             &h.id,
             FactRef {
-                label: format!("{} picked against them — their record in those games", h.hero),
-                text: format!("faced in {} of {}, their record {}", h.picks.k, games(h.picks.n), h.record.text()),
+                label: format!(
+                    "{} picked against them — their record in those games",
+                    h.hero
+                ),
+                text: format!(
+                    "faced in {} of {}, their record {}",
+                    h.picks.k,
+                    games(h.picks.n),
+                    h.record.text()
+                ),
                 n: h.picks.k,
                 low: h.picks.k < LOW_SAMPLE,
             },
         );
     }
     let fl = &f.flow;
-    put("flow.first_to_10", rate_ref("Reached level 10 first".into(), fl.first_to_10));
-    put("flow.first_to_10.record", rate_ref("Record when first to level 10".into(), fl.first_to_10_record));
-    put("flow.first_fort", rate_ref("Took the first fort".into(), fl.first_fort));
-    put("flow.first_fort.record", rate_ref("Record when taking the first fort".into(), fl.first_fort_record));
-    put("flow.first_objective", rate_ref("Won the first map objective".into(), fl.first_objective));
+    put(
+        "flow.first_to_10",
+        rate_ref("Reached level 10 first".into(), fl.first_to_10),
+    );
+    put(
+        "flow.first_to_10.record",
+        rate_ref(
+            "Record when first to level 10".into(),
+            fl.first_to_10_record,
+        ),
+    );
+    put(
+        "flow.first_fort",
+        rate_ref("Took the first fort".into(), fl.first_fort),
+    );
+    put(
+        "flow.first_fort.record",
+        rate_ref(
+            "Record when taking the first fort".into(),
+            fl.first_fort_record,
+        ),
+    );
+    put(
+        "flow.first_objective",
+        rate_ref("Won the first map objective".into(), fl.first_objective),
+    );
     put(
         "flow.first_objective.record",
-        rate_ref("Record when winning the first objective".into(), fl.first_objective_record),
+        rate_ref(
+            "Record when winning the first objective".into(),
+            fl.first_objective_record,
+        ),
     );
     for l in &fl.level_diff {
         put(
@@ -803,16 +924,33 @@ pub fn ordered_index(f: &Facts) -> Vec<(String, FactRef)> {
         );
     }
     for b in &fl.length {
-        put(&b.id, rate_ref(format!("Record in games lasting {}", b.label), b.record));
+        put(
+            &b.id,
+            rate_ref(format!("Record in games lasting {}", b.label), b.record),
+        );
     }
-    put("flow.comeback", rate_ref("Wins after trailing by 2+ levels".into(), fl.comebacks));
-    put("flow.throw", rate_ref("Losses after leading by 2+ levels".into(), fl.throws));
+    put(
+        "flow.comeback",
+        rate_ref("Wins after trailing by 2+ levels".into(), fl.comebacks),
+    );
+    put(
+        "flow.throw",
+        rate_ref("Losses after leading by 2+ levels".into(), fl.throws),
+    );
     for g in &f.games {
         put(
             &g.id,
             FactRef {
-                label: format!("Game on {} ({})", g.map, g.date.as_deref().unwrap_or("?").get(..10).unwrap_or("?")),
-                text: format!("{} in {}", if g.won { "win" } else { "loss" }, fmt_len(g.length_s)),
+                label: format!(
+                    "Game on {} ({})",
+                    g.map,
+                    g.date.as_deref().unwrap_or("?").get(..10).unwrap_or("?")
+                ),
+                text: format!(
+                    "{} in {}",
+                    if g.won { "win" } else { "loss" },
+                    fmt_len(g.length_s)
+                ),
                 n: 1,
                 low: false,
             },
@@ -864,21 +1002,36 @@ mod tests {
     fn wilson_valeurs_de_reference() {
         // 3/3 → [43.8 ; 100] ; 5/10 → [23.7 ; 76.3]
         let (lo, hi) = wilson(Rate { k: 3, n: 3 }).unwrap();
-        assert!((lo - 43.85).abs() < 0.1 && (hi - 100.0).abs() < 1e-9, "{lo} {hi}");
+        assert!(
+            (lo - 43.85).abs() < 0.1 && (hi - 100.0).abs() < 1e-9,
+            "{lo} {hi}"
+        );
         let (lo, hi) = wilson(Rate { k: 5, n: 10 }).unwrap();
-        assert!((lo - 23.66).abs() < 0.1 && (hi - 76.34).abs() < 0.1, "{lo} {hi}");
+        assert!(
+            (lo - 23.66).abs() < 0.1 && (hi - 76.34).abs() < 0.1,
+            "{lo} {hi}"
+        );
         assert_eq!(wilson(Rate { k: 0, n: 0 }), None);
     }
 
     fn inputs(games: &[GameSummary], sides: &[u8]) -> Vec<(i64, u8)> {
-        games.iter().zip(sides).enumerate().map(|(i, (_, s))| (i as i64 + 1, *s)).collect()
+        games
+            .iter()
+            .zip(sides)
+            .enumerate()
+            .map(|(i, (_, s))| (i as i64 + 1, *s))
+            .collect()
     }
 
     fn run(games: &[GameSummary], sides: &[u8]) -> Facts {
         let ix = inputs(games, sides);
         let gi: Vec<GameInput> = ix
             .iter()
-            .map(|(gid, side)| GameInput { gid: *gid, summary: &games[(*gid - 1) as usize], side: *side })
+            .map(|(gid, side)| GameInput {
+                gid: *gid,
+                summary: &games[(*gid - 1) as usize],
+                side: *side,
+            })
             .collect();
         let roles: HashMap<String, String> = [("h_r1".to_string(), "Tank".to_string())].into();
         compute(&gi, &roster(), 1, &roles)
@@ -891,17 +1044,34 @@ mod tests {
         g1.first_pick = Some(0);
         g1.bans = [
             vec![
-                Ban { hero: "Johanna".into(), phase: BanPhase::First },
-                Ban { hero: "Anduin".into(), phase: BanPhase::Mid },
+                Ban {
+                    hero: "Johanna".into(),
+                    phase: BanPhase::First,
+                },
+                Ban {
+                    hero: "Anduin".into(),
+                    phase: BanPhase::Mid,
+                },
             ],
-            vec![Ban { hero: "Garrosh".into(), phase: BanPhase::First }],
+            vec![Ban {
+                hero: "Garrosh".into(),
+                phase: BanPhase::First,
+            }],
         ];
         g1.picks = [US.iter().map(|t| format!("H_{t}")).collect(), Vec::new()];
         g1.level10 = [Some(400.0), Some(450.0)];
         g1.first_fort = Some(0);
         g1.level_diff = vec![
-            LevelSegment { start: 0.0, end: 700.0, diff: -2.0 },
-            LevelSegment { start: 700.0, end: 900.0, diff: 1.0 },
+            LevelSegment {
+                start: 0.0,
+                end: 700.0,
+                diff: -2.0,
+            },
+            LevelSegment {
+                start: 700.0,
+                end: 900.0,
+                diff: 1.0,
+            },
         ];
         let mut g2 = game(&them, &["r1", "r2", "r3", "r4", "sub"]); // cible côté 1, perd
         g2.winner = Some(0);
@@ -909,7 +1079,11 @@ mod tests {
         g2.length_s = 1300.0;
         g2.first_pick = Some(0);
         g2.level10 = [Some(400.0), None];
-        g2.level_diff = vec![LevelSegment { start: 0.0, end: 1300.0, diff: -3.0 }];
+        g2.level_diff = vec![LevelSegment {
+            start: 0.0,
+            end: 1300.0,
+            diff: -3.0,
+        }];
         vec![g1, g2]
     }
 
@@ -923,7 +1097,10 @@ mod tests {
         assert_eq!(f.players.len(), 6);
         assert!(f.players[..5].iter().all(|p| p.core));
         let sub = f.players.last().unwrap();
-        assert_eq!((sub.toon.as_str(), sub.core, sub.pid.as_str()), ("sub", false, "p6"));
+        assert_eq!(
+            (sub.toon.as_str(), sub.core, sub.pid.as_str()),
+            ("sub", false, "p6")
+        );
         let p1 = &f.players[0];
         assert_eq!(p1.record, Rate { k: 1, n: 2 });
         assert_eq!(p1.roles[0].key, "Tank");
@@ -951,7 +1128,9 @@ mod tests {
         assert_eq!(o1.id, "draft.faced.h_o1");
         assert_eq!(o1.picks, Rate { k: 2, n: 2 });
         assert_eq!(o1.record, Rate { k: 1, n: 2 });
-        assert!(f.index["draft.faced.h_o1"].text.contains("their record 1/2"));
+        assert!(f.index["draft.faced.h_o1"]
+            .text
+            .contains("their record 1/2"));
         // picks par carte : qui l'a joué
         let braxis = f.maps.iter().find(|m| m.map == "Braxis Holdout").unwrap();
         let r1 = braxis.picks.iter().find(|h| h.hero == "H_r1").unwrap();
@@ -982,7 +1161,10 @@ mod tests {
     #[test]
     fn index_complet_ids_bien_formes_et_n_partout() {
         let f = run(&sample(), &[0, 1]);
-        let ok = |id: &str| id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '.');
+        let ok = |id: &str| {
+            id.chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '.')
+        };
         for (id, r) in &f.index {
             assert!(ok(id), "id mal formé : {id}");
             // une référence de partie désigne UNE partie : pas un taux, donc pas « faible échantillon »

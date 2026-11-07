@@ -102,8 +102,14 @@ fn nom_mode(mode: i64) -> String {
 
 /// Classe une divergence de BattleTags : sur-capture (les 10 vrais sont tous là, plus des occupants
 /// en trop) ou sous-capture/décodage faux (tout le reste — un vrai joueur manque).
-fn classer(decoded: &[storm_lobby::LobbyPlayer], attendu: &BTreeMap<String, i64>) -> (bool, Vec<String>, Vec<String>) {
-    let decoded_tags: Vec<String> = decoded.iter().map(storm_lobby::LobbyPlayer::battletag).collect();
+fn classer(
+    decoded: &[storm_lobby::LobbyPlayer],
+    attendu: &BTreeMap<String, i64>,
+) -> (bool, Vec<String>, Vec<String>) {
+    let decoded_tags: Vec<String> = decoded
+        .iter()
+        .map(storm_lobby::LobbyPlayer::battletag)
+        .collect();
     let decoded_set: HashSet<&String> = decoded_tags.iter().collect();
     let en_trop: Vec<String> = decoded_tags
         .iter()
@@ -187,7 +193,10 @@ fn main() -> anyhow::Result<()> {
             }
             Ok(lobby) => {
                 let tags_ok = lobby.players.len() == attendu.len()
-                    && lobby.players.iter().all(|p| attendu.contains_key(&p.battletag()));
+                    && lobby
+                        .players
+                        .iter()
+                        .all(|p| attendu.contains_key(&p.battletag()));
                 if !tags_ok {
                     let (sur_capture, en_trop, manquants) = classer(&lobby.players, &attendu);
                     if sur_capture {
@@ -223,9 +232,7 @@ fn main() -> anyhow::Result<()> {
                         // produit puisse réparer d'un clic — d'où le comptage séparé.
                         let inversion = lobby.players.iter().all(|p| match p.team {
                             None => true,
-                            Some(team) => {
-                                attendu.get(&p.battletag()) == Some(&i64::from(1 - team))
-                            }
+                            Some(team) => attendu.get(&p.battletag()) == Some(&i64::from(1 - team)),
                         });
                         if inversion {
                             t.equipes_inversion += 1;
@@ -253,10 +260,19 @@ fn main() -> anyhow::Result<()> {
         "incohérence interne : la base ({base}) ne correspond pas à la somme des évalués par mode ({somme_modes})"
     );
 
-    let pct = |n: usize, d: usize| if d == 0 { 0.0 } else { 100.0 * n as f64 / d as f64 };
+    let pct = |n: usize, d: usize| {
+        if d == 0 {
+            0.0
+        } else {
+            100.0 * n as f64 / d as f64
+        }
+    };
 
     println!("replays vus          : {}", t.total);
-    println!("non-évaluables       : {} (ouverture/blob)", t.non_evaluables);
+    println!(
+        "non-évaluables       : {} (ouverture/blob)",
+        t.non_evaluables
+    );
     println!("écartés (stats)      : {}", t.stats_rejete);
     println!("base de comparaison  : {base}");
     println!(

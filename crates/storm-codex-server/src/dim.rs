@@ -27,7 +27,9 @@ pub async fn sync_heroes(db: &PgPool, base_url: &str) {
             return;
         }
         Ok(Err(e)) => {
-            tracing::warn!("dim_heroes : HotsPatchNotes indispo ({e}) — anneaux d'univers en fallback");
+            tracing::warn!(
+                "dim_heroes : HotsPatchNotes indispo ({e}) — anneaux d'univers en fallback"
+            );
             return;
         }
         Err(_) => return, // join error
@@ -39,7 +41,7 @@ pub async fn sync_heroes(db: &PgPool, base_url: &str) {
         let Some(name) = name else { continue };
         let role = h.get("role").and_then(|v| v.as_str());
         let universe = h.get("universe").and_then(|v| v.as_str());
-        let _ = sqlx::query(
+        if let Err(e) = sqlx::query(
             "INSERT INTO dim_heroes (id, name, role, universe, data)
              VALUES ($1,$2,$3,$4,$5)
              ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, role=EXCLUDED.role,
@@ -51,7 +53,10 @@ pub async fn sync_heroes(db: &PgPool, base_url: &str) {
         .bind(universe)
         .bind(h)
         .execute(db)
-        .await;
+        .await
+        {
+            tracing::warn!("référentiel : écriture en échec : {e}");
+        }
         n += 1;
     }
     tracing::info!("dim_heroes synchronisé : {n} héros depuis HotsPatchNotes");
@@ -61,19 +66,30 @@ pub async fn sync_heroes(db: &PgPool, base_url: &str) {
 /// devient propriétaire). Retourne les patches NOUVEAUX (absents avant) → l'appelant les notifie.
 /// Aucun « nouveau » au tout premier seed (table vide) pour éviter 200 notifications. Best-effort.
 pub async fn sync_patches(db: &PgPool, base_url: &str) -> Vec<(String, String)> {
-    let url = format!("{}/api/patches?page=1&pageSize=200", base_url.trim_end_matches('/'));
+    let url = format!(
+        "{}/api/patches?page=1&pageSize=200",
+        base_url.trim_end_matches('/')
+    );
     let items = match tokio::task::spawn_blocking(move || fetch_json(&url)).await {
-        Ok(Ok(v)) => v.get("items").and_then(|i| i.as_array()).cloned().unwrap_or_default(),
+        Ok(Ok(v)) => v
+            .get("items")
+            .and_then(|i| i.as_array())
+            .cloned()
+            .unwrap_or_default(),
         _ => {
             tracing::warn!("dim_patches : HotsPatchNotes indispo");
             return Vec::new();
         }
     };
     let was_empty: i64 = sqlx::query_scalar("SELECT count(*) FROM dim_patches")
-        .fetch_one(db).await.unwrap_or(0);
+        .fetch_one(db)
+        .await
+        .unwrap_or(0);
     let mut new_patches: Vec<(String, String)> = Vec::new();
     for it in &items {
-        let Some(iid) = it.get("internalId").and_then(|v| v.as_str()) else { continue };
+        let Some(iid) = it.get("internalId").and_then(|v| v.as_str()) else {
+            continue;
+        };
         let name = it.get("patchName").and_then(|v| v.as_str()).unwrap_or(iid);
         let inserted: Option<bool> = sqlx::query_scalar(
             "INSERT INTO dim_patches (internal_id, name, type, live_date, hero_count, map_count, data)
@@ -98,8 +114,16 @@ pub async fn sync_patches(db: &PgPool, base_url: &str) -> Vec<(String, String)> 
             new_patches.push((iid.to_string(), name.to_string()));
         }
     }
-    tracing::info!("dim_patches synchronisé : {} patches ({} nouveaux)", items.len(), new_patches.len());
-    if was_empty == 0 { Vec::new() } else { new_patches } // seed initial → pas de notif
+    tracing::info!(
+        "dim_patches synchronisé : {} patches ({} nouveaux)",
+        items.len(),
+        new_patches.len()
+    );
+    if was_empty == 0 {
+        Vec::new()
+    } else {
+        new_patches
+    } // seed initial → pas de notif
 }
 
 /// Réplique les talents par héros depuis `<base>/api/heroes/{shortName}` dans `dim_talents`.
@@ -125,7 +149,11 @@ pub async fn sync_talents(db: &PgPool, base_url: &str) {
             return;
         }
     };
-    if sqlx::query("DELETE FROM dim_talents").execute(&mut *tx).await.is_err() {
+    if sqlx::query("DELETE FROM dim_talents")
+        .execute(&mut *tx)
+        .await
+        .is_err()
+    {
         return;
     }
     let mut n = 0;
@@ -169,11 +197,19 @@ fn collect_talents(base: &str) -> Vec<(String, i32, String, String, serde_json::
                     .collect()
             })
             .unwrap_or_default();
-    let Ok(list) = fetch_array(&format!("{base}/api/heroes")) else { return out };
+    let Ok(list) = fetch_array(&format!("{base}/api/heroes")) else {
+        return out;
+    };
     for h in &list {
-        let Some(short) = h.get("shortName").and_then(|v| v.as_str()) else { continue };
-        let Some(hp_name) = h.get("name").and_then(|v| v.as_str()) else { continue };
-        let Ok(detail) = fetch_json(&format!("{base}/api/heroes/{short}")) else { continue };
+        let Some(short) = h.get("shortName").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some(hp_name) = h.get("name").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Ok(detail) = fetch_json(&format!("{base}/api/heroes/{short}")) else {
+            continue;
+        };
         // attributeId HotsPatchNotes == code attr.json (ex. Johanna="Crus", E.T.C.="L90E") →
         // nom canonique parser ; fallback sur le nom HotsPatchNotes si absent/non mappé.
         let hero_name = detail
@@ -182,12 +218,16 @@ fn collect_talents(base: &str) -> Vec<(String, i32, String, String, serde_json::
             .and_then(|a| code_to_name.get(a))
             .map(String::as_str)
             .unwrap_or(hp_name);
-        let Some(talents) = detail.get("talents").and_then(|v| v.as_object()) else { continue };
+        let Some(talents) = detail.get("talents").and_then(|v| v.as_object()) else {
+            continue;
+        };
         for (level_key, arr) in talents {
             let tier: i32 = level_key.parse().unwrap_or(0);
             let Some(arr) = arr.as_array() else { continue };
             for t in arr {
-                let Some(tree_id) = t.get("talentTreeId").and_then(|v| v.as_str()) else { continue };
+                let Some(tree_id) = t.get("talentTreeId").and_then(|v| v.as_str()) else {
+                    continue;
+                };
                 let name = t.get("name").and_then(|v| v.as_str()).unwrap_or(tree_id);
                 let data = serde_json::json!({
                     "icon": t.get("icon"),
@@ -196,7 +236,13 @@ fn collect_talents(base: &str) -> Vec<(String, i32, String, String, serde_json::
                     "sort": t.get("sort"),
                     "isQuest": t.get("isQuest"),
                 });
-                out.push((hero_name.to_string(), tier, name.to_string(), tree_id.to_string(), data));
+                out.push((
+                    hero_name.to_string(),
+                    tier,
+                    name.to_string(),
+                    tree_id.to_string(),
+                    data,
+                ));
             }
         }
     }
@@ -247,7 +293,9 @@ pub async fn ingest_snapshot(db: &PgPool, images_dir: &Path, url: &str) -> Vec<(
             let _ = std::fs::remove_dir_all(&tmp);
             std::fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
             let gz = flate2::read::GzDecoder::new(&bytes[..]);
-            tar::Archive::new(gz).unpack(&tmp).map_err(|e| e.to_string())?;
+            tar::Archive::new(gz)
+                .unpack(&tmp)
+                .map_err(|e| e.to_string())?;
             Ok(())
         }
     })
@@ -271,8 +319,10 @@ pub async fn ingest_snapshot(db: &PgPool, images_dir: &Path, url: &str) -> Vec<(
     if let Some(serde_json::Value::Array(heroes)) = read("heroes.json") {
         let mut n = 0;
         for h in &heroes {
-            let Some(name) = h.get("name").and_then(|v| v.as_str()) else { continue };
-            let _ = sqlx::query(
+            let Some(name) = h.get("name").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            if let Err(e) = sqlx::query(
                 "INSERT INTO dim_heroes (id, name, role, universe, data)
                  VALUES ($1,$2,$3,$4,$5)
                  ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, role=EXCLUDED.role,
@@ -284,7 +334,10 @@ pub async fn ingest_snapshot(db: &PgPool, images_dir: &Path, url: &str) -> Vec<(
             .bind(h.get("universe").and_then(|v| v.as_str()))
             .bind(h)
             .execute(db)
-            .await;
+            .await
+            {
+                tracing::warn!("référentiel : écriture en échec : {e}");
+            }
             n += 1;
         }
         tracing::info!("dim_heroes (snapshot) : {n} héros");
@@ -303,7 +356,11 @@ pub async fn ingest_snapshot(db: &PgPool, images_dir: &Path, url: &str) -> Vec<(
                 })
                 .unwrap_or_default();
         if let Ok(mut tx) = db.begin().await {
-            if sqlx::query("DELETE FROM dim_talents").execute(&mut *tx).await.is_ok() {
+            if sqlx::query("DELETE FROM dim_talents")
+                .execute(&mut *tx)
+                .await
+                .is_ok()
+            {
                 let mut n = 0;
                 for detail in details.values() {
                     let hp_name = detail.get("name").and_then(|v| v.as_str()).unwrap_or("");
@@ -313,12 +370,17 @@ pub async fn ingest_snapshot(db: &PgPool, images_dir: &Path, url: &str) -> Vec<(
                         .and_then(|a| code_to_name.get(a))
                         .map(String::as_str)
                         .unwrap_or(hp_name);
-                    let Some(talents) = detail.get("talents").and_then(|v| v.as_object()) else { continue };
+                    let Some(talents) = detail.get("talents").and_then(|v| v.as_object()) else {
+                        continue;
+                    };
                     for (level_key, arr) in talents {
                         let tier: i32 = level_key.parse().unwrap_or(0);
                         let Some(arr) = arr.as_array() else { continue };
                         for t in arr {
-                            let Some(tree_id) = t.get("talentTreeId").and_then(|v| v.as_str()) else { continue };
+                            let Some(tree_id) = t.get("talentTreeId").and_then(|v| v.as_str())
+                            else {
+                                continue;
+                            };
                             let name = t.get("name").and_then(|v| v.as_str()).unwrap_or(tree_id);
                             let data = serde_json::json!({
                                 "icon": t.get("icon"), "type": t.get("type"),
@@ -352,8 +414,8 @@ pub async fn ingest_snapshot(db: &PgPool, images_dir: &Path, url: &str) -> Vec<(
 
     // dim_patches : items + détail fusionné (data.detail) pour le rendu offline du patch.
     let mut new_patches: Vec<(String, String)> = Vec::new();
-    if let Some(items) = read("patches.json")
-        .and_then(|v| v.get("items").and_then(|i| i.as_array()).cloned())
+    if let Some(items) =
+        read("patches.json").and_then(|v| v.get("items").and_then(|i| i.as_array()).cloned())
     {
         let pdetails = read("patch-details.json").unwrap_or(serde_json::Value::Null);
         let was_empty: i64 = sqlx::query_scalar("SELECT count(*) FROM dim_patches")
@@ -361,7 +423,9 @@ pub async fn ingest_snapshot(db: &PgPool, images_dir: &Path, url: &str) -> Vec<(
             .await
             .unwrap_or(0);
         for it in &items {
-            let Some(iid) = it.get("internalId").and_then(|v| v.as_str()) else { continue };
+            let Some(iid) = it.get("internalId").and_then(|v| v.as_str()) else {
+                continue;
+            };
             let name = it.get("patchName").and_then(|v| v.as_str()).unwrap_or(iid);
             let mut data = it.clone();
             if let Some(d) = pdetails.get(iid) {
@@ -392,7 +456,9 @@ pub async fn ingest_snapshot(db: &PgPool, images_dir: &Path, url: &str) -> Vec<(
             // Projection des sections héros (sens héros ↔ patch) — le détail est déjà en main.
             if let Some(detail) = pdetails.get(iid) {
                 project_patch_sections(
-                    db, iid, name,
+                    db,
+                    iid,
+                    name,
                     it.get("patchType").and_then(|v| v.as_str()),
                     it.get("liveDate").and_then(|v| v.as_str()),
                     detail,
@@ -400,7 +466,11 @@ pub async fn ingest_snapshot(db: &PgPool, images_dir: &Path, url: &str) -> Vec<(
                 .await;
             }
         }
-        tracing::info!("dim_patches (snapshot) : {} patches ({} nouveaux)", items.len(), new_patches.len());
+        tracing::info!(
+            "dim_patches (snapshot) : {} patches ({} nouveaux)",
+            items.len(),
+            new_patches.len()
+        );
         if was_empty == 0 {
             new_patches.clear(); // seed initial → pas de notif
         }
@@ -422,10 +492,14 @@ pub async fn ingest_snapshot(db: &PgPool, images_dir: &Path, url: &str) -> Vec<(
 /// nombre de fichiers écrits. Best-effort (les erreurs par fichier sont ignorées).
 fn copy_tree(src: &Path, dst: &Path) -> u32 {
     let mut n = 0;
-    let Ok(entries) = std::fs::read_dir(src) else { return 0 };
+    let Ok(entries) = std::fs::read_dir(src) else {
+        return 0;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
-        let Some(name) = path.file_name() else { continue };
+        let Some(name) = path.file_name() else {
+            continue;
+        };
         let target = dst.join(name);
         if path.is_dir() {
             let _ = std::fs::create_dir_all(&target);
@@ -477,18 +551,31 @@ pub async fn project_patch_sections(
     live_date: Option<&str>,
     detail: &serde_json::Value,
 ) {
-    let Some(sections) = detail.get("sections").and_then(|v| v.as_array()) else { return };
-    let _ = sqlx::query("DELETE FROM patch_hero_sections WHERE patch_internal_id=$1")
+    let Some(sections) = detail.get("sections").and_then(|v| v.as_array()) else {
+        return;
+    };
+    if let Err(e) = sqlx::query("DELETE FROM patch_hero_sections WHERE patch_internal_id=$1")
         .bind(internal_id)
         .execute(db)
-        .await;
+        .await
+    {
+        tracing::warn!("référentiel : écriture en échec : {e}");
+    }
     for s in sections {
         if s.get("sectionType").and_then(|v| v.as_str()) != Some("Hero") {
             continue;
         }
-        let Some(entity) = s.get("entityName").and_then(|v| v.as_str()).filter(|e| !e.is_empty()) else { continue };
-        let Some(anchor) = s.get("anchor").and_then(|v| v.as_str()) else { continue };
-        let _ = sqlx::query(
+        let Some(entity) = s
+            .get("entityName")
+            .and_then(|v| v.as_str())
+            .filter(|e| !e.is_empty())
+        else {
+            continue;
+        };
+        let Some(anchor) = s.get("anchor").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        if let Err(e) = sqlx::query(
             "INSERT INTO patch_hero_sections
                (patch_internal_id, anchor, hero_short_name, hero_name, hero_key,
                 classification, short_summary, content, patch_name, patch_type, live_date)
@@ -511,7 +598,9 @@ pub async fn project_patch_sections(
         .bind(patch_type)
         .bind(live_date)
         .execute(db)
-        .await;
+        .await {
+tracing::warn!("référentiel : écriture en échec : {e}");
+}
     }
 }
 
@@ -534,11 +623,15 @@ pub async fn backfill_hero_sections(db: &PgPool, base_url: &str) {
         let url = format!("{base}/api/patches/{iid}");
         let detail = tokio::task::spawn_blocking(move || fetch_json(&url)).await;
         if let Ok(Ok(detail)) = detail {
-            project_patch_sections(db, iid, name, ptype.as_deref(), ldate.as_deref(), &detail).await;
+            project_patch_sections(db, iid, name, ptype.as_deref(), ldate.as_deref(), &detail)
+                .await;
             done += 1;
         }
     }
-    tracing::info!("patch_hero_sections : backfill de {done}/{} patch(s)", pending.len());
+    tracing::info!(
+        "patch_hero_sections : backfill de {done}/{} patch(s)",
+        pending.len()
+    );
 }
 
 fn fetch_array(url: &str) -> Result<Vec<serde_json::Value>, String> {
@@ -566,12 +659,21 @@ fn fetch_json(url: &str) -> Result<serde_json::Value, String> {
 
 /// Pour chaque objet, lit `field` (chemin `/images/...`), télécharge `<base><path>` vers
 /// `<images_dir><path sans /images>` si absent. Retourne le nombre de fichiers téléchargés.
-fn download_referenced(list: &[serde_json::Value], field: &str, base: &str, images_dir: &Path) -> u32 {
+fn download_referenced(
+    list: &[serde_json::Value],
+    field: &str,
+    base: &str,
+    images_dir: &Path,
+) -> u32 {
     let mut n = 0;
     for obj in list {
-        let Some(path) = obj.get(field).and_then(|v| v.as_str()) else { continue };
+        let Some(path) = obj.get(field).and_then(|v| v.as_str()) else {
+            continue;
+        };
         // attendu : "/images/heroes/x.png" ou "/images/battlegrounds/x.png"
-        let Some(rel) = path.strip_prefix("/images/") else { continue };
+        let Some(rel) = path.strip_prefix("/images/") else {
+            continue;
+        };
         let dest: PathBuf = images_dir.join(rel);
         if dest.exists() {
             continue;
@@ -581,7 +683,10 @@ fn download_referenced(list: &[serde_json::Value], field: &str, base: &str, imag
         }
         let url = format!("{base}{path}");
         // 404 / corps vide (ex. carte ARAM sans image) → on saute, le front a un fallback
-        match ureq::get(&url).call().and_then(|mut r| r.body_mut().read_to_vec()) {
+        match ureq::get(&url)
+            .call()
+            .and_then(|mut r| r.body_mut().read_to_vec())
+        {
             Ok(bytes) if !bytes.is_empty() && std::fs::write(&dest, &bytes).is_ok() => n += 1,
             _ => {}
         }

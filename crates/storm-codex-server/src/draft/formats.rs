@@ -40,10 +40,22 @@ mod tests {
     use super::*;
 
     fn counts(steps: &[Step]) -> (usize, usize, usize, usize) {
-        let bf = steps.iter().filter(|s| s.action == Ban && s.order == First).count();
-        let bs = steps.iter().filter(|s| s.action == Ban && s.order == Second).count();
-        let pf = steps.iter().filter(|s| s.action == Pick && s.order == First).count();
-        let ps = steps.iter().filter(|s| s.action == Pick && s.order == Second).count();
+        let bf = steps
+            .iter()
+            .filter(|s| s.action == Ban && s.order == First)
+            .count();
+        let bs = steps
+            .iter()
+            .filter(|s| s.action == Ban && s.order == Second)
+            .count();
+        let pf = steps
+            .iter()
+            .filter(|s| s.action == Pick && s.order == First)
+            .count();
+        let ps = steps
+            .iter()
+            .filter(|s| s.action == Pick && s.order == Second)
+            .count();
         (bf, bs, pf, ps)
     }
 

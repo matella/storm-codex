@@ -30,11 +30,17 @@ fn now_ms() -> i64 {
 }
 
 fn conflict(e: DraftError) -> Resp {
-    (StatusCode::CONFLICT, Json(json!({ "error": format!("{e:?}") })))
+    (
+        StatusCode::CONFLICT,
+        Json(json!({ "error": format!("{e:?}") })),
+    )
 }
 
 fn ok_state(r: &ReplayState) -> Resp {
-    (StatusCode::OK, Json(serde_json::to_value(r).unwrap_or(J::Null)))
+    (
+        StatusCode::OK,
+        Json(serde_json::to_value(r).unwrap_or(J::Null)),
+    )
 }
 
 /// Arrête la minuterie de lecture auto (si elle tourne).
@@ -91,21 +97,37 @@ impl Drop for TempFile {
 /// et suppression se font **dans** le `spawn_blocking` (rien de bloquant sur l'exécuteur) ; le permis
 /// y est déplacé et `TempFile` garantit la suppression, même si le client se déconnecte (la tâche
 /// bloquante va à son terme). Même chemin que `cast::replay::decode_in`.
-async fn decode_in(sem: Arc<Semaphore>, dir: PathBuf, bytes: Bytes) -> Result<storm_stats::Output, Resp> {
+async fn decode_in(
+    sem: Arc<Semaphore>,
+    dir: PathBuf,
+    bytes: Bytes,
+) -> Result<storm_stats::Output, Resp> {
     let Ok(permit) = sem.acquire_owned().await else {
-        return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "pool" }))));
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "pool" })),
+        ));
     };
     let parsed = tokio::task::spawn_blocking(move || {
         let _permit = permit;
         let tmp = TempFile(dir.join(format!("draft-replay-{}.StormReplay", uuid::Uuid::new_v4())));
         std::fs::write(&tmp.0, &bytes).ok()?;
-        Some(storm_stats::process_replay(&tmp.0, &tmp.0.to_string_lossy()))
+        Some(storm_stats::process_replay(
+            &tmp.0,
+            &tmp.0.to_string_lossy(),
+        ))
     })
     .await;
     match parsed {
         Ok(Some(out)) => Ok(out),
-        Ok(None) => Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "io" })))),
-        Err(_) => Err((StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "error": "parse_failed" })))),
+        Ok(None) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "io" })),
+        )),
+        Err(_) => Err((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({ "error": "parse_failed" })),
+        )),
     }
 }
 
@@ -113,7 +135,10 @@ async fn decode_in(sem: Arc<Semaphore>, dir: PathBuf, bytes: Bytes) -> Result<st
 /// Décode uniquement le draft : rien n'est écrit en base. Custom uniquement.
 pub async fn load(State(s): State<AppState>, headers: HeaderMap, bytes: Bytes) -> Resp {
     if bytes.is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "empty_body" })));
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "empty_body" })),
+        );
     }
     let name = crate::upload::filename(&headers).unwrap_or_else(|| "replay.StormReplay".into());
     let out = match decode_in(s.parse_sem.clone(), std::env::temp_dir(), bytes).await {
@@ -129,7 +154,10 @@ pub async fn load(State(s): State<AppState>, headers: HeaderMap, bytes: Bytes) -
                 d.public().replay
             };
             persist(&s).await;
-            (StatusCode::CREATED, Json(serde_json::to_value(r).unwrap_or(J::Null)))
+            (
+                StatusCode::CREATED,
+                Json(serde_json::to_value(r).unwrap_or(J::Null)),
+            )
         }
         Err(e) => {
             let code = match e {
@@ -137,13 +165,19 @@ pub async fn load(State(s): State<AppState>, headers: HeaderMap, bytes: Bytes) -
                 ReplayError::NoDraft => "no_draft",
                 ReplayError::Parse(_) => "parse_failed",
             };
-            (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "error": code, "message": e.to_string() })))
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(json!({ "error": code, "message": e.to_string() })),
+            )
         }
     }
 }
 
 /// Applique une mutation sous un seul write-lock, persiste, répond avec la file publique.
-async fn mutate(s: &AppState, f: impl FnOnce(&mut super::DraftState) -> Result<(), DraftError>) -> Resp {
+async fn mutate(
+    s: &AppState,
+    f: impl FnOnce(&mut super::DraftState) -> Result<(), DraftError>,
+) -> Resp {
     let res = {
         let mut d = s.draft.write().await;
         f(&mut d).map(|()| d.public().replay)
@@ -266,8 +300,13 @@ pub struct PlayBody {
 
 /// POST /api/draft/replay/play — lecture auto on/off, intervalle optionnel (défaut 30 s).
 pub async fn play(State(s): State<AppState>, Json(b): Json<PlayBody>) -> Resp {
-    if b.interval_ms.is_some_and(|ms| !INTERVAL_RANGE.contains(&ms)) {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "bad_interval" })));
+    if b.interval_ms
+        .is_some_and(|ms| !INTERVAL_RANGE.contains(&ms))
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "bad_interval" })),
+        );
     }
     let r = mutate(&s, |d| {
         if let Some(ms) = b.interval_ms {
@@ -301,8 +340,8 @@ pub async fn play(State(s): State<AppState>, Json(b): Json<PlayBody>) -> Resp {
 mod tests {
     use super::*;
     use crate::api_tests::{call, test_state};
-    use crate::draft::{Format, Side};
     use crate::draft::replay::LoadedGame;
+    use crate::draft::{Format, Side};
     use axum::http::StatusCode;
     use serde_json::json;
 
@@ -325,15 +364,25 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("draft-decode-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let sem = Arc::new(Semaphore::new(1));
-        let aram = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../storm-stats/tests/data/silver-city-aram.StormReplay")).unwrap();
+        let aram = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../storm-stats/tests/data/silver-city-aram.StormReplay"
+        ))
+        .unwrap();
         for bytes in [aram, vec![7u8; 64]] {
             let r = decode_in(sem.clone(), dir.clone(), Bytes::from(bytes)).await;
-            assert!(r.is_ok(), "le décodeur répond (statut storm-stats), pas d'erreur d'E/S");
+            assert!(
+                r.is_ok(),
+                "le décodeur répond (statut storm-stats), pas d'erreur d'E/S"
+            );
             assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
             assert_eq!(sem.available_permits(), 1);
         }
         let r = decode_in(sem.clone(), dir.join("nope"), Bytes::from_static(b"x")).await;
-        assert_eq!(r.err().map(|(st, j)| (st, j.0["error"].clone())), Some((StatusCode::INTERNAL_SERVER_ERROR, json!("io"))));
+        assert_eq!(
+            r.err().map(|(st, j)| (st, j.0["error"].clone())),
+            Some((StatusCode::INTERNAL_SERVER_ERROR, json!("io")))
+        );
         assert_eq!(sem.available_permits(), 1);
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -342,7 +391,9 @@ mod tests {
     /// pas `replay.fearless` (dans les deux sens).
     #[tokio::test]
     async fn replay_select_follows_active_series_format() {
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         {
             let mut c = state.cast.write().await;
             c.active = true;
@@ -352,7 +403,13 @@ mod tests {
             d.add_game(game("b"));
             d.replay.fearless = false;
         }
-        let (st, _) = call(&state, "POST", "/api/draft/replay/select", Some(json!({"index": 1}))).await;
+        let (st, _) = call(
+            &state,
+            "POST",
+            "/api/draft/replay/select",
+            Some(json!({"index": 1})),
+        )
+        .await;
         assert_eq!(st, StatusCode::OK);
         {
             let d = state.draft.read().await;
@@ -360,7 +417,13 @@ mod tests {
             assert!(d.series_bans.contains("ah4"));
         }
         state.cast.write().await.format = Format::Standard;
-        let (st, _) = call(&state, "POST", "/api/draft/replay/fearless", Some(json!({"value": true}))).await;
+        let (st, _) = call(
+            &state,
+            "POST",
+            "/api/draft/replay/fearless",
+            Some(json!({"value": true})),
+        )
+        .await;
         assert_eq!(st, StatusCode::OK);
         let d = state.draft.read().await;
         assert!(d.replay.fearless);

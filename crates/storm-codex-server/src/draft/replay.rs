@@ -66,7 +66,11 @@ impl DraftState {
     /// Révèle toute la phase courante (les 2 picks d'une phase doubles apparaissent ensemble).
     /// Écrit le script tel quel, sans contrôle d'unicité : un replay Custom peut dupliquer un héros.
     pub fn reveal_phase(&mut self) -> Result<(), DraftError> {
-        let script = self.current_game().ok_or(DraftError::NoGame)?.script.clone();
+        let script = self
+            .current_game()
+            .ok_or(DraftError::NoGame)?
+            .script
+            .clone();
         if self.is_complete() {
             return Err(DraftError::Complete);
         }
@@ -104,16 +108,44 @@ impl DraftState {
     /// l'emporte sur `replay.fearless` (M5 — la file de replays ne contourne pas le format de la
     /// série). Fearless → Fearless + series bans de la file ; Standard/Normal → Standard (les
     /// scripts de replay suivent l'ordre Standard à 16 étapes, bans compris).
-    pub fn select_game_with(&mut self, index: usize, series_format: Option<Format>) -> Result<(), DraftError> {
-        let g = self.replay.queue.get(index).ok_or(DraftError::NoGame)?.clone();
+    pub fn select_game_with(
+        &mut self,
+        index: usize,
+        series_format: Option<Format>,
+    ) -> Result<(), DraftError> {
+        let g = self
+            .replay
+            .queue
+            .get(index)
+            .ok_or(DraftError::NoGame)?
+            .clone();
         let fearless = series_format.map_or(self.replay.fearless, |f| f == Format::Fearless);
-        let mut d = DraftState::new(if fearless { Format::Fearless } else { Format::Standard }, g.first_pick, g.map);
-        d.blue = crate::draft::TeamInfo { name: self.blue.name.clone(), players: g.blue_players };
-        d.red = crate::draft::TeamInfo { name: self.red.name.clone(), players: g.red_players };
+        let mut d = DraftState::new(
+            if fearless {
+                Format::Fearless
+            } else {
+                Format::Standard
+            },
+            g.first_pick,
+            g.map,
+        );
+        d.blue = crate::draft::TeamInfo {
+            name: self.blue.name.clone(),
+            players: g.blue_players,
+        };
+        d.red = crate::draft::TeamInfo {
+            name: self.red.name.clone(),
+            players: g.red_players,
+        };
         d.score = self.score;
         d.bo = self.bo;
         d.manual_unavailable = self.manual_unavailable.clone();
-        d.replay = ReplayState { current: Some(index), playing: false, next_at_ms: None, ..self.replay.clone() };
+        d.replay = ReplayState {
+            current: Some(index),
+            playing: false,
+            next_at_ms: None,
+            ..self.replay.clone()
+        };
         if fearless {
             d.series_bans = picks_of(&self.replay.queue[..index]);
         }
@@ -210,7 +242,12 @@ impl DraftState {
         }
         if p.replay.current.is_some() {
             let (mut b, mut r) = (0usize, 0usize);
-            for (i, s) in self.steps.iter().enumerate().filter(|(_, s)| s.action == Action::Pick) {
+            for (i, s) in self
+                .steps
+                .iter()
+                .enumerate()
+                .filter(|(_, s)| s.action == Action::Pick)
+            {
                 let (team, k) = match self.side_of(s.order) {
                     Side::Blue => (&mut p.blue, &mut b),
                     Side::Red => (&mut p.red, &mut r),
@@ -231,7 +268,10 @@ fn picks_of(games: &[LoadedGame]) -> BTreeSet<String> {
         .flat_map(|g| {
             g.script.iter().enumerate().filter_map(|(i, h)| {
                 // étapes de pick du format Standard (les bans ne sont pas des héros « joués »)
-                crate::draft::steps_for(Format::Standard).get(i).filter(|s| s.action == Action::Pick).and(h.clone())
+                crate::draft::steps_for(Format::Standard)
+                    .get(i)
+                    .filter(|s| s.action == Action::Pick)
+                    .and(h.clone())
             })
         })
         .collect()
@@ -344,7 +384,10 @@ mod tests {
         assert_eq!(d.map, "Map b");
         assert_eq!(d.blue.players[0], "bb0");
         // picks (étapes 4,5,6,7,8,11,12,13,14,15) de la partie « a », pas ses bans
-        let want: BTreeSet<String> = [4, 5, 6, 7, 8, 11, 12, 13, 14, 15].iter().map(|i| format!("ah{i}")).collect();
+        let want: BTreeSet<String> = [4, 5, 6, 7, 8, 11, 12, 13, 14, 15]
+            .iter()
+            .map(|i| format!("ah{i}"))
+            .collect();
         assert_eq!(d.series_bans, want);
     }
 
@@ -395,7 +438,12 @@ mod tests {
         let mut d = loaded();
         d.reveal_phase().unwrap(); // 1er ban seulement
         let p = d.public();
-        assert!(p.blue.players.iter().chain(p.red.players.iter()).all(String::is_empty));
+        assert!(p
+            .blue
+            .players
+            .iter()
+            .chain(p.red.players.iter())
+            .all(String::is_empty));
         for _ in 0..4 {
             d.reveal_phase().unwrap(); // 3 bans de plus puis le 1er pick Blue
         }

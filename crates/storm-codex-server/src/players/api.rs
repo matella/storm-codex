@@ -19,7 +19,10 @@ fn err(code: StatusCode, msg: &str) -> Err {
 
 fn db_err(e: sqlx::Error) -> Err {
     tracing::error!("players : {e}");
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "db" })))
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "error": "db" })),
+    )
 }
 
 #[derive(Deserialize)]
@@ -102,14 +105,21 @@ pub async fn put_link(
         return Err(err(StatusCode::UNAUTHORIZED, "admin token requis"));
     }
     if toon == other {
-        return Err(err(StatusCode::BAD_REQUEST, "un compte ne peut pas être lié à lui-même"));
+        return Err(err(
+            StatusCode::BAD_REQUEST,
+            "un compte ne peut pas être lié à lui-même",
+        ));
     }
     for t in [&toon, &other] {
         if !known(&s.db, t).await.map_err(db_err)? {
             return Err(err(StatusCode::NOT_FOUND, "joueur inconnu"));
         }
     }
-    let (a, b) = if toon < other { (&toon, &other) } else { (&other, &toon) };
+    let (a, b) = if toon < other {
+        (&toon, &other)
+    } else {
+        (&other, &toon)
+    };
     let status = match body.status {
         LinkStatus::Confirmed => "confirmed",
         LinkStatus::Dismissed => "dismissed",

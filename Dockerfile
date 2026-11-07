@@ -12,14 +12,22 @@ COPY web/ ./
 RUN npm run build
 
 # ── 2. Serveur Rust (release) ───────────────────────────────────────────────
-FROM rust:1-slim AS server
+# cargo-chef : les dépendances du workspace (5 crates) sont compilées dans une couche à part, qui
+# ne se reconstruit que si Cargo.toml/Cargo.lock changent — un changement de code ne recompile plus
+# tout l'arbre de dépendances.
+FROM rust:1-slim AS chef
+RUN cargo install cargo-chef --locked --version ^0.1
 WORKDIR /src
-# dépendances d'abord (cache) : on copie les manifests du workspace + des crates
+
+FROM chef AS planner
 COPY Cargo.toml Cargo.lock ./
-COPY crates/storm-replay/Cargo.toml crates/storm-replay/Cargo.toml
-COPY crates/storm-stats/Cargo.toml crates/storm-stats/Cargo.toml
-COPY crates/storm-codex-server/Cargo.toml crates/storm-codex-server/Cargo.toml
-# sources
+COPY crates/ crates/
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS server
+COPY --from=planner /src/recipe.json recipe.json
+RUN cargo chef cook --release -p storm-codex-server --recipe-path recipe.json
+COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
 RUN cargo build --release -p storm-codex-server
 
@@ -27,7 +35,10 @@ RUN cargo build --release -p storm-codex-server
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl \
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --system --uid 10001 --home-dir /app --shell /usr/sbin/nologin storm \
+ && mkdir -p /data \
+ && chown storm:storm /data
 WORKDIR /app
 COPY --from=server /src/target/release/storm-codex-server /usr/local/bin/storm-codex-server
 COPY --from=web /web/dist /app/web
@@ -41,6 +52,9 @@ ENV WEB_DIR=/app/web \
     ORPHEUS_URL=http://host.docker.internal:3010 \
     BIND_ADDR=0.0.0.0:8088
 EXPOSE 8088
+# Utilisateur non root. Un volume /data créé par une ancienne image (root) est remis à cet uid par
+# le service `storm-codex-init` de docker-compose.yml avant le démarrage du serveur.
+USER 10001:10001
 # health : /api/health renvoie 200 si la DB répond
 HEALTHCHECK --interval=15s --timeout=4s --start-period=20s --retries=4 \
   CMD curl -fsS http://localhost:8088/api/health || exit 1
