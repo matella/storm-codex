@@ -32,12 +32,15 @@ pub fn is_admin(headers: &HeaderMap, configured: Option<&str>) -> bool {
 /// passe à l'antenne dans OBS. Avec `ADMIN_TOKEN`, elles exigent le Bearer admin comme le reste
 /// de l'API d'écriture ; en mode ouvert, rien ne change. Les lectures (GET/HEAD) restent libres :
 /// les overlays OBS n'envoient pas de token.
-const GUARDED_PREFIXES: [&str; 2] = ["/api/cast", "/api/draft"];
+const GUARDED_PREFIXES: [&str; 3] = ["/api/cast", "/api/draft", "/api/lobby"];
 
 pub fn is_guarded_write(method: &axum::http::Method, path: &str) -> bool {
     use axum::http::Method;
     let read = matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS);
+    // `POST /api/lobby` = ingestion du companion, déjà authentifiée par token d'upload.
+    let ingest = *method == Method::POST && path == "/api/lobby";
     !read
+        && !ingest
         && GUARDED_PREFIXES
             .iter()
             .any(|p| path == *p || path.starts_with(&format!("{p}/")))
@@ -115,5 +118,9 @@ mod tests {
         // préfixe voisin non concerné
         assert!(!is_guarded_write(&Method::POST, "/api/castle"));
         assert!(!is_guarded_write(&Method::POST, "/api/upload"));
+        // lobby : corrections manuelles gardées, ingestion (token d'upload) non
+        assert!(is_guarded_write(&Method::POST, "/api/lobby/hero"));
+        assert!(is_guarded_write(&Method::DELETE, "/api/lobby"));
+        assert!(!is_guarded_write(&Method::POST, "/api/lobby"));
     }
 }

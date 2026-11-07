@@ -71,10 +71,11 @@ jamais dans `uploads`/`matches`/`match_players`. Toute mutation relance le recal
 | `PUT /api/scouting/{id}/analysis` 🔒 | corps = texte brut de la réponse du LLM ; extrait/valide/écrase → `{warnings, tally}` ; `422` si JSON introuvable/invalide, `format_version` ≠ 2 (plan de draft carte par carte ; la v1 est refusée) ou `report_id` d'un autre rapport (rien n'est écrasé) |
 | `DELETE /api/scouting/{id}/analysis` 🔒 | retire l'analyse |
 
-## Écritures de la régie et du draft — 🔒 si `ADMIN_TOKEN` défini
+## Écritures de la régie, du draft et du lobby — 🔒 si `ADMIN_TOKEN` défini
 
-Toute requête **non GET/HEAD/OPTIONS** sur `/api/cast`, `/api/cast/*`, `/api/draft` ou
-`/api/draft/*` exige `Authorization: Bearer <ADMIN_TOKEN>` quand `ADMIN_TOKEN` est défini, sinon
+Toute requête **non GET/HEAD/OPTIONS** sur `/api/cast`, `/api/cast/*`, `/api/draft`,
+`/api/draft/*`, `/api/lobby` ou `/api/lobby/*` (sauf `POST /api/lobby`, ingestion authentifiée
+par token d'upload) exige `Authorization: Bearer <ADMIN_TOKEN>` quand `ADMIN_TOKEN` est défini, sinon
 `401 {"error":"admin token requis"}` (middleware `auth::guard_writes`, avant le handler). Les
 lectures restent libres (les overlays OBS n'envoient pas de token). En mode ouvert (pas
 d'`ADMIN_TOKEN`), rien ne change. Le front envoie le token saisi dans Admin (`authHeaders()`).
