@@ -107,7 +107,12 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
                     let gy = (qy * 64.0).floor() as i64;
                     let tbucket = (t / MINION_TIME_BUCKET_SEC).floor() as i64;
                     if minion_seen.insert((gx, gy, team, tbucket)) {
-                        minions.push(MinionSample { t, x: qx, y: qy, team });
+                        minions.push(MinionSample {
+                            t,
+                            x: qx,
+                            y: qy,
+                            team,
+                        });
                     }
                 }
                 None => {}
@@ -442,7 +447,10 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
         if event_name(e) != "SStatGameEvent" {
             continue;
         }
-        if e.field("m_eventName").and_then(Value::as_str_lossy).as_deref() != Some("JungleCampCapture")
+        if e.field("m_eventName")
+            .and_then(Value::as_str_lossy)
+            .as_deref()
+            != Some("JungleCampCapture")
         {
             continue;
         }
@@ -495,10 +503,15 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
         if event_name(e) != "SStatGameEvent" {
             continue;
         }
-        if e.field("m_eventName").and_then(Value::as_str_lossy).as_deref() != Some("LevelUp") {
+        if e.field("m_eventName")
+            .and_then(Value::as_str_lossy)
+            .as_deref()
+            != Some("LevelUp")
+        {
             continue;
         }
-        let (Some(pid), Some(level)) = (int_data_int(e, "PlayerID"), int_data_int(e, "Level")) else {
+        let (Some(pid), Some(level)) = (int_data_int(e, "PlayerID"), int_data_int(e, "Level"))
+        else {
             continue;
         };
         let Some(&team) = player_team.get(&pid) else {
@@ -523,7 +536,11 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
     // process) — deux entrées à t strictement égal (même gameloop, équipes/niveaux différents)
     // doivent avoir un ordre STABLE d'un run à l'autre (golden JSON compare l'ordre des tableaux).
     // Départage par (team, level) après t.
-    levels.sort_by(|a, b| a.t.total_cmp(&b.t).then(a.team.cmp(&b.team)).then(a.level.cmp(&b.level)));
+    levels.sort_by(|a, b| {
+        a.t.total_cmp(&b.t)
+            .then(a.team.cmp(&b.team))
+            .then(a.level.cmp(&b.level))
+    });
 
     // 12) objectifs par carte (US-21..24) : routage + extraction isolés dans `crate::maps` — cette
     //     fonction `build` ne connaît AUCUNE logique spécifique à une carte. Cartes "gap" connues →

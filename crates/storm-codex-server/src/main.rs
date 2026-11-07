@@ -126,12 +126,18 @@ async fn run() -> Result<(), String> {
     let (events, _) = broadcast::channel(1024);
     // État de draft : repris du disque si présent, sinon neuf (Standard, blue first-pick, Sky Temple).
     let mut draft = draft::store::load(&db).await.unwrap_or_else(|| {
-        draft::DraftState::new(draft::Format::Standard, draft::Side::Blue, "Sky Temple".into())
+        draft::DraftState::new(
+            draft::Format::Standard,
+            draft::Side::Blue,
+            "Sky Temple".into(),
+        )
     });
     // Aucune minuterie après un redémarrage : la lecture auto repart en pause (curseur conservé).
     draft.after_restart();
     // Série de cast : reprise du disque si lisible, sinon état neuf inactif (jamais d'échec au démarrage).
-    let cast_initial = cast::store::load(&db).await.unwrap_or_else(cast::Series::new);
+    let cast_initial = cast::store::load(&db)
+        .await
+        .unwrap_or_else(cast::Series::new);
     let lobby_initial = lobby::store::load(&db).await;
     let state = AppState {
         cfg: Arc::new(cfg),
@@ -184,25 +190,74 @@ async fn run() -> Result<(), String> {
                         .await;
                     }
                 }
-                tokio::time::sleep(std::time::Duration::from_secs(24 * 3600)).await;
+                // Référentiel encore vide (source injoignable au démarrage, ex. box éteint) :
+                // nouvel essai dans 10 min plutôt que 24 h.
+                let vide =
+                    sqlx::query_scalar::<_, bool>("SELECT NOT EXISTS (SELECT 1 FROM dim_heroes)")
+                        .fetch_one(&st.db)
+                        .await
+                        .unwrap_or(true);
+                let pause = if vide { 600 } else { 24 * 3600 };
+                tokio::time::sleep(std::time::Duration::from_secs(pause)).await;
             }
         });
     }
+    match upload::resume_pending(&state).await {
+        Ok(0) => {}
+        Ok(n) => tracing::info!("{n} upload(s) en attente repris au démarrage"),
+        Err(e) => tracing::error!("reprise des uploads en attente : {e}"),
+    }
     let bind = state.cfg.bind_addr.clone();
     let app = api_router(&state);
-    let app = serve_spa(app, &state).with_state(state)
-    // Limite de corps de requête : le défaut axum (2 Mo) rejetait en 413 — AVANT le handler, donc
-    // sans trace ni ligne uploads — les replays de longues parties (un Braxis Holdout 5v5 dépasse
-    // 2 Mo), faisant boucler l'uploader. 64 Mo couvre largement (replays < ~10 Mo).
-    .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024));
+    let app = serve_spa(app, state.cfg.web_dir.as_deref())
+        .with_state(state)
+        // Limite de corps de requête : le défaut axum (2 Mo) rejetait en 413 — AVANT le handler, donc
+        // sans trace ni ligne uploads — les replays de longues parties (un Braxis Holdout 5v5 dépasse
+        // 2 Mo), faisant boucler l'uploader. 64 Mo couvre largement (replays < ~10 Mo).
+        .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024))
+        // gzip/brotli selon `Accept-Encoding` (JSON de l'API, bundle JS/CSS) ; le prédicat par défaut
+        // saute les petites réponses, les images et les flux (WS : réponse 101 sans corps).
+        .layer(tower_http::compression::CompressionLayer::new());
 
     let listener = tokio::net::TcpListener::bind(&bind)
         .await
         .map_err(|e| format!("bind {bind} : {e}"))?;
     tracing::info!("storm-codex-server à l'écoute sur {bind}");
     axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
         .await
         .map_err(|e| format!("serve : {e}"))
+}
+
+/// Ctrl-C ou SIGTERM (`docker stop`) : le serveur cesse d'accepter des connexions et laisse
+/// finir les requêtes en cours. Les parses non terminés restent `pending` et sont repris au
+/// prochain démarrage (`upload::resume_pending`).
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        if let Err(e) = tokio::signal::ctrl_c().await {
+            tracing::error!("signal Ctrl-C : {e}");
+            std::future::pending::<()>().await;
+        }
+    };
+    #[cfg(unix)]
+    let term = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut s) => {
+                s.recv().await;
+            }
+            Err(e) => {
+                tracing::error!("signal SIGTERM : {e}");
+                std::future::pending::<()>().await;
+            }
+        }
+    };
+    #[cfg(not(unix))]
+    let term = std::future::pending::<()>();
+    tokio::select! {
+        () = ctrl_c => {},
+        () = term => {},
+    }
+    tracing::info!("arrêt demandé : fin des requêtes en cours");
 }
 
 /// Toutes les routes API + images (sans le fallback SPA) — extraite pour les tests d'intégration.
@@ -220,7 +275,10 @@ fn api_router(state: &AppState) -> Router<AppState> {
         .route("/api/players/search", get(players::api::search))
         .route("/api/players/{toon}", get(read::get_player))
         .route("/api/players/{toon}/identity", get(players::api::identity))
-        .route("/api/players/{toon}/links/{other}", axum::routing::put(players::api::put_link))
+        .route(
+            "/api/players/{toon}/links/{other}",
+            axum::routing::put(players::api::put_link),
+        )
         .route("/api/heroes", get(read::list_heroes))
         .route("/api/hero/{hero}", get(read::hero_detail))
         .route("/api/hero/{hero}/patches", get(read::hero_patches))
@@ -237,12 +295,30 @@ fn api_router(state: &AppState) -> Router<AppState> {
         .route("/api/trends", get(manage::trends))
         .route("/api/now-playing", get(read::now_playing))
         .route("/api/settings", get(manage::get_settings))
-        .route("/api/admin/settings", axum::routing::put(manage::put_settings))
-        .route("/api/admin/minimap-anchors", axum::routing::put(manage::put_minimap_anchors))
-        .route("/api/teams", get(manage::list_teams).post(manage::create_team))
-        .route("/api/teams/{id}", axum::routing::delete(manage::delete_team).put(manage::update_team))
-        .route("/api/collections", get(manage::list_collections).post(manage::create_collection))
-        .route("/api/collections/{id}", axum::routing::delete(manage::delete_collection))
+        .route(
+            "/api/admin/settings",
+            axum::routing::put(manage::put_settings),
+        )
+        .route(
+            "/api/admin/minimap-anchors",
+            axum::routing::put(manage::put_minimap_anchors),
+        )
+        .route(
+            "/api/teams",
+            get(manage::list_teams).post(manage::create_team),
+        )
+        .route(
+            "/api/teams/{id}",
+            axum::routing::delete(manage::delete_team).put(manage::update_team),
+        )
+        .route(
+            "/api/collections",
+            get(manage::list_collections).post(manage::create_collection),
+        )
+        .route(
+            "/api/collections/{id}",
+            axum::routing::delete(manage::delete_collection),
+        )
         .route("/api/builds", get(builds::list).post(builds::create))
         .route(
             "/api/builds/{id}",
@@ -260,53 +336,84 @@ fn api_router(state: &AppState) -> Router<AppState> {
         .route("/api/cast", get(cast::api::get_cast))
         .route(
             "/api/cast/series",
-            post(cast::api::start_series).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+            post(cast::api::start_series).layer(axum::extract::DefaultBodyLimit::max(
+                cast::api::JSON_BODY_LIMIT,
+            )),
         )
         .route(
             "/api/cast/teams",
-            axum::routing::put(cast::api::put_teams).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+            axum::routing::put(cast::api::put_teams).layer(axum::extract::DefaultBodyLimit::max(
+                cast::api::JSON_BODY_LIMIT,
+            )),
         )
         .route(
             "/api/cast/pool/map",
-            post(cast::api::mark_map).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+            post(cast::api::mark_map).layer(axum::extract::DefaultBodyLimit::max(
+                cast::api::JSON_BODY_LIMIT,
+            )),
         )
         .route(
             "/api/cast/games/start",
-            post(cast::api::start_game).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+            post(cast::api::start_game).layer(axum::extract::DefaultBodyLimit::max(
+                cast::api::JSON_BODY_LIMIT,
+            )),
         )
         .route(
             "/api/cast/games/{n}/winner",
-            post(cast::api::set_winner).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+            post(cast::api::set_winner).layer(axum::extract::DefaultBodyLimit::max(
+                cast::api::JSON_BODY_LIMIT,
+            )),
         )
-        .route("/api/cast/games/{n}", axum::routing::delete(cast::api::remove_game))
-        .route("/api/cast/games/{n}/replay", post(cast::replay::load_game_replay))
+        .route(
+            "/api/cast/games/{n}",
+            axum::routing::delete(cast::api::remove_game),
+        )
+        .route(
+            "/api/cast/games/{n}/replay",
+            post(cast::replay::load_game_replay),
+        )
         .route(
             "/api/rank/result",
-            post(rank::post_result).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+            post(rank::post_result).layer(axum::extract::DefaultBodyLimit::max(
+                cast::api::JSON_BODY_LIMIT,
+            )),
         )
         .route("/api/cast/replays/inspect", post(cast::replay::inspect))
-        .route("/api/cast/replays/import", post(cast::replay::import_replay))
+        .route(
+            "/api/cast/replays/import",
+            post(cast::replay::import_replay),
+        )
         .route(
             "/api/cast/score",
-            post(cast::api::set_score).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+            post(cast::api::set_score).layer(axum::extract::DefaultBodyLimit::max(
+                cast::api::JSON_BODY_LIMIT,
+            )),
         )
         .route(
             "/api/cast/scene",
-            post(cast::api::set_scene).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+            post(cast::api::set_scene).layer(axum::extract::DefaultBodyLimit::max(
+                cast::api::JSON_BODY_LIMIT,
+            )),
         )
         .route(
             "/api/cast/lineup-mode",
-            post(cast::api::set_lineup_mode).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+            post(cast::api::set_lineup_mode).layer(axum::extract::DefaultBodyLimit::max(
+                cast::api::JSON_BODY_LIMIT,
+            )),
         )
         .route(
             "/api/cast/slide",
-            post(cast::api::set_slide).layer(axum::extract::DefaultBodyLimit::max(cast::api::JSON_BODY_LIMIT)),
+            post(cast::api::set_slide).layer(axum::extract::DefaultBodyLimit::max(
+                cast::api::JSON_BODY_LIMIT,
+            )),
         )
         .route("/api/cast/lineup", get(cast::api::get_lineup))
         .route(
             "/api/cast/logo/{side}",
             post(cast::api::upload_logo)
-                .layer(axum::extract::DefaultBodyLimit::max(cast::api::LOGO_BODY_LIMIT))
+                .layer(axum::extract::DefaultBodyLimit::max(
+                    cast::api::LOGO_BODY_LIMIT,
+                ))
                 .get(cast::api::get_logo),
         )
         // Simulateur de draft (état autoritatif serveur + broadcast WS draft.updated)
@@ -326,10 +433,19 @@ fn api_router(state: &AppState) -> Router<AppState> {
         .route("/api/draft/replay/back", post(draft::replay_api::back))
         .route("/api/draft/replay/reset", post(draft::replay_api::reset))
         .route("/api/draft/replay/select", post(draft::replay_api::select))
-        .route("/api/draft/replay/fearless", post(draft::replay_api::fearless))
+        .route(
+            "/api/draft/replay/fearless",
+            post(draft::replay_api::fearless),
+        )
         .route("/api/draft/replay/play", post(draft::replay_api::play))
-        .route("/api/draft/replay/queue/move", post(draft::replay_api::move_game))
-        .route("/api/draft/replay/queue/{i}", axum::routing::delete(draft::replay_api::remove))
+        .route(
+            "/api/draft/replay/queue/move",
+            post(draft::replay_api::move_game),
+        )
+        .route(
+            "/api/draft/replay/queue/{i}",
+            axum::routing::delete(draft::replay_api::remove),
+        )
         // Lobby live (companion) : détection pendant l'écran de chargement + broadcast WS lobby.detected
         .route(
             "/api/lobby",
@@ -345,20 +461,29 @@ fn api_router(state: &AppState) -> Router<AppState> {
         .route("/api/live/chunk", post(live::api::chunk))
         .route("/api/live/end", post(live::api::end))
         // Rapports de scouting (tables dédiées, jamais projetés dans matches)
-        .route("/api/scouting", get(scouting::api::list).post(scouting::api::create))
+        .route(
+            "/api/scouting",
+            get(scouting::api::list).post(scouting::api::create),
+        )
         .route(
             "/api/scouting/{id}",
             get(scouting::api::get)
                 .patch(scouting::api::patch)
                 .delete(scouting::api::delete),
         )
-        .route("/api/scouting/{id}/replays", post(scouting::api::add_replay))
+        .route(
+            "/api/scouting/{id}/replays",
+            post(scouting::api::add_replay),
+        )
         .route(
             "/api/scouting/{id}/replays/{gid}",
             axum::routing::patch(scouting::api::set_side).delete(scouting::api::delete_replay),
         )
         .route("/api/scouting/{id}/pack.md", get(scouting::api::pack_md))
-        .route("/api/scouting/{id}/pack.xlsx", get(scouting::api::pack_xlsx))
+        .route(
+            "/api/scouting/{id}/pack.xlsx",
+            get(scouting::api::pack_xlsx),
+        )
         .route(
             "/api/scouting/{id}/analysis",
             axum::routing::put(scouting::api::put_analysis).delete(scouting::api::delete_analysis),
@@ -369,12 +494,20 @@ fn api_router(state: &AppState) -> Router<AppState> {
             "/images",
             tower_http::services::ServeDir::new(&state.cfg.images_dir),
         )
+        // écritures cast/draft : Bearer admin exigé quand ADMIN_TOKEN est défini
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            auth::guard_writes,
+        ))
 }
 
 /// Front buildé (SPA) : ServeDir sert les assets ; toute route inconnue renvoie index.html
 /// (statut 200) pour que le routing client React fonctionne sur les liens profonds.
-fn serve_spa(app: Router<AppState>, state: &AppState) -> Router<AppState> {
-    match &state.cfg.web_dir {
+fn serve_spa<S: Clone + Send + Sync + 'static>(
+    app: Router<S>,
+    web_dir: Option<&std::path::Path>,
+) -> Router<S> {
+    match web_dir {
         Some(dir) => {
             let index = std::fs::read_to_string(dir.join("index.html")).unwrap_or_default();
             // index.html en `no-cache` : non fingerprinté, il doit toujours être revalidé sinon
@@ -391,7 +524,14 @@ fn serve_spa(app: Router<AppState>, state: &AppState) -> Router<AppState> {
             });
             // `append_index_html_on_directories(false)` → "/" tombe sur le handler SPA (no-cache)
             // au lieu d'être servi par ServeDir sans en-tête de cache.
-            app.fallback_service(
+            // `/assets/*` : noms fingerprintés par Vite (hash du contenu) → cachables un an sans
+            // revalidation. Un asset absent répond 404 (jamais index.html à la place d'un .js).
+            let assets = tower_http::set_header::SetResponseHeader::overriding(
+                tower_http::services::ServeDir::new(dir.join("assets")),
+                axum::http::header::CACHE_CONTROL,
+                axum::http::HeaderValue::from_static("public, max-age=31536000, immutable"),
+            );
+            app.nest_service("/assets", assets).fallback_service(
                 tower_http::services::ServeDir::new(dir)
                     .append_index_html_on_directories(false)
                     .fallback(spa),
@@ -423,6 +563,61 @@ async fn health(State(state): State<AppState>) -> (StatusCode, Json<serde_json::
 /// exécutés en CI contre un service Postgres.
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
+mod spa_tests {
+    use axum::body::Body;
+    use axum::http::{header, Request, StatusCode};
+    use tower::util::ServiceExt;
+
+    /// Assets fingerprintés : cache d'un an ; index.html : no-cache ; asset absent : 404.
+    #[tokio::test]
+    async fn assets_immuables_index_revalide() {
+        let dir = std::env::temp_dir().join(format!("storm-codex-spa-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(dir.join("assets")).unwrap();
+        std::fs::write(dir.join("index.html"), "<html>spa</html>").unwrap();
+        std::fs::write(dir.join("assets/index-abc.js"), "console.log(1)").unwrap();
+        let app = super::serve_spa(axum::Router::<()>::new(), Some(&dir));
+
+        let r = app
+            .clone()
+            .oneshot(
+                Request::get("/assets/index-abc.js")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(r.status(), StatusCode::OK);
+        assert_eq!(
+            r.headers()[header::CACHE_CONTROL],
+            "public, max-age=31536000, immutable"
+        );
+
+        let r = app
+            .clone()
+            .oneshot(
+                Request::get("/assets/absent.js")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(r.status(), StatusCode::NOT_FOUND);
+
+        for path in ["/", "/cast/overlay"] {
+            let r = app
+                .clone()
+                .oneshot(Request::get(path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(r.status(), StatusCode::OK, "{path}");
+            assert_eq!(r.headers()[header::CACHE_CONTROL], "no-cache", "{path}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 pub(crate) mod api_tests {
     use super::*;
     use axum::body::Body;
@@ -439,7 +634,10 @@ pub(crate) mod api_tests {
             .connect(&url)
             .await
             .expect("connexion");
-        sqlx::migrate!("./migrations").run(&db).await.expect("migrations");
+        sqlx::migrate!("./migrations")
+            .run(&db)
+            .await
+            .expect("migrations");
         let dir = std::env::temp_dir().join(format!("storm-codex-test-{}", uuid::Uuid::new_v4()));
         let cfg = config::Config {
             database_url: url,
@@ -493,7 +691,9 @@ pub(crate) mod api_tests {
 
     #[tokio::test]
     async fn health_repond_ok_avec_db() {
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         let resp = app(&state)
             .oneshot(Request::get("/api/health").body(Body::empty()).unwrap())
             .await
@@ -510,14 +710,20 @@ pub(crate) mod api_tests {
     async fn get_player_pseudo_actuel_vient_de_lhistorique_date() {
         use crate::players::testutil::{insert_match, row, uid};
         use chrono::TimeZone;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         let (toon, u) = (format!("t-{}", uid()), uid());
         let (old, new) = (format!("Old{u}"), format!("New{u}"));
         let t = |m| chrono::Utc.with_ymd_and_hms(2025, m, 1, 20, 0, 0).unwrap();
         insert_match(&state.db, Some(t(9)), &[row(&toon, &new, 0, "Muradin")]).await;
         insert_match(&state.db, Some(t(1)), &[row(&toon, &old, 0, "Muradin")]).await; // traité en dernier
         let resp = app(&state)
-            .oneshot(Request::get(format!("/api/players/{toon}")).body(Body::empty()).unwrap())
+            .oneshot(
+                Request::get(format!("/api/players/{toon}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -534,38 +740,72 @@ pub(crate) mod api_tests {
     #[tokio::test]
     async fn players_search_route_dediee_et_litterale() {
         use crate::players::testutil::{insert_match, row, uid};
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         let (toon, u) = (format!("t-{}", uid()), uid());
-        insert_match(&state.db, None, &[row(&toon, &format!("Kerr{u}_Main"), 0, "Muradin")]).await;
+        insert_match(
+            &state.db,
+            None,
+            &[row(&toon, &format!("Kerr{u}_Main"), 0, "Muradin")],
+        )
+        .await;
         let get = |uri: String| {
             let st = state.clone();
-            async move { app(&st).oneshot(Request::get(uri).body(Body::empty()).unwrap()).await.unwrap() }
+            async move {
+                app(&st)
+                    .oneshot(Request::get(uri).body(Body::empty()).unwrap())
+                    .await
+                    .unwrap()
+            }
         };
         let resp = get(format!("/api/players/search?q=Kerr{u}_M")).await;
         assert_eq!(resp.status(), StatusCode::OK);
         let v = json_body(resp).await;
-        assert!(v["hits"].as_array().unwrap().iter().any(|h| h["toon"] == toon.as_str()));
+        assert!(v["hits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|h| h["toon"] == toon.as_str()));
         assert!(v.get("toon").is_none(), "tombé dans get_player");
         let v = json_body(get("/api/players/search?q=a".into()).await).await;
         assert_eq!(v["hits"], serde_json::json!([]));
-        assert_eq!(get("/api/players/search?q=ab&limit=9999".into()).await.status(), StatusCode::OK);
+        assert_eq!(
+            get("/api/players/search?q=ab&limit=9999".into())
+                .await
+                .status(),
+            StatusCode::OK
+        );
     }
 
-    async fn put_link(st: &AppState, a: &str, b: &str, status: &str, bearer: Option<&str>) -> axum::response::Response {
+    async fn put_link(
+        st: &AppState,
+        a: &str,
+        b: &str,
+        status: &str,
+        bearer: Option<&str>,
+    ) -> axum::response::Response {
         let mut req = Request::put(format!("/api/players/{a}/links/{b}"))
             .header("content-type", "application/json");
         if let Some(t) = bearer {
             req = req.header("authorization", format!("Bearer {t}"));
         }
         app(st)
-            .oneshot(req.body(Body::from(format!(r#"{{"status":"{status}"}}"#))).unwrap())
+            .oneshot(
+                req.body(Body::from(format!(r#"{{"status":"{status}"}}"#)))
+                    .unwrap(),
+            )
             .await
             .unwrap()
     }
 
     async fn get_identity(st: &AppState, toon: &str) -> axum::response::Response {
         app(st)
-            .oneshot(Request::get(format!("/api/players/{toon}/identity")).body(Body::empty()).unwrap())
+            .oneshot(
+                Request::get(format!("/api/players/{toon}/identity"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap()
     }
@@ -573,70 +813,150 @@ pub(crate) mod api_tests {
     #[tokio::test]
     async fn identity_inconnu_404_et_put_soi_meme_400() {
         use crate::players::testutil::{insert_match, row, uid};
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         let resp = get_identity(&state, &format!("t-inconnu-{}", uid())).await;
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
-        assert!(json_body(resp).await["error"].is_string(), "404 applicatif, pas route absente");
+        assert!(
+            json_body(resp).await["error"].is_string(),
+            "404 applicatif, pas route absente"
+        );
         let toon = format!("t-{}", uid());
         insert_match(&state.db, None, &[row(&toon, "Solo", 0, "Muradin")]).await;
-        assert_eq!(put_link(&state, &toon, &toon, "confirmed", None).await.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            put_link(&state, &toon, &toon, "confirmed", None)
+                .await
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
     }
 
     #[tokio::test]
     async fn put_link_garde_admin_statut_valide_et_inconnu() {
         use crate::players::testutil::{insert_match, row, uid};
-        let Some(state) = test_state(Some("sekret")).await else { return };
+        let Some(state) = test_state(Some("sekret")).await else {
+            return;
+        };
         let (a, b) = (format!("t-a{}", uid()), format!("t-b{}", uid()));
-        insert_match(&state.db, None, &[row(&a, "A", 0, "Muradin"), row(&b, "B", 1, "Muradin")]).await;
-        assert_eq!(put_link(&state, &a, &b, "confirmed", None).await.status(), StatusCode::UNAUTHORIZED);
-        assert_eq!(put_link(&state, &a, &b, "confirmed", Some("faux")).await.status(), StatusCode::UNAUTHORIZED);
-        assert_eq!(put_link(&state, &a, &b, "confirmed", Some("sekret")).await.status(), StatusCode::OK);
-        let bad = put_link(&state, &a, &b, "maybe", Some("sekret")).await.status();
+        insert_match(
+            &state.db,
+            None,
+            &[row(&a, "A", 0, "Muradin"), row(&b, "B", 1, "Muradin")],
+        )
+        .await;
+        assert_eq!(
+            put_link(&state, &a, &b, "confirmed", None).await.status(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            put_link(&state, &a, &b, "confirmed", Some("faux"))
+                .await
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            put_link(&state, &a, &b, "confirmed", Some("sekret"))
+                .await
+                .status(),
+            StatusCode::OK
+        );
+        let bad = put_link(&state, &a, &b, "maybe", Some("sekret"))
+            .await
+            .status();
         assert!(bad.is_client_error(), "statut invalide refusé, reçu {bad}");
         let ghost = format!("t-ghost-{}", uid());
-        assert_eq!(put_link(&state, &a, &ghost, "confirmed", Some("sekret")).await.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            put_link(&state, &a, &ghost, "confirmed", Some("sekret"))
+                .await
+                .status(),
+            StatusCode::NOT_FOUND
+        );
     }
 
     #[tokio::test]
     async fn put_link_est_symetrique_et_idempotent() {
         use crate::players::testutil::{insert_match, row, uid};
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         let (a, b) = (format!("t-a{}", uid()), format!("t-b{}", uid()));
-        insert_match(&state.db, None, &[row(&a, "NameA", 0, "Muradin"), row(&b, "NameB", 1, "Muradin")]).await;
-        assert_eq!(put_link(&state, &a, &b, "confirmed", None).await.status(), StatusCode::OK);
-        assert_eq!(put_link(&state, &b, &a, "confirmed", None).await.status(), StatusCode::OK);
-        let n: i64 = sqlx::query_scalar("SELECT count(*) FROM player_links WHERE toon_a IN ($1,$2) AND toon_b IN ($1,$2)")
-            .bind(&a)
-            .bind(&b)
-            .fetch_one(&state.db)
-            .await
-            .unwrap();
+        insert_match(
+            &state.db,
+            None,
+            &[
+                row(&a, "NameA", 0, "Muradin"),
+                row(&b, "NameB", 1, "Muradin"),
+            ],
+        )
+        .await;
+        assert_eq!(
+            put_link(&state, &a, &b, "confirmed", None).await.status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            put_link(&state, &b, &a, "confirmed", None).await.status(),
+            StatusCode::OK
+        );
+        let n: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM player_links WHERE toon_a IN ($1,$2) AND toon_b IN ($1,$2)",
+        )
+        .bind(&a)
+        .bind(&b)
+        .fetch_one(&state.db)
+        .await
+        .unwrap();
         assert_eq!(n, 1, "A→B puis B→A = une seule ligne");
         for (me, other, other_name) in [(&a, &b, "NameB"), (&b, &a, "NameA")] {
             let v = json_body(get_identity(&state, me).await).await;
             let conf = v["confirmed"].as_array().unwrap();
-            assert!(conf.iter().any(|c| c["toon"] == other.as_str() && c["name"] == other_name));
+            assert!(conf
+                .iter()
+                .any(|c| c["toon"] == other.as_str() && c["name"] == other_name));
         }
     }
 
     #[tokio::test]
     async fn identity_historique_suggestions_et_decision() {
         use crate::players::testutil::smurf_world;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         let w = smurf_world(&state.db).await;
         let v = json_body(get_identity(&state, &w.target).await).await;
         assert_eq!(v["toon"], w.target.as_str());
-        assert!(v["names"].as_array().unwrap().iter().any(|n| n["name"] == "N" && n["games"] == 18));
-        let s = v["suggestions"].as_array().unwrap().iter().find(|s| s["toon"] == w.smurf.as_str()).expect("smurf suggéré");
+        assert!(v["names"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|n| n["name"] == "N" && n["games"] == 18));
+        let s = v["suggestions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["toon"] == w.smurf.as_str())
+            .expect("smurf suggéré");
         assert_eq!(s["level"], "high");
         assert!(s["score"].as_u64().unwrap() >= 50);
         assert!(!s["reasons"].as_array().unwrap().is_empty());
         // écarter → plus proposé, depuis la cible comme depuis le smurf
-        assert_eq!(put_link(&state, &w.target, &w.smurf, "dismissed", None).await.status(), StatusCode::OK);
+        assert_eq!(
+            put_link(&state, &w.target, &w.smurf, "dismissed", None)
+                .await
+                .status(),
+            StatusCode::OK
+        );
         for me in [&w.target, &w.smurf] {
             let v = json_body(get_identity(&state, me).await).await;
             let other = if me == &w.target { &w.smurf } else { &w.target };
-            assert!(v["suggestions"].as_array().unwrap().iter().all(|s| s["toon"] != other.as_str()), "écarté mais reproposé");
+            assert!(
+                v["suggestions"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|s| s["toon"] != other.as_str()),
+                "écarté mais reproposé"
+            );
             assert!(v["confirmed"].as_array().unwrap().is_empty());
         }
     }
@@ -644,9 +964,15 @@ pub(crate) mod api_tests {
     /// Codes attribut des bans → noms parser (attr.json), y compris les codes en capitales.
     #[tokio::test]
     async fn dim_hero_attributes_resout_les_codes_de_ban() {
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         let resp = app(&state)
-            .oneshot(Request::get("/api/dim/hero-attributes").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::get("/api/dim/hero-attributes")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -659,7 +985,9 @@ pub(crate) mod api_tests {
 
     #[tokio::test]
     async fn admin_ferme_exige_bearer_et_ouvre_avec() {
-        let Some(state) = test_state(Some("s3cret")).await else { return };
+        let Some(state) = test_state(Some("s3cret")).await else {
+            return;
+        };
         // sans token → 401
         let resp = app(&state)
             .oneshot(
@@ -687,12 +1015,56 @@ pub(crate) mod api_tests {
         assert!(v["token"].as_str().is_some_and(|t| !t.is_empty()));
     }
 
+    /// ADMIN_TOKEN défini : les écritures cast/draft exigent le Bearer, les lectures restent libres
+    /// (overlays OBS sans token). Corps invalide avec le Bearer → 4xx du handler (la garde est
+    /// passée) sans muter l'état partagé.
+    #[tokio::test]
+    async fn ecritures_cast_draft_gardees_quand_admin_token() {
+        let Some(state) = test_state(Some("s3cret")).await else {
+            return;
+        };
+        for path in ["/api/cast/scene", "/api/draft/undo"] {
+            let resp = app(&state)
+                .oneshot(
+                    Request::post(path)
+                        .header("content-type", "application/json")
+                        .body(Body::from("{}"))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), StatusCode::UNAUTHORIZED, "{path} sans token");
+        }
+        let resp = app(&state)
+            .oneshot(
+                Request::post("/api/cast/scene")
+                    .header("authorization", "Bearer s3cret")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"scene":"pas-une-scene"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(
+            resp.status().is_client_error() && resp.status() != StatusCode::UNAUTHORIZED,
+            "statut {}",
+            resp.status()
+        );
+        let resp = app(&state)
+            .oneshot(Request::get("/api/cast").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
     /// Scouting bout-en-bout : création → dépôt d'un replay → lot ambigu (1 partie : les 10
     /// joueurs à 100 %) → ancre → côté trouvé → faits → pack .md/.xlsx → import d'analyse →
     /// écrasement. Et l'isolation : rien n'est écrit dans uploads/matches pour ce replay.
     #[tokio::test]
     async fn scouting_cycle_complet_et_isolation() {
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         let replay = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../storm-replay/tests/data/2024-10-07 22.29.55 Industrial District.StormReplay");
         let bytes = std::fs::read(&replay).expect("replay committé");
@@ -701,42 +1073,84 @@ pub(crate) mod api_tests {
         let fp = crate::upload::game_fingerprint(&out).unwrap();
         let counts = |db: sqlx::PgPool, sha: String, fp: String| async move {
             let u: i64 = sqlx::query_scalar("SELECT count(*) FROM uploads WHERE fingerprint = $1")
-                .bind(&sha).fetch_one(&db).await.unwrap();
+                .bind(&sha)
+                .fetch_one(&db)
+                .await
+                .unwrap();
             let m: i64 = sqlx::query_scalar("SELECT count(*) FROM matches WHERE fingerprint = $1")
-                .bind(&fp).fetch_one(&db).await.unwrap();
+                .bind(&fp)
+                .fetch_one(&db)
+                .await
+                .unwrap();
             (u, m)
         };
         let before = counts(state.db.clone(), sha.clone(), fp.clone()).await;
 
         let req = |method: &str, uri: String, body: Body| {
-            Request::builder().method(method).uri(uri).header("content-type", "application/json").body(body).unwrap()
+            Request::builder()
+                .method(method)
+                .uri(uri)
+                .header("content-type", "application/json")
+                .body(body)
+                .unwrap()
         };
         let resp = app(&state)
-            .oneshot(req("POST", "/api/scouting".into(), Body::from(r#"{"title":"Test scout","target_name":"Team X"}"#)))
-            .await.unwrap();
+            .oneshot(req(
+                "POST",
+                "/api/scouting".into(),
+                Body::from(r#"{"title":"Test scout","target_name":"Team X"}"#),
+            ))
+            .await
+            .unwrap();
         assert_eq!(resp.status(), StatusCode::CREATED);
         let id = json_body(resp).await["id"].as_i64().unwrap();
 
         let add = |b: Vec<u8>| {
             Request::post(format!("/api/scouting/{id}/replays"))
-                .header("x-filename", "2024-10-07 22.29.55 Industrial%20District.StormReplay")
-                .body(Body::from(b)).unwrap()
+                .header(
+                    "x-filename",
+                    "2024-10-07 22.29.55 Industrial%20District.StormReplay",
+                )
+                .body(Body::from(b))
+                .unwrap()
         };
         let v = json_body(app(&state).oneshot(add(bytes.clone())).await.unwrap()).await;
         assert_eq!(v["status"], "added", "{v}");
-        assert!(v["target_team"].is_null(), "lot d'une partie = ambigu, pas de côté : {v}");
+        assert!(
+            v["target_team"].is_null(),
+            "lot d'une partie = ambigu, pas de côté : {v}"
+        );
         let v = json_body(app(&state).oneshot(add(bytes.clone())).await.unwrap()).await;
         assert_eq!(v["status"], "duplicate");
 
-        let detail = json_body(app(&state).oneshot(req("GET", format!("/api/scouting/{id}"), Body::empty())).await.unwrap()).await;
+        let detail = json_body(
+            app(&state)
+                .oneshot(req("GET", format!("/api/scouting/{id}"), Body::empty()))
+                .await
+                .unwrap(),
+        )
+        .await;
         assert_eq!(detail["snapshot"]["detection"]["ambiguous"], true);
         assert_eq!(detail["snapshot"]["facts"]["overview"]["excluded"], 1);
         assert_eq!(detail["status"], "ready");
-        let anchor = detail["games"][0]["teams"][1][0]["toon"].as_str().unwrap().to_owned();
+        let anchor = detail["games"][0]["teams"][1][0]["toon"]
+            .as_str()
+            .unwrap()
+            .to_owned();
 
         // ancre côté 1 → côté trouvé, roster = les 5 coéquipiers, 1 partie analysée
         let body = serde_json::json!({ "anchors": [anchor] }).to_string();
-        let detail = json_body(app(&state).oneshot(req("PATCH", format!("/api/scouting/{id}"), Body::from(body))).await.unwrap()).await;
+        let detail = json_body(
+            app(&state)
+                .oneshot(req(
+                    "PATCH",
+                    format!("/api/scouting/{id}"),
+                    Body::from(body),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
         assert_eq!(detail["games"][0]["target_team"], 1, "{}", detail["games"]);
         assert_eq!(detail["games"][0]["target_source"], "roster");
         assert_eq!(detail["snapshot"]["roster"].as_array().unwrap().len(), 5);
@@ -746,36 +1160,107 @@ pub(crate) mod api_tests {
         // côté manuel puis retour à l'automatique
         let body = r#"{"target_team":0}"#.to_string();
         let gid = detail["games"][0]["gid"].as_i64().unwrap();
-        let d2 = json_body(app(&state).oneshot(req("PATCH", format!("/api/scouting/{id}/replays/{gid}"), Body::from(body))).await.unwrap()).await;
+        let d2 = json_body(
+            app(&state)
+                .oneshot(req(
+                    "PATCH",
+                    format!("/api/scouting/{id}/replays/{gid}"),
+                    Body::from(body),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
         assert_eq!(d2["games"][0]["target_source"], "manual");
-        let d2 = json_body(app(&state).oneshot(req("PATCH", format!("/api/scouting/{id}/replays/{gid}"), Body::from(r#"{"target_team":null}"#))).await.unwrap()).await;
+        let d2 = json_body(
+            app(&state)
+                .oneshot(req(
+                    "PATCH",
+                    format!("/api/scouting/{id}/replays/{gid}"),
+                    Body::from(r#"{"target_team":null}"#),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
         assert_eq!(d2["games"][0]["target_team"], 1);
         let fv = d2["facts_version"].as_i64().unwrap().max(fv);
 
         // packs
-        let resp = app(&state).oneshot(req("GET", format!("/api/scouting/{id}/pack.md"), Body::empty())).await.unwrap();
+        let resp = app(&state)
+            .oneshot(req(
+                "GET",
+                format!("/api/scouting/{id}/pack.md"),
+                Body::empty(),
+            ))
+            .await
+            .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-        let md = String::from_utf8(resp.into_body().collect().await.unwrap().to_bytes().to_vec()).unwrap();
+        let md = String::from_utf8(
+            resp.into_body()
+                .collect()
+                .await
+                .unwrap()
+                .to_bytes()
+                .to_vec(),
+        )
+        .unwrap();
         assert!(md.contains(&format!("report_id: **{id}**")));
         assert!(md.contains("`map.industrial_district.record`"));
-        let resp = app(&state).oneshot(req("GET", format!("/api/scouting/{id}/pack.xlsx"), Body::empty())).await.unwrap();
+        let resp = app(&state)
+            .oneshot(req(
+                "GET",
+                format!("/api/scouting/{id}/pack.xlsx"),
+                Body::empty(),
+            ))
+            .await
+            .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         let x = resp.into_body().collect().await.unwrap().to_bytes();
         assert_eq!(&x[..2], b"PK");
 
         // import : JSON cassé → 422 et rien d'écrit ; valide → importé ; ré-import → écrasé
-        let resp = app(&state).oneshot(req("PUT", format!("/api/scouting/{id}/analysis"), Body::from("```json\n{bad}\n```"))).await.unwrap();
+        let resp = app(&state)
+            .oneshot(req(
+                "PUT",
+                format!("/api/scouting/{id}/analysis"),
+                Body::from("```json\n{bad}\n```"),
+            ))
+            .await
+            .unwrap();
         assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
         // plan de draft v2 : 1 carte citant un fait réel + un id inconnu, 1 considération sans preuve
-        let analysis = |summary: &str| format!(
-            "Here you go:\n```json\n{{\"format_version\":2,\"report_id\":{id},\"facts_version\":{fv},\"summary\":\"{summary}\",\"maps\":[{{\"map\":\"Industrial District\",\"confidence\":\"low\",\"overview\":\"o\",\"evidence\":[\"map.industrial_district.record\",\"nope\"],\"considerations\":[{{\"point\":\"y\",\"evidence\":[]}}]}}]}}\n```");
-        let resp = app(&state).oneshot(req("PUT", format!("/api/scouting/{id}/analysis"), Body::from(analysis("first")))).await.unwrap();
+        let analysis = |summary: &str| {
+            format!(
+            "Here you go:\n```json\n{{\"format_version\":2,\"report_id\":{id},\"facts_version\":{fv},\"summary\":\"{summary}\",\"maps\":[{{\"map\":\"Industrial District\",\"confidence\":\"low\",\"overview\":\"o\",\"evidence\":[\"map.industrial_district.record\",\"nope\"],\"considerations\":[{{\"point\":\"y\",\"evidence\":[]}}]}}]}}\n```")
+        };
+        let resp = app(&state)
+            .oneshot(req(
+                "PUT",
+                format!("/api/scouting/{id}/analysis"),
+                Body::from(analysis("first")),
+            ))
+            .await
+            .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         let v = json_body(resp).await;
         assert_eq!(v["tally"]["claims"], 2, "{v}");
         assert_eq!(v["tally"]["unsupported"], 1);
-        app(&state).oneshot(req("PUT", format!("/api/scouting/{id}/analysis"), Body::from(analysis("second")))).await.unwrap();
-        let detail = json_body(app(&state).oneshot(req("GET", format!("/api/scouting/{id}"), Body::empty())).await.unwrap()).await;
+        app(&state)
+            .oneshot(req(
+                "PUT",
+                format!("/api/scouting/{id}/analysis"),
+                Body::from(analysis("second")),
+            ))
+            .await
+            .unwrap();
+        let detail = json_body(
+            app(&state)
+                .oneshot(req("GET", format!("/api/scouting/{id}"), Body::empty()))
+                .await
+                .unwrap(),
+        )
+        .await;
         assert_eq!(detail["analysis"]["summary"], "second");
         assert_eq!(detail["status"], "analyzed");
         assert_eq!(detail["analysis"]["maps"][0]["evidence"][0]["known"], true);
@@ -784,7 +1269,10 @@ pub(crate) mod api_tests {
         // isolation : aucune écriture dans uploads/matches pour ce replay
         assert_eq!(counts(state.db.clone(), sha, fp).await, before);
 
-        let resp = app(&state).oneshot(req("DELETE", format!("/api/scouting/{id}"), Body::empty())).await.unwrap();
+        let resp = app(&state)
+            .oneshot(req("DELETE", format!("/api/scouting/{id}"), Body::empty()))
+            .await
+            .unwrap();
         assert_eq!(resp.status(), StatusCode::NO_CONTENT);
     }
 
@@ -792,7 +1280,9 @@ pub(crate) mod api_tests {
     /// → lecture du détail (avec `match.messages`) → dédup 409 au re-upload.
     #[tokio::test]
     async fn upload_parse_lecture_et_dedup() {
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         // token d'upload (mode admin ouvert)
         let resp = app(&state)
             .oneshot(
@@ -820,11 +1310,17 @@ pub(crate) mod api_tests {
         let upload_req = |b: Vec<u8>, tok: &str| {
             Request::post("/api/upload-raw")
                 .header("authorization", format!("Bearer {tok}"))
-                .header("x-filename", "2026-06-09 20.35.02 Industrial%20District.StormReplay")
+                .header(
+                    "x-filename",
+                    "2026-06-09 20.35.02 Industrial%20District.StormReplay",
+                )
                 .body(Body::from(b))
                 .unwrap()
         };
-        let resp = app(&state).oneshot(upload_req(bytes.clone(), &token)).await.unwrap();
+        let resp = app(&state)
+            .oneshot(upload_req(bytes.clone(), &token))
+            .await
+            .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         let v = json_body(resp).await;
         assert_eq!(v["status"], "parsed", "réponse : {v}");
@@ -832,7 +1328,11 @@ pub(crate) mod api_tests {
 
         // lecture du détail : forme {match, players}, messages présents (chat + pings)
         let resp = app(&state)
-            .oneshot(Request::get(format!("/api/matches/{match_id}")).body(Body::empty()).unwrap())
+            .oneshot(
+                Request::get(format!("/api/matches/{match_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -840,12 +1340,17 @@ pub(crate) mod api_tests {
         assert_eq!(detail["match"]["map"], "Industrial District");
         assert_eq!(detail["players"].as_object().unwrap().len(), 10);
         assert!(
-            detail["match"]["messages"].as_array().is_some_and(|m| !m.is_empty()),
+            detail["match"]["messages"]
+                .as_array()
+                .is_some_and(|m| !m.is_empty()),
             "messages absents du détail"
         );
 
         // re-upload identique → 409 duplicate
-        let resp = app(&state).oneshot(upload_req(bytes, &token)).await.unwrap();
+        let resp = app(&state)
+            .oneshot(upload_req(bytes, &token))
+            .await
+            .unwrap();
         assert_eq!(resp.status(), StatusCode::CONFLICT);
 
         // sans token → 401
@@ -864,14 +1369,19 @@ pub(crate) mod api_tests {
     // ── draft depuis un replay ────────────────────────────────────────────────
 
     async fn with_game(state: &AppState) {
-        let fx: serde_json::Value = serde_json::from_str(include_str!("draft/fixtures/custom_draft.json")).unwrap();
+        let fx: serde_json::Value =
+            serde_json::from_str(include_str!("draft/fixtures/custom_draft.json")).unwrap();
         let out = storm_stats::Output {
             status: 1,
             match_: fx["match"].as_object().cloned(),
             players: fx["players"].as_object().cloned(),
         };
-        let g = draft::replay_extract::loaded_game_from_output(&out, "fx.StormReplay", storm_stats::constants::hero_attribute())
-            .unwrap();
+        let g = draft::replay_extract::loaded_game_from_output(
+            &out,
+            "fx.StormReplay",
+            storm_stats::constants::hero_attribute(),
+        )
+        .unwrap();
         state.draft.write().await.add_game(g);
     }
 
@@ -888,7 +1398,12 @@ pub(crate) mod api_tests {
         }
     }
 
-    pub(crate) async fn call(state: &AppState, method: &str, path: &str, body: Option<serde_json::Value>) -> (StatusCode, serde_json::Value) {
+    pub(crate) async fn call(
+        state: &AppState,
+        method: &str,
+        path: &str,
+        body: Option<serde_json::Value>,
+    ) -> (StatusCode, serde_json::Value) {
         let mut req = Request::builder().method(method).uri(path);
         let body = match body {
             Some(b) => {
@@ -900,25 +1415,51 @@ pub(crate) mod api_tests {
         let resp = app(state).oneshot(req.body(body).unwrap()).await.unwrap();
         let status = resp.status();
         let bytes = resp.into_body().collect().await.unwrap().to_bytes();
-        (status, serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null))
+        (
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null),
+        )
     }
 
     /// Requête à corps brut (octets) ; renvoie statut + octets de la réponse.
-    pub(crate) async fn call_raw(state: &AppState, method: &str, path: &str, content_type: Option<&str>, body: Vec<u8>) -> (StatusCode, Vec<u8>) {
+    pub(crate) async fn call_raw(
+        state: &AppState,
+        method: &str,
+        path: &str,
+        content_type: Option<&str>,
+        body: Vec<u8>,
+    ) -> (StatusCode, Vec<u8>) {
         let mut req = Request::builder().method(method).uri(path);
         if let Some(ct) = content_type {
             req = req.header("content-type", ct);
         }
-        let resp = app(state).oneshot(req.body(Body::from(body)).unwrap()).await.unwrap();
+        let resp = app(state)
+            .oneshot(req.body(Body::from(body)).unwrap())
+            .await
+            .unwrap();
         let status = resp.status();
-        (status, resp.into_body().collect().await.unwrap().to_bytes().to_vec())
+        (
+            status,
+            resp.into_body()
+                .collect()
+                .await
+                .unwrap()
+                .to_bytes()
+                .to_vec(),
+        )
     }
 
     #[tokio::test]
     async fn replay_load_rejects_empty_body() {
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         let resp = app(&state)
-            .oneshot(Request::post("/api/draft/replay/load").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::post("/api/draft/replay/load")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
@@ -926,11 +1467,21 @@ pub(crate) mod api_tests {
 
     #[tokio::test]
     async fn replay_load_rejects_non_custom_and_garbage_and_queues_nothing() {
-        let Some(state) = test_state(None).await else { return };
-        let aram = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../storm-stats/tests/data/silver-city-aram.StormReplay")).unwrap();
+        let Some(state) = test_state(None).await else {
+            return;
+        };
+        let aram = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../storm-stats/tests/data/silver-city-aram.StormReplay"
+        ))
+        .unwrap();
         for bytes in [aram, vec![7u8; 64]] {
             let resp = app(&state)
-                .oneshot(Request::post("/api/draft/replay/load").body(Body::from(bytes)).unwrap())
+                .oneshot(
+                    Request::post("/api/draft/replay/load")
+                        .body(Body::from(bytes))
+                        .unwrap(),
+                )
                 .await
                 .unwrap();
             assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -940,52 +1491,107 @@ pub(crate) mod api_tests {
 
     #[tokio::test]
     async fn replay_next_back_errors_are_409_and_change_nothing() {
-        let Some(state) = test_state(None).await else { return };
-        assert_eq!(call(&state, "POST", "/api/draft/replay/next", None).await.0, StatusCode::CONFLICT); // pas de partie
+        let Some(state) = test_state(None).await else {
+            return;
+        };
+        assert_eq!(
+            call(&state, "POST", "/api/draft/replay/next", None).await.0,
+            StatusCode::CONFLICT
+        ); // pas de partie
         with_game(&state).await;
-        assert_eq!(call(&state, "POST", "/api/draft/replay/back", None).await.0, StatusCode::CONFLICT); // au début
+        assert_eq!(
+            call(&state, "POST", "/api/draft/replay/back", None).await.0,
+            StatusCode::CONFLICT
+        ); // au début
         for _ in 0..12 {
-            assert_eq!(call(&state, "POST", "/api/draft/replay/next", None).await.0, StatusCode::OK);
+            assert_eq!(
+                call(&state, "POST", "/api/draft/replay/next", None).await.0,
+                StatusCode::OK
+            );
         }
-        assert_eq!(call(&state, "POST", "/api/draft/replay/next", None).await.0, StatusCode::CONFLICT); // fini
+        assert_eq!(
+            call(&state, "POST", "/api/draft/replay/next", None).await.0,
+            StatusCode::CONFLICT
+        ); // fini
         assert_eq!(state.draft.read().await.cursor, 16);
     }
 
     #[tokio::test]
     async fn public_draft_hides_future_but_replay_route_has_script() {
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         with_game(&state).await;
         call(&state, "POST", "/api/draft/replay/next", None).await;
         let (_, public) = call(&state, "GET", "/api/draft", None).await;
-        assert!(public["replay"]["queue"][0]["script"].as_array().unwrap().is_empty());
-        assert_eq!(public["assignments"].as_array().unwrap().iter().filter(|a| !a.is_null()).count(), 1);
+        assert!(public["replay"]["queue"][0]["script"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            public["assignments"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|a| !a.is_null())
+                .count(),
+            1
+        );
         let (_, full) = call(&state, "GET", "/api/draft/replay", None).await;
         assert_eq!(full["queue"][0]["script"].as_array().unwrap().len(), 16);
     }
 
     #[tokio::test]
     async fn replay_autoplay_ticks_then_pause_stops() {
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         with_game(&state).await;
-        let (st, _) = call(&state, "POST", "/api/draft/replay/play", Some(serde_json::json!({"playing": true, "interval_ms": 20}))).await;
+        let (st, _) = call(
+            &state,
+            "POST",
+            "/api/draft/replay/play",
+            Some(serde_json::json!({"playing": true, "interval_ms": 20})),
+        )
+        .await;
         assert_eq!(st, StatusCode::OK);
         // attente bornée au lieu d'un sommeil fixe : un runner CI chargé peut retarder les ticks
         let c = wait_until(&state, |d| d.cursor >= 2).await;
         assert!(c >= 2, "la lecture auto n'avance pas (curseur {c})");
-        call(&state, "POST", "/api/draft/replay/play", Some(serde_json::json!({"playing": false}))).await;
+        call(
+            &state,
+            "POST",
+            "/api/draft/replay/play",
+            Some(serde_json::json!({"playing": false})),
+        )
+        .await;
         let paused = state.draft.read().await.cursor;
         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
         assert_eq!(state.draft.read().await.cursor, paused);
         // intervalle absurde → 400
-        let (st, _) = call(&state, "POST", "/api/draft/replay/play", Some(serde_json::json!({"playing": true, "interval_ms": 1}))).await;
+        let (st, _) = call(
+            &state,
+            "POST",
+            "/api/draft/replay/play",
+            Some(serde_json::json!({"playing": true, "interval_ms": 1})),
+        )
+        .await;
         assert_eq!(st, StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
     async fn replay_autoplay_stops_itself_at_the_end() {
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         with_game(&state).await;
-        call(&state, "POST", "/api/draft/replay/play", Some(serde_json::json!({"playing": true, "interval_ms": 10}))).await;
+        call(
+            &state,
+            "POST",
+            "/api/draft/replay/play",
+            Some(serde_json::json!({"playing": true, "interval_ms": 10})),
+        )
+        .await;
         wait_until(&state, |d| d.is_complete() && !d.replay.playing).await;
         let d = state.draft.read().await;
         assert!(d.is_complete() && !d.replay.playing);
@@ -993,12 +1599,26 @@ pub(crate) mod api_tests {
 
     #[tokio::test]
     async fn replay_manual_next_while_playing_never_double_reveals() {
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         with_game(&state).await;
-        call(&state, "POST", "/api/draft/replay/play", Some(serde_json::json!({"playing": true, "interval_ms": 60_000}))).await;
+        call(
+            &state,
+            "POST",
+            "/api/draft/replay/play",
+            Some(serde_json::json!({"playing": true, "interval_ms": 60_000})),
+        )
+        .await;
         call(&state, "POST", "/api/draft/replay/next", None).await;
         // 1 phase = 1 étape de ban → curseur 1 exactement, le timer 60 s n'a pas tiré
         assert_eq!(state.draft.read().await.cursor, 1);
-        call(&state, "POST", "/api/draft/replay/play", Some(serde_json::json!({"playing": false}))).await;
+        call(
+            &state,
+            "POST",
+            "/api/draft/replay/play",
+            Some(serde_json::json!({"playing": false})),
+        )
+        .await;
     }
 }

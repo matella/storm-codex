@@ -69,7 +69,10 @@ impl TryFrom<PoolMapRaw> for PoolMap {
         } else {
             MapStatus::default()
         };
-        Ok(Self { name: r.name, status })
+        Ok(Self {
+            name: r.name,
+            status,
+        })
     }
 }
 
@@ -144,7 +147,9 @@ pub struct GameSummary {
 }
 
 /// Lecture tolérante d'un résumé persisté : illisible → `None` (la série reste chargeable).
-fn lenient_summary<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<GameSummary>, D::Error> {
+fn lenient_summary<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Option<GameSummary>, D::Error> {
     let v = Option::<serde_json::Value>::deserialize(d)?;
     Ok(v.and_then(|v| serde_json::from_value(v).ok()))
 }
@@ -184,7 +189,13 @@ pub struct SlideState {
 }
 impl Default for SlideState {
     fn default() -> Self {
-        Self { game: None, index: 0, auto: false, interval_ms: 12_000, since_ms: 0 }
+        Self {
+            game: None,
+            index: 0,
+            auto: false,
+            interval_ms: 12_000,
+            since_ms: 0,
+        }
     }
 }
 

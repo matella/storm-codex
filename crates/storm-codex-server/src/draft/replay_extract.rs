@@ -1,5 +1,5 @@
 //! Extraction du draft d'une partie Custom depuis la sortie de storm-stats : reconstruit l'ordre
-//! global des 16 étapes (miroir de `selections` dans `process_draft`, storm-stats/src/process.rs).
+//! global des 16 étapes (miroir de `selections` dans `process_draft`, storm-stats/src/process/draft.rs).
 use super::replay::LoadedGame;
 use super::Side;
 use serde_json::{Map, Value as J};
@@ -48,7 +48,10 @@ fn sequence(a: usize, b: usize, old_build: bool) -> [(usize, Slot); 16] {
 }
 
 fn team_list(v: Option<&J>, team: usize) -> Vec<J> {
-    v.and_then(|o| o.get(team.to_string())).and_then(J::as_array).cloned().unwrap_or_default()
+    v.and_then(|o| o.get(team.to_string()))
+        .and_then(J::as_array)
+        .cloned()
+        .unwrap_or_default()
 }
 
 /// Construit le `LoadedGame` d'une sortie storm-stats. `attrs` : code attribut des bans → nom canonique.
@@ -63,7 +66,9 @@ pub fn loaded_game_from_output(
     let (Some(m), Some(players)) = (out.match_.as_ref(), out.players.as_ref()) else {
         return Err(ReplayError::Parse(out.status));
     };
-    if m.get("mode").and_then(J::as_i64) != Some(storm_stats::constants::rt_int("GameMode", "Custom")) {
+    if m.get("mode").and_then(J::as_i64)
+        != Some(storm_stats::constants::rt_int("GameMode", "Custom"))
+    {
         return Err(ReplayError::NotCustom);
     }
     let (bans, picks) = (m.get("bans"), m.get("picks"));
@@ -74,9 +79,17 @@ pub fn loaded_game_from_output(
     let bans_t = [team_list(bans, 0), team_list(bans, 1)];
 
     // Même défaut que le parser : sans `picks.first`, l'équipe 1 draft en premier.
-    let a = if picks.and_then(|p| p.get("first")).and_then(J::as_i64) == Some(0) { 0 } else { 1 };
+    let a = if picks.and_then(|p| p.get("first")).and_then(J::as_i64) == Some(0) {
+        0
+    } else {
+        1
+    };
     let b = 1 - a;
-    let build = m.get("version").and_then(|v| v.get("m_build")).and_then(J::as_f64).unwrap_or(f64::NAN);
+    let build = m
+        .get("version")
+        .and_then(|v| v.get("m_build"))
+        .and_then(J::as_f64)
+        .unwrap_or(f64::NAN);
     let old_build = build < NEW_BAN_BUILD;
 
     let mut script: Vec<Option<String>> = Vec::with_capacity(16);
@@ -89,18 +102,31 @@ pub fn loaded_game_from_output(
                 // Builds anciens : les bans 3 et 4 n'existent pas (« N/A » côté parser) → étape vide.
                 let skipped = old_build && (i == 2 || i == 3);
                 let code = (!skipped).then(|| bans_t[team].get(k)).flatten();
-                let code = code.and_then(|b| b.get("hero").or(Some(b))).and_then(J::as_str);
-                (code.and_then(|c| attrs.get(c)).and_then(J::as_str).map(str::to_owned), None)
+                let code = code
+                    .and_then(|b| b.get("hero").or(Some(b)))
+                    .and_then(J::as_str);
+                (
+                    code.and_then(|c| attrs.get(c))
+                        .and_then(J::as_str)
+                        .map(str::to_owned),
+                    None,
+                )
             }
             Slot::Pick(k) => {
                 let hero = picks_t[team].get(k).and_then(J::as_str).map(str::to_owned);
-                let player = hero.as_deref().and_then(|h| owner(players, team, h, &mut used));
+                let player = hero
+                    .as_deref()
+                    .and_then(|h| owner(players, team, h, &mut used));
                 (hero, player)
             }
         };
         if matches!(slot, Slot::Pick(_)) {
             let side_is_blue = team == 0;
-            let list = if side_is_blue { &mut blue_players } else { &mut red_players };
+            let list = if side_is_blue {
+                &mut blue_players
+            } else {
+                &mut red_players
+            };
             list.push(player.clone().unwrap_or_default());
         }
         script.push(hero);
@@ -118,7 +144,12 @@ pub fn loaded_game_from_output(
 }
 
 /// Pseudo du joueur de l'équipe `team` qui joue `hero` (premier non encore attribué).
-fn owner(players: &Map<String, J>, team: usize, hero: &str, used: &mut HashSet<String>) -> Option<String> {
+fn owner(
+    players: &Map<String, J>,
+    team: usize,
+    hero: &str,
+    used: &mut HashSet<String>,
+) -> Option<String> {
     let (toon, p) = players.iter().find(|(toon, p)| {
         p.get("team").and_then(J::as_i64) == Some(team as i64)
             && p.get("hero").and_then(J::as_str) == Some(hero)
@@ -154,19 +185,39 @@ mod tests {
         let c = codes(6);
         let ban = |i: usize| json!({"hero": c[i].0, "order": 1, "absolute": 1});
         let mut m = Map::new();
-        m.insert("mode".into(), json!(storm_stats::constants::rt_int("GameMode", mode)));
+        m.insert(
+            "mode".into(),
+            json!(storm_stats::constants::rt_int("GameMode", mode)),
+        );
         m.insert("map".into(), json!("Sky Temple"));
         m.insert("version".into(), json!({"m_build": build}));
-        m.insert("bans".into(), json!({"0": [ban(0), ban(1), ban(2)], "1": [ban(3), ban(4), ban(5)]}));
-        let pk = |t: usize| (0..5).map(|k| json!(format!("T{t}H{k}"))).collect::<Vec<_>>();
-        m.insert("picks".into(), json!({"0": pk(0), "1": pk(1), "first": first}));
+        m.insert(
+            "bans".into(),
+            json!({"0": [ban(0), ban(1), ban(2)], "1": [ban(3), ban(4), ban(5)]}),
+        );
+        let pk = |t: usize| {
+            (0..5)
+                .map(|k| json!(format!("T{t}H{k}")))
+                .collect::<Vec<_>>()
+        };
+        m.insert(
+            "picks".into(),
+            json!({"0": pk(0), "1": pk(1), "first": first}),
+        );
         let mut players = Map::new();
         for t in 0..2usize {
             for k in 0..5usize {
-                players.insert(format!("toon{t}{k}"), json!({"team": t, "hero": format!("T{t}H{k}"), "name": format!("P{t}{k}")}));
+                players.insert(
+                    format!("toon{t}{k}"),
+                    json!({"team": t, "hero": format!("T{t}H{k}"), "name": format!("P{t}{k}")}),
+                );
             }
         }
-        storm_stats::Output { status: 1, match_: Some(m), players: Some(players) }
+        storm_stats::Output {
+            status: 1,
+            match_: Some(m),
+            players: Some(players),
+        }
     }
 
     fn load(o: &storm_stats::Output) -> Result<LoadedGame, ReplayError> {
@@ -198,7 +249,14 @@ mod tests {
         let g = load(&output("Custom", 0, 90000)).unwrap();
         let c = codes(6);
         // ordre des bans : a0 b0 a1 b1 | b2 a2
-        let expect = [(0, &c[0]), (1, &c[3]), (2, &c[1]), (3, &c[4]), (9, &c[5]), (10, &c[2])];
+        let expect = [
+            (0, &c[0]),
+            (1, &c[3]),
+            (2, &c[1]),
+            (3, &c[4]),
+            (9, &c[5]),
+            (10, &c[2]),
+        ];
         for (i, (_, hero)) in expect {
             assert_eq!(g.script[i].as_deref(), Some(hero.as_str()), "étape {i}");
         }
@@ -206,7 +264,10 @@ mod tests {
 
     #[test]
     fn non_custom_rejected() {
-        assert_eq!(load(&output("Brawl", 0, 90000)), Err(ReplayError::NotCustom));
+        assert_eq!(
+            load(&output("Brawl", 0, 90000)),
+            Err(ReplayError::NotCustom)
+        );
     }
 
     #[test]
@@ -256,7 +317,11 @@ mod tests {
         assert_eq!(g.first_pick, Side::Red); // picks.first = 1 → équipe 1 (Red) draft en premier
         for p in fx["players"].as_object().unwrap().values() {
             let (hero, turn) = (p["hero"].as_str().unwrap(), p["turn"].as_i64().unwrap());
-            assert_eq!(g.script.iter().position(|h| h.as_deref() == Some(hero)), Some(turn as usize), "{hero}");
+            assert_eq!(
+                g.script.iter().position(|h| h.as_deref() == Some(hero)),
+                Some(turn as usize),
+                "{hero}"
+            );
         }
         assert_eq!(g.script.iter().flatten().count(), 16);
     }

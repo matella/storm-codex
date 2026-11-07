@@ -125,7 +125,7 @@ pub async fn upload(
         .cfg
         .archive_dir
         .join(format!("{content_hash}.StormReplay"));
-    if let Err(e) = tokio::fs::write(&archived, &bytes).await {
+    if let Err(e) = write_atomic(&archived, &bytes).await {
         tracing::error!("archivage : {e}");
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -285,7 +285,7 @@ async fn run_parse(
 
     match project::project_match(&state.db, &fp, PARSER_VERSION, &out).await {
         Ok(match_id) => {
-            let _ = sqlx::query(
+            if let Err(e) = sqlx::query(
                 "UPDATE uploads SET status='parsed', parser_version=$2, build=$3, match_id=$4,
                  error_class=NULL, error_msg=NULL, parsed_at=now() WHERE id=$1",
             )
@@ -294,7 +294,11 @@ async fn run_parse(
             .bind(build)
             .bind(match_id)
             .execute(&state.db)
-            .await;
+            .await
+            {
+                // le match est projeté ; l'upload reste `pending` et sera repris au démarrage
+                tracing::error!("upload {upload_id} : statut parsed non écrit : {e}");
+            }
 
             // Si ce match est la partie du lobby ouvert, le companion bascule en debrief. Verrou
             // tenu pour la lecture (`lier_match` interroge `match_players` sous ce verrou), la
@@ -308,7 +312,9 @@ async fn run_parse(
                         tracing::error!("lobby save: {e}");
                     }
                     // lectures de rang en attente de cette session (le hash du lobby = id de session)
-                    if let Err(e) = crate::rank::attach_to_match(&state.db, &st.content_hash, match_id).await {
+                    if let Err(e) =
+                        crate::rank::attach_to_match(&state.db, &st.content_hash, match_id).await
+                    {
                         tracing::error!("rank attach: {e}");
                     }
                     lobby_lie = true;
@@ -316,7 +322,9 @@ async fn run_parse(
             }
             drop(guard);
             if lobby_lie {
-                let _ = state.events.send(serde_json::json!({ "type": "lobby.updated" }));
+                let _ = state
+                    .events
+                    .send(serde_json::json!({ "type": "lobby.updated" }));
             }
 
             // push temps réel (jalon 3 T5)
@@ -354,7 +362,7 @@ async fn run_parse(
 }
 
 async fn mark_failed(db: &sqlx::PgPool, upload_id: i64, class: &str, msg: &str) {
-    let _ = sqlx::query(
+    if let Err(e) = sqlx::query(
         "UPDATE uploads SET status='parse_failed', error_class=$2, error_msg=$3, parsed_at=now()
          WHERE id=$1",
     )
@@ -362,7 +370,44 @@ async fn mark_failed(db: &sqlx::PgPool, upload_id: i64, class: &str, msg: &str) 
     .bind(class)
     .bind(msg)
     .execute(db)
-    .await;
+    .await
+    {
+        tracing::error!("upload {upload_id} : statut parse_failed ({class}) non écrit : {e}");
+    }
+}
+
+/// Écrit l'archive via un fichier temporaire puis un renommage : un arrêt en pleine écriture ne
+/// laisse jamais un replay tronqué à la place de la source de vérité.
+async fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    let tmp = path.with_extension(format!("tmp-{}", uuid::Uuid::new_v4()));
+    if let Err(e) = tokio::fs::write(&tmp, bytes).await {
+        let _ = tokio::fs::remove_file(&tmp).await;
+        return Err(e);
+    }
+    tokio::fs::rename(&tmp, path).await
+}
+
+/// Reprend au démarrage les uploads restés `pending` : un `202 accepted` met le parse en file
+/// d'attente en mémoire seulement, donc un redémarrage avant la fin les laissait bloqués (le
+/// client ne renvoie pas un fichier accepté). Le fichier archivé est la source de vérité ;
+/// `project_match` est idempotent. Renvoie le nombre d'uploads remis en file.
+pub(crate) async fn resume_pending(state: &AppState) -> Result<usize, sqlx::Error> {
+    let rows: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT id, archived_path FROM uploads
+         WHERE status = 'pending' AND archived_path IS NOT NULL ORDER BY id",
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let n = rows.len();
+    for (upload_id, path) in rows {
+        let st = state.clone();
+        tokio::spawn(async move {
+            if let Ok(p) = st.parse_sem.clone().acquire_owned().await {
+                run_parse(st, upload_id, PathBuf::from(path), p).await;
+            }
+        });
+    }
+    Ok(n)
 }
 
 pub(crate) fn filename(headers: &HeaderMap) -> Option<String> {
@@ -408,7 +453,10 @@ mod tests {
             "2024-12-25 21.30.45 Blackheart's Bay.StormReplay"
         );
         // pas de séquence → inchangé
-        assert_eq!(percent_decode("Cursed Hollow.StormReplay"), "Cursed Hollow.StormReplay");
+        assert_eq!(
+            percent_decode("Cursed Hollow.StormReplay"),
+            "Cursed Hollow.StormReplay"
+        );
         // % en fin de chaîne sans 2 hexa → conservé tel quel
         assert_eq!(percent_decode("weird%2"), "weird%2");
     }
@@ -453,10 +501,87 @@ mod tests {
     fn game_fingerprint_stable_et_ordre_independant() {
         let a = output("2026-06-09", "Sky Temple", 900.0, &["b", "a", "c"]);
         let b = output("2026-06-09", "Sky Temple", 900.0, &["c", "a", "b"]);
-        assert_eq!(game_fingerprint(&a), game_fingerprint(&b), "ordre des toons");
+        assert_eq!(
+            game_fingerprint(&a),
+            game_fingerprint(&b),
+            "ordre des toons"
+        );
         let c = output("2026-06-09", "Sky Temple", 901.0, &["a", "b", "c"]);
-        assert_ne!(game_fingerprint(&a), game_fingerprint(&c), "length différente");
+        assert_ne!(
+            game_fingerprint(&a),
+            game_fingerprint(&c),
+            "length différente"
+        );
         // sans match (rejet) → pas de fingerprint
-        assert_eq!(game_fingerprint(&storm_stats::Output { status: -3, match_: None, players: None }), None);
+        assert_eq!(
+            game_fingerprint(&storm_stats::Output {
+                status: -3,
+                match_: None,
+                players: None
+            }),
+            None
+        );
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod resume_tests {
+    use crate::api_tests::test_state;
+
+    /// Un upload resté `pending` (202 puis redémarrage) est repris et parsé au démarrage.
+    #[tokio::test]
+    async fn pending_upload_is_resumed_and_parsed() {
+        let Some(state) = test_state(None).await else {
+            return;
+        };
+        let replay = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../storm-replay/tests/data/2026-05-27 22.37.45 Industrial District.StormReplay");
+        let bytes = std::fs::read(&replay).expect("replay committé");
+        let hash = super::sha256_hex(&bytes);
+        let archived = state.cfg.archive_dir.join(format!("{hash}.StormReplay"));
+        super::write_atomic(&archived, &bytes).await.unwrap();
+        sqlx::query("DELETE FROM uploads WHERE fingerprint = $1")
+            .bind(&hash)
+            .execute(&state.db)
+            .await
+            .unwrap();
+        let id: i64 = sqlx::query_scalar(
+            "INSERT INTO uploads (filename, fingerprint, archived_path, status)
+             VALUES ('resume.StormReplay', $1, $2, 'pending') RETURNING id",
+        )
+        .bind(&hash)
+        .bind(archived.to_string_lossy().as_ref())
+        .fetch_one(&state.db)
+        .await
+        .unwrap();
+
+        let n = super::resume_pending(&state).await.unwrap();
+        assert!(n >= 1, "l'upload pending doit être remis en file");
+        let mut status = String::new();
+        for _ in 0..100 {
+            status = sqlx::query_scalar("SELECT status FROM uploads WHERE id = $1")
+                .bind(id)
+                .fetch_one(&state.db)
+                .await
+                .unwrap();
+            if status != "pending" {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        assert_eq!(status, "parsed");
+        // aucun fichier temporaire laissé à côté de l'archive
+        let leftovers = std::fs::read_dir(&state.cfg.archive_dir)
+            .unwrap()
+            .filter(|e| {
+                e.as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .contains("tmp-")
+            })
+            .count();
+        assert_eq!(leftovers, 0);
     }
 }

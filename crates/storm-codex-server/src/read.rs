@@ -136,7 +136,9 @@ pub async fn get_match(State(s): State<AppState>, Path(id): Path<i64>) -> Resp {
 pub async fn get_player(State(s): State<AppState>, Path(toon): Path<String>) -> Resp {
     // Pseudo actuel et liste des pseudos viennent de l'historique daté (récent d'abord), pas de
     // `players.last_name`/`names` (ordre de traitement). Repli sur l'ancien comportement si vide.
-    let history = crate::players::names::name_history(&s.db, &toon).await.map_err(db_err)?;
+    let history = crate::players::names::name_history(&s.db, &toon)
+        .await
+        .map_err(db_err)?;
     let mut v: J = sqlx::query_scalar(
         "SELECT jsonb_build_object(
             'toon', $1::text,
@@ -202,7 +204,11 @@ pub async fn list_heroes(State(s): State<AppState>, Query(f): Query<MatchFilter>
 
 /// GET /api/hero/{hero} — fiche héros du point de vue opérateur : volume + WR + KDA moyen, WR par
 /// carte, et builds de talents les plus joués (avec WR) pour ce héros.
-pub async fn hero_detail(State(s): State<AppState>, Path(hero): Path<String>, Query(f): Query<MatchFilter>) -> Resp {
+pub async fn hero_detail(
+    State(s): State<AppState>,
+    Path(hero): Path<String>,
+    Query(f): Query<MatchFilter>,
+) -> Resp {
     // Mêmes filtres que /api/heroes (mode/from/to/mine/account) → cohérence liste ↔ fiche.
     // Défaut (mine=false, account absent) = tous les joueurs, comme la liste.
     let v: J = sqlx::query_scalar(
@@ -329,7 +335,7 @@ pub async fn matches_csv(
         Option<i32>,
     );
     let rows: Vec<Row> = sqlx::query_as(
-            "WITH ops AS (
+        "WITH ops AS (
                 SELECT lower(jsonb_array_elements_text(value)) AS name
                 FROM app_settings WHERE key = 'operator_names'
              )
@@ -353,19 +359,19 @@ pub async fn matches_csv(
                AND ($8::timestamptz  IS NULL OR m.played_at >= $8::timestamptz)
                AND ($9::timestamptz  IS NULL OR m.played_at <  $9::timestamptz)
              ORDER BY m.played_at DESC NULLS LAST LIMIT $3",
-        )
-        .bind(f.map)
-        .bind(f.mode)
-        .bind(f.limit.unwrap_or(5000).clamp(1, 50000))
-        .bind(f.account)
-        .bind(f.hero)
-        .bind(f.result)
-        .bind(f.mvp)
-        .bind(f.from)
-        .bind(f.to)
-        .fetch_all(&s.db)
-        .await
-        .map_err(db_err)?;
+    )
+    .bind(f.map)
+    .bind(f.mode)
+    .bind(f.limit.unwrap_or(5000).clamp(1, 50000))
+    .bind(f.account)
+    .bind(f.hero)
+    .bind(f.result)
+    .bind(f.mvp)
+    .bind(f.from)
+    .bind(f.to)
+    .fetch_all(&s.db)
+    .await
+    .map_err(db_err)?;
     let mut csv = String::from("id,map,mode,played_at,length,winner,build\n");
     for (id, map, mode, played, length, winner, build) in rows {
         let _ = writeln!(
@@ -382,7 +388,10 @@ pub async fn matches_csv(
     Ok((
         [
             (axum::http::header::CONTENT_TYPE, "text/csv; charset=utf-8"),
-            (axum::http::header::CONTENT_DISPOSITION, "attachment; filename=\"matches.csv\""),
+            (
+                axum::http::header::CONTENT_DISPOSITION,
+                "attachment; filename=\"matches.csv\"",
+            ),
         ],
         csv,
     )
@@ -432,7 +441,9 @@ pub async fn list_maps(State(s): State<AppState>, Query(f): Query<MatchFilter>) 
 /// Proxy GET best-effort vers HotsPatchNotes (`hotspatchnotes_url`) ; `fallback` si indispo/non
 /// configuré. Même mécanique que `now_playing` (ureq + spawn_blocking, jamais sur le thread HTTP).
 async fn hpn_proxy(s: &AppState, path: String, fallback: J) -> Json<J> {
-    let Some(base) = s.cfg.hotspatchnotes_url.clone() else { return Json(fallback) };
+    let Some(base) = s.cfg.hotspatchnotes_url.clone() else {
+        return Json(fallback);
+    };
     let url = format!("{}{}", base.trim_end_matches('/'), path);
     let res = tokio::task::spawn_blocking(move || -> Option<J> {
         ureq::get(&url).call().ok()?.body_mut().read_json().ok()
@@ -491,10 +502,17 @@ pub struct HeroChangesFilter {
 
 /// GET /api/hero-changes — fil global des ajustements héros (toutes sections de type Hero), récents
 /// d'abord, filtrable par héros / classification / patch + paginé. Alimente la vue « par héros ».
-pub async fn hero_changes(State(s): State<AppState>, Query(f): Query<HeroChangesFilter>) -> Json<J> {
+pub async fn hero_changes(
+    State(s): State<AppState>,
+    Query(f): Query<HeroChangesFilter>,
+) -> Json<J> {
     let limit = f.limit.unwrap_or(60).clamp(1, 300);
     let offset = f.offset.unwrap_or(0).max(0);
-    let hkey = f.hero.as_deref().filter(|h| !h.is_empty()).map(crate::dim::hero_key);
+    let hkey = f
+        .hero
+        .as_deref()
+        .filter(|h| !h.is_empty())
+        .map(crate::dim::hero_key);
     let v: J = sqlx::query_scalar(
         "SELECT COALESCE(jsonb_agg(jsonb_build_object(
             'patchInternalId', patch_internal_id, 'patchName', patch_name, 'patchType', patch_type,
@@ -523,7 +541,10 @@ pub async fn hero_changes(State(s): State<AppState>, Query(f): Query<HeroChanges
 
 /// GET /api/hero-changes/heroes — un héros = une ligne : nombre de changements, dernier patch/date/
 /// classification. Pour la vue « par héros » (groupée). Filtrable par classification / patch.
-pub async fn hero_changes_heroes(State(s): State<AppState>, Query(f): Query<HeroChangesFilter>) -> Json<J> {
+pub async fn hero_changes_heroes(
+    State(s): State<AppState>,
+    Query(f): Query<HeroChangesFilter>,
+) -> Json<J> {
     let v: J = sqlx::query_scalar(
         "SELECT COALESCE(jsonb_agg(jsonb_build_object(
             'heroName', hero_name, 'count', cnt, 'latestDate', latest,

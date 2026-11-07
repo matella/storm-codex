@@ -1,7 +1,7 @@
 // Couche API de la régie de cast : types miroir de `Series` (crates/storm-codex-server/src/cast/mod.rs)
 // + un fetcher par route de cast/api.rs + `useCast()` (rafraîchi par le WS `cast.updated`, cf. api.ts).
 import { useQuery } from "@tanstack/react-query";
-import { httpError } from "./api";
+import { authHeaders, httpError } from "./api";
 import type { DraftFormat, Side } from "./api";
 
 export type CastScene = "lineups" | "series" | "draft" | "ingame" | "hide";
@@ -136,7 +136,7 @@ export type SlidePatch = Partial<Pick<SlideState, "game" | "index" | "auto" | "i
 async function send<T>(method: string, path: string, body?: unknown): Promise<T> {
   const r = await fetch(path, {
     method,
-    headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+    headers: { ...(body !== undefined ? { "Content-Type": "application/json" } : {}), ...(method === "GET" ? {} : authHeaders()) },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (!r.ok) throw await httpError(r);
@@ -162,7 +162,7 @@ export const castSlide = (patch: SlidePatch) => send<CastSeries>("POST", "/api/c
 export async function castLogoUpload(side: Side, file: File): Promise<CastSeries> {
   const r = await fetch(`/api/cast/logo/${side}`, {
     method: "POST",
-    headers: { "Content-Type": file.type },
+    headers: { "Content-Type": file.type, ...authHeaders() },
     body: file,
   });
   if (!r.ok) throw await httpError(r);
@@ -181,7 +181,7 @@ export type GameReplayResult = GameSummary & {
 export async function castGameReplay(n: number, file: File, swap = false): Promise<GameReplayResult> {
   const r = await fetch(`/api/cast/games/${n}/replay${swap ? "?swap=1" : ""}`, {
     method: "POST",
-    headers: { "Content-Type": "application/octet-stream" },
+    headers: { "Content-Type": "application/octet-stream", ...authHeaders() },
     body: file,
   });
   if (!r.ok) throw await httpError(r);
@@ -192,7 +192,7 @@ export async function castGameReplay(n: number, file: File, swap = false): Promi
 export async function castReplayInspect(file: File): Promise<GameSummary> {
   const r = await fetch("/api/cast/replays/inspect", {
     method: "POST",
-    headers: { "Content-Type": "application/octet-stream" },
+    headers: { "Content-Type": "application/octet-stream", ...authHeaders() },
     body: file,
   });
   if (!r.ok) throw await httpError(r);
@@ -209,7 +209,7 @@ export async function castReplayImport(map: string, file: File, swap: boolean, s
   const q = new URLSearchParams({ map, series_id: seriesId, ...(swap ? { swap: "1" } : {}) });
   const r = await fetch(`/api/cast/replays/import?${q}`, {
     method: "POST",
-    headers: { "Content-Type": "application/octet-stream" },
+    headers: { "Content-Type": "application/octet-stream", ...authHeaders() },
     body: file,
   });
   if (!r.ok) throw await httpError(r);

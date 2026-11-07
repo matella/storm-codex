@@ -84,7 +84,9 @@ SELECT r.toon_handle, r.matched, r.games,
 FROM ranked r ORDER BY r.tier, r.games DESC, r.toon_handle";
 
 pub async fn search(db: &PgPool, q: &str, limit: i64) -> Result<Vec<SearchHit>, sqlx::Error> {
-    let Some(q) = normalize_query(q) else { return Ok(vec![]) };
+    let Some(q) = normalize_query(q) else {
+        return Ok(vec![]);
+    };
     let esc = escape_like(&q);
     let rows: Vec<HitRow> = sqlx::query_as(SEARCH_SQL)
         .bind(format!("%{esc}%"))
@@ -141,14 +143,37 @@ mod tests {
         let u = uid();
         let (a, b, c) = (format!("ta-{u}"), format!("tb-{u}"), format!("tc-{u}"));
         // A : ancien « Zed{u}Night », actuel « Zed{u}Knight ».
-        insert_match(&db, Some(t(1)), &[row(&a, &format!("Zed{u}Night"), 0, "Muradin")]).await;
-        insert_match(&db, Some(t(6)), &[row(&a, &format!("Zed{u}Knight"), 0, "Muradin")]).await;
+        insert_match(
+            &db,
+            Some(t(1)),
+            &[row(&a, &format!("Zed{u}Night"), 0, "Muradin")],
+        )
+        .await;
+        insert_match(
+            &db,
+            Some(t(6)),
+            &[row(&a, &format!("Zed{u}Knight"), 0, "Muradin")],
+        )
+        .await;
         // B : « Zed{u}_Main » ; C : « Zed{u}XMain » (ne doit PAS sortir pour « _M »).
-        insert_match(&db, Some(t(3)), &[row(&b, &format!("Zed{u}_Main"), 0, "Kerrigan")]).await;
-        insert_match(&db, Some(t(3)), &[row(&c, &format!("Zed{u}XMain"), 0, "Kerrigan")]).await;
+        insert_match(
+            &db,
+            Some(t(3)),
+            &[row(&b, &format!("Zed{u}_Main"), 0, "Kerrigan")],
+        )
+        .await;
+        insert_match(
+            &db,
+            Some(t(3)),
+            &[row(&c, &format!("Zed{u}XMain"), 0, "Kerrigan")],
+        )
+        .await;
 
         let hits = search(&db, &format!("ZED{u}night"), 20).await.unwrap();
-        let ha = hits.iter().find(|h| h.toon == a).expect("A trouvé par son ancien pseudo");
+        let ha = hits
+            .iter()
+            .find(|h| h.toon == a)
+            .expect("A trouvé par son ancien pseudo");
         assert!(ha.matched_old);
         assert_eq!(ha.matched_name, format!("Zed{u}Night"));
         assert_eq!(ha.name.as_deref(), Some(format!("Zed{u}Knight").as_str()));
@@ -159,7 +184,10 @@ mod tests {
 
         let hits = search(&db, &format!("Zed{u}_M"), 20).await.unwrap();
         assert!(hits.iter().any(|h| h.toon == b));
-        assert!(!hits.iter().any(|h| h.toon == c), "« _ » doit être littéral, pas un joker");
+        assert!(
+            !hits.iter().any(|h| h.toon == c),
+            "« _ » doit être littéral, pas un joker"
+        );
     }
 
     /// Budget perf (spec : p95 < 100 ms) sur le corpus réel de la base pointée par `DATABASE_URL`.
@@ -168,7 +196,10 @@ mod tests {
     #[ignore = "mesure sur corpus réel"]
     async fn mesure_p95_recherche() {
         let Some(db) = test_pool().await else { return };
-        let qs = ["ar", "ma", "ni", "xx", "ra", "el", "mat", "ubi", "knight", "kerr", "zz", "an", "ov", "ig", "mon", "ele", "sta", "tor", "pro", "da"];
+        let qs = [
+            "ar", "ma", "ni", "xx", "ra", "el", "mat", "ubi", "knight", "kerr", "zz", "an", "ov",
+            "ig", "mon", "ele", "sta", "tor", "pro", "da",
+        ];
         let mut ms = Vec::new();
         for q in qs {
             let t0 = std::time::Instant::now();
@@ -190,7 +221,12 @@ mod tests {
         insert_match(&db, None, &[row(&sub, &format!("xx{u}"), 0, "Muradin")]).await;
         insert_match(&db, None, &[row(&pre, &format!("{u}zz"), 0, "Muradin")]).await;
         insert_match(&db, None, &[row(&ex, &u, 0, "Muradin")]).await;
-        let toons: Vec<_> = search(&db, &u, 20).await.unwrap().into_iter().map(|h| h.toon).collect();
+        let toons: Vec<_> = search(&db, &u, 20)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|h| h.toon)
+            .collect();
         assert_eq!(toons, [ex, pre, sub]);
         assert_eq!(search(&db, &u, 2).await.unwrap().len(), 2);
         assert!(search(&db, "x", 20).await.unwrap().is_empty());

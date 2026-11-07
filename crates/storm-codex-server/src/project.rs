@@ -39,7 +39,10 @@ fn talent_hero(p: &J, lut: &HashMap<String, String>) -> Option<String> {
             *tally.entry(h.as_str()).or_default() += 1;
         }
     }
-    tally.into_iter().max_by_key(|(_, n)| *n).map(|(h, _)| h.to_string())
+    tally
+        .into_iter()
+        .max_by_key(|(_, n)| *n)
+        .map(|(h, _)| h.to_string())
 }
 
 /// Toon → héros joué, pour les seuls joueurs dont le héros résolu par les talents diffère du
@@ -265,7 +268,7 @@ async fn project_once(
         .collect();
     roster.sort_unstable_by(|a, b| a.0.cmp(b.0));
     for (toon, name) in roster {
-        let _ = sqlx::query(
+        if let Err(e) = sqlx::query(
             "INSERT INTO players (toon_handle, last_name, names, updated_at)
              VALUES ($1,$2, jsonb_build_array($2::text), now())
              ON CONFLICT (toon_handle) DO UPDATE SET
@@ -277,7 +280,10 @@ async fn project_once(
         .bind(toon)
         .bind(name)
         .execute(db)
-        .await;
+        .await
+        {
+            tracing::warn!("référentiel joueurs : upsert de {toon} en échec : {e}");
+        }
     }
 
     Ok(match_id)

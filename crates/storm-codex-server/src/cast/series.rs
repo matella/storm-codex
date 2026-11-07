@@ -27,7 +27,11 @@ impl Series {
     /// Remplace le pool (ordre donné) ; les cartes conservées gardent leur statut, les autres sont retirées.
     pub fn set_pool(&mut self, names: &[String]) {
         // Linéaire (HashMap/HashSet) : un pool énorme ne doit pas coûter du quadratique sous verrou.
-        let old: HashMap<&str, MapStatus> = self.pool.iter().map(|m| (m.name.as_str(), m.status)).collect();
+        let old: HashMap<&str, MapStatus> = self
+            .pool
+            .iter()
+            .map(|m| (m.name.as_str(), m.status))
+            .collect();
         let mut seen: HashSet<&str> = HashSet::with_capacity(names.len());
         let mut pool: Vec<PoolMap> = Vec::with_capacity(names.len());
         for n in names {
@@ -35,18 +39,29 @@ impl Series {
                 continue;
             }
             let status = old.get(n.as_str()).copied().unwrap_or_default();
-            pool.push(PoolMap { name: n.clone(), status });
+            pool.push(PoolMap {
+                name: n.clone(),
+                status,
+            });
         }
         self.pool = pool;
     }
 
     pub fn mark_map(&mut self, name: &str, status: MapStatus) -> Result<(), CastError> {
-        let idx = self.pool.iter().position(|m| m.name == name).ok_or(CastError::NotInPool)?;
+        let idx = self
+            .pool
+            .iter()
+            .position(|m| m.name == name)
+            .ok_or(CastError::NotInPool)?;
         if self.is_played(name) {
             return Err(CastError::MapAlreadyPlayed);
         }
         if status == MapStatus::Decider
-            && self.pool.iter().enumerate().any(|(i, m)| i != idx && m.status == MapStatus::Decider)
+            && self
+                .pool
+                .iter()
+                .enumerate()
+                .any(|(i, m)| i != idx && m.status == MapStatus::Decider)
         {
             return Err(CastError::DuplicateDecider);
         }
@@ -55,9 +70,9 @@ impl Series {
     }
 
     fn is_chosen(&self, name: &str) -> bool {
-        self.pool
-            .iter()
-            .any(|m| m.name == name && matches!(m.status, MapStatus::Picked { .. } | MapStatus::Decider))
+        self.pool.iter().any(|m| {
+            m.name == name && matches!(m.status, MapStatus::Picked { .. } | MapStatus::Decider)
+        })
     }
 
     fn is_played(&self, name: &str) -> bool {
@@ -71,15 +86,29 @@ impl Series {
         if !self.is_chosen(map) || self.is_played(map) {
             return Err(CastError::MapNotChosen);
         }
-        let number = self.games.iter().map(|g| g.number).max().unwrap_or(0).saturating_add(1);
-        self.games.push(GameRecord { number, map: map.to_string(), ..Default::default() });
+        let number = self
+            .games
+            .iter()
+            .map(|g| g.number)
+            .max()
+            .unwrap_or(0)
+            .saturating_add(1);
+        self.games.push(GameRecord {
+            number,
+            map: map.to_string(),
+            ..Default::default()
+        });
         Ok(number)
     }
 
     /// Pose (ou corrige, R21 : erreur de clic) le vainqueur saisi à la main ; refusé si la partie a
     /// un résumé de replay (il porte son propre vainqueur et son orientation).
     pub fn set_winner(&mut self, number: u8, side: Side) -> Result<(), CastError> {
-        let g = self.games.iter_mut().find(|g| g.number == number).ok_or(CastError::UnknownGame)?;
+        let g = self
+            .games
+            .iter_mut()
+            .find(|g| g.number == number)
+            .ok_or(CastError::UnknownGame)?;
         if g.summary.is_some() {
             return Err(CastError::WinnerAlreadySet);
         }
@@ -91,7 +120,11 @@ impl Series {
     /// sans vainqueur ni résumé. Le statut de la carte (pickée/decider) est inchangé : elle redevient
     /// lançable. Une partie épinglée dans le diaporama est désépinglée.
     pub fn remove_game(&mut self, number: u8) -> Result<(), CastError> {
-        let idx = self.games.iter().position(|g| g.number == number).ok_or(CastError::UnknownGame)?;
+        let idx = self
+            .games
+            .iter()
+            .position(|g| g.number == number)
+            .ok_or(CastError::UnknownGame)?;
         if self.games.iter().any(|g| g.number > number) {
             return Err(CastError::NotLastGame);
         }
@@ -109,7 +142,11 @@ impl Series {
     /// Remplit la partie `number` depuis le résumé de son replay (qui fait foi : remplace un
     /// vainqueur/takedowns/durée saisis à la main, et un résumé précédent).
     fn fill_from_summary(&mut self, number: u8, summary: GameSummary) -> Result<(), CastError> {
-        let g = self.games.iter_mut().find(|g| g.number == number).ok_or(CastError::UnknownGame)?;
+        let g = self
+            .games
+            .iter_mut()
+            .find(|g| g.number == number)
+            .ok_or(CastError::UnknownGame)?;
         g.winner = Some(summary.winner);
         g.takedowns = summary.takedowns;
         g.duration_secs = Some(summary.duration_secs);
@@ -155,8 +192,14 @@ impl Series {
     /// (choix de l'opérateur) ou preuve par les joueurs → `swapped()` ; sans preuve, un vainqueur
     /// déjà saisi qui contredit le replay → `SideMismatch` (rien ne change) ; sinon équipe 0 = Blue.
     /// Renvoie le résumé tel qu'enregistré.
-    pub fn fill_from_replay(&mut self, number: u8, summary: GameSummary, force_swap: bool) -> Result<GameSummary, CastError> {
-        self.fill_from_replay_oriented(number, summary, force_swap).map(|(s, _)| s)
+    pub fn fill_from_replay(
+        &mut self,
+        number: u8,
+        summary: GameSummary,
+        force_swap: bool,
+    ) -> Result<GameSummary, CastError> {
+        self.fill_from_replay_oriented(number, summary, force_swap)
+            .map(|(s, _)| s)
     }
 
     /// Comme `fill_from_replay`, et dit comment l'orientation a été décidée (réponse de la route).
@@ -166,11 +209,21 @@ impl Series {
         summary: GameSummary,
         force_swap: bool,
     ) -> Result<(GameSummary, Orientation), CastError> {
-        let manual = self.games.iter().find(|g| g.number == number).ok_or(CastError::UnknownGame)?.winner;
+        let manual = self
+            .games
+            .iter()
+            .find(|g| g.number == number)
+            .ok_or(CastError::UnknownGame)?
+            .winner;
         let evidence = self.orient(&summary);
         let (swap, how) = match (force_swap, evidence) {
             // échange forcé alors que les joueurs liés prouvent l'orientation directe
-            (true, e) => (true, Orientation::Forced { against_evidence: e == Some(false) }),
+            (true, e) => (
+                true,
+                Orientation::Forced {
+                    against_evidence: e == Some(false),
+                },
+            ),
             (false, Some(swap)) => (swap, Orientation::Evidence),
             (false, None) => {
                 if manual.is_some_and(|w| w != summary.winner) {
@@ -248,8 +301,10 @@ mod tests {
     #[test]
     fn set_pool_keeps_status_of_retained_maps_and_drops_others() {
         let mut s = series(&["A", "B", "C"]);
-        s.mark_map("A", MapStatus::Banned { by: Side::Red }).unwrap();
-        s.mark_map("B", MapStatus::Picked { by: Side::Blue }).unwrap();
+        s.mark_map("A", MapStatus::Banned { by: Side::Red })
+            .unwrap();
+        s.mark_map("B", MapStatus::Picked { by: Side::Blue })
+            .unwrap();
         s.set_pool(&names(&["B", "D", "A"]));
         let order: Vec<_> = s.pool.iter().map(|m| m.name.as_str()).collect();
         assert_eq!(order, ["B", "D", "A"]);
@@ -261,7 +316,8 @@ mod tests {
     #[test]
     fn set_pool_dedups_a_huge_list_and_keeps_first_occurrence_order() {
         let mut s = series(&["A"]);
-        s.mark_map("A", MapStatus::Banned { by: Side::Red }).unwrap();
+        s.mark_map("A", MapStatus::Banned { by: Side::Red })
+            .unwrap();
         let mut names: Vec<String> = (0..50_000).map(|_| "A".to_string()).collect();
         names.extend((0..50_000).map(|i| format!("M{}", i % 3)));
         s.set_pool(&names);
@@ -273,7 +329,10 @@ mod tests {
     #[test]
     fn mark_map_rejects_map_outside_pool() {
         let mut s = series(&["A"]);
-        assert_eq!(s.mark_map("Z", MapStatus::Decider), Err(CastError::NotInPool));
+        assert_eq!(
+            s.mark_map("Z", MapStatus::Decider),
+            Err(CastError::NotInPool)
+        );
     }
 
     #[test]
@@ -281,7 +340,10 @@ mod tests {
         let mut s = series(&["A", "B"]);
         s.mark_map("A", MapStatus::Decider).unwrap();
         let before = s.clone();
-        assert_eq!(s.mark_map("B", MapStatus::Decider), Err(CastError::DuplicateDecider));
+        assert_eq!(
+            s.mark_map("B", MapStatus::Decider),
+            Err(CastError::DuplicateDecider)
+        );
         assert_eq!(s, before);
         s.mark_map("A", MapStatus::Decider).unwrap();
     }
@@ -290,23 +352,30 @@ mod tests {
     fn mark_map_refuses_a_map_that_already_has_a_game() {
         let mut s = with_game();
         let before = s.clone();
-        assert_eq!(s.mark_map("A", MapStatus::Banned { by: Side::Red }), Err(CastError::MapAlreadyPlayed));
+        assert_eq!(
+            s.mark_map("A", MapStatus::Banned { by: Side::Red }),
+            Err(CastError::MapAlreadyPlayed)
+        );
         assert_eq!(s, before);
     }
 
     #[test]
     fn marking_banned_then_picked_replaces_status() {
         let mut s = series(&["A"]);
-        s.mark_map("A", MapStatus::Banned { by: Side::Blue }).unwrap();
-        s.mark_map("A", MapStatus::Picked { by: Side::Red }).unwrap();
+        s.mark_map("A", MapStatus::Banned { by: Side::Blue })
+            .unwrap();
+        s.mark_map("A", MapStatus::Picked { by: Side::Red })
+            .unwrap();
         assert_eq!(status(&s, "A"), MapStatus::Picked { by: Side::Red });
     }
 
     #[test]
     fn start_game_requires_picked_or_decider() {
         let mut s = series(&["A", "B", "C", "D"]);
-        s.mark_map("B", MapStatus::Banned { by: Side::Blue }).unwrap();
-        s.mark_map("C", MapStatus::Picked { by: Side::Blue }).unwrap();
+        s.mark_map("B", MapStatus::Banned { by: Side::Blue })
+            .unwrap();
+        s.mark_map("C", MapStatus::Picked { by: Side::Blue })
+            .unwrap();
         s.mark_map("D", MapStatus::Decider).unwrap();
         assert_eq!(s.start_game("A"), Err(CastError::MapNotChosen));
         assert_eq!(s.start_game("B"), Err(CastError::MapNotChosen));
@@ -318,8 +387,10 @@ mod tests {
     #[test]
     fn start_game_numbers_games_from_one_and_rejects_replaying_a_map() {
         let mut s = series(&["A", "B"]);
-        s.mark_map("A", MapStatus::Picked { by: Side::Blue }).unwrap();
-        s.mark_map("B", MapStatus::Picked { by: Side::Red }).unwrap();
+        s.mark_map("A", MapStatus::Picked { by: Side::Blue })
+            .unwrap();
+        s.mark_map("B", MapStatus::Picked { by: Side::Red })
+            .unwrap();
         assert_eq!(s.start_game("A"), Ok(1));
         assert_eq!(s.start_game("A"), Err(CastError::MapNotChosen));
         assert_eq!(s.start_game("B"), Ok(2));
@@ -327,7 +398,8 @@ mod tests {
 
     fn with_game() -> Series {
         let mut s = series(&["A"]);
-        s.mark_map("A", MapStatus::Picked { by: Side::Blue }).unwrap();
+        s.mark_map("A", MapStatus::Picked { by: Side::Blue })
+            .unwrap();
         s.start_game("A").unwrap();
         s
     }
@@ -359,7 +431,8 @@ mod tests {
     #[test]
     fn remove_game_only_last_without_result_and_map_becomes_startable_again() {
         let mut s = series(&["A", "B"]);
-        s.mark_map("A", MapStatus::Picked { by: Side::Blue }).unwrap();
+        s.mark_map("A", MapStatus::Picked { by: Side::Blue })
+            .unwrap();
         s.mark_map("B", MapStatus::Decider).unwrap();
         s.start_game("A").unwrap();
         s.start_game("B").unwrap();
@@ -389,7 +462,8 @@ mod tests {
         for n in ["A", "B", "C"] {
             s.mark_map(n, MapStatus::Picked { by: Side::Blue }).unwrap();
             let g = s.start_game(n).unwrap();
-            s.set_winner(g, if n == "B" { Side::Red } else { Side::Blue }).unwrap();
+            s.set_winner(g, if n == "B" { Side::Red } else { Side::Blue })
+                .unwrap();
         }
         assert_eq!(s.score(), [2, 1]);
         s.score_override = Some([0, 3]);
@@ -401,8 +475,10 @@ mod tests {
         let mut s = series(&["A", "B", "C", "D"]);
         assert_eq!(s.next_map(), None);
         s.mark_map("D", MapStatus::Decider).unwrap();
-        s.mark_map("B", MapStatus::Picked { by: Side::Red }).unwrap();
-        s.mark_map("A", MapStatus::Banned { by: Side::Red }).unwrap();
+        s.mark_map("B", MapStatus::Picked { by: Side::Red })
+            .unwrap();
+        s.mark_map("A", MapStatus::Banned { by: Side::Red })
+            .unwrap();
         assert_eq!(s.next_map(), Some("B"));
         s.start_game("B").unwrap();
         assert_eq!(s.next_map(), Some("D"));
@@ -443,7 +519,8 @@ mod tests {
     fn series_roundtrips_json_and_loads_default_for_missing_fields() {
         let mut s = series(&["A", "B"]);
         s.blue.name = "X".into();
-        s.mark_map("A", MapStatus::Picked { by: Side::Red }).unwrap();
+        s.mark_map("A", MapStatus::Picked { by: Side::Red })
+            .unwrap();
         s.start_game("A").unwrap();
         let json = serde_json::to_string(&s).unwrap();
         assert!(json.contains(r#""status":"picked""#), "{json}");
@@ -459,18 +536,39 @@ mod tests {
 
     fn row(side: Side, toon: &str, name: &str) -> crate::cast::PlayerSummary {
         crate::cast::PlayerSummary {
-            side, toon: toon.into(), name: name.into(), hero: format!("H-{name}"), kills: 0, takedowns: 0, deaths: 0,
-            assists: 0, hero_damage: 0, siege_damage: 0, healing: 0,
+            side,
+            toon: toon.into(),
+            name: name.into(),
+            hero: format!("H-{name}"),
+            kills: 0,
+            takedowns: 0,
+            deaths: 0,
+            assists: 0,
+            hero_damage: 0,
+            siege_damage: 0,
+            healing: 0,
         }
     }
 
     /// Résumé où l'équipe 0 du replay (Blue) a gagné, joueurs `a*` en équipe 0 et `b*` en équipe 1.
     fn replay_summary() -> GameSummary {
         GameSummary {
-            map: None, played_at: None,
-            duration_secs: 600, winner: Side::Blue, takedowns: [10, 4], team_level: Some([20, 18]), structures: Some([3, 1]),
-            merc_camps: Some([5, 2]), objectives: None, bans: [vec!["X".into()], vec!["Y".into()]],
-            players: vec![row(Side::Blue, "ta1", "Alpha1"), row(Side::Blue, "ta2", "Alpha2"), row(Side::Red, "tb1", "Beta1"), row(Side::Red, "tb2", "Beta2")],
+            map: None,
+            played_at: None,
+            duration_secs: 600,
+            winner: Side::Blue,
+            takedowns: [10, 4],
+            team_level: Some([20, 18]),
+            structures: Some([3, 1]),
+            merc_camps: Some([5, 2]),
+            objectives: None,
+            bans: [vec!["X".into()], vec!["Y".into()]],
+            players: vec![
+                row(Side::Blue, "ta1", "Alpha1"),
+                row(Side::Blue, "ta2", "Alpha2"),
+                row(Side::Red, "tb1", "Beta1"),
+                row(Side::Red, "tb2", "Beta2"),
+            ],
             xp_lead: vec![(60, 300)],
         }
     }
@@ -478,16 +576,25 @@ mod tests {
     fn team(players: &[(Option<&str>, &str)]) -> crate::cast::Team {
         let mut t = crate::cast::Team::default();
         for (i, (toon, name)) in players.iter().enumerate() {
-            t.players[i] = Player { name: (*name).into(), tagline: String::new(), toon: toon.map(Into::into) };
+            t.players[i] = Player {
+                name: (*name).into(),
+                tagline: String::new(),
+                toon: toon.map(Into::into),
+            };
         }
         t
     }
 
-    fn replay_game(blue: crate::cast::Team, red: crate::cast::Team, winner: Option<Side>) -> Series {
+    fn replay_game(
+        blue: crate::cast::Team,
+        red: crate::cast::Team,
+        winner: Option<Side>,
+    ) -> Series {
         let mut s = series(&["A"]);
         s.blue = blue;
         s.red = red;
-        s.mark_map("A", MapStatus::Picked { by: Side::Blue }).unwrap();
+        s.mark_map("A", MapStatus::Picked { by: Side::Blue })
+            .unwrap();
         s.start_game("A").unwrap();
         s.games[0].winner = winner;
         s
@@ -496,7 +603,11 @@ mod tests {
     #[test]
     fn orient_swaps_on_toon_evidence() {
         // la Blue de la série joue en équipe 1 du replay (toons tb*)
-        let mut s = replay_game(team(&[(Some("tb1"), "x"), (Some("tb2"), "y")]), team(&[(Some("ta1"), "z")]), None);
+        let mut s = replay_game(
+            team(&[(Some("tb1"), "x"), (Some("tb2"), "y")]),
+            team(&[(Some("ta1"), "z")]),
+            None,
+        );
         assert_eq!(s.orient(&replay_summary()), Some(true));
         let got = s.fill_from_replay(1, replay_summary(), false).unwrap();
         let g = &s.games[0];
@@ -508,16 +619,27 @@ mod tests {
 
     #[test]
     fn orient_keeps_direct_orientation() {
-        let mut s = replay_game(team(&[(Some("ta1"), "x")]), team(&[(Some("tb1"), "y")]), Some(Side::Red));
+        let mut s = replay_game(
+            team(&[(Some("ta1"), "x")]),
+            team(&[(Some("tb1"), "y")]),
+            Some(Side::Red),
+        );
         assert_eq!(s.orient(&replay_summary()), Some(false));
         // preuve nette : le replay fait foi, même contre un vainqueur saisi
         s.fill_from_replay(1, replay_summary(), false).unwrap();
-        assert_eq!((s.games[0].winner, s.games[0].takedowns), (Some(Side::Blue), [10, 4]));
+        assert_eq!(
+            (s.games[0].winner, s.games[0].takedowns),
+            (Some(Side::Blue), [10, 4])
+        );
     }
 
     #[test]
     fn orient_swaps_on_name_evidence() {
-        let s = replay_game(team(&[(None, " beta1 "), (None, "BETA2")]), team(&[(None, "alpha1")]), None);
+        let s = replay_game(
+            team(&[(None, " beta1 "), (None, "BETA2")]),
+            team(&[(None, "alpha1")]),
+            None,
+        );
         assert_eq!(s.orient(&replay_summary()), Some(true));
         // même pseudo mais toons différents : pas une preuve (homonyme d'un autre compte)
         let s = replay_game(team(&[(Some("other"), "Beta1")]), team(&[]), None);
@@ -529,7 +651,10 @@ mod tests {
         let mut s = replay_game(team(&[(None, "Nobody")]), team(&[]), Some(Side::Red));
         assert_eq!(s.orient(&replay_summary()), None);
         let before = s.clone();
-        assert_eq!(s.fill_from_replay(1, replay_summary(), false), Err(CastError::SideMismatch));
+        assert_eq!(
+            s.fill_from_replay(1, replay_summary(), false),
+            Err(CastError::SideMismatch)
+        );
         assert_eq!(s, before);
         // choix explicite de l'opérateur : échange forcé, accepté
         s.fill_from_replay(1, replay_summary(), true).unwrap();
@@ -540,15 +665,30 @@ mod tests {
     #[test]
     fn orient_mixed_evidence_majority_and_tie() {
         // 2 rattachements croisés (Beta1, Beta2 dans la Blue) contre 1 direct (Alpha1 dans la Blue) → échange
-        let s = replay_game(team(&[(None, "Beta1"), (None, "Beta2"), (None, "Alpha1")]), team(&[]), None);
+        let s = replay_game(
+            team(&[(None, "Beta1"), (None, "Beta2"), (None, "Alpha1")]),
+            team(&[]),
+            None,
+        );
         assert_eq!(s.orient(&replay_summary()), Some(true));
         // 2 directs (Alpha1, Alpha2) contre 1 croisé (Beta1) → direct
-        let s = replay_game(team(&[(None, "Alpha1"), (None, "Alpha2"), (None, "Beta1")]), team(&[]), None);
+        let s = replay_game(
+            team(&[(None, "Alpha1"), (None, "Alpha2"), (None, "Beta1")]),
+            team(&[]),
+            None,
+        );
         assert_eq!(s.orient(&replay_summary()), Some(false));
         // 1 contre 1 → pas de preuve ; avec un vainqueur saisi contraire → SideMismatch
-        let mut s = replay_game(team(&[(None, "Alpha1"), (None, "Beta1")]), team(&[]), Some(Side::Red));
+        let mut s = replay_game(
+            team(&[(None, "Alpha1"), (None, "Beta1")]),
+            team(&[]),
+            Some(Side::Red),
+        );
         assert_eq!(s.orient(&replay_summary()), None);
-        assert_eq!(s.fill_from_replay(1, replay_summary(), false), Err(CastError::SideMismatch));
+        assert_eq!(
+            s.fill_from_replay(1, replay_summary(), false),
+            Err(CastError::SideMismatch)
+        );
     }
 
     /// Un joueur listé dans les deux équipes de la série est ignoré (pas une preuve).
@@ -557,7 +697,11 @@ mod tests {
         let s = replay_game(team(&[(None, "Beta1")]), team(&[(None, "Beta1")]), None);
         assert_eq!(s.orient(&replay_summary()), None);
         // la preuve d'un autre joueur reste prise en compte
-        let s = replay_game(team(&[(None, "Beta1"), (None, "Beta2")]), team(&[(None, "Beta1")]), None);
+        let s = replay_game(
+            team(&[(None, "Beta1"), (None, "Beta2")]),
+            team(&[(None, "Beta1")]),
+            None,
+        );
         assert_eq!(s.orient(&replay_summary()), Some(true));
     }
 
@@ -565,27 +709,59 @@ mod tests {
     #[test]
     fn orientation_reports_evidence_assumed_and_forced() {
         let mut s = replay_game(team(&[(Some("ta1"), "x")]), team(&[]), None);
-        assert_eq!(s.fill_from_replay_oriented(1, replay_summary(), false).unwrap().1, Orientation::Evidence);
-        let mut s = replay_game(team(&[]), team(&[]), None);
-        assert_eq!(s.fill_from_replay_oriented(1, replay_summary(), false).unwrap().1, Orientation::Assumed);
+        assert_eq!(
+            s.fill_from_replay_oriented(1, replay_summary(), false)
+                .unwrap()
+                .1,
+            Orientation::Evidence
+        );
         let mut s = replay_game(team(&[]), team(&[]), None);
         assert_eq!(
-            s.fill_from_replay_oriented(1, replay_summary(), true).unwrap().1,
-            Orientation::Forced { against_evidence: false }
+            s.fill_from_replay_oriented(1, replay_summary(), false)
+                .unwrap()
+                .1,
+            Orientation::Assumed
+        );
+        let mut s = replay_game(team(&[]), team(&[]), None);
+        assert_eq!(
+            s.fill_from_replay_oriented(1, replay_summary(), true)
+                .unwrap()
+                .1,
+            Orientation::Forced {
+                against_evidence: false
+            }
         );
         // échange forcé alors que la preuve dit « direct »
         let mut s = replay_game(team(&[(Some("ta1"), "x")]), team(&[]), None);
-        let (got, how) = s.fill_from_replay_oriented(1, replay_summary(), true).unwrap();
-        assert_eq!(how, Orientation::Forced { against_evidence: true });
+        let (got, how) = s
+            .fill_from_replay_oriented(1, replay_summary(), true)
+            .unwrap();
+        assert_eq!(
+            how,
+            Orientation::Forced {
+                against_evidence: true
+            }
+        );
         assert_eq!(got.winner, Side::Red);
         // échange forcé dans le sens de la preuve : pas « contre »
         let mut s = replay_game(team(&[(Some("tb1"), "x")]), team(&[]), None);
         assert_eq!(
-            s.fill_from_replay_oriented(1, replay_summary(), true).unwrap().1,
-            Orientation::Forced { against_evidence: false }
+            s.fill_from_replay_oriented(1, replay_summary(), true)
+                .unwrap()
+                .1,
+            Orientation::Forced {
+                against_evidence: false
+            }
         );
         assert_eq!(
-            [Orientation::Evidence, Orientation::Assumed, Orientation::Forced { against_evidence: true }].map(Orientation::code),
+            [
+                Orientation::Evidence,
+                Orientation::Assumed,
+                Orientation::Forced {
+                    against_evidence: true
+                }
+            ]
+            .map(Orientation::code),
             ["evidence", "assumed", "forced"]
         );
     }
@@ -594,7 +770,10 @@ mod tests {
     fn ambiguous_without_winner_keeps_team0_blue() {
         let mut s = replay_game(team(&[]), team(&[]), None);
         s.fill_from_replay(1, replay_summary(), false).unwrap();
-        assert_eq!((s.games[0].winner, s.games[0].takedowns), (Some(Side::Blue), [10, 4]));
+        assert_eq!(
+            (s.games[0].winner, s.games[0].takedowns),
+            (Some(Side::Blue), [10, 4])
+        );
         // vainqueur saisi concordant : pas d'erreur
         let mut s = replay_game(team(&[]), team(&[]), Some(Side::Blue));
         assert!(s.fill_from_replay(1, replay_summary(), false).is_ok());

@@ -207,7 +207,10 @@ pub struct TeamsBody {
 /// des deux camps — les 94,7 % restants sont des ordres qui ne portent aucune information
 /// d'équipe. Un bouton « inverser » serait donc inutile 19 fois sur 20 : seule une saisie
 /// explicite par joueur peut reconstruire l'équipe correcte dans le cas général.
-pub async fn set_teams(State(s): State<AppState>, Json(b): Json<TeamsBody>) -> (StatusCode, Json<J>) {
+pub async fn set_teams(
+    State(s): State<AppState>,
+    Json(b): Json<TeamsBody>,
+) -> (StatusCode, Json<J>) {
     muter(s, |st| appliquer_teams(&mut st.players, &b.teams)).await
 }
 

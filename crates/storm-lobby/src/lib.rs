@@ -26,7 +26,7 @@ mod maps;
 const MIN_BLOB_LEN: usize = 8;
 
 /// Regex de production, identique à celle de `storm-stats::process::get_battletags`
-/// (`crates/storm-stats/src/process.rs`) — validée sur le corpus de référence. `\p{L}` couvre les
+/// (`crates/storm-stats/src/process/mod.rs`) — validée sur le corpus de référence. `\p{L}` couvre les
 /// alphabets non-ASCII (cyrillique notamment) ; le suffixe `[zØ]?` optionnel capture du bruit
 /// binaire collé après le discriminant, retiré ensuite (cf. `parse`).
 fn battletag_regex() -> &'static Regex {
@@ -157,7 +157,7 @@ pub fn parse(bytes: &[u8]) -> Result<Lobby, LobbyError> {
         // résolution 1). Le parseur de référence compare à un entier (`js_parse_int`).
         //
         // Cette troncature aux chiffres ASCII est délibérée et alignée sur `js_parse_int`
-        // (`crates/storm-stats/src/process.rs`) : les deux parseurs doivent produire exactement la
+        // (`crates/storm-stats/src/process/js.rs`) : les deux parseurs doivent produire exactement la
         // même clé `nom#discriminant` pour qu'un lobby décodé en live et une archive décodée après
         // coup se rejoignent sur la même identité. Un désaccord sur ce point casserait la liaison
         // replay ↔ lobby documentée dans la spec companion, en silence.

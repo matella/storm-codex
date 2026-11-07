@@ -37,9 +37,12 @@ fn section(id: &str) -> &'static str {
 }
 
 fn example(meta: &PackMeta, f: &Facts) -> String {
-    let (map, map_id) = f.maps.first().map_or(("<map>".to_string(), "map.<map>.record".to_string()), |m| {
-        (m.map.clone(), format!("{}.record", m.id))
-    });
+    let (map, map_id) = f
+        .maps
+        .first()
+        .map_or(("<map>".to_string(), "map.<map>.record".to_string()), |m| {
+            (m.map.clone(), format!("{}.record", m.id))
+        });
     serde_json::to_string_pretty(&serde_json::json!({
         "format_version": crate::scouting::analysis::FORMAT_VERSION,
         "report_id": meta.report_id,
@@ -118,7 +121,10 @@ pub fn markdown(meta: &PackMeta, f: &Facts) -> String {
 
     push(&mut out, "## Facts");
     push(&mut out, "");
-    push(&mut out, "Cite the `id` column in your `evidence` arrays. `n` = number of games behind the fact.");
+    push(
+        &mut out,
+        "Cite the `id` column in your `evidence` arrays. `n` = number of games behind the fact.",
+    );
     let mut current = "";
     for (id, r) in ordered_index(f) {
         let sec = section(&id);
@@ -136,7 +142,12 @@ pub fn markdown(meta: &PackMeta, f: &Facts) -> String {
         let low = if r.low { " — LOW SAMPLE" } else { "" };
         push(
             &mut out,
-            &format!("| `{id}` | {} | {}{low} | {} |", cell(&r.label), cell(&r.text), r.n),
+            &format!(
+                "| `{id}` | {} | {}{low} | {} |",
+                cell(&r.label),
+                cell(&r.text),
+                r.n
+            ),
         );
     }
     push(&mut out, "");
@@ -152,7 +163,10 @@ pub fn markdown(meta: &PackMeta, f: &Facts) -> String {
     push(&mut out, "|---|---|---|---|---|---|---|---|---|---|");
     for g in &f.games {
         let picks = |ps: &[super::facts::GamePick]| {
-            ps.iter().map(|p| format!("{} ({})", p.hero, p.player)).collect::<Vec<_>>().join(", ")
+            ps.iter()
+                .map(|p| format!("{} ({})", p.hero, p.player))
+                .collect::<Vec<_>>()
+                .join(", ")
         };
         push(
             &mut out,
@@ -203,10 +217,25 @@ mod tests {
 
     #[test]
     fn le_pack_cite_chaque_fait_et_les_identifiants_du_rapport() {
-        let g = game(&["r1", "r2", "r3", "r4", "r5"], &["o1", "o2", "o3", "o4", "o5"]);
-        let gi = [GameInput { gid: 42, summary: &g, side: 0 }];
+        let g = game(
+            &["r1", "r2", "r3", "r4", "r5"],
+            &["o1", "o2", "o3", "o4", "o5"],
+        );
+        let gi = [GameInput {
+            gid: 42,
+            summary: &g,
+            side: 0,
+        }];
         let f = compute(&gi, &[], 0, &HashMap::new());
-        let md = markdown(&PackMeta { report_id: 9, facts_version: 4, title: "Scout", target_name: Some("Team X") }, &f);
+        let md = markdown(
+            &PackMeta {
+                report_id: 9,
+                facts_version: 4,
+                title: "Scout",
+                target_name: Some("Team X"),
+            },
+            &f,
+        );
         for id in f.index.keys() {
             assert!(md.contains(&format!("`{id}`")), "id absent du pack : {id}");
         }
@@ -214,12 +243,24 @@ mod tests {
         assert!(md.contains("\"facts_version\": 4"));
         assert!(md.contains("\"format_version\": 2"));
         // ordre orienté draft : cartes et draft avant les joueurs
-        let (maps, draft, players) = (md.find("### Maps").unwrap(), md.find("### Draft").unwrap(), md.find("### Players").unwrap());
+        let (maps, draft, players) = (
+            md.find("### Maps").unwrap(),
+            md.find("### Draft").unwrap(),
+            md.find("### Players").unwrap(),
+        );
         assert!(maps < draft && draft < players);
         assert!(md.contains("LOW SAMPLE"));
         assert!(md.contains("```json"));
         // l'exemple embarqué est lui-même importable
-        let ex = example(&PackMeta { report_id: 9, facts_version: 4, title: "", target_name: None }, &f);
+        let ex = example(
+            &PackMeta {
+                report_id: 9,
+                facts_version: 4,
+                title: "",
+                target_name: None,
+            },
+            &f,
+        );
         assert!(crate::scouting::analysis::import(&ex, 9, 4).is_ok());
     }
 }

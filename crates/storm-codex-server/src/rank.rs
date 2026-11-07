@@ -52,7 +52,11 @@ pub struct RankResultBody {
 
 /// Session depuis `X-Session` : SHA-256 hex du battlelobby (64 caractères), normalisée en minuscules.
 pub fn session_from_headers(headers: &HeaderMap) -> Result<String, &'static str> {
-    let raw = headers.get("x-session").ok_or("missing_session")?.to_str().map_err(|_| "bad_session")?;
+    let raw = headers
+        .get("x-session")
+        .ok_or("missing_session")?
+        .to_str()
+        .map_err(|_| "bad_session")?;
     let s = raw.trim();
     if s.len() == 64 && s.bytes().all(|c| c.is_ascii_hexdigit()) {
         Ok(s.to_ascii_lowercase())
@@ -68,8 +72,12 @@ fn blank(s: &Option<String>) -> bool {
 
 /// Code d'erreur (stable, lisible par Aegis) si le corps est incohérent ; `Ok` sinon.
 pub fn validate(b: &RankResultBody) -> Result<(), &'static str> {
-    if b.rank_name.as_deref().is_some_and(|s| s.chars().count() > MAX_TEXT)
-        || b.reason.as_deref().is_some_and(|s| s.chars().count() > MAX_REASON)
+    if b.rank_name
+        .as_deref()
+        .is_some_and(|s| s.chars().count() > MAX_TEXT)
+        || b.reason
+            .as_deref()
+            .is_some_and(|s| s.chars().count() > MAX_REASON)
     {
         return Err("bad_text");
     }
@@ -83,7 +91,10 @@ pub fn validate(b: &RankResultBody) -> Result<(), &'static str> {
             if blank(&b.reason) || b.reason.is_none() {
                 return Err("reason_required");
             }
-            if b.total_points.is_some() || b.promotion_required.is_some() || b.points_delta.is_some() {
+            if b.total_points.is_some()
+                || b.promotion_required.is_some()
+                || b.points_delta.is_some()
+            {
                 return Err("numbers_on_unavailable");
             }
             if b.rank_name.is_some() {
@@ -112,12 +123,18 @@ pub fn validate(b: &RankResultBody) -> Result<(), &'static str> {
 /// Match de la session, si le lobby courant est déjà lié à un match (`content_hash` = session,
 /// `match_id` posé par `lobby::lier_match` à l'upload). `None` sinon : la lecture reste en attente.
 pub fn linked_match(lobby: Option<(&str, Option<i64>)>, session: &str) -> Option<i64> {
-    lobby.filter(|(hash, _)| *hash == session).and_then(|(_, m)| m)
+    lobby
+        .filter(|(hash, _)| *hash == session)
+        .and_then(|(_, m)| m)
 }
 
 /// Rattache les lectures en attente de la session au match `match_id` (lobby lié à l'upload) et
 /// mémorise l'empreinte du match, pour retrouver le rattachement après un re-process. Idempotent.
-pub async fn attach_to_match(db: &sqlx::PgPool, session: &str, match_id: i64) -> Result<u64, sqlx::Error> {
+pub async fn attach_to_match(
+    db: &sqlx::PgPool,
+    session: &str,
+    match_id: i64,
+) -> Result<u64, sqlx::Error> {
     let done = sqlx::query(
         "UPDATE ranked_results
          SET match_id = $2, match_fingerprint = (SELECT fingerprint FROM matches WHERE id = $2)
@@ -133,12 +150,18 @@ pub async fn attach_to_match(db: &sqlx::PgPool, session: &str, match_id: i64) ->
 /// Rattache les lectures liées à l'empreinte `fingerprint` au match `match_id`. Appelé à chaque
 /// projection de partie : un re-process supprime et recrée le match (nouvel id), et `ON DELETE SET NULL`
 /// détache les lectures ; l'empreinte, elle, est stable et permet de les rattacher à nouveau.
-pub async fn attach_by_fingerprint(db: &sqlx::PgPool, fingerprint: &str, match_id: i64) -> Result<u64, sqlx::Error> {
-    let done = sqlx::query("UPDATE ranked_results SET match_id = $2 WHERE match_fingerprint = $1 AND match_id IS NULL")
-        .bind(fingerprint)
-        .bind(match_id)
-        .execute(db)
-        .await?;
+pub async fn attach_by_fingerprint(
+    db: &sqlx::PgPool,
+    fingerprint: &str,
+    match_id: i64,
+) -> Result<u64, sqlx::Error> {
+    let done = sqlx::query(
+        "UPDATE ranked_results SET match_id = $2 WHERE match_fingerprint = $1 AND match_id IS NULL",
+    )
+    .bind(fingerprint)
+    .bind(match_id)
+    .execute(db)
+    .await?;
     Ok(done.rows_affected())
 }
 
@@ -151,7 +174,11 @@ fn reply(code: StatusCode, body: J) -> (StatusCode, Json<J>) {
 /// 201 `{id}` (lecture enregistrée) ; 200 `{id, kept: true}` (lecture `indisponible` ignorée, une `valide`
 /// existe) ; 401 sans token valide ; 422 `{error}` si la session ou le corps est incohérent (rien n'est écrit) ;
 /// 500 `{error: "db"}` si la base échoue. Le token est contrôlé avant tout traitement du corps.
-pub async fn post_result(State(s): State<AppState>, headers: HeaderMap, body: Bytes) -> (StatusCode, Json<J>) {
+pub async fn post_result(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> (StatusCode, Json<J>) {
     let Some(token) = token_id(&s.db, &headers).await else {
         return reply(StatusCode::UNAUTHORIZED, json!({ "error": "unauthorized" }));
     };
@@ -161,7 +188,12 @@ pub async fn post_result(State(s): State<AppState>, headers: HeaderMap, body: By
     };
     let b: RankResultBody = match serde_json::from_slice(&body) {
         Ok(b) => b,
-        Err(_) => return reply(StatusCode::UNPROCESSABLE_ENTITY, json!({ "error": "bad_json" })),
+        Err(_) => {
+            return reply(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                json!({ "error": "bad_json" }),
+            )
+        }
     };
     if let Err(code) = validate(&b) {
         return reply(StatusCode::UNPROCESSABLE_ENTITY, json!({ "error": code }));
@@ -170,22 +202,29 @@ pub async fn post_result(State(s): State<AppState>, headers: HeaderMap, body: By
     // Le verrou de lecture du lobby reste tenu jusqu'au commit : `run_parse` ne peut pas lier le lobby
     // entre le contrôle du `match_id` et l'écriture (sinon la lecture resterait orpheline).
     let lobby = s.lobby.read().await;
-    let linked = linked_match(lobby.as_ref().map(|l| (l.content_hash.as_str(), l.match_id)), &session);
+    let linked = linked_match(
+        lobby
+            .as_ref()
+            .map(|l| (l.content_hash.as_str(), l.match_id)),
+        &session,
+    );
     let db_error = |e: sqlx::Error| {
         tracing::error!("rank insert: {e}");
         reply(StatusCode::INTERNAL_SERVER_ERROR, json!({ "error": "db" }))
     };
     // Un match lié qui n'existe plus (re-process en cours ou terminé) ne doit pas être posé : clé étrangère cassée.
     let (match_id, fingerprint) = match linked {
-        Some(m) => match sqlx::query_scalar::<_, String>("SELECT fingerprint FROM matches WHERE id = $1")
-            .bind(m)
-            .fetch_optional(&s.db)
-            .await
-        {
-            Ok(Some(fp)) => (Some(m), Some(fp)),
-            Ok(None) => (None, None),
-            Err(e) => return db_error(e),
-        },
+        Some(m) => {
+            match sqlx::query_scalar::<_, String>("SELECT fingerprint FROM matches WHERE id = $1")
+                .bind(m)
+                .fetch_optional(&s.db)
+                .await
+            {
+                Ok(Some(fp)) => (Some(m), Some(fp)),
+                Ok(None) => (None, None),
+                Err(e) => return db_error(e),
+            }
+        }
         None => (None, None),
     };
     // Upsert atomique sur la session (contrainte UNIQUE) : deux POST simultanés ne créent pas deux lignes.
@@ -220,10 +259,11 @@ pub async fn post_result(State(s): State<AppState>, headers: HeaderMap, body: By
         Ok(Some(id)) => reply(StatusCode::CREATED, json!({ "id": id })),
         // indisponible reçue après une valide : rien n'est écrit, la valide reste
         Ok(None) => {
-            let id: Result<i64, sqlx::Error> = sqlx::query_scalar("SELECT id FROM ranked_results WHERE session_id = $1")
-                .bind(&session)
-                .fetch_one(&s.db)
-                .await;
+            let id: Result<i64, sqlx::Error> =
+                sqlx::query_scalar("SELECT id FROM ranked_results WHERE session_id = $1")
+                    .bind(&session)
+                    .fetch_one(&s.db)
+                    .await;
             match id {
                 Ok(id) => reply(StatusCode::OK, json!({ "id": id, "kept": true })),
                 Err(e) => db_error(e),
@@ -269,7 +309,10 @@ mod tests {
         // pas de seuil affiché (ex. Grandmaster) : pas de contrôle croisé
         assert_eq!(validate(&valid(535, None)), Ok(()));
         // addition qui déborde : refus, pas de panique
-        assert_eq!(validate(&valid(1000, Some(i32::MAX))), Err("scale_mismatch"));
+        assert_eq!(
+            validate(&valid(1000, Some(i32::MAX))),
+            Err("scale_mismatch")
+        );
     }
 
     #[test]
@@ -315,7 +358,10 @@ mod tests {
         let me = "c".repeat(64);
         assert_eq!(linked_match(Some((&me, Some(7))), &me), Some(7));
         assert_eq!(linked_match(Some((&me, None)), &me), None);
-        assert_eq!(linked_match(Some(("d".repeat(64).as_str(), Some(7))), &me), None);
+        assert_eq!(
+            linked_match(Some(("d".repeat(64).as_str(), Some(7))), &me),
+            None
+        );
         assert_eq!(linked_match(None, &me), None);
     }
 
@@ -354,14 +400,21 @@ mod db_tests {
     fn headers(token: Option<&str>, session: &str) -> HeaderMap {
         let mut h = HeaderMap::new();
         if let Some(t) = token {
-            h.insert("authorization", HeaderValue::from_str(&format!("Bearer {t}")).unwrap());
+            h.insert(
+                "authorization",
+                HeaderValue::from_str(&format!("Bearer {t}")).unwrap(),
+            );
         }
         h.insert("x-session", HeaderValue::from_str(session).unwrap());
         h
     }
 
     fn session() -> String {
-        format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple())
+        format!(
+            "{}{}",
+            uuid::Uuid::new_v4().simple(),
+            uuid::Uuid::new_v4().simple()
+        )
     }
 
     fn body(total: i32, req: i32) -> Bytes {
@@ -372,98 +425,191 @@ mod db_tests {
     }
 
     async fn rows_for(db: &sqlx::PgPool, sid: &str) -> Vec<(String, i32, Option<i64>)> {
-        sqlx::query_as("SELECT status, total_points, match_id FROM ranked_results WHERE session_id = $1")
-            .bind(sid)
-            .fetch_all(db)
-            .await
-            .unwrap()
+        sqlx::query_as(
+            "SELECT status, total_points, match_id FROM ranked_results WHERE session_id = $1",
+        )
+        .bind(sid)
+        .fetch_all(db)
+        .await
+        .unwrap()
     }
 
     #[tokio::test]
     async fn post_result_needs_token_even_with_a_bad_body() {
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         let sid = session();
         let (st, _) = post_result(State(state.clone()), headers(None, &sid), body(535, 465)).await;
         assert_eq!(st, StatusCode::UNAUTHORIZED);
         // corps invalide sans token : 401, pas 422 (le token passe avant le corps)
-        let (st, _) = post_result(State(state.clone()), headers(None, &sid), Bytes::from_static(b"nope")).await;
+        let (st, _) = post_result(
+            State(state.clone()),
+            headers(None, &sid),
+            Bytes::from_static(b"nope"),
+        )
+        .await;
         assert_eq!(st, StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
     async fn post_result_stores_reading_and_last_one_wins() {
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         let clear = token(&state.db).await;
         let sid = session();
-        let (st, v) = post_result(State(state.clone()), headers(Some(&clear), &sid), body(500, 500)).await;
+        let (st, v) = post_result(
+            State(state.clone()),
+            headers(Some(&clear), &sid),
+            body(500, 500),
+        )
+        .await;
         assert_eq!(st, StatusCode::CREATED, "{v:?}");
-        let (st, _) = post_result(State(state.clone()), headers(Some(&clear), &sid), body(535, 465)).await;
+        let (st, _) = post_result(
+            State(state.clone()),
+            headers(Some(&clear), &sid),
+            body(535, 465),
+        )
+        .await;
         assert_eq!(st, StatusCode::CREATED);
-        assert_eq!(rows_for(&state.db, &sid).await, vec![("valide".into(), 535, None)]);
+        assert_eq!(
+            rows_for(&state.db, &sid).await,
+            vec![("valide".into(), 535, None)]
+        );
     }
 
     /// Règle de la spec : une `indisponible` reçue après une `valide` ne l'écrase pas (200, `kept`).
     #[tokio::test]
     async fn unavailable_never_overwrites_a_valid_reading() {
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         let clear = token(&state.db).await;
         let sid = session();
-        let (st, _) = post_result(State(state.clone()), headers(Some(&clear), &sid), body(535, 465)).await;
+        let (st, _) = post_result(
+            State(state.clone()),
+            headers(Some(&clear), &sid),
+            body(535, 465),
+        )
+        .await;
         assert_eq!(st, StatusCode::CREATED);
-        let unavailable = Bytes::from_static(br#"{"status":"indisponible","reason":"titre non lu"}"#);
-        let (st, v) = post_result(State(state.clone()), headers(Some(&clear), &sid), unavailable).await;
+        let unavailable =
+            Bytes::from_static(br#"{"status":"indisponible","reason":"titre non lu"}"#);
+        let (st, v) = post_result(
+            State(state.clone()),
+            headers(Some(&clear), &sid),
+            unavailable,
+        )
+        .await;
         assert_eq!((st, v.0["kept"].as_bool()), (StatusCode::OK, Some(true)));
-        assert_eq!(rows_for(&state.db, &sid).await, vec![("valide".into(), 535, None)]);
+        assert_eq!(
+            rows_for(&state.db, &sid).await,
+            vec![("valide".into(), 535, None)]
+        );
     }
 
     /// Deux envois de la même session (ex. relance après timeout) : une seule ligne.
     #[tokio::test]
     async fn same_session_twice_keeps_one_row() {
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         let clear = token(&state.db).await;
         let sid = session();
         for total in [500, 535] {
-            let (st, _) = post_result(State(state.clone()), headers(Some(&clear), &sid), body(total, 1000 - total)).await;
+            let (st, _) = post_result(
+                State(state.clone()),
+                headers(Some(&clear), &sid),
+                body(total, 1000 - total),
+            )
+            .await;
             assert_eq!(st, StatusCode::CREATED);
         }
-        assert_eq!(rows_for(&state.db, &sid).await, vec![("valide".into(), 535, None)]);
+        assert_eq!(
+            rows_for(&state.db, &sid).await,
+            vec![("valide".into(), 535, None)]
+        );
     }
 
     #[tokio::test]
     async fn post_result_rejects_bad_session_body_and_writes_nothing() {
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         let clear = token(&state.db).await;
         let sid = session();
-        let (st, v) = post_result(State(state.clone()), headers(Some(&clear), &sid), body(535, 460)).await;
-        assert_eq!((st, v.0["error"].as_str()), (StatusCode::UNPROCESSABLE_ENTITY, Some("scale_mismatch")));
-        let (st, v) = post_result(State(state.clone()), headers(Some(&clear), &sid), Bytes::from_static(b"{")).await;
-        assert_eq!((st, v.0["error"].as_str()), (StatusCode::UNPROCESSABLE_ENTITY, Some("bad_json")));
-        let (st, v) = post_result(State(state.clone()), headers(Some(&clear), "xyz"), body(535, 465)).await;
-        assert_eq!((st, v.0["error"].as_str()), (StatusCode::UNPROCESSABLE_ENTITY, Some("bad_session")));
+        let (st, v) = post_result(
+            State(state.clone()),
+            headers(Some(&clear), &sid),
+            body(535, 460),
+        )
+        .await;
+        assert_eq!(
+            (st, v.0["error"].as_str()),
+            (StatusCode::UNPROCESSABLE_ENTITY, Some("scale_mismatch"))
+        );
+        let (st, v) = post_result(
+            State(state.clone()),
+            headers(Some(&clear), &sid),
+            Bytes::from_static(b"{"),
+        )
+        .await;
+        assert_eq!(
+            (st, v.0["error"].as_str()),
+            (StatusCode::UNPROCESSABLE_ENTITY, Some("bad_json"))
+        );
+        let (st, v) = post_result(
+            State(state.clone()),
+            headers(Some(&clear), "xyz"),
+            body(535, 465),
+        )
+        .await;
+        assert_eq!(
+            (st, v.0["error"].as_str()),
+            (StatusCode::UNPROCESSABLE_ENTITY, Some("bad_session"))
+        );
         assert!(rows_for(&state.db, &sid).await.is_empty());
     }
 
     #[tokio::test]
     async fn pending_reading_attaches_once_to_its_match() {
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         let clear = token(&state.db).await;
         let sid = session();
-        let (st, _) = post_result(State(state.clone()), headers(Some(&clear), &sid), body(535, 465)).await;
+        let (st, _) = post_result(
+            State(state.clone()),
+            headers(Some(&clear), &sid),
+            body(535, 465),
+        )
+        .await;
         assert_eq!(st, StatusCode::CREATED);
         let match_id = crate::players::testutil::insert_match(&state.db, None, &[]).await;
         assert_eq!(attach_to_match(&state.db, &sid, match_id).await.unwrap(), 1);
         assert_eq!(attach_to_match(&state.db, &sid, match_id).await.unwrap(), 0);
-        assert_eq!(rows_for(&state.db, &sid).await, vec![("valide".into(), 535, Some(match_id))]);
+        assert_eq!(
+            rows_for(&state.db, &sid).await,
+            vec![("valide".into(), 535, Some(match_id))]
+        );
     }
 
     /// Re-process : la partie est supprimée puis recréée (nouvel id) avec la même empreinte. Le rattachement
     /// doit revenir par l'empreinte, sans passer par le lobby.
     #[tokio::test]
     async fn link_survives_a_reprocess_through_the_fingerprint() {
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         let clear = token(&state.db).await;
         let sid = session();
-        let (st, _) = post_result(State(state.clone()), headers(Some(&clear), &sid), body(535, 465)).await;
+        let (st, _) = post_result(
+            State(state.clone()),
+            headers(Some(&clear), &sid),
+            body(535, 465),
+        )
+        .await;
         assert_eq!(st, StatusCode::CREATED);
         let first = crate::players::testutil::insert_match(&state.db, None, &[]).await;
         assert_eq!(attach_to_match(&state.db, &sid, first).await.unwrap(), 1);
@@ -473,12 +619,30 @@ mod db_tests {
             .await
             .unwrap();
         // suppression : ON DELETE SET NULL détache la lecture
-        sqlx::query("DELETE FROM matches WHERE id = $1").bind(first).execute(&state.db).await.unwrap();
-        assert_eq!(rows_for(&state.db, &sid).await, vec![("valide".into(), 535, None)]);
+        sqlx::query("DELETE FROM matches WHERE id = $1")
+            .bind(first)
+            .execute(&state.db)
+            .await
+            .unwrap();
+        assert_eq!(
+            rows_for(&state.db, &sid).await,
+            vec![("valide".into(), 535, None)]
+        );
         // recréation avec la même empreinte, puis rattachement par empreinte
         let second = crate::players::testutil::insert_match(&state.db, None, &[]).await;
-        sqlx::query("UPDATE matches SET fingerprint = $1 WHERE id = $2").bind(&fp).bind(second).execute(&state.db).await.unwrap();
-        assert_eq!(attach_by_fingerprint(&state.db, &fp, second).await.unwrap(), 1);
-        assert_eq!(rows_for(&state.db, &sid).await, vec![("valide".into(), 535, Some(second))]);
+        sqlx::query("UPDATE matches SET fingerprint = $1 WHERE id = $2")
+            .bind(&fp)
+            .bind(second)
+            .execute(&state.db)
+            .await
+            .unwrap();
+        assert_eq!(
+            attach_by_fingerprint(&state.db, &fp, second).await.unwrap(),
+            1
+        );
+        assert_eq!(
+            rows_for(&state.db, &sid).await,
+            vec![("valide".into(), 535, Some(second))]
+        );
     }
 }

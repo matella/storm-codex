@@ -116,12 +116,14 @@ pub async fn update(
     }
     let mut tx = s.db.begin().await.map_err(db_err)?;
     if b.is_default {
-        sqlx::query("UPDATE builds SET is_default = false WHERE hero_id = $1 AND is_default AND id <> $2")
-            .bind(&b.hero_id)
-            .bind(id)
-            .execute(&mut *tx)
-            .await
-            .map_err(db_err)?;
+        sqlx::query(
+            "UPDATE builds SET is_default = false WHERE hero_id = $1 AND is_default AND id <> $2",
+        )
+        .bind(&b.hero_id)
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(db_err)?;
     }
     let n = sqlx::query(
         "UPDATE builds SET hero_id = $2, name = $3, picks = $4, notes = $5, is_default = $6,
@@ -142,18 +144,17 @@ pub async fn update(
         // Ligne inexistante : on abandonne la transaction (rollback implicite au drop de `tx`)
         // plutôt que de committer le démarquage du défaut fait plus haut. Sans ça, un PUT sur un
         // id inconnu répondait 404 tout en ayant persisté la perte du défaut du héros.
-        return Err((StatusCode::NOT_FOUND, Json(json!({ "error": "build inconnu" }))));
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "build inconnu" })),
+        ));
     }
     tx.commit().await.map_err(db_err)?;
     Ok(Json(json!({ "ok": true })))
 }
 
 /// `DELETE /api/builds/{id}`.
-pub async fn delete(
-    State(s): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<i64>,
-) -> Resp {
+pub async fn delete(State(s): State<AppState>, headers: HeaderMap, Path(id): Path<i64>) -> Resp {
     if !crate::manage::is_admin(&headers, &s) {
         return Err(refus_admin());
     }
@@ -164,7 +165,10 @@ pub async fn delete(
         .map_err(db_err)?
         .rows_affected();
     if n == 0 {
-        return Err((StatusCode::NOT_FOUND, Json(json!({ "error": "build inconnu" }))));
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "build inconnu" })),
+        ));
     }
     Ok(Json(json!({ "ok": true })))
 }

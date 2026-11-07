@@ -68,7 +68,9 @@ Le statut d'un rapport (`empty`/`ready`/`analyzed`/`stale`) est **dérivé**, ja
 
 ## Conventions pour toute nouvelle migration
 
-1. Fichier `NNNN_description.sql` séquentiel — **jamais** modifier une migration appliquée. Fins de
+1. Fichier `NNNN_description.sql` séquentiel — **jamais** modifier une migration appliquée
+   (contrôlé en CI : `scripts/check-migrations.sh` refuse toute modification d'une migration déjà
+   présente sur la branche cible). Fins de
    ligne forcées en LF (`.gitattributes`) : sqlx vérifie la somme de contrôle des octets exacts, un
    checkout Windows en CRLF donnait `VersionMismatch` sur une base migrée en LF.
 2. Grosse structure → JSONB ; axe de filtre/tri → colonne promue + index.

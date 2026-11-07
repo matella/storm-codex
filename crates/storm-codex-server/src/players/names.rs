@@ -72,7 +72,10 @@ mod tests {
         let (toon, u) = (format!("t-{}", uid()), uid());
         insert_match(&db, None, &[row(&toon, &format!("Solo{u}"), 0, "Muradin")]).await;
         assert_eq!(name_history(&db, &toon).await.unwrap().len(), 1);
-        assert!(name_history(&db, "toon-inexistant").await.unwrap().is_empty());
+        assert!(name_history(&db, "toon-inexistant")
+            .await
+            .unwrap()
+            .is_empty());
         assert_eq!(current_name(&db, "toon-inexistant").await.unwrap(), None);
     }
 }

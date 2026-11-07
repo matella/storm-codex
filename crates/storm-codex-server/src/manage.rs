@@ -14,11 +14,17 @@ pub(crate) fn is_admin(h: &HeaderMap, s: &AppState) -> bool {
     crate::auth::is_admin(h, s.cfg.admin_token.as_deref())
 }
 fn forbidden() -> (StatusCode, Json<J>) {
-    (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "admin token requis"})))
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(serde_json::json!({"error": "admin token requis"})),
+    )
 }
 fn db_err(e: sqlx::Error) -> (StatusCode, Json<J>) {
     tracing::error!("manage : {e}");
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "db"})))
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(serde_json::json!({"error": "db"})),
+    )
 }
 
 // ── Réglages (operator_names…) ───────────────────────────────────────────────
@@ -69,7 +75,10 @@ pub async fn put_settings(
     .execute(&s.db)
     .await
     {
-        Ok(_) => (StatusCode::OK, Json(serde_json::json!({"operator_names": names}))),
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({"operator_names": names})),
+        ),
         Err(e) => {
             let (c, j) = db_err(e);
             (c, j)
@@ -169,12 +178,12 @@ pub async fn update_team(
         return forbidden();
     }
     let league = b.league.as_deref().map(str::trim).filter(|s| !s.is_empty());
-    let _ = sqlx::query("UPDATE teams SET league = $2 WHERE id = $1")
+    let r = sqlx::query("UPDATE teams SET league = $2 WHERE id = $1")
         .bind(id)
         .bind(league)
         .execute(&s.db)
         .await;
-    (StatusCode::OK, Json(serde_json::json!({"updated": id})))
+    write_reply(r, "update_team", serde_json::json!({"updated": id}))
 }
 
 /// DELETE /api/teams/{id} (admin)
@@ -186,8 +195,11 @@ pub async fn delete_team(
     if !is_admin(&headers, &s) {
         return forbidden();
     }
-    let _ = sqlx::query("DELETE FROM teams WHERE id = $1").bind(id).execute(&s.db).await;
-    (StatusCode::OK, Json(serde_json::json!({"deleted": id})))
+    let r = sqlx::query("DELETE FROM teams WHERE id = $1")
+        .bind(id)
+        .execute(&s.db)
+        .await;
+    write_reply(r, "delete_team", serde_json::json!({"deleted": id}))
 }
 
 #[derive(Deserialize)]
@@ -241,8 +253,11 @@ pub async fn delete_collection(
     if !is_admin(&headers, &s) {
         return forbidden();
     }
-    let _ = sqlx::query("DELETE FROM collections WHERE id = $1").bind(id).execute(&s.db).await;
-    (StatusCode::OK, Json(serde_json::json!({"deleted": id})))
+    let r = sqlx::query("DELETE FROM collections WHERE id = $1")
+        .bind(id)
+        .execute(&s.db)
+        .await;
+    write_reply(r, "delete_collection", serde_json::json!({"deleted": id}))
 }
 
 /// GET /api/trends — winrate & parties agrégés par build (proxy de patch), récents d'abord.
@@ -278,4 +293,23 @@ pub async fn trends(State(s): State<AppState>) -> Result<Json<J>, (StatusCode, J
     .await
     .map_err(db_err)?;
     Ok(Json(v))
+}
+
+/// Réponse d'une écriture simple : `200 ok` si la base a répondu (supprimer une ligne absente reste
+/// idempotent), `500 {error: db}` sinon — jamais un succès quand l'écriture a échoué.
+fn write_reply(
+    r: Result<sqlx::postgres::PgQueryResult, sqlx::Error>,
+    what: &str,
+    ok: J,
+) -> (StatusCode, Json<J>) {
+    match r {
+        Ok(_) => (StatusCode::OK, Json(ok)),
+        Err(e) => {
+            tracing::error!("{what} : {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "db"})),
+            )
+        }
+    }
 }

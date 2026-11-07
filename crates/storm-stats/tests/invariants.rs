@@ -10,8 +10,13 @@ use std::path::Path;
 fn replay() -> serde_json::Value {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../storm-replay/tests/data/2026-06-09 20.35.02 Industrial District.StormReplay");
-    let out = storm_stats::process_replay(&path, "2026-06-09 20.35.02 Industrial District.StormReplay");
-    assert_eq!(out.status, 1, "replay de référence non parsé ({})", out.status);
+    let out =
+        storm_stats::process_replay(&path, "2026-06-09 20.35.02 Industrial District.StormReplay");
+    assert_eq!(
+        out.status, 1,
+        "replay de référence non parsé ({})",
+        out.status
+    );
     out.to_json()
 }
 
@@ -43,7 +48,11 @@ fn identite_et_coherence_du_match() {
         );
     }
     for p in ps.values() {
-        assert_eq!(p["win"] == true, p["team"] == winner, "win/team incohérents");
+        assert_eq!(
+            p["win"] == true,
+            p["team"] == winner,
+            "win/team incohérents"
+        );
     }
 }
 
@@ -102,7 +111,12 @@ fn score_talents_takedowns_presents() {
     let ps = json["players"].as_object().expect("players");
     for (toon, p) in ps {
         let g = &p["gameStats"];
-        for k in ["Takedowns", "Deaths", "HeroDamage", "ExperienceContribution"] {
+        for k in [
+            "Takedowns",
+            "Deaths",
+            "HeroDamage",
+            "ExperienceContribution",
+        ] {
             assert!(g[k].is_number(), "{toon} : gameStats.{k} absent");
         }
         assert!(!p["hero"].as_str().unwrap_or("").is_empty(), "héros vide");
@@ -129,7 +143,9 @@ fn score_talents_takedowns_presents() {
 #[test]
 fn timeline_xp_monotone() {
     let json = replay();
-    let xp = json["match"]["XPBreakdown"].as_array().expect("XPBreakdown");
+    let xp = json["match"]["XPBreakdown"]
+        .as_array()
+        .expect("XPBreakdown");
     assert!(xp.len() > 1, "XPBreakdown vide");
     let mut last = f64::MIN;
     for point in xp {

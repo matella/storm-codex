@@ -49,8 +49,10 @@ pub fn owners_from(per_toon: &HashMap<String, HashSet<i64>>, total: usize) -> Ha
     // l'autre compte (≥ 10 %, disjoint du principal) joue AVEC lui, donc n'est pas retenu.
     let mut owners = HashSet::from([main.clone()]);
     let mut taken: Vec<&HashSet<i64>> = vec![main_matches];
-    let mut rest: Vec<(&String, &HashSet<i64>)> =
-        per_toon.iter().filter(|(t, m)| *t != main && share(m.len()) >= 0.1).collect();
+    let mut rest: Vec<(&String, &HashSet<i64>)> = per_toon
+        .iter()
+        .filter(|(t, m)| *t != main && share(m.len()) >= 0.1)
+        .collect();
     rest.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then(a.0.cmp(b.0)));
     for (toon, matches) in rest {
         if taken.iter().all(|t| t.is_disjoint(matches)) {
@@ -65,7 +67,10 @@ pub fn owners_from(per_toon: &HashMap<String, HashSet<i64>>, total: usize) -> Ha
 type TokenMatches = (HashSet<i64>, HashMap<String, HashSet<i64>>);
 
 /// `token_id → comptes propriétaires` pour les tokens ayant au moins `min_matches` parties.
-pub async fn token_owners_with(db: &PgPool, min_matches: usize) -> Result<HashMap<i64, HashSet<String>>, sqlx::Error> {
+pub async fn token_owners_with(
+    db: &PgPool,
+    min_matches: usize,
+) -> Result<HashMap<i64, HashSet<String>>, sqlx::Error> {
     let rows: Vec<(i64, i64, String)> = sqlx::query_as(
         "WITH tok AS (
             SELECT token_id FROM uploads WHERE token_id IS NOT NULL AND match_id IS NOT NULL
@@ -110,7 +115,10 @@ pub async fn operator_toons(db: &PgPool) -> Result<HashSet<String>, sqlx::Error>
 }
 
 /// Opérateur ∪ tous les propriétaires de token.
-pub async fn excluded_toons(db: &PgPool, owners: &HashMap<i64, HashSet<String>>) -> Result<HashSet<String>, sqlx::Error> {
+pub async fn excluded_toons(
+    db: &PgPool,
+    owners: &HashMap<i64, HashSet<String>>,
+) -> Result<HashSet<String>, sqlx::Error> {
     let mut ex = operator_toons(db).await?;
     ex.extend(owners.values().flatten().cloned());
     Ok(ex)
@@ -142,9 +150,16 @@ pub async fn suggest_with(
     // partagent ≥ 2 co-équipiers récurrents avec la cible), pool de héros proche. Jamais la cible,
     // jamais un compte déjà croisé dans une partie (même personne ≠ deux comptes dans une partie),
     // jamais une paire déjà décidée.
-    let mut top_mates: Vec<(&String, &u32)> = mates_t.iter().filter(|(_, g)| **g >= MIN_PAIR_GAMES).collect();
+    let mut top_mates: Vec<(&String, &u32)> = mates_t
+        .iter()
+        .filter(|(_, g)| **g >= MIN_PAIR_GAMES)
+        .collect();
     top_mates.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
-    let top_mates: Vec<String> = top_mates.into_iter().take(TOP_TEAMMATES).map(|(t, _)| t.clone()).collect();
+    let top_mates: Vec<String> = top_mates
+        .into_iter()
+        .take(TOP_TEAMMATES)
+        .map(|(t, _)| t.clone())
+        .collect();
 
     // Comptes jamais candidats : la cible, les comptes déjà croisés dans une partie, les paires déjà
     // décidées, l'opérateur et les propriétaires de token.
@@ -173,7 +188,11 @@ pub async fn suggest_with(
         .filter(|(c, _)| *c >= 0.5)
         .collect();
     by_cos.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(b.1)));
-    let hero: Vec<String> = by_cos.into_iter().take(MAX_CANDIDATES).map(|(_, t)| t.clone()).collect();
+    let hero: Vec<String> = by_cos
+        .into_iter()
+        .take(MAX_CANDIDATES)
+        .map(|(_, t)| t.clone())
+        .collect();
     let ordered = merge_paths(co_owners, circle, hero, MAX_CANDIDATES);
 
     let windows_t = match_windows(db, target).await?;
@@ -190,7 +209,10 @@ pub async fn suggest_with(
         let mates_c = teammates(db, &cand, excluded).await?;
         let (mut shared, mut shared_games) = (0u32, 0u32);
         for (t, gt) in &mates_t {
-            if let Some(gc) = mates_c.get(t).filter(|g| **g >= MIN_PAIR_GAMES && *gt >= MIN_PAIR_GAMES) {
+            if let Some(gc) = mates_c
+                .get(t)
+                .filter(|g| **g >= MIN_PAIR_GAMES && *gt >= MIN_PAIR_GAMES)
+            {
                 shared += 1;
                 shared_games += (*gt).min(*gc);
             }
@@ -204,20 +226,36 @@ pub async fn suggest_with(
             talent_agreement: talent_agreement(&talents_t, &talent_rows(db, &cand).await?),
             hour_cosine: cosine(&hours_t, &hour_histogram(db, &cand).await?),
             overlapping_games: intervals_overlap(&windows_t, &match_windows(db, &cand).await?),
-            same_token_owner: owners.values().any(|o| o.contains(target) && o.contains(&cand)),
+            same_token_owner: owners
+                .values()
+                .any(|o| o.contains(target) && o.contains(&cand)),
         };
         if let Some(suggestion) = score(&features) {
             let name = super::names::current_name(db, &cand).await?;
-            out.push(Candidate { toon: cand, name, suggestion });
+            out.push(Candidate {
+                toon: cand,
+                name,
+                suggestion,
+            });
         }
     }
-    out.sort_by(|a, b| b.suggestion.score.cmp(&a.suggestion.score).then(a.toon.cmp(&b.toon)));
+    out.sort_by(|a, b| {
+        b.suggestion
+            .score
+            .cmp(&a.suggestion.score)
+            .then(a.toon.cmp(&b.toon))
+    });
     Ok(out)
 }
 
 /// Fusionne les chemins de présélection (déjà filtrés) en au plus `cap` comptes : co-propriétaires de
 /// token d'abord, puis alternance cercle / pool de héros pour qu'aucun chemin n'affame l'autre.
-fn merge_paths(owners: Vec<String>, circle: Vec<String>, hero: Vec<String>, cap: usize) -> Vec<String> {
+fn merge_paths(
+    owners: Vec<String>,
+    circle: Vec<String>,
+    hero: Vec<String>,
+    cap: usize,
+) -> Vec<String> {
     let mut out: Vec<String> = Vec::with_capacity(cap);
     let mut seen: HashSet<String> = HashSet::new();
     let (mut c, mut h) = (circle.into_iter(), hero.into_iter());
@@ -260,7 +298,9 @@ async fn hero_vector(db: &PgPool, toon: &str) -> Result<HashMap<String, u32>, sq
 }
 
 /// Vecteurs héros de tous les comptes ayant au moins `MIN_CAND_GAMES` parties, en une requête.
-async fn all_hero_vectors(db: &PgPool) -> Result<HashMap<String, HashMap<String, u32>>, sqlx::Error> {
+async fn all_hero_vectors(
+    db: &PgPool,
+) -> Result<HashMap<String, HashMap<String, u32>>, sqlx::Error> {
     let rows: Vec<(String, String, i64)> = sqlx::query_as(
         "SELECT toon_handle, hero, count(*) FROM match_players
          WHERE hero IS NOT NULL
@@ -291,7 +331,11 @@ async fn co_occurring(db: &PgPool, toon: &str) -> Result<HashSet<String>, sqlx::
 }
 
 /// Co-équipiers (même équipe) de `toon` et nombre de parties ensemble, hors `excluded`.
-async fn teammates(db: &PgPool, toon: &str, excluded: &HashSet<String>) -> Result<HashMap<String, u32>, sqlx::Error> {
+async fn teammates(
+    db: &PgPool,
+    toon: &str,
+    excluded: &HashSet<String>,
+) -> Result<HashMap<String, u32>, sqlx::Error> {
     let rows: Vec<(String, i64)> = sqlx::query_as(
         "SELECT o.toon_handle, count(*) FROM match_players t
          JOIN match_players o ON o.match_id = t.match_id AND o.team = t.team AND o.toon_handle <> t.toon_handle
@@ -300,7 +344,11 @@ async fn teammates(db: &PgPool, toon: &str, excluded: &HashSet<String>) -> Resul
     .bind(toon)
     .fetch_all(db)
     .await?;
-    Ok(rows.into_iter().filter(|(t, _)| !excluded.contains(t)).map(|(t, n)| (t, to_u32(n))).collect())
+    Ok(rows
+        .into_iter()
+        .filter(|(t, _)| !excluded.contains(t))
+        .map(|(t, n)| (t, to_u32(n)))
+        .collect())
 }
 
 /// Comptes partageant au moins 2 des co-équipiers récurrents donnés, hors `skip` (filtré **avant** la
@@ -401,7 +449,10 @@ mod tests {
         per.insert("R".into(), set(&[15]));
         let o = owners_from(&per, 20);
         assert!(o.contains("M") && o.contains("S"));
-        assert!(!o.contains("F"), "un ami qui joue avec le principal n'est pas propriétaire");
+        assert!(
+            !o.contains("F"),
+            "un ami qui joue avec le principal n'est pas propriétaire"
+        );
         assert!(!o.contains("R"), "sous 10 % des parties");
     }
 
@@ -432,9 +483,20 @@ mod tests {
         let hero: Vec<String> = (0..5).map(|i| format!("h{i}")).collect();
         let m = merge_paths(vec!["o1".into()], circle, hero, 30);
         assert_eq!(m.len(), 30);
-        assert_eq!(m[0], "o1", "les co-propriétaires de token passent en premier");
-        assert_eq!(m.iter().filter(|t| t.starts_with('h')).count(), 5, "le pool de héros n'est pas affamé par le cercle");
-        assert_eq!(m.iter().collect::<HashSet<_>>().len(), m.len(), "pas de doublon");
+        assert_eq!(
+            m[0], "o1",
+            "les co-propriétaires de token passent en premier"
+        );
+        assert_eq!(
+            m.iter().filter(|t| t.starts_with('h')).count(),
+            5,
+            "le pool de héros n'est pas affamé par le cercle"
+        );
+        assert_eq!(
+            m.iter().collect::<HashSet<_>>().len(),
+            m.len(),
+            "pas de doublon"
+        );
         // un chemin vide laisse toute la place à l'autre
         let only: Vec<String> = (0..40).map(|i| format!("c{i}")).collect();
         assert_eq!(merge_paths(vec![], only, vec![], 30).len(), 30);
@@ -453,9 +515,14 @@ mod tests {
         let mates: Vec<String> = w.friends.iter().take(2).cloned().collect();
         let skip = HashSet::from([d1.clone(), d2.clone()]);
         // limite 1 : sans filtrage en SQL, le leurre mieux classé occuperait l'unique place
-        let got = circle_candidates(&db, &mates, "toon-absent", &skip, 1).await.unwrap();
+        let got = circle_candidates(&db, &mates, "toon-absent", &skip, 1)
+            .await
+            .unwrap();
         assert_eq!(got.len(), 1);
-        assert!(!skip.contains(&got[0]), "un compte à écarter a pris la place : filtrage après la limite");
+        assert!(
+            !skip.contains(&got[0]),
+            "un compte à écarter a pris la place : filtrage après la limite"
+        );
     }
 
     #[tokio::test]
@@ -473,8 +540,14 @@ mod tests {
             link_upload(&db, tok, id).await;
         }
         let owners = token_owners_with(&db, 10).await.unwrap();
-        assert_eq!(owners.get(&tok), Some(&HashSet::from([m.clone(), s.clone()])));
-        assert!(!token_owners_with(&db, 11).await.unwrap().contains_key(&tok), "sous le seuil de parties");
+        assert_eq!(
+            owners.get(&tok),
+            Some(&HashSet::from([m.clone(), s.clone()]))
+        );
+        assert!(
+            !token_owners_with(&db, 11).await.unwrap().contains_key(&tok),
+            "sous le seuil de parties"
+        );
     }
 
     // ── scénarios de présélection ───────────────────────────────────────────
@@ -487,12 +560,18 @@ mod tests {
     async fn smurf_evident_est_suggere_en_haut() {
         let Some(db) = test_pool().await else { return };
         let w = smurf_world(&db).await;
-        let c = suggest_with(&w.db, &w.target, &HashSet::new(), &HashMap::new()).await.unwrap();
+        let c = suggest_with(&w.db, &w.target, &HashSet::new(), &HashMap::new())
+            .await
+            .unwrap();
         let s = find(&c, &w.smurf).expect("le smurf évident doit être suggéré");
         assert_eq!(s.suggestion.level, Level::High);
         assert!(find(&c, &w.target).is_none(), "jamais la cible elle-même");
         assert!(c.len() <= MAX_CANDIDATES);
-        assert!(c.windows(2).all(|p| p[0].suggestion.score >= p[1].suggestion.score), "tri par score décroissant");
+        assert!(
+            c.windows(2)
+                .all(|p| p[0].suggestion.score >= p[1].suggestion.score),
+            "tri par score décroissant"
+        );
     }
 
     #[tokio::test]
@@ -500,8 +579,18 @@ mod tests {
         let Some(db) = test_pool().await else { return };
         let w = smurf_world(&db).await;
         // une partie où les deux comptes sont présents (équipes opposées)
-        insert_match(&w.db, None, &[row(&w.target, "N", 0, "Muradin"), row(&w.smurf, "N", 1, "Muradin")]).await;
-        let c = suggest_with(&w.db, &w.target, &HashSet::new(), &HashMap::new()).await.unwrap();
+        insert_match(
+            &w.db,
+            None,
+            &[
+                row(&w.target, "N", 0, "Muradin"),
+                row(&w.smurf, "N", 1, "Muradin"),
+            ],
+        )
+        .await;
+        let c = suggest_with(&w.db, &w.target, &HashSet::new(), &HashMap::new())
+            .await
+            .unwrap();
         assert!(find(&c, &w.smurf).is_none());
     }
 
@@ -512,7 +601,9 @@ mod tests {
         // le smurf joue une partie (autres joueurs) pendant une partie de la cible (même heure)
         let t0 = Utc.with_ymd_and_hms(2025, 3, 1, 20, 0, 0).unwrap();
         insert_match(&w.db, Some(t0), &[row(&w.smurf, "N", 0, "Muradin")]).await;
-        let c = suggest_with(&w.db, &w.target, &HashSet::new(), &HashMap::new()).await.unwrap();
+        let c = suggest_with(&w.db, &w.target, &HashSet::new(), &HashMap::new())
+            .await
+            .unwrap();
         assert!(find(&c, &w.smurf).is_none());
     }
 
@@ -520,14 +611,20 @@ mod tests {
     async fn paire_ecartee_nest_plus_proposee() {
         let Some(db) = test_pool().await else { return };
         let w = smurf_world(&db).await;
-        let (a, b) = if w.target < w.smurf { (&w.target, &w.smurf) } else { (&w.smurf, &w.target) };
+        let (a, b) = if w.target < w.smurf {
+            (&w.target, &w.smurf)
+        } else {
+            (&w.smurf, &w.target)
+        };
         sqlx::query("INSERT INTO player_links (toon_a, toon_b, status) VALUES ($1,$2,'dismissed')")
             .bind(a)
             .bind(b)
             .execute(&w.db)
             .await
             .unwrap();
-        let c = suggest_with(&w.db, &w.target, &HashSet::new(), &HashMap::new()).await.unwrap();
+        let c = suggest_with(&w.db, &w.target, &HashSet::new(), &HashMap::new())
+            .await
+            .unwrap();
         assert!(find(&c, &w.smurf).is_none());
     }
 
@@ -546,8 +643,13 @@ mod tests {
             insert_match(&db, Some(when), &rows).await;
         }
         let excluded = HashSet::from([op.clone()]);
-        let c = suggest_with(&db, &a, &excluded, &HashMap::new()).await.unwrap();
-        assert!(find(&c, &b).is_none(), "ne partager que l'opérateur ne crée aucun lien");
+        let c = suggest_with(&db, &a, &excluded, &HashMap::new())
+            .await
+            .unwrap();
+        assert!(
+            find(&c, &b).is_none(),
+            "ne partager que l'opérateur ne crée aucun lien"
+        );
         assert!(find(&c, &op).is_none(), "l'opérateur n'est jamais candidat");
     }
 
@@ -558,10 +660,15 @@ mod tests {
         let Some(db) = test_pool().await else { return };
         let w = smurf_world(&db).await;
         let ex: HashSet<String> = w.friends.iter().cloned().collect();
-        let with = suggest_with(&w.db, &w.target, &HashSet::new(), &HashMap::new()).await.unwrap();
-        let without = suggest_with(&w.db, &w.target, &ex, &HashMap::new()).await.unwrap();
+        let with = suggest_with(&w.db, &w.target, &HashSet::new(), &HashMap::new())
+            .await
+            .unwrap();
+        let without = suggest_with(&w.db, &w.target, &ex, &HashMap::new())
+            .await
+            .unwrap();
         let has_tm = |c: &[Candidate]| {
-            find(c, &w.smurf).is_some_and(|s| s.suggestion.reasons.iter().any(|r| r.kind == "teammates"))
+            find(c, &w.smurf)
+                .is_some_and(|s| s.suggestion.reasons.iter().any(|r| r.kind == "teammates"))
         };
         assert!(has_tm(&with));
         assert!(!has_tm(&without));
@@ -574,8 +681,11 @@ mod tests {
         let w = smurf_world(&db).await;
         let owners = HashMap::from([(1_i64, HashSet::from([w.target.clone(), w.smurf.clone()]))]);
         let excluded: HashSet<String> = owners.values().flatten().cloned().collect();
-        let c = suggest_with(&w.db, &w.target, &excluded, &owners).await.unwrap();
-        let s = find(&c, &w.smurf).expect("co-propriétaire de token = candidat même s'il est exclu par ailleurs");
+        let c = suggest_with(&w.db, &w.target, &excluded, &owners)
+            .await
+            .unwrap();
+        let s = find(&c, &w.smurf)
+            .expect("co-propriétaire de token = candidat même s'il est exclu par ailleurs");
         assert!(s.suggestion.reasons.iter().any(|r| r.kind == "token"));
     }
 
@@ -589,7 +699,11 @@ mod tests {
         let t0 = std::time::Instant::now();
         let owners = token_owners(&db).await.unwrap();
         let excluded = excluded_toons(&db, &owners).await.unwrap();
-        eprintln!("owners/exclus : {:?} en {:?}", (owners.len(), excluded.len()), t0.elapsed());
+        eprintln!(
+            "owners/exclus : {:?} en {:?}",
+            (owners.len(), excluded.len()),
+            t0.elapsed()
+        );
         let toons: Vec<String> = sqlx::query_scalar(
             "(SELECT toon_handle FROM match_players GROUP BY 1 ORDER BY count(*) DESC LIMIT 6)
              UNION ALL
@@ -601,11 +715,20 @@ mod tests {
         for toon in toons {
             let t = std::time::Instant::now();
             let c = suggest_with(&db, &toon, &excluded, &owners).await.unwrap();
-            let name = crate::players::names::current_name(&db, &toon).await.unwrap();
-            eprintln!("{toon} ({name:?}) → {} suggestions en {:?}", c.len(), t.elapsed());
+            let name = crate::players::names::current_name(&db, &toon)
+                .await
+                .unwrap();
+            eprintln!(
+                "{toon} ({name:?}) → {} suggestions en {:?}",
+                c.len(),
+                t.elapsed()
+            );
             for s in c.iter().take(4) {
                 let why: Vec<_> = s.suggestion.reasons.iter().map(|r| r.kind).collect();
-                eprintln!("    {:?} {:>3} {:?} {:?} {why:?}", s.suggestion.level, s.suggestion.score, s.name, s.toon);
+                eprintln!(
+                    "    {:?} {:>3} {:?} {:?} {why:?}",
+                    s.suggestion.level, s.suggestion.score, s.name, s.toon
+                );
             }
         }
     }

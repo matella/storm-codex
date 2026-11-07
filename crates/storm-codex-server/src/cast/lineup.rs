@@ -18,15 +18,26 @@ pub struct HeroCount {
 
 /// Une seule requête pour tous les toons (LATERAL sur `match_players_toon_idx`) ; la sortie garde
 /// la position : `out[i]` correspond à `toons[i]` (toon vide = joueur non lié → liste vide).
-pub async fn recent_heroes_many(db: &PgPool, toons: &[String]) -> Result<Vec<Vec<HeroCount>>, sqlx::Error> {
-    let rows: Vec<(i32, Option<String>)> = sqlx::query_as(LINEUP_SQL).bind(toons).bind(WINDOW).fetch_all(db).await?;
+pub async fn recent_heroes_many(
+    db: &PgPool,
+    toons: &[String],
+) -> Result<Vec<Vec<HeroCount>>, sqlx::Error> {
+    let rows: Vec<(i32, Option<String>)> = sqlx::query_as(LINEUP_SQL)
+        .bind(toons)
+        .bind(WINDOW)
+        .fetch_all(db)
+        .await?;
     Ok(tally(toons.len(), &rows))
 }
 
 /// API à un seul toon, pour les tests (la route passe par `recent_heroes_many`).
 #[cfg(test)]
 pub async fn recent_heroes(db: &PgPool, toon: &str) -> Result<Vec<HeroCount>, sqlx::Error> {
-    Ok(recent_heroes_many(db, &[toon.to_owned()]).await?.into_iter().next().unwrap_or_default())
+    Ok(recent_heroes_many(db, &[toon.to_owned()])
+        .await?
+        .into_iter()
+        .next()
+        .unwrap_or_default())
 }
 
 pub(crate) const LINEUP_SQL: &str = "
@@ -49,7 +60,13 @@ fn tally(n: usize, rows: &[(i32, Option<String>)]) -> Vec<Vec<HeroCount>> {
     // par position : (héros, parties, rang de la 1re apparition = récence)
     let mut per: Vec<Vec<(String, u32, usize)>> = vec![Vec::new(); n];
     for (ord, hero) in rows {
-        let Some(i) = usize::try_from(*ord).ok().and_then(|o| o.checked_sub(1)).filter(|i| *i < n) else { continue };
+        let Some(i) = usize::try_from(*ord)
+            .ok()
+            .and_then(|o| o.checked_sub(1))
+            .filter(|i| *i < n)
+        else {
+            continue;
+        };
         games[i] += 1;
         let Some(h) = hero else { continue };
         match per[i].iter_mut().find(|(x, _, _)| x == h) {
@@ -64,7 +81,10 @@ fn tally(n: usize, rows: &[(i32, Option<String>)]) -> Vec<Vec<HeroCount>> {
                 return Vec::new();
             }
             v.sort_by(|a, b| b.1.cmp(&a.1).then(a.2.cmp(&b.2)));
-            v.into_iter().take(TOP).map(|(hero, games, _)| HeroCount { hero, games }).collect()
+            v.into_iter()
+                .take(TOP)
+                .map(|(hero, games, _)| HeroCount { hero, games })
+                .collect()
         })
         .collect()
 }
@@ -82,14 +102,22 @@ mod tests {
     async fn seed(db: &PgPool, toon: &str, heroes: &[&str]) {
         let t0 = Utc.with_ymd_and_hms(2025, 1, 1, 20, 0, 0).unwrap();
         for (i, h) in heroes.iter().enumerate() {
-            insert_match(db, Some(t0 + Duration::days(i as i64)), &[row(toon, "Casteur", 0, h)]).await;
+            insert_match(
+                db,
+                Some(t0 + Duration::days(i as i64)),
+                &[row(toon, "Casteur", 0, h)],
+            )
+            .await;
         }
     }
     fn rep(h: &'static str, n: usize) -> Vec<&'static str> {
         vec![h; n]
     }
     fn hc(hero: &str, games: u32) -> HeroCount {
-        HeroCount { hero: hero.into(), games }
+        HeroCount {
+            hero: hero.into(),
+            games,
+        }
     }
 
     #[tokio::test]
@@ -104,7 +132,10 @@ mod tests {
         h.push("Zeratul");
         seed(&db, &toon, &h).await;
         let got = recent_heroes(&db, &toon).await.unwrap();
-        assert_eq!(got, vec![hc("Kerrigan", 10), hc("Diablo", 6), hc("Arthas", 3)]);
+        assert_eq!(
+            got,
+            vec![hc("Kerrigan", 10), hc("Diablo", 6), hc("Arthas", 3)]
+        );
     }
 
     #[tokio::test]
@@ -125,7 +156,10 @@ mod tests {
         seed(&db, &toon, &rep("Kerrigan", 4)).await;
         assert!(recent_heroes(&db, &toon).await.unwrap().is_empty());
         seed(&db, &toon, &["Kerrigan"]).await;
-        assert_eq!(recent_heroes(&db, &toon).await.unwrap(), vec![hc("Kerrigan", 5)]);
+        assert_eq!(
+            recent_heroes(&db, &toon).await.unwrap(),
+            vec![hc("Kerrigan", 5)]
+        );
     }
 
     #[tokio::test]
@@ -134,10 +168,23 @@ mod tests {
         let toon = format!("t-lu{}", uid());
         let t0 = Utc.with_ymd_and_hms(2025, 1, 1, 20, 0, 0).unwrap();
         for (i, mode) in [1, 2, 3, 4, 5, 6].into_iter().enumerate() {
-            let id = insert_match(&db, Some(t0 + Duration::days(i as i64)), &[row(&toon, "Casteur", 0, "Valla")]).await;
-            sqlx::query("UPDATE matches SET mode = $1 WHERE id = $2").bind(mode).bind(id).execute(&db).await.unwrap();
+            let id = insert_match(
+                &db,
+                Some(t0 + Duration::days(i as i64)),
+                &[row(&toon, "Casteur", 0, "Valla")],
+            )
+            .await;
+            sqlx::query("UPDATE matches SET mode = $1 WHERE id = $2")
+                .bind(mode)
+                .bind(id)
+                .execute(&db)
+                .await
+                .unwrap();
         }
-        assert_eq!(recent_heroes(&db, &toon).await.unwrap(), vec![hc("Valla", 6)]);
+        assert_eq!(
+            recent_heroes(&db, &toon).await.unwrap(),
+            vec![hc("Valla", 6)]
+        );
     }
 
     #[tokio::test]
@@ -146,8 +193,16 @@ mod tests {
         let (a, b) = (format!("t-lu{}", uid()), format!("t-lu{}", uid()));
         seed(&db, &a, &rep("Valla", 6)).await;
         seed(&db, &b, &rep("Jaina", 7)).await;
-        let got = recent_heroes_many(&db, &[b.clone(), String::new(), a.clone(), "inconnu".into()]).await.unwrap();
-        assert_eq!(got, vec![vec![hc("Jaina", 7)], vec![], vec![hc("Valla", 6)], vec![]]);
+        let got = recent_heroes_many(
+            &db,
+            &[b.clone(), String::new(), a.clone(), "inconnu".into()],
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            got,
+            vec![vec![hc("Jaina", 7)], vec![], vec![hc("Valla", 6)], vec![]]
+        );
     }
 
     /// Nettoyage des lignes insérées par le test, même s'il panique : `Drop` ne peut pas `.await`,
@@ -158,14 +213,30 @@ mod tests {
     }
     impl Drop for Cleanup {
         fn drop(&mut self) {
-            let (ids, toons) = (std::mem::take(&mut self.ids), std::mem::take(&mut self.toons));
-            let Ok(url) = std::env::var("DATABASE_URL") else { return };
+            let (ids, toons) = (
+                std::mem::take(&mut self.ids),
+                std::mem::take(&mut self.toons),
+            );
+            let Ok(url) = std::env::var("DATABASE_URL") else {
+                return;
+            };
             let _ = std::thread::spawn(move || {
-                let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime");
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("runtime");
                 rt.block_on(async {
                     let db = PgPool::connect(&url).await.expect("connexion");
-                    sqlx::query("DELETE FROM matches WHERE id = ANY($1)").bind(&ids).execute(&db).await.expect("delete matches");
-                    sqlx::query("DELETE FROM players WHERE toon_handle = ANY($1)").bind(&toons).execute(&db).await.expect("delete players");
+                    sqlx::query("DELETE FROM matches WHERE id = ANY($1)")
+                        .bind(&ids)
+                        .execute(&db)
+                        .await
+                        .expect("delete matches");
+                    sqlx::query("DELETE FROM players WHERE toon_handle = ANY($1)")
+                        .bind(&toons)
+                        .execute(&db)
+                        .await
+                        .expect("delete players");
                 });
             })
             .join();
@@ -174,32 +245,56 @@ mod tests {
 
     #[tokio::test]
     async fn lineup_route_under_100ms_for_10_players() {
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         let toons: Vec<String> = (0..10).map(|_| format!("t-lu{}", uid())).collect();
-        let mut cleanup = Cleanup { ids: Vec::new(), toons: toons.clone() };
+        let mut cleanup = Cleanup {
+            ids: Vec::new(),
+            toons: toons.clone(),
+        };
         let t0 = Utc.with_ymd_and_hms(2025, 1, 1, 20, 0, 0).unwrap();
         let heroes = ["Valla", "Jaina", "Diablo", "Arthas", "Zeratul"];
         for g in 0..30 {
-            let rows: Vec<_> = toons.iter().enumerate().map(|(i, t)| row(t, "Casteur", (i % 2) as i32, heroes[(g + i) % 5])).collect();
-            cleanup.ids.push(insert_match(&state.db, Some(t0 + Duration::days(g as i64)), &rows).await);
+            let rows: Vec<_> = toons
+                .iter()
+                .enumerate()
+                .map(|(i, t)| row(t, "Casteur", (i % 2) as i32, heroes[(g + i) % 5]))
+                .collect();
+            cleanup
+                .ids
+                .push(insert_match(&state.db, Some(t0 + Duration::days(g as i64)), &rows).await);
         }
         // EXPLAIN : le plan doit passer par l'index `match_players_toon_idx` (scan séquentiel désactivé
         // sur cette connexion : le test ne dépend pas de la taille de la base de dev/CI)
         let mut conn = state.db.acquire().await.unwrap();
-        sqlx::query("SET enable_seqscan = off").execute(&mut *conn).await.unwrap();
+        sqlx::query("SET enable_seqscan = off")
+            .execute(&mut *conn)
+            .await
+            .unwrap();
         let plan: Vec<(String,)> = sqlx::query_as(&format!("EXPLAIN {LINEUP_SQL}"))
             .bind(&toons)
             .bind(WINDOW)
             .fetch_all(&mut *conn)
             .await
             .unwrap();
-        sqlx::query("RESET enable_seqscan").execute(&mut *conn).await.unwrap();
+        sqlx::query("RESET enable_seqscan")
+            .execute(&mut *conn)
+            .await
+            .unwrap();
         drop(conn);
         let plan = plan.into_iter().map(|r| r.0).collect::<Vec<_>>().join("\n");
         eprintln!("{plan}");
-        assert!(plan.contains("match_players_toon_idx"), "plan sans match_players_toon_idx :\n{plan}");
+        assert!(
+            plan.contains("match_players_toon_idx"),
+            "plan sans match_players_toon_idx :\n{plan}"
+        );
 
-        let q = format!("/api/cast/lineup?blue={}&red={}", toons[..5].join(","), toons[5..].join(","));
+        let q = format!(
+            "/api/cast/lineup?blue={}&red={}",
+            toons[..5].join(","),
+            toons[5..].join(",")
+        );
         let t = Instant::now();
         let (st, v) = call(&state, "GET", &q, None).await;
         let elapsed = t.elapsed();
@@ -214,8 +309,13 @@ mod tests {
     /// Une partie au héros NULL compte dans le seuil des 5 parties mais pas dans le décompte.
     #[test]
     fn null_hero_counts_toward_threshold_not_tally() {
-        let rows: Vec<(i32, Option<String>)> =
-            vec![(1, Some("Valla".into())), (1, None), (1, None), (1, Some("Valla".into())), (1, None)];
+        let rows: Vec<(i32, Option<String>)> = vec![
+            (1, Some("Valla".into())),
+            (1, None),
+            (1, None),
+            (1, Some("Valla".into())),
+            (1, None),
+        ];
         assert_eq!(tally(1, &rows), vec![vec![hc("Valla", 2)]]);
         assert_eq!(tally(1, &rows[..4]), vec![Vec::<HeroCount>::new()]);
     }

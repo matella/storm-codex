@@ -106,7 +106,12 @@ pub fn ban_hero_name(code: &str) -> String {
 }
 
 fn per_team<T>(m: &Map<String, J>, key: &str, f: impl Fn(&J) -> Vec<T>) -> [Vec<T>; 2] {
-    let side = |t: &str| m.get(key).and_then(|o| o.get(t)).map(&f).unwrap_or_default();
+    let side = |t: &str| {
+        m.get(key)
+            .and_then(|o| o.get(t))
+            .map(&f)
+            .unwrap_or_default()
+    };
     [side("0"), side("1")]
 }
 
@@ -126,11 +131,21 @@ pub fn summarize(out: &storm_stats::Output) -> Result<GameSummary, SummaryError>
     toons.sort();
     for toon in toons {
         let p = &players[toon.as_str()];
-        let Some(t) = team_of(p.get("team")) else { continue };
+        let Some(t) = team_of(p.get("team")) else {
+            continue;
+        };
         teams[t as usize].push(Player {
             toon: toon.clone(),
-            name: p.get("name").and_then(J::as_str).unwrap_or_default().to_string(),
-            hero: p.get("hero").and_then(J::as_str).unwrap_or_default().to_string(),
+            name: p
+                .get("name")
+                .and_then(J::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            hero: p
+                .get("hero")
+                .and_then(J::as_str)
+                .unwrap_or_default()
+                .to_string(),
             stats: PlayerStats {
                 kills: gs(p, "SoloKill"),
                 deaths: gs(p, "Deaths"),
@@ -159,7 +174,10 @@ pub fn summarize(out: &storm_stats::Output) -> Result<GameSummary, SummaryError>
                         } else {
                             BanPhase::First
                         };
-                        Some(Ban { hero: ban_hero_name(code), phase })
+                        Some(Ban {
+                            hero: ban_hero_name(code),
+                            phase,
+                        })
                     })
                     .collect()
             })
@@ -167,7 +185,11 @@ pub fn summarize(out: &storm_stats::Output) -> Result<GameSummary, SummaryError>
     });
     let picks = per_team(m, "picks", |arr| {
         arr.as_array()
-            .map(|a| a.iter().filter_map(|h| h.as_str().map(str::to_string)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|h| h.as_str().map(str::to_string))
+                    .collect()
+            })
             .unwrap_or_default()
     });
 
@@ -235,7 +257,11 @@ mod tests {
         let s = summarize(&out).unwrap();
         assert_eq!(s.map, "Industrial District");
         assert_eq!(s.teams[0].len() + s.teams[1].len(), 10);
-        assert!(s.teams.iter().flatten().all(|p| !p.hero.is_empty() && !p.toon.is_empty()));
+        assert!(s
+            .teams
+            .iter()
+            .flatten()
+            .all(|p| !p.hero.is_empty() && !p.toon.is_empty()));
         assert!(s.winner.is_some());
         assert!(s.length_s > 0.0);
         assert!(!s.level_diff.is_empty());
@@ -246,7 +272,11 @@ mod tests {
 
     #[test]
     fn sortie_vide_refusee() {
-        let out = storm_stats::Output { status: 1, match_: None, players: None };
+        let out = storm_stats::Output {
+            status: 1,
+            match_: None,
+            players: None,
+        };
         assert_eq!(summarize(&out), Err(SummaryError::Empty));
     }
 }

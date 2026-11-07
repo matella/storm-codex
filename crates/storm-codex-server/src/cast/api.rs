@@ -21,7 +21,9 @@ const INTERVAL_RANGE: std::ops::RangeInclusive<u32> = 500..=3_600_000;
 
 /// Version suivante de l'état en mémoire — appelée sous le write-lock de la mutation qui le produit.
 fn next_version(s: &AppState) -> u64 {
-    s.cast_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1
+    s.cast_version
+        .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        + 1
 }
 
 /// Écrit `snapshot` (l'état produit par la mutation de version `v`), sauf si une version plus
@@ -50,7 +52,10 @@ pub(super) async fn persist(s: &AppState, snapshot: &Series, v: u64) -> Result<(
 
 /// R24 : l'écriture en base a échoué — état appliqué en mémoire et diffusé, mais non persisté.
 fn persist_failed() -> Resp {
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "persist_failed" })))
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "error": "persist_failed" })),
+    )
 }
 
 pub(super) fn conflict(e: CastError) -> Resp {
@@ -83,7 +88,10 @@ pub(super) async fn sync_draft(s: &AppState, align: bool) {
 }
 
 fn series_json(s: &Series) -> Resp {
-    (StatusCode::OK, Json(serde_json::to_value(s).unwrap_or(J::Null)))
+    (
+        StatusCode::OK,
+        Json(serde_json::to_value(s).unwrap_or(J::Null)),
+    )
 }
 
 /// Applique `f` sous un seul write-lock, sur une copie (échec → état inchangé, pas de persist).
@@ -119,12 +127,18 @@ pub(super) async fn mutate_ex<T>(
     if sync != DraftSync::No {
         sync_draft(s, sync == DraftSync::Align).await;
     }
-    persist(s, &out.1, version).await.map_err(|_| persist_failed())?;
+    persist(s, &out.1, version)
+        .await
+        .map_err(|_| persist_failed())?;
     Ok(out)
 }
 
 /// Mutation qui répond par la série complète.
-async fn mutate_series(s: &AppState, gated: bool, f: impl FnOnce(&mut Series) -> Result<(), CastError>) -> Resp {
+async fn mutate_series(
+    s: &AppState,
+    gated: bool,
+    f: impl FnOnce(&mut Series) -> Result<(), CastError>,
+) -> Resp {
     mutate_series_ex(s, gated, DraftSync::No, f).await
 }
 
@@ -204,8 +218,14 @@ pub async fn start_series(State(s): State<AppState>, Json(b): Json<SeriesBody>) 
         n.active = true;
         // logo absent du corps → on garde celui en place (stocké en base)
         let (old_blue, old_red) = (c.blue.logo.take(), c.red.logo.take());
-        n.blue = Team { logo: b.blue.logo.or(old_blue), ..b.blue };
-        n.red = Team { logo: b.red.logo.or(old_red), ..b.red };
+        n.blue = Team {
+            logo: b.blue.logo.or(old_blue),
+            ..b.blue
+        };
+        n.red = Team {
+            logo: b.red.logo.or(old_red),
+            ..b.red
+        };
         n.bo = b.bo;
         n.format = b.format;
         n.scene = c.scene;
@@ -270,7 +290,11 @@ pub struct WinnerBody {
 }
 
 /// POST /api/cast/games/{n}/winner `{side, takedowns?, duration_secs?}`.
-pub async fn set_winner(State(s): State<AppState>, Path(n): Path<u8>, Json(b): Json<WinnerBody>) -> Resp {
+pub async fn set_winner(
+    State(s): State<AppState>,
+    Path(n): Path<u8>,
+    Json(b): Json<WinnerBody>,
+) -> Resp {
     mutate_series_ex(&s, true, DraftSync::Sync, |c| {
         c.set_winner(n, b.side)?;
         if let Some(g) = c.games.iter_mut().find(|g| g.number == n) {
@@ -425,12 +449,25 @@ fn err(code: StatusCode, e: &str) -> Resp {
 
 /// POST /api/cast/logo/{side} — corps = octets de l'image, `Content-Type` png/jpeg/webp, 1..=512 Ko.
 /// Stocke en base et pose `Team.logo = /api/cast/logo/{side}?v={updated_at_ms}`. Autorisé série inactive.
-pub async fn upload_logo(State(s): State<AppState>, Path(side): Path<String>, headers: HeaderMap, body: Bytes) -> Resp {
-    let Some(side) = side_str(&side) else { return err(StatusCode::NOT_FOUND, "bad_side") };
+pub async fn upload_logo(
+    State(s): State<AppState>,
+    Path(side): Path<String>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Resp {
+    let Some(side) = side_str(&side) else {
+        return err(StatusCode::NOT_FOUND, "bad_side");
+    };
     let mime = headers
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
-        .map(|v| v.split(';').next().unwrap_or("").trim().to_ascii_lowercase())
+        .map(|v| {
+            v.split(';')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_ascii_lowercase()
+        })
         .unwrap_or_default();
     if !LOGO_MIMES.contains(&mime.as_str()) {
         return err(StatusCode::UNSUPPORTED_MEDIA_TYPE, "unsupported_mime");
@@ -463,7 +500,11 @@ pub async fn upload_logo(State(s): State<AppState>, Path(side): Path<String>, he
     };
     let url = format!("/api/cast/logo/{side}?v={version}");
     mutate_series(&s, false, |c| {
-        let team = if side == "blue" { &mut c.blue } else { &mut c.red };
+        let team = if side == "blue" {
+            &mut c.blue
+        } else {
+            &mut c.red
+        };
         team.logo = Some(url);
         Ok(())
     })
@@ -472,21 +513,24 @@ pub async fn upload_logo(State(s): State<AppState>, Path(side): Path<String>, he
 
 /// GET /api/cast/logo/{side} — octets du logo (404 si aucun), `X-Content-Type-Options: nosniff`.
 pub async fn get_logo(State(s): State<AppState>, Path(side): Path<String>) -> Response {
-    let Some(side) = side_str(&side) else { return err(StatusCode::NOT_FOUND, "bad_side").into_response() };
+    let Some(side) = side_str(&side) else {
+        return err(StatusCode::NOT_FOUND, "bad_side").into_response();
+    };
     let row: Result<Option<(String, Vec<u8>)>, sqlx::Error> =
-        sqlx::query_as("SELECT mime, bytes FROM cast_logo WHERE side = $1").bind(side).fetch_optional(&s.db).await;
+        sqlx::query_as("SELECT mime, bytes FROM cast_logo WHERE side = $1")
+            .bind(side)
+            .fetch_optional(&s.db)
+            .await;
     match row {
-        Ok(Some((mime, bytes))) => {
-            (
-                [
-                    (header::CONTENT_TYPE, mime),
-                    (header::CACHE_CONTROL, "public, max-age=86400".to_string()),
-                    (header::X_CONTENT_TYPE_OPTIONS, "nosniff".to_string()),
-                ],
-                bytes,
-            )
-                .into_response()
-        }
+        Ok(Some((mime, bytes))) => (
+            [
+                (header::CONTENT_TYPE, mime),
+                (header::CACHE_CONTROL, "public, max-age=86400".to_string()),
+                (header::X_CONTENT_TYPE_OPTIONS, "nosniff".to_string()),
+            ],
+            bytes,
+        )
+            .into_response(),
         Ok(None) => err(StatusCode::NOT_FOUND, "no_logo").into_response(),
         Err(e) => {
             tracing::error!("cast logo load: {e}");
@@ -512,7 +556,10 @@ fn split_toons(s: &str) -> Option<Vec<String>> {
     if s.is_empty() {
         return Some(Vec::new());
     }
-    s.split(',').map(str::trim).map(|t| (t.len() <= TOON_MAX).then(|| t.to_owned())).collect()
+    s.split(',')
+        .map(str::trim)
+        .map(|t| (t.len() <= TOON_MAX).then(|| t.to_owned()))
+        .collect()
 }
 
 /// GET /api/cast/lineup?blue=toon,...&red=toon,... : `{ blue: [[HeroCount]], red: [[HeroCount]] }`,
@@ -522,7 +569,10 @@ pub async fn get_lineup(State(s): State<AppState>, Query(q): Query<LineupQuery>)
         return err(StatusCode::BAD_REQUEST, "bad_toon");
     };
     if blue.len() > lineup::MAX_PER_SIDE || red.len() > lineup::MAX_PER_SIDE {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "too_many_players" })));
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "too_many_players" })),
+        );
     }
     let all: Vec<String> = blue.iter().chain(red.iter()).cloned().collect();
     match lineup::recent_heroes_many(&s.db, &all).await {
@@ -532,7 +582,10 @@ pub async fn get_lineup(State(s): State<AppState>, Query(q): Query<LineupQuery>)
         }
         Err(e) => {
             tracing::error!("cast lineup: {e}");
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "db" })))
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "db" })),
+            )
         }
     }
 }
@@ -554,18 +607,26 @@ mod tests {
     #[tokio::test]
     async fn post_series_rejects_oversized_pool_and_long_names_without_changing_state() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         call(&state, "POST", "/api/cast/series", Some(start_body())).await;
         let before = call(&state, "GET", "/api/cast", None).await.1;
         let too_many: Vec<String> = (0..33).map(|i| format!("Map{i}")).collect();
         let mut body = start_body();
         body["pool"] = json!(too_many);
         let (st, v) = call(&state, "POST", "/api/cast/series", Some(body)).await;
-        assert_eq!((st, v["error"].as_str()), (StatusCode::BAD_REQUEST, Some("bad_pool")));
+        assert_eq!(
+            (st, v["error"].as_str()),
+            (StatusCode::BAD_REQUEST, Some("bad_pool"))
+        );
         let mut body = start_body();
         body["pool"] = json!(["x".repeat(65)]);
         let (st, v) = call(&state, "POST", "/api/cast/series", Some(body)).await;
-        assert_eq!((st, v["error"].as_str()), (StatusCode::BAD_REQUEST, Some("bad_pool")));
+        assert_eq!(
+            (st, v["error"].as_str()),
+            (StatusCode::BAD_REQUEST, Some("bad_pool"))
+        );
         let after = call(&state, "GET", "/api/cast", None).await.1;
         assert_eq!(before, after, "un refus ne change rien");
         // 32 cartes de 64 caractères : à la borne, accepté
@@ -578,22 +639,39 @@ mod tests {
     #[tokio::test]
     async fn teams_with_overlong_text_are_400_bad_team() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         let mut body = start_body();
         body["blue"] = json!({"name": "n".repeat(65)});
         let (st, v) = call(&state, "POST", "/api/cast/series", Some(body)).await;
-        assert_eq!((st, v["error"].as_str()), (StatusCode::BAD_REQUEST, Some("bad_team")));
+        assert_eq!(
+            (st, v["error"].as_str()),
+            (StatusCode::BAD_REQUEST, Some("bad_team"))
+        );
         call(&state, "POST", "/api/cast/series", Some(start_body())).await;
-        let long_tag = json!({"name":"B","players":[{"name":"p","tagline":"t".repeat(121)},{},{},{},{}]});
+        let long_tag =
+            json!({"name":"B","players":[{"name":"p","tagline":"t".repeat(121)},{},{},{},{}]});
         let ok_team = json!({"name":"R"});
-        let (st, v) = call(&state, "PUT", "/api/cast/teams", Some(json!({"blue": long_tag, "red": ok_team}))).await;
-        assert_eq!((st, v["error"].as_str()), (StatusCode::BAD_REQUEST, Some("bad_team")));
+        let (st, v) = call(
+            &state,
+            "PUT",
+            "/api/cast/teams",
+            Some(json!({"blue": long_tag, "red": ok_team})),
+        )
+        .await;
+        assert_eq!(
+            (st, v["error"].as_str()),
+            (StatusCode::BAD_REQUEST, Some("bad_team"))
+        );
     }
 
     #[tokio::test]
     async fn json_body_over_64_kib_is_413() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         let mut body = start_body();
         body["pool"] = json!(["z".repeat(70 * 1024)]);
         let (st, _) = call(&state, "POST", "/api/cast/series", Some(body)).await;
@@ -603,7 +681,9 @@ mod tests {
     #[tokio::test]
     async fn get_cast_returns_default_inactive_series() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         let (st, v) = call(&state, "GET", "/api/cast", None).await;
         assert_eq!(st, StatusCode::OK);
         assert_eq!(v["active"], false);
@@ -614,10 +694,16 @@ mod tests {
     #[tokio::test]
     async fn start_series_aligns_draft_format_and_steps() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         {
             let mut d = state.draft.write().await;
-            *d = crate::draft::DraftState::new(Format::Standard, crate::draft::Side::Red, "Sky Temple".into());
+            *d = crate::draft::DraftState::new(
+                Format::Standard,
+                crate::draft::Side::Red,
+                "Sky Temple".into(),
+            );
             d.apply("Muradin").unwrap();
             d.series_bans.insert("Valla".into());
             d.set_unavailable("Jaina", true);
@@ -639,7 +725,9 @@ mod tests {
     #[tokio::test]
     async fn start_series_deselects_replay_game_and_stops_autoplay() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         {
             let mut d = state.draft.write().await;
             d.replay.current = Some(0);
@@ -658,10 +746,16 @@ mod tests {
     #[tokio::test]
     async fn start_series_with_same_format_still_resets_game() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         {
             let mut d = state.draft.write().await;
-            *d = crate::draft::DraftState::new(Format::Fearless, crate::draft::Side::Blue, "Sky Temple".into());
+            *d = crate::draft::DraftState::new(
+                Format::Fearless,
+                crate::draft::Side::Blue,
+                "Sky Temple".into(),
+            );
             d.apply("Muradin").unwrap();
             d.start_next_game();
             d.apply("Jaina").unwrap();
@@ -676,12 +770,32 @@ mod tests {
     #[tokio::test]
     async fn post_series_activates_and_resets_games() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         call(&state, "POST", "/api/cast/series", Some(start_body())).await;
-        call(&state, "POST", "/api/cast/pool/map", Some(json!({"name":"A","status":"picked","by":"blue"}))).await;
-        let (_, g) = call(&state, "POST", "/api/cast/games/start", Some(json!({"map":"A"}))).await;
+        call(
+            &state,
+            "POST",
+            "/api/cast/pool/map",
+            Some(json!({"name":"A","status":"picked","by":"blue"})),
+        )
+        .await;
+        let (_, g) = call(
+            &state,
+            "POST",
+            "/api/cast/games/start",
+            Some(json!({"map":"A"})),
+        )
+        .await;
         assert_eq!(g["number"], 1);
-        call(&state, "POST", "/api/cast/games/1/winner", Some(json!({"side":"red","takedowns":[3,7],"duration_secs":600}))).await;
+        call(
+            &state,
+            "POST",
+            "/api/cast/games/1/winner",
+            Some(json!({"side":"red","takedowns":[3,7],"duration_secs":600})),
+        )
+        .await;
         let (_, v) = call(&state, "GET", "/api/cast", None).await;
         assert_eq!(v["games"][0]["winner"], "red");
         assert_eq!(v["games"][0]["takedowns"], json!([3, 7]));
@@ -700,7 +814,9 @@ mod tests {
     #[tokio::test]
     async fn post_series_accepts_full_teams_and_players() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         let body = json!({
             "blue":{"name":"Blue Co","record":"4-1","captain":2,
                     "players":[{"name":"P1","tagline":"t1"},{"name":"P2"},{"name":"P3"},{"name":"P4"},{"name":"P5"}]},
@@ -719,7 +835,9 @@ mod tests {
     #[tokio::test]
     async fn post_series_with_name_only_still_works_and_keeps_logos() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         {
             let mut c = state.cast.write().await;
             c.blue.logo = Some("/api/cast/logo/blue?v=1".into());
@@ -734,10 +852,18 @@ mod tests {
     #[tokio::test]
     async fn invalid_map_marking_returns_409_and_leaves_state() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         call(&state, "POST", "/api/cast/series", Some(start_body())).await;
         let before = state.cast.read().await.clone();
-        let (st, v) = call(&state, "POST", "/api/cast/pool/map", Some(json!({"name":"Z","status":"decider"}))).await;
+        let (st, v) = call(
+            &state,
+            "POST",
+            "/api/cast/pool/map",
+            Some(json!({"name":"Z","status":"decider"})),
+        )
+        .await;
         assert_eq!(st, StatusCode::CONFLICT);
         assert_eq!(v["error"], "NotInPool");
         assert_eq!(*state.cast.read().await, before);
@@ -746,11 +872,31 @@ mod tests {
     #[tokio::test]
     async fn marking_a_played_map_returns_409() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         call(&state, "POST", "/api/cast/series", Some(start_body())).await;
-        call(&state, "POST", "/api/cast/pool/map", Some(json!({"name":"A","status":"picked","by":"blue"}))).await;
-        call(&state, "POST", "/api/cast/games/start", Some(json!({"map":"A"}))).await;
-        let (st, v) = call(&state, "POST", "/api/cast/pool/map", Some(json!({"name":"A","status":"banned","by":"red"}))).await;
+        call(
+            &state,
+            "POST",
+            "/api/cast/pool/map",
+            Some(json!({"name":"A","status":"picked","by":"blue"})),
+        )
+        .await;
+        call(
+            &state,
+            "POST",
+            "/api/cast/games/start",
+            Some(json!({"map":"A"})),
+        )
+        .await;
+        let (st, v) = call(
+            &state,
+            "POST",
+            "/api/cast/pool/map",
+            Some(json!({"name":"A","status":"banned","by":"red"})),
+        )
+        .await;
         assert_eq!(st, StatusCode::CONFLICT);
         assert_eq!(v["error"], "MapAlreadyPlayed");
     }
@@ -758,12 +904,18 @@ mod tests {
     #[tokio::test]
     async fn mutations_on_inactive_series_return_409_except_series_and_scene() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         *state.cast.write().await = Series::new();
         let team = json!({"name":"x","players":[{},{},{},{},{}]});
         let cases = [
             ("PUT", "/api/cast/teams", json!({"blue":team,"red":team})),
-            ("POST", "/api/cast/pool/map", json!({"name":"A","status":"banned","by":"red"})),
+            (
+                "POST",
+                "/api/cast/pool/map",
+                json!({"name":"A","status":"banned","by":"red"}),
+            ),
             ("POST", "/api/cast/games/start", json!({"map":"A"})),
             ("POST", "/api/cast/games/1/winner", json!({"side":"blue"})),
             ("DELETE", "/api/cast/games/1", J::Null),
@@ -777,11 +929,23 @@ mod tests {
             assert_eq!(v["error"], "SeriesInactive", "{p}");
         }
         assert!(!state.cast.read().await.active);
-        let (st, _) = call(&state, "POST", "/api/cast/scene", Some(json!({"scene":"lineups"}))).await;
+        let (st, _) = call(
+            &state,
+            "POST",
+            "/api/cast/scene",
+            Some(json!({"scene":"lineups"})),
+        )
+        .await;
         assert_eq!(st, StatusCode::OK);
         let (st, _) = call(&state, "POST", "/api/cast/series", Some(start_body())).await;
         assert_eq!(st, StatusCode::OK);
-        let (st, v) = call(&state, "POST", "/api/cast/score", Some(json!({"blue":1,"red":0}))).await;
+        let (st, v) = call(
+            &state,
+            "POST",
+            "/api/cast/score",
+            Some(json!({"blue":1,"red":0})),
+        )
+        .await;
         assert_eq!(st, StatusCode::OK);
         assert_eq!(v["score_override"], json!([1, 0]));
         let (_, v) = call(&state, "POST", "/api/cast/score", Some(J::Null)).await;
@@ -793,37 +957,93 @@ mod tests {
     #[tokio::test]
     async fn teams_lineup_mode_and_slide_update_state() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         call(&state, "POST", "/api/cast/series", Some(start_body())).await;
-        let team = json!({"name":"T","record":"3-1","captain":2,"players":[{"name":"p1"},{},{},{},{}]});
-        let (st, v) = call(&state, "PUT", "/api/cast/teams", Some(json!({"blue":team,"red":{"name":"R"}}))).await;
+        let team =
+            json!({"name":"T","record":"3-1","captain":2,"players":[{"name":"p1"},{},{},{},{}]});
+        let (st, v) = call(
+            &state,
+            "PUT",
+            "/api/cast/teams",
+            Some(json!({"blue":team,"red":{"name":"R"}})),
+        )
+        .await;
         assert_eq!(st, StatusCode::OK);
         assert_eq!(v["blue"]["players"][0]["name"], "p1");
         assert_eq!(v["blue"]["captain"], 2);
-        let (_, v) = call(&state, "POST", "/api/cast/lineup-mode", Some(json!({"mode":"b"}))).await;
+        let (_, v) = call(
+            &state,
+            "POST",
+            "/api/cast/lineup-mode",
+            Some(json!({"mode":"b"})),
+        )
+        .await;
         assert_eq!(v["lineup_mode"], "b");
-        call(&state, "POST", "/api/cast/pool/map", Some(json!({"name":"A","status":"picked","by":"blue"}))).await;
-        call(&state, "POST", "/api/cast/games/start", Some(json!({"map":"A"}))).await;
-        let (_, v) = call(&state, "POST", "/api/cast/slide", Some(json!({"game":1,"auto":true,"interval_ms":1}))).await;
+        call(
+            &state,
+            "POST",
+            "/api/cast/pool/map",
+            Some(json!({"name":"A","status":"picked","by":"blue"})),
+        )
+        .await;
+        call(
+            &state,
+            "POST",
+            "/api/cast/games/start",
+            Some(json!({"map":"A"})),
+        )
+        .await;
+        let (_, v) = call(
+            &state,
+            "POST",
+            "/api/cast/slide",
+            Some(json!({"game":1,"auto":true,"interval_ms":1})),
+        )
+        .await;
         assert_eq!(v["slide"]["game"], 1);
         assert_eq!(v["slide"]["auto"], true);
         assert_eq!(v["slide"]["interval_ms"], 500);
         assert_eq!(v["slide"]["index"], 0);
-        assert!(v["slide"]["since_ms"].as_i64().is_some_and(|t| t > 0), "ancre de rotation posée");
+        assert!(
+            v["slide"]["since_ms"].as_i64().is_some_and(|t| t > 0),
+            "ancre de rotation posée"
+        );
     }
 
     #[tokio::test]
     async fn slide_game_zero_clears_pinned_game() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         call(&state, "POST", "/api/cast/series", Some(start_body())).await;
         for m in ["A", "B"] {
-            call(&state, "POST", "/api/cast/pool/map", Some(json!({"name":m,"status":"picked","by":"blue"}))).await;
-            call(&state, "POST", "/api/cast/games/start", Some(json!({"map":m}))).await;
+            call(
+                &state,
+                "POST",
+                "/api/cast/pool/map",
+                Some(json!({"name":m,"status":"picked","by":"blue"})),
+            )
+            .await;
+            call(
+                &state,
+                "POST",
+                "/api/cast/games/start",
+                Some(json!({"map":m})),
+            )
+            .await;
         }
         let (_, v) = call(&state, "POST", "/api/cast/slide", Some(json!({"game":2}))).await;
         assert_eq!(v["slide"]["game"], 2);
-        let (st, v) = call(&state, "POST", "/api/cast/slide", Some(json!({"game":0,"auto":true}))).await;
+        let (st, v) = call(
+            &state,
+            "POST",
+            "/api/cast/slide",
+            Some(json!({"game":0,"auto":true})),
+        )
+        .await;
         assert_eq!(st, StatusCode::OK);
         assert!(v["slide"]["game"].is_null());
         assert_eq!(v["slide"]["auto"], true);
@@ -832,9 +1052,17 @@ mod tests {
     #[tokio::test]
     async fn scene_change_broadcasts_cast_updated() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         let mut rx = state.events.subscribe();
-        let (st, v) = call(&state, "POST", "/api/cast/scene", Some(json!({"scene":"draft"}))).await;
+        let (st, v) = call(
+            &state,
+            "POST",
+            "/api/cast/scene",
+            Some(json!({"scene":"draft"})),
+        )
+        .await;
         assert_eq!(st, StatusCode::OK);
         assert_eq!(v["scene"], "draft");
         assert_eq!(rx.recv().await.unwrap(), json!({"type":"cast.updated"}));
@@ -843,9 +1071,17 @@ mod tests {
     #[tokio::test]
     async fn state_survives_restart() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         call(&state, "POST", "/api/cast/series", Some(start_body())).await;
-        call(&state, "POST", "/api/cast/scene", Some(json!({"scene":"ingame"}))).await;
+        call(
+            &state,
+            "POST",
+            "/api/cast/scene",
+            Some(json!({"scene":"ingame"})),
+        )
+        .await;
         let saved = state.cast.read().await.clone();
         assert_eq!(store::load(&state.db).await, Some(saved));
     }
@@ -863,53 +1099,81 @@ mod tests {
         // valeurs d'enum inconnues
         assert!(store::decode(json!({"scene": "nope"})).is_none());
         assert!(store::decode(json!({"format": "nope"})).is_none());
-        assert!(store::decode(json!({"pool": [{"name":"A","status":"banned","by":"green"}]})).is_none());
+        assert!(
+            store::decode(json!({"pool": [{"name":"A","status":"banned","by":"green"}]})).is_none()
+        );
         // résumé de partie illisible (ancien `{}`) : ignoré, la série reste chargeable
-        let s = store::decode(json!({"games": [{"number": 1, "map": "A", "summary": {}}]})).unwrap();
+        let s =
+            store::decode(json!({"games": [{"number": 1, "map": "A", "summary": {}}]})).unwrap();
         assert_eq!((s.games.len(), s.games[0].summary.is_none()), (1, true));
     }
 
     #[tokio::test]
     async fn load_of_unreadable_row_returns_none() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         sqlx::query("INSERT INTO cast_live (id, state) VALUES (1, $1) ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state")
             .bind(json!({"scene": "nope", "blue": {"players": [{}, {}, {}]}}))
             .execute(&state.db)
             .await
             .unwrap();
         assert!(store::load(&state.db).await.is_none());
-        sqlx::query("UPDATE cast_live SET state = '[1]'::jsonb WHERE id = 1").execute(&state.db).await.unwrap();
+        sqlx::query("UPDATE cast_live SET state = '[1]'::jsonb WHERE id = 1")
+            .execute(&state.db)
+            .await
+            .unwrap();
         assert!(store::load(&state.db).await.is_none());
     }
 
     const PNG: [u8; 12] = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 1];
 
     async fn logo_rows(state: &AppState) -> i64 {
-        sqlx::query_scalar("SELECT count(*) FROM cast_logo").fetch_one(&state.db).await.unwrap()
+        sqlx::query_scalar("SELECT count(*) FROM cast_logo")
+            .fetch_one(&state.db)
+            .await
+            .unwrap()
     }
 
     async fn clear_logos(state: &AppState) {
-        sqlx::query("DELETE FROM cast_logo").execute(&state.db).await.unwrap();
+        sqlx::query("DELETE FROM cast_logo")
+            .execute(&state.db)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
     async fn logo_upload_stores_and_serves_same_bytes() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         clear_logos(&state).await;
-        let (st, bytes) = call_raw(&state, "POST", "/api/cast/logo/blue", Some("image/png"), PNG.to_vec()).await;
+        let (st, bytes) = call_raw(
+            &state,
+            "POST",
+            "/api/cast/logo/blue",
+            Some("image/png"),
+            PNG.to_vec(),
+        )
+        .await;
         assert_eq!(st, StatusCode::OK);
         let v: J = serde_json::from_slice(&bytes).unwrap();
         let url = v["blue"]["logo"].as_str().unwrap().to_string();
         assert!(url.starts_with("/api/cast/logo/blue?v="), "{url}");
-        assert_eq!(state.cast.read().await.blue.logo.as_deref(), Some(url.as_str()));
+        assert_eq!(
+            state.cast.read().await.blue.logo.as_deref(),
+            Some(url.as_str())
+        );
         let (st, got) = call_raw(&state, "GET", &url, None, vec![]).await;
         assert_eq!(st, StatusCode::OK);
         assert_eq!(got, PNG.to_vec());
         {
             use tower::util::ServiceExt;
-            let req = axum::http::Request::get(&url).body(axum::body::Body::empty()).unwrap();
+            let req = axum::http::Request::get(&url)
+                .body(axum::body::Body::empty())
+                .unwrap();
             let resp = crate::api_tests::app(&state).oneshot(req).await.unwrap();
             assert_eq!(resp.headers()[header::X_CONTENT_TYPE_OPTIONS], "nosniff");
             assert_eq!(resp.headers()[header::CONTENT_TYPE], "image/png");
@@ -925,11 +1189,27 @@ mod tests {
     #[tokio::test]
     async fn logo_over_512kb_is_413() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         clear_logos(&state).await;
-        let (st, _) = call_raw(&state, "POST", "/api/cast/logo/red", Some("image/png"), vec![1; 512 * 1024 + 1]).await;
+        let (st, _) = call_raw(
+            &state,
+            "POST",
+            "/api/cast/logo/red",
+            Some("image/png"),
+            vec![1; 512 * 1024 + 1],
+        )
+        .await;
         assert_eq!(st, StatusCode::PAYLOAD_TOO_LARGE);
-        let (st, _) = call_raw(&state, "POST", "/api/cast/logo/red", Some("image/png"), vec![1; 700 * 1024]).await;
+        let (st, _) = call_raw(
+            &state,
+            "POST",
+            "/api/cast/logo/red",
+            Some("image/png"),
+            vec![1; 700 * 1024],
+        )
+        .await;
         assert_eq!(st, StatusCode::PAYLOAD_TOO_LARGE);
         assert_eq!(logo_rows(&state).await, 0);
         let mut max = PNG.to_vec();
@@ -942,9 +1222,18 @@ mod tests {
     #[tokio::test]
     async fn logo_wrong_mime_is_415() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         clear_logos(&state).await;
-        let (st, _) = call_raw(&state, "POST", "/api/cast/logo/blue", Some("image/gif"), PNG.to_vec()).await;
+        let (st, _) = call_raw(
+            &state,
+            "POST",
+            "/api/cast/logo/blue",
+            Some("image/gif"),
+            PNG.to_vec(),
+        )
+        .await;
         assert_eq!(st, StatusCode::UNSUPPORTED_MEDIA_TYPE);
         let (st, _) = call_raw(&state, "POST", "/api/cast/logo/blue", None, PNG.to_vec()).await;
         assert_eq!(st, StatusCode::UNSUPPORTED_MEDIA_TYPE);
@@ -955,20 +1244,34 @@ mod tests {
     #[tokio::test]
     async fn logo_magic_bytes_must_match_declared_mime() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         clear_logos(&state).await;
         let jpeg = vec![0xFF, 0xD8, 0xFF, 0xE0, 0, 0x10];
         let mut webp = b"RIFF".to_vec();
         webp.extend([0x10, 0, 0, 0]);
         webp.extend(b"WEBPVP8 ");
         let svg = b"<svg onload=x>".to_vec();
-        for (mime, bytes) in [("image/png", jpeg.clone()), ("image/jpeg", PNG.to_vec()), ("image/webp", PNG.to_vec()), ("image/png", svg)] {
+        for (mime, bytes) in [
+            ("image/png", jpeg.clone()),
+            ("image/jpeg", PNG.to_vec()),
+            ("image/webp", PNG.to_vec()),
+            ("image/png", svg),
+        ] {
             let (st, b) = call_raw(&state, "POST", "/api/cast/logo/blue", Some(mime), bytes).await;
             assert_eq!(st, StatusCode::UNSUPPORTED_MEDIA_TYPE, "{mime}");
-            assert_eq!(serde_json::from_slice::<J>(&b).unwrap()["error"], "mime_mismatch");
+            assert_eq!(
+                serde_json::from_slice::<J>(&b).unwrap()["error"],
+                "mime_mismatch"
+            );
         }
         assert_eq!(logo_rows(&state).await, 0);
-        for (mime, bytes) in [("image/jpeg", jpeg), ("image/webp", webp), ("image/png", PNG.to_vec())] {
+        for (mime, bytes) in [
+            ("image/jpeg", jpeg),
+            ("image/webp", webp),
+            ("image/png", PNG.to_vec()),
+        ] {
             let (st, _) = call_raw(&state, "POST", "/api/cast/logo/blue", Some(mime), bytes).await;
             assert_eq!(st, StatusCode::OK, "{mime}");
         }
@@ -978,39 +1281,90 @@ mod tests {
     /// Item 6 : une entrée de toon > 64 octets → 400 `bad_toon`.
     #[tokio::test]
     async fn lineup_rejects_overlong_toon() {
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         let long = "x".repeat(65);
-        let (st, v) = call(&state, "GET", &format!("/api/cast/lineup?blue=a,{long}&red="), None).await;
-        assert_eq!((st, v["error"].as_str()), (StatusCode::BAD_REQUEST, Some("bad_toon")));
+        let (st, v) = call(
+            &state,
+            "GET",
+            &format!("/api/cast/lineup?blue=a,{long}&red="),
+            None,
+        )
+        .await;
+        assert_eq!(
+            (st, v["error"].as_str()),
+            (StatusCode::BAD_REQUEST, Some("bad_toon"))
+        );
         let ok = "x".repeat(64);
-        let (st, _) = call(&state, "GET", &format!("/api/cast/lineup?blue={ok}&red="), None).await;
+        let (st, _) = call(
+            &state,
+            "GET",
+            &format!("/api/cast/lineup?blue={ok}&red="),
+            None,
+        )
+        .await;
         assert_eq!(st, StatusCode::OK);
         assert_eq!(split_toons(""), Some(vec![]));
-        assert_eq!(split_toons(" a , ,b"), Some(vec!["a".to_owned(), String::new(), "b".to_owned()]));
+        assert_eq!(
+            split_toons(" a , ,b"),
+            Some(vec!["a".to_owned(), String::new(), "b".to_owned()])
+        );
     }
 
     /// R25 : `game` doit exister (0 = désépingler), `index` ≤ 99 ; refus → état inchangé.
     #[tokio::test]
     async fn slide_on_inactive_series_is_409_even_with_bad_index() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         *state.cast.write().await = crate::cast::Series::new();
-        let (st, v) = call(&state, "POST", "/api/cast/slide", Some(json!({"index":100}))).await;
-        assert_eq!((st, v["error"].as_str()), (StatusCode::CONFLICT, Some("SeriesInactive")));
+        let (st, v) = call(
+            &state,
+            "POST",
+            "/api/cast/slide",
+            Some(json!({"index":100})),
+        )
+        .await;
+        assert_eq!(
+            (st, v["error"].as_str()),
+            (StatusCode::CONFLICT, Some("SeriesInactive"))
+        );
     }
 
     #[tokio::test]
     async fn slide_rejects_unknown_game_and_index_over_99() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         call(&state, "POST", "/api/cast/series", Some(start_body())).await;
         let before = state.cast.read().await.clone();
         let (st, v) = call(&state, "POST", "/api/cast/slide", Some(json!({"game":1}))).await;
-        assert_eq!((st, v["error"].as_str()), (StatusCode::CONFLICT, Some("UnknownGame")));
-        let (st, v) = call(&state, "POST", "/api/cast/slide", Some(json!({"index":100}))).await;
-        assert_eq!((st, v["error"].as_str()), (StatusCode::BAD_REQUEST, Some("bad_index")));
+        assert_eq!(
+            (st, v["error"].as_str()),
+            (StatusCode::CONFLICT, Some("UnknownGame"))
+        );
+        let (st, v) = call(
+            &state,
+            "POST",
+            "/api/cast/slide",
+            Some(json!({"index":100})),
+        )
+        .await;
+        assert_eq!(
+            (st, v["error"].as_str()),
+            (StatusCode::BAD_REQUEST, Some("bad_index"))
+        );
         assert_eq!(*state.cast.read().await, before);
-        let (st, v) = call(&state, "POST", "/api/cast/slide", Some(json!({"index":99,"game":0}))).await;
+        let (st, v) = call(
+            &state,
+            "POST",
+            "/api/cast/slide",
+            Some(json!({"index":99,"game":0})),
+        )
+        .await;
         assert_eq!(st, StatusCode::OK);
         assert_eq!(v["slide"]["index"], 99);
     }
@@ -1018,11 +1372,27 @@ mod tests {
     #[tokio::test]
     async fn logo_empty_body_is_400() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         clear_logos(&state).await;
-        let (st, _) = call_raw(&state, "POST", "/api/cast/logo/blue", Some("image/png"), vec![]).await;
+        let (st, _) = call_raw(
+            &state,
+            "POST",
+            "/api/cast/logo/blue",
+            Some("image/png"),
+            vec![],
+        )
+        .await;
         assert_eq!(st, StatusCode::BAD_REQUEST);
-        let (st, _) = call_raw(&state, "POST", "/api/cast/logo/green", Some("image/png"), PNG.to_vec()).await;
+        let (st, _) = call_raw(
+            &state,
+            "POST",
+            "/api/cast/logo/green",
+            Some("image/png"),
+            PNG.to_vec(),
+        )
+        .await;
         assert_eq!(st, StatusCode::NOT_FOUND);
         assert_eq!(logo_rows(&state).await, 0);
     }
@@ -1030,7 +1400,9 @@ mod tests {
     #[tokio::test]
     async fn post_series_with_bad_bo_is_400_and_leaves_state() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         let before = state.cast.read().await.clone();
         for bo in [0, 2, 4, 9] {
             let mut b = start_body();
@@ -1042,24 +1414,56 @@ mod tests {
         assert_eq!(*state.cast.read().await, before);
         let mut b = start_body();
         b["bo"] = json!(7);
-        assert_eq!(call(&state, "POST", "/api/cast/series", Some(b)).await.0, StatusCode::OK);
+        assert_eq!(
+            call(&state, "POST", "/api/cast/series", Some(b)).await.0,
+            StatusCode::OK
+        );
     }
 
     #[tokio::test]
     async fn mutations_sync_into_draft_and_broadcast() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         call(&state, "POST", "/api/cast/series", Some(start_body())).await;
         {
             let d = state.draft.read().await;
-            assert_eq!((d.blue.name.as_str(), d.red.name.as_str(), d.bo, d.score), ("Blue Co", "Red Co", 5, [0, 0]));
+            assert_eq!(
+                (d.blue.name.as_str(), d.red.name.as_str(), d.bo, d.score),
+                ("Blue Co", "Red Co", 5, [0, 0])
+            );
         }
         let team = json!({"name":"T","players":[{"name":"p1"},{"name":"p2"},{},{},{}]});
-        call(&state, "PUT", "/api/cast/teams", Some(json!({"blue":team,"red":{"name":"R"}}))).await;
-        call(&state, "POST", "/api/cast/pool/map", Some(json!({"name":"A","status":"picked","by":"blue"}))).await;
-        call(&state, "POST", "/api/cast/games/start", Some(json!({"map":"A"}))).await;
+        call(
+            &state,
+            "PUT",
+            "/api/cast/teams",
+            Some(json!({"blue":team,"red":{"name":"R"}})),
+        )
+        .await;
+        call(
+            &state,
+            "POST",
+            "/api/cast/pool/map",
+            Some(json!({"name":"A","status":"picked","by":"blue"})),
+        )
+        .await;
+        call(
+            &state,
+            "POST",
+            "/api/cast/games/start",
+            Some(json!({"map":"A"})),
+        )
+        .await;
         let mut rx = state.events.subscribe();
-        call(&state, "POST", "/api/cast/games/1/winner", Some(json!({"side":"red"}))).await;
+        call(
+            &state,
+            "POST",
+            "/api/cast/games/1/winner",
+            Some(json!({"side":"red"})),
+        )
+        .await;
         {
             let d = state.draft.read().await;
             assert_eq!(d.blue.name, "T");
@@ -1070,8 +1474,18 @@ mod tests {
         while let Ok(e) = rx.try_recv() {
             seen.push(e["type"].as_str().unwrap_or("").to_string());
         }
-        assert!(seen.contains(&"draft.updated".to_string()) && seen.contains(&"cast.updated".to_string()), "{seen:?}");
-        call(&state, "POST", "/api/cast/score", Some(json!({"blue":3,"red":2}))).await;
+        assert!(
+            seen.contains(&"draft.updated".to_string())
+                && seen.contains(&"cast.updated".to_string()),
+            "{seen:?}"
+        );
+        call(
+            &state,
+            "POST",
+            "/api/cast/score",
+            Some(json!({"blue":3,"red":2})),
+        )
+        .await;
         assert_eq!(state.draft.read().await.score, [3, 2]);
     }
 
@@ -1080,24 +1494,62 @@ mod tests {
     #[tokio::test]
     async fn change_winner_and_remove_last_game() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         call(&state, "POST", "/api/cast/series", Some(start_body())).await;
         for (m, by) in [("A", "blue"), ("B", "red")] {
-            call(&state, "POST", "/api/cast/pool/map", Some(json!({"name":m,"status":"picked","by":by}))).await;
+            call(
+                &state,
+                "POST",
+                "/api/cast/pool/map",
+                Some(json!({"name":m,"status":"picked","by":by})),
+            )
+            .await;
         }
-        call(&state, "POST", "/api/cast/games/start", Some(json!({"map":"A"}))).await;
-        call(&state, "POST", "/api/cast/games/1/winner", Some(json!({"side":"blue"}))).await;
+        call(
+            &state,
+            "POST",
+            "/api/cast/games/start",
+            Some(json!({"map":"A"})),
+        )
+        .await;
+        call(
+            &state,
+            "POST",
+            "/api/cast/games/1/winner",
+            Some(json!({"side":"blue"})),
+        )
+        .await;
         assert_eq!(state.draft.read().await.score, [1, 0]);
-        let (st, v) = call(&state, "POST", "/api/cast/games/1/winner", Some(json!({"side":"red"}))).await;
+        let (st, v) = call(
+            &state,
+            "POST",
+            "/api/cast/games/1/winner",
+            Some(json!({"side":"red"})),
+        )
+        .await;
         assert_eq!(st, StatusCode::OK);
         assert_eq!(v["games"][0]["winner"], "red");
         assert_eq!(state.draft.read().await.score, [0, 1]);
-        assert_eq!(state.cast.read().await.lineup_mode_effective(), LineupMode::B);
+        assert_eq!(
+            state.cast.read().await.lineup_mode_effective(),
+            LineupMode::B
+        );
 
-        call(&state, "POST", "/api/cast/games/start", Some(json!({"map":"B"}))).await;
+        call(
+            &state,
+            "POST",
+            "/api/cast/games/start",
+            Some(json!({"map":"B"})),
+        )
+        .await;
         // partie 1 : pas la dernière ; partie 2 inconnue après retrait
         let (st, v) = call(&state, "DELETE", "/api/cast/games/1", None).await;
-        assert_eq!((st, v["error"].as_str()), (StatusCode::CONFLICT, Some("NotLastGame")));
+        assert_eq!(
+            (st, v["error"].as_str()),
+            (StatusCode::CONFLICT, Some("NotLastGame"))
+        );
         let mut rx = state.events.subscribe();
         let (st, v) = call(&state, "DELETE", "/api/cast/games/2", None).await;
         assert_eq!(st, StatusCode::OK);
@@ -1111,14 +1563,26 @@ mod tests {
         }
         assert!(seen.contains(&"cast.updated".to_string()), "{seen:?}");
         let (st, v) = call(&state, "DELETE", "/api/cast/games/2", None).await;
-        assert_eq!((st, v["error"].as_str()), (StatusCode::CONFLICT, Some("UnknownGame")));
+        assert_eq!(
+            (st, v["error"].as_str()),
+            (StatusCode::CONFLICT, Some("UnknownGame"))
+        );
         // partie 1 a un vainqueur : non retirable
         let before = state.cast.read().await.clone();
         let (st, v) = call(&state, "DELETE", "/api/cast/games/1", None).await;
-        assert_eq!((st, v["error"].as_str()), (StatusCode::CONFLICT, Some("GameHasResult")));
+        assert_eq!(
+            (st, v["error"].as_str()),
+            (StatusCode::CONFLICT, Some("GameHasResult"))
+        );
         assert_eq!(*state.cast.read().await, before);
         // la carte B se relance avec le même numéro
-        let (_, g) = call(&state, "POST", "/api/cast/games/start", Some(json!({"map":"B"}))).await;
+        let (_, g) = call(
+            &state,
+            "POST",
+            "/api/cast/games/start",
+            Some(json!({"map":"B"})),
+        )
+        .await;
         assert_eq!(g["number"], 2);
     }
 
@@ -1126,7 +1590,9 @@ mod tests {
     #[tokio::test]
     async fn older_snapshot_never_overwrites_newer_one() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         let (mut old, mut new) = (Series::new(), Series::new());
         old.scene = Scene::Series;
         new.scene = Scene::Draft;
@@ -1143,16 +1609,38 @@ mod tests {
     #[tokio::test]
     async fn interleaved_mutations_persist_and_sync_latest_state() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         call(&state, "POST", "/api/cast/series", Some(start_body())).await;
         for round in 0..20u8 {
             let (a, b) = (state.clone(), state.clone());
-            let ta = tokio::spawn(async move { call(&a, "POST", "/api/cast/score", Some(json!({"blue": round, "red": 0}))).await });
-            let tb = tokio::spawn(async move { call(&b, "POST", "/api/cast/score", Some(json!({"blue": 0, "red": round}))).await });
+            let ta = tokio::spawn(async move {
+                call(
+                    &a,
+                    "POST",
+                    "/api/cast/score",
+                    Some(json!({"blue": round, "red": 0})),
+                )
+                .await
+            });
+            let tb = tokio::spawn(async move {
+                call(
+                    &b,
+                    "POST",
+                    "/api/cast/score",
+                    Some(json!({"blue": 0, "red": round})),
+                )
+                .await
+            });
             assert_eq!(ta.await.unwrap().0, StatusCode::OK);
             assert_eq!(tb.await.unwrap().0, StatusCode::OK);
             let mem = state.cast.read().await.clone();
-            assert_eq!(store::load(&state.db).await.as_ref(), Some(&mem), "round {round}");
+            assert_eq!(
+                store::load(&state.db).await.as_ref(),
+                Some(&mem),
+                "round {round}"
+            );
             assert_eq!(state.draft.read().await.score, mem.score(), "round {round}");
         }
     }
@@ -1161,7 +1649,9 @@ mod tests {
     #[tokio::test]
     async fn sync_draft_copies_current_cast_state() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         call(&state, "POST", "/api/cast/series", Some(start_body())).await;
         {
             let mut c = state.cast.write().await;
@@ -1177,11 +1667,22 @@ mod tests {
     #[tokio::test]
     async fn failed_save_answers_500_persist_failed_but_applies_and_broadcasts() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         state.db.close().await;
         let mut rx = state.events.subscribe();
-        let (st, v) = call(&state, "POST", "/api/cast/scene", Some(json!({"scene":"lineups"}))).await;
-        assert_eq!((st, v["error"].as_str()), (StatusCode::INTERNAL_SERVER_ERROR, Some("persist_failed")));
+        let (st, v) = call(
+            &state,
+            "POST",
+            "/api/cast/scene",
+            Some(json!({"scene":"lineups"})),
+        )
+        .await;
+        assert_eq!(
+            (st, v["error"].as_str()),
+            (StatusCode::INTERNAL_SERVER_ERROR, Some("persist_failed"))
+        );
         assert_eq!(state.cast.read().await.scene, Scene::Lineups);
         assert_eq!(rx.recv().await.unwrap(), json!({"type":"cast.updated"}));
     }
@@ -1212,8 +1713,14 @@ mod tests {
     /// Item 3 : un `schema_version` plus récent est signalé mais l'état reste chargeable.
     #[test]
     fn newer_schema_is_detected_and_still_loads() {
-        assert_eq!(store::newer_schema(&json!({"schema_version": 99})), Some(99));
-        assert_eq!(store::newer_schema(&json!({"schema_version": crate::cast::SCHEMA_VERSION})), None);
+        assert_eq!(
+            store::newer_schema(&json!({"schema_version": 99})),
+            Some(99)
+        );
+        assert_eq!(
+            store::newer_schema(&json!({"schema_version": crate::cast::SCHEMA_VERSION})),
+            None
+        );
         assert_eq!(store::newer_schema(&json!({})), None);
         let s = store::decode(json!({"schema_version": 99, "bo": 3})).unwrap();
         assert_eq!((s.schema_version, s.bo), (99, 3));
@@ -1222,11 +1729,23 @@ mod tests {
     #[tokio::test]
     async fn scene_switch_to_overlay_poll_under_500ms() {
         let _g = DB_LOCK.lock().await;
-        let Some(state) = test_state(None).await else { return };
+        let Some(state) = test_state(None).await else {
+            return;
+        };
         let t0 = Instant::now();
-        call(&state, "POST", "/api/cast/scene", Some(json!({"scene":"series"}))).await;
+        call(
+            &state,
+            "POST",
+            "/api/cast/scene",
+            Some(json!({"scene":"series"})),
+        )
+        .await;
         let (_, v) = call(&state, "GET", "/api/cast", None).await;
         assert_eq!(v["scene"], "series");
-        assert!(t0.elapsed() < Duration::from_millis(500), "{:?}", t0.elapsed());
+        assert!(
+            t0.elapsed() < Duration::from_millis(500),
+            "{:?}",
+            t0.elapsed()
+        );
     }
 }

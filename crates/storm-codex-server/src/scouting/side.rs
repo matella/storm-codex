@@ -82,7 +82,11 @@ pub fn candidates(games: &[GameSummary], anchors: &[String]) -> Detection {
     let mut candidates: Vec<Candidate> = count
         .into_iter()
         .filter(|(_, (n, _))| total > 0 && *n * 2 >= total)
-        .map(|(toon, (n, name))| Candidate { toon: toon.into(), name: name.into(), games: n })
+        .map(|(toon, (n, name))| Candidate {
+            toon: toon.into(),
+            name: name.into(),
+            games: n,
+        })
         .collect();
     candidates.sort_by(|a, b| b.games.cmp(&a.games).then_with(|| a.name.cmp(&b.name)));
 
@@ -91,7 +95,10 @@ pub fn candidates(games: &[GameSummary], anchors: &[String]) -> Detection {
         && games.iter().any(|g| {
             side_toons(g, 0).any(|t| set.contains(t)) && side_toons(g, 1).any(|t| set.contains(t))
         });
-    Detection { candidates, ambiguous }
+    Detection {
+        candidates,
+        ambiguous,
+    }
 }
 
 /// Roster effectif : celui fixé par l'opérateur, sinon les candidats détectés (vide si le lot est
@@ -103,7 +110,11 @@ pub fn effective_roster(stored: &[String], detection: &Detection) -> Vec<String>
     if detection.ambiguous {
         return Vec::new();
     }
-    detection.candidates.iter().map(|c| c.toon.clone()).collect()
+    detection
+        .candidates
+        .iter()
+        .map(|c| c.toon.clone())
+        .collect()
 }
 
 /// Côté cible d'une partie par les règles automatiques (le choix manuel est géré par l'appelant,
@@ -161,7 +172,10 @@ pub(crate) mod tests {
 
     #[test]
     fn trois_du_roster_suffisent() {
-        let g = game(&["x1", "r1", "x2", "r2", "r3"], &["o1", "o2", "o3", "o4", "o5"]);
+        let g = game(
+            &["x1", "r1", "x2", "r2", "r3"],
+            &["o1", "o2", "o3", "o4", "o5"],
+        );
         let roster: Vec<String> = US.iter().map(|s| s.to_string()).collect();
         assert_eq!(detect(&g, &roster, &[]), Some((0, Source::Roster)));
         let g = game(&["o1", "o2", "o3", "o4", "o5"], &US);
@@ -170,15 +184,24 @@ pub(crate) mod tests {
 
     #[test]
     fn moins_de_trois_repli_sur_ancre_puis_rien() {
-        let g = game(&["r1", "r2", "x1", "x2", "x3"], &["o1", "o2", "o3", "o4", "o5"]);
+        let g = game(
+            &["r1", "r2", "x1", "x2", "x3"],
+            &["o1", "o2", "o3", "o4", "o5"],
+        );
         let roster: Vec<String> = US.iter().map(|s| s.to_string()).collect();
         assert_eq!(detect(&g, &roster, &[]), None);
-        assert_eq!(detect(&g, &roster, &["r2".into()]), Some((0, Source::Anchor)));
+        assert_eq!(
+            detect(&g, &roster, &["r2".into()]),
+            Some((0, Source::Anchor))
+        );
     }
 
     #[test]
     fn ancre_des_deux_cotes_ne_tranche_pas() {
-        let g = game(&["a", "x1", "x2", "x3", "x4"], &["a", "o2", "o3", "o4", "o5"]);
+        let g = game(
+            &["a", "x1", "x2", "x3", "x4"],
+            &["a", "o2", "o3", "o4", "o5"],
+        );
         assert_eq!(detect(&g, &[], &["a".into()]), None);
     }
 
@@ -187,7 +210,10 @@ pub(crate) mod tests {
         let games = vec![
             game(&US, &["o1", "o2", "o3", "o4", "o5"]),
             game(&US, &["p1", "p2", "p3", "p4", "p5"]),
-            game(&["r1", "r2", "r3", "r4", "sub"], &["q1", "q2", "q3", "q4", "q5"]),
+            game(
+                &["r1", "r2", "r3", "r4", "sub"],
+                &["q1", "q2", "q3", "q4", "q5"],
+            ),
         ];
         let d = candidates(&games, &[]);
         assert!(!d.ambiguous);
@@ -215,7 +241,10 @@ pub(crate) mod tests {
 
     #[test]
     fn roster_fixe_prioritaire() {
-        let d = Detection { candidates: Vec::new(), ambiguous: true };
+        let d = Detection {
+            candidates: Vec::new(),
+            ambiguous: true,
+        };
         assert_eq!(effective_roster(&["z".into()], &d), vec!["z".to_string()]);
     }
 }

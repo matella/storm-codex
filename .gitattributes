@@ -9,3 +9,6 @@ CLAUDE.md text eol=lf
 gads/** text eol=lf
 .claude/agents/** text eol=lf
 .claude/settings.json text eol=lf
+
+# scripts shell exécutés en CI (Linux)
+*.sh text eol=lf

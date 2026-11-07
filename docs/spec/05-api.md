@@ -42,9 +42,13 @@ les routes marquées 🔒 exigent `Authorization: Bearer` (token d'upload nomina
 | `PUT /api/admin/settings` | écrit `app_settings` (ex. `operator_names`) |
 | `GET/POST /api/teams` · `PUT/DELETE /api/teams/{id}` | équipes (+ champ `league`) |
 | `GET/POST /api/collections` · `DELETE /api/collections/{id}` | collections de matchs |
-| `POST /api/admin/tokens` · `DELETE /api/admin/tokens/{id}` | tokens d'upload nominatifs (le clair n'est montré qu'à la création) |
+| `POST /api/admin/tokens` · `DELETE /api/admin/tokens/{id}` | tokens d'upload nominatifs (le clair n'est montré qu'à la création) ; révocation idempotente (date de la 1re révocation gardée), `404` si l'id n'existe pas |
 | `GET /api/admin/uploads` | santé des uploads (statuts, classes d'échec) |
 | `POST /api/admin/reprocess` | re-parse idempotent (piloté par `parser_version`) ; couvre aussi `scouting_games`, puis recalcule les rapports touchés |
+
+Toute écriture de cette section répond `500 {"error":"db"}` si la base échoue (avant : `200`
+même en cas d'échec). Supprimer une équipe ou une collection absente reste `200` (idempotent).
+Le Bearer admin est comparé par empreinte SHA-256, sans sortie anticipée.
 
 ## Scouting (`scouting/api.rs`) — écritures 🔒 si `ADMIN_TOKEN` défini
 
@@ -67,6 +71,15 @@ jamais dans `uploads`/`matches`/`match_players`. Toute mutation relance le recal
 | `PUT /api/scouting/{id}/analysis` 🔒 | corps = texte brut de la réponse du LLM ; extrait/valide/écrase → `{warnings, tally}` ; `422` si JSON introuvable/invalide, `format_version` ≠ 2 (plan de draft carte par carte ; la v1 est refusée) ou `report_id` d'un autre rapport (rien n'est écrasé) |
 | `DELETE /api/scouting/{id}/analysis` 🔒 | retire l'analyse |
 
+## Écritures de la régie, du draft et du lobby — 🔒 si `ADMIN_TOKEN` défini
+
+Toute requête **non GET/HEAD/OPTIONS** sur `/api/cast`, `/api/cast/*`, `/api/draft`,
+`/api/draft/*`, `/api/lobby` ou `/api/lobby/*` (sauf `POST /api/lobby`, ingestion authentifiée
+par token d'upload) exige `Authorization: Bearer <ADMIN_TOKEN>` quand `ADMIN_TOKEN` est défini, sinon
+`401 {"error":"admin token requis"}` (middleware `auth::guard_writes`, avant le handler). Les
+lectures restent libres (les overlays OBS n'envoient pas de token). En mode ouvert (pas
+d'`ADMIN_TOKEN`), rien ne change. Le front envoie le token saisi dans Admin (`authHeaders()`).
+
 ## Simulateur de draft (`draft/api.rs`)
 
 `GET /api/draft` (état) · `POST /api/draft/config` · `/action` (pick/ban) · `/undo` · `/reset` ·
@@ -87,7 +100,7 @@ est la source de vérité) ; `/config` reste accepté mais ignore `blue`/`red`/`
 serveur, s'arrête à la fin du draft) · `POST …/replay/queue/move {from,to}` · `DELETE …/replay/queue/{i}`.
 Spec : `docs/specs/2026-10-25-draft-replay-design.md`.
 
-## Régie de cast (`cast/api.rs`, mode ouvert)
+## Régie de cast (`cast/api.rs`) — écritures 🔒 si `ADMIN_TOKEN` défini (voir plus haut)
 
 `GET /api/cast` (→ `Series`) · `POST /api/cast/series {blue:Team, red:Team, bo, format, pool:[nom]}`
 (`blue`/`red` = équipe complète — nom, bilan, joueurs, capitaine, logo — tous champs optionnels, `{name}` seul accepté ; un `logo` absent garde le logo en place ; crée/redémarre en un seul appel : nouvelle identité `series_id` (uuid), `active=true`, parties/score/diaporama remis à zéro, scène conservée ; **draft aligné (R20)** : le moteur de draft reprend `format` et `steps` de la série, partie neuve (curseur 0) et nouvelle série (historique et series bans vidés), en gardant map, first_pick, prébans manuels, file de replays (conservée, mais partie courante désélectionnée et lecture auto stoppée, comme `/api/draft/config`) et équipes synchronisées (`DraftState::align_to_series`) ; `bo` ∈ {1,3,5,7}
@@ -171,7 +184,9 @@ changement de statut → WS `live.updated` (signal seul).
 ## Statique
 
 `/` = SPA (fallback `index.html` en `no-cache` — un redeploy change le hash du bundle) ;
-`/images` = portraits héros + fonds de carte vendorisés ; `/assets` = bundle Vite fingerprinté.
+`/images` = portraits héros + fonds de carte vendorisés ; `/assets` = bundle Vite fingerprinté,
+servi en `Cache-Control: public, max-age=31536000, immutable` (asset absent → 404). Réponses
+compressées gzip/brotli selon `Accept-Encoding`.
 
 ## WebSocket `/ws`
 

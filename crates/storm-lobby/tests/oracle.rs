@@ -11,7 +11,9 @@ use std::path::{Path, PathBuf};
 use storm_lobby::LobbyPlayer;
 
 fn data(rel: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(rel)
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(rel)
 }
 
 /// Les replays committés dans le workspace.
@@ -113,7 +115,9 @@ fn les_hashes_de_carte_sont_extraits() {
         "aucun hash .s2ma extrait — le rapport de format en documente 9"
     );
     assert!(
-        hashes.iter().all(|h| h.len() == 32 && h.chars().all(|c| c.is_ascii_hexdigit())),
+        hashes
+            .iter()
+            .all(|h| h.len() == 32 && h.chars().all(|c| c.is_ascii_hexdigit())),
         "hash mal formé : {hashes:?}"
     );
 }
@@ -128,7 +132,10 @@ fn la_carte_deduite_ne_ment_jamais() {
         let out = storm_stats::process_replay(&path, filename);
         assert_eq!(out.status, 1, "{label} : parse complet rejeté");
         let json = out.to_json();
-        let attendue = json["match"]["map"].as_str().unwrap_or_default().to_string();
+        let attendue = json["match"]["map"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
 
         if let Some(deduite) = lobby_of(&path).map {
             assert_eq!(deduite, attendue, "{label} : carte déduite fausse");
@@ -141,7 +148,8 @@ fn la_carte_deduite_ne_ment_jamais() {
 /// dans les parties européennes — sans échouer, ce qui est pire. Cf. le rapport de format, Q1.
 #[test]
 fn battletag_non_ascii_est_decode() {
-    let path = data("crates/storm-replay/tests/data/2026-06-09 20.35.02 Industrial District.StormReplay");
+    let path =
+        data("crates/storm-replay/tests/data/2026-06-09 20.35.02 Industrial District.StormReplay");
     let lobby = lobby_of(&path);
     assert!(
         lobby
@@ -149,6 +157,10 @@ fn battletag_non_ascii_est_decode() {
             .iter()
             .any(|p| p.name == "ЛовкийЭльф" && p.discriminant == "215346"),
         "BattleTag cyrillique absent — décodés : {:?}",
-        lobby.players.iter().map(LobbyPlayer::battletag).collect::<Vec<_>>()
+        lobby
+            .players
+            .iter()
+            .map(LobbyPlayer::battletag)
+            .collect::<Vec<_>>()
     );
 }

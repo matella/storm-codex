@@ -23,7 +23,10 @@ pub(super) fn newer_schema(v: &serde_json::Value) -> Option<i64> {
 /// de lecture en base est journalisée en `error` ; un JSON illisible en `warn` (cas distincts).
 pub async fn load(db: &PgPool) -> Option<Series> {
     let row: Option<serde_json::Value> =
-        match sqlx::query_scalar("SELECT state FROM cast_live WHERE id = 1").fetch_optional(db).await {
+        match sqlx::query_scalar("SELECT state FROM cast_live WHERE id = 1")
+            .fetch_optional(db)
+            .await
+        {
             Ok(r) => r,
             Err(e) => {
                 tracing::error!("cast load: lecture de cast_live impossible ({e}) — série neuve");
@@ -32,7 +35,10 @@ pub async fn load(db: &PgPool) -> Option<Series> {
         };
     let v = row?;
     if let Some(n) = newer_schema(&v) {
-        tracing::warn!("cast load: schema_version {n} plus récent que le code ({}) — lecture tolérante", super::SCHEMA_VERSION);
+        tracing::warn!(
+            "cast load: schema_version {n} plus récent que le code ({}) — lecture tolérante",
+            super::SCHEMA_VERSION
+        );
     }
     let s = decode(v);
     if s.is_none() {

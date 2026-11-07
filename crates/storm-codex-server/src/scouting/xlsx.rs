@@ -19,7 +19,10 @@ fn header(ws: &mut Worksheet, cols: &[&str], bold: &Format) -> Result<(), XlsxEr
 }
 
 fn picks(ps: &[GamePick]) -> String {
-    ps.iter().map(|p| format!("{} ({})", p.hero, p.player)).collect::<Vec<_>>().join(", ")
+    ps.iter()
+        .map(|p| format!("{} ({})", p.hero, p.player))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 pub fn workbook(meta: &PackMeta, f: &Facts) -> Result<Vec<u8>, XlsxError> {
@@ -75,8 +78,22 @@ pub fn workbook(meta: &PackMeta, f: &Facts) -> Result<Vec<u8>, XlsxError> {
     header(
         ws,
         &[
-            "id", "name", "status", "games", "wins", "win %", "kills", "deaths", "assists", "KP %",
-            "hero dmg/min", "siege/min", "healing/min", "dmg taken/min", "XP/min", "time dead %",
+            "id",
+            "name",
+            "status",
+            "games",
+            "wins",
+            "win %",
+            "kills",
+            "deaths",
+            "assists",
+            "KP %",
+            "hero dmg/min",
+            "siege/min",
+            "healing/min",
+            "dmg taken/min",
+            "XP/min",
+            "time dead %",
         ],
         &bold,
     )?;
@@ -90,8 +107,16 @@ pub fn workbook(meta: &PackMeta, f: &Facts) -> Result<Vec<u8>, XlsxError> {
         ws.write(row, 4, p.record.k)?;
         ws.write(row, 5, pct(p.record))?;
         let nums = [
-            s.kills, s.deaths, s.assists, s.kill_participation_pct, s.hero_damage_pm,
-            s.siege_damage_pm, s.healing_pm, s.damage_taken_pm, s.xp_pm, s.time_dead_pct,
+            s.kills,
+            s.deaths,
+            s.assists,
+            s.kill_participation_pct,
+            s.hero_damage_pm,
+            s.siege_damage_pm,
+            s.healing_pm,
+            s.damage_taken_pm,
+            s.xp_pm,
+            s.time_dead_pct,
         ];
         for (j, v) in nums.iter().enumerate() {
             ws.write(row, 6 + j as u16, (v * 10.0).round() / 10.0)?;
@@ -100,7 +125,11 @@ pub fn workbook(meta: &PackMeta, f: &Facts) -> Result<Vec<u8>, XlsxError> {
 
     // Heroes
     let ws = wb.add_worksheet().set_name("Heroes")?;
-    header(ws, &["player id", "player", "hero", "games", "wins", "win %"], &bold)?;
+    header(
+        ws,
+        &["player id", "player", "hero", "games", "wins", "win %"],
+        &bold,
+    )?;
     let mut row = 1;
     for p in &f.players {
         for h in &p.heroes {
@@ -116,8 +145,27 @@ pub fn workbook(meta: &PackMeta, f: &Facts) -> Result<Vec<u8>, XlsxError> {
 
     // Maps
     let ws = wb.add_worksheet().set_name("Maps")?;
-    header(ws, &["map", "games", "wins", "win %", "95% CI low", "95% CI high", "their bans", "bans against them", "their picks"], &bold)?;
-    let list = |cs: &[Count]| cs.iter().map(|c| format!("{} ×{}", c.key, c.count.k)).collect::<Vec<_>>().join(", ");
+    header(
+        ws,
+        &[
+            "map",
+            "games",
+            "wins",
+            "win %",
+            "95% CI low",
+            "95% CI high",
+            "their bans",
+            "bans against them",
+            "their picks",
+        ],
+        &bold,
+    )?;
+    let list = |cs: &[Count]| {
+        cs.iter()
+            .map(|c| format!("{} ×{}", c.key, c.count.k))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
     for (i, m) in f.maps.iter().enumerate() {
         let row = i as u32 + 1;
         ws.write(row, 0, m.map.as_str())?;
@@ -130,13 +178,22 @@ pub fn workbook(meta: &PackMeta, f: &Facts) -> Result<Vec<u8>, XlsxError> {
         }
         ws.write(row, 6, list(&m.bans))?;
         ws.write(row, 7, list(&m.bans_against))?;
-        let pk = m.picks.iter().map(|h| format!("{} ×{}", h.hero, h.picks.k)).collect::<Vec<_>>().join(", ");
+        let pk = m
+            .picks
+            .iter()
+            .map(|h| format!("{} ×{}", h.hero, h.picks.k))
+            .collect::<Vec<_>>()
+            .join(", ");
         ws.write(row, 8, pk)?;
     }
 
     // Draft
     let ws = wb.add_worksheet().set_name("Draft")?;
-    header(ws, &["category", "hero / role", "count", "out of games", "%"], &bold)?;
+    header(
+        ws,
+        &["category", "hero / role", "count", "out of games", "%"],
+        &bold,
+    )?;
     let d = &f.draft;
     let mut row = 1;
     for (cat, r) in [
@@ -172,20 +229,43 @@ pub fn workbook(meta: &PackMeta, f: &Facts) -> Result<Vec<u8>, XlsxError> {
     let ws = wb.add_worksheet().set_name("Games")?;
     header(
         ws,
-        &["date", "map", "result", "length (min)", "first pick", "their bans", "bans against them", "their picks", "opponent picks", "opponents"],
+        &[
+            "date",
+            "map",
+            "result",
+            "length (min)",
+            "first pick",
+            "their bans",
+            "bans against them",
+            "their picks",
+            "opponent picks",
+            "opponents",
+        ],
         &bold,
     )?;
     for (i, g) in f.games.iter().enumerate() {
         let row = i as u32 + 1;
-        ws.write(row, 0, g.date.as_deref().and_then(|d| d.get(..16)).unwrap_or("?").replace('T', " "))?;
+        ws.write(
+            row,
+            0,
+            g.date
+                .as_deref()
+                .and_then(|d| d.get(..16))
+                .unwrap_or("?")
+                .replace('T', " "),
+        )?;
         ws.write(row, 1, g.map.as_str())?;
         ws.write(row, 2, if g.won { "win" } else { "loss" })?;
         ws.write(row, 3, (g.length_s / 6.0).round() / 10.0)?;
-        ws.write(row, 4, match g.first_pick {
-            Some(true) => "them",
-            Some(false) => "opponent",
-            None => "?",
-        })?;
+        ws.write(
+            row,
+            4,
+            match g.first_pick {
+                Some(true) => "them",
+                Some(false) => "opponent",
+                None => "?",
+            },
+        )?;
         ws.write(row, 5, g.bans.join(", "))?;
         ws.write(row, 6, g.bans_against.join(", "))?;
         ws.write(row, 7, picks(&g.picks))?;
@@ -206,10 +286,26 @@ mod tests {
 
     #[test]
     fn classeur_genere() {
-        let g = game(&["r1", "r2", "r3", "r4", "r5"], &["o1", "o2", "o3", "o4", "o5"]);
-        let gi = [GameInput { gid: 1, summary: &g, side: 0 }];
+        let g = game(
+            &["r1", "r2", "r3", "r4", "r5"],
+            &["o1", "o2", "o3", "o4", "o5"],
+        );
+        let gi = [GameInput {
+            gid: 1,
+            summary: &g,
+            side: 0,
+        }];
         let f = compute(&gi, &[], 0, &HashMap::new());
-        let bytes = workbook(&PackMeta { report_id: 1, facts_version: 1, title: "t", target_name: None }, &f).unwrap();
+        let bytes = workbook(
+            &PackMeta {
+                report_id: 1,
+                facts_version: 1,
+                title: "t",
+                target_name: None,
+            },
+            &f,
+        )
+        .unwrap();
         assert!(bytes.len() > 1000);
         assert_eq!(&bytes[..2], b"PK"); // .xlsx = archive ZIP
     }
