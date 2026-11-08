@@ -29,6 +29,9 @@ pub struct Output {
     /// `toon_handle → m_hotkeyProfile` (SUserOptionsEvent). Hors `to_json` : extension storm-codex,
     /// non comparée au harnais de parité Node.
     pub hotkey_profiles: HashMap<String, String>,
+    /// `toon_handle → nombre de `SCmdEvent`` (commandes) émis pendant la partie (hors chargement) ;
+    /// base de l'APM. Hors `to_json`, comme `hotkey_profiles`.
+    pub actions: HashMap<String, i64>,
 }
 
 impl Output {
@@ -38,6 +41,7 @@ impl Output {
             match_: None,
             players: None,
             hotkey_profiles: HashMap::new(),
+            actions: HashMap::new(),
         }
     }
 
@@ -941,6 +945,7 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
     // ===== messages + BM (taunts/dances/bsteps) — parser.js:2214-2346 =====
     // (with/against dépendent de match.teams complet → T7)
     let mut hotkey_profiles: HashMap<String, String> = HashMap::new();
+    let mut actions: HashMap<String, i64> = HashMap::new();
     process_messages_and_bm(
         &data,
         &mut match_,
@@ -948,6 +953,7 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
         &player_lobby_id,
         loop_game_start,
         &mut hotkey_profiles,
+        &mut actions,
     )?;
 
     // ===== collectTeamStats, partie structures (parser.js:2659+, 2704-2729) =====
@@ -1236,5 +1242,6 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
         match_: Some(match_),
         players: Some(players),
         hotkey_profiles,
+        actions,
     })
 }

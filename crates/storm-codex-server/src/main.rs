@@ -33,7 +33,7 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock, Semaphore};
 
 /// Version du projecteur — bumper quand la projection change ; pilote le re-process idempotent.
-pub const PARSER_VERSION: i32 = 3;
+pub const PARSER_VERSION: i32 = 4;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -963,6 +963,73 @@ pub(crate) mod api_tests {
     }
 
     #[tokio::test]
+    async fn apm_par_partie_et_moyenne_par_joueur() {
+        use crate::players::testutil::{insert_match, row, uid};
+        let Some(state) = test_state(None).await else {
+            return;
+        };
+        let u = uid();
+        let (a, b) = (format!("t-pa{u}"), format!("t-pb{u}"));
+        let m1 = insert_match(
+            &state.db,
+            None,
+            &[row(&a, "A", 0, "Muradin"), row(&b, "B", 1, "Diablo")],
+        )
+        .await;
+        let m2 = insert_match(
+            &state.db,
+            None,
+            &[row(&a, "A", 0, "Muradin"), row(&b, "B", 1, "Diablo")],
+        )
+        .await;
+        let m3 = insert_match(&state.db, None, &[row(&a, "A", 0, "Muradin")]).await;
+        // A : 100 puis 140 APM, plus une partie d'avant le re-process (NULL, hors moyenne) ; B : 60
+        for (m, toon, apm) in [
+            (m1, &a, Some(100.0)),
+            (m2, &a, Some(140.0)),
+            (m3, &a, None),
+            (m1, &b, Some(60.0)),
+        ] {
+            sqlx::query(
+                "UPDATE match_players SET apm = $3 WHERE match_id = $1 AND toon_handle = $2",
+            )
+            .bind(m)
+            .bind(toon)
+            .bind(apm)
+            .execute(&state.db)
+            .await
+            .unwrap();
+        }
+        let get = |uri: String| {
+            let st = state.clone();
+            async move {
+                json_body(
+                    app(&st)
+                        .oneshot(Request::get(uri).body(Body::empty()).unwrap())
+                        .await
+                        .unwrap(),
+                )
+                .await
+            }
+        };
+        let va = get(format!("/api/players/{a}")).await;
+        assert_eq!(va["avg_apm"], 120, "moyenne des parties mesurées seulement");
+        assert_eq!(va["apm_games"], 2);
+        let recent = va["recent"].as_array().unwrap();
+        assert!(recent
+            .iter()
+            .any(|g| g["match_id"] == m1 && g["apm"] == 100));
+        assert!(recent
+            .iter()
+            .any(|g| g["match_id"] == m3 && g["apm"].is_null()));
+        let vb = get(format!("/api/players/{b}")).await;
+        assert_eq!(vb["avg_apm"], 60);
+        let md = get(format!("/api/matches/{m1}")).await;
+        assert_eq!(md["players"][&a]["apm"], 100.0);
+        assert_eq!(md["players"][&b]["apm"], 60.0);
+    }
+
+    #[tokio::test]
     async fn chat_habitudes_comptees_pour_le_bon_joueur() {
         use crate::players::testutil::{insert_match, row, uid};
         let Some(state) = test_state(None).await else {
@@ -1477,6 +1544,7 @@ pub(crate) mod api_tests {
             serde_json::from_str(include_str!("draft/fixtures/custom_draft.json")).unwrap();
         let out = storm_stats::Output {
             hotkey_profiles: Default::default(),
+            actions: Default::default(),
             status: 1,
             match_: fx["match"].as_object().cloned(),
             players: fx["players"].as_object().cloned(),

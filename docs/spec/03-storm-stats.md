@@ -26,7 +26,7 @@ avant/après sur les 114 replays du corpus local, et diff de parité re-vert (11
 
 ## Parité : la règle
 
-**Extension storm-codex hors parité** : `Output.hotkey_profiles` (`toon → m_hotkeyProfile`, `SUserOptionsEvent`), absent de `to_json` donc du diff Node.
+**Extension storm-codex hors parité** : `Output.actions` (`toon → nombre de SCmdEvent` après le début de partie, base de l'APM, absent de `to_json`) ; `Output.hotkey_profiles` (`toon → m_hotkeyProfile`, `SUserOptionsEvent`), absent de `to_json` donc du diff Node.
 
 **Prouvée, pas déclarée.** Le harnais `tools/parity-harness/` (`dump.js` côté Node, `diff.py`,
 `tolerances.json`) diffe champ par champ contre hots-parser 7.55.7 sur le corpus de référence :

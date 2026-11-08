@@ -33,12 +33,13 @@ function TalentStrip({ talents }: { talents: Record<string, string> | undefined 
 
 /** Colonnes du tableau de score. `adv` = colonnes étendues (masquées par défaut) ; `bar` = jauge
  *  relative au max de la partie ; `total` = sommée dans la ligne « Team total ». */
-const COLS: { label: string; get: (g: any) => number; adv?: boolean; total?: boolean; bar?: boolean }[] = [
+const COLS: { label: string; get: (g: any, p?: any) => number; adv?: boolean; total?: boolean; bar?: boolean }[] = [
   { label: "Hero dmg", get: (g) => num(g.HeroDamage), total: true, bar: true },
   { label: "Siege", get: (g) => num(g.SiegeDamage), total: true, bar: true },
   { label: "Healing", get: (g) => num(g.Healing), total: true, bar: true },
   { label: "XP", get: (g) => num(g.ExperienceContribution), total: true, bar: true },
   { label: "Lvl", get: (g) => num(g.Level) },
+  { label: "APM", get: (_g, p) => num(p?.apm) },
   { label: "Spell", get: (g) => num(g.SpellDamage), adv: true, total: true, bar: true },
   { label: "Taken", get: (g) => num(g.DamageTaken), adv: true, total: true, bar: true },
   { label: "Self-heal", get: (g) => num(g.SelfHealing), adv: true, total: true },
@@ -75,9 +76,9 @@ function ScoreTable({ players, team, label, adv, meToon, max }: {
                 {cols.map((c) => (
                   <td key={c.label}>
                     {c.bar ? (
-                      <div className="ds-cell"><span>{fmtK(c.get(g))}</span>
-                        <i className={red ? "ds-bar red" : "ds-bar"}><b style={{ width: `${Math.round((c.get(g) * 100) / (max[c.label] || 1))}%` }} /></i></div>
-                    ) : <span className="ds-num">{fmtN(c.get(g))}</span>}
+                      <div className="ds-cell"><span>{fmtK(c.get(g, p))}</span>
+                        <i className={red ? "ds-bar red" : "ds-bar"}><b style={{ width: `${Math.round((c.get(g, p) * 100) / (max[c.label] || 1))}%` }} /></i></div>
+                    ) : <span className="ds-num">{fmtN(c.get(g, p))}</span>}
                   </td>
                 ))}
               </tr>,
@@ -87,7 +88,7 @@ function ScoreTable({ players, team, label, adv, meToon, max }: {
           <tr className="total">
             <td>Team total</td>
             <td>{rows.reduce((s, p) => s + num(p.gameStats?.SoloKill), 0)}/{rows.reduce((s, p) => s + num(p.gameStats?.Deaths), 0)}</td>
-            {cols.map((c) => <td key={c.label}>{c.total ? fmtN(rows.reduce((s, p) => s + c.get(p.gameStats ?? {}), 0)) : ""}</td>)}
+            {cols.map((c) => <td key={c.label}>{c.total ? fmtN(rows.reduce((s, p) => s + c.get(p.gameStats ?? {}, p), 0)) : ""}</td>)}
           </tr>
         </tbody>
       </table>
@@ -280,7 +281,7 @@ export function MatchDetail() {
   const sideCls = (t: number | null | undefined) => (t == null || t < 0 ? "" : t === 0 ? "ds-us" : "ds-them");
   const teamLabel = (t: number) => (myTeam == null ? (t === 0 ? "Blue team" : "Red team") : t === myTeam ? "Your team" : "Enemy team");
   const maxes: Record<string, number> = {};
-  for (const c of COLS) maxes[c.label] = Math.max(1, ...players.map((p: any) => c.get(p.gameStats ?? {})));
+  for (const c of COLS) maxes[c.label] = Math.max(1, ...players.map((p: any) => c.get(p.gameStats ?? {}, p)));
   const fort = (Object.values(m.structures ?? {}) as any[]).filter((s) => s?.destroyed != null && s?.name === "Fort").sort((a, b) => a.destroyed - b.destroyed)[0];
   const marks = fort ? [{ t: fort.destroyed, label: `first fort · ${side(fort.team === 0 ? 1 : 0).toLowerCase()} ${myTeam == null ? "team takes it" : "take it"}` }] : [];
   const order = myTeam == null ? [0, 1] : [myTeam, 1 - myTeam];
