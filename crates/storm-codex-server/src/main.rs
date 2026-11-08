@@ -275,6 +275,7 @@ fn api_router(state: &AppState) -> Router<AppState> {
         .route("/api/players/search", get(players::api::search))
         .route("/api/players/{toon}", get(read::get_player))
         .route("/api/players/{toon}/identity", get(players::api::identity))
+        .route("/api/players/{toon}/chat", get(players::api::chat))
         .route(
             "/api/players/{toon}/links/{other}",
             axum::routing::put(players::api::put_link),
@@ -959,6 +960,62 @@ pub(crate) mod api_tests {
             );
             assert!(v["confirmed"].as_array().unwrap().is_empty());
         }
+    }
+
+    #[tokio::test]
+    async fn chat_habitudes_comptees_pour_le_bon_joueur() {
+        use crate::players::testutil::{insert_match, row, uid};
+        let Some(state) = test_state(None).await else {
+            return;
+        };
+        let u = uid();
+        let (a, b) = (format!("t-ca{u}"), format!("t-cb{u}"));
+        let id = insert_match(
+            &state.db,
+            None,
+            &[row(&a, "A", 0, "Muradin"), row(&b, "B", 1, "Diablo")],
+        )
+        .await;
+        let msg = |player: &str, ty: i64, text: &str| serde_json::json!({"type": ty, "player": player, "recipient": 1, "time": 60.0, "text": text});
+        let messages = serde_json::json!([
+            msg(&a, 0, "noob"),
+            msg(&a, 0, "noob"),
+            msg(&a, 0, "noob"),
+            msg(&b, 0, "salut"),
+            msg(&a, 4, "annonce")
+        ]);
+        sqlx::query("UPDATE matches SET data = jsonb_build_object('messages', $2::jsonb), length = 600 WHERE id = $1")
+            .bind(id)
+            .bind(messages)
+            .execute(&state.db)
+            .await
+            .unwrap();
+        let get = |toon: String| {
+            let st = state.clone();
+            async move {
+                app(&st)
+                    .oneshot(
+                        Request::get(format!("/api/players/{toon}/chat"))
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap()
+            }
+        };
+        let va = json_body(get(a.clone()).await).await;
+        assert_eq!(va["messages"], 3);
+        assert_eq!(
+            va["top_words"],
+            serde_json::json!([{"word": "noob", "count": 3}])
+        );
+        assert!(!va.to_string().contains("annonce"), "aucun texte exposé");
+        let vb = json_body(get(b.clone()).await).await;
+        assert_eq!(vb["messages"], 1);
+        assert_eq!(
+            get(format!("inconnu-{u}")).await.status(),
+            StatusCode::NOT_FOUND
+        );
     }
 
     /// Codes attribut des bans → noms parser (attr.json), y compris les codes en capitales.

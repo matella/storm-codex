@@ -1,6 +1,6 @@
 //! Routes `/api/players/*` de la recherche et de l'identité (spec recherche-joueurs).
 
-use super::{identity, names, profiles, search};
+use super::{chat, identity, names, profiles, search};
 use crate::AppState;
 use axum::{
     extract::{Path, Query, State},
@@ -81,6 +81,15 @@ pub async fn identity(State(s): State<AppState>, Path(toon): Path<String>) -> Re
         "suggestions": suggestions,
         "confirmed": confirmed,
     })))
+}
+
+/// GET /api/players/{toon}/chat — habitudes de chat (mesures seulement, jamais le texte).
+pub async fn chat(State(s): State<AppState>, Path(toon): Path<String>) -> Resp {
+    if !known(&s.db, &toon).await.map_err(db_err)? {
+        return Err(err(StatusCode::NOT_FOUND, "joueur inconnu"));
+    }
+    let (games, rows) = chat::load_rows(&s.db, &toon).await.map_err(db_err)?;
+    Ok(Json(json!(chat::habits(games, &rows))))
 }
 
 #[derive(Deserialize, Clone, Copy)]
