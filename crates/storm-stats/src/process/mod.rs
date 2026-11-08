@@ -26,6 +26,9 @@ pub struct Output {
     pub status: i64,
     pub match_: Option<Map<String, J>>,
     pub players: Option<Map<String, J>>,
+    /// `toon_handle → m_hotkeyProfile` (SUserOptionsEvent). Hors `to_json` : extension storm-codex,
+    /// non comparée au harnais de parité Node.
+    pub hotkey_profiles: HashMap<String, String>,
 }
 
 impl Output {
@@ -34,6 +37,7 @@ impl Output {
             status,
             match_: None,
             players: None,
+            hotkey_profiles: HashMap::new(),
         }
     }
 
@@ -936,12 +940,14 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
 
     // ===== messages + BM (taunts/dances/bsteps) — parser.js:2214-2346 =====
     // (with/against dépendent de match.teams complet → T7)
+    let mut hotkey_profiles: HashMap<String, String> = HashMap::new();
     process_messages_and_bm(
         &data,
         &mut match_,
         &mut players,
         &player_lobby_id,
         loop_game_start,
+        &mut hotkey_profiles,
     )?;
 
     // ===== collectTeamStats, partie structures (parser.js:2659+, 2704-2729) =====
@@ -1229,5 +1235,6 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
         status: status::OK,
         match_: Some(match_),
         players: Some(players),
+        hotkey_profiles,
     })
 }

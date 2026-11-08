@@ -10,6 +10,8 @@ pub const LOW_MIN_SCORE: u8 = 25;
 /// Score minimal pour HAUT (en plus des conditions : 2 signaux dont un fort/moyen, assez de parties).
 pub const HIGH_MIN_SCORE: u8 = 50;
 
+/// Points : même nom de profil de raccourcis non générique (signal fort, suffit seul pour HAUT).
+const PROFILE_POINTS: f32 = 60.0;
 /// Points : propriétaire du même token (signal fort).
 const TOKEN_POINTS: f32 = 50.0;
 /// Points max : co-équipiers récurrents communs (signal moyen).
@@ -26,7 +28,7 @@ const HEROES_MIN: f32 = 0.6;
 const HOURS_MAX: f32 = 12.0;
 const HOURS_MIN: f32 = 0.7;
 
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct PairFeatures {
     pub games_a: u32,
     pub games_b: u32,
@@ -44,6 +46,8 @@ pub struct PairFeatures {
     pub overlapping_games: bool,
     /// Les deux comptes sont propriétaires du même token d'upload.
     pub same_token_owner: bool,
+    /// Noms de profil de raccourcis partagés (non ignorés, non génériques).
+    pub shared_profiles: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -55,7 +59,7 @@ pub enum Level {
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct Reason {
-    /// `token` | `teammates` | `talents` | `heroes` | `hours`.
+    /// `profile` | `token` | `teammates` | `talents` | `heroes` | `hours`.
     pub kind: &'static str,
     pub text: String,
 }
@@ -78,6 +82,17 @@ pub fn score(f: &PairFeatures) -> Option<Suggestion> {
     let mut reasons = Vec::new();
     let mut strong_or_moderate = false;
 
+    if !f.shared_profiles.is_empty() {
+        points += PROFILE_POINTS;
+        strong_or_moderate = true;
+        reasons.push(Reason {
+            kind: "profile",
+            text: format!(
+                "Same custom hotkey profile name: {}",
+                f.shared_profiles.join(", ")
+            ),
+        });
+    }
     if f.same_token_owner {
         points += TOKEN_POINTS;
         strong_or_moderate = true;
@@ -130,10 +145,12 @@ pub fn score(f: &PairFeatures) -> Option<Suggestion> {
     if raw < LOW_MIN_SCORE {
         return None;
     }
+    // Un nom de profil choisi à la main et partagé suffit seul (décision opérateur 2026-11-08).
     let high = raw >= HIGH_MIN_SCORE
-        && reasons.len() >= 2
-        && strong_or_moderate
-        && f.games_a.min(f.games_b) >= MIN_GAMES_FOR_HIGH;
+        && (!f.shared_profiles.is_empty()
+            || (reasons.len() >= 2
+                && strong_or_moderate
+                && f.games_a.min(f.games_b) >= MIN_GAMES_FOR_HIGH));
     // Un score affiché sous le seuil HAUT ne peut pas être étiqueté HAUT, et réciproquement.
     let (level, score) = if high {
         (Level::High, raw)
@@ -161,6 +178,31 @@ mod tests {
     }
     fn level(f: &PairFeatures) -> Option<Level> {
         score(f).map(|s| s.level)
+    }
+
+    #[test]
+    fn profil_partage_suffit_seul_pour_haut_mais_pas_malgre_chevauchement() {
+        let f = PairFeatures {
+            games_a: 3,
+            games_b: 3,
+            shared_profiles: vec!["Kure1".into()],
+            ..Default::default()
+        };
+        let s = score(&f).expect("suggestion");
+        assert_eq!(s.level, Level::High);
+        assert!(s
+            .reasons
+            .iter()
+            .any(|r| r.kind == "profile" && r.text.contains("Kure1")));
+        let overlapping = PairFeatures {
+            overlapping_games: true,
+            ..f
+        };
+        assert!(
+            score(&overlapping).is_none(),
+            "exclusion temporelle prioritaire"
+        );
+        assert!(level(&base()).is_none(), "sans signal : rien");
     }
 
     #[test]

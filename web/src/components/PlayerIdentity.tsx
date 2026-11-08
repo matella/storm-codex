@@ -65,9 +65,22 @@ export function PlayerIdentity({ toon }: { toon: string }) {
         </div>
       </section>
 
+      {data.profiles.length > 0 && (
+        <section className="ds-sec">
+          <SecHead num={2} title="Hotkey profiles" sub="custom names, read from replays" />
+          <div className="ds-panel">
+            <div className="ds-chips">
+              {data.profiles.map((p) => (
+                <span key={p.name} className="ds-chip text">{p.name} <em>{seenRange(p)} · {p.games}g</em></span>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
       <section className="ds-sec">
-        <SecHead num={2} title="Other accounts" sub="estimate" />
-        <div className="ds-banner">Guesses from shared teammates, hero pool, talent habits and play hours — never proof. Confirming only adds a note; the two profiles stay separate.</div>
+        <SecHead num={data.profiles.length > 0 ? 3 : 2} title="Other accounts" sub="estimate" />
+        <div className="ds-banner">Guesses from shared hotkey profile names, teammates, hero pool, talent habits and play hours — never proof. Confirming only adds a note; the two profiles stay separate.</div>
         {decide.isError && (
           <div className="ds-toast bad">
             {err}
@@ -87,7 +100,7 @@ export function PlayerIdentity({ toon }: { toon: string }) {
 
       {data.confirmed.length > 0 && (
         <section className="ds-sec">
-          <SecHead num={3} title="Confirmed" sub="marked as the same person" />
+          <SecHead num={data.profiles.length > 0 ? 4 : 3} title="Confirmed" sub="marked as the same person" />
           <div className="ds-chips">
             {data.confirmed.map((c) => (
               <Link key={c.toon} to={`/player/${encodeURIComponent(c.toon)}`} className="ds-chip text" style={{ textDecoration: "none", color: "inherit" }}>{c.name ?? c.toon}</Link>

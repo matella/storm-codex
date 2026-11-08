@@ -1,6 +1,6 @@
 //! Routes `/api/players/*` de la recherche et de l'identité (spec recherche-joueurs).
 
-use super::{identity, names, search};
+use super::{identity, names, profiles, search};
 use crate::AppState;
 use axum::{
     extract::{Path, Query, State},
@@ -59,6 +59,7 @@ pub async fn identity(State(s): State<AppState>, Path(toon): Path<String>) -> Re
     let history = names::name_history(&s.db, &toon).await.map_err(db_err)?;
     let name = names::current_name(&s.db, &toon).await.map_err(db_err)?;
     let suggestions = identity::suggest(&s.db, &toon).await.map_err(db_err)?;
+    let hotkey_profiles = profiles::history(&s.db, &toon).await.map_err(db_err)?;
     let links: Vec<(String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
         "SELECT CASE WHEN toon_a = $1 THEN toon_b ELSE toon_a END, decided_at FROM player_links
          WHERE (toon_a = $1 OR toon_b = $1) AND status = 'confirmed' ORDER BY decided_at DESC",
@@ -76,6 +77,7 @@ pub async fn identity(State(s): State<AppState>, Path(toon): Path<String>) -> Re
         "toon": toon,
         "name": name,
         "names": history,
+        "profiles": hotkey_profiles,
         "suggestions": suggestions,
         "confirmed": confirmed,
     })))

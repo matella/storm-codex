@@ -10,6 +10,7 @@ pub(super) fn process_messages_and_bm(
     players: &mut Map<String, J>,
     player_lobby_id: &HashMap<String, String>,
     loop_game_start: f64,
+    hotkey_profiles: &mut HashMap<String, String>,
 ) -> R<()> {
     let loop_to_sec = |loop_: f64| (loop_ - loop_game_start) / 16.0;
     let team_of = |players: &Map<String, J>, handle: &str| -> J {
@@ -113,7 +114,23 @@ pub(super) fn process_messages_and_bm(
     let mut abort: Option<Abort> = None;
     data.replay
         .visit_game_events(|ev| {
-            if abort.is_some() || srv_int(&ev, "_eventid") != Some(27) {
+            let eventid = srv_int(&ev, "_eventid");
+            // SUserOptionsEvent (gameloop 0) : profil de raccourcis du joueur, hors parité Node
+            // (stocké à part, pas dans les documents joueur).
+            if eventid == Some(7) {
+                let user_key = ev
+                    .field("_userid")
+                    .and_then(|u| srv_int(u, "m_userId"))
+                    .map(|v| v.to_string());
+                let profile = ev.field("m_hotkeyProfile").and_then(|v| v.as_str_lossy());
+                if let (Some(k), Some(p)) = (user_key, profile) {
+                    if let Some(toon) = player_lobby_id.get(&k) {
+                        hotkey_profiles.insert(toon.clone(), p);
+                    }
+                }
+                return;
+            }
+            if abort.is_some() || eventid != Some(27) {
                 return;
             }
             let Some(abil) = ev.field("m_abil") else {

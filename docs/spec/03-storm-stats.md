@@ -26,6 +26,8 @@ avant/après sur les 114 replays du corpus local, et diff de parité re-vert (11
 
 ## Parité : la règle
 
+**Extension storm-codex hors parité** : `Output.hotkey_profiles` (`toon → m_hotkeyProfile`, `SUserOptionsEvent`), absent de `to_json` donc du diff Node.
+
 **Prouvée, pas déclarée.** Le harnais `tools/parity-harness/` (`dump.js` côté Node, `diff.py`,
 `tolerances.json`) diffe champ par champ contre hots-parser 7.55.7 sur le corpus de référence :
 **114/114 verts** (79 parse complet identique, 25 extension ARAM, 10 rejets brawls identiques).

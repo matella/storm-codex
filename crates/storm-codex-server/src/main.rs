@@ -33,7 +33,7 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock, Semaphore};
 
 /// Version du projecteur — bumper quand la projection change ; pilote le re-process idempotent.
-pub const PARSER_VERSION: i32 = 2;
+pub const PARSER_VERSION: i32 = 3;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -1372,6 +1372,7 @@ pub(crate) mod api_tests {
         let fx: serde_json::Value =
             serde_json::from_str(include_str!("draft/fixtures/custom_draft.json")).unwrap();
         let out = storm_stats::Output {
+            hotkey_profiles: Default::default(),
             status: 1,
             match_: fx["match"].as_object().cloned(),
             players: fx["players"].as_object().cloned(),
