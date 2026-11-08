@@ -4,6 +4,7 @@ import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom"
 import { fetchPlayer, fetchIdentity, fmtTime, awardLabel } from "../api";
 import { likelyAlias } from "../players";
 import { PlayerIdentity } from "../components/PlayerIdentity";
+import { PlayerChat } from "../components/PlayerChat";
 import { Portrait, SecHead, heroRing } from "../components/ds";
 import { ModeTag, hasMapArt, mapArt } from "../components/ds/match";
 
@@ -95,6 +96,11 @@ export function Player() {
             );
           })}
         </div>
+      </section>
+
+      <section className="ds-sec">
+        <SecHead num={3} title="Chat" sub="habits only — message text is never shown" />
+        <PlayerChat toon={toon!} />
       </section>
       </>}
     </div>

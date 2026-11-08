@@ -275,6 +275,7 @@ fn api_router(state: &AppState) -> Router<AppState> {
         .route("/api/players/search", get(players::api::search))
         .route("/api/players/{toon}", get(read::get_player))
         .route("/api/players/{toon}/identity", get(players::api::identity))
+        .route("/api/players/{toon}/chat", get(players::api::chat))
         .route(
             "/api/players/{toon}/links/{other}",
             axum::routing::put(players::api::put_link),
@@ -959,6 +960,109 @@ pub(crate) mod api_tests {
             );
             assert!(v["confirmed"].as_array().unwrap().is_empty());
         }
+    }
+
+    #[tokio::test]
+    async fn chat_habitudes_comptees_pour_le_bon_joueur() {
+        use crate::players::testutil::{insert_match, row, uid};
+        let Some(state) = test_state(None).await else {
+            return;
+        };
+        let u = uid();
+        let (a, b) = (format!("t-ca{u}"), format!("t-cb{u}"));
+        let id = insert_match(
+            &state.db,
+            None,
+            &[row(&a, "A", 0, "Muradin"), row(&b, "B", 1, "Diablo")],
+        )
+        .await;
+        let msg = |player: &str, ty: i64, text: &str| serde_json::json!({"type": ty, "player": player, "recipient": 1, "time": 60.0, "text": text});
+        let messages = serde_json::json!([
+            msg(&a, 0, "noob"),
+            msg(&a, 0, "noob"),
+            msg(&a, 0, "noob"),
+            msg(&b, 0, "salut"),
+            msg(&a, 4, "annonce")
+        ]);
+        sqlx::query("UPDATE matches SET data = jsonb_build_object('messages', $2::jsonb), length = 600 WHERE id = $1")
+            .bind(id)
+            .bind(messages)
+            .execute(&state.db)
+            .await
+            .unwrap();
+        let get = |toon: String| {
+            let st = state.clone();
+            async move {
+                app(&st)
+                    .oneshot(
+                        Request::get(format!("/api/players/{toon}/chat"))
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap()
+            }
+        };
+        let va = json_body(get(a.clone()).await).await;
+        assert_eq!(va["messages"], 3);
+        assert_eq!(
+            va["top_words"],
+            serde_json::json!([{"word": "noob", "count": 3}])
+        );
+        assert!(!va.to_string().contains("annonce"), "aucun texte exposé");
+        assert!(va.get("text").is_none() && !va.to_string().contains("salut"));
+        // messages d'un autre joueur, ou mot trop rare : jamais dans la réponse de A
+        assert!(va["top_words"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|w| w["word"] != "salut"));
+        let vb = json_body(get(b.clone()).await).await;
+        assert_eq!(vb["messages"], 1);
+        assert_eq!(
+            get(format!("inconnu-{u}")).await.status(),
+            StatusCode::NOT_FOUND
+        );
+    }
+
+    #[tokio::test]
+    async fn chat_fenetre_bornee_aux_parties_recentes() {
+        use crate::players::testutil::{insert_match, row, uid};
+        use chrono::{Duration, TimeZone, Utc};
+        let Some(state) = test_state(None).await else {
+            return;
+        };
+        let (u, a) = (uid(), format!("t-cw{}", uid()));
+        let t0 = Utc.with_ymd_and_hms(2025, 5, 1, 20, 0, 0).unwrap();
+        for d in 0..3 {
+            let id = insert_match(
+                &state.db,
+                Some(t0 + Duration::days(d)),
+                &[row(&a, "A", 0, "Muradin")],
+            )
+            .await;
+            let m = serde_json::json!([{"type": 0, "player": a, "recipient": 1, "time": 60.0, "text": format!("m{u}{d}")}]);
+            sqlx::query("UPDATE matches SET data = jsonb_build_object('messages', $2::jsonb), length = 600 WHERE id = $1")
+                .bind(id)
+                .bind(m)
+                .execute(&state.db)
+                .await
+                .unwrap();
+        }
+        let (games, rows) = crate::players::chat::load_rows_with(&state.db, &a, 2)
+            .await
+            .unwrap();
+        assert_eq!(games, 2, "games = taille de la fenêtre");
+        assert_eq!(
+            rows.len(),
+            2,
+            "messages des 2 parties les plus récentes seulement"
+        );
+        let texts: Vec<_> = rows.iter().filter_map(|r| r.text.as_deref()).collect();
+        assert!(
+            !texts.iter().any(|t| t.ends_with('0')),
+            "la plus ancienne est exclue"
+        );
     }
 
     /// Codes attribut des bans → noms parser (attr.json), y compris les codes en capitales.

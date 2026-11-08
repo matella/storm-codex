@@ -1,5 +1,5 @@
 // Helpers purs de la recherche et de l'identité des joueurs (testés dans players.test.ts).
-import type { NameSpan, PlayerIdentity } from "./api";
+import type { ChatHabits, NameSpan, PlayerIdentity } from "./api";
 
 export interface Segment { text: string; hit: boolean }
 
@@ -43,4 +43,11 @@ export function likelyAlias(i: PlayerIdentity): { toon: string; name: string | n
   if (c) return { toon: c.toon, name: c.name };
   const h = i.suggestions.find((s) => s.level === "high");
   return h ? { toon: h.toon, name: h.name } : null;
+}
+
+/** Résumé d'une ligne des habitudes de chat ; `null` si l'échantillon est trop petit. */
+export function chatSummary(c: ChatHabits): string | null {
+  if (!c.enough) return null;
+  if (c.per_game < 0.5) return "quiet";
+  return `${c.per_game.toFixed(1)} msg/game · ${Math.round(c.team_share * 100)}% team chat`;
 }
