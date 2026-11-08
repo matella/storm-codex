@@ -1,5 +1,14 @@
 # STATUS — lire d'abord, mettre à jour en dernier
 
+## Habitudes de chat (2026-11-08)
+Plan `docs/plans/2026-11-08-chat-habitudes.md` (spec `2026-11-08-signaux-replay-supplementaires-design.md`, lot C).
+`GET /api/players/{toon}/chat` (`players/chat.rs`) : mesures seulement, jamais le texte, aucune
+migration. Section « Chat » de la fiche joueur + ligne compacte dans « Their players » du scouting
+(pas dans l'export HTML). **Reste** (specs validées, plans à écrire) : B déserteurs, A cosmétiques,
+E niveau (maîtrise/boost), D clavier. Idée 2 (groupes) abandonnée : champs vides dans les replays.
+Vérifié : clippy, `cargo test` (Postgres dev), vitest 256, build web. Non vérifié à l'œil : rendu
+de la section avec des données réelles.
+
 ## Profils de raccourcis → comptes d'une même personne (2026-11-08)
 Spec `docs/specs/2026-11-08-profils-hotkeys-comptes-design.md` (validée). `storm-stats` lit
 `SUserOptionsEvent.m_hotkeyProfile` (hors parité Node), migration `0015` (`match_players.hotkey_profile`),

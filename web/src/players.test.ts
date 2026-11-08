@@ -1,7 +1,7 @@
 // Tests des helpers purs de recherche/identité des joueurs (environnement node).
 import { describe, expect, it } from "vitest";
-import { highlightSegments, likelyAlias, recentNames, seenRange } from "./players";
-import type { NameSpan, PlayerIdentity } from "./api";
+import { chatSummary, highlightSegments, likelyAlias, recentNames, seenRange } from "./players";
+import type { ChatHabits, NameSpan, PlayerIdentity } from "./api";
 
 const span = (name: string, first: string | null = null, last: string | null = null): NameSpan => ({ name, first_seen: first, last_seen: last, games: 1 });
 
@@ -76,4 +76,11 @@ describe("likelyAlias", () => {
   it("rien du tout : null", () => {
     expect(likelyAlias(base)).toBeNull();
   });
+});
+
+describe("chatSummary", () => {
+  const c: ChatHabits = { games: 10, messages: 25, per_game: 2.5, all_share: 0.2, team_share: 0.8, timing: { early: 0, mid: 1, late: 0 }, top_words: [], enough: true };
+  it("échantillon trop petit : null", () => expect(chatSummary({ ...c, enough: false })).toBeNull());
+  it("peu bavard : quiet", () => expect(chatSummary({ ...c, per_game: 0.2 })).toBe("quiet"));
+  it("résumé chiffré", () => expect(chatSummary(c)).toBe("2.5 msg/game · 80% team chat"));
 });

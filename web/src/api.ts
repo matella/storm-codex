@@ -808,6 +808,14 @@ export interface PlayerIdentity {
   confirmed: { toon: string; name: string | null; decided_at: string }[];
 }
 
+export interface ChatHabits {
+  games: number; messages: number; per_game: number; all_share: number; team_share: number;
+  timing: { early: number; mid: number; late: number };
+  top_words: { word: string; count: number }[];
+  enough: boolean;
+}
+export const fetchChat = (toon: string) => get<ChatHabits>(`/api/players/${encodeURIComponent(toon)}/chat`);
+
 export const searchPlayers = async (q: string): Promise<PlayerHit[]> =>
   (await get<{ hits: PlayerHit[] }>(`/api/players/search?q=${encodeURIComponent(q)}`)).hits;
 export const fetchIdentity = (toon: string) => get<PlayerIdentity>(`/api/players/${encodeURIComponent(toon)}/identity`);

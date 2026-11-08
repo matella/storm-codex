@@ -11,6 +11,7 @@ import {
 } from "../components/ds";
 import type { Names } from "../components/ds";
 import { exportReportHtml } from "../reportExport";
+import { PlayerChat } from "../components/PlayerChat";
 import { humanize as humanizeSafe } from "../reportHtml";
 import { day, fmtRate, mapsWithPlans, pidNames, uploadLabel } from "../scouting";
 import type { Evidence, Facts, GameRow, MapFacts, MapPlan, Rate, ScoutGame, ScoutingReport as Report } from "../scouting";
@@ -378,6 +379,7 @@ function Players({ facts, num }: { facts: Facts; num: number }) {
                 K/D/A <b>{p.stats.kills.toFixed(1)}/{p.stats.deaths.toFixed(1)}/{p.stats.assists.toFixed(1)}</b> · KP <b>{p.stats.kill_participation_pct.toFixed(0)}%</b> ·
                 dmg <b>{p.stats.hero_damage_pm.toFixed(0)}</b>/min · heal <b>{p.stats.healing_pm.toFixed(0)}</b>/min · dead <b>{p.stats.time_dead_pct.toFixed(1)}%</b>
               </div>
+              <PlayerChat toon={p.toon} compact />
             </div>
           );
         })}
