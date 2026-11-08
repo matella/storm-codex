@@ -802,6 +802,8 @@ export interface PlayerIdentity {
   toon: string;
   name: string | null;
   names: NameSpan[];
+  /** Profils de raccourcis non génériques (nom choisi par le joueur), récent d'abord. */
+  profiles: NameSpan[];
   suggestions: LinkSuggestion[];
   confirmed: { toon: string; name: string | null; decided_at: string }[];
 }

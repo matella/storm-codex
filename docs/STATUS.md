@@ -1,5 +1,13 @@
 # STATUS — lire d'abord, mettre à jour en dernier
 
+## Profils de raccourcis → comptes d'une même personne (2026-11-08)
+Spec `docs/specs/2026-11-08-profils-hotkeys-comptes-design.md` (validée). `storm-stats` lit
+`SUserOptionsEvent.m_hotkeyProfile` (hors parité Node), migration `0015` (`match_players.hotkey_profile`),
+`PARSER_VERSION` 3, module `players/profiles.rs`, signal `profile` (fort, HAUT seul), section
+« Hotkey profiles » de l'onglet Identité. **À faire (opérateur)** : `POST /api/admin/reprocess` sur le
+corpus pour remplir la colonne, puis sonde sur corpus réel pour régler le seuil générique (5 comptes).
+Vérifié : clippy, `cargo test --workspace` avec Postgres dev, vitest, build web.
+
 ## Revue complète + correctifs (2026-11-07, branche `fix/revue-complete`)
 Demande opérateur : revue de tout le projet puis « corrige le tout ». Aucun changement de contrat
 de données (pas de migration, pas de bump `PARSER_VERSION`).

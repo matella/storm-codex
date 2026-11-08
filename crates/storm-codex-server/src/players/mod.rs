@@ -4,6 +4,7 @@ pub mod api;
 pub mod features;
 pub mod identity;
 pub mod names;
+pub mod profiles;
 pub mod search;
 pub mod similarity;
 

@@ -61,7 +61,7 @@ describe("seenRange", () => {
 });
 
 describe("likelyAlias", () => {
-  const base: PlayerIdentity = { toon: "T", name: "T", names: [], suggestions: [], confirmed: [] };
+  const base: PlayerIdentity = { toon: "T", name: "T", names: [], profiles: [], suggestions: [], confirmed: [] };
   const sug = (toon: string, level: "high" | "low") => ({ toon, name: toon, level, score: 60, reasons: [] });
   it("jamais une suggestion de confiance basse", () => {
     expect(likelyAlias({ ...base, suggestions: [sug("L", "low")] })).toBeNull();

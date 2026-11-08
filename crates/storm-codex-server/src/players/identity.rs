@@ -145,6 +145,7 @@ pub async fn suggest_with(
     let decided = decided_links(db, target).await?;
     let co = co_occurring(db, target).await?;
     let mates_t = teammates(db, target, excluded).await?;
+    let profiles = super::profiles::shared_with(db, target).await?;
 
     // Présélection (ordre de priorité) : co-propriétaires de token, « cercle » (comptes qui
     // partagent ≥ 2 co-équipiers récurrents avec la cible), pool de héros proche. Jamais la cible,
@@ -178,6 +179,16 @@ pub async fn suggest_with(
         .collect();
     co_owners.sort();
     co_owners.dedup();
+    // Comptes au même nom de profil : candidats même s'ils sont exclus par ailleurs (opérateur,
+    // propriétaires de token), hors déjà croisés/décidés ; en tête, c'est le signal le plus fort.
+    let mut prof_cands: Vec<String> = profiles
+        .keys()
+        .filter(|t| !co.contains(*t) && !decided.contains_key(*t))
+        .cloned()
+        .collect();
+    prof_cands.sort();
+    prof_cands.extend(co_owners);
+    let co_owners = prof_cands;
 
     let circle = circle_candidates(db, &top_mates, target, &skip, 200).await?;
     let all_heroes = all_hero_vectors(db).await?;
@@ -229,6 +240,7 @@ pub async fn suggest_with(
             same_token_owner: owners
                 .values()
                 .any(|o| o.contains(target) && o.contains(&cand)),
+            shared_profiles: profiles.get(&cand).cloned().unwrap_or_default(),
         };
         if let Some(suggestion) = score(&features) {
             let name = super::names::current_name(db, &cand).await?;

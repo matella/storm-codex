@@ -229,8 +229,8 @@ async fn project_once(
     for (toon, p) in &players {
         sqlx::query(
             "INSERT INTO match_players (match_id, toon_handle, name, hero, team, win, hero_level,
-                kills, takedowns, deaths, hero_damage, healing, experience, data)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)",
+                kills, takedowns, deaths, hero_damage, healing, experience, data, hotkey_profile)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)",
         )
         .bind(match_id)
         .bind(toon)
@@ -246,6 +246,7 @@ async fn project_once(
         .bind(gs_i(p, "Healing"))
         .bind(gs_i(p, "ExperienceContribution"))
         .bind(p)
+        .bind(output.hotkey_profiles.get(toon))
         .execute(&mut *tx)
         .await?;
     }
@@ -426,6 +427,19 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(n, 10, "attendu 10 joueurs");
+        let with_profile: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM match_players WHERE match_id = $1 AND hotkey_profile IS NOT NULL",
+        )
+        .bind(id1)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+        assert_eq!(
+            with_profile,
+            i64::try_from(out.hotkey_profiles.len()).unwrap(),
+            "profils de raccourcis projetés"
+        );
+        assert!(with_profile > 0);
 
         // re-projection (re-process) : remplace, pas de doublon
         let id2 = project_match(&db, fp, 1, &out).await.expect("projection 2");

@@ -97,6 +97,7 @@ mod tests {
         }))
         .unwrap();
         storm_stats::Output {
+            hotkey_profiles: Default::default(),
             status: 1,
             match_: Some(match_),
             players: Some(players),

@@ -486,6 +486,7 @@ mod tests {
             players.insert((*t).into(), json!({}));
         }
         storm_stats::Output {
+            hotkey_profiles: Default::default(),
             status: 1,
             match_: Some(
                 serde_json::from_value(json!({"date": date, "map": map, "length": length}))
@@ -515,6 +516,7 @@ mod tests {
         // sans match (rejet) → pas de fingerprint
         assert_eq!(
             game_fingerprint(&storm_stats::Output {
+                hotkey_profiles: Default::default(),
                 status: -3,
                 match_: None,
                 players: None

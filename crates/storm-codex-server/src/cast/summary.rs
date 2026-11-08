@@ -293,6 +293,7 @@ mod tests {
 
     fn output(fx: &J) -> storm_stats::Output {
         storm_stats::Output {
+            hotkey_profiles: Default::default(),
             status: 1,
             match_: fx["match"].as_object().cloned(),
             players: fx["players"].as_object().cloned(),
@@ -381,6 +382,7 @@ mod tests {
         o.status = -2;
         assert_eq!(summary_from_output(&o), Err(SummaryError::Parse(-2)));
         let empty = storm_stats::Output {
+            hotkey_profiles: Default::default(),
             status: 1,
             match_: None,
             players: None,
