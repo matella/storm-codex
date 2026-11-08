@@ -274,6 +274,7 @@ mod tests {
     fn sortie_vide_refusee() {
         let out = storm_stats::Output {
             hotkey_profiles: Default::default(),
+            actions: Default::default(),
             status: 1,
             match_: None,
             players: None,

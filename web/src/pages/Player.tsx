@@ -41,6 +41,7 @@ export function Player() {
           <div className="ds-statline" style={{ marginTop: 16 }}>
             <div className="ds-stat"><span className="ds-label">Win rate</span><strong>{wr}<span>%</span></strong><small>{data.wins}–{data.matches - data.wins} · {data.matches} games</small></div>
             <div className="ds-stat"><span className="ds-label">Avg K / D / T</span><strong>{data.avg_kills ?? "—"}<span>/</span>{data.avg_deaths ?? "—"}<span>/</span>{data.avg_takedowns ?? "—"}</strong><small>KDA ratio {kdaRatio}</small></div>
+            <div className="ds-stat"><span className="ds-label">Avg APM</span><strong>{data.avg_apm ?? "—"}</strong><small>{data.apm_games > 0 ? `${data.apm_games} games measured` : "re-process pending"}</small></div>
             <div className="ds-stat"><span className="ds-label">Heroes</span><strong>{data.heroes.length}</strong><small>{main ? `main: ${main}` : ""}</small></div>
           </div>
         </div>
@@ -88,6 +89,7 @@ export function Player() {
                 {g.hero ? <Portrait hero={g.hero} size={40} tone={g.win ? "pick" : "loss"} /> : <span />}
                 <span className="what"><span className="map">{g.map ?? "—"}</span><span className="hero">{g.hero} · <span className="ds-kda">{g.kills}<i>/</i>{g.deaths}<i>/</i>{a}</span></span></span>
                 <span style={{ display: "flex", gap: 6 }}>
+                  {g.apm != null && <span className="ds-tag" title="actions per minute">{g.apm} APM</span>}
                   <span className={`ds-tag ${g.win ? "win" : "loss"}`}>{g.win ? "WIN" : "LOSS"}</span>
                   {aw?.mvp && <span className="ds-tag mvp">👑 MVP</span>}
                 </span>

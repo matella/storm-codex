@@ -88,7 +88,7 @@ export interface HeroStat {
   wins: number;
 }
 export interface PlayerHero { hero: string; games: number; wins: number; avg_kills: number | null; avg_deaths: number | null; avg_takedowns: number | null }
-export interface PlayerGame { match_id: number; hero: string | null; map: string | null; mode: number | null; win: boolean | null; kills: number | null; deaths: number | null; takedowns: number | null; played_at: string | null; award: string | null }
+export interface PlayerGame { match_id: number; hero: string | null; map: string | null; mode: number | null; win: boolean | null; kills: number | null; deaths: number | null; takedowns: number | null; apm: number | null; played_at: string | null; award: string | null }
 export interface PlayerSummary {
   toon: string;
   name: string | null;
@@ -98,6 +98,9 @@ export interface PlayerSummary {
   avg_kills: number | null;
   avg_deaths: number | null;
   avg_takedowns: number | null;
+  /** moyenne des APM mesurés (parties re-traitées seulement) ; null si aucune partie mesurée */
+  avg_apm: number | null;
+  apm_games: number;
   heroes: PlayerHero[];
   recent: PlayerGame[];
 }

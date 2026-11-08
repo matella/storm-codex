@@ -375,6 +375,7 @@ mod tests {
         let fx: J = serde_json::from_str(include_str!("fixtures/custom_summary.json")).unwrap();
         let out = storm_stats::Output {
             hotkey_profiles: Default::default(),
+            actions: Default::default(),
             status: 1,
             match_: fx["match"].as_object().cloned(),
             players: fx["players"].as_object().cloned(),

@@ -115,7 +115,8 @@ pub async fn get_match(State(s): State<AppState>, Path(id): Path<i64>) -> Resp {
         "SELECT jsonb_build_object(
             'id', m.id, 'fingerprint', m.fingerprint, 'parser_version', m.parser_version,
             'match', m.data,
-            'players', (SELECT jsonb_object_agg(mp.toon_handle, mp.data)
+            'players', (SELECT jsonb_object_agg(mp.toon_handle,
+                            mp.data || jsonb_build_object('apm', round(mp.apm::numeric, 1)))
                         FROM match_players mp WHERE mp.match_id = m.id))
          FROM matches m WHERE m.id = $1",
     )
@@ -149,6 +150,8 @@ pub async fn get_player(State(s): State<AppState>, Path(toon): Path<String>) -> 
             'avg_kills', (SELECT round(avg(kills)::numeric, 1) FROM match_players WHERE toon_handle = $1),
             'avg_deaths', (SELECT round(avg(deaths)::numeric, 1) FROM match_players WHERE toon_handle = $1),
             'avg_takedowns', (SELECT round(avg(takedowns)::numeric, 1) FROM match_players WHERE toon_handle = $1),
+            'avg_apm', (SELECT round(avg(apm)::numeric, 0) FROM match_players WHERE toon_handle = $1),
+            'apm_games', (SELECT count(apm) FROM match_players WHERE toon_handle = $1),
             'heroes', COALESCE((SELECT jsonb_agg(h ORDER BY h.games DESC) FROM (
                 SELECT hero, count(*) AS games, count(*) FILTER (WHERE win) AS wins,
                        round(avg(kills)::numeric, 1) AS avg_kills,
@@ -158,6 +161,7 @@ pub async fn get_player(State(s): State<AppState>, Path(toon): Path<String>) -> 
                 GROUP BY hero) h), '[]'::jsonb),
             'recent', COALESCE((SELECT jsonb_agg(r ORDER BY r.played_at DESC NULLS LAST) FROM (
                 SELECT mp.match_id, mp.hero, m.map, m.mode, mp.win, mp.kills, mp.deaths, mp.takedowns,
+                       round(mp.apm::numeric, 0) AS apm,
                        m.played_at, mp.data #>> '{gameStats,awards,0}' AS award
                 FROM match_players mp JOIN matches m ON m.id = mp.match_id
                 WHERE mp.toon_handle = $1 ORDER BY m.played_at DESC NULLS LAST LIMIT 20) r), '[]'::jsonb))",

@@ -1,5 +1,13 @@
 # STATUS — lire d'abord, mettre à jour en dernier
 
+## APM par partie et par joueur (2026-11-08, branche `feat/apm`)
+Spec `docs/specs/2026-11-08-apm-par-partie-design.md` (demande opérateur, lot D « clavier » réduit à l'APM).
+`storm-stats` compte les `SCmdEvent` par toon (`Output.actions`, hors parité), migration `0016`
+(`match_players.apm`), `PARSER_VERSION` 4. API : `avg_apm`/`apm_games`/`recent[].apm` sur
+`/api/players/{toon}`, `apm` par joueur sur `/api/matches/{id}`. Web : tuile Avg APM, pastille par partie
+récente, colonne APM du tableau de score. **À faire (opérateur)** : `POST /api/admin/reprocess` pour remplir
+`apm` sur le corpus. Reste du lot D (touches utilisées, empreinte) : non fait.
+
 ## Habitudes de chat (2026-11-08)
 Plan `docs/plans/2026-11-08-chat-habitudes.md` (spec `2026-11-08-signaux-replay-supplementaires-design.md`, lot C).
 `GET /api/players/{toon}/chat` (`players/chat.rs`) : mesures seulement, jamais le texte, aucune

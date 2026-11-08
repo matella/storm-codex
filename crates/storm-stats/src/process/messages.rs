@@ -11,6 +11,7 @@ pub(super) fn process_messages_and_bm(
     player_lobby_id: &HashMap<String, String>,
     loop_game_start: f64,
     hotkey_profiles: &mut HashMap<String, String>,
+    actions: &mut HashMap<String, i64>,
 ) -> R<()> {
     let loop_to_sec = |loop_: f64| (loop_ - loop_game_start) / 16.0;
     let team_of = |players: &Map<String, J>, handle: &str| -> J {
@@ -132,6 +133,17 @@ pub(super) fn process_messages_and_bm(
             }
             if abort.is_some() || eventid != Some(27) {
                 return;
+            }
+            // APM : tout `SCmdEvent` d'un joueur après le début de la partie compte comme une action
+            // (déplacements, attaques, aptitudes, objets). Compté avant le filtre `m_abil` ci-dessous.
+            if srv_int(&ev, "_gameloop").is_some_and(|l| l as f64 >= loop_game_start) {
+                if let Some(toon) = ev
+                    .field("_userid")
+                    .and_then(|u| srv_int(u, "m_userId"))
+                    .and_then(|u| player_lobby_id.get(&u.to_string()))
+                {
+                    *actions.entry(toon.clone()).or_default() += 1;
+                }
             }
             let Some(abil) = ev.field("m_abil") else {
                 return;

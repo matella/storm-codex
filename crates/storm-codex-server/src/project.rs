@@ -7,6 +7,13 @@ use serde_json::{Map, Value as J};
 use sqlx::PgPool;
 use std::collections::HashMap;
 
+/// Actions par minute : `actions` commandes sur `length_secs` secondes de jeu. `None` si la durée est
+/// inconnue ou nulle (pas de division par zéro, pas de valeur inventée).
+pub fn apm(actions: i64, length_secs: Option<f64>) -> Option<f64> {
+    let minutes = length_secs.filter(|l| *l > 0.0)? / 60.0;
+    Some(actions as f64 / minutes)
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
     #[error("base : {0}")]
@@ -229,8 +236,8 @@ async fn project_once(
     for (toon, p) in &players {
         sqlx::query(
             "INSERT INTO match_players (match_id, toon_handle, name, hero, team, win, hero_level,
-                kills, takedowns, deaths, hero_damage, healing, experience, data, hotkey_profile)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)",
+                kills, takedowns, deaths, hero_damage, healing, experience, data, hotkey_profile, apm)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)",
         )
         .bind(match_id)
         .bind(toon)
@@ -247,6 +254,7 @@ async fn project_once(
         .bind(gs_i(p, "ExperienceContribution"))
         .bind(p)
         .bind(output.hotkey_profiles.get(toon))
+        .bind(output.actions.get(toon).and_then(|n| apm(*n, length)))
         .execute(&mut *tx)
         .await?;
     }
@@ -296,6 +304,19 @@ mod tests {
     use super::*;
     use sqlx::postgres::PgPoolOptions;
     use std::path::PathBuf;
+
+    #[test]
+    fn apm_est_le_nombre_de_commandes_par_minute() {
+        assert_eq!(apm(600, Some(300.0)), Some(120.0));
+        assert_eq!(apm(0, Some(300.0)), Some(0.0));
+    }
+
+    #[test]
+    fn apm_absent_si_duree_inconnue_ou_nulle() {
+        assert_eq!(apm(600, None), None);
+        assert_eq!(apm(600, Some(0.0)), None);
+        assert_eq!(apm(600, Some(-5.0)), None);
+    }
 
     #[test]
     fn talent_hero_vote_majoritaire() {
@@ -440,6 +461,19 @@ mod tests {
             "profils de raccourcis projetés"
         );
         assert!(with_profile > 0);
+        let with_apm: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM match_players WHERE match_id = $1 AND apm > 0",
+        )
+        .bind(id1)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+        assert_eq!(
+            with_apm,
+            i64::try_from(out.actions.len()).unwrap(),
+            "APM projetée pour chaque joueur compté"
+        );
+        assert!(with_apm > 0);
 
         // re-projection (re-process) : remplace, pas de doublon
         let id2 = project_match(&db, fp, 1, &out).await.expect("projection 2");
