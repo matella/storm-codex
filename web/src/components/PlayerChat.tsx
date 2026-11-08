@@ -9,7 +9,7 @@ export function PlayerChat({ toon, compact }: { toon: string; compact?: boolean 
   const { data, isError } = useQuery({ queryKey: ["chat", toon], queryFn: () => fetchChat(toon), retry: false });
   if (isError || !data) return null; // compte absent du corpus : rien à dire
   const summary = chatSummary(data);
-  if (compact) return summary ? <div className="ds-pstats">Chat <b>{summary}</b></div> : null;
+  if (compact) return summary ? <div className="ds-pstats" title="From your own archived games with this account">Chat <b>{summary}</b> · from your games</div> : null;
   if (!data.enough) return <div className="ds-empty">Not enough games ({data.games}) for chat habits.</div>;
   const t = data.timing;
   return (

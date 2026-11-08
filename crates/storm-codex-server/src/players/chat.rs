@@ -4,7 +4,7 @@
 
 use serde::Serialize;
 use sqlx::PgPool;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Parties minimales pour présenter des pourcentages.
 pub const MIN_GAMES: i64 = 5;
@@ -12,6 +12,8 @@ pub const MIN_GAMES: i64 = 5;
 pub const MIN_WORD_COUNT: i64 = 3;
 pub const MAX_WORDS: usize = 8;
 const MIN_WORD_LEN: usize = 3;
+/// Au-delà, ce n'est pas un mot (CJK sans espaces, phrase collée) : jamais affiché.
+const MAX_WORD_LEN: usize = 20;
 
 /// Mots vides ignorés (français et anglais).
 const STOP_WORDS: &[&str] = &[
@@ -69,28 +71,40 @@ fn share(n: i64, total: i64) -> f64 {
 
 type RawRow = (Option<String>, Option<i64>, Option<f64>, Option<f64>);
 
-/// Messages relus au maximum (les plus récents) : borne le coût d'un gros compte.
-pub const MAX_ROWS: i64 = 5000;
+/// Parties récentes prises en compte : borne le coût (p95 < 100 ms) et garde `games` et `messages`
+/// sur la même fenêtre.
+pub const WINDOW_GAMES: i64 = 500;
 
-/// `(parties du compte, ≤ MAX_ROWS messages de chat du compte, les plus récents d'abord)`.
+/// `(parties de la fenêtre, messages de chat du compte dans ces parties)` — les `WINDOW_GAMES`
+/// parties les plus récentes du compte.
 pub async fn load_rows(db: &PgPool, toon: &str) -> Result<(i64, Vec<ChatRow>), sqlx::Error> {
-    let games: i64 =
+    load_rows_with(db, toon, WINDOW_GAMES).await
+}
+
+pub async fn load_rows_with(
+    db: &PgPool,
+    toon: &str,
+    window: i64,
+) -> Result<(i64, Vec<ChatRow>), sqlx::Error> {
+    let total: i64 =
         sqlx::query_scalar("SELECT count(*) FROM match_players WHERE toon_handle = $1")
             .bind(toon)
             .fetch_one(db)
             .await?;
     let raw: Vec<RawRow> = sqlx::query_as(
-        "SELECT x ->> 'text', (x ->> 'recipient')::bigint, (x ->> 'time')::float8, m.length::float8
-         FROM match_players mp
-         JOIN matches m ON m.id = mp.match_id
+        "WITH ids AS (
+             SELECT m.id FROM match_players mp JOIN matches m ON m.id = mp.match_id
+             WHERE mp.toon_handle = $1
+             ORDER BY m.played_at DESC NULLS LAST, m.id DESC
+             LIMIT $2)
+         SELECT x ->> 'text', (x ->> 'recipient')::bigint, (x ->> 'time')::float8, m.length::float8
+         FROM ids JOIN matches m ON m.id = ids.id
          CROSS JOIN LATERAL jsonb_array_elements(
              CASE WHEN jsonb_typeof(m.data -> 'messages') = 'array' THEN m.data -> 'messages' ELSE '[]'::jsonb END) x
-         WHERE mp.toon_handle = $1 AND x ->> 'type' = '0' AND x ->> 'player' = $1
-         ORDER BY m.played_at DESC NULLS LAST, m.id DESC
-         LIMIT $2",
+         WHERE x ->> 'type' = '0' AND x ->> 'player' = $1",
     )
     .bind(toon)
-    .bind(MAX_ROWS)
+    .bind(window)
     .fetch_all(db)
     .await?;
     let rows = raw
@@ -102,7 +116,7 @@ pub async fn load_rows(db: &PgPool, toon: &str) -> Result<(i64, Vec<ChatRow>), s
             length,
         })
         .collect();
-    Ok((games, rows))
+    Ok((total.min(window), rows))
 }
 
 pub fn habits(games: i64, rows: &[ChatRow]) -> ChatHabits {
@@ -135,13 +149,15 @@ pub fn habits(games: i64, rows: &[ChatRow]) -> ChatHabits {
             }
         }
         if let Some(text) = &r.text {
-            for w in text
-                .to_lowercase()
+            // un mot compte une fois par message : ≥ 3 occurrences = ≥ 3 messages distincts
+            let lower = text.to_lowercase();
+            let distinct: HashSet<&str> = lower
                 .split(|c: char| !c.is_alphanumeric())
-                .filter(|w| w.chars().count() >= MIN_WORD_LEN)
+                .filter(|w| (MIN_WORD_LEN..=MAX_WORD_LEN).contains(&w.chars().count()))
                 .filter(|w| !w.chars().all(char::is_numeric))
                 .filter(|w| !STOP_WORDS.contains(w))
-            {
+                .collect();
+            for w in distinct {
                 *words.entry(w.to_owned()).or_default() += 1;
             }
         }
@@ -253,11 +269,11 @@ mod tests {
 
     #[test]
     fn mots_non_latins_et_vides_ignores() {
-        let rows = [row(
-            "Привет привет ПРИВЕТ the the the 123 123 123 les les les",
-            1,
-            0.5,
-        )];
+        let rows = [
+            row("Привет привет", 1, 0.5),
+            row("ПРИВЕТ the the 123", 1, 0.5),
+            row("привет 123 les les", 1, 0.5),
+        ];
         let h = habits(5, &rows);
         assert_eq!(
             h.top_words,
@@ -266,6 +282,24 @@ mod tests {
                 count: 3
             }]
         );
+    }
+
+    #[test]
+    fn un_seul_message_qui_repete_un_mot_n_affiche_rien() {
+        let rows = [row("noob noob noob noob", 1, 0.5)];
+        assert!(habits(5, &rows).top_words.is_empty());
+    }
+
+    #[test]
+    fn phrase_sans_espaces_envoyee_trois_fois_n_est_pas_un_mot() {
+        // CJK : aucune coupe sur les espaces, la phrase entière serait un seul « mot »
+        let phrase = "这是一个很长很长很长很长很长很长很长的句子没有空格";
+        let rows = [
+            row(phrase, 1, 0.5),
+            row(phrase, 1, 0.5),
+            row(phrase, 1, 0.5),
+        ];
+        assert!(habits(5, &rows).top_words.is_empty());
     }
 
     #[test]
