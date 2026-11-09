@@ -1,41 +1,41 @@
-# Runbook — bascule storm-codex & décommission du serveur Node local (jalon 5)
+# Runbook — storm-codex switchover & decommissioning of the local Node server (milestone 5)
 
-> Étape **box/opérateur** (le soir, box allumé). Le code est prêt ; cette bascule est
-> opérationnelle. À exécuter quand le serveur storm-codex tourne sur le box et que le front est
-> validé. Aucune perte de fonction attendue (EBS Twitch Azure conservée, alimentée par push).
+> **Box/operator** step (in the evening, box on). The code is ready; this switchover is
+> operational. To run when the storm-codex server is running on the box and the front-end is
+> validated. No loss of function expected (Twitch Azure EBS kept, fed by push).
 
-## Pré-requis
-- `storm-codex-server` déployé sur le box (rsync + `docker compose build`), Postgres + Redis du
-  box configurés (`DATABASE_URL`, `REDIS_URL`), `WEB_DIR` = front buildé, archive backfillée.
-- `client-rs` re-pointé (`SERVER_URL` → storm-codex) déployé sur le PC de jeu.
-- Variables push : `JARVIS_CHANNEL` (canal Redis Jarvis), `AZURE_PUSH_URL`/`AZURE_PUSH_TOKEN`
-  (mêmes valeurs que le push patch-digest existant).
+## Prerequisites
+- `storm-codex-server` deployed on the box (rsync + `docker compose build`), the box's Postgres + Redis
+  configured (`DATABASE_URL`, `REDIS_URL`), `WEB_DIR` = built front-end, archive backfilled.
+- `client-rs` re-pointed (`SERVER_URL` → storm-codex) deployed on the gaming PC.
+- Push variables: `JARVIS_CHANNEL` (Jarvis Redis channel), `AZURE_PUSH_URL`/`AZURE_PUSH_TOKEN`
+  (same values as the existing patch-digest push).
 
-## Bascule
-1. **Vérifier l'équivalence de fonction** avant d'arrêter le Node :
-   - une partie test → page à jour < 5 s (WS), widget OBS à jour, event `hots.match.completed`
-     reçu sur le Redis Jarvis (`redis-cli subscribe <JARVIS_CHANNEL>`), extension Twitch à jour
-     (push Azure ok).
-   - overlay OBS re-pointé sur `https://<box>/widget` (browser source).
-2. **Inspecter le Mongo de l'overlay une dernière fois** (la spec note : vide à ce jour,
-   0 replays) :
+## Switchover
+1. **Check functional equivalence** before stopping the Node:
+   - a test game → page up to date < 5 s (WS), OBS widget up to date, `hots.match.completed` event
+     received on the Jarvis Redis (`redis-cli subscribe <JARVIS_CHANNEL>`), Twitch extension up to date
+     (Azure push ok).
+   - OBS overlay re-pointed to `https://<box>/widget` (browser source).
+2. **Inspect the overlay's Mongo one last time** (the spec notes: empty to date,
+   0 replays):
    ```
    docker exec <mongo> mongosh --eval 'db.matches.countDocuments()'
    ```
-   S'il contient des définitions non dérivables (équipes/collections de test), les recréer à la
-   main dans l'UI storm-codex (jalon 4) avant suppression.
-3. **Arrêter le serveur Node local** (`Hots-Overlay/server.js`) :
+   If it contains non-derivable definitions (test teams/collections), recreate them
+   by hand in the storm-codex UI (milestone 4) before deletion.
+3. **Stop the local Node server** (`Hots-Overlay/server.js`):
    ```
-   docker compose -f <overlay>/docker-compose.yml stop   # ou pm2 stop / systemctl stop
+   docker compose -f <overlay>/docker-compose.yml stop   # or pm2 stop / systemctl stop
    ```
-4. **Supprimer le Mongo** une fois l'inspection faite et l'overlay arrêté.
+4. **Delete the Mongo** once the inspection is done and the overlay stopped.
 
-## Ce qui RESTE (par conception, V1)
-- **EBS Twitch Azure** : conservée, alimentée par le push sortant `box→Azure` de storm-codex
-  (`azure.rs`). La validation JWT Twitch reste dans l'EBS Azure (absorption = V2).
-- **HotsPatchNotes** (:5001) : référentiel héros/talents, consommé par storm-codex au démarrage
-  (jalon 4 — réplication `dim_*`). Inchangé.
+## What REMAINS (by design, V1)
+- **Twitch Azure EBS**: kept, fed by storm-codex's outgoing `box→Azure` push
+  (`azure.rs`). Twitch JWT validation stays in the Azure EBS (absorption = V2).
+- **HotsPatchNotes** (:5001): hero/talent reference data, consumed by storm-codex at startup
+  (milestone 4 — `dim_*` replication). Unchanged.
 
 ## Rollback
-Le Node local peut être relancé tant que le Mongo n'est pas supprimé. Garder une fenêtre
-d'observation (quelques soirs) avant la suppression définitive du Mongo.
+The local Node can be restarted as long as the Mongo is not deleted. Keep an observation
+window (a few evenings) before the final deletion of the Mongo.

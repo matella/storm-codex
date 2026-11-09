@@ -1,74 +1,74 @@
-# Now Playing — reveal animé : plan d'implémentation
+# Now Playing — animated reveal: implementation plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task.
 > Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ajouter une variante `/now-playing?reveal` qui annonce chaque nouveau morceau par une
-grande carte (pochette 264 px, titre, artiste) tenue 2,6 s, puis se replie en fondu sur le badge
-compact existant en haut à droite.
+**Goal:** Add a `/now-playing?reveal` variant that announces each new track with a
+large card (264 px cover, title, artist) held for 2.6 s, then fades down onto the existing compact
+badge at the top right.
 
-**Architecture:** Machine à trois états (`hidden|big|mini`) isolée dans un **réducteur pur**
-(`revealState.ts`, testable en environnement node), enveloppée d'un hook mince qui porte la
-minuterie de hold, et rendue par un composant de présentation dont le morph est entièrement en CSS
-(une boîte qui s'anime en taille, deux couches de contenu en fondu croisé). Le sondage
-`/api/now-playing` passe de 5 s à 2 s.
+**Architecture:** A three-state machine (`hidden|big|mini`) isolated in a **pure reducer**
+(`revealState.ts`, testable in a node environment), wrapped in a thin hook that holds the
+hold timer, and rendered by a presentational component whose morph is entirely in CSS
+(one box that animates its size, two content layers cross-fading). Polling of
+`/api/now-playing` goes from 5 s to 2 s.
 
-**Tech Stack:** React 18 + TypeScript + Vite, TanStack Query v5, vitest 2 (environnement **node**,
-pas de React Testing Library dans ce repo), CSS simple par fichier d'overlay.
+**Tech Stack:** React 18 + TypeScript + Vite, TanStack Query v5, vitest 2 (**node** environment,
+no React Testing Library in this repo), plain CSS per overlay file.
 
 **Spec:** `docs/specs/2026-08-29-now-playing-reveal-design.md`
-**Maquette animée:** `docs/specs/2026-08-29-now-playing-reveal-mockup.html` (n'anime que servie en
-http ; antérieure à la décision « titre deux lignes » — la spec fait foi).
+**Animated mockup:** `docs/specs/2026-08-29-now-playing-reveal-mockup.html` (only animates when served over
+http; predates the "two-line title" decision — the spec is authoritative).
 
 ## Global Constraints
 
-- **Ne rien casser des variantes existantes.** `/now-playing` (carte étoffée) et
-  `/now-playing?mini` doivent se comporter exactement comme aujourd'hui. La source OBS de
-  l'opérateur pointe sur l'une d'elles.
-- **Timings figés** : entrée 440 ms, hold 2600 ms, morph 620 ms, easing
-  `cubic-bezier(.22,.9,.24,1)`. Ne pas « améliorer » ces valeurs, elles ont été réglées à la main.
-- **Géométrie figée** : grand = 300×408 (padding 18, pochette 264×264 rayon 12, bloc de titre
-  **fixe 52 px** sur deux lignes) ; mini = 290×68 (padding 10, pochette 48×48 rayon 8) — identique
-  à l'existant.
-- **Ancrage** : `OverlayFrame anchor="top-right" pad={36}`, inchangé.
-- **Préfixe CSS obligatoire `npr-`.** `web/src/theme.css` définit déjà `.card`, `.kick` et `.mono`
-  en global ; une classe `.card` non préfixée casserait la carte. Toutes les classes du nouveau
-  fichier CSS commencent par `npr-`, sous la racine `.npr`.
-- **Conventions repo** : TypeScript strict, commits conventionnels, commentaires et docs **en
-  français** comme le reste de `web/src`.
-- **Pas de `any`.** Le parseur existant utilise `Record<string, unknown>` + gardes typées ; suivre
-  ce style.
+- **Break nothing in the existing variants.** `/now-playing` (rich card) and
+  `/now-playing?mini` must behave exactly as today. The operator's OBS source
+  points at one of them.
+- **Frozen timings**: entry 440 ms, hold 2600 ms, morph 620 ms, easing
+  `cubic-bezier(.22,.9,.24,1)`. Do not "improve" these values, they were tuned by hand.
+- **Frozen geometry**: big = 300×408 (padding 18, cover 264×264 radius 12, title block
+  **fixed 52 px** on two lines); mini = 290×68 (padding 10, cover 48×48 radius 8) — identical
+  to the existing one.
+- **Anchoring**: `OverlayFrame anchor="top-right" pad={36}`, unchanged.
+- **Mandatory `npr-` CSS prefix.** `web/src/theme.css` already defines `.card`, `.kick` and `.mono`
+  globally; an unprefixed `.card` class would break the card. All classes of the new
+  CSS file start with `npr-`, under the `.npr` root.
+- **Repo conventions**: strict TypeScript, conventional commits, comments and docs **in
+  French** like the rest of `web/src` (at the time; the project switched to English on 2026-11-09).
+- **No `any`.** The existing parser uses `Record<string, unknown>` + typed guards; follow
+  that style.
 
 ---
 
-### Task 1 : Identité de piste
+### Task 1: Track identity
 
-Le reveal se déclenche sur un **changement d'identité de piste**. Aujourd'hui `parseTrack`
-n'extrait aucun identifiant : deux morceaux de même titre seraient confondus. On ajoute `id` au
-`Track` et une fonction `trackKey` qui en dérive une clé stable, avec repli sur `titre|artiste`.
+The reveal fires on a **change of track identity**. Today `parseTrack`
+extracts no identifier: two tracks with the same title would be confused. We add `id` to
+`Track` and a `trackKey` function that derives a stable key from it, falling back to `title|artist`.
 
 **Files:**
-- Modify: `web/src/api.ts` (interface `Track` ~ligne 490, corps de `parseTrack` ~ligne 503)
+- Modify: `web/src/api.ts` (interface `Track` ~line 490, body of `parseTrack` ~line 503)
 - Create: `web/src/api.test.ts`
 
 **Interfaces:**
-- Consumes: rien (première tâche).
+- Consumes: nothing (first task).
 - Produces:
-  - `interface Track` gagne le champ optionnel `id?: string`.
-  - `export function trackKey(t: Track): string | null` — `null` si la piste n'a ni `id` ni
-    `title`. Consommée par les tâches 2 et 3.
+  - `interface Track` gains the optional field `id?: string`.
+  - `export function trackKey(t: Track): string | null` — `null` if the track has neither `id` nor
+    `title`. Consumed by tasks 2 and 3.
 
-- [ ] **Step 1 : Écrire les tests qui échouent**
+- [ ] **Step 1: Write the failing tests**
 
-Créer `web/src/api.test.ts` :
+Create `web/src/api.test.ts`:
 
 ```ts
 import { describe, it, expect } from "vitest";
 import { parseTrack, trackKey } from "./api";
 
 describe("parseTrack", () => {
-  it("extrait l'id Spotify de la forme /api/playback/now", () => {
+  it("extracts the Spotify id from the /api/playback/now shape", () => {
     const t = parseTrack({
       authenticated: true,
       current: { isPlaying: true, track: { id: "4uLU6hMCjMI75M1A2tKUQC", name: "Ghosts", artists: [{ name: "Foundry" }] } },
@@ -77,7 +77,7 @@ describe("parseTrack", () => {
     expect(t.playing).toBe(true);
   });
 
-  it("retombe sur l'uri quand id est absent", () => {
+  it("falls back to the uri when id is missing", () => {
     const t = parseTrack({
       authenticated: true,
       current: { isPlaying: true, track: { uri: "spotify:track:abc", name: "Ghosts" } },
@@ -85,7 +85,7 @@ describe("parseTrack", () => {
     expect(t.id).toBe("spotify:track:abc");
   });
 
-  it("laisse id indéfini quand la source n'en fournit aucun", () => {
+  it("leaves id undefined when the source provides none", () => {
     const t = parseTrack({
       authenticated: true,
       current: { isPlaying: true, current: { name: "Ghosts", artist: "Foundry" } },
@@ -96,37 +96,37 @@ describe("parseTrack", () => {
 });
 
 describe("trackKey", () => {
-  it("préfère l'id quand il existe", () => {
+  it("prefers the id when it exists", () => {
     expect(trackKey({ playing: true, id: "abc", title: "Ghosts", artist: "Foundry" })).toBe("abc");
   });
 
-  it("retombe sur titre|artiste sans id", () => {
+  it("falls back to title|artist without an id", () => {
     expect(trackKey({ playing: true, title: "Ghosts", artist: "Foundry" })).toBe("Ghosts|Foundry");
   });
 
-  it("tolère un artiste manquant", () => {
+  it("tolerates a missing artist", () => {
     expect(trackKey({ playing: true, title: "Ghosts" })).toBe("Ghosts|");
   });
 
-  it("rend null sans id ni titre", () => {
+  it("returns null without id or title", () => {
     expect(trackKey({ playing: false })).toBeNull();
   });
 });
 ```
 
-- [ ] **Step 2 : Lancer les tests pour vérifier qu'ils échouent**
+- [ ] **Step 2: Run the tests to check that they fail**
 
 Run: `npm test --prefix web -- api.test.ts`
-Expected: FAIL — `trackKey` n'est pas exporté par `./api`, et les assertions sur `t.id` échouent.
+Expected: FAIL — `trackKey` is not exported by `./api`, and the assertions on `t.id` fail.
 
-- [ ] **Step 3 : Ajouter `id` à `Track` et l'extraire dans `parseTrack`**
+- [ ] **Step 3: Add `id` to `Track` and extract it in `parseTrack`**
 
-Dans `web/src/api.ts`, ajouter le champ à l'interface `Track` (juste après `playing`) :
+In `web/src/api.ts`, add the field to the `Track` interface (just after `playing`):
 
 ```ts
 export interface Track {
   playing: boolean;
-  /** identifiant stable de la piste (`id` ou `uri` Spotify) — absent sur l'ancien engine. */
+  /** stable track identifier (Spotify `id` or `uri`) — missing on the old engine. */
   id?: string;
   title?: string;
   artist?: string;
@@ -137,26 +137,26 @@ export interface Track {
 }
 ```
 
-Dans le corps de `parseTrack`, après la ligne qui calcule `const title = …`, ajouter :
+In the body of `parseTrack`, after the line that computes `const title = …`, add:
 
 ```ts
   const id = str(t.id) ?? str(t.uri);
 ```
 
-puis ajouter `id` à l'objet retourné :
+then add `id` to the returned object:
 
 ```ts
   return { playing: !!(np?.authenticated && title && isPlaying), id, title, artist, art, album, durationMs, progressMs };
 ```
 
-- [ ] **Step 4 : Ajouter `trackKey`**
+- [ ] **Step 4: Add `trackKey`**
 
-Dans `web/src/api.ts`, juste après `parseTrack` :
+In `web/src/api.ts`, just after `parseTrack`:
 
 ```ts
-/** Clé d'identité d'une piste pour détecter un changement de morceau. `id` quand la source en
- *  fournit un, sinon `titre|artiste` (l'ancien engine n'a pas d'identifiant). `null` = rien
- *  d'exploitable, donc rien à annoncer. */
+/** Identity key of a track, to detect a track change. `id` when the source
+ *  provides one, otherwise `title|artist` (the old engine has no identifier). `null` = nothing
+ *  usable, so nothing to announce. */
 export function trackKey(t: Track): string | null {
   if (t.id) return t.id;
   if (t.title) return `${t.title}|${t.artist ?? ""}`;
@@ -164,48 +164,48 @@ export function trackKey(t: Track): string | null {
 }
 ```
 
-- [ ] **Step 5 : Lancer les tests pour vérifier qu'ils passent**
+- [ ] **Step 5: Run the tests to check that they pass**
 
 Run: `npm test --prefix web -- api.test.ts`
 Expected: PASS — 7 tests.
 
-- [ ] **Step 6 : Vérifier que rien n'a régressé**
+- [ ] **Step 6: Check that nothing regressed**
 
 Run: `npm test --prefix web`
-Expected: PASS — toute la suite (`api`, `clipExport`, `replay2d`, `usePlayback`).
+Expected: PASS — the whole suite (`api`, `clipExport`, `replay2d`, `usePlayback`).
 
-- [ ] **Step 7 : Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add web/src/api.ts web/src/api.test.ts
-git commit -m "feat(now-playing): identité de piste (id Spotify + trackKey)"
+git commit -m "feat(now-playing): track identity (Spotify id + trackKey)"
 ```
 
 ---
 
-### Task 2 : Réducteur de reveal
+### Task 2: Reveal reducer
 
-Toute la politique de déclenchement vit ici, en pur, sans React ni DOM — c'est la couture qui rend
-la logique testable dans l'environnement node de vitest (ce repo n'a pas React Testing Library ;
-`usePlayback.ts` / `usePlayback.test.ts` suivent exactement ce modèle avec sa fonction pure
+All the trigger policy lives here, pure, without React or DOM — this is the seam that makes
+the logic testable in vitest's node environment (this repo has no React Testing Library;
+`usePlayback.ts` / `usePlayback.test.ts` follow exactly this model with its pure function
 `advance`).
 
-Politique retenue (spec, décisions 2 et 4) : **tout démarrage de lecture** annonce (nouveau
-morceau, reprise après pause, premier montage avec de la musique en cours) ; un changement de piste
-pendant que la grande carte est affichée **remplace le contenu et relance le hold** sans repasser
-par le mini.
+Chosen policy (spec, decisions 2 and 4): **every playback start** announces (new
+track, resume after pause, first mount with music already playing); a track change
+while the big card is shown **replaces the content and restarts the hold** without going back
+through the mini.
 
 **Files:**
 - Create: `web/src/revealState.ts`
 - Create: `web/src/revealState.test.ts`
 
-Racine de `web/src/` et non `pages/` : c'est là que vivent déjà la logique pure et les hooks du
-repo (`usePlayback.ts`, `replay2d.ts`, `clipExport.ts`). Seuls les composants d'overlay et leur CSS
-vont dans `pages/` (`DraftOverlay.tsx` + `draft-overlay.css`).
+Root of `web/src/` and not `pages/`: that is where the repo's pure logic and hooks already live
+(`usePlayback.ts`, `replay2d.ts`, `clipExport.ts`). Only the overlay components and their CSS
+go into `pages/` (`DraftOverlay.tsx` + `draft-overlay.css`).
 
 **Interfaces:**
-- Consumes: rien de la tâche 1 au niveau du code (le réducteur reçoit déjà une clé calculée).
-- Produces :
+- Consumes: nothing from task 1 at the code level (the reducer already receives a computed key).
+- Produces:
   - `export type RevealPhase = "hidden" | "big" | "mini"`
   - `export interface RevealState { phase: RevealPhase; key: string | null; holdToken: number }`
   - `export interface RevealInput { playing: boolean; key: string | null }`
@@ -213,14 +213,14 @@ vont dans `pages/` (`DraftOverlay.tsx` + `draft-overlay.css`).
   - `export function nextRevealState(prev: RevealState, next: RevealInput): RevealState`
   - `export function holdExpired(prev: RevealState): RevealState`
 
-  `holdToken` s'incrémente **à chaque fois que le hold doit être (ré)armé** ; c'est ce compteur que
-  le hook de la tâche 3 met en dépendance d'effet pour relancer sa minuterie. Les deux fonctions
-  rendent **l'objet `prev` lui-même** (identité référentielle) quand rien ne change, pour que le
-  hook ne réarme pas la minuterie à chaque sondage.
+  `holdToken` is incremented **every time the hold must be (re)armed**; this counter is what
+  the task 3 hook uses as an effect dependency to restart its timer. Both functions
+  return **the `prev` object itself** (referential identity) when nothing changes, so that the
+  hook does not re-arm the timer on every poll.
 
-- [ ] **Step 1 : Écrire les tests qui échouent**
+- [ ] **Step 1: Write the failing tests**
 
-Créer `web/src/revealState.test.ts` :
+Create `web/src/revealState.test.ts`:
 
 ```ts
 import { describe, it, expect } from "vitest";
@@ -230,14 +230,14 @@ const at = (phase: RevealState["phase"], key: string | null, holdToken = 0): Rev
   ({ phase, key, holdToken });
 
 describe("nextRevealState", () => {
-  it("premier sondage avec de la musique en cours → big, hold armé", () => {
+  it("first poll with music playing → big, hold armed", () => {
     const s = nextRevealState(INITIAL_REVEAL, { playing: true, key: "a" });
     expect(s.phase).toBe("big");
     expect(s.key).toBe("a");
     expect(s.holdToken).toBe(INITIAL_REVEAL.holdToken + 1);
   });
 
-  it("reprise après pause → big (même morceau qu'avant la pause)", () => {
+  it("resume after pause → big (same track as before the pause)", () => {
     const paused = nextRevealState(at("mini", "a", 3), { playing: false, key: "a" });
     expect(paused.phase).toBe("hidden");
     const resumed = nextRevealState(paused, { playing: true, key: "a" });
@@ -245,43 +245,43 @@ describe("nextRevealState", () => {
     expect(resumed.holdToken).toBe(paused.holdToken + 1);
   });
 
-  it("changement de piste en big → reste big, contenu remplacé, hold relancé", () => {
+  it("track change in big → stays big, content replaced, hold restarted", () => {
     const s = nextRevealState(at("big", "a", 5), { playing: true, key: "b" });
     expect(s.phase).toBe("big");
     expect(s.key).toBe("b");
     expect(s.holdToken).toBe(6);
   });
 
-  it("changement de piste en mini → big", () => {
+  it("track change in mini → big", () => {
     const s = nextRevealState(at("mini", "a", 5), { playing: true, key: "b" });
     expect(s.phase).toBe("big");
     expect(s.key).toBe("b");
     expect(s.holdToken).toBe(6);
   });
 
-  it("arrêt de lecture → hidden, sans incrémenter le hold", () => {
+  it("playback stop → hidden, without incrementing the hold", () => {
     const s = nextRevealState(at("mini", "a", 5), { playing: false, key: "a" });
     expect(s.phase).toBe("hidden");
     expect(s.key).toBeNull();
     expect(s.holdToken).toBe(5);
   });
 
-  it("piste sans clé exploitable → hidden", () => {
+  it("track without a usable key → hidden", () => {
     const s = nextRevealState(at("mini", "a", 5), { playing: true, key: null });
     expect(s.phase).toBe("hidden");
   });
 
-  it("sondage identique → même objet, aucun réarmement", () => {
+  it("identical poll → same object, no re-arming", () => {
     const prev = at("mini", "a", 5);
     expect(nextRevealState(prev, { playing: true, key: "a" })).toBe(prev);
   });
 
-  it("sondage identique en big → même objet (le hold ne redémarre pas)", () => {
+  it("identical poll in big → same object (the hold does not restart)", () => {
     const prev = at("big", "a", 5);
     expect(nextRevealState(prev, { playing: true, key: "a" })).toBe(prev);
   });
 
-  it("arrêt répété → même objet", () => {
+  it("repeated stop → same object", () => {
     const prev = at("hidden", null, 5);
     expect(nextRevealState(prev, { playing: false, key: null })).toBe(prev);
   });
@@ -292,39 +292,39 @@ describe("holdExpired", () => {
     expect(holdExpired(at("big", "a", 5))).toEqual(at("mini", "a", 5));
   });
 
-  it("ne touche pas mini", () => {
+  it("does not touch mini", () => {
     const prev = at("mini", "a", 5);
     expect(holdExpired(prev)).toBe(prev);
   });
 
-  it("ne touche pas hidden", () => {
+  it("does not touch hidden", () => {
     const prev = at("hidden", null, 5);
     expect(holdExpired(prev)).toBe(prev);
   });
 });
 ```
 
-- [ ] **Step 2 : Lancer les tests pour vérifier qu'ils échouent**
+- [ ] **Step 2: Run the tests to check that they fail**
 
 Run: `npm test --prefix web -- revealState.test.ts`
 Expected: FAIL — `Failed to resolve import "./revealState"`.
 
-- [ ] **Step 3 : Écrire le réducteur**
+- [ ] **Step 3: Write the reducer**
 
-Créer `web/src/revealState.ts` :
+Create `web/src/revealState.ts`:
 
 ```ts
-// Machine à états du reveal musical (/now-playing?reveal), en pur : ni React ni DOM, donc
-// testable dans l'environnement node de vitest. Même découpage que usePlayback.ts / advance().
+// State machine of the music reveal (/now-playing?reveal), pure: no React or DOM, so
+// testable in vitest's node environment. Same split as usePlayback.ts / advance().
 
-/** `hidden` = rien à l'écran ; `big` = grande carte d'annonce ; `mini` = badge compact persistant. */
+/** `hidden` = nothing on screen; `big` = large announcement card; `mini` = persistent compact badge. */
 export type RevealPhase = "hidden" | "big" | "mini";
 
 export interface RevealState {
   phase: RevealPhase;
-  /** clé de la piste portée par la carte ; `null` quand `phase === "hidden"`. */
+  /** key of the track carried by the card; `null` when `phase === "hidden"`. */
   key: string | null;
-  /** incrémenté chaque fois que le hold doit être (ré)armé — dépendance d'effet du hook. */
+  /** incremented every time the hold must be (re)armed — effect dependency of the hook. */
   holdToken: number;
 }
 
@@ -336,15 +336,15 @@ export interface RevealInput {
 export const INITIAL_REVEAL: RevealState = { phase: "hidden", key: null, holdToken: 0 };
 
 /**
- * Transition sur une mise à jour de sondage.
+ * Transition on a poll update.
  *
- * Règle retenue (spec, décision 2) : **tout démarrage de lecture annonce** — nouveau morceau,
- * reprise après pause, premier montage avec de la musique en cours. Et (décision 4) un changement
- * de piste pendant la grande carte la **recible sur place** : on reste en `big`, on relance le
- * hold, on ne repasse pas par le mini — sinon la carte fait le yoyo quand on enchaîne les skips.
+ * Chosen rule (spec, decision 2): **every playback start announces** — new track,
+ * resume after pause, first mount with music already playing. And (decision 4) a track change
+ * during the big card **retargets it in place**: we stay in `big`, restart the
+ * hold, and do not go back through the mini — otherwise the card yo-yos when skipping repeatedly.
  *
- * Rend `prev` **tel quel** quand rien ne change, pour que le hook ne réarme pas sa minuterie à
- * chaque sondage.
+ * Returns `prev` **as is** when nothing changes, so that the hook does not re-arm its timer on
+ * every poll.
  */
 export function nextRevealState(prev: RevealState, next: RevealInput): RevealState {
   if (!next.playing || next.key === null) {
@@ -356,63 +356,63 @@ export function nextRevealState(prev: RevealState, next: RevealInput): RevealSta
   return prev;
 }
 
-/** Transition sur expiration du hold : la grande carte se replie sur le badge. */
+/** Transition on hold expiry: the big card folds down onto the badge. */
 export function holdExpired(prev: RevealState): RevealState {
   return prev.phase === "big" ? { ...prev, phase: "mini" } : prev;
 }
 ```
 
-- [ ] **Step 4 : Lancer les tests pour vérifier qu'ils passent**
+- [ ] **Step 4: Run the tests to check that they pass**
 
 Run: `npm test --prefix web -- revealState.test.ts`
 Expected: PASS — 12 tests.
 
-- [ ] **Step 5 : Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add web/src/revealState.ts web/src/revealState.test.ts
-git commit -m "feat(now-playing): réducteur pur de la machine à états du reveal"
+git commit -m "feat(now-playing): pure reducer for the reveal state machine"
 ```
 
 ---
 
-### Task 3 : Hook, carte, route et vérification live
+### Task 3: Hook, card, route and live check
 
-Le hook, le CSS et le composant ne sont observables qu'une fois routés : ils forment un seul
-livrable, vérifié à l'écran. Pas de test unitaire du hook — ce repo n'a pas React Testing Library
-et l'introduire pour un hook de six lignes serait disproportionné ; toute la logique qui mérite un
-test est déjà couverte en tâche 2.
+The hook, the CSS and the component are only observable once routed: they form a single
+deliverable, checked on screen. No unit test of the hook — this repo has no React Testing Library
+and introducing it for a six-line hook would be disproportionate; all the logic that deserves a
+test is already covered in task 2.
 
 **Files:**
 - Create: `web/src/useTrackReveal.ts`
 - Create: `web/src/pages/now-playing-reveal.css`
 - Create: `web/src/pages/RevealCard.tsx`
-- Modify: `web/src/pages/NowPlaying.tsx` (aiguillage de variante + `refetchInterval`)
+- Modify: `web/src/pages/NowPlaying.tsx` (variant switch + `refetchInterval`)
 - Modify: `docs/STATUS.md`
 
 **Interfaces:**
 - Consumes:
-  - `trackKey(t: Track): string | null` et `Track` (avec `id?`) — tâche 1, depuis `../api`.
-  - `INITIAL_REVEAL`, `nextRevealState`, `holdExpired`, `RevealPhase` — tâche 2, depuis
-    `./revealState` (dans `useTrackReveal.ts`, à la racine) ou `../revealState` (dans
-    `RevealCard.tsx`, sous `pages/`).
+  - `trackKey(t: Track): string | null` and `Track` (with `id?`) — task 1, from `../api`.
+  - `INITIAL_REVEAL`, `nextRevealState`, `holdExpired`, `RevealPhase` — task 2, from
+    `./revealState` (in `useTrackReveal.ts`, at the root) or `../revealState` (in
+    `RevealCard.tsx`, under `pages/`).
   - `OverlayFrame` — existant, `../components/OverlayFrame`.
 - Produces:
   - `export function useTrackReveal(playing: boolean, key: string | null, holdMs?: number): RevealPhase`
   - `export function RevealCard({ track, phase }: { track: Track; phase: RevealPhase }): JSX.Element`
 
-- [ ] **Step 1 : Écrire le hook**
+- [ ] **Step 1: Write the hook**
 
-Créer `web/src/useTrackReveal.ts` :
+Create `web/src/useTrackReveal.ts`:
 
 ```ts
-// Minuterie du reveal musical. Le hook ne porte aucune règle : il applique le réducteur pur de
-// revealState.ts et arme le hold. `holdToken` en dépendance d'effet fait que tout (re)ciblage
-// annule la minuterie en cours et en repart une neuve.
+// Timer of the music reveal. The hook holds no rule: it applies the pure reducer of
+// revealState.ts and arms the hold. `holdToken` as an effect dependency means any (re)targeting
+// cancels the running timer and starts a fresh one.
 import { useEffect, useState } from "react";
 import { INITIAL_REVEAL, nextRevealState, holdExpired, type RevealPhase } from "./revealState";
 
-/** Durée d'affichage de la grande carte avant repli sur le badge (spec : figée à 2,6 s). */
+/** How long the big card stays before folding onto the badge (spec: frozen at 2.6 s). */
 export const HOLD_MS = 2600;
 
 export function useTrackReveal(playing: boolean, key: string | null, holdMs = HOLD_MS): RevealPhase {
@@ -432,16 +432,16 @@ export function useTrackReveal(playing: boolean, key: string | null, holdMs = HO
 }
 ```
 
-- [ ] **Step 2 : Écrire le CSS du morph**
+- [ ] **Step 2: Write the morph CSS**
 
-Créer `web/src/pages/now-playing-reveal.css`. **Toutes les classes sont préfixées `npr-`** :
-`theme.css` définit `.card`, `.kick` et `.mono` en global.
+Create `web/src/pages/now-playing-reveal.css`. **All classes are prefixed `npr-`**:
+`theme.css` defines `.card`, `.kick` and `.mono` globally.
 
 ```css
 /* Overlay musique OBS — variante « reveal » (/now-playing?reveal).
-   Morph « Dissolve » : une seule boîte s'anime en taille, deux couches de contenu se fondent
-   l'une dans l'autre. Timings figés par la spec 2026-08-29 — ne pas retoucher.
-   Porté de docs/specs/2026-08-29-now-playing-reveal-mockup.html (option A). */
+   "Dissolve" morph: a single box animates its size, two content layers fade
+   into each other. Timings frozen by the 2026-08-29 spec — do not touch.
+   Ported from docs/specs/2026-08-29-now-playing-reveal-mockup.html (option A). */
 .npr {
   --npr-morph: 620ms;
   --npr-enter: 440ms;
@@ -454,7 +454,7 @@ Créer `web/src/pages/now-playing-reveal.css`. **Toutes les classes sont préfix
   border: 1px solid var(--hairline-strong);
   box-shadow: 0 14px 40px rgba(0, 0, 0, .55);
   will-change: width, height, transform, opacity;
-  /* état de repos = géométrie du badge mini ; l'entrée grandit depuis cette taille. */
+  /* resting state = mini badge geometry; the entry grows from this size. */
   width: 290px;
   height: 68px;
   border-radius: 16px;
@@ -470,20 +470,20 @@ Créer `web/src/pages/now-playing-reveal.css`. **Toutes les classes sont préfix
 
 .npr-layer { position: absolute; inset: 0; opacity: 0; transition: opacity calc(var(--npr-morph) * .55) ease; }
 
-/* ── couche « grande carte » ─────────────────────────────────────────────── */
+/* ── "big card" layer ─────────────────────────────────────────────── */
 .npr-big { padding: 18px; display: flex; flex-direction: column; align-items: center; text-align: center; }
 .npr-big .npr-krow { display: flex; align-items: center; gap: 8px; align-self: flex-start; height: 12px; margin-bottom: 10px; }
 .npr-big .npr-art { width: 264px; height: 264px; border-radius: 12px; }
 .npr-big .npr-title {
   margin-top: 14px; height: 52px; font-size: 20px; line-height: 1.3; font-weight: 700; width: 100%;
-  /* deux lignes maxi : 264px à 20px tronquent vers 22 caractères sur une seule ligne. La hauteur
-     reste fixe pour que la boîte garde une cible d'animation. */
+  /* two lines max: 264px at 20px truncates around 22 characters on a single line. The height
+     stays fixed so the box keeps an animation target. */
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .npr-big .npr-artist { margin-top: 2px; height: 18px; font-size: 14px; color: var(--text-2); width: 100%;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* ── couche « badge mini » (géométrie identique à la variante ?mini) ─────── */
+/* ── "mini badge" layer (geometry identical to the ?mini variant) ─────── */
 .npr-mini { padding: 10px; display: flex; gap: 12px; align-items: center; }
 .npr-mini .npr-art { width: 48px; height: 48px; border-radius: 8px; }
 .npr-mini .npr-txt { flex: 1; min-width: 0; }
@@ -492,14 +492,14 @@ Créer `web/src/pages/now-playing-reveal.css`. **Toutes les classes sont préfix
 .npr-mini .npr-artist { margin-top: 1px; font-size: 12px; color: var(--text-2);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* ── pochette et placeholder ─────────────────────────────────────────────── */
+/* ── cover and placeholder ─────────────────────────────────────────────── */
 .npr-art { background-size: cover; background-position: center; flex-shrink: 0; box-shadow: 0 4px 14px rgba(0, 0, 0, .5); }
 .npr-art.npr-none { display: flex; align-items: center; justify-content: center;
   background: var(--surface-2); color: var(--text-2); }
 .npr-big .npr-art.npr-none { font-size: 100px; }
 .npr-mini .npr-art.npr-none { font-size: 18px; }
 
-/* ── kicker + égaliseur ──────────────────────────────────────────────────── */
+/* ── kicker + equaliser ──────────────────────────────────────────────────── */
 .npr-kick { color: var(--accent); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; }
 .npr-eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 11px; }
 .npr-eq i { width: 3px; background: var(--accent); border-radius: 1px; animation: npr-eq .9s ease-in-out infinite; }
@@ -508,7 +508,7 @@ Créer `web/src/pages/now-playing-reveal.css`. **Toutes les classes sont préfix
 .npr-eq i:nth-child(4) { animation-delay: .54s; }
 @keyframes npr-eq { 0%, 100% { height: 3px; } 50% { height: 11px; } }
 
-/* ── états ───────────────────────────────────────────────────────────────── */
+/* ── states ───────────────────────────────────────────────────────────────── */
 .npr.is-big .npr-card { width: 300px; height: 408px; border-radius: 18px; opacity: 1; transform: none; }
 .npr.is-big .npr-big { opacity: 1; transition-delay: calc(var(--npr-morph) * .35); }
 .npr.is-mini .npr-card { width: 290px; height: 68px; border-radius: 16px; opacity: 1; transform: none; }
@@ -520,25 +520,25 @@ Créer `web/src/pages/now-playing-reveal.css`. **Toutes les classes sont préfix
 }
 ```
 
-- [ ] **Step 3 : Écrire le composant de présentation**
+- [ ] **Step 3: Write the presentational component**
 
-Créer `web/src/pages/RevealCard.tsx` :
+Create `web/src/pages/RevealCard.tsx`:
 
 ```tsx
 import type { Track } from "../api";
 import type { RevealPhase } from "../revealState";
 import "./now-playing-reveal.css";
 
-/** Pochette, ou placeholder ♫ quand la source n'en fournit pas. */
+/** Cover, or a ♫ placeholder when the source provides none. */
 function Art({ art }: { art?: string }) {
   if (!art) return <div className="npr-art npr-none">♫</div>;
   return <div className="npr-art" style={{ backgroundImage: `url(${art})` }} />;
 }
 
 /**
- * Carte du reveal musical : une seule boîte qui s'anime entre la grande annonce et le badge
- * compact, avec les deux couches de contenu en fondu croisé. Les deux couches sont **toujours
- * montées** — c'est ce qui permet le fondu ; c'est la classe d'état sur la racine qui décide.
+ * Music reveal card: a single box that animates between the big announcement and the compact
+ * badge, with the two content layers cross-fading. Both layers are **always
+ * mounted** — that is what makes the fade possible; the state class on the root decides.
  */
 export function RevealCard({ track, phase }: { track: Track; phase: RevealPhase }) {
   return (
@@ -566,11 +566,11 @@ export function RevealCard({ track, phase }: { track: Track; phase: RevealPhase 
 }
 ```
 
-- [ ] **Step 4 : Brancher la variante et resserrer le sondage**
+- [ ] **Step 4: Wire the variant and tighten the polling**
 
-Dans `web/src/pages/NowPlaying.tsx` :
+In `web/src/pages/NowPlaying.tsx`:
 
-1. Ajouter les imports en tête du fichier :
+1. Add the imports at the top of the file:
 
 ```ts
 import { parseTrack, trackKey } from "../api";
@@ -578,9 +578,9 @@ import { RevealCard } from "./RevealCard";
 import { useTrackReveal } from "../useTrackReveal";
 ```
 
-(la ligne `import { parseTrack } from "../api";` existante est remplacée par celle ci-dessus)
+(the existing `import { parseTrack } from "../api";` line is replaced by the one above)
 
-2. Dans le corps de `NowPlaying`, remplacer la ligne de lecture du paramètre d'URL :
+2. In the body of `NowPlaying`, replace the line that reads the URL parameter:
 
 ```ts
   const params = new URLSearchParams(window.location.search);
@@ -588,18 +588,18 @@ import { useTrackReveal } from "../useTrackReveal";
   const reveal = params.has("reveal");
 ```
 
-3. Passer `refetchInterval` de `5000` à `2000` dans le `useQuery` (spec, décision 3 : sous la règle
-   « tout démarrage de lecture annonce », 5 s font arriver le reveal visiblement en retard).
+3. Change `refetchInterval` from `5000` to `2000` in the `useQuery` (spec, decision 3: under the rule
+   "every playback start announces", 5 s makes the reveal arrive visibly late).
 
-4. Juste après `const t = parseTrack(data);`, appeler le hook — **inconditionnellement**, avant
-   tout `return` anticipé, sinon on viole les règles des hooks :
+4. Right after `const t = parseTrack(data);`, call the hook — **unconditionally**, before
+   any early `return`, otherwise the rules of hooks are violated:
 
 ```ts
   const phase = useTrackReveal(t.playing, trackKey(t));
 ```
 
-5. Ajouter la branche de variante **avant** le `if (!t.playing) return …` existant (la carte doit
-   pouvoir rester montée pendant que le CSS la fait disparaître) :
+5. Add the variant branch **before** the existing `if (!t.playing) return …` (the card must
+   be able to stay mounted while the CSS makes it disappear):
 
 ```tsx
   if (reveal) {
@@ -611,96 +611,96 @@ import { useTrackReveal } from "../useTrackReveal";
   }
 ```
 
-6. Mettre à jour le commentaire de tête du fichier pour mentionner les trois variantes :
+6. Update the file's header comment to mention the three variants:
 
 ```
- *   - défaut  : carte étoffée (pochette, titre/artiste/album, progression, égaliseur).
- *   - `?mini` : compacte (pochette + titre + artiste seulement).
- *   - `?reveal` : annonce en grand à chaque démarrage de lecture, puis repli sur `?mini`.
+ *   - default: rich card (cover, title/artist/album, progress, equaliser).
+ *   - `?mini`: compact (cover + title + artist only).
+ *   - `?reveal`: big announcement at each playback start, then folds onto `?mini`.
 ```
 
-- [ ] **Step 5 : Vérifier types et build**
+- [ ] **Step 5: Check types and build**
 
 Run: `npm run build --prefix web`
-Expected: PASS — `tsc -b` sans erreur puis build Vite. En cas d'erreur « React Hook called
-conditionally », c'est que l'appel de `useTrackReveal` a été placé après un `return` : le remonter.
+Expected: PASS — `tsc -b` without errors then the Vite build. On a "React Hook called
+conditionally" error, the `useTrackReveal` call was placed after a `return`: move it up.
 
-- [ ] **Step 6 : Vérifier que la suite de tests passe toujours**
+- [ ] **Step 6: Check that the test suite still passes**
 
 Run: `npm test --prefix web`
-Expected: PASS — suite complète, dont `api.test.ts` et `revealState.test.ts`.
+Expected: PASS — full suite, including `api.test.ts` and `revealState.test.ts`.
 
-- [ ] **Step 7 : Vérification visuelle en direct**
+- [ ] **Step 7: Live visual check**
 
-Démarrer le serveur de dev via l'outil de preview (config `storm-codex-web` de
-`.claude/launch.json`, port 5180) — **pas via Bash**.
+Start the dev server via the preview tool (config `storm-codex-web` of
+`.claude/launch.json`, port 5180) — **not via Bash**.
 
-Orpheus n'étant pas joignable depuis le Mac, `/api/now-playing` répond en erreur ou
-`{authenticated:false}` : la carte reste masquée. Piloter donc la machine à états à la main depuis
-la console de la page, à `http://localhost:5180/now-playing?reveal` :
+Since Orpheus cannot be reached from the Mac, `/api/now-playing` answers with an error or
+`{authenticated:false}`: the card stays hidden. So drive the state machine by hand from
+the page console, at `http://localhost:5180/now-playing?reveal`:
 
 ```js
-// forcer les trois états pour contrôler géométrie et fondu
+// force the three states to check geometry and fade
 document.querySelector(".npr").className = "npr is-big";
 document.querySelector(".npr").className = "npr is-mini";
 ```
 
-Vérifier :
-- [ ] `is-big` → carte 300×408, ancrée à 36 px des bords haut et droit ;
-- [ ] `is-mini` → carte 290×68, même ancrage, coin haut-droit inchangé ;
-- [ ] la transition entre les deux dure ~620 ms sans saut de position ;
-- [ ] un titre long (injecter `document.querySelector(".npr-big .npr-title").textContent = "Un titre volontairement très long pour tester le passage à la ligne"`) s'affiche sur **deux lignes** puis ellipse, **sans changer la hauteur** de la carte ;
-- [ ] sans pochette, le placeholder ♫ s'affiche dans les deux tailles.
+Check:
+- [ ] `is-big` → card 300×408, anchored 36 px from the top and right edges;
+- [ ] `is-mini` → card 290×68, same anchoring, top-right corner unchanged;
+- [ ] the transition between the two takes ~620 ms with no position jump;
+- [ ] a long title (inject `document.querySelector(".npr-big .npr-title").textContent = "A deliberately very long title to test line wrapping"`) shows on **two lines** then an ellipsis, **without changing the card's height**;
+- [ ] without a cover, the ♫ placeholder shows at both sizes.
 
-Prendre une capture d'écran de l'état `is-big` et de l'état `is-mini` comme preuve.
+Take a screenshot of the `is-big` state and of the `is-mini` state as evidence.
 
-- [ ] **Step 8 : Vérifier la non-régression des deux autres variantes**
+- [ ] **Step 8: Check non-regression of the two other variants**
 
-Ouvrir `http://localhost:5180/now-playing` puis `http://localhost:5180/now-playing?mini`.
-Expected: cadre vide dans les deux cas (Orpheus injoignable depuis le Mac → `playing:false`), aucune
-erreur dans la console. C'est le comportement d'aujourd'hui, inchangé.
+Open `http://localhost:5180/now-playing` then `http://localhost:5180/now-playing?mini`.
+Expected: empty frame in both cases (Orpheus unreachable from the Mac → `playing:false`), no
+error in the console. This is today's behaviour, unchanged.
 
-- [ ] **Step 9 : Mettre à jour `docs/STATUS.md`**
+- [ ] **Step 9: Update `docs/STATUS.md`**
 
-Dans la section « Scène OBS « entre les games » », remplacer la puce existante :
-
-```
-- **`/now-playing`** (source persistante, EN) : widget musique lisant **Orpheus** via proxy
-  `/api/now-playing` (config `ORPHEUS_URL`). Affiche « Music — off » tant que Spotify dormant.
-```
-
-par :
+In the section "OBS scene "between games"", replace the existing bullet:
 
 ```
-- **`/now-playing`** (source persistante, EN) : widget musique lisant **Orpheus** via proxy
-  `/api/now-playing` (config `ORPHEUS_URL`). Affiche « Music — off » tant que Spotify dormant.
-  Trois variantes : défaut (carte étoffée), `?mini` (badge compact), `?reveal` (annonce en grand
-  à chaque démarrage de lecture — entrée 440 ms, hold 2,6 s, morph 620 ms — puis repli sur le
+- **`/now-playing`** (persistent source, EN): music widget reading **Orpheus** via the proxy
+  `/api/now-playing` (config `ORPHEUS_URL`). Shows "Music — off" while Spotify is asleep.
+```
+
+with:
+
+```
+- **`/now-playing`** (persistent source, EN): music widget reading **Orpheus** via the proxy
+  `/api/now-playing` (config `ORPHEUS_URL`). Shows "Music — off" while Spotify is asleep.
+  Three variants: default (rich card), `?mini` (compact badge), `?reveal` (big announcement
+  at each playback start — entry 440 ms, hold 2.6 s, morph 620 ms — then folds onto the
   badge). Spec `docs/specs/2026-08-29-now-playing-reveal-design.md`, plan
-  `docs/plans/2026-08-29-now-playing-reveal.md`. Sondage passé de 5 s à 2 s.
-  **Reste à vérifier sur le box** : (a) qu'Orpheus ne relaie pas l'API Spotify sans cache — le
-  sondage à 2 s fait ~30 requêtes/min par source ouverte ; repli documenté = push WS
-  `music.changed` ; (b) que le reveal s'affiche réellement, ce qui suppose l'OAuth Spotify faite
-  (voir la section « Orpheus (musique) » plus bas). Jusque-là seule la géométrie est vérifiée,
-  en pilotant les classes d'état à la main.
+  `docs/plans/2026-08-29-now-playing-reveal.md`. Polling changed from 5 s to 2 s.
+  **Still to check on the box**: (a) that Orpheus does not relay the Spotify API without a cache — the
+  2 s polling makes ~30 requests/min per open source; documented fallback = WS push
+  `music.changed`; (b) that the reveal actually shows, which requires the Spotify OAuth to be done
+  (see the "Orpheus (music)" section further down). Until then only the geometry is verified,
+  by driving the state classes by hand.
 ```
 
-- [ ] **Step 10 : Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
 git add web/src/useTrackReveal.ts web/src/pages/now-playing-reveal.css \
         web/src/pages/RevealCard.tsx web/src/pages/NowPlaying.tsx docs/STATUS.md
-git commit -m "feat(now-playing): variante ?reveal (grande annonce → badge mini)"
+git commit -m "feat(now-playing): ?reveal variant (big announcement → mini badge)"
 ```
 
 ---
 
-## Reste à vérifier sur le box (hors plan)
+## Still to check on the box (outside the plan)
 
-Ces deux points ne peuvent pas être vérifiés depuis le Mac et ne bloquent pas l'implémentation :
+These two points cannot be checked from the Mac and do not block the implementation:
 
-1. **Cache Orpheus.** Le passage à 2 s suppose qu'Orpheus ne relaie pas l'API Spotify sans cache.
-   Repli documenté si l'hypothèse tombe : push WS `music.changed` (hors scope de la spec).
-2. **Rendu réel.** Le reveal ne peut être vu de bout en bout qu'avec l'OAuth Spotify faite côté
-   Orpheus (`docs/STATUS.md`, section « Orpheus (musique) »). Jusque-là, seule la géométrie est
-   vérifiable, en pilotant les classes à la main.
+1. **Orpheus cache.** The switch to 2 s assumes Orpheus does not relay the Spotify API without a cache.
+   Documented fallback if the assumption fails: WS push `music.changed` (out of the spec's scope).
+2. **Real rendering.** The reveal can only be seen end to end with the Spotify OAuth done on the
+   Orpheus side (`docs/STATUS.md`, section "Orpheus (music)"). Until then, only the geometry is
+   checkable, by driving the classes by hand.

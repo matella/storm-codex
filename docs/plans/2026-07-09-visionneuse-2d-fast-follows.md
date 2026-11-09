@@ -1,185 +1,185 @@
-# Visionneuse 2D — Fast-follows (Phases 2–5) — Plan d'implémentation
+# 2D viewer — Fast-follows (Phases 2–5) — Implementation plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (fresh subagent per lot + two-stage review). Steps use checkbox (`- [ ]`).
+> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (fresh subagent per batch + two-stage review). Steps use checkbox (`- [ ]`).
 
-**Goal:** Compléter la visionneuse 2D au-delà du MVP-1 : lecture animée, structures, kill-feed, indicateurs de sorts/talents/niveaux, objectifs par carte, toggle minions, export de clip — tout ce que couvre la spec au-delà de la V1.
+**Goal:** Complete the 2D viewer beyond MVP-1: animated playback, structures, kill-feed, ability/talent/level indicators, per-map objectives, minion toggle, clip export — everything the spec covers beyond V1.
 
-**Base :** MVP-1 livré + déployé (crate `storm-replay-viewer`, endpoint `/api/matches/{id}/replay2d`, onglet front `web/src/components/Replay2D.tsx` + `web/src/replay2d.ts`). Ces lots **étendent** ces trois unités selon les mêmes patterns.
+**Base:** MVP-1 shipped + deployed (crate `storm-replay-viewer`, endpoint `/api/matches/{id}/replay2d`, front tab `web/src/components/Replay2D.tsx` + `web/src/replay2d.ts`). These batches **extend** those three units following the same patterns.
 
 **Spec :** `docs/specs/2026-07-09-visionneuse-2d-replay-design.md` (Phases 2–5, US-11, US-16→US-27).
 
-**Vérités terrain (mesurées sur un vrai replay — cf. recon 2026-07-09) :**
-- Structures : born `KingsCore`(core), `TownTownHallL{2,3}`(fort/keep), `TownCannonTowerL{2,3}`(tour), `TownWallRadial*`(mur), `TownGate*`(porte), `m_controlPlayerId` **11=team0 / 12=team1** ; destruction = `SUnitDiedEvent` du tag ; `SStatGameEvent{TownStructureInit}`.
-- Talents : `SHeroTalentTreeSelectedEvent {_userid.m_userId, m_index, _gameloop}` (pick, l'ordre = tier) ; `SStatGameEvent{TalentChosen}` et `{LevelUp}` (horodatés). Noms via `dim_talents` (peuplé sur le box).
-- Sorts : `SCmdEvent` avec `m_abil` non-null (`m_abilLink`), clé `_userid.m_userId`.
-- Kill-feed : `deaths` (déjà extraits) + `SStatGameEvent{PlayerDeath, JungleCampCapture}` + morts de structures.
-- Minions/camps : `SUnitPositionsEvent` porte aussi les unités non-héros (damage-gated, éparses).
+**Ground truths (measured on a real replay — see recon 2026-07-09):**
+- Structures: born `KingsCore`(core), `TownTownHallL{2,3}`(fort/keep), `TownCannonTowerL{2,3}`(tower), `TownWallRadial*`(wall), `TownGate*`(gate), `m_controlPlayerId` **11=team0 / 12=team1**; destruction = the tag's `SUnitDiedEvent`; `SStatGameEvent{TownStructureInit}`.
+- Talents: `SHeroTalentTreeSelectedEvent {_userid.m_userId, m_index, _gameloop}` (pick, order = tier); `SStatGameEvent{TalentChosen}` and `{LevelUp}` (timestamped). Names via `dim_talents` (populated on the box).
+- Abilities: `SCmdEvent` with a non-null `m_abil` (`m_abilLink`), key `_userid.m_userId`.
+- Kill-feed: `deaths` (already extracted) + `SStatGameEvent{PlayerDeath, JungleCampCapture}` + structure deaths.
+- Minions/camps: `SUnitPositionsEvent` also carries non-hero units (damage-gated, sparse).
 
-**⚠️ Branche :** `git switch -c feat/replay2d-fastfollows` (pas sur `main`). Chaque lot commit + review avant le suivant.
+**⚠️ Branch:** `git switch -c feat/replay2d-fastfollows` (not on `main`). Each batch commit + review before the next one.
 
-**Rappel bump `VIEWER_VERSION`** : dès qu'un lot change le **schéma JSON** du modèle (nouveaux champs), incrémenter `VIEWER_VERSION` dans `crates/storm-replay-viewer/src/model.rs` (invalide le cache disque `{id}-replay2d-v{N}.json`) et régénérer le golden (`UPDATE_GOLDEN=1`).
+**`VIEWER_VERSION` bump reminder**: as soon as a batch changes the model's **JSON schema** (new fields), increment `VIEWER_VERSION` in `crates/storm-replay-viewer/src/model.rs` (invalidates the disk cache `{id}-replay2d-v{N}.json`) and regenerate the golden (`UPDATE_GOLDEN=1`).
 
-**Ordre de build = valeur/effort décroissant, chaque lot livrable indépendamment.**
+**Build order = decreasing value/effort, each batch shippable independently.**
 
 ---
 
-## Chunk 1 — Lecture animée (Phase 2, US-11) · FRONT SEUL
+## Chunk 1 — Animated playback (Phase 2, US-11) · FRONT ONLY
 
-**Responsabilité :** play/pause + vitesse 0,5×–8× pilotant le `t` existant. Aucune donnée serveur.
+**Responsibility:** play/pause + speed 0.5×–8× driving the existing `t`. No server data.
 
-**Fichiers :** Créer `web/src/usePlayback.ts` (hook pur testable) ; Modifier `web/src/components/Replay2D.tsx` (contrôles) ; Test `web/src/usePlayback.test.ts`.
+**Files:** Create `web/src/usePlayback.ts` (testable pure hook); Modify `web/src/components/Replay2D.tsx` (controls); Test `web/src/usePlayback.test.ts`.
 
-- [ ] **Step 1 — test du hook (échoue)** : `usePlayback` expose `{playing, speed, toggle, setSpeed}` et, via un « tick » injectable, avance `t` de `speed × dt` en secondes, s'arrête à `durationSec` (clamp + auto-pause). Écrire un test unitaire de la **fonction pure d'avancement** `advance(t, dt, speed, duration) → {t, playing}` (pas le hook React) : `advance(10, 1, 2, 100) → {t:12}` ; `advance(99.5, 1, 8, 100) → {t:100, playing:false}` (clamp + pause en fin).
-- [ ] **Step 2** : `npm run test` → FAIL.
-- [ ] **Step 3 — implémenter** `web/src/usePlayback.ts` : `advance()` pure + un hook `usePlayback(duration, {onTick})` qui utilise `requestAnimationFrame` (delta réel via un timestamp passé en argument au callback pour rester testable ; le hook mesure le delta lui-même via `performance.now`). NB : `performance.now` est autorisé côté navigateur (ce n'est pas le sandbox Rust). Le hook ne détient PAS `t` : il appelle `onTick(dt)` et le composant applique `advance`.
-- [ ] **Step 4** : `npm run test` → PASS.
-- [ ] **Step 5 — brancher dans Replay2D.tsx** : bouton ▶/⏸, sélecteur de vitesse (0.5, 1, 2, 4, 8), câblés au scrub existant (`setT(t => advance(...).t)`). Le scrub manuel met en pause. `aria-label` sur les contrôles. **Arrêt de boucle** : quand `advance` renvoie `playing:false` (fin atteinte), le composant doit repasser le hook en pause (appeler `toggle`/`setPlaying(false)`) pour que la boucle `requestAnimationFrame` cesse de tourner à vide après la fin du clip.
-- [ ] **Step 6** : `npm run build` → `✓ built`. Commit `feat(web): lecture animée play/pause + vitesse (US-11)`.
+- [ ] **Step 1 — hook test (fails)**: `usePlayback` exposes `{playing, speed, toggle, setSpeed}` and, via an injectable "tick", advances `t` by `speed × dt` seconds, stops at `durationSec` (clamp + auto-pause). Write a unit test of the **pure advance function** `advance(t, dt, speed, duration) → {t, playing}` (not the React hook): `advance(10, 1, 2, 100) → {t:12}`; `advance(99.5, 1, 8, 100) → {t:100, playing:false}` (clamp + pause at the end).
+- [ ] **Step 2**: `npm run test` → FAIL.
+- [ ] **Step 3 — implement** `web/src/usePlayback.ts`: pure `advance()` + a hook `usePlayback(duration, {onTick})` that uses `requestAnimationFrame` (real delta via a timestamp passed as an argument to the callback to stay testable; the hook measures the delta itself via `performance.now`). NB: `performance.now` is allowed in the browser (this is not the Rust sandbox). The hook does NOT own `t`: it calls `onTick(dt)` and the component applies `advance`.
+- [ ] **Step 4**: `npm run test` → PASS.
+- [ ] **Step 5 — wire into Replay2D.tsx**: ▶/⏸ button, speed selector (0.5, 1, 2, 4, 8), wired to the existing scrub (`setT(t => advance(...).t)`). Manual scrubbing pauses. `aria-label` on the controls. **Loop stop**: when `advance` returns `playing:false` (end reached), the component must put the hook back into pause (call `toggle`/`setPlaying(false)`) so the `requestAnimationFrame` loop stops spinning idle after the end of the clip.
+- [ ] **Step 6**: `npm run build` → `✓ built`. Commit `feat(web): animated playback play/pause + speed (US-11)`.
 
 ---
 
 ## Chunk 2 — Structures (Phase 3, US-16) · CRATE + FRONT
 
-**Responsabilité :** état des structures (core/fort/keep/tour/mur/porte) vivant→détruit au scrub.
+**Responsibility:** state of the structures (core/fort/keep/tower/wall/gate) alive→destroyed while scrubbing.
 
-**Fichiers :** Modifier `crates/storm-replay-viewer/src/{model.rs,extract.rs}` ; Modifier `web/src/replay2d.ts` (type) + `web/src/components/Replay2D.tsx` (rendu) ; Test crate `tests/extract.rs`.
+**Files:** Modify `crates/storm-replay-viewer/src/{model.rs,extract.rs}`; Modify `web/src/replay2d.ts` (type) + `web/src/components/Replay2D.tsx` (rendering); crate test `tests/extract.rs`.
 
-- [ ] **Step 1 — modèle** : ajouter à `ViewerModel` un champ `structures: Vec<Structure>` où
+- [ ] **Step 1 — model**: add to `ViewerModel` a field `structures: Vec<Structure>` where
   `Structure { team: i64, kind: String, x: f64, y: f64, destroyed_at: Option<f64> }` (camelCase, `destroyedAt`). **Bump `VIEWER_VERSION` → 2.**
-- [ ] **Step 2 — test crate (échoue)** : `structures_present_and_classified` : ≥1 structure `kind=="core"` par équipe (0 et 1), toutes coords ∈ [0,1], `destroyed_at` soit `None` soit ∈ [0, durationSec]. (Sur silver-city ARAM il y a 2 `KingsCore`.)
-- [ ] **Step 3** : `cargo test -p storm-replay-viewer` → FAIL.
-- [ ] **Step 4 — extraction** : dans `build`, parcourir `SUnitBornEvent` où `m_controlPlayerId ∈ {11,12}` **et** `m_unitTypeName` matche un préfixe structure. Classifier `kind` :
+- [ ] **Step 2 — crate test (fails)**: `structures_present_and_classified`: ≥1 structure `kind=="core"` per team (0 and 1), all coords ∈ [0,1], `destroyed_at` either `None` or ∈ [0, durationSec]. (On silver-city ARAM there are 2 `KingsCore`.)
+- [ ] **Step 3**: `cargo test -p storm-replay-viewer` → FAIL.
+- [ ] **Step 4 — extraction**: in `build`, walk `SUnitBornEvent` where `m_controlPlayerId ∈ {11,12}` **and** `m_unitTypeName` matches a structure prefix. Classify `kind`:
   ```
   KingsCore|*Core*        → "core"
-  TownTownHall*           → "fort"      // (fort/keep : garder "fort" en V1, raffiner plus tard)
+  TownTownHall*           → "fort"      // (fort/keep: keep "fort" in V1, refine later)
   TownCannonTower*|*Tower*→ "tower"
   TownWall*               → "wall"
   TownGate*               → "gate"
   TownMoonwell*           → "well"
-  sinon                   → "other" (ignorer other pour le rendu si trop bruyant)
+  otherwise               → "other" (ignore other for rendering if too noisy)
   ```
-  `team = if m_controlPlayerId==11 {0} else {1}`. Position `q3(norm_tile(m_x,m_y))`. `destroyed_at` : chercher un `SUnitDiedEvent` du même `(m_unitTagIndex,m_unitTagRecycle)` → `loop_to_sec(t)`, sinon `None`. Trier par (team, kind). Ignorer les unités éphémères (`WitchDoctorZombieWallUnit`, `*BunkerDrop*`, summons) — restreindre au préfixe `Town`/`KingsCore`/`HallOfStorms`.
-- [ ] **Step 5** : régénérer golden (`UPDATE_GOLDEN=1`), `cargo test -p storm-replay-viewer` + `--workspace` PASS, clippy clean.
-- [ ] **Step 6 — front** : type `Structure` dans `replay2d.ts` ; dans le draw loop, dessiner chaque structure à `(x,(1-y))` : icône/losange selon `kind` (couleur d'équipe), **grisé + ✕** si `destroyedAt != null && t >= destroyedAt`. Core = plus gros. Dessiner SOUS les héros (structures d'abord).
-- [ ] **Step 7** : `npm run build` ✓. Commit `feat(viewer): structures alive/destroyed (US-16)` (crate+front).
+  `team = if m_controlPlayerId==11 {0} else {1}`. Position `q3(norm_tile(m_x,m_y))`. `destroyed_at`: look for a `SUnitDiedEvent` with the same `(m_unitTagIndex,m_unitTagRecycle)` → `loop_to_sec(t)`, otherwise `None`. Sort by (team, kind). Ignore ephemeral units (`WitchDoctorZombieWallUnit`, `*BunkerDrop*`, summons) — restrict to the `Town`/`KingsCore`/`HallOfStorms` prefix.
+- [ ] **Step 5**: regenerate the golden (`UPDATE_GOLDEN=1`), `cargo test -p storm-replay-viewer` + `--workspace` PASS, clippy clean.
+- [ ] **Step 6 — front**: `Structure` type in `replay2d.ts`; in the draw loop, draw each structure at `(x,(1-y))`: icon/diamond by `kind` (team colour), **greyed + ✕** if `destroyedAt != null && t >= destroyedAt`. Core = bigger. Draw UNDER the heroes (structures first).
+- [ ] **Step 7**: `npm run build` ✓. Commit `feat(viewer): structures alive/destroyed (US-16)` (crate+front).
 
 ---
 
 ## Chunk 3 — Kill-feed cliquable (Phase 3, US-20) · CRATE + FRONT
 
-**Responsabilité :** journal d'événements (takedowns, morts de structures, captures de camp) à côté de la carte ; clic → seek.
+**Responsibility:** event log (takedowns, structure deaths, camp captures) next to the map; click → seek.
 
-**Fichiers :** Modifier `crates/storm-replay-viewer/src/{model.rs,extract.rs}` ; `web/src/replay2d.ts` + `Replay2D.tsx` ; test crate.
+**Files:** Modify `crates/storm-replay-viewer/src/{model.rs,extract.rs}`; `web/src/replay2d.ts` + `Replay2D.tsx`; crate test.
 
-- [ ] **Step 1 — modèle** : `events: Vec<FeedEvent>` où **le crate émet des champs STRUCTURÉS, pas de texte lisible** (le front compose le libellé avec les vrais noms) :
-  `FeedEvent { t: f64, kind: String, team: Option<i64>, victim_player_id: Option<i64>, killer_player_id: Option<i64>, structure_kind: Option<String> }` (camelCase en JSON). `kind ∈ {"takedown","structure","camp","objective"}`. `structure_kind` réutilise l'énum de Chunk 2 (`core/fort/tower/wall/gate/well/other`). **Bump `VIEWER_VERSION` → 3.**
-- [ ] **Step 2 — test (échoue)** : `feed_events_sorted_nonempty` : `events` non vide, triés par `t` croissant, chaque `t ∈ [0,durationSec]`, au moins un `kind=="takedown"`.
-- [ ] **Step 3** : FAIL.
-- [ ] **Step 4 — extraction** : construire `events` avec les champs structurés définis en Step 1 (aucun texte côté crate).
-  - **takedowns** : un `FeedEvent{kind:"takedown", t, victim_player_id, killer_player_id, team=équipe de la victime}` par mort de héros (réutiliser la logique/les données de `deaths`).
-  - **structure** : `FeedEvent{kind:"structure", t=destroyed_at, team, structure_kind}` pour chaque `Structure` de Chunk 2 dont `destroyed_at != None`.
-  - **camp** : `SStatGameEvent{JungleCampCapture}` → `FeedEvent{kind:"camp", t, team}` (équipe depuis `m_intData`/player→team si présent, sinon `team=None`).
-  - Trier par `t` croissant.
-- [ ] **Step 5** : golden + tests + clippy PASS.
-- [ ] **Step 6 — front** : panneau liste à droite (sous la légende ou onglet) : chaque event = icône (💀/🏰/🏕️) + libellé (noms via `players[]`/`heroIcon`) + timecode `mm:ss`, couleur d'équipe, **clic → setT(event.t)** + pause. Surligner l'event le plus proche de `t`. Scroll auto vers l'event courant. Rangs cliquables = `<button>` (ou `role="button"` + `aria-label` décrivant l'event et son timecode) pour l'accessibilité clavier.
-- [ ] **Step 7** : `npm run build` ✓. Commit `feat(viewer): clickable kill-feed event log (US-20)`.
+- [ ] **Step 1 — model**: `events: Vec<FeedEvent>` where **the crate emits STRUCTURED fields, not readable text** (the front builds the label with the real names):
+  `FeedEvent { t: f64, kind: String, team: Option<i64>, victim_player_id: Option<i64>, killer_player_id: Option<i64>, structure_kind: Option<String> }` (camelCase in JSON). `kind ∈ {"takedown","structure","camp","objective"}`. `structure_kind` reuses the Chunk 2 enum (`core/fort/tower/wall/gate/well/other`). **Bump `VIEWER_VERSION` → 3.**
+- [ ] **Step 2 — test (fails)**: `feed_events_sorted_nonempty`: `events` non-empty, sorted by increasing `t`, each `t ∈ [0,durationSec]`, at least one `kind=="takedown"`.
+- [ ] **Step 3**: FAIL.
+- [ ] **Step 4 — extraction**: build `events` with the structured fields defined in Step 1 (no text on the crate side).
+  - **takedowns**: one `FeedEvent{kind:"takedown", t, victim_player_id, killer_player_id, team=victim's team}` per hero death (reuse the logic/data of `deaths`).
+  - **structure**: `FeedEvent{kind:"structure", t=destroyed_at, team, structure_kind}` for each Chunk 2 `Structure` whose `destroyed_at != None`.
+  - **camp**: `SStatGameEvent{JungleCampCapture}` → `FeedEvent{kind:"camp", t, team}` (team from `m_intData`/player→team if present, otherwise `team=None`).
+  - Sort by increasing `t`.
+- [ ] **Step 5**: golden + tests + clippy PASS.
+- [ ] **Step 6 — front**: list panel on the right (under the legend or as a tab): each event = icon (💀/🏰/🏕️) + label (names via `players[]`/`heroIcon`) + `mm:ss` timecode, team colour, **click → setT(event.t)** + pause. Highlight the event closest to `t`. Auto-scroll to the current event. Clickable rows = `<button>` (or `role="button"` + an `aria-label` describing the event and its timecode) for keyboard accessibility.
+- [ ] **Step 7**: `npm run build` ✓. Commit `feat(viewer): clickable kill-feed event log (US-20)`.
 
 ---
 
-## Chunk 4 — Indicateurs de sorts (Phase 3, US-18) · CRATE + FRONT
+## Chunk 4 — Ability indicators (Phase 3, US-18) · CRATE + FRONT
 
-**Responsabilité :** flash sur un héros quand il lance un sort.
+**Responsibility:** flash on a hero when they cast an ability.
 
-**Fichiers :** crate `{model,extract}` ; `replay2d.ts` + `Replay2D.tsx` ; test crate.
+**Files:** crate `{model,extract}`; `replay2d.ts` + `Replay2D.tsx`; crate test.
 
-- [ ] **Step 1 — modèle** : ajouter aux `HeroTrack` un champ `casts: Vec<f64>` (instants de lancement, triés). **Bump `VIEWER_VERSION` → 4.**
-- [ ] **Step 2 — test (échoue)** : `casts_present` : somme des `casts` sur tous les héros > 100 ; chaque instant ∈ [0,durationSec] ; triés.
-- [ ] **Step 3** : FAIL.
-- [ ] **Step 4 — extraction** : dans le passage `visit_game_events`, pour un `SCmdEvent` avec `m_abil` non-null, `t=loop_to_sec(_gameloop)`, `p=user_to_player[_userid.m_userId]` → pousser `t` dans `casts[p]`. **Dédup temporel** : ignorer un cast à moins de ~0.3 s du précédent du même joueur (spam de re-cast). Ne PAS tenter d'identifier quel sort (hors périmètre — juste « a lancé un sort »). Trier.
-- [ ] **Step 5** : golden + tests + clippy.
-- [ ] **Step 6 — front** : helper pur `castFlash(casts, t, window=0.6) → 0..1` (intensité du flash le plus proche, 0 si aucun) + test. Dans le draw loop, si intensité>0, dessiner un anneau lumineux pulsé autour de la pastille. Utile en lecture animée.
-- [ ] **Step 7** : `npm run build` ✓. Commit `feat(viewer): ability-cast flash indicators (US-18)`.
+- [ ] **Step 1 — model**: add to `HeroTrack` a field `casts: Vec<f64>` (cast instants, sorted). **Bump `VIEWER_VERSION` → 4.**
+- [ ] **Step 2 — test (fails)**: `casts_present`: sum of `casts` over all heroes > 100; each instant ∈ [0,durationSec]; sorted.
+- [ ] **Step 3**: FAIL.
+- [ ] **Step 4 — extraction**: in the `visit_game_events` pass, for an `SCmdEvent` with a non-null `m_abil`, `t=loop_to_sec(_gameloop)`, `p=user_to_player[_userid.m_userId]` → push `t` into `casts[p]`. **Temporal dedup**: ignore a cast less than ~0.3 s after the same player's previous one (re-cast spam). Do NOT try to identify which ability (out of scope — just "cast an ability"). Sort.
+- [ ] **Step 5**: golden + tests + clippy.
+- [ ] **Step 6 — front**: pure helper `castFlash(casts, t, window=0.6) → 0..1` (intensity of the closest flash, 0 if none) + test. In the draw loop, if intensity>0, draw a pulsing glowing ring around the marker. Useful during animated playback.
+- [ ] **Step 7**: `npm run build` ✓. Commit `feat(viewer): ability-cast flash indicators (US-18)`.
 
 ---
 
 ## Chunk 5 — Talents/niveaux + bande talents (Phase 3 US-19 + Phase 5 US-27) · CRATE + FRONT
 
-**Responsabilité :** marqueur de pick de talent par héros + **bande de tiers** sous le scrub.
+**Responsibility:** talent pick marker per hero + **tier strip** under the scrub.
 
-**Fichiers :** crate `{model,extract}` ; `replay2d.ts` + `Replay2D.tsx` (+ éventuel `web/src/components/TalentStrip2D.tsx`) ; test crate.
+**Files:** crate `{model,extract}`; `replay2d.ts` + `Replay2D.tsx` (+ possibly `web/src/components/TalentStrip2D.tsx`); crate test.
 
-- [ ] **Step 1 — modèle** : `HeroTrack.talents: Vec<TalentPick>` où `TalentPick { t: f64, tier: i64, talent_id: Option<String> }` ; `levels: Vec<LevelTick>` (au niveau `ViewerModel`) où `LevelTick { t, team, level }` (ARAM = XP partagé par équipe). **Bump `VIEWER_VERSION` → 5.**
-- [ ] **Step 2 — test (échoue)** : `talents_and_levels` : au moins un héros a des `talents` non vides, `tier` croissant par héros ; `levels` non vide, `level` croissant par équipe.
-- [ ] **Step 3** : FAIL.
-- [ ] **Step 4 — extraction** : talents depuis `SHeroTalentTreeSelectedEvent` (ordre des picks par joueur = tier 1,2,3… → `tier` = rang du pick ; mapper aux niveaux 1,4,7,10,13,16,20 pour info). **Décision V1 : `talent_id = None`** — le crate reste pur (pas de référentiel, cf. Notes transverses) ; le FRONT résout le nom via `dim_talents` + le build `match_players.talents` déjà stocké (indexé par tier). Ne PAS lire `TalentChosen.m_stringData` en V1. Niveaux : `SStatGameEvent{LevelUp}` (équipe via `m_intData`/player→team) → `levels`.
-- [ ] **Step 5** : golden + tests + clippy.
-- [ ] **Step 6 — front marqueur** : sur la pastille, petit badge « ⬆ » ou halo quand `talents[i].t` proche de `t` (≤ 3 s). Résoudre le nom via `talentInfo()`/`dim_talents` (déjà côté front) en tooltip.
-- [ ] **Step 7 — bande talents (US-27)** : sous le scrub, une grille 10 lignes (héros) × tiers ; case remplie quand le tier est pris à `t` (couleur d'équipe), vide sinon ; hover = nom du talent. Niveau d'équipe affiché.
-- [ ] **Step 8** : `npm run build` ✓. Commit `feat(viewer): talent/level indicators + talent timeline strip (US-19/US-27)`.
+- [ ] **Step 1 — model**: `HeroTrack.talents: Vec<TalentPick>` where `TalentPick { t: f64, tier: i64, talent_id: Option<String> }`; `levels: Vec<LevelTick>` (at the `ViewerModel` level) where `LevelTick { t, team, level }` (ARAM = XP shared per team). **Bump `VIEWER_VERSION` → 5.**
+- [ ] **Step 2 — test (fails)**: `talents_and_levels`: at least one hero has non-empty `talents`, `tier` increasing per hero; `levels` non-empty, `level` increasing per team.
+- [ ] **Step 3**: FAIL.
+- [ ] **Step 4 — extraction**: talents from `SHeroTalentTreeSelectedEvent` (order of picks per player = tier 1,2,3… → `tier` = pick rank; map to levels 1,4,7,10,13,16,20 for information). **V1 decision: `talent_id = None`** — the crate stays pure (no reference data, see Cross-cutting notes); the FRONT resolves the name via `dim_talents` + the already stored `match_players.talents` build (indexed by tier). Do NOT read `TalentChosen.m_stringData` in V1. Levels: `SStatGameEvent{LevelUp}` (team via `m_intData`/player→team) → `levels`.
+- [ ] **Step 5**: golden + tests + clippy.
+- [ ] **Step 6 — front marker**: on the marker, a small "⬆" badge or halo when `talents[i].t` is close to `t` (≤ 3 s). Resolve the name via `talentInfo()`/`dim_talents` (already on the front) in a tooltip.
+- [ ] **Step 7 — talent strip (US-27)**: under the scrub, a grid of 10 rows (heroes) × tiers; cell filled when the tier is taken at `t` (team colour), empty otherwise; hover = talent name. Team level displayed.
+- [ ] **Step 8**: `npm run build` ✓. Commit `feat(viewer): talent/level indicators + talent timeline strip (US-19/US-27)`.
 
 ---
 
-## Chunk 6 — Objectifs par carte (Phase 4, US-21→US-24) · CRATE (module par carte) + FRONT
+## Chunk 6 — Per-map objectives (Phase 4, US-21→US-24) · CRATE (module per map) + FRONT
 
-**Responsabilité :** cadre par-carte isolé (US-24) ; renseigner les objectifs traçables, **signaler « données indisponibles »** pour les cartes à trou connu (US-7/US-22/US-23) ; Braxis best-effort (US-21).
+**Responsibility:** isolated per-map framework (US-24); fill in the traceable objectives, **flag "data unavailable"** for maps with a known gap (US-7/US-22/US-23); Braxis best-effort (US-21).
 
-**Fichiers :** Créer `crates/storm-replay-viewer/src/maps/mod.rs` (+ `braxis.rs`, `generic.rs`) ; Modifier `extract.rs` (appel), `model.rs` ; `replay2d.ts` + `Replay2D.tsx` ; test crate.
+**Files:** Create `crates/storm-replay-viewer/src/maps/mod.rs` (+ `braxis.rs`, `generic.rs`); Modify `extract.rs` (call), `model.rs`; `replay2d.ts` + `Replay2D.tsx`; crate test.
 
-- [ ] **Step 1 — modèle** : `objectives: Vec<Objective>` où `Objective { t: f64, kind: String, team: Option<i64>, text: String }` (événements d'objectif horodatés) + réutiliser `warnings: Vec<String>` (déjà présent, US-7). **Bump `VIEWER_VERSION` → 6.**
-- [ ] **Step 2 — module par carte (US-24)** : `maps::objectives(map_name, &tracker) -> (Vec<Objective>, Vec<String> warnings)`. Chaque carte = un handler ; défaut `generic` (rien / événements d'objectif génériques s'il y en a). Cartes à trou → `warnings.push("objective data unavailable: <map>")` (Blackheart's Bay, Volskaya Foundry).
-- [ ] **Step 3 — test (échoue)** : `objectives_framework` : pour un replay Braxis (ou à défaut, silver-city → `objectives` vide + pas de warning erroné), la fonction ne panique pas et respecte l'invariant (t ∈ [0,dur]). Pour une carte à trou (monter un cas), un warning est présent. (Utiliser les replays dispo ; si Braxis absent du corpus local, tester au moins le routage `generic` + le warning sur un nom de carte-trou simulé via un test unitaire de `maps::objectives`.)
-- [ ] **Step 4** : FAIL.
-- [ ] **Step 5 — implémenter** : `braxis.rs` (US-21) : inférer la force/timing des vagues depuis les morts d'`Ultralisk`/unités zerg (`SUnitDiedEvent` unit types zerg) → `Objective{kind:"zerg_wave"}`. `generic.rs` : mapper les `SStatGameEvent` d'objectif communs si présents. Cartes-trou → warnings. Brancher dans `build`.
-  ⚠️ **Corpus** : aucun replay Braxis/Blackheart/Volskaya n'est committé (seul silver-city ARAM + Industrial District). Tenter d'en récupérer un (`fetch-corpus`/NAS/box read-only) pour valider `braxis.rs` ; **à défaut, marquer l'inférence de vagues comme « non validée sur données réelles / best-effort » dans le message de commit ET dans STATUS.md** — ne pas la présenter comme testée alors que seuls le routage + le warning le sont.
-- [ ] **Step 6** : golden + tests + clippy.
-- [ ] **Step 7 — front** : afficher les `objectives` dans le kill-feed (kind `objective`) + un bandeau « objective data unavailable » quand `warnings` non vide.
-- [ ] **Step 8** : `npm run build` ✓. Commit `feat(viewer): per-map objectives framework + gap warnings + Braxis waves (US-21..24)`.
+- [ ] **Step 1 — model**: `objectives: Vec<Objective>` where `Objective { t: f64, kind: String, team: Option<i64>, text: String }` (timestamped objective events) + reuse `warnings: Vec<String>` (already present, US-7). **Bump `VIEWER_VERSION` → 6.**
+- [ ] **Step 2 — module per map (US-24)**: `maps::objectives(map_name, &tracker) -> (Vec<Objective>, Vec<String> warnings)`. Each map = a handler; default `generic` (nothing / generic objective events if any). Maps with a gap → `warnings.push("objective data unavailable: <map>")` (Blackheart's Bay, Volskaya Foundry).
+- [ ] **Step 3 — test (fails)**: `objectives_framework`: for a Braxis replay (or failing that, silver-city → empty `objectives` + no wrong warning), the function does not panic and respects the invariant (t ∈ [0,dur]). For a map with a gap (build a case), a warning is present. (Use the available replays; if Braxis is missing from the local corpus, test at least the `generic` routing + the warning on a simulated gap-map name via a unit test of `maps::objectives`.)
+- [ ] **Step 4**: FAIL.
+- [ ] **Step 5 — implement**: `braxis.rs` (US-21): infer wave strength/timing from the deaths of `Ultralisk`/zerg units (`SUnitDiedEvent` zerg unit types) → `Objective{kind:"zerg_wave"}`. `generic.rs`: map the common objective `SStatGameEvent`s if present. Gap maps → warnings. Wire into `build`.
+  ⚠️ **Corpus**: no Braxis/Blackheart/Volskaya replay is committed (only silver-city ARAM + Industrial District). Try to get one (`fetch-corpus`/NAS/box read-only) to validate `braxis.rs`; **failing that, mark the wave inference as "not validated on real data / best-effort" in the commit message AND in STATUS.md** — do not present it as tested when only the routing + the warning are.
+- [ ] **Step 6**: golden + tests + clippy.
+- [ ] **Step 7 — front**: show the `objectives` in the kill-feed (kind `objective`) + an "objective data unavailable" banner when `warnings` is non-empty.
+- [ ] **Step 8**: `npm run build` ✓. Commit `feat(viewer): per-map objectives framework + gap warnings + Braxis waves (US-21..24)`.
 
 ---
 
 ## Chunk 7 — Toggle minions/camps (Phase 5, US-26) · CRATE + FRONT
 
-**Responsabilité :** afficher/masquer les unités non-héros (best-effort, éparses).
+**Responsibility:** show/hide non-hero units (best-effort, sparse).
 
-**Fichiers :** crate `{model,extract}` ; `replay2d.ts` + `Replay2D.tsx` ; test crate.
+**Files:** crate `{model,extract}`; `replay2d.ts` + `Replay2D.tsx`; crate test.
 
-- [ ] **Step 1 — modèle** : `minions: Vec<MinionSample>` où `MinionSample { t, x, y, team }` (positions non-héros damage-gated). **Bump `VIEWER_VERSION` → 7.** ⚠️ Volume : quantifier + dédup agressif (grille), plafonner (log si tronqué — pas de cap silencieux).
-- [ ] **Step 2 — test (échoue)** : `minions_bounded` : coords ∈ [0,1] ; nombre borné (< 20000) ; team ∈ {0,1} ou -1 (neutre).
-- [ ] **Step 3** : FAIL.
-- [ ] **Step 4 — extraction** : depuis `SUnitPositionsEvent`, pour les tags **non-héros** connus (via `unit_player` : unité non `isHero`, ou owner 11/12), pousser des `MinionSample` (team depuis owner : 11/12→0/1, autre→-1). Dédup par cellule de grille (~1/64) + fenêtre temporelle. Trier par t. **Plafond dur `const MINION_CAP: usize = 15000;`** : si dépassé, tronquer **et** `log::warn!("minions truncated: {kept}/{seen}")` — jamais de cap silencieux (le test Step 2 vérifie `< 20000`).
-- [ ] **Step 5** : golden + tests + clippy.
-- [ ] **Step 6 — front** : case à cocher « minions/camps » (défaut OFF, avec `aria-label`) ; si ON, dessiner de petits points ternes (couleur d'équipe atténuée) à `sampleAt`-like nearest (pas d'interpolation — trop épars, afficher le sample le plus proche dans une fenêtre ~5 s).
-- [ ] **Step 7** : `npm run build` ✓. Commit `feat(viewer): minion/camp visibility toggle (US-26)`.
-
----
-
-## Chunk 8 — Export de clip (Phase 5, US-25) · FRONT SEUL
-
-**Responsabilité :** exporter un extrait [start,end] du canvas en fichier vidéo.
-
-**Fichiers :** Créer `web/src/clipExport.ts` ; Modifier `Replay2D.tsx` (UI) ; test unitaire de la logique de bornes.
-
-- [ ] **Step 1 — test (échoue)** : fonction pure `clipFrames(start, end, fps) → number` (nb de frames) + validation bornes (`start<end`, clamp à durée). `clipFrames(10,15,30)=150`.
-- [ ] **Step 2** : FAIL.
-- [ ] **Step 3 — implémenter** `clipExport.ts` : `clipFrames()` + `recordClip(canvas, {start, end, fps, speed, onFrame})` utilisant `canvas.captureStream(fps)` + `MediaRecorder` (webm/vp9, fallback vp8) ; boucle interne qui pilote `onFrame(t)` de start→end à `1000/fps` ms et `stop()` à la fin → `Blob` → `URL.createObjectURL` → download `match-<id>-<start>-<end>.webm`. NB : MediaRecorder est une API navigateur standard.
-- [ ] **Step 4** : `npm run test` PASS (la partie pure ; l'enregistrement réel = vérif E2E).
-- [ ] **Step 5 — UI** : deux poignées « clip start/end » (ou boutons « set in/out » sur le scrub) + bouton « Export clip » → `recordClip` en pilotant le rendu du canvas existant. Désactivé si `start>=end`. Indicateur d'enregistrement. `aria-label` sur les boutons in/out/export.
-- [ ] **Step 6** : `npm run build` ✓. Commit `feat(web): clip export to webm (US-25)`.
+- [ ] **Step 1 — model**: `minions: Vec<MinionSample>` where `MinionSample { t, x, y, team }` (damage-gated non-hero positions). **Bump `VIEWER_VERSION` → 7.** ⚠️ Volume: quantise + aggressive dedup (grid), cap (log if truncated — no silent cap).
+- [ ] **Step 2 — test (fails)**: `minions_bounded`: coords ∈ [0,1]; bounded count (< 20000); team ∈ {0,1} or -1 (neutral).
+- [ ] **Step 3**: FAIL.
+- [ ] **Step 4 — extraction**: from `SUnitPositionsEvent`, for known **non-hero** tags (via `unit_player`: non-`isHero` unit, or owner 11/12), push `MinionSample`s (team from owner: 11/12→0/1, other→-1). Dedup per grid cell (~1/64) + time window. Sort by t. **Hard cap `const MINION_CAP: usize = 15000;`**: if exceeded, truncate **and** `log::warn!("minions truncated: {kept}/{seen}")` — never a silent cap (the Step 2 test checks `< 20000`).
+- [ ] **Step 5**: golden + tests + clippy.
+- [ ] **Step 6 — front**: "minions/camps" checkbox (default OFF, with `aria-label`); if ON, draw small dull dots (dimmed team colour) at the `sampleAt`-like nearest (no interpolation — too sparse, show the closest sample within a ~5 s window).
+- [ ] **Step 7**: `npm run build` ✓. Commit `feat(viewer): minion/camp visibility toggle (US-26)`.
 
 ---
 
-## Chunk 9 — Vérif E2E globale + STATUS
+## Chunk 8 — Clip export (Phase 5, US-25) · FRONT ONLY
 
-- [ ] **Step 1** : `cargo test --workspace` + `cd web && npm run test` + `npm run build` verts.
-- [ ] **Step 2 — smoke local** (comme MVP-1) : PG dev + serveur + upload d'un replay imagé (Cursed Hollow tiré du box en read-only si besoin) ; via preview : lecture animée, structures qui tombent, kill-feed cliquable, flashes de sorts, bande de talents, toggle minions, export d'un court clip. Screenshots.
-- [ ] **Step 3 — STATUS** : mettre à jour `docs/STATUS.md` (Phases 2–5 livrées + vérifiées ; ce qui reste éventuellement). Commit.
-- [ ] **Step 4** : `superpowers:finishing-a-development-branch` (merge/PR) puis (option opérateur) redéploiement box.
+**Responsibility:** export a [start,end] excerpt of the canvas as a video file.
+
+**Files:** Create `web/src/clipExport.ts`; Modify `Replay2D.tsx` (UI); unit test of the bounds logic.
+
+- [ ] **Step 1 — test (fails)**: pure function `clipFrames(start, end, fps) → number` (number of frames) + bounds validation (`start<end`, clamp to duration). `clipFrames(10,15,30)=150`.
+- [ ] **Step 2**: FAIL.
+- [ ] **Step 3 — implement** `clipExport.ts`: `clipFrames()` + `recordClip(canvas, {start, end, fps, speed, onFrame})` using `canvas.captureStream(fps)` + `MediaRecorder` (webm/vp9, vp8 fallback); internal loop that drives `onFrame(t)` from start→end every `1000/fps` ms and `stop()` at the end → `Blob` → `URL.createObjectURL` → download `match-<id>-<start>-<end>.webm`. NB: MediaRecorder is a standard browser API.
+- [ ] **Step 4**: `npm run test` PASS (the pure part; the actual recording = E2E check).
+- [ ] **Step 5 — UI**: two "clip start/end" handles (or "set in/out" buttons on the scrub) + an "Export clip" button → `recordClip` driving the existing canvas rendering. Disabled if `start>=end`. Recording indicator. `aria-label` on the in/out/export buttons.
+- [ ] **Step 6**: `npm run build` ✓. Commit `feat(web): clip export to webm (US-25)`.
+
+---
+
+## Chunk 9 — Global E2E check + STATUS
+
+- [ ] **Step 1**: `cargo test --workspace` + `cd web && npm run test` + `npm run build` green.
+- [ ] **Step 2 — local smoke** (like MVP-1): dev PG + server + upload of a mapped replay (Cursed Hollow pulled read-only from the box if needed); via preview: animated playback, falling structures, clickable kill-feed, ability flashes, talent strip, minion toggle, export of a short clip. Screenshots.
+- [ ] **Step 3 — STATUS**: update `docs/STATUS.md` (Phases 2–5 shipped + verified; what possibly remains). Commit.
+- [ ] **Step 4**: `superpowers:finishing-a-development-branch` (merge/PR) then (operator option) box redeployment.
 
 ---
 
 ## Notes transverses
-- **Schéma évolutif** : chaque lot qui ajoute un champ bump `VIEWER_VERSION` + régénère le golden. Le front ignore les champs qu'il ne connaît pas encore (rétro-compat).
-- **Budget payload** : structures/events/talents/casts sont légers ; **minions** est le seul risque → dédup grille + plafond + `log`. Objectifs légers.
-- **Réutilisation** : noms héros/talents via `players[]` + `dim_*` (front) — le crate reste pur géométrie/temps, sans référentiel.
-- **Perf seek** : tout reste 100 % client ; les nouvelles couches sont des lookups `t` (binaire/fenêtre). Pas de round-trip.
-- **YAGNI** : pas d'identification du sort précis (US-18 = flash générique) ; fort/keep non distingués finement en V1 ; objectifs = traçables + « unavailable » sinon (pas de sur-inférence).
+- **Evolving schema**: each batch that adds a field bumps `VIEWER_VERSION` + regenerates the golden. The front ignores fields it does not know yet (backward compatibility).
+- **Payload budget**: structures/events/talents/casts are light; **minions** is the only risk → grid dedup + cap + `log`. Objectives are light.
+- **Reuse**: hero/talent names via `players[]` + `dim_*` (front) — the crate stays pure geometry/time, with no reference data.
+- **Seek perf**: everything stays 100% client-side; the new layers are `t` lookups (binary/window). No round-trip.
+- **YAGNI**: no identification of the exact ability (US-18 = generic flash); fort/keep not finely distinguished in V1; objectives = traceable + "unavailable" otherwise (no over-inference).

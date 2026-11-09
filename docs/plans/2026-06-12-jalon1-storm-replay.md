@@ -1,159 +1,159 @@
-# Jalon 1 — crate `storm-replay` : décodage complet des 7 streams
+# Milestone 1 — `storm-replay` crate: complete decoding of the 7 streams
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal :** un crate Rust publiable (`crates/storm-replay`) qui décode les **7 streams** d'un
+**Goal:** a publishable Rust crate (`crates/storm-replay`) that decodes the **7 streams** of a
 `.StormReplay` (header, details, initdata, attributes, messages, game events, tracker events),
-avec tables de protocole générées (`protocol-gen`), fallback builds inconnus, erreurs typées.
-**Accept (spec) : 100 % du corpus décodé** (= l'archive locale entière, 2 652 replays) **et
-bench < 150 ms/replay hors stats** (7 streams compris).
+with generated protocol tables (`protocol-gen`), unknown-build fallback, typed errors.
+**Accept (spec): 100 % of the corpus decoded** (= the whole local archive, 2,652 replays) **and
+bench < 150 ms/replay excluding stats** (7 streams included).
 
-**Architecture :** le spike (jalon 0) a validé nom-mpq + le décodeur versioned interprétant des
-typeinfos JSON (12 ms/replay sur 3 streams). Le jalon 1 industrialise : workspace cargo racine,
-crate `storm-replay` (thiserror, pas d'`unwrap()` hors tests, clippy strict), port du
-**BitPackedDecoder** (bit-à-bit big-endian — requis par initdata/game/message events, absent du
-spike), décodeur attributes (format little-endian à part), tables **dédupliquées committées**
-(390 builds → 32 contenus distincts ≈ 0,5 MB, embarquées par `include_str!`), parité prouvée
-stream par stream contre heroprotocol.
+**Architecture:** the spike (milestone 0) validated nom-mpq + the versioned decoder interpreting
+JSON typeinfos (12 ms/replay on 3 streams). Milestone 1 industrialises: root cargo workspace,
+`storm-replay` crate (thiserror, no `unwrap()` outside tests, strict clippy), port of the
+**BitPackedDecoder** (bit-by-bit big-endian — required by initdata/game/message events, absent from the
+spike), attributes decoder (separate little-endian format), **deduplicated committed** tables
+(390 builds → 32 distinct contents ≈ 0.5 MB, embedded via `include_str!`), parity proven
+stream by stream against heroprotocol.
 
-**Tech stack :** Rust 2021 (deps lib : `serde_json`, `thiserror` ; dev : rien de plus),
-Python 3.13 pour protocol-gen/cross-check (clone GitHub Blizzard/heroprotocol — PyPI interdit,
-cf. rapport jalon 0).
+**Tech stack:** Rust 2021 (lib deps: `serde_json`, `thiserror`; dev: nothing more),
+Python 3.13 for protocol-gen/cross-check (GitHub clone of Blizzard/heroprotocol — PyPI forbidden,
+see milestone 0 report).
 
 ---
 
-## Contexte pour l'exécutant
+## Context for the implementer
 
-- Référence exacte des décodeurs : `decoders.py` du package pip heroprotocol
+- Exact reference of the decoders: `decoders.py` of the heroprotocol pip package
   (`python -c "import heroprotocol, pathlib; print(pathlib.Path(heroprotocol.__file__).parent)"`).
-  Le spike a déjà porté `VersionedDecoder` (`spike/storm-decode/src/versioned.rs`) — le
-  **BitPackedDecoder** (classe au-dessus dans le même fichier) reste à porter : lecture de bits
-  big-endian (`read_bits` : bits de poids faible de `_next` placés en poids fort du résultat),
-  `_int` = `bounds[0] + read_bits(bounds[1])` — **les bounds comptent ici** (le versioned les
-  ignore), `_struct` séquentiel sans tags, `_choice` sans skip (tag inconnu = corrompu),
-  `_bitarray` → (longueur, entier), `_blob` → byte_align puis octets alignés.
-- Attributes : `decode_replay_attributes_events` dans tout module protocole (ex.
-  protocol91756.py:453) — BitPackedBuffer **little-endian**, scopes/attrid, valeur 4 octets
-  inversés et dépouillés des `\x00`.
-- Boucle d'événements : `_decode_event_stream` (protocolXXXXX.py:366) — delta svaruint32,
-  userid **seulement** pour game/message events, eventid, struct, `byte_align()` entre
-  événements. Champs ajoutés : `_event`, `_eventid`, `_gameloop`, `_userid` (pas `_bits` :
-  on ne l'émet pas, le cross-check le strippe côté Python).
-- Spike réutilisable : `spike/export_protocols.py` (base de protocol-gen),
-  `spike/storm-decode/src/{versioned,protocol}.rs` (à adapter en lib propre),
-  corpus `corpus/spike50` + archive complète locale (~2 652 replays, builds ≥ 92665 → tous
-  couverts par les protocoles GitHub, fallback validé pour 97039).
-- Conventions repo : thiserror dans la lib (anyhow toléré uniquement dans les binaires
+  The spike already ported `VersionedDecoder` (`spike/storm-decode/src/versioned.rs`) — the
+  **BitPackedDecoder** (class above in the same file) remains to be ported: big-endian
+  bit reading (`read_bits`: low-order bits of `_next` placed in the high-order bits of the result),
+  `_int` = `bounds[0] + read_bits(bounds[1])` — **the bounds matter here** (the versioned one
+  ignores them), sequential `_struct` without tags, `_choice` without skip (unknown tag = corrupted),
+  `_bitarray` → (length, integer), `_blob` → byte_align then aligned bytes.
+- Attributes: `decode_replay_attributes_events` in any protocol module (e.g.
+  protocol91756.py:453) — BitPackedBuffer **little-endian**, scopes/attrid, 4-byte value
+  reversed and stripped of `\x00`.
+- Event loop: `_decode_event_stream` (protocolXXXXX.py:366) — delta svaruint32,
+  userid **only** for game/message events, eventid, struct, `byte_align()` between
+  events. Fields added: `_event`, `_eventid`, `_gameloop`, `_userid` (not `_bits`:
+  we do not emit it, the cross-check strips it on the Python side).
+- Reusable spike: `spike/export_protocols.py` (basis of protocol-gen),
+  `spike/storm-decode/src/{versioned,protocol}.rs` (to adapt into a clean lib),
+  corpus `corpus/spike50` + complete local archive (~2,652 replays, builds ≥ 92665 → all
+  covered by the GitHub protocols, fallback validated for 97039).
+- Repo conventions: thiserror in the lib (anyhow tolerated only in the binaries
   outils/tests), commits conventionnels, clippy `-D warnings`.
 
 ---
 
-### Task 1 : workspace racine + squelette du crate
+### Task 1: root workspace + crate skeleton
 
-- Racine : `Cargo.toml` workspace `members = ["crates/storm-replay"]`,
-  `exclude = ["spike/storm-decode"]` (le spike garde son lockfile, il est figé).
-- `crates/storm-replay` : lib `src/lib.rs` + `src/error.rs` (`thiserror` :
+- Root: `Cargo.toml` workspace `members = ["crates/storm-replay"]`,
+  `exclude = ["spike/storm-decode"]` (the spike keeps its lockfile, it is frozen).
+- `crates/storm-replay`: lib `src/lib.rs` + `src/error.rs` (`thiserror`:
   `Error::{Io, Mpq, Truncated, Corrupted, UnknownType, MissingStream, Protocol}` — classes
-  d'erreur stables, elles serviront aux stats d'échec du serveur au jalon 3).
-- `cargo clippy --workspace -- -D warnings` vert. Commit.
+  stable error codes, they will be used for the server's failure stats in milestone 3).
+- `cargo clippy --workspace -- -D warnings` green. Commit.
 
-### Task 2 : protocol-gen (tables dédupliquées committées)
+### Task 2: protocol-gen (deduplicated committed tables)
 
-- `tools/protocol_gen.py` : depuis un clone GitHub (clone automatique en `%TEMP%/heroprotocol`
-  si absent, option `--clone-dir`), exporte par build le JSON **complet** (typeinfos + les 6
-  constantes typeid + `tracker_event_types` + `game_event_types` + `message_event_types` +
-  `game_eventid_typeid`, `message_eventid_typeid`), déduplique par hash du contenu
-  (hors `base_build`), écrit :
-  - `crates/storm-replay/protocols/tables/<hash12>.json` (~32 fichiers),
+- `tools/protocol_gen.py`: from a GitHub clone (automatic clone into `%TEMP%/heroprotocol`
+  if absent, `--clone-dir` option), exports per build the **complete** JSON (typeinfos + the 6
+  typeid constants + `tracker_event_types` + `game_event_types` + `message_event_types` +
+  `game_eventid_typeid`, `message_eventid_typeid`), deduplicates by content hash
+  (excluding `base_build`), writes:
+  - `crates/storm-replay/protocols/tables/<hash12>.json` (~32 files),
   - `crates/storm-replay/protocols/index.json` (`{"builds": {"92665": "<hash12>", …},
     "latest": 96477}`),
-  - `crates/storm-replay/protocols/embed.rs` généré : `static TABLES: &[(&str, &str)] =
+  - generated `crates/storm-replay/protocols/embed.rs`: `static TABLES: &[(&str, &str)] =
     &[("<hash12>", include_str!("tables/<hash12>.json")), …];` + index builds.
-- Vérif : 390 builds dans l'index, ~32 tables, taille totale < 1 MB. Commit (tables incluses —
-  relançable à chaque patch HotS).
+- Check: 390 builds in the index, ~32 tables, total size < 1 MB. Commit (tables included —
+  rerunnable at each HotS patch).
 
-### Task 3 : décodeurs (versioned porté + bitpacked nouveau)
+### Task 3: decoders (ported versioned + new bitpacked)
 
-- `src/value.rs` : `Value` du spike + `BitArrayInt(u64 bits, u64 valeur)` (variante bitpacked).
-- `src/typeinfo.rs` : `TypeInfo` avec **bounds conservés** (`Int{lo, bits}`, `Choice{lo, bits,
-  fields}`, `Array{lo, bits, typeid}`, `Blob{lo, bits}`, `BitArray{lo, bits}`) — parse depuis le
-  JSON ; le versioned les ignore, le bitpacked les utilise.
-- `src/versioned.rs` : port du spike adapté (`Error` typée au lieu d'anyhow).
-- `src/bitpacked.rs` : `BitReader` big-endian fidèle à `BitPackedBuffer.read_bits` + endian
-  little pour attributes ; `BitPackedDecoder::instance`. Tests unitaires : vint (0, 1, -1,
-  0x3F, gros nombres), read_bits big-endian sur un motif connu (comparer à un calcul Python
-  fait à la main dans le commentaire du test).
+- `src/value.rs`: the spike's `Value` + `BitArrayInt(u64 bits, u64 value)` (bitpacked variant).
+- `src/typeinfo.rs`: `TypeInfo` with **bounds kept** (`Int{lo, bits}`, `Choice{lo, bits,
+  fields}`, `Array{lo, bits, typeid}`, `Blob{lo, bits}`, `BitArray{lo, bits}`) — parsed from the
+  JSON; the versioned decoder ignores them, the bitpacked one uses them.
+- `src/versioned.rs`: port of the spike, adapted (typed `Error` instead of anyhow).
+- `src/bitpacked.rs`: big-endian `BitReader` faithful to `BitPackedBuffer.read_bits` + little
+  endian for attributes; `BitPackedDecoder::instance`. Unit tests: vint (0, 1, -1,
+  0x3F, large numbers), big-endian read_bits on a known pattern (compare with a Python computation
+  done by hand in the test's comment).
 - Commit.
 
-### Task 4 : attributes + tables embarquées + boucles d'événements
+### Task 4: attributes + embedded tables + event loops
 
-- `src/attributes.rs` : port de `decode_replay_attributes_events` (struct typée
+- `src/attributes.rs`: port of `decode_replay_attributes_events` (typed struct
   `Attributes{source, map_namespace, scopes: HashMap<u8, HashMap<u32, Vec<AttributeValue>>>}`).
-- `src/protocol.rs` : `Protocol` chargé depuis les tables embarquées (`OnceLock`, parse JSON
-  une fois par table et par process) ; `for_build(build) -> (protocole, fallback: bool)` ;
-  `decode_header/details/initdata` ; `decode_tracker_events` (versioned, sans userid) ;
-  `decode_game_events`/`decode_message_events` (bitpacked, avec userid, `byte_align` entre
-  événements).
+- `src/protocol.rs`: `Protocol` loaded from the embedded tables (`OnceLock`, JSON parsed
+  once per table and per process); `for_build(build) -> (protocol, fallback: bool)`;
+  `decode_header/details/initdata`; `decode_tracker_events` (versioned, without userid);
+  `decode_game_events`/`decode_message_events` (bitpacked, with userid, `byte_align` between
+  events).
 - Commit.
 
-### Task 5 : API publique `Replay` + mini-corpus + tests d'intégration
+### Task 5: public `Replay` API + mini-corpus + integration tests
 
-- `src/lib.rs` : `Replay::open(path)` / `Replay::from_bytes` → MPQ parsé + header décodé à
-  l'ouverture (build, durée, version typées : `ReplayHeader`) ; streams **paresseux** :
-  `details()` (vue typée `ReplayDetails{title, players: Vec<PlayerDetails{name, hero, team,
+- `src/lib.rs`: `Replay::open(path)` / `Replay::from_bytes` → MPQ parsed + header decoded at
+  opening (typed build, duration, version: `ReplayHeader`); **lazy** streams:
+  `details()` (typed view `ReplayDetails{title, players: Vec<PlayerDetails{name, hero, team,
   result, toon…}>, timestamp}` + `details_raw()` Value), `initdata_raw()`, `attributes()`,
-  `message_events()`, `game_events()`, `tracker_events()` (Value + nom d'événement) ;
-  `protocol_fallback() -> Option<(demandé, utilisé)>` (warning à la charge de l'appelant).
-- Mini-corpus CI : copier 2 replays récents + 1 de 2024 depuis l'archive locale vers
-  `crates/storm-replay/tests/data/` (~3 MB committés — replays de l'opérateur ; signalé dans le
-  résumé de session pour veto éventuel). Tests d'intégration : les 7 streams de chaque replay
-  du mini-corpus se décodent, invariants (10 joueurs, 5 vainqueurs, > 1 000 tracker events,
-  attributes non vides, game events > tracker events).
-- `cargo test --workspace` + clippy verts. Commit.
+  `message_events()`, `game_events()`, `tracker_events()` (Value + event name);
+  `protocol_fallback() -> Option<(requested, used)>` (warning up to the caller).
+- CI mini-corpus: copy 2 recent replays + 1 from 2024 from the local archive into
+  `crates/storm-replay/tests/data/` (~3 MB committed — the operator's replays; flagged in the
+  session summary for a possible veto). Integration tests: the 7 streams of each replay
+  of the mini-corpus decode, invariants (10 players, 5 winners, > 1,000 tracker events,
+  non-empty attributes, game events > tracker events).
+- `cargo test --workspace` + clippy green. Commit.
 
-### Task 6 : parité stream par stream vs heroprotocol
+### Task 6: stream-by-stream parity vs heroprotocol
 
-- Bin `src/bin/storm-replay-dump.rs` : `storm-replay-dump <replay> --stream <nom>` → JSON
-  lines normalisé « comme heroprotocol » (blobs en latin-1, structs = objets, reals = `[f]`,
-  bitarrays selon le décodeur, `_event/_eventid/_gameloop/_userid`).
-- `tools/crosscheck_streams.py` : sur les **3 replays les plus récents** du corpus spike50 +
-  le replay 2024 du mini-corpus, pour chacun des 7 streams : décode via heroprotocol (loader
-  importlib du jalon 0) et via storm-replay-dump, normalise (strip `_bits`, tuples→listes,
-  bytes→latin-1), **deep-compare**. Attendu : égalité exacte partout (tolérance documentée
-  uniquement si un cas réel l'exige — alors la documenter dans le rapport).
+- Bin `src/bin/storm-replay-dump.rs`: `storm-replay-dump <replay> --stream <name>` → JSON
+  lines normalised "like heroprotocol" (blobs as latin-1, structs = objects, reals = `[f]`,
+  bitarrays according to the decoder, `_event/_eventid/_gameloop/_userid`).
+- `tools/crosscheck_streams.py`: on the **3 most recent replays** of the spike50 corpus +
+  the 2024 replay of the mini-corpus, for each of the 7 streams: decode via heroprotocol (milestone 0
+  importlib loader) and via storm-replay-dump, normalise (strip `_bits`, tuples→lists,
+  bytes→latin-1), **deep-compare**. Expected: exact equality everywhere (documented tolerance
+  only if a real case requires it — then document it in the report).
 - Commit.
 
-### Task 7 : sweep d'archive (critère 100 %) + bench (critère < 150 ms)
+### Task 7: archive sweep (100 % criterion) + bench (< 150 ms criterion)
 
-- Bin `src/bin/storm-replay-verify.rs` : parcourt un répertoire récursivement, décode les
-  7 streams de chaque `.StormReplay`, classe les échecs par `Error` ; sortie CSV + résumé.
-- Run sur l'archive locale complète (`Documents/Heroes of the Storm/.../Multiplayer`).
-  **Accept : 100 % décodés** (sinon : corriger le décodeur — les builds locaux sont tous
-  ≥ 92665, aucune excuse « builds alpha »).
-- Bench : `storm-replay-dump --bench corpus/spike50` (7 streams, mono-thread, warm-up exclu,
-  médiane/p95/max → `spike/bench-results/rust-jalon1.csv`). **Accept : médiane et p95 < 150 ms.**
+- Bin `src/bin/storm-replay-verify.rs`: walks a directory recursively, decodes the
+  7 streams of each `.StormReplay`, classifies failures by `Error`; CSV output + summary.
+- Run on the complete local archive (`Documents/Heroes of the Storm/.../Multiplayer`).
+  **Accept: 100 % decoded** (otherwise: fix the decoder — the local builds are all
+  ≥ 92665, no "alpha builds" excuse).
+- Bench: `storm-replay-dump --bench corpus/spike50` (7 streams, single-threaded, warm-up excluded,
+  median/p95/max → `spike/bench-results/rust-jalon1.csv`). **Accept: median and p95 < 150 ms.**
 - Commit.
 
-### Task 8 : finitions + STATUS + push
+### Task 8: finishing touches + STATUS + push
 
-- README du crate (usage, protocol-gen, fallback, perfs mesurées), doc rustdoc sur l'API
-  publique, `cargo fmt` + clippy + tests une dernière fois.
-- `docs/STATUS.md` : jalon 1 fini (chiffres sweep + bench), prochaine étape jalon 2.
-- Commit + **git push** (autorisation opérateur du 2026-06-12).
+- Crate README (usage, protocol-gen, fallback, measured perf), rustdoc on the public
+  API, `cargo fmt` + clippy + tests one last time.
+- `docs/STATUS.md`: milestone 1 finished (sweep + bench figures), next step milestone 2.
+- Commit + **git push** (operator authorisation of 2026-06-12).
 
 ---
 
-## Pièges connus
+## Known pitfalls
 
-- `read_bits` big-endian : on consomme les bits de **poids faible** de l'octet courant mais on
-  les place en **poids fort** du résultat — porter la boucle telle quelle, ne pas « simplifier ».
-- `_struct` bitpacked n'a **pas** de tags ni de skip : tout champ se décode séquentiellement ;
-  un protocole inadapté ⇒ `Corrupted`, c'est le comportement attendu (pas de tolérance).
-- `_bitarray` versioned = octets alignés ; bitpacked = entier de `length` bits. Deux variantes
-  de `Value`, ne pas fusionner.
-- Attributes : buffer **little-endian** (l'unique usage), valeurs 4 octets inversées
-  (`[::-1]`) puis `strip(b'\x00')` — strip des deux côtés, comme Python.
-- game events : certains types contiennent des bitarrays/fourcc exotiques — si un eventid ou
-  un champ casse sur un vieux replay du sweep, comparer d'abord avec
-  `python -m`-style dump heroprotocol du même fichier avant de toucher au décodeur.
-- Réutiliser le clone heroprotocol de `%TEMP%` s'il existe (sinon re-cloner --depth 1).
+- Big-endian `read_bits`: we consume the **low-order** bits of the current byte but
+  place them in the **high-order** bits of the result — port the loop as is, do not "simplify".
+- Bitpacked `_struct` has **no** tags or skip: every field decodes sequentially;
+  an unsuitable protocol ⇒ `Corrupted`, that is the expected behaviour (no tolerance).
+- Versioned `_bitarray` = aligned bytes; bitpacked = integer of `length` bits. Two variants
+  of `Value`, do not merge.
+- Attributes: **little-endian** buffer (the only use), 4-byte values reversed
+  (`[::-1]`) then `strip(b'\x00')` — strip on both sides, like Python.
+- game events: some types contain exotic bitarrays/fourcc — if an eventid or
+  a field breaks on an old replay of the sweep, first compare with a
+  `python -m`-style heroprotocol dump of the same file before touching the decoder.
+- Reuse the heroprotocol clone in `%TEMP%` if it exists (otherwise re-clone --depth 1).

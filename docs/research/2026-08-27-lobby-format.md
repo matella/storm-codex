@@ -1,37 +1,37 @@
-# Inspection du format `replay.server.battlelobby` (companion live, tâche 1)
+# Inspection of the `replay.server.battlelobby` format (companion live, task 1)
 
-**Date :** 2026-08-27 · **Statut : investigation, pas de décision d'architecture** — ce document
-répond aux 6 questions de la spec companion-live avec preuve à l'appui ; il conditionne l'écriture
-du parser en tâche 3.
+**Date:** 2026-08-27 · **Status: investigation, no architecture decision** — this document
+answers the companion-live spec's 6 questions with supporting evidence; it conditions the writing
+of the parser in task 3.
 
-**Outil :** `crates/storm-replay/examples/dump_lobby.rs` — extrait le stream
-`replay.server.battlelobby` brut (non décodé) d'un `.StormReplay` vers un fichier `.bin`, via
-`Replay::open()` + `battlelobby_raw()`. C'est le même blob que celui écrit en live par le jeu dans
+**Tool:** `crates/storm-replay/examples/dump_lobby.rs` — extracts the raw (undecoded)
+`replay.server.battlelobby` stream of a `.StormReplay` to a `.bin` file, via
+`Replay::open()` + `battlelobby_raw()`. It is the same blob as the one written live by the game into
 `%TEMP%\Heroes of the Storm\TempWriteReplayP1\replay.server.battlelobby`.
 
 ```
-cargo run -p storm-replay --example dump_lobby -- <replay> <sortie.bin>
+cargo run -p storm-replay --example dump_lobby -- <replay> <output.bin>
 ```
 
-## Corpus dumpé
+## Dumped corpus
 
-| Fichier source | Taille du blob | Joueurs (via `storm-stats-dump`) |
+| Source file | Blob size | Players (via `storm-stats-dump`) |
 |---|---|---|
-| `crates/storm-stats/tests/data/silver-city-aram.StormReplay` | 279 694 octets | 10 (ARAM, Silver City) |
-| `crates/storm-replay/tests/data/2024-10-07 22.29.55 Industrial District.StormReplay` | 280 388 octets | 10 |
-| `crates/storm-replay/tests/data/2026-05-27 22.37.45 Industrial District.StormReplay` | 281 735 octets | 10 |
-| `crates/storm-replay/tests/data/2026-06-09 20.35.02 Industrial District.StormReplay` | 281 642 octets | 10 |
+| `crates/storm-stats/tests/data/silver-city-aram.StormReplay` | 279,694 bytes | 10 (ARAM, Silver City) |
+| `crates/storm-replay/tests/data/2024-10-07 22.29.55 Industrial District.StormReplay` | 280,388 bytes | 10 |
+| `crates/storm-replay/tests/data/2026-05-27 22.37.45 Industrial District.StormReplay` | 281,735 bytes | 10 |
+| `crates/storm-replay/tests/data/2026-06-09 20.35.02 Industrial District.StormReplay` | 281,642 bytes | 10 |
 
-4 replays uniques → 5 fichiers `.bin` produits par l'étape 3 (`silver-city.bin` et
-`silver-city-aram.bin` sont deux dumps du même replay, tailles identiques 279 694 octets — attendu).
+4 unique replays → 5 `.bin` files produced by step 3 (`silver-city.bin` and
+`silver-city-aram.bin` are two dumps of the same replay, identical sizes 279,694 bytes — expected).
 
-Pour disposer d'une vérité de référence (noms de joueurs, héros *tels que décodés par le pipeline
-existant*, équipes), chaque replay a aussi été passé dans le binaire déjà existant
-`storm-stats-dump` (`crates/storm-stats/src/bin/storm-stats-dump.rs`) — **cette référence vient de
-`replay.details()`, pas du lobby** ; elle sert uniquement de point de comparaison pour chercher les
-mêmes chaînes dans le blob lobby.
+To have a reference truth (player names, heroes *as decoded by the existing
+pipeline*, teams), each replay was also run through the already existing binary
+`storm-stats-dump` (`crates/storm-stats/src/bin/storm-stats-dump.rs`) — **this reference comes from
+`replay.details()`, not from the lobby**; it is only used as a point of comparison to look for the
+same strings in the lobby blob.
 
-Extrait pour `silver-city-aram` :
+Excerpt for `silver-city-aram`:
 
 ```
 2-Hero-1-10724235 | Sando         | Tassadar        | team 0
@@ -46,18 +46,18 @@ Extrait pour `silver-city-aram` :
 2-Hero-1-2138731  | Shrek         | Rehgar          | team 1
 ```
 
-(clé = `toon_handle`, format confirmé par le code existant : `region-Hero-realm-id`.)
+(key = `toon_handle`, format confirmed by the existing code: `region-Hero-realm-id`.)
 
 ---
 
-## Réponses aux 6 questions
+## Answers to the 6 questions
 
-### 1. Les BattleTags sont-ils présents, et dans l'ordre du lobby ?
+### 1. Are the BattleTags present, and in lobby order?
 
-**Oui**, présents en clair, et dans un ordre qui correspond au regroupement par équipe (5+5) tel
-que retourné par `storm-stats` (lui-même dérivé de `replay.details()`, pas du lobby).
+**Yes**, present in clear text, and in an order that matches the grouping by team (5+5) as
+returned by `storm-stats` (itself derived from `replay.details()`, not from the lobby).
 
-Preuve (`strings -n 3 silver-city.bin`, lignes 2343–2368) :
+Evidence (`strings -n 3 silver-city.bin`, lines 2343–2368):
 
 ```
 Sando#2475
@@ -72,15 +72,15 @@ Hyldii#21343
 Shrek#2533
 ```
 
-Ordre identique à la table ci-dessus (équipe 0 : Sando, Kain, ShieldedSlug, TheBlackKing, Cascon ;
-équipe 1 : slashbored, SVKpermaBan, LenaOxton, Hyldii, Shrek). Confirmé sur un 2ᵉ replay
-(`2026-06-09 … Industrial District`, 9 des 10 tags visibles via `strings`, cf. Q3/limite ci-dessous)
-avec le même schéma d'ordre.
+Order identical to the table above (team 0: Sando, Kain, ShieldedSlug, TheBlackKing, Cascon;
+team 1: slashbored, SVKpermaBan, LenaOxton, Hyldii, Shrek). Confirmed on a 2nd replay
+(`2026-06-09 … Industrial District`, 9 of the 10 tags visible via `strings`, see Q3/limit below)
+with the same order pattern.
 
-**Nuance importante pour le parser (tâche 3) :** un BattleTag non-ASCII (joueur russe
-`ЛовкийЭльф#215346` dans le replay Industrial District du 2026-06-09) **n'apparaît pas** dans la
-sortie de `strings` (qui ne détecte que des runs ASCII imprimables) — il est bien présent dans le
-blob mais en UTF-8 multi-octets. Vérifié en cherchant les octets bruts :
+**Important nuance for the parser (task 3):** a non-ASCII BattleTag (Russian player
+`ЛовкийЭльф#215346` in the 2026-06-09 Industrial District replay) **does not appear** in the
+output of `strings` (which only detects printable ASCII runs) — it is indeed present in the
+blob but in multi-byte UTF-8. Checked by searching the raw bytes:
 
 ```
 offset 0x43e38 : 07 ce 86 4b 21 1b d0 9b d0 be d0 b2 d0 ba d0 b8 d0 b9 d0 ad d0 bb d1 8c d1 84
@@ -88,175 +88,175 @@ offset 0x43e38 : 07 ce 86 4b 21 1b d0 9b d0 be d0 b2 d0 ba d0 b8 d0 b9 d0 ad d0 
                  [len=0x1b=27] Л  о  в  к  и  й  Э  л  ь  ф  #  2  1  5  3  4  6  \0
 ```
 
-(`0x43e3e`, cité par erreur comme offset de départ dans une version antérieure de ce document, est
-en réalité le premier octet du nom cyrillique lui-même — `d0 9b` = « Л » — c'est-à-dire l'octet
-0x43e38 + 6, une fois passés les 6 octets `07 ce 86 4b 21 1b` qui précèdent la chaîne UTF-8.)
+(`0x43e3e`, wrongly cited as the starting offset in an earlier version of this document, is
+actually the first byte of the Cyrillic name itself — `d0 9b` = "Л" — that is, byte
+0x43e38 + 6, once past the 6 bytes `07 ce 86 4b 21 1b` that precede the UTF-8 string.)
 
-Le préfixe `0x1b` = 27 correspond exactement à la longueur **en octets UTF-8** de
-`"ЛовкийЭльф#215346"` (10 caractères cyrilliques × 2 octets = 20, + `"#215346"` = 7 octets → 27).
-**Le parser de tâche 3 doit donc lire un compte d'octets puis décoder en UTF-8, pas supposer de
-l'ASCII pur ni un compte de caractères.**
+The prefix `0x1b` = 27 matches exactly the length **in UTF-8 bytes** of
+`"ЛовкийЭльф#215346"` (10 Cyrillic characters × 2 bytes = 20, + `"#215346"` = 7 bytes → 27).
+**The task 3 parser must therefore read a byte count then decode as UTF-8, not assume
+pure ASCII or a character count.**
 
-### 2. Les composantes du toon handle (`m_region`, `m_programId`, `m_realm`, `m_id`) sont-elles présentes ?
+### 2. Are the toon handle components (`m_region`, `m_programId`, `m_realm`, `m_id`) present?
 
-**Inconnu / probablement non sous forme directement exploitable.** Chaque BattleTag est précédé
-d'un champ texte de la forme `T:<nombre>#<nombre>`, par exemple juste avant `Sando#2475` :
+**Unknown / probably not in a directly usable form.** Each BattleTag is preceded by
+a text field of the form `T:<number>#<number>`, for example just before `Sando#2475`:
 
 ```
 0004338e: 03 00 00 00 19 01 54 3a 31 30 35 36 31 37 35 37   ......T:1056175
 0004339e: 36 23 32 32 37 00 01 01 ...                        6#227...
 ```
-soit la chaîne `"T:105617576#227\0"` immédiatement suivie, plus loin, de `"Sando#2475"` (avec son
-propre octet de longueur `0x0a`=10 bien vérifié, cf. plus bas). **Contrairement au champ
-BattleTag**, le mécanisme de longueur-préfixe de ce champ `T:…#…` n'a pas été identifié avec
-certitude (l'octet immédiatement précédent, `0x01`, ne correspond pas à la longueur de la chaîne
-`15` ; il s'agit possiblement d'un tag de type ou d'un varint sur plusieurs octets) — noté ici
-comme observation brute, pas comme mécanisme confirmé.
+i.e. the string `"T:105617576#227\0"` immediately followed, further on, by `"Sando#2475"` (with its
+own length byte `0x0a`=10, well checked, see below). **Unlike the BattleTag
+field**, the length-prefix mechanism of this `T:…#…` field has not been identified with
+certainty (the immediately preceding byte, `0x01`, does not match the string's length
+`15`; it is possibly a type tag or a multi-byte varint) — noted here
+as a raw observation, not as a confirmed mechanism.
 
-Ce nombre (`105617576`) **ne correspond à aucun des `m_id` réels** des 10 joueurs
+This number (`105617576`) **matches none of the real `m_id`s** of the 10 players
 (`10724235, 1770353, 14148348, 14148822, 7293976, 6130044, 13579289, 13495235, 1863125,
-2138731`) — vérifié par recherche exhaustive des 10 `m_id` en ASCII et en entier 32 bits
-little/big-endian dans le blob : **aucune occurrence, sous aucune des trois formes**. Le champ
-`T:…#…` a donc une sémantique **inconnue** (piste : un identifiant de session/lobby côté
-Battle.net, pas le `toon_handle` du joueur) et ne doit pas être confondu avec `m_id`.
+2138731`) — checked by an exhaustive search of the 10 `m_id`s as ASCII and as 32-bit
+little/big-endian integers in the blob: **no occurrence, in any of the three forms**. The
+`T:…#…` field therefore has **unknown** semantics (lead: a session/lobby identifier on the
+Battle.net side, not the player's `toon_handle`) and must not be confused with `m_id`.
 
-Aucune chaîne `m_region`, `m_programId`, `m_realm`, `toonHandle`, ni un pattern texte du type
-`"2-Hero-1-…"` (format confirmé du toon handle applicatif, cf. `ReplayHeader.toon_handle`) n'a été
-trouvée dans le blob. **Conclusion : les composantes du toon handle ne sont pas présentes sous
-forme lisible évidente ; il faudra reconstituer la liaison par ensemble de BattleTags (nom#tag)
-plutôt que par toon handle** — cohérent avec la résolution par défaut prévue en cas de doute.
+No string `m_region`, `m_programId`, `m_realm`, `toonHandle`, nor a text pattern like
+`"2-Hero-1-…"` (confirmed format of the application toon handle, see `ReplayHeader.toon_handle`) was
+found in the blob. **Conclusion: the toon handle components are not present in an obvious
+readable form; the link will have to be rebuilt from the set of BattleTags (name#tag)
+rather than by toon handle** — consistent with the default resolution planned in case of doubt.
 
-### 3. L'appartenance à une équipe est-elle déductible (champ explicite, ou position/ordre) ?
+### 3. Can team membership be deduced (explicit field, or position/order)?
 
-**Par ordre uniquement, à confirmer — aucun champ « équipe » explicite identifié à proximité des
-enregistrements joueurs.** L'ordre d'apparition des 10 BattleTags correspond, sur les 2 replays
-inspectés en détail, exactement au découpage 5 premiers = équipe 0 / 5 derniers = équipe 1 tel que
-retourné par `storm-stats` (qui lui dérive l'équipe de `replay.details()`, pas du lobby).
+**By order only, to be confirmed — no explicit "team" field identified near the
+player records.** The order of appearance of the 10 BattleTags matches, on the 2 replays
+inspected in detail, exactly the split first 5 = team 0 / last 5 = team 1 as
+returned by `storm-stats` (which derives the team from `replay.details()`, not from the lobby).
 
-En xxd, la structure autour de chaque enregistrement (motif répété `42 21 95 c9 2f` avant/après
-chaque BattleTag, taille de bloc variable ~90-110 octets à cause de champs à longueur variable) ne
-laisse voir aucun octet différenciant nettement le 5ᵉ du 6ᵉ enregistrement (frontière d'équipe) du
-1ᵉʳ au 2ᵉ (même équipe) — le motif de séparation est identique. Il est donc possible que le champ
-équipe existe ailleurs dans le blob (zone bit-packée non explorée byte par byte) sans qu'on l'ait
-localisé. **Réponse : ordre observé cohérent avec un regroupement par équipe sur 2 échantillons,
-mais aucun champ explicite trouvé → à traiter avec prudence en tâche 3 (ne pas parier uniquement
-sur la position sans un signal de secours).**
+In xxd, the structure around each record (repeated pattern `42 21 95 c9 2f` before/after
+each BattleTag, variable block size ~90-110 bytes because of variable-length fields) shows
+no byte clearly distinguishing the 5th from the 6th record (team boundary) from the
+1st to the 2nd (same team) — the separation pattern is identical. It is therefore possible that the team
+field exists elsewhere in the blob (bit-packed zone not explored byte by byte) without us having
+located it. **Answer: observed order consistent with a grouping by team on 2 samples,
+but no explicit field found → to handle with care in task 3 (do not bet only
+on position without a fallback signal).**
 
-### 4. Le héros pické est-il présent ? — question la plus importante
+### 4. Is the picked hero present? — the most important question
 
-**Non trouvé sous forme de chaîne lisible, ni canonique ni interne, associée aux BattleTags.**
-Recherche active mais négative :
+**Not found as a readable string, neither canonical nor internal, associated with the BattleTags.**
+Active but negative search:
 
-- Aucun des 10 noms de héros réellement joués en `silver-city-aram` (`Tassadar`, `Qhira`,
-  `Lost Vikings`, `Li Li`, `Chromie`, `Varian`, `Mephisto`, `Jaina`, `Zarya`, `Rehgar`) n'apparaît
-  dans `strings -n 3 silver-city.bin` (recherche insensible à la casse, formes canoniques testées).
-- Aucune forme interne `HeroXxx` correspondant à ces héros n'apparaît non plus.
-- Des fragments à consonance de héros existent bien dans le blob, mais **ne correspondent à
-  aucun des héros réellement joués** dans cette partie — ce qui suggère un catalogue générique
-  (portraits/récompenses), pas le pick :
-  - `DVA4`, `DVAJ`, `DVA9` (offsets ~659–666 dans `strings`) : aucun joueur de cette partie ne
-    joue D.Va.
-  - Une liste distincte, en fin de fichier (offset 0x43ddd–0x4444f), de tokens 4 octets de type
+- None of the 10 hero names actually played in `silver-city-aram` (`Tassadar`, `Qhira`,
+  `Lost Vikings`, `Li Li`, `Chromie`, `Varian`, `Mephisto`, `Jaina`, `Zarya`, `Rehgar`) appears
+  in `strings -n 3 silver-city.bin` (case-insensitive search, canonical forms tested).
+- No internal `HeroXxx` form matching these heroes appears either.
+- Hero-sounding fragments do exist in the blob, but **match none
+  of the heroes actually played** in this game — which suggests a generic catalogue
+  (portraits/rewards), not the pick:
+  - `DVA4`, `DVAJ`, `DVA9` (offsets ~659–666 in `strings`): no player of this game
+    plays D.Va.
+  - A separate list, at the end of the file (offset 0x43ddd–0x4444f), of 4-byte tokens like
     `Arts`, `Crus`, `FENX`, `Guld`, `HL--`, `Junk`, `Luci`, `Monk`, `Ragn`, `Sylv`, `Uthe`, `Zaga`
-    — dans une zone à enregistrements de taille fixe (~64 octets chacun, cf. xxd). Aucun ne
-    correspond à un abrégé plausible des 10 héros joués (`TASS`, `QHIR`, `LILI`, `CHRO`, `VARI`,
-    `MEPH`, `JAIN`, `ZARY`, `REHG` : zéro occurrence). Sémantique de cette zone : **inconnue**
-    (hypothèse non vérifiée : catalogue de portraits/loot/annonceur générique au client, pas
-    lié aux picks de la partie).
-- Une zone contenant de nombreux jetons `Hero…` (`HeroPOVT8`, `HeroGOLD`, `HeroLOOT`, `HeroICON`,
-  `HeroLcns`, `HeroPORT`) a été trouvée (offset ~ligne 2385 dans `strings`) mais ce sont des
-  suffixes de type d'actif (`ICON`, `PORT`ait, `LOOT`, `Lcns`=license) accolés au mot générique
-  `Hero`, **pas des noms de héros** — probablement des clés de la structure de récompenses/lobby
-  UI, sans rapport avec le pick.
-- **Précision sur l'exhaustivité de la recherche ci-dessus :** la recherche des noms complets
-  (premier point) et celle des abrégés dans la zone à enregistrements fixes (troisième point) sont
-  toutes deux restées négatives, mais une recherche complémentaire en sous-chaîne brute (`grep -a`,
-  4 premiers caractères de chaque nom de héros, insensible à la casse, sur l'intégralité du blob —
-  pas limitée à cette zone) trouve bel et bien plusieurs de ces préfixes dans `silver-city.bin` :
+    — in a zone of fixed-size records (~64 bytes each, see xxd). None
+    matches a plausible abbreviation of the 10 heroes played (`TASS`, `QHIR`, `LILI`, `CHRO`, `VARI`,
+    `MEPH`, `JAIN`, `ZARY`, `REHG`: zero occurrences). Semantics of this zone: **unknown**
+    (unverified hypothesis: catalogue of portraits/loot/announcer generic to the client, not
+    linked to the game's picks).
+- A zone containing many `Hero…` tokens (`HeroPOVT8`, `HeroGOLD`, `HeroLOOT`, `HeroICON`,
+  `HeroLcns`, `HeroPORT`) was found (offset ~line 2385 in `strings`) but these are
+  asset type suffixes (`ICON`, `PORT`rait, `LOOT`, `Lcns`=license) attached to the generic word
+  `Hero`, **not hero names** — probably keys of the rewards/lobby
+  UI structure, unrelated to the pick.
+- **Note on the exhaustiveness of the search above:** the search for full names
+  (first point) and the one for abbreviations in the fixed-record zone (third point) both
+  remained negative, but a complementary raw substring search (`grep -a`,
+  first 4 characters of each hero name, case-insensitive, over the whole blob —
+  not limited to that zone) does find several of these prefixes in `silver-city.bin`:
   `Tass` (Tassadar, ×1, offset 0x8f50), `Vari` (Varian, ×1, offset 0x12b1), `Meph` (Mephisto, ×3,
   offsets 0x14be/0x5903/0x91d9), `Zary` (Zarya, ×3, offsets 0x15b2/0x59f7/0x92cd), `Chro`
-  (Chromie, ×1, offset 0x97d1) et `Rehg` (Rehgar, ×1, offset 0x8f13). Ces offsets sont dispersés et
-  sans relation évidente entre eux — à noter, chaque occurrence `Zary` se trouve exactement 0xf4
-  octets après l'occurrence `Meph` correspondante, ce qui évoque un enregistrement répété de
-  structure fixe plutôt qu'un pick isolé. **Hypothèse non confirmée :** bruit de zone
-  binaire/table générique (répétition du même token à des endroits sans rapport, aucune occurrence
-  adossée à un BattleTag ni à un motif de longueur-préfixe exploitable), pas une trace lisible du
-  pick. Ceci ne change pas la conclusion ci-dessous : aucune **forme canonique complète** d'un nom
-  de héros n'a été trouvée associée à un joueur.
+  (Chromie, ×1, offset 0x97d1) and `Rehg` (Rehgar, ×1, offset 0x8f13). These offsets are scattered and
+  with no obvious relation between them — notably, each `Zary` occurrence sits exactly 0xf4
+  bytes after the matching `Meph` occurrence, which suggests a repeated record of
+  fixed structure rather than an isolated pick. **Unconfirmed hypothesis:** noise from a
+  binary zone/generic table (repetition of the same token at unrelated places, no occurrence
+  attached to a BattleTag or to a usable length-prefix pattern), not a readable trace of the
+  pick. This does not change the conclusion below: no **complete canonical form** of a
+  hero name was found associated with a player.
 
-**Conclusion, honnête : le héros pické n'est pas trouvable en clair dans ce blob par une recherche
-de chaînes ou de motifs connus. Réponse à la sous-question ARAM (correspond-il au héros réellement
-joué, vu le bug de shuffle sur l'attribut 4002 documenté dans `docs/STATUS.md`) : sans objet,
-puisqu'aucun candidat « héros » n'a été identifié dans le blob pour commencer — inconnu.**
-Il est possible que le pick soit encodé uniquement sous forme d'ID numérique bit-packé (non
-byte-aligné) nécessitant un décodage structurel complet du blob (hors périmètre de cette tâche
-d'investigation) — **si c'est le cas, l'ergonomie « héros visible en direct dans le lobby » n'est
-pas acquise avec une simple extraction de chaînes, et la tâche 3 devra soit décoder le format bit
-par bit, soit renoncer à afficher le héros avant la fin de partie.**
+**Honest conclusion: the picked hero cannot be found in clear text in this blob by a search
+for known strings or patterns. Answer to the ARAM sub-question (does it match the hero actually
+played, given the shuffle bug on attribute 4002 documented in `docs/STATUS.md`): not applicable,
+since no "hero" candidate was identified in the blob to begin with — unknown.**
+It is possible that the pick is encoded only as a bit-packed numeric ID (not
+byte-aligned) requiring a complete structural decoding of the blob (outside the scope of this
+investigation task) — **if so, the "hero visible live in the lobby" ergonomics is
+not achieved with a simple string extraction, and task 3 will have to either decode the format bit
+by bit, or give up showing the hero before the end of the game.**
 
-### 5. La carte et le mode sont-ils présents ?
+### 5. Are the map and the mode present?
 
-**Carte : indirectement, via des chemins de cache `.s2ma`, mais pas de nom en clair.**
-Le tout début du blob contient 9 chemins de cache Battle.net pointant vers des fichiers `.s2ma`
-(cartes) identifiés par hash de contenu, par exemple :
+**Map: indirectly, via `.s2ma` cache paths, but no name in clear text.**
+The very start of the blob contains 9 Battle.net cache paths pointing to `.s2ma` files
+(maps) identified by content hash, for example:
 
 ```
 C:\ProgramData\Blizzard Entertainment\Battle.net\Cache\1f\1b\1f1b228ddb1f72205cbfd44405528710
 0b0f39959be816548162e4081ea85511.s2ma
 ```
 
-Aucun de ces hashes ne se résout en nom de carte sans table de correspondance externe (absente de
-ce blob et du crate) — **inconnu** si l'un de ces 9 fichiers correspond spécifiquement à Silver
-City sans decoder le hash. Recherche complémentaire négative : ni `"Silver City"`, ni `"ARAM"`, ni
-aucun nom de carte/mode canonique n'apparaît en ASCII (`strings`) ni en UTF-16LE (recherche
-programmatique dédiée) dans le blob.
+None of these hashes resolves to a map name without an external mapping table (absent from
+this blob and from the crate) — **unknown** whether one of these 9 files specifically matches Silver
+City without decoding the hash. Complementary negative search: neither `"Silver City"`, nor `"ARAM"`, nor
+any canonical map/mode name appears as ASCII (`strings`) or as UTF-16LE (dedicated
+programmatic search) in the blob.
 
-**Mode : non trouvé.** Recherche des codes de mode connus et documentés dans `docs/STATUS.md`
-(`50091`=Storm League, `50101`=ARAM, `-1`=Custom) en ASCII et en entier 32 bits little/big-endian :
-aucune occurrence dans le blob. **Réponse : carte et mode ne sont pas présents sous forme
-directement lisible ; la carte est peut-être déductible via le hash `.s2ma` (nécessite une table
-hash→carte externe, à vérifier — inconnu à ce stade) ; le mode n'a aucune piste identifiée.**
+**Mode: not found.** Search for the known mode codes documented in `docs/STATUS.md`
+(`50091`=Storm League, `50101`=ARAM, `-1`=Custom) as ASCII and as 32-bit little/big-endian integers:
+no occurrence in the blob. **Answer: map and mode are not present in a
+directly readable form; the map may be deducible via the `.s2ma` hash (requires an external
+hash→map table, to check — unknown at this stage); the mode has no identified lead.**
 
-### 6. Le blob live est-il bit-à-bit identique au blob archivé ?
+### 6. Is the live blob bit-for-bit identical to the archived blob?
 
-**Non testé — exige le PC de jeu.** Cette comparaison nécessite de copier
-`%TEMP%\Heroes of the Storm\TempWriteReplayP1\replay.server.battlelobby` pendant une partie en
-cours sur la machine de jeu Windows, indisponible pour cette tâche. À reporter en tâche 5 (ou dès
-qu'un accès au PC de jeu est possible). Par défaut, en l'absence de cette preuve, **la liaison
-replay↔lobby devra se faire par ensemble de BattleTags**, comme prévu par la résolution par défaut
-de la spec — pas par hash d'octets.
+**Not tested — requires the gaming PC.** This comparison requires copying
+`%TEMP%\Heroes of the Storm\TempWriteReplayP1\replay.server.battlelobby` during a game in
+progress on the Windows gaming machine, unavailable for this task. To carry over to task 5 (or as soon
+as access to the gaming PC is possible). By default, in the absence of this evidence, **the
+replay↔lobby link will have to be made by set of BattleTags**, as planned by the spec's default
+resolution — not by byte hash.
 
 ---
 
-## Difficultés rencontrées
+## Difficulties encountered
 
-- La structure du blob n'est **pas un format à enregistrements de taille fixe** dans la zone des
-  BattleTags : la distance entre deux BattleTags consécutifs varie (92, 101… octets), à cause de
-  champs numériques précédents encodés en longueur variable (vraisemblablement des varints du
-  protocole versionné de Blizzard). Une extraction fiable en tâche 3 devra donc marcher par
-  recherche de motif (longueur-préfixe + `#` + chiffres) plutôt que par offsets fixes.
-- `strings` (BSD, macOS) n'a pas d'option `-e`/`-el` pour forcer une lecture UTF-16 ou UTF-8
-  multi-octets — la détection du BattleTag cyrillique a nécessité une recherche programmatique
-  directe des octets UTF-8 dans le fichier (Python), pas l'outil `strings` seul. À documenter pour
-  la tâche 3 : ne pas se fier uniquement à `strings`/grep ASCII pour l'inventaire des BattleTags.
-- Aucun exemple `storm-stats` dédié à l'affichage des héros n'existait ; le binaire déjà présent
-  `crates/storm-stats/src/bin/storm-stats-dump.rs` (`storm-stats-dump <replay> <sortie.json>`) a
-  été réutilisé tel quel (aucune modification) pour obtenir la vérité de référence
-  joueurs/héros/équipes utilisée dans ce document — cette référence vient de `replay.details()`
-  (l'attribut 4002, potentiellement biaisé par le shuffle ARAM selon `docs/STATUS.md`), pas du
-  lobby ; elle ne sert qu'à savoir *quelles chaînes chercher* dans le blob, pas de vérité absolue
-  sur le héros réellement joué.
+- The blob's structure is **not a fixed-size record format** in the BattleTag
+  zone: the distance between two consecutive BattleTags varies (92, 101… bytes), because of
+  preceding numeric fields encoded with variable length (most likely varints of
+  Blizzard's versioned protocol). A reliable extraction in task 3 will therefore have to work by
+  pattern search (length-prefix + `#` + digits) rather than by fixed offsets.
+- `strings` (BSD, macOS) has no `-e`/`-el` option to force a UTF-16 or multi-byte UTF-8
+  read — detecting the Cyrillic BattleTag required a direct programmatic search
+  for the UTF-8 bytes in the file (Python), not the `strings` tool alone. To document for
+  task 3: do not rely only on `strings`/ASCII grep for the BattleTag inventory.
+- No dedicated `storm-stats` example for displaying heroes existed; the already present binary
+  `crates/storm-stats/src/bin/storm-stats-dump.rs` (`storm-stats-dump <replay> <output.json>`) was
+  reused as is (no modification) to obtain the reference truth
+  players/heroes/teams used in this document — this reference comes from `replay.details()`
+  (attribute 4002, potentially biased by the ARAM shuffle according to `docs/STATUS.md`), not from the
+  lobby; it is only used to know *which strings to search for* in the blob, not as absolute truth
+  about the hero actually played.
 
-## Ce que la tâche 3 peut retenir de sûr
+## What task 3 can safely retain
 
-1. Les BattleTags (`nom#tag`) sont extractibles du blob par un motif
-   `[octet de longueur en octets][bytes UTF-8][séparateur '#'][chiffres][\0]`, dans l'ordre du
-   lobby (empiriquement = ordre par équipe sur 2 échantillons).
-2. Il faut décoder en UTF-8 sur le nombre d'octets donné, pas supposer de l'ASCII.
-3. Le toon handle complet n'est pas présent en clair → liaison par BattleTag, pas par
-   toon handle, et pas par team explicite (pas de champ confirmé) tant qu'un champ équipe n'a pas
-   été localisé plus précisément.
-4. Le héros pické n'a pas été retrouvé dans ce blob par cette méthode — **point bloquant potentiel
-   pour l'ergonomie visée**, à traiter explicitement en tâche 3 (soit décodage bit-packé complet,
-   soit produit livré sans héros visible avant fin de partie, à trancher par l'opérateur).
-5. Carte et mode ne sont pas exploitables sans décodage plus profond ou table externe.
+1. The BattleTags (`name#tag`) can be extracted from the blob with a pattern
+   `[length byte in bytes][UTF-8 bytes]['#' separator][digits][\0]`, in lobby
+   order (empirically = order by team on 2 samples).
+2. Decode as UTF-8 over the given number of bytes, do not assume ASCII.
+3. The complete toon handle is not present in clear text → link by BattleTag, not by
+   toon handle, and not by explicit team (no confirmed field) as long as a team field has not
+   been located more precisely.
+4. The picked hero was not found in this blob by this method — **potential blocking point
+   for the targeted ergonomics**, to handle explicitly in task 3 (either complete bit-packed decoding,
+   or a product delivered without a visible hero before the end of the game, to be decided by the operator).
+5. Map and mode cannot be used without deeper decoding or an external table.

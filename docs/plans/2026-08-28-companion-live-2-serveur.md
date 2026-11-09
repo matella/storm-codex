@@ -1,96 +1,96 @@
-# Companion live — Plan 2 : serveur (lobby, builds, enrichissement)
+# Companion live — Plan 2: server (lobby, builds, enrichment)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task.
 > Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** exposer côté serveur tout ce dont la page companion aura besoin — ingérer un lobby live,
-l'enrichir avec l'historique de l'archive, gérer une bibliothèque de builds, et relier la partie
-terminée au lobby pour le debrief.
+**Goal:** expose on the server everything the companion page will need — ingest a live lobby,
+enrich it with the archive's history, manage a build library, and link the finished
+game to the lobby for the debrief.
 
-**Architecture:** `storm-lobby` (plan 1, mergé) fournit les BattleTags et les équipes. Le serveur
-résout ces BattleTags en identités applicatives **contre l'archive elle-même**
-(`match_players.name` + `data->>'tag'` → `toon_handle`), puis agrège l'historique en une seule
-requête `jsonb_build_object`, comme le fait déjà `read::get_player`. L'état du lobby courant est un
-singleton persisté, calqué sur `draft_live`.
+**Architecture:** `storm-lobby` (plan 1, merged) provides the BattleTags and the teams. The server
+resolves these BattleTags to application identities **against the archive itself**
+(`match_players.name` + `data->>'tag'` → `toon_handle`), then aggregates the history in a single
+`jsonb_build_object` query, as `read::get_player` already does. The current lobby state is a
+persisted singleton, modelled on `draft_live`.
 
-**Tech Stack:** Rust 2021, axum 0.8, sqlx 0.8 (requêtes runtime, pas de macros vérifiées),
-PostgreSQL, `tokio::sync::broadcast` pour le WS.
+**Tech Stack:** Rust 2021, axum 0.8, sqlx 0.8 (runtime queries, no checked macros),
+PostgreSQL, `tokio::sync::broadcast` for the WS.
 
-## Périmètre
+## Scope
 
-**Ce plan couvre le serveur uniquement.** Le front (`/companion`, `/builds`) est le plan 3 ; le
-watcher `client-rs` (repo Hots-Overlay) est le plan 4 et exige le PC de jeu. Chaque route livrée
-ici est testable au curl sans une ligne de front.
+**This plan covers the server only.** The front (`/companion`, `/builds`) is plan 3; the
+`client-rs` watcher (Hots-Overlay repo) is plan 4 and needs the gaming PC. Each route shipped
+here is testable with curl without a single line of front.
 
 ## Global Constraints
 
-- Rust 2021 ; lints workspace : `clippy::unwrap_used` = deny, `clippy::expect_used` = warn.
-  Aucun `unwrap()` hors tests ; les fichiers de test ouvrent par
+- Rust 2021; workspace lints: `clippy::unwrap_used` = deny, `clippy::expect_used` = warn.
+  No `unwrap()` outside tests; test files open with
   `#![allow(clippy::expect_used, clippy::unwrap_used)]`.
-- **sqlx en requêtes runtime** (`sqlx::query`, `query_scalar`), jamais les macros vérifiées à la
-  compilation — c'est le choix déjà fait partout dans `crates/storm-codex-server`.
-- Jamais d'interpolation de chaîne dans du SQL : uniquement des binds `$1`, `$2`…
-- `storm-lobby` reste **pur** : aucune I/O, aucune dépendance runtime à `storm-replay`/`storm-stats`.
-- Budget : `/api/lobby` — `GET` p95 < 100 ms, `POST` p95 < 500 ms (critère **amendé le
-  2026-08-28 après mesure**, cf. `docs/specs/2026-08-27-companion-live-design.md` §Critères).
-- Les mutations d'état de lobby diffusent sur le canal `/ws` existant, comme `draft.updated`.
-- Commits conventionnels. Branche : `feat/companion-live-serveur`.
-- **Aucune modification du box** dans ce plan : tout se développe contre le Postgres de dev
+- **sqlx with runtime queries** (`sqlx::query`, `query_scalar`), never the compile-time checked
+  macros — that is the choice already made everywhere in `crates/storm-codex-server`.
+- Never any string interpolation in SQL: only `$1`, `$2`… binds.
+- `storm-lobby` stays **pure**: no I/O, no runtime dependency on `storm-replay`/`storm-stats`.
+- Budget: `/api/lobby` — `GET` p95 < 100 ms, `POST` p95 < 500 ms (criterion **amended on
+  2026-08-28 after measurement**, see `docs/specs/2026-08-27-companion-live-design.md` §Criteria).
+- Lobby state mutations broadcast on the existing `/ws` channel, like `draft.updated`.
+- Conventional commits. Branch: `feat/companion-live-serveur`.
+- **No change to the box** in this plan: everything is developed against the dev Postgres
   (`docker-compose.dev.yml`).
 
-## Décisions produit actées par l'opérateur (2026-08-28)
+## Product decisions recorded by the operator (2026-08-28)
 
-1. **Réassignation d'équipe par joueur** (et non un simple bouton d'inversion) : la mesure du plan 1
-   montre que l'inversion ne répare que 5,3 % des cas fautifs, contre 94,7 % d'ordres qui ne portent
-   aucune information d'équipe. L'API doit donc permettre de fixer l'équipe **de chaque joueur**.
-2. **Table `hash .s2ma → carte` dérivée de l'archive**, pour supprimer la saisie manuelle de la
-   carte. C'est la tâche 1.
+1. **Per-player team reassignment** (not a simple swap button): plan 1's measurement
+   shows that the swap only fixes 5.3% of the wrong cases, against 94.7% of orders that carry
+   no team information. The API must therefore allow setting the team **of each player**.
+2. **`.s2ma hash → map` table derived from the archive**, to remove the manual entry of the
+   map. That is task 1.
 
-## Fichiers
+## Files
 
-| Fichier | Responsabilité |
+| File | Responsibility |
 |---|---|
-| `crates/storm-lobby/src/lib.rs` | + extraction des hashes `.s2ma`, + résolution de la carte via table embarquée |
-| `crates/storm-lobby/src/maps.rs` | table `hash → nom de carte`, générée, committée |
-| `crates/storm-lobby/examples/derive_maps.rs` | dérive `maps.rs` depuis un dossier de replays |
-| `crates/storm-codex-server/migrations/0009_companion.sql` | tables `builds`, `lobby_live`, index de résolution |
-| `crates/storm-codex-server/src/builds.rs` | CRUD bibliothèque + import depuis un match |
-| `crates/storm-codex-server/src/lobby/mod.rs` | type d'état enrichi + singleton |
-| `crates/storm-codex-server/src/lobby/store.rs` | persistance `lobby_live` (calque de `draft/store.rs`) |
-| `crates/storm-codex-server/src/lobby/enrich.rs` | résolution BattleTag→identité + agrégats d'archive |
+| `crates/storm-lobby/src/lib.rs` | + extraction of the `.s2ma` hashes, + map resolution via an embedded table |
+| `crates/storm-lobby/src/maps.rs` | `hash → map name` table, generated, committed |
+| `crates/storm-lobby/examples/derive_maps.rs` | derives `maps.rs` from a folder of replays |
+| `crates/storm-codex-server/migrations/0009_companion.sql` | `builds`, `lobby_live` tables, resolution index |
+| `crates/storm-codex-server/src/builds.rs` | library CRUD + import from a match |
+| `crates/storm-codex-server/src/lobby/mod.rs` | enriched state type + singleton |
+| `crates/storm-codex-server/src/lobby/store.rs` | `lobby_live` persistence (modelled on `draft/store.rs`) |
+| `crates/storm-codex-server/src/lobby/enrich.rs` | BattleTag→identity resolution + archive aggregates |
 | `crates/storm-codex-server/src/lobby/api.rs` | routes `/api/lobby*` |
-| `crates/storm-codex-server/src/main.rs` | déclaration des routes + champ `lobby` dans `AppState` |
+| `crates/storm-codex-server/src/main.rs` | route declarations + `lobby` field in `AppState` |
 
 ---
 
-## Task 1 : Carte déduite des hashes `.s2ma`
+## Task 1: Map inferred from the `.s2ma` hashes
 
 **Files:**
 - Modify: `crates/storm-lobby/src/lib.rs`
 - Create: `crates/storm-lobby/src/maps.rs`
 - Create: `crates/storm-lobby/examples/derive_maps.rs`
-- Test: `crates/storm-lobby/tests/oracle.rs` (ajout d'un test)
+- Test: `crates/storm-lobby/tests/oracle.rs` (one test added)
 
 **Interfaces:**
-- Produit : `Lobby { players: Vec<LobbyPlayer>, map: Option<String> }` — le champ `map` est **ajouté**
-  (`Lobby` est `#[non_exhaustive]`, donc c'est non cassant). `map` porte le nom de carte tel que
-  `matches.map` le stocke, ou `None` si aucun hash connu n'est trouvé.
-- Consomme : rien de nouveau.
+- Produces: `Lobby { players: Vec<LobbyPlayer>, map: Option<String> }` — the `map` field is **added**
+  (`Lobby` is `#[non_exhaustive]`, so it is non-breaking). `map` carries the map name as
+  `matches.map` stores it, or `None` if no known hash is found.
+- Consumes: nothing new.
 
-Le rapport de format (`docs/research/2026-08-27-lobby-format.md`, Q5) établit que le blob contient
-des chemins de cache vers des fichiers `.s2ma` identifiés par hash, mais aucun nom de carte. Chaque
-replay archivé porte à la fois ces hashes **et** sa carte connue : la correspondance se dérive donc
-de l'archive, une fois pour toutes.
+The format report (`docs/research/2026-08-27-lobby-format.md`, Q5) establishes that the blob contains
+cache paths to `.s2ma` files identified by hash, but no map name. Each
+archived replay carries both these hashes **and** its known map: the mapping can therefore be derived
+from the archive, once and for all.
 
-- [ ] **Étape 1 : Écrire le test d'extraction des hashes (rouge)**
+- [ ] **Step 1: Write the hash extraction test (red)**
 
-Ajouter à `crates/storm-lobby/tests/oracle.rs` :
+Add to `crates/storm-lobby/tests/oracle.rs`:
 
 ```rust
-/// Le blob contient des chemins de cache Battle.net vers des fichiers `.s2ma` (les cartes),
-/// identifiés par un hash de 32 caractères hexadécimaux. Ils sont la seule piste de carte du
-/// format (rapport de format, Q5).
+/// The blob contains Battle.net cache paths to `.s2ma` files (the maps),
+/// identified by a 32-character hexadecimal hash. They are the format's only map
+/// clue (format report, Q5).
 #[test]
 fn les_hashes_de_carte_sont_extraits() {
     let path = data("crates/storm-stats/tests/data/silver-city-aram.StormReplay");
@@ -99,36 +99,36 @@ fn les_hashes_de_carte_sont_extraits() {
     let hashes = storm_lobby::map_hashes(&blob);
     assert!(
         !hashes.is_empty(),
-        "aucun hash .s2ma extrait — le rapport de format en documente 9"
+        "no .s2ma hash extracted — the format report documents 9"
     );
     assert!(
         hashes.iter().all(|h| h.len() == 32 && h.chars().all(|c| c.is_ascii_hexdigit())),
-        "hash mal formé : {hashes:?}"
+        "malformed hash: {hashes:?}"
     );
 }
 ```
 
-- [ ] **Étape 2 : Lancer le test, vérifier l'échec**
+- [ ] **Step 2: Run the test, check the failure**
 
 Run: `cargo test -p storm-lobby --test oracle les_hashes`
-Expected: FAIL à la compilation — `map_hashes` n'existe pas.
+Expected: FAIL at compile time — `map_hashes` does not exist.
 
-- [ ] **Étape 3 : Implémenter l'extraction**
+- [ ] **Step 3: Implement the extraction**
 
-Dans `crates/storm-lobby/src/lib.rs`, ajouter :
+In `crates/storm-lobby/src/lib.rs`, add:
 
 ```rust
-/// Hashes des fichiers `.s2ma` (cartes) référencés par le blob, dans l'ordre d'apparition,
-/// dédupliqués. Le blob ne nomme jamais la carte : ces hashes sont la seule piste, et leur
-/// correspondance vers un nom vit dans [`maps`] (dérivée de l'archive).
+/// Hashes of the `.s2ma` files (maps) referenced by the blob, in order of appearance,
+/// deduplicated. The blob never names the map: these hashes are the only clue, and their
+/// mapping to a name lives in [`maps`] (derived from the archive).
 #[must_use]
 pub fn map_hashes(bytes: &[u8]) -> Vec<String> {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    // Même motif que `parse()` : le littéral est vérifié par les tests, donc l'échec de
-    // compilation de la regex est impossible en usage normal — mais pas de `unwrap()` nu.
+    // Same pattern as `parse()`: the literal is checked by the tests, so a regex compile
+    // failure is impossible in normal use — but no bare `unwrap()`.
     let re = RE.get_or_init(|| match regex::Regex::new(r"([0-9a-f]{32})\.s2ma") {
         Ok(r) => r,
-        Err(e) => unreachable!("regex .s2ma invalide : {e}"),
+        Err(e) => unreachable!("invalid .s2ma regex: {e}"),
     });
     let text = String::from_utf8_lossy(bytes);
     let mut out: Vec<String> = Vec::new();
@@ -144,27 +144,27 @@ pub fn map_hashes(bytes: &[u8]) -> Vec<String> {
 }
 ```
 
-Note : `unreachable!` est le même échappatoire que `parse()` utilise déjà pour sa propre regex —
-il satisfait `clippy::unwrap_used = deny` sans masquer d'erreur réelle, puisque le motif est un
-littéral couvert par les tests.
+Note: `unreachable!` is the same escape hatch `parse()` already uses for its own regex —
+it satisfies `clippy::unwrap_used = deny` without hiding a real error, since the pattern is a
+literal covered by the tests.
 
-- [ ] **Étape 4 : Vérifier le vert**
+- [ ] **Step 4: Check green**
 
 Run: `cargo test -p storm-lobby --test oracle les_hashes`
 Expected: PASS
 
-- [ ] **Étape 5 : Écrire l'outil de dérivation**
+- [ ] **Step 5: Write the derivation tool**
 
-`crates/storm-lobby/examples/derive_maps.rs` :
+`crates/storm-lobby/examples/derive_maps.rs`:
 
 ```rust
-//! Dérive la table `hash .s2ma → nom de carte` depuis un dossier de replays archivés.
+//! Derives the `.s2ma hash → map name` table from a folder of archived replays.
 //!
-//! Principe : chaque replay donne (carte connue via le parse complet, hashes du blob). Un hash est
-//! retenu pour une carte s'il apparaît dans TOUS les replays de cette carte et dans AUCUN replay
-//! d'une autre carte. Les hashes communs à plusieurs cartes (assets partagés) sont donc écartés.
+//! Principle: each replay gives (map known via the full parse, hashes of the blob). A hash is
+//! kept for a map if it appears in ALL the replays of that map and in NO replay
+//! of another map. Hashes common to several maps (shared assets) are therefore set aside.
 //!
-//! Usage : cargo run --release -p storm-lobby --example derive_maps -- <dossier> > src/maps.rs
+//! Usage: cargo run --release -p storm-lobby --example derive_maps -- <folder> > src/maps.rs
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -175,7 +175,7 @@ fn main() -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("usage: derive_maps <dossier>"))?
         .into();
 
-    // carte → nombre de replays, et hash → cartes où il apparaît, et (carte,hash) → occurrences
+    // map → number of replays, hash → maps where it appears, and (map,hash) → occurrences
     let mut replays_par_carte: BTreeMap<String, usize> = BTreeMap::new();
     let mut cartes_par_hash: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut occurrences: BTreeMap<(String, String), usize> = BTreeMap::new();
@@ -203,7 +203,7 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
-    // Un hash est discriminant s'il n'apparaît que sur une carte, et sur TOUS ses replays.
+    // A hash is discriminating if it appears on only one map, and on ALL its replays.
     let mut table: Vec<(String, String)> = Vec::new();
     for (hash, cartes) in &cartes_par_hash {
         if cartes.len() != 1 {
@@ -218,31 +218,31 @@ fn main() -> anyhow::Result<()> {
     }
     table.sort();
 
-    println!("//! Table `hash .s2ma → nom de carte`, GÉNÉRÉE — ne pas éditer à la main.");
+    println!("//! `.s2ma hash → map name` table, GENERATED — do not edit by hand.");
     println!("//!");
-    println!("//! Produite par `cargo run --release -p storm-lobby --example derive_maps -- <dossier>`");
-    println!("//! sur l'archive du box. Un hash n'est retenu que s'il apparaît sur une seule carte");
-    println!("//! ET sur tous les replays de cette carte.");
+    println!("//! Produced by `cargo run --release -p storm-lobby --example derive_maps -- <folder>`");
+    println!("//! on the box's archive. A hash is kept only if it appears on a single map");
+    println!("//! AND on all the replays of that map.");
     println!();
-    println!("/// `(hash, nom de carte)`, trié par hash — les noms sont ceux que `matches.map` stocke.");
+    println!("/// `(hash, map name)`, sorted by hash — the names are the ones `matches.map` stores.");
     println!("pub(crate) const MAP_BY_HASH: &[(&str, &str)] = &[");
     for (h, c) in &table {
         println!("    ({h:?}, {c:?}),");
     }
     println!("];");
 
-    eprintln!("cartes couvertes : {}", 
+    eprintln!("maps covered : {}",
         table.iter().map(|(_, c)| c).collect::<BTreeSet<_>>().len());
     eprintln!("hashes retenus   : {}", table.len());
-    eprintln!("cartes vues      : {}", replays_par_carte.len());
+    eprintln!("maps seen    : {}", replays_par_carte.len());
     Ok(())
 }
 ```
 
-- [ ] **Étape 6 : Générer la table depuis l'archive**
+- [ ] **Step 6: Generate the table from the archive**
 
-L'archive vit dans un volume Docker sur le box. Récupération en **lecture seule** (le motif du
-runbook `docs/runbooks/2026-07-09-visionneuse-2d-verif-box.md`) :
+The archive lives in a Docker volume on the box. Fetch it **read-only** (the pattern of the
+runbook `docs/runbooks/2026-07-09-visionneuse-2d-verif-box.md`):
 
 ```bash
 mkdir -p /tmp/lobby-archive && \
@@ -250,25 +250,25 @@ ssh matella@192.168.129.85 "docker cp storm-codex-server:/data/archive -" | tar 
 ls /tmp/lobby-archive/archive | wc -l
 ```
 
-Expected: ~3300 fichiers. Puis (plusieurs minutes — arrière-plan ou timeout élevé) :
+Expected: ~3300 files. Then (several minutes — background or high timeout):
 
 ```bash
 cargo run --release -p storm-lobby --example derive_maps -- /tmp/lobby-archive/archive \
   > crates/storm-lobby/src/maps.rs
 ```
 
-Regarder la sortie d'erreur : « cartes couvertes » doit approcher « cartes vues ». Si moins de la
-moitié des cartes sont couvertes, **ne pas forcer** : consigner le résultat et remonter à
-l'opérateur — la carte restera une saisie manuelle, ce que le plan 3 gère déjà.
+Look at the error output: "maps covered" should approach "maps seen". If fewer than
+half of the maps are covered, **do not force it**: record the result and report it to
+the operator — the map will stay a manual entry, which plan 3 already handles.
 
-- [ ] **Étape 7 : Brancher la table dans `parse()`**
+- [ ] **Step 7: Wire the table into `parse()`**
 
-Dans `crates/storm-lobby/src/lib.rs` :
+In `crates/storm-lobby/src/lib.rs`:
 
 ```rust
 mod maps;
 
-// … dans la construction du Lobby, après les joueurs :
+// … in the construction of the Lobby, after the players:
 let map = map_hashes(bytes)
     .iter()
     .find_map(|h| {
@@ -279,76 +279,76 @@ let map = map_hashes(bytes)
     });
 ```
 
-et ajouter le champ à la structure :
+and add the field to the structure:
 
 ```rust
 pub struct Lobby {
     pub players: Vec<LobbyPlayer>,
-    /// Carte, déduite des hashes `.s2ma` via une table dérivée de l'archive. `None` si aucun hash
-    /// connu — le format ne nomme jamais la carte.
+    /// Map, inferred from the `.s2ma` hashes via a table derived from the archive. `None` if no
+    /// known hash — the format never names the map.
     pub map: Option<String>,
 }
 ```
 
-- [ ] **Étape 8 : Test de bout en bout de la carte**
+- [ ] **Step 8: End-to-end map test**
 
-Ajouter à `crates/storm-lobby/tests/oracle.rs` :
+Add to `crates/storm-lobby/tests/oracle.rs`:
 
 ```rust
-/// La carte déduite des hashes doit correspondre à celle du parse complet, quand elle est déduite.
-/// Une carte `None` est acceptable (hash inconnu de la table) ; une carte FAUSSE ne l'est pas.
+/// The map inferred from the hashes must match the one from the full parse, when it is inferred.
+/// A `None` map is acceptable (hash unknown to the table); a WRONG map is not.
 #[test]
 fn la_carte_deduite_ne_ment_jamais() {
     for path in replays() {
         let label = path.file_name().and_then(|s| s.to_str()).expect("nom");
         let filename = label;
         let out = storm_stats::process_replay(&path, filename);
-        assert_eq!(out.status, 1, "{label} : parse complet rejeté");
+        assert_eq!(out.status, 1, "{label}: full parse rejected");
         let json = out.to_json();
         let attendue = json["match"]["map"].as_str().unwrap_or_default().to_string();
 
         if let Some(deduite) = lobby_of(&path).map {
-            assert_eq!(deduite, attendue, "{label} : carte déduite fausse");
+            assert_eq!(deduite, attendue, "{label}: wrong inferred map");
         }
     }
 }
 ```
 
 Run: `cargo test -p storm-lobby`
-Expected: PASS (les 4 tests précédents + les 2 nouveaux).
+Expected: PASS (the 4 previous tests + the 2 new ones).
 
-- [ ] **Étape 9 : Nettoyer et committer**
+- [ ] **Step 9: Clean up and commit**
 
 ```bash
 rm -rf /tmp/lobby-archive
 cargo clippy -p storm-lobby --all-targets -- -D warnings
 git add crates/storm-lobby
-git commit -m "feat(storm-lobby): déduire la carte des hashes .s2ma via une table dérivée de l'archive"
+git commit -m "feat(storm-lobby): infer the map from the .s2ma hashes via a table derived from the archive"
 ```
 
 ---
 
-## Task 2 : Migration `0009` et bibliothèque de builds
+## Task 2: Migration `0009` and build library
 
 **Files:**
 - Create: `crates/storm-codex-server/migrations/0009_companion.sql`
 - Create: `crates/storm-codex-server/src/builds.rs`
-- Modify: `crates/storm-codex-server/src/main.rs` (déclaration du module + routes)
+- Modify: `crates/storm-codex-server/src/main.rs` (module declaration + routes)
 
 **Interfaces:**
-- Produit : les routes `GET /api/builds`, `POST /api/builds`, `PUT /api/builds/{id}`,
-  `DELETE /api/builds/{id}`, `POST /api/builds/from-match`. La tâche 4 lira la table `builds` pour
-  joindre le build par défaut au lobby ; la tâche 6 comparera `builds.picks` aux talents joués.
-- Consomme : `AppState { db: PgPool, … }` (`main.rs:31`).
+- Produces: the routes `GET /api/builds`, `POST /api/builds`, `PUT /api/builds/{id}`,
+  `DELETE /api/builds/{id}`, `POST /api/builds/from-match`. Task 4 will read the `builds` table to
+  attach the default build to the lobby; task 6 will compare `builds.picks` with the talents played.
+- Consumes: `AppState { db: PgPool, … }` (`main.rs:31`).
 
-- [ ] **Étape 1 : Écrire la migration**
+- [ ] **Step 1: Write the migration**
 
-`crates/storm-codex-server/migrations/0009_companion.sql` :
+`crates/storm-codex-server/migrations/0009_companion.sql`:
 
 ```sql
--- Bibliothèque de builds. `picks` a EXACTEMENT la forme écrite par le parser dans
--- match_players.data.talents : {"Tier1Choice": "<talentTreeId>", ...}. C'est ce qui rend l'import
--- depuis un match et le diff post-game de simples comparaisons d'objets, sans mapping à inventer.
+-- Build library. `picks` has EXACTLY the shape written by the parser in
+-- match_players.data.talents: {"Tier1Choice": "<talentTreeId>", ...}. That is what makes importing
+-- from a match and the post-game diff simple object comparisons, with no mapping to invent.
 CREATE TABLE builds (
     id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     hero_id         TEXT NOT NULL,          -- = dim_heroes.id = match_players.hero
@@ -361,48 +361,48 @@ CREATE TABLE builds (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX builds_hero_idx ON builds (hero_id);
--- Invariant tenu par la base, pas par le code : au plus un build par défaut par héros.
+-- Invariant held by the database, not by the code: at most one default build per hero.
 CREATE UNIQUE INDEX builds_one_default_per_hero ON builds (hero_id) WHERE is_default;
 
--- Lobby courant. Singleton, calque exact de draft_live : tout l'état dans le JSON, écrasé à chaque
--- nouveau lobby. Aucun historique — le replay archivé reste la source de vérité.
+-- Current lobby. Singleton, exact copy of draft_live: the whole state in the JSON, overwritten at each
+-- new lobby. No history — the archived replay stays the source of truth.
 CREATE TABLE lobby_live (
     id         INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
     state      JSONB NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Résolution BattleTag → toon_handle : le blob de lobby ne porte que "nom#discriminant", et
--- l'archive est la seule table de correspondance dont on dispose (cf. spec companion-live).
+-- BattleTag → toon_handle resolution: the lobby blob only carries "name#discriminant", and
+-- the archive is the only mapping table available (see the companion-live spec).
 CREATE INDEX match_players_name_tag_idx
     ON match_players (lower(name), (data ->> 'tag'));
 ```
 
-- [ ] **Étape 2 : Vérifier que la migration s'applique**
+- [ ] **Step 2: Check that the migration applies**
 
 ```bash
 docker compose -f docker-compose.dev.yml up -d
 cargo run -p storm-codex-server 2>&1 | head -20
 ```
 
-Expected: le serveur démarre sans erreur de migration. Vérifier :
+Expected: the server starts without a migration error. Check:
 
 ```bash
 docker compose -f docker-compose.dev.yml exec -T postgres \
   psql -U postgres -d storm_codex -c '\d builds' | head -15
 ```
 
-Expected: les 9 colonnes de `builds`.
+Expected: the 9 columns of `builds`.
 
-- [ ] **Étape 3 : Écrire le module builds**
+- [ ] **Step 3: Write the builds module**
 
-`crates/storm-codex-server/src/builds.rs` :
+`crates/storm-codex-server/src/builds.rs`:
 
 ```rust
-//! Bibliothèque de builds de talents. `picks` reprend la forme du parser
-//! (`{TierNChoice: talentTreeId}`), ce qui permet d'importer un build depuis une partie jouée et de
-//! diffuser « prévu vs pris » sans conversion. L'unicité du build par défaut est tenue par un index
-//! partiel unique en base, pas par ce code.
+//! Talent build library. `picks` reuses the parser's shape
+//! (`{TierNChoice: talentTreeId}`), which allows importing a build from a played game and
+//! diffing "planned vs taken" without conversion. The uniqueness of the default build is held by a
+//! partial unique index in the database, not by this code.
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
@@ -420,9 +420,9 @@ fn db_err(e: sqlx::Error) -> (StatusCode, Json<J>) {
     )
 }
 
-/// Les mutations de la bibliothèque suivent la même garde que teams/collections : ouvertes si
-/// aucun `ADMIN_TOKEN` n'est configuré (mode local par défaut de la spec suite), protégées sinon.
-/// La lecture reste toujours ouverte, comme `list_teams`.
+/// Library mutations follow the same guard as teams/collections: open if
+/// no `ADMIN_TOKEN` is configured (the suite spec's default local mode), protected otherwise.
+/// Reading always stays open, like `list_teams`.
 fn refus_admin() -> (StatusCode, Json<J>) {
     (
         StatusCode::UNAUTHORIZED,
@@ -432,11 +432,11 @@ fn refus_admin() -> (StatusCode, Json<J>) {
 
 #[derive(Deserialize)]
 pub struct ListQuery {
-    /// Filtre optionnel sur le héros (clé `dim_heroes.id`).
+    /// Optional filter on the hero (key `dim_heroes.id`).
     pub hero: Option<String>,
 }
 
-/// `GET /api/builds` — la bibliothèque, éventuellement filtrée par héros.
+/// `GET /api/builds` — the library, optionally filtered by hero.
 pub async fn list(State(s): State<AppState>, Query(q): Query<ListQuery>) -> Resp {
     let v: J = sqlx::query_scalar(
         "SELECT COALESCE(jsonb_agg(b ORDER BY b.hero_id, b.is_default DESC, b.name), '[]'::jsonb)
@@ -463,8 +463,8 @@ pub struct BuildBody {
     pub is_default: bool,
 }
 
-/// `POST /api/builds` — créer un build. Marquer `is_default` retire d'abord le défaut existant du
-/// même héros : sans ça, l'index partiel unique rejetterait l'insertion.
+/// `POST /api/builds` — create a build. Marking `is_default` first removes the existing default of the
+/// same hero: without that, the partial unique index would reject the insertion.
 pub async fn create(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -497,7 +497,7 @@ pub async fn create(
     Ok(Json(json!({ "id": id })))
 }
 
-/// `PUT /api/builds/{id}` — remplacer un build. Même précaution sur le défaut que `create`.
+/// `PUT /api/builds/{id}` — replace a build. Same precaution on the default as `create`.
 pub async fn update(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -568,8 +568,8 @@ pub struct FromMatchBody {
     pub is_default: bool,
 }
 
-/// `POST /api/builds/from-match` — amorcer un build depuis une partie jouée. C'est ce qui évite de
-/// saisir 90 héros à la main : les talents de l'archive ont déjà la bonne forme.
+/// `POST /api/builds/from-match` — seed a build from a played game. This is what avoids
+/// entering 90 heroes by hand: the archive's talents already have the right shape.
 pub async fn from_match(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -616,24 +616,24 @@ pub async fn from_match(
 }
 ```
 
-- [ ] **Étape 4 : Déclarer le module et les routes**
+- [ ] **Step 4: Declare the module and the routes**
 
-Dans `crates/storm-codex-server/src/manage.rs`, rendre la garde réutilisable — elle est
-aujourd'hui privée :
+In `crates/storm-codex-server/src/manage.rs`, make the guard reusable — it is
+currently private:
 
 ```rust
 pub(crate) fn is_admin(h: &axum::http::HeaderMap, s: &AppState) -> bool {
 ```
 
-(seul le mot-clé change ; le corps reste identique.)
+(only the keyword changes; the body stays identical.)
 
-Dans `crates/storm-codex-server/src/main.rs`, à côté des autres `mod` :
+In `crates/storm-codex-server/src/main.rs`, next to the other `mod`s:
 
 ```rust
 mod builds;
 ```
 
-et dans le `Router::new()`, à la suite des routes `/api/collections` :
+and in the `Router::new()`, after the `/api/collections` routes:
 
 ```rust
         .route("/api/builds", get(builds::list).post(builds::create))
@@ -644,13 +644,13 @@ et dans le `Router::new()`, à la suite des routes `/api/collections` :
         .route("/api/builds/from-match", post(builds::from_match))
 ```
 
-- [ ] **Étape 5 : Vérifier au curl, y compris l'invariant de la base**
+- [ ] **Step 5: Check with curl, including the database invariant**
 
-Démarrer le serveur, puis :
+Start the server, then:
 
 ```bash
-# En dev sans ADMIN_TOKEN configuré, la garde laisse passer ; avec un token, ajouter
-# -H "authorization: Bearer $ADMIN_TOKEN" aux trois mutations.
+# In dev without ADMIN_TOKEN configured, the guard lets through; with a token, add
+# -H "authorization: Bearer $ADMIN_TOKEN" to the three mutations.
 curl -s -XPOST localhost:8080/api/builds -H 'content-type: application/json' \
   -d '{"hero_id":"Tychus","name":"Anti-heal","picks":{"Tier1Choice":"TychusMasterAssassin"},"is_default":true}'
 curl -s -XPOST localhost:8080/api/builds -H 'content-type: application/json' \
@@ -658,11 +658,11 @@ curl -s -XPOST localhost:8080/api/builds -H 'content-type: application/json' \
 curl -s 'localhost:8080/api/builds?hero=Tychus'
 ```
 
-Expected: deux `{"id":N}`, puis une liste de **deux** builds dont **un seul** a `is_default: true`
-(le second — le premier a été démarqué par la transaction). Si les deux sortent à `true`, ou si la
-seconde insertion échoue en 500, la transaction de `create` est fautive.
+Expected: two `{"id":N}`, then a list of **two** builds of which **only one** has `is_default: true`
+(the second — the first was unmarked by the transaction). If both come out `true`, or if the
+second insertion fails with a 500, the `create` transaction is faulty.
 
-Vérifier ensuite que l'index protège bien contre un contournement :
+Then check that the index really protects against a bypass:
 
 ```bash
 docker compose -f docker-compose.dev.yml exec -T postgres psql -U postgres -d storm_codex \
@@ -670,51 +670,51 @@ docker compose -f docker-compose.dev.yml exec -T postgres psql -U postgres -d st
 ```
 
 Expected: `ERROR: duplicate key value violates unique constraint "builds_one_default_per_hero"`.
-C'est le comportement recherché — l'invariant tient même si un futur code l'oublie.
+This is the intended behaviour — the invariant holds even if future code forgets it.
 
-- [ ] **Étape 6 : Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 cargo clippy -p storm-codex-server --all-targets -- -D warnings
 git add crates/storm-codex-server/migrations/0009_companion.sql crates/storm-codex-server/src/builds.rs crates/storm-codex-server/src/main.rs
-git commit -m "feat(server): migration 0009 + bibliothèque de builds (CRUD, import depuis un match)"
+git commit -m "feat(server): migration 0009 + build library (CRUD, import from a match)"
 ```
 
 ---
 
-## Task 3 : Ingestion du lobby live
+## Task 3: Live lobby ingestion
 
 **Files:**
 - Create: `crates/storm-codex-server/src/lobby/mod.rs`
 - Create: `crates/storm-codex-server/src/lobby/store.rs`
 - Create: `crates/storm-codex-server/src/lobby/api.rs`
-- Modify: `crates/storm-codex-server/src/main.rs` (champ `lobby` dans `AppState`, chargement au
-  démarrage, routes)
-- Modify: `crates/storm-codex-server/Cargo.toml` (dépendance `storm-lobby`)
+- Modify: `crates/storm-codex-server/src/main.rs` (`lobby` field in `AppState`, loading at
+  startup, routes)
+- Modify: `crates/storm-codex-server/Cargo.toml` (`storm-lobby` dependency)
 
 **Interfaces:**
-- Produit : `LobbyState` (sérialisable, porte `schema_version`), les routes `POST /api/lobby`,
-  `GET /api/lobby`, `DELETE /api/lobby`, et l'événement WS `lobby.detected`. La tâche 4 remplira le
-  champ `players[].history` ; la tâche 5 mutera `hero`, `map` et les équipes ; la tâche 6 remplira
+- Produces: `LobbyState` (serialisable, carries `schema_version`), the routes `POST /api/lobby`,
+  `GET /api/lobby`, `DELETE /api/lobby`, and the WS event `lobby.detected`. Task 4 will fill the
+  `players[].history` field; task 5 will mutate `hero`, `map` and the teams; task 6 will fill
   `match_id`.
-- Consomme : `storm_lobby::{parse, Lobby, LobbyPlayer}` (plan 1), `crate::AppState`.
+- Consumes: `storm_lobby::{parse, Lobby, LobbyPlayer}` (plan 1), `crate::AppState`.
 
-- [ ] **Étape 1 : Ajouter la dépendance**
+- [ ] **Step 1: Add the dependency**
 
-Dans `crates/storm-codex-server/Cargo.toml`, section `[dependencies]` :
+In `crates/storm-codex-server/Cargo.toml`, `[dependencies]` section:
 
 ```toml
 storm-lobby = { path = "../storm-lobby" }
 ```
 
-- [ ] **Étape 2 : Définir l'état**
+- [ ] **Step 2: Define the state**
 
-`crates/storm-codex-server/src/lobby/mod.rs` :
+`crates/storm-codex-server/src/lobby/mod.rs`:
 
 ```rust
-//! Lobby live : état courant d'une partie en cours de chargement. Singleton persisté (calque de
-//! `draft_live`) — le lobby courant écrase le précédent, il n'y a pas d'historique de lobbies : le
-//! replay archivé reste la source de vérité (étage 1 des trois étages de données).
+//! Live lobby: current state of a game being loaded. Persisted singleton (modelled on
+//! `draft_live`) — the current lobby overwrites the previous one, there is no lobby history: the
+//! archived replay stays the source of truth (tier 1 of the three data tiers).
 pub mod api;
 pub mod enrich;
 pub mod store;
@@ -722,24 +722,24 @@ pub mod store;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as J;
 
-/// Version du schéma de `lobby_live.state` — un état d'une version inconnue est ignoré au
-/// démarrage plutôt que désérialisé de travers.
+/// Schema version of `lobby_live.state` — a state of an unknown version is ignored at
+/// startup rather than deserialised wrongly.
 pub const LOBBY_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LobbyPlayerState {
     pub name: String,
     pub discriminant: String,
-    /// `"nom#1234"` — la clé d'identité issue du blob.
+    /// `"name#1234"` — the identity key from the blob.
     pub battletag: String,
-    /// Équipe : celle déduite par `storm-lobby`, ou celle fixée à la main (tâche 5).
+    /// Team: the one inferred by `storm-lobby`, or the one set by hand (task 5).
     pub team: Option<u8>,
-    /// `true` si l'équipe a été corrigée à la main — le front l'affiche différemment.
+    /// `true` if the team was corrected by hand — the front shows it differently.
     #[serde(default)]
     pub team_manual: bool,
-    /// Identité applicative, résolue contre l'archive. `None` = joueur jamais croisé.
+    /// Application identity, resolved against the archive. `None` = player never met.
     pub toon_handle: Option<String>,
-    /// Agrégats d'archive (tâche 4). `null` tant que non enrichi ou si joueur inconnu.
+    /// Archive aggregates (task 4). `null` until enriched or if the player is unknown.
     #[serde(default)]
     pub history: Option<J>,
 }
@@ -749,31 +749,31 @@ pub struct LobbyState {
     pub schema_version: u32,
     pub detected_at: String,
     pub players: Vec<LobbyPlayerState>,
-    /// Carte : déduite des hashes `.s2ma`, ou saisie à la main.
+    /// Map: inferred from the `.s2ma` hashes, or entered by hand.
     pub map: Option<String>,
     #[serde(default)]
     pub map_manual: bool,
-    /// Héros de l'opérateur — jamais dans le blob, toujours saisi (tâche 5).
+    /// The operator's hero — never in the blob, always entered (task 5).
     pub hero: Option<String>,
-    /// Index dans `players` du joueur identifié comme l'opérateur, si trouvé.
+    /// Index in `players` of the player identified as the operator, if found.
     pub me: Option<usize>,
-    /// Build suggéré + alternatives (tâche 4).
+    /// Suggested build + alternatives (task 4).
     #[serde(default)]
     pub build: Option<J>,
-    /// Stats de l'opérateur sur ce héros / cette carte (tâche 4).
+    /// The operator's stats on this hero / this map (task 4).
     #[serde(default)]
     pub me_stats: Option<J>,
-    /// Rempli quand le replay correspondant est parsé (tâche 6) → bascule en debrief.
+    /// Filled when the matching replay is parsed (task 6) → switches to debrief.
     #[serde(default)]
     pub match_id: Option<i64>,
-    /// `parse_failed` quand le blob est illisible : la page affiche alors le sélecteur manuel
-    /// plutôt qu'une page vide.
+    /// `parse_failed` when the blob is unreadable: the page then shows the manual selector
+    /// rather than an empty page.
     #[serde(default)]
     pub status: Option<String>,
 }
 
 impl LobbyState {
-    /// Construit l'état brut depuis un lobby décodé, avant enrichissement.
+    /// Builds the raw state from a decoded lobby, before enrichment.
     #[must_use]
     pub fn from_lobby(lobby: &storm_lobby::Lobby, detected_at: String) -> Self {
         Self {
@@ -803,8 +803,8 @@ impl LobbyState {
         }
     }
 
-    /// État dégradé quand le blob n'a pas pu être décodé (nouveau build Blizzard). La page reste
-    /// utilisable : l'opérateur saisit son héros, le build s'affiche.
+    /// Degraded state when the blob could not be decoded (new Blizzard build). The page stays
+    /// usable: the operator enters their hero, the build shows.
     #[must_use]
     pub fn unreadable(detected_at: String) -> Self {
         Self {
@@ -824,18 +824,18 @@ impl LobbyState {
 }
 ```
 
-- [ ] **Étape 3 : Persistance (calque de `draft/store.rs`)**
+- [ ] **Step 3: Persistence (modelled on `draft/store.rs`)**
 
-`crates/storm-codex-server/src/lobby/store.rs` :
+`crates/storm-codex-server/src/lobby/store.rs`:
 
 ```rust
-//! Persistance du lobby courant (singleton `lobby_live`, id=1). Requêtes runtime, comme le reste
-//! du serveur. Copie assumée du motif de `draft/store.rs` : deux singletons indépendants, chacun
-//! avec son cycle de vie ; les factoriser coûterait plus en indirection qu'il ne rapporterait.
+//! Persistence of the current lobby (singleton `lobby_live`, id=1). Runtime queries, like the rest
+//! of the server. Deliberate copy of the `draft/store.rs` pattern: two independent singletons, each
+//! with its own life cycle; factoring them would cost more in indirection than it would bring.
 use crate::lobby::{LobbyState, LOBBY_SCHEMA_VERSION};
 use sqlx::PgPool;
 
-/// Charge l'état persistant. Un état d'une autre version de schéma est ignoré (→ pas de lobby).
+/// Loads the persisted state. A state of another schema version is ignored (→ no lobby).
 pub async fn load(db: &PgPool) -> Option<LobbyState> {
     let row: Option<serde_json::Value> =
         sqlx::query_scalar("SELECT state FROM lobby_live WHERE id = 1")
@@ -847,7 +847,7 @@ pub async fn load(db: &PgPool) -> Option<LobbyState> {
     (state.schema_version == LOBBY_SCHEMA_VERSION).then_some(state)
 }
 
-/// Écrit l'état (upsert sur la ligne unique).
+/// Writes the state (upsert on the single row).
 pub async fn save(db: &PgPool, state: &LobbyState) -> Result<(), sqlx::Error> {
     let v = serde_json::to_value(state).unwrap_or_else(|_| serde_json::json!({}));
     sqlx::query(
@@ -860,7 +860,7 @@ pub async fn save(db: &PgPool, state: &LobbyState) -> Result<(), sqlx::Error> {
     .map(|_| ())
 }
 
-/// Efface le lobby courant.
+/// Clears the current lobby.
 pub async fn clear(db: &PgPool) -> Result<(), sqlx::Error> {
     sqlx::query("DELETE FROM lobby_live WHERE id = 1")
         .execute(db)
@@ -869,15 +869,15 @@ pub async fn clear(db: &PgPool) -> Result<(), sqlx::Error> {
 }
 ```
 
-- [ ] **Étape 4 : Les routes d'ingestion**
+- [ ] **Step 4: The ingestion routes**
 
-`crates/storm-codex-server/src/lobby/api.rs` :
+`crates/storm-codex-server/src/lobby/api.rs`:
 
 ```rust
-//! Routes du lobby live. `POST /api/lobby` reçoit les octets bruts du fichier de lobby (même
-//! contrat que `/api/upload-raw` : `Bearer` + corps binaire), le décode, l'enrichit, le persiste et
-//! diffuse `lobby.detected`. Le parseur vivant côté serveur, une casse de format Blizzard se
-//! corrige par un redéploiement du box, sans jamais retoucher le binaire Windows.
+//! Live lobby routes. `POST /api/lobby` receives the raw bytes of the lobby file (same
+//! contract as `/api/upload-raw`: `Bearer` + binary body), decodes it, enriches it, persists it and
+//! broadcasts `lobby.detected`. With the parser living on the server, a Blizzard format break is
+//! fixed by a box redeployment, without ever touching the Windows binary.
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
@@ -886,8 +886,8 @@ use serde_json::{json, Value as J};
 use crate::lobby::{store, LobbyState};
 use crate::AppState;
 
-/// Idempotence : deux POST du même fichier (le watcher redémarre, le jeu réécrit) ne doivent pas
-/// écraser un état déjà enrichi ni rediffuser un événement. On compare l'ensemble des BattleTags.
+/// Idempotence: two POSTs of the same file (the watcher restarts, the game rewrites) must not
+/// overwrite an already enriched state nor rebroadcast an event. We compare the set of BattleTags.
 fn meme_lobby(a: &LobbyState, b: &LobbyState) -> bool {
     if a.players.len() != b.players.len() || a.players.is_empty() {
         return false;
@@ -899,7 +899,7 @@ fn meme_lobby(a: &LobbyState, b: &LobbyState) -> bool {
     x == y
 }
 
-/// `POST /api/lobby` — octets bruts, `Bearer` d'upload.
+/// `POST /api/lobby` — raw bytes, upload `Bearer`.
 pub async fn ingest(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -916,8 +916,8 @@ pub async fn ingest(
     let mut state = match storm_lobby::parse(&bytes) {
         Ok(lobby) => LobbyState::from_lobby(&lobby, detected_at),
         Err(e) => {
-            // Pas une erreur HTTP : la page doit s'ouvrir quand même, avec le sélecteur manuel.
-            tracing::warn!("lobby illisible ({} octets) : {e}", bytes.len());
+            // Not an HTTP error: the page must open anyway, with the manual selector.
+            tracing::warn!("unreadable lobby ({} bytes): {e}", bytes.len());
             LobbyState::unreadable(detected_at)
         }
     };
@@ -943,7 +943,7 @@ pub async fn ingest(
     )
 }
 
-/// `GET /api/lobby` — l'état enrichi courant, `204` si aucun lobby.
+/// `GET /api/lobby` — the current enriched state, `204` if there is no lobby.
 pub async fn get(State(s): State<AppState>) -> (StatusCode, Json<J>) {
     match s.lobby.read().await.as_ref() {
         None => (StatusCode::NO_CONTENT, Json(J::Null)),
@@ -954,7 +954,7 @@ pub async fn get(State(s): State<AppState>) -> (StatusCode, Json<J>) {
     }
 }
 
-/// `DELETE /api/lobby` — fermer le companion.
+/// `DELETE /api/lobby` — close the companion.
 pub async fn clear(State(s): State<AppState>) -> Json<J> {
     let _ = store::clear(&s.db).await;
     *s.lobby.write().await = None;
@@ -963,19 +963,19 @@ pub async fn clear(State(s): State<AppState>) -> Json<J> {
 }
 ```
 
-- [ ] **Étape 5 : Extraire la validation de token pour la réutiliser**
+- [ ] **Step 5: Extract the token validation to reuse it**
 
-Dans `crates/storm-codex-server/src/upload.rs`, la validation vit aujourd'hui inline dans `upload`
-(lignes ~73-96). L'extraire en fonction publique et l'appeler depuis les deux endroits :
+In `crates/storm-codex-server/src/upload.rs`, the validation currently lives inline in `upload`
+(lines ~73-96). Extract it into a public function and call it from both places:
 
 ```rust
-/// Vrai si l'en-tête porte un `Bearer` correspondant à un token d'upload non révoqué.
-/// Partagé avec `lobby::api::ingest` : les deux endpoints ont le même contrat d'authentification.
+/// True if the header carries a `Bearer` matching a non-revoked upload token.
+/// Shared with `lobby::api::ingest`: both endpoints have the same authentication contract.
 pub async fn token_valide(db: &sqlx::PgPool, headers: &axum::http::HeaderMap) -> bool {
     token_id(db, headers).await.is_some()
 }
 
-/// L'id du token, quand il est valide (l'upload en a besoin pour tracer `uploads.token_id`).
+/// The token's id, when it is valid (the upload needs it to record `uploads.token_id`).
 pub async fn token_id(db: &sqlx::PgPool, headers: &axum::http::HeaderMap) -> Option<i64> {
     let tok = bearer(headers)?;
     let h = sha256_hex(tok.as_bytes());
@@ -988,12 +988,12 @@ pub async fn token_id(db: &sqlx::PgPool, headers: &axum::http::HeaderMap) -> Opt
 }
 ```
 
-Puis remplacer le bloc inline de `upload` par `let Some(token_id) = upload::token_id(&state.db,
-&headers).await else { … }`, en conservant sa réponse 401 existante à l'identique.
+Then replace the inline block of `upload` with `let Some(token_id) = upload::token_id(&state.db,
+&headers).await else { … }`, keeping its existing 401 response identical.
 
-- [ ] **Étape 6 : Câbler l'état dans `AppState`**
+- [ ] **Step 6: Wire the state into `AppState`**
 
-Dans `crates/storm-codex-server/src/main.rs`, ajouter le module et le champ :
+In `crates/storm-codex-server/src/main.rs`, add the module and the field:
 
 ```rust
 mod lobby;
@@ -1001,37 +1001,37 @@ mod lobby;
 
 ```rust
 pub struct AppState {
-    // … champs existants …
-    /// Lobby live courant (singleton, persisté dans `lobby_live`). `None` = aucun lobby.
+    // … existing fields …
+    /// Current live lobby (singleton, persisted in `lobby_live`). `None` = no lobby.
     pub lobby: Arc<RwLock<Option<lobby::LobbyState>>>,
 }
 ```
 
-À la construction de l'état, après le chargement du draft :
+When building the state, after loading the draft:
 
 ```rust
     let lobby_initial = lobby::store::load(&db).await;
 ```
 
-et dans le littéral `AppState { … }` :
+and in the `AppState { … }` literal:
 
 ```rust
         lobby: Arc::new(RwLock::new(lobby_initial)),
 ```
 
-Routes, à la suite de celles du draft :
+Routes, after the draft ones:
 
 ```rust
         .route("/api/lobby", get(lobby::api::get).post(lobby::api::ingest))
         .route("/api/lobby", axum::routing::delete(lobby::api::clear))
 ```
 
-⚠️ axum refuse deux `.route()` sur le même chemin : **fusionner** en un seul appel —
+⚠️ axum refuses two `.route()` calls on the same path: **merge** them into a single call —
 `.route("/api/lobby", get(lobby::api::get).post(lobby::api::ingest).delete(lobby::api::clear))`.
 
-- [ ] **Étape 7 : Vérifier de bout en bout**
+- [ ] **Step 7: Check end to end**
 
-Créer un token, extraire un blob réel, le poster :
+Create a token, extract a real blob, post it:
 
 ```bash
 TOKEN=$(curl -s -XPOST localhost:8080/api/admin/tokens -H "authorization: Bearer $ADMIN_TOKEN" \
@@ -1043,46 +1043,46 @@ curl -s -XPOST localhost:8080/api/lobby -H "authorization: Bearer $TOKEN" \
 curl -s localhost:8080/api/lobby | head -c 400
 ```
 
-Expected: `{"status":"ok","players":10}` puis un état JSON avec 10 joueurs et leurs BattleTags.
-Reposter le même fichier doit répondre `{"status":"unchanged"}`. Sans `Bearer` : 401.
+Expected: `{"status":"ok","players":10}` then a JSON state with 10 players and their BattleTags.
+Posting the same file again must answer `{"status":"unchanged"}`. Without `Bearer`: 401.
 
-- [ ] **Étape 8 : Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 cargo clippy -p storm-codex-server --all-targets -- -D warnings
 git add crates/storm-codex-server
-git commit -m "feat(server): ingestion du lobby live (POST/GET/DELETE /api/lobby + WS lobby.detected)"
+git commit -m "feat(server): live lobby ingestion (POST/GET/DELETE /api/lobby + WS lobby.detected)"
 ```
 
 ---
 
-## Task 4 : Enrichissement contre l'archive
+## Task 4: Enrichment against the archive
 
 **Files:**
 - Create: `crates/storm-codex-server/src/lobby/enrich.rs`
 
 **Interfaces:**
-- Produit : `pub async fn enrich(db: &PgPool, state: &mut LobbyState)` — remplit `toon_handle`,
-  `history`, `me`, `build` et `me_stats`. Appelée par `lobby::api::ingest` (tâche 3) et après chaque
-  mutation manuelle (tâche 5).
-- Consomme : `LobbyState`, `LobbyPlayerState` (tâche 3) ; la table `builds` (tâche 2).
+- Produces: `pub async fn enrich(db: &PgPool, state: &mut LobbyState)` — fills `toon_handle`,
+  `history`, `me`, `build` and `me_stats`. Called by `lobby::api::ingest` (task 3) and after each
+  manual mutation (task 5).
+- Consumes: `LobbyState`, `LobbyPlayerState` (task 3); the `builds` table (task 2).
 
-C'est le cœur de la valeur du companion : ce que le blob donne (des BattleTags) devient ce que tu
-veux voir (qui sont ces gens, et comment ça s'est passé avec eux).
+This is the heart of the companion's value: what the blob gives (BattleTags) becomes what you
+want to see (who these people are, and how it went with them).
 
-- [ ] **Étape 1 : Écrire la résolution d'identité**
+- [ ] **Step 1: Write the identity resolution**
 
 ```rust
-//! Enrichissement du lobby contre l'archive. Le blob ne porte que `nom#discriminant` : le
-//! `toon_handle` se retrouve dans `match_players` (nom + `data->>'tag'`), c'est-à-dire dans les
-//! parties déjà jouées. Un joueur jamais croisé reste non résolu — sans conséquence, puisqu'il n'a
-//! de toute façon aucun historique à afficher.
+//! Enrichment of the lobby against the archive. The blob only carries `name#discriminant`: the
+//! `toon_handle` is found in `match_players` (name + `data->>'tag'`), that is, in the
+//! games already played. A player never met stays unresolved — with no consequence, since they
+//! have no history to show anyway.
 use serde_json::Value as J;
 use sqlx::PgPool;
 
 use crate::lobby::LobbyState;
 
-/// `nom#tag` → `toon_handle`, d'après l'archive. `None` si jamais croisé.
+/// `name#tag` → `toon_handle`, according to the archive. `None` if never met.
 async fn resoudre(db: &PgPool, name: &str, discriminant: &str) -> Option<String> {
     sqlx::query_scalar(
         "SELECT toon_handle FROM match_players
@@ -1098,12 +1098,12 @@ async fn resoudre(db: &PgPool, name: &str, discriminant: &str) -> Option<String>
 }
 ```
 
-- [ ] **Étape 2 : Écrire l'agrégat par joueur**
+- [ ] **Step 2: Write the per-player aggregate**
 
 ```rust
-/// Historique d'un joueur du point de vue de l'opérateur : parties ensemble, parties contre,
-/// winrates, héros favoris. Une seule requête — le contrat p95 < 100 ms de la spec s'applique à
-/// `/api/lobby`, et un aller-retour par joueur le ferait sauter.
+/// History of a player from the operator's point of view: games together, games against,
+/// win rates, favourite heroes. A single query — the spec's p95 < 100 ms contract applies to
+/// `/api/lobby`, and one round trip per player would blow it.
 async fn historique(db: &PgPool, toon: &str) -> Option<J> {
     sqlx::query_scalar(
         "WITH moi AS (
@@ -1145,11 +1145,11 @@ async fn historique(db: &PgPool, toon: &str) -> Option<J> {
 }
 ```
 
-- [ ] **Étape 3 : Écrire les stats de l'opérateur et le build**
+- [ ] **Step 3: Write the operator's stats and the build**
 
 ```rust
-/// Stats de l'opérateur sur ce héros, cette carte, et le couple. `hero` peut être `None` tant que
-/// l'opérateur ne l'a pas saisi : les stats de carte restent alors calculables.
+/// The operator's stats on this hero, this map, and the pair. `hero` can be `None` as long as
+/// the operator has not entered it: the map stats can still be computed.
 async fn stats_operateur(db: &PgPool, hero: Option<&str>, map: Option<&str>) -> Option<J> {
     sqlx::query_scalar(
         "WITH moi AS (
@@ -1177,8 +1177,8 @@ async fn stats_operateur(db: &PgPool, hero: Option<&str>, map: Option<&str>) -> 
     .flatten()
 }
 
-/// Build par défaut du héros + alternatives. `None` si aucun build enregistré : le front propose
-/// alors l'import depuis la meilleure partie sur ce héros.
+/// Default build of the hero + alternatives. `None` if no build is recorded: the front then offers
+/// the import from the best game on this hero.
 async fn build_du_heros(db: &PgPool, hero: &str) -> Option<J> {
     sqlx::query_scalar(
         "SELECT jsonb_build_object(
@@ -1197,12 +1197,12 @@ async fn build_du_heros(db: &PgPool, hero: &str) -> Option<J> {
 }
 ```
 
-- [ ] **Étape 4 : Assembler**
+- [ ] **Step 4: Assemble**
 
 ```rust
-/// Remplit l'état avec tout ce que l'archive sait. Best-effort : une requête qui échoue laisse le
-/// champ à `None` plutôt que de faire échouer l'ingestion — un lobby à moitié enrichi vaut mieux
-/// qu'une page vide.
+/// Fills the state with everything the archive knows. Best-effort: a failing query leaves the
+/// field at `None` rather than failing the ingestion — a half-enriched lobby is better
+/// than an empty page.
 pub async fn enrich(db: &PgPool, state: &mut LobbyState) {
     let noms_operateur: Vec<String> = sqlx::query_scalar(
         "SELECT lower(jsonb_array_elements_text(value)) FROM app_settings WHERE key = 'operator_names'",
@@ -1229,13 +1229,13 @@ pub async fn enrich(db: &PgPool, state: &mut LobbyState) {
 }
 ```
 
-L'import `serde_json::json` n'est pas utilisé par ce module : ne l'importer que si une évolution
-l'exige — `cargo clippy -D warnings` signalerait un import mort.
+The `serde_json::json` import is not used by this module: only import it if a change
+requires it — `cargo clippy -D warnings` would flag a dead import.
 
-- [ ] **Étape 5 : Vérifier contre une base peuplée**
+- [ ] **Step 5: Check against a populated database**
 
-Il faut des données : uploader quelques replays du corpus committé dans la base de dev, puis
-reposter le blob de lobby correspondant.
+Data is needed: upload a few replays of the committed corpus into the dev database, then
+post the matching lobby blob again.
 
 ```bash
 for f in crates/storm-replay/tests/data/*.StormReplay crates/storm-stats/tests/data/*.StormReplay; do
@@ -1249,57 +1249,57 @@ curl -s -XPOST localhost:8080/api/lobby -H "authorization: Bearer $TOKEN" --data
 curl -s localhost:8080/api/lobby | python3 -m json.tool | head -50
 ```
 
-Expected: les 10 joueurs ont un `toon_handle` non nul (ils sont tous dans l'archive de dev puisque
-le lobby vient d'un de ces replays), `history.games_with` ou `games_against` ≥ 1 pour chacun, et
-`me` pointe sur l'index de `matella`.
+Expected: the 10 players have a non-null `toon_handle` (they are all in the dev archive since
+the lobby comes from one of these replays), `history.games_with` or `games_against` ≥ 1 for each, and
+`me` points at `matella`'s index.
 
-Mesurer le budget de la spec :
+Measure the spec's budget:
 
 ```bash
 for i in $(seq 20); do curl -s -o /dev/null -w '%{time_total}\n' localhost:8080/api/lobby; done | sort -n | tail -2
 ```
 
-Expected: p95 < 0,100 s. Au-delà, le coupable est la boucle par joueur de l'étape 4 : la remplacer
-par **une** requête prenant le tableau des toon handles (`= ANY($1)`) plutôt que d'en faire dix.
+Expected: p95 < 0.100 s. Beyond that, the culprit is the per-player loop of step 4: replace it
+with **one** query taking the array of toon handles (`= ANY($1)`) rather than running ten.
 
-- [ ] **Étape 6 : Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 cargo clippy -p storm-codex-server --all-targets -- -D warnings
 git add crates/storm-codex-server/src/lobby/enrich.rs
-git commit -m "feat(server): enrichir le lobby contre l'archive (identités, historiques, build, stats)"
+git commit -m "feat(server): enrich the lobby against the archive (identities, histories, build, stats)"
 ```
 
 ---
 
-## Task 5 : Saisies et corrections manuelles
+## Task 5: Manual entries and corrections
 
 **Files:**
 - Modify: `crates/storm-codex-server/src/lobby/api.rs`
 - Modify: `crates/storm-codex-server/src/main.rs` (routes)
 
 **Interfaces:**
-- Produit : `POST /api/lobby/hero`, `POST /api/lobby/map`, `POST /api/lobby/teams`. Chacune mute
-  l'état, ré-enrichit, persiste et diffuse `lobby.updated`.
-- Consomme : `LobbyState` (tâche 3), `enrich` (tâche 4).
+- Produces: `POST /api/lobby/hero`, `POST /api/lobby/map`, `POST /api/lobby/teams`. Each one mutates
+  the state, re-enriches, persists and broadcasts `lobby.updated`.
+- Consumes: `LobbyState` (task 3), `enrich` (task 4).
 
-Le blob ne porte pas le héros (mesuré, plan 1). Et la déduction d'équipe, parfaite en matchmaking,
-se trompe en partie personnalisée : dans 94,7 % des cas fautifs l'ordre ne porte **aucune**
-information d'équipe, donc un bouton d'inversion ne suffirait pas — d'où une réassignation
-**par joueur**.
+The blob does not carry the hero (measured, plan 1). And the team inference, perfect in matchmaking,
+is wrong in custom games: in 94.7% of the wrong cases the order carries **no** team
+information, so a swap button would not be enough — hence a reassignment
+**per player**.
 
-- [ ] **Étape 1 : Ajouter les trois routes**
+- [ ] **Step 1: Add the three routes**
 
-À la fin de `crates/storm-codex-server/src/lobby/api.rs` :
+At the end of `crates/storm-codex-server/src/lobby/api.rs`:
 
 ```rust
 #[derive(serde::Deserialize)]
 pub struct HeroBody {
-    /// Clé `dim_heroes.id`. `null` pour effacer la saisie.
+    /// Key `dim_heroes.id`. `null` to clear the entry.
     pub hero: Option<String>,
 }
 
-/// `POST /api/lobby/hero` — le héros n'est jamais dans le blob : c'est le seul tap obligatoire.
+/// `POST /api/lobby/hero` — the hero is never in the blob: it is the only mandatory tap.
 pub async fn set_hero(State(s): State<AppState>, Json(b): Json<HeroBody>) -> (StatusCode, Json<J>) {
     muter(s, |st| st.hero = b.hero).await
 }
@@ -1309,7 +1309,7 @@ pub struct MapBody {
     pub map: Option<String>,
 }
 
-/// `POST /api/lobby/map` — repli quand la carte n'a pas pu être déduite des hashes `.s2ma`.
+/// `POST /api/lobby/map` — fallback when the map could not be inferred from the `.s2ma` hashes.
 pub async fn set_map(State(s): State<AppState>, Json(b): Json<MapBody>) -> (StatusCode, Json<J>) {
     muter(s, |st| {
         st.map = b.map;
@@ -1320,13 +1320,13 @@ pub async fn set_map(State(s): State<AppState>, Json(b): Json<MapBody>) -> (Stat
 
 #[derive(serde::Deserialize)]
 pub struct TeamsBody {
-    /// `battletag → équipe (0 ou 1)`. Les joueurs absents de la table gardent leur équipe.
+    /// `battletag → team (0 or 1)`. Players absent from the table keep their team.
     pub teams: std::collections::HashMap<String, u8>,
 }
 
-/// `POST /api/lobby/teams` — réassignation par joueur. Un simple bouton d'inversion ne réparerait
-/// que 5,3 % des cas fautifs (mesure du plan 1) : dans les autres, l'ordre du lobby ne porte
-/// aucune information d'équipe et seule une saisie explicite peut la reconstruire.
+/// `POST /api/lobby/teams` — per-player reassignment. A simple swap button would only fix
+/// 5.3% of the wrong cases (plan 1 measurement): in the others, the lobby order carries
+/// no team information and only an explicit entry can rebuild it.
 pub async fn set_teams(State(s): State<AppState>, Json(b): Json<TeamsBody>) -> (StatusCode, Json<J>) {
     muter(s, |st| {
         for p in &mut st.players {
@@ -1341,8 +1341,8 @@ pub async fn set_teams(State(s): State<AppState>, Json(b): Json<TeamsBody>) -> (
     .await
 }
 
-/// Mutation + ré-enrichissement + persistance + diffusion, factorisés : les trois routes
-/// ci-dessus ne diffèrent que par la mutation elle-même.
+/// Mutation + re-enrichment + persistence + broadcast, factored out: the three routes
+/// above differ only by the mutation itself.
 async fn muter<F>(s: AppState, f: F) -> (StatusCode, Json<J>)
 where
     F: FnOnce(&mut LobbyState),
@@ -1364,7 +1364,7 @@ where
 }
 ```
 
-- [ ] **Étape 2 : Déclarer les routes**
+- [ ] **Step 2: Declare the routes**
 
 ```rust
         .route("/api/lobby/hero", post(lobby::api::set_hero))
@@ -1372,15 +1372,15 @@ where
         .route("/api/lobby/teams", post(lobby::api::set_teams))
 ```
 
-- [ ] **Étape 3 : Vérifier**
+- [ ] **Step 3: Check**
 
 ```bash
 curl -s -XPOST localhost:8080/api/lobby/hero -H 'content-type: application/json' \
   -d '{"hero":"Tychus"}' | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d["hero"], d["build"] is not None, d["me_stats"])'
 ```
 
-Expected: `Tychus True {...}` — le build du héros et les stats apparaissent immédiatement, preuve
-que la mutation ré-enrichit.
+Expected: `Tychus True {...}` — the hero's build and the stats appear immediately, proof
+that the mutation re-enriches.
 
 ```bash
 BT=$(curl -s localhost:8080/api/lobby | python3 -c 'import sys,json;print(json.load(sys.stdin)["players"][0]["battletag"])')
@@ -1388,41 +1388,41 @@ curl -s -XPOST localhost:8080/api/lobby/teams -H 'content-type: application/json
   -d "{\"teams\":{\"$BT\":1}}" | python3 -c 'import sys,json;p=json.load(sys.stdin)["players"][0];print(p["team"], p["team_manual"])'
 ```
 
-Expected: `1 True`. Et sans lobby courant (`DELETE /api/lobby` d'abord), les trois routes doivent
-répondre 404, pas 500.
+Expected: `1 True`. And without a current lobby (`DELETE /api/lobby` first), the three routes must
+answer 404, not 500.
 
-- [ ] **Étape 4 : Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 cargo clippy -p storm-codex-server --all-targets -- -D warnings
 git add crates/storm-codex-server
-git commit -m "feat(server): saisie du héros/carte et réassignation d'équipe par joueur"
+git commit -m "feat(server): hero/map entry and per-player team reassignment"
 ```
 
 ---
 
-## Task 6 : Liaison replay ↔ lobby et debrief de build
+## Task 6: Replay ↔ lobby link and build debrief
 
 **Files:**
-- Modify: `crates/storm-codex-server/src/lobby/mod.rs` (fonction de liaison)
-- Modify: `crates/storm-codex-server/src/upload.rs` (appel après parse réussi)
+- Modify: `crates/storm-codex-server/src/lobby/mod.rs` (link function)
+- Modify: `crates/storm-codex-server/src/upload.rs` (call after a successful parse)
 
 **Interfaces:**
-- Produit : `pub async fn lier_match(db, lobby, match_id)` — remplit `LobbyState.match_id` quand les
-  BattleTags correspondent. Le front (plan 3) bascule alors en debrief et compare `build.default.picks`
-  aux talents joués, deux objets de même forme.
-- Consomme : `LobbyState` (tâche 3), le chemin de parse existant (`upload.rs:295`, là où
-  `match.parsed` est déjà diffusé).
+- Produces: `pub async fn lier_match(db, lobby, match_id)` — fills `LobbyState.match_id` when the
+  BattleTags match. The front (plan 3) then switches to debrief and compares `build.default.picks`
+  with the talents played, two objects of the same shape.
+- Consumes: `LobbyState` (task 3), the existing parse path (`upload.rs:295`, where
+  `match.parsed` is already broadcast).
 
-- [ ] **Étape 1 : Écrire la liaison**
+- [ ] **Step 1: Write the link**
 
-Dans `crates/storm-codex-server/src/lobby/mod.rs` :
+In `crates/storm-codex-server/src/lobby/mod.rs`:
 
 ```rust
-/// Relie un match fraîchement parsé au lobby courant, si c'est la même partie. Critère : l'ensemble
-/// des BattleTags. Le parse complet reconstruit les mêmes `nom#tag` depuis le blob embarqué dans le
-/// replay (`storm_stats`, `get_battletags`), donc les deux côtés portent la même clé — sans rien
-/// supposer du format binaire. Fenêtre de 6 h pour écarter une composition rejouée plus tard.
+/// Links a freshly parsed match to the current lobby, if it is the same game. Criterion: the set
+/// of BattleTags. The full parse rebuilds the same `name#tag` from the blob embedded in the
+/// replay (`storm_stats`, `get_battletags`), so both sides carry the same key — without assuming
+/// anything about the binary format. 6 h window to rule out a composition replayed later.
 pub async fn lier_match(db: &sqlx::PgPool, state: &mut LobbyState, match_id: i64) -> bool {
     if state.match_id.is_some() || state.players.is_empty() {
         return false;
@@ -1452,13 +1452,13 @@ pub async fn lier_match(db: &sqlx::PgPool, state: &mut LobbyState, match_id: i64
 }
 ```
 
-- [ ] **Étape 2 : Appeler après un parse réussi**
+- [ ] **Step 2: Call after a successful parse**
 
-Dans `crates/storm-codex-server/src/upload.rs`, juste avant la diffusion de `match.parsed`
-(ligne ~295) :
+In `crates/storm-codex-server/src/upload.rs`, just before broadcasting `match.parsed`
+(line ~295):
 
 ```rust
-            // Si ce match est la partie du lobby ouvert, le companion bascule en debrief.
+            // If this match is the game of the open lobby, the companion switches to debrief.
             {
                 let mut guard = state.lobby.write().await;
                 if let Some(st) = guard.as_mut() {
@@ -1470,10 +1470,10 @@ Dans `crates/storm-codex-server/src/upload.rs`, juste avant la diffusion de `mat
             }
 ```
 
-⚠️ Ne pas garder le write-lock pendant la diffusion si le compilateur signale un emprunt : sortir
-le `bool` du bloc, `drop(guard)`, puis diffuser — même précaution que dans `muter` (tâche 5).
+⚠️ Do not hold the write-lock during the broadcast if the compiler reports a borrow: take
+the `bool` out of the block, `drop(guard)`, then broadcast — same precaution as in `muter` (task 5).
 
-- [ ] **Étape 3 : Vérifier la bascule**
+- [ ] **Step 3: Check the switch**
 
 ```bash
 curl -s -XDELETE localhost:8080/api/lobby
@@ -1481,10 +1481,10 @@ curl -s -XPOST localhost:8080/api/lobby -H "authorization: Bearer $TOKEN" --data
 curl -s localhost:8080/api/lobby | python3 -c 'import sys,json;print("match_id:", json.load(sys.stdin)["match_id"])'
 ```
 
-Expected: `match_id: None` (le replay est déjà en base, mais aucun parse n'a eu lieu depuis
-l'ouverture du lobby).
+Expected: `match_id: None` (the replay is already in the database, but no parse has happened since
+the lobby was opened).
 
-Reprocesser le replay correspondant pour déclencher le chemin de parse :
+Reprocess the matching replay to trigger the parse path:
 
 ```bash
 curl -s -XPOST localhost:8080/api/admin/reprocess -H "authorization: Bearer $ADMIN_TOKEN" \
@@ -1492,38 +1492,38 @@ curl -s -XPOST localhost:8080/api/admin/reprocess -H "authorization: Bearer $ADM
 curl -s localhost:8080/api/lobby | python3 -c 'import sys,json;print("match_id:", json.load(sys.stdin)["match_id"])'
 ```
 
-Expected: un `match_id` numérique. Vérifier ensuite que le lobby d'une **autre** partie ne se lie
-pas : reposter un blob issu d'un replay différent et reprocesser — `match_id` doit rester `None`
-pour les parties qui ne sont pas la sienne.
+Expected: a numeric `match_id`. Then check that the lobby of **another** game does not get
+linked: post a blob from a different replay again and reprocess — `match_id` must stay `None`
+for the games that are not its own.
 
-- [ ] **Étape 4 : Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 cargo clippy -p storm-codex-server --all-targets -- -D warnings
 cargo test --workspace
 git add crates/storm-codex-server
-git commit -m "feat(server): relier le replay parsé au lobby courant (bascule debrief)"
+git commit -m "feat(server): link the parsed replay to the current lobby (debrief switch)"
 ```
 
 ---
 
-## Fin de plan
+## End of plan
 
-- [x] `cargo test --workspace` vert
-- [x] `cargo clippy -p storm-lobby --all-targets -- -D warnings` vert, et
-      `cargo clippy -p storm-codex-server -- -D warnings` (lib + bin) vert.
-      ⚠️ Rectificatif : la case cochait initialement `-p storm-codex-server --all-targets`, qui
-      **échoue** — ce target inclut le module de test de `src/draft/mod.rs` et ses 11 `unwrap()`,
-      pré-existants sur `main`. L'affirmation d'origine était fausse.
-      (⚠️ `--workspace` échoue pour une raison **pré-existante** sur les tests de
-      `storm-codex-server` : 11 `unwrap_used`. Vérifié sur `main`, hors périmètre — ne pas le
-      corriger dans ce plan, et ne pas le confondre avec une régression.)
-- [x] `/api/lobby` mesuré via `backfill_bench.py` (passe ajoutée en revue finale — l'ancien
-      « p95 ≈ 35 ms » n'était mesuré par aucun outil du dépôt) : **p95 ≈ 18 ms en régime stable**
-      sur `POST` (le chemin qui exécute l'enrichissement), contre le budget de 100 ms ; `GET`
-      (mémoire) ≈ 0,6 ms. Détail et pic à froid consignés dans `docs/STATUS.md`.
-- [x] Couverture de la carte par la table `.s2ma` : **19/19 cartes, 116 hashes**, consignée dans `docs/STATUS.md`
-- [x] `docs/STATUS.md` mis à jour (état + prochaine étape), conformément à `CLAUDE.md`
+- [x] `cargo test --workspace` green
+- [x] `cargo clippy -p storm-lobby --all-targets -- -D warnings` green, and
+      `cargo clippy -p storm-codex-server -- -D warnings` (lib + bin) green.
+      ⚠️ Correction: the box was originally ticked for `-p storm-codex-server --all-targets`, which
+      **fails** — that target includes the test module of `src/draft/mod.rs` and its 11 `unwrap()`s,
+      pre-existing on `main`. The original claim was false.
+      (⚠️ `--workspace` fails for a **pre-existing** reason on the tests of
+      `storm-codex-server`: 11 `unwrap_used`. Checked on `main`, out of scope — do not
+      fix it in this plan, and do not mistake it for a regression.)
+- [x] `/api/lobby` measured via `backfill_bench.py` (pass added in the final review — the old
+      "p95 ≈ 35 ms" was measured by no tool in the repo): **p95 ≈ 18 ms in steady state**
+      on `POST` (the path that runs the enrichment), against the 100 ms budget; `GET`
+      (memory) ≈ 0.6 ms. Detail and cold peak recorded in `docs/STATUS.md`.
+- [x] Map coverage by the `.s2ma` table: **19/19 maps, 116 hashes**, recorded in `docs/STATUS.md`
+- [x] `docs/STATUS.md` updated (state + next step), as required by `CLAUDE.md`
 
-Puis : plan 3 (front `/companion` et `/builds`), et plan 4 (watcher `client-rs`, repo Hots-Overlay,
-seul morceau exigeant le PC de jeu).
+Then: plan 3 (front `/companion` and `/builds`), and plan 4 (`client-rs` watcher, Hots-Overlay repo,
+the only piece that needs the gaming PC).

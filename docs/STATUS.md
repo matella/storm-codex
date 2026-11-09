@@ -1,550 +1,550 @@
-# STATUS — lire d'abord, mettre à jour en dernier
+# STATUS — read first, update last
 
-## APM par partie et par joueur (2026-11-08, branche `feat/apm`)
-Spec `docs/specs/2026-11-08-apm-par-partie-design.md` (demande opérateur, lot D « clavier » réduit à l'APM).
-`storm-stats` compte les `SCmdEvent` par toon (`Output.actions`, hors parité), migration `0016`
-(`match_players.apm`), `PARSER_VERSION` 4. API : `avg_apm`/`apm_games`/`recent[].apm` sur
-`/api/players/{toon}`, `apm` par joueur sur `/api/matches/{id}`. Web : tuile Avg APM, pastille par partie
-récente, colonne APM du tableau de score. **À faire (opérateur)** : `POST /api/admin/reprocess` pour remplir
-`apm` sur le corpus. Reste du lot D (touches utilisées, empreinte) : non fait.
+## APM per game and per player (2026-11-08, branch `feat/apm`)
+Spec `docs/specs/2026-11-08-apm-par-partie-design.md` (operator request, batch D "keyboard" reduced to APM).
+`storm-stats` counts the `SCmdEvent`s per toon (`Output.actions`, outside parity), migration `0016`
+(`match_players.apm`), `PARSER_VERSION` 4. API: `avg_apm`/`apm_games`/`recent[].apm` on
+`/api/players/{toon}`, `apm` per player on `/api/matches/{id}`. Web: Avg APM tile, badge per recent
+game, APM column in the score table. **To do (operator)**: `POST /api/admin/reprocess` to fill
+`apm` on the corpus. Rest of batch D (keys used, fingerprint): not done.
 
-## Habitudes de chat (2026-11-08)
-Plan `docs/plans/2026-11-08-chat-habitudes.md` (spec `2026-11-08-signaux-replay-supplementaires-design.md`, lot C).
-`GET /api/players/{toon}/chat` (`players/chat.rs`) : mesures seulement, jamais le texte, aucune
-migration. Section « Chat » de la fiche joueur + ligne compacte dans « Their players » du scouting
-(pas dans l'export HTML). **Reste** (specs validées, plans à écrire) : B déserteurs, A cosmétiques,
-E niveau (maîtrise/boost), D clavier. Idée 2 (groupes) abandonnée : champs vides dans les replays.
-Vérifié : clippy, `cargo test` (Postgres dev), vitest 256, build web. Non vérifié à l'œil : rendu
-de la section avec des données réelles.
+## Chat habits (2026-11-08)
+Plan `docs/plans/2026-11-08-chat-habitudes.md` (spec `2026-11-08-signaux-replay-supplementaires-design.md`, batch C).
+`GET /api/players/{toon}/chat` (`players/chat.rs`): measures only, never the text, no
+migration. "Chat" section of the player page + compact line in the scouting "Their players"
+(not in the HTML export). **Remaining** (specs approved, plans to write): B deserters, A cosmetics,
+E level (mastery/boost), D keyboard. Idea 2 (groups) dropped: empty fields in the replays.
+Verified: clippy, `cargo test` (dev Postgres), vitest 256, web build. Not checked by eye: rendering
+of the section with real data.
 
-## Profils de raccourcis → comptes d'une même personne (2026-11-08)
-Spec `docs/specs/2026-11-08-profils-hotkeys-comptes-design.md` (validée). `storm-stats` lit
-`SUserOptionsEvent.m_hotkeyProfile` (hors parité Node), migration `0015` (`match_players.hotkey_profile`),
-`PARSER_VERSION` 3, module `players/profiles.rs`, signal `profile` (fort, HAUT seul), section
-« Hotkey profiles » de l'onglet Identité. **À faire (opérateur)** : `POST /api/admin/reprocess` sur le
-corpus pour remplir la colonne, puis sonde sur corpus réel pour régler le seuil générique (5 comptes).
-Vérifié : clippy, `cargo test --workspace` avec Postgres dev, vitest, build web.
+## Hotkey profiles → accounts of the same person (2026-11-08)
+Spec `docs/specs/2026-11-08-profils-hotkeys-comptes-design.md` (approved). `storm-stats` reads
+`SUserOptionsEvent.m_hotkeyProfile` (outside Node parity), migration `0015` (`match_players.hotkey_profile`),
+`PARSER_VERSION` 3, module `players/profiles.rs`, signal `profile` (strong, HIGH on its own), section
+"Hotkey profiles" of the Identity tab. **To do (operator)**: `POST /api/admin/reprocess` on the
+corpus to fill the column, then a probe on the real corpus to tune the generic threshold (5 accounts).
+Verified: clippy, `cargo test --workspace` with dev Postgres, vitest, web build.
 
-## Revue complète + correctifs (2026-11-07, branche `fix/revue-complete`)
-Demande opérateur : revue de tout le projet puis « corrige le tout ». Aucun changement de contrat
-de données (pas de migration, pas de bump `PARSER_VERSION`).
-- **Base dev** : la migration `0014` avait été appliquée en cours de PR #12 puis réécrite avant le
-  merge → `VersionMismatch(14)` et 97 tests DB en échec sur la base dev (la CI part d'une base
-  vide). Aucune autre base concernée (le box n'a pas la `0012`). Réparé : schéma déjà conforme,
-  somme de contrôle mise à jour dans `_sqlx_migrations` (10 lignes `ranked_results` conservées).
-  Garde-fou CI : `scripts/check-migrations.sh`.
-- **Serveur** : reprise des uploads `pending` au démarrage ; archive écrite atomiquement ; arrêt
-  propre (SIGTERM, 0,5 s mesuré dans le conteneur) ; compression gzip/brotli ; `/assets/*` en
-  cache immuable ; écritures cast/draft gardées par `ADMIN_TOKEN` quand il est défini ; erreurs
-  DB plus avalées (révocation de token `404`/`500`, équipes/collections `500`, reprocess logué) ;
-  token admin comparé par empreinte ; référentiel re-tenté toutes les 10 min tant qu'il est vide.
-- **Front** : pages chargées à la demande (bundle principal 535 → 240 kB) ; token admin envoyé
-  par la régie et le draft (`authHeaders`) ; react-router 7, vite 8, vitest 5, dompurify 3.4.17.
-- **storm-stats** : `process.rs` découpé en `src/process/` (7 fichiers) sans changement de
-  logique — sorties identiques octet pour octet sur 114 replays, parité 114/114.
-- **Docker/CI** : cargo-chef (rebuild après changement de code : 91 s), utilisateur non root
-  (uid 10001) + service `storm-codex-init` qui remet `/data` à cet uid ; un seul workflow : fmt,
-  migrations figées, clippy/tests, `cargo audit` (propre ; `rsa` ignoré car jamais compilé),
-  `npm audit`, puis publication `latest` + `sha-…` **seulement si tout est vert** ; `publish.yml`
-  supprimé ; `cargo fmt` appliqué à tout le workspace.
-- **Vérifié** : voir le rapport de la PR (commandes et résultats). **Non fait** : déploiement sur le
-  box (au premier déploiement, `storm-codex-init` remet `/data` à l'uid 10001 automatiquement) ;
-  le fichier parasite `e399b92a…` à la racine (non suivi par git) reste à supprimer à la main.
-- **Attention au déploiement** : si `ADMIN_TOKEN` est défini sur le box, la régie `/cast` et le
-  draft exigent désormais le token saisi dans Admin (sinon `401`). Les overlays OBS ne sont pas
-  concernés (lecture seule).
+## Full review + fixes (2026-11-07, branch `fix/revue-complete`)
+Operator request: review the whole project then "fix it all". No data contract change
+(no migration, no `PARSER_VERSION` bump).
+- **Dev database**: migration `0014` had been applied during PR #12 then rewritten before the
+  merge → `VersionMismatch(14)` and 97 DB tests failing on the dev database (CI starts from an
+  empty database). No other database affected (the box does not have `0012`). Repaired: schema already compliant,
+  checksum updated in `_sqlx_migrations` (10 `ranked_results` rows kept).
+  CI guard: `scripts/check-migrations.sh`.
+- **Server**: `pending` uploads resumed at startup; archive written atomically; clean
+  shutdown (SIGTERM, 0.5 s measured in the container); gzip/brotli compression; `/assets/*` in
+  immutable cache; cast/draft writes guarded by `ADMIN_TOKEN` when it is set; DB errors
+  no longer swallowed (token revocation `404`/`500`, teams/collections `500`, reprocess logged);
+  admin token compared by digest; reference data retried every 10 min as long as it is empty.
+- **Front**: pages loaded on demand (main bundle 535 → 240 kB); admin token sent
+  by the control room and the draft (`authHeaders`); react-router 7, vite 8, vitest 5, dompurify 3.4.17.
+- **storm-stats**: `process.rs` split into `src/process/` (7 files) with no logic
+  change — outputs identical byte for byte on 114 replays, parity 114/114.
+- **Docker/CI**: cargo-chef (rebuild after a code change: 91 s), non-root user
+  (uid 10001) + `storm-codex-init` service that resets `/data` to that uid; a single workflow: fmt,
+  frozen migrations, clippy/tests, `cargo audit` (clean; `rsa` ignored as it is never compiled),
+  `npm audit`, then publication of `latest` + `sha-…` **only if everything is green**; `publish.yml`
+  deleted; `cargo fmt` applied to the whole workspace.
+- **Verified**: see the PR report (commands and results). **Not done**: deployment on the
+  box (on the first deployment, `storm-codex-init` resets `/data` to uid 10001 automatically);
+  the stray file `e399b92a…` at the root (not tracked by git) still has to be deleted by hand.
+- **Deployment warning**: if `ADMIN_TOKEN` is set on the box, the `/cast` control room and the
+  draft now require the token entered in Admin (otherwise `401`). The OBS overlays are not
+  affected (read-only).
 
-## Régie de cast — import groupé des replays (2026-10-31, mergé dans `main`, PR #10)
-Spec `docs/specs/2026-10-31-cast-batch-replay-import-design.md` (validée, amendée 2026-11-01 : routes par fichier,
-garde `series_changed`, option Swap sides). Vérifié : `cargo test --workspace` avec Postgres, `tsc`, vitest.
-**Non vérifié** : parcours navigateur de l'import groupé.
+## Cast control room — batch replay import (2026-10-31, merged into `main`, PR #10)
+Spec `docs/specs/2026-10-31-cast-batch-replay-import-design.md` (approved, amended 2026-11-01: per-file routes,
+`series_changed` guard, Swap sides option). Verified: `cargo test --workspace` with Postgres, `tsc`, vitest.
+**Not verified**: browser walkthrough of the batch import.
 
-## Régie de cast — ergonomie d'utilisation (2026-10-31, mergé dans `main`, PRs #9 et #10)
-Spec `docs/specs/2026-10-31-cast-usage-ux-design.md` (validée par l'opérateur, choix recommandés). Livré dans l'arbre de travail : `since_ms` (ancre de rotation serveur, `POST /api/cast/slide`) ; URL OBS permanente + skin + copie ; mise à l'antenne explicite ; étapes et prochaine action dans le rail ; erreurs en clair ; libellés. Vérifié : clippy `-D warnings` vert, `cargo test -p storm-codex-server` 254 passés, vitest 247 passés, `npm run build` OK. **Non vérifié** : parcours manuel dans le navigateur (critère 3 de la spec) et rotation mesurée sur deux onglets (critère 5). Non déployé sur le box.
+## Cast control room — usability (2026-10-31, merged into `main`, PRs #9 and #10)
+Spec `docs/specs/2026-10-31-cast-usage-ux-design.md` (approved by the operator, recommended choices). Shipped in the working tree: `since_ms` (server rotation anchor, `POST /api/cast/slide`); permanent OBS URL + skin + copy; explicit going on air; steps and next action in the rail; plain-language errors; labels. Verified: clippy `-D warnings` green, `cargo test -p storm-codex-server` 254 passed, vitest 247 passed, `npm run build` OK. **Not verified**: manual walkthrough in the browser (spec criterion 3) and rotation measured over two tabs (criterion 5). Not deployed on the box.
 
-## Régie de cast — LIVRÉE le 2026-10-27 (PR #5 mergée sur `main` ; **pas encore déployée sur le box**)
+## Cast control room — SHIPPED on 2026-10-27 (PR #5 merged into `main`; **not yet deployed on the box**)
 Spec `docs/specs/2026-10-25-cast-control-room-design.md` · plan `docs/plans/2026-10-25-cast-control-room.md`.
-Une **série** (Bo1/3/5/7, Fearless/Standard/Normal, pool de cartes, 2 équipes × 5 joueurs, logos) est l'unique source
-de vérité des équipes ; le casteur la pilote depuis `/cast` et OBS lit `/cast/overlay`.
-- **Serveur** `src/cast/` : `series.rs` (moteur pur : veto dans un ordre quelconque, parties, score calculé/forcé),
-  `store.rs` (singleton `cast_live`, migrations `0012_cast_live` + `0013_cast_logo`, repli sur série neuve si le JSON est illisible),
-  `sync.rs` (série → draft, sens unique ; démarrer une série aligne le moteur de draft, R20), `api.rs`
+A **series** (Bo1/3/5/7, Fearless/Standard/Normal, map pool, 2 teams × 5 players, logos) is the single source
+of truth for the teams; the caster drives it from `/cast` and OBS reads `/cast/overlay`.
+- **Server** `src/cast/`: `series.rs` (pure engine: veto in any order, games, computed/forced score),
+  `store.rs` (singleton `cast_live`, migrations `0012_cast_live` + `0013_cast_logo`, fallback to a fresh series if the JSON is unreadable),
+  `sync.rs` (series → draft, one way; starting a series aligns the draft engine, R20), `api.rs`
   (`/api/cast`, `/series`, `/teams`, `/pool/map`, `/games/start`, `/games/{n}/winner`, `DELETE /games/{n}`, `/score`, `/scene`,
-  `/lineup-mode`, `/slide`, logos `/logo/{side}`, `GET /api/cast/lineup`), `lineup.rs` (3 héros récents / 20 parties,
-  masqué < 5 parties), `summary.rs` + `replay.rs` (`POST /api/cast/games/{n}/replay` : replay **Custom** décodé à la
-  volée, **rien écrit en base**, orientation Blue/Red prouvée par toon puis pseudo, `?swap=1`). WS `cast.updated`.
-- **Front** : `/cast` (régie : rail série/équipes avec sélecteur de joueurs, pool, aperçu = l'overlay en iframe,
-  onglets Lineups / Series / Draft / In-game, Draft déplacé ici ; `/draft*` redirigent vers `/cast?scene=draft`),
-  `/cast/overlay` (hors Layout, fond transparent pour OBS : scènes `lineups` A/B, `series` + diaporama post-game
-  4 onglets, `draft`, `ingame` avec onglets ancrés sur le HUD 1920×1080, `hide`).
-- **Mesures (build release, Postgres dev, 2026-10-27)** : scène → overlay à jour **7–9 ms** typique, **37 ms** max
-  (12 bascules, DOM d'un navigateur sur 127.0.0.1, pas OBS ; WS `cast.updated` reçu en 4–6 ms ; budget < 500 ms) ·
-  `GET /api/cast/lineup` 10 joueurs **médiane 5,9 ms, p95 8,1 ms, 1er appel 40 ms** (budget < 100 ms) ·
-  **décodage post-game : 417–444 ms** (route complète, upload local de 1,6 Mo compris, replay Custom Tomb) — mesuré
-  **sous charge** (un jeu tournait, CPU ~68 %) ; la marge vers le budget de 500 ms est **mince** et **aucune
-  re-mesure à vide n'a été faite** : on ne sait pas séparer la charge machine d'une régression éventuelle (ex. construction
-  du résumé de la tâche 9). Pour mémoire, un run antérieur pendant le développement (autres replays, conditions non documentées)
-  donnait 178–203 ms pour la route ; `docs/spec/05-api.md` cite aussi un bench `storm-stats-dump --bench` (6 replays
-  Custom, médiane 177 ms) — mesures **différentes**, non comparables à celle-ci.
-  **Mesurer sur `127.0.0.1`, jamais `localhost`** : sous Windows, `localhost` tente d'abord IPv6 et ajoute ~2 s
-  de repli par requête, ce qui fausse tous les temps.
-- **Vérifié bout en bout** (vrai Custom Tomb du 2026-09-27, vrais toons) : série Bo5 Fearless pool 10, veto en désordre,
-  partie 1 + replay → lineups A→B (« awaiting game data » pour les joueurs non rattachés), diaporama post-game
-  concordant avec la sortie brute storm-stats (takedowns 28/15, dégâts, bans), draft live + replay, scène In-game sur
-  `ingame.webp` (ancres 39,20 % / 59,65 % / 9,90 %, nom de 40 caractères tronqué par « … »), redémarrage du serveur :
-  état cast **et** draft identiques octet pour octet.
-- **Vague de correctifs (relecture finale, 2026-10-27)** vérifiée dans le navigateur sur 127.0.0.1 (build release) :
-  R21 « Remove game » puis « Change winner » depuis `/cast` (carte de nouveau lançable, score draft suivi) ; R22
-  Bo3 2-0 → « GAME 2 » (In-game et Series) ; scène Draft rendue série inactive, Series masquée ; reconnexion WS :
-  serveur arrêté, scène changée **en base** (aucun event), serveur relancé → `GET /api/cast` émis à la milliseconde
-  de réouverture du WS, overlay à jour ≈ 1 s après le redémarrage (sur 3 essais, le filet 10 s / les retries de
-  TanStack ont parfois livré l'état avant le WS — les deux chemins mènent au même état). Pas dans OBS.
-- **Vague de correctifs 2 (« Fix it all », 2026-10-28)** — tout ce qui était différé ou « ship as is », sauf les
-  choix de conception R26 (ci-dessous) : persistance de cast **versionnée** (un instantané ancien n'écrase jamais un
-  récent) et `500 persist_failed` si l'écriture échoue (R24) ; synchro draft sur l'état cast **courant** ; codes
-  d'erreur stables (`CastError::code`) ; `store::load` distingue erreur DB / JSON illisible / schéma plus récent ;
-  logos : signature des octets vérifiée (`415 mime_mismatch`) ; lineup : toon > 64 octets → `400 bad_toon`, `EXPLAIN`
-  doit nommer `match_players_toon_idx`, nettoyage du test garanti ; diaporama validé (R25 : `game` existant sinon
-  `409 UnknownGame`, `index` ≤ 99 sinon `400 bad_index`, régie 1–3600 s) ; forts·keeps `null` sans Fort/Keep ;
-  `series_id` re-vérifié après le décodage d'un replay (`409 series_changed`) ; la file de replays du draft suit le
-  format d'une série active (M5) ; réponse du replay avec `orientation` et `forced_against_evidence` (note visible
-  dans la régie) ; `draft/replay/load` décodé comme le replay de cast (M2 : `spawn_blocking` + garde + `parse_sem`).
-  Front : fondu de sortie de l'overlay, bandeau 11–14 cartes sur trois rangées, aperçu sans image à 0,4, motif
-  onglets complet (flèches = focus seul), aria des cartes/vainqueurs, rail resynchronisé par version serveur vue +
-  `TeamEditor`, garde « dernière recherche » du sélecteur de joueur, « loading… »/erreur dans l'aperçu lineups,
-  libellé « auto » du diaporama, « Swap sides » décoché après dépôt, Live/Replay stylé, helpers partagés.
-  Vague 3 : la couche sortante de l'overlay garde la MÊME instance (id de couche stable utilisé comme `key`,
-  `sceneTransition`) — son tick de diaporama n'est plus remis à zéro pendant le fondu ; le replay re-vérifie aussi la
-  carte de la partie `n` (numéro réutilisé après R21 → `409 series_changed`) ; `/slide` : garde `SeriesInactive` avant
-  `bad_index` ; `500 pool|io` documentés ; cas limite persistance v2/v1 documenté.
-  Vérifié dans le navigateur (build release, 127.0.0.1:8089, DOM) : pool 14 cartes = 3 rangées sans chevauchement
-  (bas à 589 px / 1080) ; changement de scène → couche sortante gardée ≈ 300 ms avec l'ancienne scène puis démontée
-  (opacités non observables : volet d'aperçu en arrière-plan, animations figées) ; onglets (`aria-selected` local,
-  tabpanel, → déplace le focus sans changer la scène à l'antenne) ; Live/Replay stylé dans les deux sous-modes ;
-  recherche de joueur : Find désactivé pendant la requête, frappe pendant la requête → aucune liste périmée. Pas dans OBS.
-- **Non changé exprès (R26, choix de conception à trancher par l'opérateur)** : un clic sur un onglet de scène la
-  met à l'antenne **et** ouvre son espace de travail ; « Start game » de la régie n'avance pas le draft et ne pose pas
-  sa carte ; pas de proposition automatique du decider quand il ne reste qu'une carte ; polices Google Fonts en
-  `@import` (Fontsource = décision de dépendance, cohérent avec l'overlay de draft) ; R7 logos conservés par une
-  nouvelle série ; R18 Blackheart's Bay dans la liste blanche ; écritures en mode ouvert ; `PoolPanel` hors du rail (R11).
-- **Non vérifié / réserves** : temps scène → overlay mesuré dans un navigateur sur 127.0.0.1, **pas dans OBS** ;
-  la scène In-game a été contrôlée sur une **image fixe** dans une iframe, pas sur une capture en direct ; l'atténuation
-  Fearless des lineups n'a **pas été vue à l'écran** (seulement le bandeau « HEROES LOCKED » et les libellés G1 en DOM) ;
-  script et orientation du draft-replay **non vus à l'écran** ; **pas de comparaison avec une fiche de match** (un
-  replay Custom n'a pas de ligne `matches` : comparé à la sortie brute de storm-stats ; preuve « rien écrit en base » =
-  comptes matches/uploads/match_players identiques avant/après deux uploads : 6593/2862/51050).
-- **Tests** : `DATABASE_URL=postgres://storm:storm@localhost:5433/storm_codex STORM_CAST_CUSTOM_REPLAY=<un .StormReplay
-  Custom> cargo test --workspace` (sans `DATABASE_URL`, les tests DB s'ignorent en silence ; sans
-  `STORM_CAST_CUSTOM_REPLAY`, le test d'octets réels est sauté) → **271 passés, 3 ignorés** (serveur : 227) ; après la
-  vague de correctifs de la relecture finale : serveur **230 passés, 3 ignorés** (`cargo test -p storm-codex-server`),
-  web **201** ; après la vague 2 : serveur **248 passés, 3 ignorés** (+ test d'octets réels Custom Tomb vert avec
-  `STORM_CAST_CUSTOM_REPLAY`), web **238** (22 fichiers) ;
-  `cd web && npm test && npm run build` → 186 web avant cette vague ; `cargo clippy --all-targets -- -D warnings` propre.
-  Les tests DB du dépôt laissent des fixtures dans la base dev (un run : matches +454, uploads +10, match_players
-  +2 912) : comportement **préexistant** (surtout `players/`) ; les tests `cast/lineup.rs` utilisent aussi le helper
-  `insert_match` (quelques lignes, part exacte non mesurée). Purge : `cargo test -p storm-codex-server purge_fixtures --
-  --ignored`. La base dev de cast (`cast_live`, `cast_logo`, `draft_live`) a été **nettoyée** après la vérification.
-- **Limites connues** :
-  - *Draft* : **démarrer une série (`POST /api/cast/series`) réinitialise le moteur de draft** (format/étapes reconstruits,
-    curseur 0, series bans vidés, partie de replay désélectionnée, lecture auto stoppée) et **efface donc un draft en
-    cours** (R20) ; pendant une série active, « New series » du draft est **désactivé** (la série se gère depuis le
-    rail) ; « Next game › » reste actif et n'agit que sur le moteur de draft (cumul des bans Fearless) — « Start game »
-    de la régie n'avance pas le draft.
-  - *Replay d'une partie* : orientation Blue/Red par toon puis pseudo (R16) ; sans preuve, équipe 0 = Blue, mais un
-    vainqueur saisi qui contredit → `409 side_mismatch` ; `?swap=1` forcé contre une preuve contraire est **accepté
-    mais signalé** (`forced_against_evidence`, note dans la régie) ; série remplacée pendant le décodage →
-    `409 series_changed` ; forts·keeps retiré sur les cartes sans Fort/Keep ; objectifs de carte = liste blanche (R17), Blackheart's Bay gardé sur un corpus mince (1 partie) —
-    l'opérateur peut préférer le retirer (une constante + une ligne de doc, R18).
-  - *Diaporama* (R15) : slide 0 = bandeau des cartes, slides 1–4 = onglets du breakdown (dégâts, soins, siège,
-    takedowns), seule la slide 0 existe sans résumé ; en auto, l'aperçu et la source OBS ont chacun leur minuterie
-    (la régie affiche « auto », sans prétendre connaître la slide à l'antenne).
-  - *Overlay* : pastille « GAME k » — R9 (partie en cours, sinon dernière + 1) et **R22** (série décidée, un camp à
-    ⌈bo/2⌉ : numéro de la dernière partie) ; la scène Draft s'affiche même sans série active (R19) ; le WS relit
-    `cast`/`draft` à chaque reconnexion (+ filet 10 s) ; fondu d'entrée et de sortie ≈ 300 ms ; ancres In-game =
-    constantes (`web/src/cast/anchors.ts`) à ré-étalonner si l'UI du jeu change ; mode B n'attribue un héros qu'à un joueur
-    rattaché par toon ou pseudo exact (jamais par position).
-  - *Régie* : erreur de clic récupérable (**R21**) : « Change winner » sur un vainqueur saisi sans résumé de replay,
-    « Remove game » (`DELETE /api/cast/games/{n}`) sur la dernière partie sans résultat ; un vainqueur venu d'un replay
-    ne se corrige qu'en rechargeant le bon replay. `POST /series` **garde les logos** existants (R7, effacer via `PUT /teams`) ; `PoolPanel` sous l'espace de
-    travail et non dans le rail gauche (R11). Échec d'écriture en base = bandeau `persist_failed` (état appliqué en mémoire
-    seulement, il sera perdu au redémarrage si la base reste indisponible).
-- **Reste** : relecture finale puis merge ; **re-mesurer le décodage post-game sur machine au repos avant déploiement**
-  (417–444 ms mesurés sous charge) ; purger les fixtures de la base dev (`purge_fixtures`, voir Tests) ; confirmer en cast réel « équipe 0 du replay = Blue » quand aucune preuve de joueurs ; **déploiement sur le
-  box** (rsync + docker compose build, migrations `0012_cast_live` **et** `0013_cast_logo`) et essai sur une vraie diffusion
-  OBS ; trancher avec l'opérateur la réécriture d'historique pour l'ancienne capture `ingame.webp` (commit `cf372fa`,
-  pseudos réels visibles ; la version courante est floutée sous la bande de HUD).
+  `/lineup-mode`, `/slide`, logos `/logo/{side}`, `GET /api/cast/lineup`), `lineup.rs` (3 recent heroes / 20 games,
+  hidden < 5 games), `summary.rs` + `replay.rs` (`POST /api/cast/games/{n}/replay`: **Custom** replay decoded on
+  the fly, **nothing written to the database**, Blue/Red orientation proven by toon then name, `?swap=1`). WS `cast.updated`.
+- **Front**: `/cast` (control room: series/teams rail with a player picker, pool, preview = the overlay in an iframe,
+  Lineups / Series / Draft / In-game tabs, Draft moved here; `/draft*` redirect to `/cast?scene=draft`),
+  `/cast/overlay` (outside Layout, transparent background for OBS: `lineups` A/B scenes, `series` + post-game slideshow
+  with 4 tabs, `draft`, `ingame` with tabs anchored on the 1920×1080 HUD, `hide`).
+- **Measurements (release build, dev Postgres, 2026-10-27)**: scene → overlay updated **7–9 ms** typical, **37 ms** max
+  (12 switches, DOM of a browser on 127.0.0.1, not OBS; WS `cast.updated` received in 4–6 ms; budget < 500 ms) ·
+  `GET /api/cast/lineup` 10 players **median 5.9 ms, p95 8.1 ms, 1st call 40 ms** (budget < 100 ms) ·
+  **post-game decoding: 417–444 ms** (full route, local upload of 1.6 MB included, Custom Tomb replay) — measured
+  **under load** (a game was running, CPU ~68%); the margin to the 500 ms budget is **thin** and **no
+  idle re-measurement was made**: we cannot separate machine load from a possible regression (e.g. building
+  the task 9 summary). For the record, an earlier run during development (other replays, undocumented conditions)
+  gave 178–203 ms for the route; `docs/spec/05-api.md` also cites a `storm-stats-dump --bench` bench (6 Custom
+  replays, median 177 ms) — **different** measurements, not comparable with this one.
+  **Measure on `127.0.0.1`, never `localhost`**: on Windows, `localhost` tries IPv6 first and adds ~2 s
+  of fallback per request, which skews every timing.
+- **Verified end to end** (real Custom Tomb of 2026-09-27, real toons): Bo5 Fearless series pool 10, veto out of order,
+  game 1 + replay → lineups A→B ("awaiting game data" for unlinked players), post-game slideshow
+  matching the raw storm-stats output (takedowns 28/15, damage, bans), live draft + replay, In-game scene on
+  `ingame.webp` (anchors 39.20% / 59.65% / 9.90%, 40-character name truncated with "…"), server restart:
+  cast **and** draft state identical byte for byte.
+- **Fix wave (final review, 2026-10-27)** verified in the browser on 127.0.0.1 (release build):
+  R21 "Remove game" then "Change winner" from `/cast` (map launchable again, draft score followed); R22
+  Bo3 2-0 → "GAME 2" (In-game and Series); Draft scene rendered with the series inactive, Series hidden; WS reconnection:
+  server stopped, scene changed **in the database** (no event), server restarted → `GET /api/cast` sent within the millisecond
+  of the WS reopening, overlay updated ≈ 1 s after the restart (over 3 tries, the 10 s safety net / TanStack
+  retries sometimes delivered the state before the WS — both paths lead to the same state). Not in OBS.
+- **Fix wave 2 ("Fix it all", 2026-10-28)** — everything that was deferred or "ship as is", except the
+  R26 design choices (below): **versioned** cast persistence (an old snapshot never overwrites a
+  recent one) and `500 persist_failed` if the write fails (R24); draft sync on the **current** cast state; stable
+  error codes (`CastError::code`); `store::load` distinguishes DB error / unreadable JSON / newer schema;
+  logos: byte signature checked (`415 mime_mismatch`); lineup: toon > 64 bytes → `400 bad_toon`, `EXPLAIN`
+  must name `match_players_toon_idx`, test cleanup guaranteed; slideshow validated (R25: existing `game` otherwise
+  `409 UnknownGame`, `index` ≤ 99 otherwise `400 bad_index`, control room 1–3600 s); forts·keeps `null` without Fort/Keep;
+  `series_id` re-checked after decoding a replay (`409 series_changed`); the draft's replay queue follows the
+  format of an active series (M5); replay response with `orientation` and `forced_against_evidence` (note visible
+  in the control room); `draft/replay/load` decoded like the cast replay (M2: `spawn_blocking` + guard + `parse_sem`).
+  Front: overlay exit fade, strip of 11–14 maps on three rows, preview without image at 0.4, full
+  tabs pattern (arrows = focus only), aria for maps/winners, rail resynchronised by the server version seen +
+  `TeamEditor`, "last search" guard of the player picker, "loading…"/error in the lineups preview,
+  "auto" label of the slideshow, "Swap sides" unticked after drop, Live/Replay styled, shared helpers.
+  Wave 3: the overlay's outgoing layer keeps the SAME instance (stable layer id used as `key`,
+  `sceneTransition`) — its slideshow tick is no longer reset during the fade; the replay also re-checks the
+  map of game `n` (number reused after R21 → `409 series_changed`); `/slide`: `SeriesInactive` guard before
+  `bad_index`; `500 pool|io` documented; v2/v1 persistence edge case documented.
+  Verified in the browser (release build, 127.0.0.1:8089, DOM): pool of 14 maps = 3 rows without overlap
+  (bottom at 589 px / 1080); scene change → outgoing layer kept ≈ 300 ms with the old scene then unmounted
+  (opacities not observable: preview pane in the background, animations frozen); tabs (local `aria-selected`,
+  tabpanel, → moves the focus without changing the on-air scene); Live/Replay styled in both sub-modes;
+  player search: Find disabled during the request, typing during the request → no stale list. Not in OBS.
+- **Deliberately not changed (R26, design choices for the operator to decide)**: a click on a scene tab
+  puts it on air **and** opens its workspace; the control room's "Start game" does not advance the draft and does not set
+  its map; no automatic proposal of the decider when only one map remains; Google Fonts loaded via
+  `@import` (Fontsource = a dependency decision, consistent with the draft overlay); R7 logos kept by a
+  new series; R18 Blackheart's Bay in the allow list; writes in open mode; `PoolPanel` outside the rail (R11).
+- **Not verified / caveats**: scene → overlay time measured in a browser on 127.0.0.1, **not in OBS**;
+  the In-game scene was checked on a **still image** in an iframe, not on a live capture; the Fearless
+  dimming of the lineups was **not seen on screen** (only the "HEROES LOCKED" banner and the G1 labels in the DOM);
+  draft-replay script and orientation **not seen on screen**; **no comparison with a match page** (a
+  Custom replay has no `matches` row: compared with the raw storm-stats output; proof of "nothing written to the database" =
+  matches/uploads/match_players counts identical before/after two uploads: 6593/2862/51050).
+- **Tests**: `DATABASE_URL=postgres://storm:storm@localhost:5433/storm_codex STORM_CAST_CUSTOM_REPLAY=<a Custom
+  .StormReplay> cargo test --workspace` (without `DATABASE_URL`, the DB tests skip silently; without
+  `STORM_CAST_CUSTOM_REPLAY`, the real-bytes test is skipped) → **271 passed, 3 ignored** (server: 227); after the
+  final review fix wave: server **230 passed, 3 ignored** (`cargo test -p storm-codex-server`),
+  web **201**; after wave 2: server **248 passed, 3 ignored** (+ real-bytes test Custom Tomb green with
+  `STORM_CAST_CUSTOM_REPLAY`), web **238** (22 files);
+  `cd web && npm test && npm run build` → 186 web before this wave; `cargo clippy --all-targets -- -D warnings` clean.
+  The repo's DB tests leave fixtures in the dev database (one run: matches +454, uploads +10, match_players
+  +2,912): **pre-existing** behaviour (mostly `players/`); the `cast/lineup.rs` tests also use the helper
+  `insert_match` (a few rows, exact share not measured). Purge: `cargo test -p storm-codex-server purge_fixtures --
+  --ignored`. The cast dev database (`cast_live`, `cast_logo`, `draft_live`) was **cleaned** after the check.
+- **Known limits**:
+  - *Draft*: **starting a series (`POST /api/cast/series`) resets the draft engine** (format/steps rebuilt,
+    cursor 0, series bans emptied, replay game deselected, auto playback stopped) and **so clears a draft in
+    progress** (R20); during an active series, the draft's "New series" is **disabled** (the series is managed from the
+    rail); "Next game ›" stays active and only acts on the draft engine (Fearless bans accumulate) — the control room's
+    "Start game" does not advance the draft.
+  - *Replay of a game*: Blue/Red orientation by toon then name (R16); without proof, team 0 = Blue, but an
+    entered winner that contradicts it → `409 side_mismatch`; `?swap=1` forced against contrary proof is **accepted
+    but flagged** (`forced_against_evidence`, note in the control room); series replaced during decoding →
+    `409 series_changed`; forts·keeps removed on maps without Fort/Keep; map objectives = allow list (R17), Blackheart's Bay kept on a thin corpus (1 game) —
+    the operator may prefer to remove it (one constant + one doc line, R18).
+  - *Slideshow* (R15): slide 0 = map strip, slides 1–4 = breakdown tabs (damage, healing, siege,
+    takedowns), only slide 0 exists without a summary; in auto, the preview and the OBS source each have their own timer
+    (the control room shows "auto", without claiming to know the slide on air).
+  - *Overlay*: "GAME k" badge — R9 (game in progress, otherwise last + 1) and **R22** (series decided, one side at
+    ⌈bo/2⌉: number of the last game); the Draft scene shows even without an active series (R19); the WS re-reads
+    `cast`/`draft` at each reconnection (+ 10 s safety net); entry and exit fade ≈ 300 ms; In-game anchors =
+    constants (`web/src/cast/anchors.ts`) to recalibrate if the game's UI changes; mode B only assigns a hero to a player
+    linked by toon or exact name (never by position).
+  - *Control room*: recoverable click error (**R21**): "Change winner" on a winner entered without a replay summary,
+    "Remove game" (`DELETE /api/cast/games/{n}`) on the last game without a result; a winner coming from a replay
+    can only be corrected by reloading the right replay. `POST /series` **keeps the existing logos** (R7, clear via `PUT /teams`); `PoolPanel` under the
+    workspace and not in the left rail (R11). Database write failure = `persist_failed` banner (state applied in memory
+    only, it will be lost at restart if the database stays unavailable).
+- **Remaining**: final review then merge; **re-measure the post-game decoding on an idle machine before deployment**
+  (417–444 ms measured under load); purge the fixtures from the dev database (`purge_fixtures`, see Tests); confirm in a real cast "replay team 0 = Blue" when there is no player proof; **deployment on the
+  box** (rsync + docker compose build, migrations `0012_cast_live` **and** `0013_cast_logo`) and a trial on a real OBS
+  broadcast; decide with the operator on rewriting history for the old `ingame.webp` capture (commit `cf372fa`,
+  real names visible; the current version is blurred under the HUD strip).
 
-## Draft depuis un replay — LIVRÉ (2026-10-25, mergé dans `main` PR #4, pas encore déployé)
-Spec `docs/specs/2026-10-25-draft-replay-design.md`, plan `docs/plans/2026-10-25-draft-replay.md`, maquettes
-`docs/draft-replay-mockup.html`. Page `/draft/replay` (télécommande) + overlay OBS existant : on charge des
-replays **Custom** (rien écrit en base), le draft est préparé caché puis révélé **phase par phase** (12 phases
-Standard), à la main (Espace) ou en auto (**30 s par phase**), avec file de replays et **fearless**.
-Vérifié sur 3 vrais replays Custom (27/09/2026) : chargement 178–340 ms (release, upload local compris, budget
-< 500 ms), scripts conformes aux `turn` du parser (fixture anonymisée committée), fearless (10 picks de la
-partie 1 indisponibles en partie 2), auto-play à 2 s échantillonné, overlay vide → rempli → « prêt » après Reset.
-Tests : 118 Rust (dont 8 d'intégration sur Postgres local) + 101 web. Hypothèse à confirmer en cast réel :
-équipe 0 = Blue, équipe 1 = Red. Aussi corrigé au passage : lint clippy `chunks_exact` (storm-replay-viewer) qui
-faisait échouer le CI de `main`. **Pas fait** : édition manuelle des noms d'équipe depuis cette page (utiliser `/draft`).
-Replays Custom sans picks (parties sans draft) → refusés (`no_draft`).
+## Draft from a replay — SHIPPED (2026-10-25, merged into `main` PR #4, not yet deployed)
+Spec `docs/specs/2026-10-25-draft-replay-design.md`, plan `docs/plans/2026-10-25-draft-replay.md`, mockups
+`docs/draft-replay-mockup.html`. Page `/draft/replay` (remote control) + existing OBS overlay: we load
+**Custom** replays (nothing written to the database), the draft is prepared hidden then revealed **phase by phase** (12
+Standard phases), by hand (Space) or in auto (**30 s per phase**), with a replay queue and **fearless**.
+Verified on 3 real Custom replays (27/09/2026): loading 178–340 ms (release, local upload included, budget
+< 500 ms), scripts matching the parser's `turn` (anonymised fixture committed), fearless (10 picks of
+game 1 unavailable in game 2), auto-play at 2 s sampled, overlay empty → filled → "ready" after Reset.
+Tests: 118 Rust (8 of them integration tests on local Postgres) + 101 web. Assumption to confirm in a real cast:
+team 0 = Blue, team 1 = Red. Also fixed along the way: clippy lint `chunks_exact` (storm-replay-viewer) that
+was failing `main`'s CI. **Not done**: manual editing of team names from this page (use `/draft`).
+Custom replays without picks (games without a draft) → refused (`no_draft`).
 
-## Recherche de joueurs + comptes liés LIVRÉS le 2026-10-25 (mergé dans `main`)
-Spec `docs/specs/2026-10-25-recherche-joueurs-design.md` (validée + amendée le 2026-10-25) · plan
+## Player search + linked accounts SHIPPED on 2026-10-25 (merged into `main`)
+Spec `docs/specs/2026-10-25-recherche-joueurs-design.md` (approved + amended on 2026-10-25) · plan
 `docs/plans/2026-10-25-recherche-joueurs.md`.
-- **Serveur** `src/players/` : `names.rs` (historique **daté** des pseudos — pseudo actuel = dernier vu dans le
-  temps, pas `players.last_name`), `search.rs` (`GET /api/players/search`, anciens pseudos inclus, `_`/`%`
-  littéraux, p95 **20–26 ms** sur 2 723 parties / 7 618 joueurs), `similarity.rs` (scoring **pur**),
-  `features.rs` (cosinus, talents, chevauchements), `identity.rs` (propriétaires de token, présélection
-  bornée à 30, ~400 ms/joueur), `api.rs` (`GET …/identity`, `PUT …/links/{other}` 🔒). Migration `0011_player_links`.
-- **Front** : page `/players`, onglets Stats / Identity sur `/player/:toon`, ligne « Also plays as X → »
-  (lien confirmé ou suggestion HAUTE seulement). Vérifié dans le navigateur (recherche d'un ancien pseudo,
-  onglet Identité, Confirm → lien confirmé, suggestion retirée).
-- **Écarts à la spec, rapportés à l'opérateur** : signal « même uploader » → « propriétaire de token »
-  (principal ≥ 50 % + autres comptes ≥ 10 % jamais dans une partie avec lui) ; opérateur et propriétaires
-  exclus du signal co-équipiers ; routes front `player/:toon` conservée + `players`.
-- **Limites connues** : joueurs vus *seulement* en scouting non cherchables (tables isolées) ; recherche
-  non insensible aux accents ; pas d'« annuler une décision » ; poids/seuils de `similarity.rs` = valeurs de
-  départ — **à relire avec l'opérateur** sur des cas réels (beaucoup de suggestions BAS « co-équipiers + heures »
-  à 40–49 dans les gros cercles sociaux ; les HAUT vus sont plausibles, ex. Argas ↔ lilgas 72).
-- **Tests** : `DATABASE_URL=postgres://storm:storm@localhost:5433/storm_codex cargo test -p storm-codex-server`
-  (sans elle les tests DB s'ignorent en silence). Fixtures de test : `cargo test -p storm-codex-server
-  purge_fixtures -- --ignored` ; mesure : `mesure_p95_recherche`, `sonde_identite_corpus_reel` (`--ignored`).
-- **Prochaine étape** : relecture des seuils avec l'opérateur, merge de la branche.
+- **Server** `src/players/`: `names.rs` (**dated** name history — current name = last seen in
+  time, not `players.last_name`), `search.rs` (`GET /api/players/search`, old names included, `_`/`%`
+  literal, p95 **20–26 ms** on 2,723 games / 7,618 players), `similarity.rs` (**pure** scoring),
+  `features.rs` (cosine, talents, overlaps), `identity.rs` (token owners, pre-selection
+  bounded to 30, ~400 ms/player), `api.rs` (`GET …/identity`, `PUT …/links/{other}` 🔒). Migration `0011_player_links`.
+- **Front**: `/players` page, Stats / Identity tabs on `/player/:toon`, "Also plays as X →" line
+  (confirmed link or HIGH suggestion only). Verified in the browser (search for an old name,
+  Identity tab, Confirm → confirmed link, suggestion removed).
+- **Deviations from the spec, reported to the operator**: "same uploader" signal → "token owner"
+  (main ≥ 50% + other accounts ≥ 10% never in a game with them); operator and owners
+  excluded from the teammates signal; front route `player/:toon` kept + `players`.
+- **Known limits**: players seen *only* in scouting not searchable (isolated tables); search
+  not accent-insensitive; no "undo a decision"; weights/thresholds of `similarity.rs` = starting
+  values — **to review with the operator** on real cases (many LOW "teammates + hours" suggestions
+  at 40–49 in the large social circles; the HIGH ones seen are plausible, e.g. Argas ↔ lilgas 72).
+- **Tests**: `DATABASE_URL=postgres://storm:storm@localhost:5433/storm_codex cargo test -p storm-codex-server`
+  (without it the DB tests skip silently). Test fixtures: `cargo test -p storm-codex-server
+  purge_fixtures -- --ignored`; measurement: `mesure_p95_recherche`, `sonde_identite_corpus_reel` (`--ignored`).
+- **Next step**: review of the thresholds with the operator, merge of the branch.
 
-## Feed live en partie — serveur + page `/live` LIVRÉS le 2026-10-24 (vérifié par simulateur)
-Spec `docs/specs/2026-10-24-feed-live-en-partie-design.md` (décisions opérateur du 2026-10-24) ·
-plan `docs/plans/2026-10-24-feed-live.md` · mesures `docs/research/2026-10-24-tempwritereplay-live.md`.
-- **storm-replay** : `StreamDecoder` (décodage par morceaux des streams nus) + `*_events_raw()`.
-  Découpe 4 Ko / aléatoire / octet par octet = décodage entier (mini-corpus).
-- **Serveur** `src/live/` : `POST /api/live/chunk` (idempotent par offset, `409` sur trou, `413` au-delà
-  de 64 Mo), `/end`, `GET /api/live?scope=self|allies|all&me=`, `DELETE` (garde admin), WS
-  `live.updated` (signal sans état). Réducteur pur ; table unité → héros dérivée de l'archive (90/90).
-  Un replay rejoué par blocs de 4 Ko concorde avec `details` (héros) et storm-stats (morts, takedowns,
-  talents) sur les 3 replays committés.
-- **Page `/live`** (nav « Live ») = composant `LiveGame` : trois niveaux de visibilité (défaut « Me +
-  scoreboard »), aptitudes non nommées (pressions de touche), fil d'événements.
-- **Critère 2 mesuré** : morceau → `live.updated`, p95 **1,7 ms** (budget 200 ms). Opérateur : lobby
-  pris en compte seulement si son hash = id de session (`X-Session` = SHA-256 du battlelobby) ;
-  déduction « un seul humain » bridée (testée sur chaque bloc d'une partie à 10).
-- **Vérifié** : `examples/live_sim.rs` a rejoué la partie Sandbox du 2026-10-24 (76 blocs) et une partie
-  10 humains (259 blocs) contre le serveur release + Postgres dev ; page vérifiée dans le navigateur
-  (repos, en cours, terminé, trois niveaux, 375 px). Constat : en Sandbox, la réinitialisation de
-  talents ré-émet tous les `TalentChosen` → le tableau garde le dernier choix par palier.
-- **Watcher `client-rs` ÉCRIT (2026-10-25)** — repo Hots-Overlay, `client-rs/src/live.rs`, commit
-  `ac093e7` (matella/Hots-Overlay `main`) : lobby → `/api/lobby`, blocs pleins de 4 Ko → `/api/live/chunk`
-  (offset tenu par stream, `409` → renvoi, box injoignable → rattrapage), fin → queue + `/end` ;
-  partie déjà finie au démarrage → rien. 12 tests unitaires + 2 runs bout en bout (dont coupure du
-  serveur et redémarrage du watcher).
-- **Spike fait (2026-10-25)** sur une partie **ARAM** à 10 humains avec le vrai watcher :
-  `docs/research/2026-10-25-feed-live-spike-aram.md`. Ordres des **10** joueurs présents en cours de
-  partie ; retard médian **~5 s** pour les aptitudes, **~28 s** pour le tracker (l'inverse de la
-  Sandbox) ; build lisible à mi-partie par le **chemin du process** (`Versions\BaseNNNNN`). **Critère 3
-  tenu** (état final = projection du replay, 10/10 joueurs).
-- **Reste** : point 4 du spike (calage de l'horloge sur l'affichage en jeu) ; re-mesure sur une QM ou
-  SL ; `X-Build` depuis le chemin du process dans `client-rs` ; état « en partie » de `/companion`
-  quand la page existera ; nommage des aptitudes (étape 2). **Pas encore déployé sur le box.**
-- **Bug vu au spike (hors live)** : dans la projection d'un replay ARAM, les héros nommés dans
-  `deaths[].victim/killers` ne sont pas ceux de la partie (`players[].hero` est juste) — à analyser
-  dans `storm-stats`.
-- **Constat annexe** : la partie du 2026-10-24 tournait en build **98348** (2.57.0), plus récent que nos
-  tables (96477) ; heroprotocol ne l'a pas publié (vérifié le 2026-10-24). Décodée correctement par le
-  repli « dernier protocole connu ».
+## Live in-game feed — server + `/live` page SHIPPED on 2026-10-24 (verified by simulator)
+Spec `docs/specs/2026-10-24-feed-live-en-partie-design.md` (operator decisions of 2026-10-24) ·
+plan `docs/plans/2026-10-24-feed-live.md` · measurements `docs/research/2026-10-24-tempwritereplay-live.md`.
+- **storm-replay**: `StreamDecoder` (chunked decoding of the bare streams) + `*_events_raw()`.
+  Splitting into 4 KB / random / byte by byte = whole decoding (mini-corpus).
+- **Server** `src/live/`: `POST /api/live/chunk` (idempotent per offset, `409` on a gap, `413` beyond
+  64 MB), `/end`, `GET /api/live?scope=self|allies|all&me=`, `DELETE` (admin guard), WS
+  `live.updated` (stateless signal). Pure reducer; unit → hero table derived from the archive (90/90).
+  A replay replayed in 4 KB blocks matches `details` (heroes) and storm-stats (deaths, takedowns,
+  talents) on the 3 committed replays.
+- **`/live` page** ("Live" nav) = `LiveGame` component: three visibility levels (default "Me +
+  scoreboard"), unnamed abilities (key presses), event feed.
+- **Criterion 2 measured**: chunk → `live.updated`, p95 **1.7 ms** (budget 200 ms). Operator: lobby
+  taken into account only if its hash = session id (`X-Session` = SHA-256 of the battlelobby);
+  "single human" inference restrained (tested on each block of a 10-player game).
+- **Verified**: `examples/live_sim.rs` replayed the Sandbox game of 2026-10-24 (76 blocks) and a
+  10-human game (259 blocks) against the release server + dev Postgres; page verified in the browser
+  (idle, in progress, finished, three levels, 375 px). Finding: in Sandbox, the talent
+  reset re-emits all the `TalentChosen` → the table keeps the last choice per tier.
+- **`client-rs` watcher WRITTEN (2026-10-25)** — Hots-Overlay repo, `client-rs/src/live.rs`, commit
+  `ac093e7` (matella/Hots-Overlay `main`): lobby → `/api/lobby`, full 4 KB blocks → `/api/live/chunk`
+  (offset held per stream, `409` → resend, box unreachable → catch-up), end → queue + `/end`;
+  game already finished at startup → nothing. 12 unit tests + 2 end-to-end runs (including a server
+  cut and a watcher restart).
+- **Spike done (2026-10-25)** on a 10-human **ARAM** game with the real watcher:
+  `docs/research/2026-10-25-feed-live-spike-aram.md`. Orders of the **10** players present during the
+  game; median delay **~5 s** for the abilities, **~28 s** for the tracker (the opposite of
+  Sandbox); build readable mid-game from the **process path** (`Versions\BaseNNNNN`). **Criterion 3
+  held** (final state = projection of the replay, 10/10 players).
+- **Remaining**: spike point 4 (clock alignment with the in-game display); re-measure on a QM or
+  SL; `X-Build` from the process path in `client-rs`; "in game" state of `/companion`
+  once the page exists; naming of the abilities (step 2). **Not yet deployed on the box.**
+- **Bug seen during the spike (outside live)**: in the projection of an ARAM replay, the heroes named in
+  `deaths[].victim/killers` are not those of the game (`players[].hero` is correct) — to analyse
+  in `storm-stats`.
+- **Side finding**: the game of 2026-10-24 ran on build **98348** (2.57.0), newer than our
+  tables (96477); heroprotocol had not published it (checked on 2026-10-24). Decoded correctly by the
+  "last known protocol" fallback.
 
-## Design « dossier » pour toute l'app — spec VALIDÉE le 2026-09-27, déploiement par lots
-Spec `docs/specs/2026-09-27-design-dossier-app-design.md` (+ maquettes). Overlays OBS hors périmètre.
-- **Lot 0 (fondations) — fait** : polices auto-hébergées (Fontsource, 132 Ko latin), tokens dans
-  `theme.css`, design system global `src/ds.css` + `components/ds/`, nouvelle barre du haut,
-  pages Scouting migrées (identiques visuellement). `body` inchangé → sources OBS inchangées (seule
-  nuance : JetBrains Mono est désormais réellement chargé là où `.mono` l'utilisait déjà).
-- **Lot 1 (cœur) — fait** : Session, Matches, Match detail refaits (toutes les fonctions conservées ;
-  courbe de niveau passée d'uPlot à un SVG en escalier, `LevelChart` supprimé ; uPlot reste en
-  dépendance). Session : la couverture suit désormais la **dernière partie de l'opérateur** (avant :
-  la dernière partie de l'archive, même sans lui). Vérifié par captures Edge headless (données réelles).
-- **Lot 2 (référentiel) — fait** : Heroes (mur de héros, rôle), Hero (grand portrait, cartes, builds,
-  patchs), Player (réserve de héros, parties récentes), Maps (tuiles sur l'art des cartes). HTML des
-  patchs rendu par `SafeHtml` (fragment DOMPurify, pas de chaîne HTML injectée).
-- **Lot 3 (analyses) — fait** : Synergies, Trends (histogramme par patch), Patch notes (liste datée +
-  détail à sommaire), Hero changes, Leagues. `SafeHtml` est désormais le seul point d'insertion
-  d'HTML externe dans l'app (fragment DOMPurify, aucune chaîne HTML injectée).
-- **Lot 4 (outils opérateur) — fait** : Draft console et Admin passés au design (libellés en anglais,
-  toutes les fonctions conservées). L'overlay OBS `/draft/overlay` n'est pas touché.
-- **Déploiement du design « dossier » terminé** (lots 0→4) ; les overlays OBS restent hors périmètre.
-## Bans du draft résolus sur la fiche de match — 2026-09-26
-storm-stats stocke les bans en code attribut brut (`Crus`, `DEAT`…) ; la fiche de match les
-affichait tels quels (constaté sur le match 143). `dim_heroes` ne porte pas l'`attributeId`
-(absent de la liste HotsPatchNotes) → nouvelle route statique `GET /api/dim/hero-attributes`
-(`attr.json` de storm-stats, source déjà utilisée par `dim.rs`) + `banHero` / `useDimHeroAttributes`
-dans `api.ts`. Bloc Draft réorganisé par équipe : picks puis bans (nom + portrait), `no ban` pour
-un tour passé. Vérifié navigateur sur 143, 1702, 69 (tours passés), 1720 (custom), 1 (ARAM : pas de
-bloc) et en 375 px. **Pas encore déployé sur le box.**
-Constat annexe (CRLF des migrations sur checkout Windows) : corrigé sur `main` par `.gitattributes`
-(`migrations/*.sql eol=lf`). Fusionné dans `main` le 2026-09-27.
+## "Dossier" design for the whole app — spec APPROVED on 2026-09-27, rolled out in batches
+Spec `docs/specs/2026-09-27-design-dossier-app-design.md` (+ mockups). OBS overlays out of scope.
+- **Batch 0 (foundations) — done**: self-hosted fonts (Fontsource, 132 KB latin), tokens in
+  `theme.css`, global design system `src/ds.css` + `components/ds/`, new top bar,
+  Scouting pages migrated (visually identical). `body` unchanged → OBS sources unchanged (only
+  nuance: JetBrains Mono is now actually loaded where `.mono` already used it).
+- **Batch 1 (core) — done**: Session, Matches, Match detail redone (all functions kept;
+  level curve moved from uPlot to a stepped SVG, `LevelChart` deleted; uPlot stays as a
+  dependency). Session: the coverage now follows the **operator's last game** (before:
+  the archive's last game, even without them). Verified by headless Edge screenshots (real data).
+- **Batch 2 (reference data) — done**: Heroes (hero wall, role), Hero (large portrait, maps, builds,
+  patches), Player (hero pool, recent games), Maps (tiles on the map art). Patch HTML
+  rendered by `SafeHtml` (DOMPurify fragment, no injected HTML string).
+- **Batch 3 (analyses) — done**: Synergies, Trends (histogram per patch), Patch notes (dated list +
+  detail with a table of contents), Hero changes, Leagues. `SafeHtml` is now the only insertion point
+  for external HTML in the app (DOMPurify fragment, no injected HTML string).
+- **Batch 4 (operator tools) — done**: Draft console and Admin moved to the design (labels in English,
+  all functions kept). The OBS overlay `/draft/overlay` is not touched.
+- **Rollout of the "dossier" design finished** (batches 0→4); the OBS overlays stay out of scope.
+## Draft bans resolved on the match page — 2026-09-26
+storm-stats stores the bans as a raw attribute code (`Crus`, `DEAT`…); the match page
+showed them as is (seen on match 143). `dim_heroes` does not carry the `attributeId`
+(missing from the HotsPatchNotes list) → new static route `GET /api/dim/hero-attributes`
+(`attr.json` from storm-stats, a source already used by `dim.rs`) + `banHero` / `useDimHeroAttributes`
+in `api.ts`. Draft block reorganised per team: picks then bans (name + portrait), `no ban` for
+a skipped turn. Verified in the browser on 143, 1702, 69 (skipped turns), 1720 (custom), 1 (ARAM: no
+block) and at 375 px. **Not yet deployed on the box.**
+Side finding (CRLF of the migrations on a Windows checkout): fixed on `main` by `.gitattributes`
+(`migrations/*.sql eol=lf`). Merged into `main` on 2026-09-27.
 
-## Rapports de scouting — LIVRÉ sur `main` le 2026-09-26 (pas encore déployé sur le box)
+## Scouting reports — SHIPPED on `main` on 2026-09-26 (not yet deployed on the box)
 Spec `docs/specs/2026-09-26-rapports-scouting-design.md` · plan `docs/plans/2026-09-26-rapports-scouting.md`.
-Pages `/scouting` et `/scouting/:id` ; routes `/api/scouting/*` ; migration `0010` (tables dédiées :
-les replays adverses ne touchent jamais `uploads`/`matches` — test d'intégration d'isolation).
-- **Volet A** (draft des parties perso) : 3 replays réels de l'opérateur, **confirmé** par lui.
-- **Vérifié en navigateur sur ces 3 replays** (serveur release :8089 + Postgres dev) : lot ambigu
-  détecté (série contre un même adversaire) → une ancre (joueur de l'équipe scoutée) → roster des 5 attendus, 3 parties par
-  la règle roster ; faits identiques aux drafts confirmés (first pick 2/3, bans 1re phase
-  Johanna/Falstad ×2, bans subis Deathwing/Garrosh ×2, ouvertures Dehaka/Hogger/Chromie, V/V/D) ;
-  pack `.md` 19 Ko + `.xlsx` ; analyse rédigée à partir du pack réel (étape LLM manuelle) importée
-  par la fenêtre d'import : 16 affirmations, 0 sans preuve ; ré-import = écrasement.
-- **Mesuré** : `GET /api/scouting/{id}` p95 5,9 ms (contrat 100 ms).
-- Tests : 25 tests scouting (dont intégration DB), 77 serveur, vitest 54 ; clippy `-D warnings` vert.
-- Correctif d'infra au passage : `.gitattributes` force LF sur les migrations (un checkout Windows
-  CRLF faisait échouer sqlx en `VersionMismatch` contre une base migrée en LF).
-- **Reste dû (opérateur)** : critère D — donner le pack réel à **ChatGPT et Claude** et réimporter
-  leurs réponses (l'import tolère la prose autour du JSON) ; critère B — valider la détection sur
-  un lot plus large (parties de l'adversaire contre plusieurs équipes) ; déploiement box
-  (rsync + `docker compose up -d --build`, la migration 0010 s'applique au démarrage).
-- **Recentrage draft (2026-09-26, demande opérateur)** : l'analyse devient un **plan de draft
-  carte par carte** (`format_version: 2` : choix de carte, par carte bans avec phase / picks /
-  picks adverses attendus avec le joueur / points à prévoir, plan toute carte) ; la v1 est refusée
-  à l'import. Nouveaux faits : héros joués contre eux avec leur bilan (`draft.faced.*`), joueur
-  derrière chaque pick par carte ; pack réordonné (cartes et draft avant joueurs). Vérifié en
-  navigateur sur la série : plan v2 importé, 28 éléments, 0 sans preuve.
-- **Export HTML à partager (2026-09-27, volet G)** : bouton « Export HTML » → un fichier `.html`
-  autonome (portraits + minimaps embarqués une seule fois en WebP via classes CSS, ~600 Ko pour la
-  série de 3 parties, 33/33 portraits). Rendu pur `web/src/reportHtml.ts` (vitest : échappement du
-  texte LLM, data: URI filtrées, pseudos à la place des `pN`), chargement `reportExport.ts`.
-  Vérifié : export réel depuis le bouton, rendu contrôlé par captures Edge headless en 1400 px et
-  dans un iframe de 390 px (téléphone). En dev, les portraits viennent de HotsPatchNotes du box
-  (`HOTSPATCHNOTES_URL` ajouté à la config d'aperçu, lecture seule).
-- **Pages au style « dossier » (2026-09-27)** : `/scouting` et `/scouting/:id` reprennent le langage
-  visuel de l'export (page unique à sections, tableaux de draft par carte, dépôt/roster restylés).
-  Export inchangé. Vérifié par captures Edge headless de la vraie page (1400 px + iframe 390 px).
-- Hors v1 (spec volet F) : fiche de match / visionneuse 2D pour les replays de scouting,
-  passerelle vers le simulateur de draft.
-- Aperçu local : config `storm-codex-server` dans `.claude/launch.json` (release, port 8089, sert
-  `web/dist` ; le 8088 peut être occupé par une autre session).
+Pages `/scouting` and `/scouting/:id`; routes `/api/scouting/*`; migration `0010` (dedicated tables:
+the opponents' replays never touch `uploads`/`matches` — isolation integration test).
+- **Part A** (draft of custom games): 3 real replays of the operator, **confirmed** by them.
+- **Verified in the browser on these 3 replays** (release server :8089 + dev Postgres): ambiguous batch
+  detected (series against the same opponent) → one anchor (player of the scouted team) → roster of the 5 expected, 3 games by
+  the roster rule; facts identical to the confirmed drafts (first pick 2/3, 1st-phase bans
+  Johanna/Falstad ×2, bans received Deathwing/Garrosh ×2, openings Dehaka/Hogger/Chromie, W/W/L);
+  pack `.md` 19 KB + `.xlsx`; analysis written from the real pack (manual LLM step) imported
+  through the import window: 16 claims, 0 without proof; re-import = overwrite.
+- **Measured**: `GET /api/scouting/{id}` p95 5.9 ms (contract 100 ms).
+- Tests: 25 scouting tests (DB integration included), 77 server, vitest 54; clippy `-D warnings` green.
+- Infra fix along the way: `.gitattributes` forces LF on the migrations (a Windows CRLF
+  checkout made sqlx fail with `VersionMismatch` against a database migrated with LF).
+- **Still owed (operator)**: criterion D — give the real pack to **ChatGPT and Claude** and re-import
+  their answers (the import tolerates prose around the JSON); criterion B — validate the detection on
+  a larger batch (games of the opponent against several teams); box deployment
+  (rsync + `docker compose up -d --build`, migration 0010 applies at startup).
+- **Draft refocus (2026-09-26, operator request)**: the analysis becomes a **map-by-map draft
+  plan** (`format_version: 2`: map choice, per map bans with phase / picks /
+  expected opponent picks with the player / points to prepare, any-map plan); v1 is refused
+  at import. New facts: heroes played against them with their record (`draft.faced.*`), player
+  behind each pick per map; pack reordered (maps and draft before players). Verified in the
+  browser on the series: v2 plan imported, 28 items, 0 without proof.
+- **HTML export to share (2026-09-27, part G)**: "Export HTML" button → a standalone `.html` file
+  (portraits + minimaps embedded only once as WebP via CSS classes, ~600 KB for the
+  3-game series, 33/33 portraits). Pure rendering `web/src/reportHtml.ts` (vitest: escaping of the
+  LLM text, data: URIs filtered, names instead of `pN`), loading `reportExport.ts`.
+  Verified: real export from the button, rendering checked with headless Edge screenshots at 1400 px and
+  in a 390 px iframe (phone). In dev, the portraits come from the box's HotsPatchNotes
+  (`HOTSPATCHNOTES_URL` added to the preview config, read-only).
+- **Pages in the "dossier" style (2026-09-27)**: `/scouting` and `/scouting/:id` take up the visual
+  language of the export (single page with sections, draft tables per map, drop zone/roster restyled).
+  Export unchanged. Verified with headless Edge screenshots of the real page (1400 px + 390 px iframe).
+- Outside v1 (spec part F): match page / 2D viewer for scouting replays,
+  bridge to the draft simulator.
+- Local preview: `storm-codex-server` config in `.claude/launch.json` (release, port 8089, serves
+  `web/dist`; 8088 may be taken by another session).
 
-## ⚠ EN ATTENTE DE VALIDATION OPÉRATEUR — deux specs datées du 2026-09-08
-Scope retenu par l'opérateur, specs écrites et poussées, **rien n'est implémenté** (règle n° 0 :
-une décision de conception se valide avant de coder).
-- `docs/specs/2026-09-08-github-pages-design.md` — 4 volets : site de doc (mdBook), rustdoc des
-  crates, **playground WASM « dépose un replay »** (décodage 100 % navigateur), partage statique
-  d'un match. **Go technique mesuré** : `cargo build -p storm-stats -p storm-replay-viewer
-  --target wasm32-unknown-unknown --release` passe **sans aucune modification** (17,6 s) — toute la
-  chaîne est pure Rust (`bzip2-rs`, `miniz_oxide`). Restent à mesurer la taille du `.wasm`
-  (budget ≤ 3 Mo gzip) et le temps de décodage en navigateur (budget ≤ 1 s ; 133 ms en natif).
-- `docs/specs/2026-09-08-chat-de-match-design.md` — 4 volets : lien chat ↔ visionneuse 2D (les
-  `point{x,y}` des pings sont décodés depuis toujours et n'ont jamais été affichés), recherche et
-  filtres, contexte de jeu dans le fil, recherche inter-matchs (migration `0010 match_messages`
+## ⚠ AWAITING OPERATOR APPROVAL — two specs dated 2026-09-08
+Scope chosen by the operator, specs written and pushed, **nothing is implemented** (rule no. 0:
+a design decision is approved before coding).
+- `docs/specs/2026-09-08-github-pages-design.md` — 4 parts: doc site (mdBook), rustdoc of the
+  crates, **WASM "drop a replay" playground** (100% in-browser decoding), static sharing
+  of a match. **Measured technical go**: `cargo build -p storm-stats -p storm-replay-viewer
+  --target wasm32-unknown-unknown --release` passes **without any change** (17.6 s) — the whole
+  chain is pure Rust (`bzip2-rs`, `miniz_oxide`). Still to measure: the size of the `.wasm`
+  (budget ≤ 3 MB gzip) and the decoding time in the browser (budget ≤ 1 s; 133 ms native).
+- `docs/specs/2026-09-08-chat-de-match-design.md` — 4 parts: chat ↔ 2D viewer link (the
+  pings' `point{x,y}` have always been decoded and never shown), search and
+  filters, game context in the feed, cross-match search (migration `0010 match_messages`
   + `pg_trgm`, route `GET /api/chat`).
-- **Questions ouvertes** listées en fin de chaque spec (vie privée du partage statique, messages
-  d'observateurs écartés par le parser).
+- **Open questions** listed at the end of each spec (privacy of the static sharing, observer
+  messages discarded by the parser).
 
-## Déployé sur le box le 2026-09-01 — variante `/now-playing?reveal`
-`main` mergé et poussé (`642750c`), puis rsync + `docker compose up -d --build` sur matelab.
-Vérifs de `docs/spec/09-operations.md` passées : conteneurs healthy, `/api/health` 200, bundle
-passé de `index-BmQMoQ9z.js` à `index-LjZbPmIC.js` (le hash correspond au build local), `npr-card`
-présent dans le bundle servi, `.env` du box intact, aucune erreur au démarrage.
-**Reste dû** : la vérification navigateur sur données réelles exigée pour une route front — elle
-suppose l'OAuth Spotify côté Orpheus (section « Orpheus (musique) » plus bas). Le reveal n'a donc
-jamais été vu se déclencher pour de vrai ; premier test à faire = deux skips en moins de 2,6 s
-(reciblage sur place, la transition que les tests unitaires ne peuvent pas juger visuellement).
+## Deployed on the box on 2026-09-01 — `/now-playing?reveal` variant
+`main` merged and pushed (`642750c`), then rsync + `docker compose up -d --build` on matelab.
+Checks from `docs/spec/09-operations.md` passed: containers healthy, `/api/health` 200, bundle
+changed from `index-BmQMoQ9z.js` to `index-LjZbPmIC.js` (the hash matches the local build), `npr-card`
+present in the served bundle, the box's `.env` intact, no error at startup.
+**Still owed**: the browser check on real data required for a front route — it
+requires the Spotify OAuth on the Orpheus side (section "Orpheus (music)" further down). The reveal has therefore
+never been seen firing for real; first test to do = two skips within 2.6 s
+(in-place retargeting, the transition the unit tests cannot judge visually).
 
-## Companion live — plan 2 (serveur) : LIVRÉ (branche `feat/companion-live-serveur`, 2026-08-28)
-Plan : `docs/plans/2026-08-28-companion-live-2-serveur.md`. Le serveur expose tout ce dont la page
-companion aura besoin. **Front = plan 3, watcher `client-rs` = plan 4** (seul morceau exigeant le PC
-de jeu). 6 tâches, chacune revue spec+qualité ; **10 correctifs Important repliés** (compté à 5 puis
-9 dans des passes antérieures — les deux comptes étaient faux), tous issus du code de mon propre
-plan et attrapés par les revues — détail plus bas.
-- **Carte déduite sans saisie** : `storm-lobby` extrait les hashes `.s2ma` du blob et les résout via
-  une table dérivée de l'archive (`src/maps.rs`, générée par `examples/derive_maps.rs`).
-  **19 cartes sur 19 couvertes, 116 hashes**, sur 3 322 replays. Critère retenu : hash jamais
-  observé sur une autre carte — ne peut pas produire d'association fausse. Un critère plus strict
-  avait été envisagé (hash présent dans TOUS les replays de sa carte) puis écarté : mesuré une
-  fois, lors de la mise au point du critère, il ne couvrait que 9/19 cartes (Blizzard republie les
-  `.s2ma` à chaque patch) — ce critère n'existe plus dans le code, ce chiffre n'est donc pas
-  rejouable. Garantie circulaire par construction (dérivée et validée sur la même archive) :
-  documenté sur le champ `Lobby::map`.
-- **Migration `0009`** : `builds` (bibliothèque de builds de talents, `picks` à la forme exacte du
-  parser) + `lobby_live` (singleton, calque de `draft_live`) + index de résolution BattleTag.
-  L'invariant « un seul build par défaut par héros » est tenu par un **index partiel unique**.
-- **Routes** : `POST/GET/DELETE /api/lobby`, `POST /api/lobby/{hero,map,teams}`, CRUD
+## Companion live — plan 2 (server): SHIPPED (branch `feat/companion-live-serveur`, 2026-08-28)
+Plan: `docs/plans/2026-08-28-companion-live-2-serveur.md`. The server exposes everything the companion
+page will need. **Front = plan 3, `client-rs` watcher = plan 4** (the only piece that needs the gaming
+PC). 6 tasks, each reviewed for spec+quality; **10 Important fixes folded in** (counted as 5 then
+9 in earlier passes — both counts were wrong), all coming from the code of my own
+plan and caught by the reviews — detail below.
+- **Map inferred without entry**: `storm-lobby` extracts the `.s2ma` hashes from the blob and resolves them via
+  a table derived from the archive (`src/maps.rs`, generated by `examples/derive_maps.rs`).
+  **19 maps out of 19 covered, 116 hashes**, over 3,322 replays. Criterion kept: hash never
+  observed on another map — cannot produce a wrong association. A stricter criterion
+  had been considered (hash present in ALL the replays of its map) then dropped: measured once,
+  while tuning the criterion, it only covered 9/19 maps (Blizzard republishes the
+  `.s2ma` at each patch) — this criterion no longer exists in the code, so this figure cannot be
+  replayed. Circular guarantee by construction (derived and validated on the same archive):
+  documented on the `Lobby::map` field.
+- **Migration `0009`**: `builds` (talent build library, `picks` in the exact shape of the
+  parser) + `lobby_live` (singleton, modelled on `draft_live`) + BattleTag resolution index.
+  The invariant "a single default build per hero" is held by a **partial unique index**.
+- **Routes**: `POST/GET/DELETE /api/lobby`, `POST /api/lobby/{hero,map,teams}`, CRUD
   `/api/builds` + `POST /api/builds/from-match`. WS `lobby.detected` / `lobby.updated`.
-- **Enrichissement** : `nom#discriminant` → `toon_handle` **contre l'archive elle-même**, puis
-  historiques (parties avec/contre toi, winrates, héros favoris) et tes stats héros/carte.
-  Requêtes **batchées** (LEFT JOIN LATERAL + `= ANY($1)`) au lieu de la boucle par joueur du plan.
-  **Mesuré** (passe `/api/lobby` ajoutée à `backfill_bench.py` en revue finale, puis corrigée en
-  dernière revue avant merge : le `GET` était mesuré *avant* le premier `POST`, donc sur mémoire
-  vide — `204` systématique, chiffre sans rapport avec la sérialisation d'un état enrichi réel) :
-  **p95 ≈ 36 ms en régime stable sur `POST /api/lobby`** (décodage + enrichissement SQL, médiane
-  ~31 ms, max ~53 ms sur 20 requêtes), contre un contrat de 100 ms. `GET` sert la mémoire une fois
-  l'état enrichi posé (dix joueurs, historiques, build) : p95 ~1,2 ms.
-  ⚠️ **Le chemin à froid dépasse le budget contractuel de 100 ms, et ce n'est pas une anomalie de
-  démarrage à ignorer** : mesuré à 165–169 ms de façon reproductible sur 3 redémarrages consécutifs
-  (premier `POST /api/lobby` après lancement du serveur, avant tout autre trafic). En usage réel il
-  y a exactement **un `POST /api/lobby` par partie, serveur inactif entre deux** (le box ne tourne
-  que le soir) — **le chemin froid est donc le chemin nominal de cet endpoint**, pas le tout premier
-  appel isolé qu'un simple warm-up ferait disparaître. Reste à investiguer avant mise en prod (pool
-  de connexions pré-chauffé au démarrage, ou budget à revoir spécifiquement pour cette route).
-- **Dégradations tenues** : blob illisible → `parse_failed` + sélecteur manuel, jamais d'erreur HTTP
-  ni de page vide ; joueur jamais croisé → `toon_handle`/`history` à `null`, jamais un winrate
-  fabriqué ; un `parse_failed` transitoire (fichier lu pendant que le jeu l'écrit) **n'écrase pas**
-  un lobby déjà enrichi de moins de 2 minutes.
-- **Correctifs Important repliés** (tous des défauts de mon plan, attrapés en revue — **10**, pas
-  5 ni 9 comme documenté à tort dans des passes antérieures) : `update` de builds committait le
-  démarquage du défaut sur un 404 ; `meme_lobby` laissait un blob illisible écraser un lobby
-  enrichi ; l'opérateur était compté « avec lui-même » dans son propre historique ; effacer la
-  carte la marquait quand même « saisie à la main » ; la fenêtre de 6 h de la liaison replay↔lobby
-  était promise en prose et absente du code ; **(revue finale de branche)** une revanche entre les
-  mêmes dix joueurs (ligue/scrim) n'était jamais ingérée tant que le lobby précédent restait lié
-  à son match ; `from_match` ne persistait jamais `source_match_id`, rendant la provenance de tout
-  build importé irrécupérable ; `mes_parties` pouvait compter un même adversaire à la fois « avec »
-  et « contre » (fan-out de jointure sur homonyme d'archive, `DISTINCT ON` ajouté) ; un `hero` NULL
-  en base faisait répondre 500 au lieu du 422 déjà prévu pour l'absence de talents ; **(dernière
-  revue avant merge)** un simple redémarrage du watcher qui repostait le blob de lobby déjà lié
-  détruisait le debrief (`match_id` réécrasé à `null`, irrécupérable) — corrigé par une garde de
-  hash SHA-256 sur les octets bruts du blob, prioritaire sur toutes les autres règles
-  d'idempotence : un hash identique à l'état courant est toujours `unchanged`, y compris lié.
-- **Vérif** : `cargo test --workspace` vert, **42 tests** dans `storm-codex-server` dont des tests
-  purs sur l'idempotence par BattleTags et par hash, la réassignation d'équipe et la fenêtre
-  temporelle.
-  **Clippy, énoncé exactement** : `-p storm-lobby --all-targets -- -D warnings` propre, et
-  `-p storm-codex-server -- -D warnings` (lib + bin) propre. En revanche `-p storm-codex-server
-  --all-targets` **échoue** — il inclut le module de test de `src/draft/mod.rs`, qui porte 11
-  `unwrap()`. ⚠️ `clippy --workspace
-  --all-targets` échoue sur 11 `unwrap()` dans les *tests* de `draft/mod.rs` — **pré-existant sur
-  `main`**, vérifié, hors périmètre.
-- **Restes connus** : `/api/admin/reprocess` n'appelle pas `lier_match` (exclusion jugée légitime :
-  le backfill ne doit pas lier un vieux match au lobby du jour) ; pas de test d'intégration contre
-  une base (dette de projet, aucun crate n'en a).
+- **Enrichment**: `name#discriminant` → `toon_handle` **against the archive itself**, then
+  histories (games with/against you, win rates, favourite heroes) and your hero/map stats.
+  **Batched** queries (LEFT JOIN LATERAL + `= ANY($1)`) instead of the plan's per-player loop.
+  **Measured** (`/api/lobby` pass added to `backfill_bench.py` in the final review, then fixed in the
+  last review before merge: the `GET` was measured *before* the first `POST`, so on empty
+  memory — systematic `204`, a figure unrelated to serialising a real enriched state):
+  **p95 ≈ 36 ms in steady state on `POST /api/lobby`** (decoding + SQL enrichment, median
+  ~31 ms, max ~53 ms over 20 requests), against a 100 ms contract. `GET` serves memory once
+  the enriched state is set (ten players, histories, build): p95 ~1.2 ms.
+  ⚠️ **The cold path exceeds the 100 ms contractual budget, and this is not a startup
+  anomaly to ignore**: measured at 165–169 ms reproducibly over 3 consecutive restarts
+  (first `POST /api/lobby` after the server starts, before any other traffic). In real use there
+  is exactly **one `POST /api/lobby` per game, with the server idle in between** (the box only runs
+  in the evening) — **the cold path is therefore this endpoint's nominal path**, not the very first
+  isolated call that a simple warm-up would make disappear. Still to investigate before production (connection
+  pool pre-warmed at startup, or a budget to revisit specifically for this route).
+- **Degradations held**: unreadable blob → `parse_failed` + manual selector, never an HTTP error
+  nor an empty page; player never met → `toon_handle`/`history` at `null`, never a fabricated
+  win rate; a transient `parse_failed` (file read while the game writes it) **does not overwrite**
+  an already enriched lobby less than 2 minutes old.
+- **Important fixes folded in** (all defects of my plan, caught in review — **10**, not
+  5 or 9 as wrongly documented in earlier passes): the builds `update` committed the
+  unmarking of the default on a 404; `meme_lobby` let an unreadable blob overwrite an enriched
+  lobby; the operator was counted "with themself" in their own history; clearing the
+  map still marked it "entered by hand"; the 6 h window of the replay↔lobby link
+  was promised in prose and missing from the code; **(final branch review)** a rematch between the
+  same ten players (league/scrim) was never ingested as long as the previous lobby stayed linked
+  to its match; `from_match` never persisted `source_match_id`, making the provenance of any
+  imported build unrecoverable; `mes_parties` could count the same opponent both "with"
+  and "against" (join fan-out on an archive namesake, `DISTINCT ON` added); a NULL `hero`
+  in the database made it answer 500 instead of the 422 already planned for missing talents; **(last
+  review before merge)** a simple watcher restart that re-posted the already linked lobby blob
+  destroyed the debrief (`match_id` overwritten with `null`, unrecoverable) — fixed by a SHA-256
+  hash guard on the raw bytes of the blob, taking priority over all the other idempotence
+  rules: a hash identical to the current state is always `unchanged`, linked included.
+- **Check**: `cargo test --workspace` green, **42 tests** in `storm-codex-server` including pure
+  tests on idempotence by BattleTags and by hash, team reassignment and the time
+  window.
+  **Clippy, stated exactly**: `-p storm-lobby --all-targets -- -D warnings` clean, and
+  `-p storm-codex-server -- -D warnings` (lib + bin) clean. On the other hand `-p storm-codex-server
+  --all-targets` **fails** — it includes the test module of `src/draft/mod.rs`, which carries 11
+  `unwrap()`s. ⚠️ `clippy --workspace
+  --all-targets` fails on 11 `unwrap()`s in the *tests* of `draft/mod.rs` — **pre-existing on
+  `main`**, checked, out of scope.
+- **Known leftovers**: `/api/admin/reprocess` does not call `lier_match` (exclusion judged legitimate:
+  the backfill must not link an old match to today's lobby); no integration test against
+  a database (project debt, no crate has any).
 
 
-## Companion live — plan 1 (`storm-lobby`) : LIVRÉ + MESURÉ (branche `feat/companion-live`, 2026-08-28)
-Spec : `docs/specs/2026-08-27-companion-live-design.md` · Plan :
-`docs/plans/2026-08-27-companion-live-1-storm-lobby.md`. Nouveau crate pur `crates/storm-lobby` :
-décode `replay.server.battlelobby` **seul** (sans le stream `details`) pour identifier les joueurs
-d'une partie **en cours**, avant que le replay n'existe. Rouvre la décision n° 6 de la spec
-programme (« pas de pré-game en V1 »), sur décision de l'opérateur.
-- **Ce que le format donne, et ne donne pas** (`docs/research/2026-08-27-lobby-format.md`) :
-  BattleTags **en clair**, préfixés d'une longueur **en octets UTF-8** (un tag cyrillique est
-  invisible à `strings` — un parser ASCII perdrait un joueur sans échouer). **Absents** : toon
-  handle, héros pické, carte, mode, champ d'équipe. L'identité se résout donc par BattleTag contre
-  l'archive (`match_players.name` + `data->>'tag'`), et héros/carte passent en saisie manuelle.
-- **Parité mesurée sur 3 322 replays, 25 builds** (`docs/research/2026-08-27-lobby-parity.md`) :
-  **GO sur les modes matchmakés — 100 % de BattleTags ET 100 % d'équipes sur 2 710 parties**
-  (Storm League 1978/1978, ARAM 729/729, QM 3/3), soit 83,9 % de la base de comparaison
-  (2 710 / 3 231). Le chiffre global de 96,19 % était **entièrement** produit par les parties
-  personnalisées (521 évaluées, 16,1 % de la base : 398 exactes en tags, 76 % ; et parmi ces 398,
-  115 exactes en équipes, 29 %) — des observateurs siègent dans le lobby et l'ordre n'y porte pas l'équipe. Mode
-  d'échec vérifié **exhaustivement** sur les 3 231 replays : sur-capture (3,81 %), **jamais** un
-  joueur manquant, jamais un décodage malformé (0 % de sous-capture).
-- **Limite à connaître** : le blob ne porte pas le mode → le parser ne peut pas savoir qu'il lit une
-  partie personnalisée. Sur une personnalisée à 10 occupants pile et sans observateur, il assignera
-  des équipes avec assurance et se trompera dans la majorité de ces cas — 283 des 398 personnalisées
-  aux BattleTags exacts ont une équipe fausse (~71 %). Recommandation du rapport : garder la
-  déduction (parfaite sur 83,9 % de la base de comparaison) et offrir une inversion manuelle d'un
-  clic côté produit.
-- **Vérif** : `cargo test -p storm-lobby` vert (oracle 3/3, robustesse 4/4, team_rule 3/3).
+## Companion live — plan 1 (`storm-lobby`): SHIPPED + MEASURED (branch `feat/companion-live`, 2026-08-28)
+Spec: `docs/specs/2026-08-27-companion-live-design.md` · Plan:
+`docs/plans/2026-08-27-companion-live-1-storm-lobby.md`. New pure crate `crates/storm-lobby`:
+decodes `replay.server.battlelobby` **alone** (without the `details` stream) to identify the players
+of a game **in progress**, before the replay exists. Reopens decision no. 6 of the programme
+spec ("no pre-game in V1"), by operator decision.
+- **What the format gives, and does not give** (`docs/research/2026-08-27-lobby-format.md`):
+  BattleTags **in clear text**, prefixed with a length **in UTF-8 bytes** (a Cyrillic tag is
+  invisible to `strings` — an ASCII parser would lose a player without failing). **Missing**: toon
+  handle, picked hero, map, mode, team field. Identity is therefore resolved by BattleTag against
+  the archive (`match_players.name` + `data->>'tag'`), and hero/map become manual entries.
+- **Parity measured on 3,322 replays, 25 builds** (`docs/research/2026-08-27-lobby-parity.md`):
+  **GO on the matchmade modes — 100% of BattleTags AND 100% of teams over 2,710 games**
+  (Storm League 1978/1978, ARAM 729/729, QM 3/3), i.e. 83.9% of the comparison base
+  (2,710 / 3,231). The overall figure of 96.19% was **entirely** produced by the custom
+  games (521 evaluated, 16.1% of the base: 398 exact on tags, 76%; and among these 398,
+  115 exact on teams, 29%) — observers sit in the lobby and the order there does not carry the team. Failure
+  mode checked **exhaustively** over the 3,231 replays: over-capture (3.81%), **never** a
+  missing player, never a malformed decode (0% under-capture).
+- **Limit to know**: the blob does not carry the mode → the parser cannot know it is reading a
+  custom game. On a custom game with exactly 10 occupants and no observer, it will assign
+  teams with confidence and be wrong in most of these cases — 283 of the 398 custom games
+  with exact BattleTags have a wrong team (~71%). The report's recommendation: keep the
+  inference (perfect on 83.9% of the comparison base) and offer a one-click manual swap
+  on the product side.
+- **Check**: `cargo test -p storm-lobby` green (oracle 3/3, robustness 4/4, team_rule 3/3).
   `cargo clippy -p storm-lobby
-  --all-targets -- -D warnings` propre. ⚠️ `cargo clippy --workspace --all-targets` échoue sur
-  `storm-codex-server` (11 `unwrap_used` dans son *target de test*) — **pré-existant sur `main`**,
-  vérifié, hors périmètre de cette branche.
-- **Reste** : plan 2 (migration `0009`, module `lobby.rs`, routes `/api/lobby` + `/api/builds`, pages
-  `/companion` et `/builds`) — à écrire maintenant que héros/carte sont tranchés comme manuels ;
-  puis plan 3, le watcher `client-rs` (repo Hots-Overlay), seul morceau exigeant le PC de jeu.
+  --all-targets -- -D warnings` clean. ⚠️ `cargo clippy --workspace --all-targets` fails on
+  `storm-codex-server` (11 `unwrap_used` in its *test target*) — **pre-existing on `main`**,
+  checked, out of this branch's scope.
+- **Remaining**: plan 2 (migration `0009`, module `lobby.rs`, routes `/api/lobby` + `/api/builds`, pages
+  `/companion` and `/builds`) — to write now that hero/map are decided as manual;
+  then plan 3, the `client-rs` watcher (Hots-Overlay repo), the only piece that needs the gaming PC.
 
 
-## Visionneuse 2D — fonds de minimap in-game + calibration (branche `feat/minimap-backgrounds`, 2026-07-09)
-Spec : `docs/specs/2026-07-09-minimap-backgrounds-design.md`. Remplace l'art peint de loading-screen (chargé)
-par la **vraie minimap tactique in-game** (top-down propre) → lisibilité nettement meilleure.
-- **Assets** : 15 minimaps extraites du jeu par l'opérateur (CascView a échoué → download direct), downscalées
-  1400px, slug-nommées, **committées** `assets/minimaps/` (5,2 Mo) et **bakées dans l'image** (Dockerfile COPY
-  + `MINIMAPS_BUNDLE_DIR`) ; `bundle_minimaps()` les copie dans `IMAGES_DIR/minimaps` au démarrage (idempotent)
-  → servies `/images/minimaps/<slug>.jpg`. Pas de fetch runtime (fallback baké).
-- **Front** : `minimapImage()`/`mapSlug()` ; fond **prioritaire minimap → art peint → dégradé**. La minimap est
-  dessinée DROITE dans le canvas ; les overlays (héros/structures/minions/morts) sont **PROJETÉS** via une
-  **similitude par carte** (rotation+échelle) calée sur les 2 cores — le repère de coords du jeu est tourné/étiré
-  vs l'image (Cursed Hollow ~20°). Ancres cores par carte dans `MAP_ANCHORS`.
-- **Calibration** : **13 battlegrounds calibrés** (Cursed Hollow affiné + vérifié en direct ; 12 mesurés à
-  l'image, spot-checkés Dragon Shire/Braxis/Towers of Doom — orientation OK, cores près des bases). Haunted
-  Mines (1 partie) + Blackheart's Bay (5) → fallback pleine image. **Affinables** à l'œil via le hook dev
-  `window.__cal("<slug>",[bx,by],[rx,ry])` sur une vraie partie (box : toutes les cartes présentes).
-- **Vérif** : E2E local (Cursed Hollow, Braxis, Dragon Shire, Towers of Doom…) — minimap propre + calibration.
-  Tests workspace + vitest verts. **Reste : merge + redéploiement box** (readability + calibration).
-- **Idée (backlog, opérateur 2026-07-09)** : **mode calibration interactif in-app** — au lieu de mesurer les
-  ancres à l'image / `window.__cal`, permettre de **glisser à la souris les 2 points cores** sur la minimap
-  pour les placer au pixel près, aperçu live, puis sauvegarder (persist `MAP_ANCHORS` côté serveur/settings).
-  Extension naturelle du hook `window.__cal` déjà en place. Non implémenté (idée).
+## 2D viewer — in-game minimap backgrounds + calibration (branch `feat/minimap-backgrounds`, 2026-07-09)
+Spec: `docs/specs/2026-07-09-minimap-backgrounds-design.md`. Replaces the painted loading-screen art (busy)
+with the **real in-game tactical minimap** (clean top-down) → clearly better readability.
+- **Assets**: 15 minimaps extracted from the game by the operator (CascView failed → direct download), downscaled
+  to 1400px, slug-named, **committed** in `assets/minimaps/` (5.2 MB) and **baked into the image** (Dockerfile COPY
+  + `MINIMAPS_BUNDLE_DIR`); `bundle_minimaps()` copies them into `IMAGES_DIR/minimaps` at startup (idempotent)
+  → served at `/images/minimaps/<slug>.jpg`. No runtime fetch (baked fallback).
+- **Front**: `minimapImage()`/`mapSlug()`; background **priority minimap → painted art → gradient**. The minimap is
+  drawn STRAIGHT in the canvas; the overlays (heroes/structures/minions/deaths) are **PROJECTED** via a
+  **per-map similarity** (rotation+scale) anchored on the 2 cores — the game's coordinate frame is rotated/stretched
+  vs the image (Cursed Hollow ~20°). Core anchors per map in `MAP_ANCHORS`.
+- **Calibration**: **13 battlegrounds calibrated** (Cursed Hollow refined + verified live; 12 measured on
+  the image, spot-checked Dragon Shire/Braxis/Towers of Doom — orientation OK, cores near the bases). Haunted
+  Mines (1 game) + Blackheart's Bay (5) → full-image fallback. **Refinable** by eye via the dev hook
+  `window.__cal("<slug>",[bx,by],[rx,ry])` on a real game (box: all maps present).
+- **Check**: local E2E (Cursed Hollow, Braxis, Dragon Shire, Towers of Doom…) — clean minimap + calibration.
+  Workspace tests + vitest green. **Remaining: merge + box redeployment** (readability + calibration).
+- **Idea (backlog, operator 2026-07-09)**: **interactive in-app calibration mode** — instead of measuring the
+  anchors on the image / `window.__cal`, allow **dragging the 2 core points with the mouse** on the minimap
+  to place them to the pixel, live preview, then save (persist `MAP_ANCHORS` on the server/settings side).
+  Natural extension of the `window.__cal` hook already in place. Not implemented (idea).
 
-## Visionneuse 2D — fast-follows (Phases 2–5) : LIVRÉ + VÉRIFIÉ E2E (branche `feat/replay2d-fastfollows`, 2026-07-09)
-Plan : `docs/plans/2026-07-09-visionneuse-2d-fast-follows.md` (9 lots, revu 2×). **8 lots de feature livrés,
-chacun revu spec+qualité (findings repliés)** : lecture animée play/pause+vitesse (US-11) ; structures
-vivant/détruit (US-16) ; kill-feed cliquable → seek (US-20) ; flashes de sorts (US-18) ; talents/niveaux +
-bande de tiers (US-19/US-27) ; objectifs par carte + framework isolé + warnings cartes-trou + vagues Braxis
-(US-21→24) ; toggle minions/camps (US-26) ; export clip webm (US-25). `VIEWER_VERSION` 1→7 (schéma étendu,
-rétro-compat : le front ignore les champs inconnus ; `minions` exclu du golden pour ne pas le gonfler).
-Tout reste **seek 100 % client**, aucune requête réseau par scrub. Crate `storm-replay-viewer` toujours pur
-(géométrie/temps, zéro référentiel ; noms héros/talents résolus côté front via `players[]`+`dim_*`).
-- **Bugs réels attrapés en route** : déterminisme `levels` (tri (t,team,level) — sinon golden flaky sous
-  `--workspace`, même classe que serde_json/preserve_order) ; mislabel talent en ARAM miroir (clé par nom de
-  joueur, pas par héros) ; fuite MediaRecorder au démontage ; clamp coords minions ; typage zerg via Born
-  (SUnitDiedEvent ne porte pas `m_unitTypeName`).
-- **Vérif E2E locale (2026-07-09, read-only box)** : PG dev + serveur (nouveau crate) + images réelles +
-  replays Cursed Hollow & Braxis. Prouvé via preview navigateur : lecture animée (dots bougent), structures
-  sur la carte + destructions dans le feed, **kill-feed cliquable (seek à 9:56 confirmé)**, bande de talents
-  (« Blue lvl 11 · Red lvl 10 », cases par tier), toggle minions (dots ternes), **objectifs Braxis dans le
-  feed** (⚡ Zerg wave 51/61/63/13 à 3:49/11:03/15:36/23:05), export-clip UI (Set in/out/Export), 0 erreur
-  console. Endpoints v7 OK (Braxis : 4 zerg_wave, 0 warning ; Cursed Hollow : 94 structs, 58 events).
-- ⚠️ **Restes honnêtes** : Braxis US-21 = inférence best-effort **non couverte par un test auto** (pas de
-  replay Braxis committé ; validée sur 1 vrai replay). Export clip = enregistrement réel non exercé en
-  headless (UI + logique testées ; MediaRecorder = navigateur). `generic.rs` inline (pas de fichier séparé).
+## 2D viewer — fast-follows (Phases 2–5): SHIPPED + VERIFIED E2E (branch `feat/replay2d-fastfollows`, 2026-07-09)
+Plan: `docs/plans/2026-07-09-visionneuse-2d-fast-follows.md` (9 batches, reviewed 2×). **8 feature batches shipped,
+each reviewed for spec+quality (findings folded in)**: animated playback play/pause+speed (US-11); structures
+alive/destroyed (US-16); clickable kill-feed → seek (US-20); ability flashes (US-18); talents/levels +
+tier strip (US-19/US-27); per-map objectives + isolated framework + gap-map warnings + Braxis waves
+(US-21→24); minions/camps toggle (US-26); webm clip export (US-25). `VIEWER_VERSION` 1→7 (extended schema,
+backward-compatible: the front ignores unknown fields; `minions` excluded from the golden to avoid bloating it).
+Everything stays **100% client-side seek**, no network request per scrub. Crate `storm-replay-viewer` still pure
+(geometry/time, zero reference data; hero/talent names resolved on the front via `players[]`+`dim_*`).
+- **Real bugs caught along the way**: `levels` determinism (sort (t,team,level) — otherwise a flaky golden under
+  `--workspace`, same class as serde_json/preserve_order); talent mislabel in mirror ARAM (key by player
+  name, not by hero); MediaRecorder leak on unmount; minion coords clamp; zerg typing via Born
+  (SUnitDiedEvent does not carry `m_unitTypeName`).
+- **Local E2E check (2026-07-09, read-only box)**: dev PG + server (new crate) + real images +
+  Cursed Hollow & Braxis replays. Proven via browser preview: animated playback (dots move), structures
+  on the map + destructions in the feed, **clickable kill-feed (seek to 9:56 confirmed)**, talent strip
+  ("Blue lvl 11 · Red lvl 10", cells per tier), minion toggle (dull dots), **Braxis objectives in the
+  feed** (⚡ Zerg wave 51/61/63/13 at 3:49/11:03/15:36/23:05), clip-export UI (Set in/out/Export), 0 console
+  errors. v7 endpoints OK (Braxis: 4 zerg_wave, 0 warnings; Cursed Hollow: 94 structs, 58 events).
+- ⚠️ **Known leftovers**: Braxis US-21 = best-effort inference **not covered by an automated test** (no
+  Braxis replay committed; validated on 1 real replay). Clip export = real recording not exercised in
+  headless (UI + logic tested; MediaRecorder = browser). `generic.rs` inline (no separate file).
 
 
-## Visionneuse 2D de replay — MVP-1 : livré + VÉRIFIÉ (calage confirmé) + mergé sur main (2026-07-09)
-Nouvelle feature (hors jalons 0→6) : onglet **« Replay 2D »** dans le détail de match — rejoue les
-positions des héros sur la minimap avec scrub à seek instantané (état vivant/mort + marqueurs de
-mort ; **pas d'HP/mana** — donnée absente du replay ; pas d'animation play/pause). Branche
-**`feat/replay2d`** (mergée dans `main`).
-- **Spec** : `docs/specs/2026-07-09-visionneuse-2d-replay-design.md` (validée, revue). **Plan** :
-  `docs/plans/2026-07-09-visionneuse-2d-replay.md` (revu 2 passes).
-- **Code livré (3 lots, revue spec+qualité chacun)** : ① crate `crates/storm-replay-viewer`
-  (extraction événements→modèle JSON normalisé `[0,1]`, mapping joueur autoritaire via
-  `SPlayerSetupEvent`, golden test) ; ② endpoint `GET /api/matches/{id}/replay2d` (décodage à la
-  demande + cache disque, réutilise le chemin `raw.rs`, méta joueurs jointes depuis Postgres) ;
-  ③ onglet front canvas (`web/src/components/Replay2D.tsx` + `web/src/replay2d.ts` seek pur testé
+## 2D replay viewer — MVP-1: shipped + VERIFIED (calibration confirmed) + merged into main (2026-07-09)
+New feature (outside milestones 0→6): **"Replay 2D"** tab in the match detail — replays the
+heroes' positions on the minimap with an instant-seek scrub (alive/dead state + death
+markers; **no HP/mana** — data missing from the replay; no play/pause animation). Branch
+**`feat/replay2d`** (merged into `main`).
+- **Spec**: `docs/specs/2026-07-09-visionneuse-2d-replay-design.md` (approved, reviewed). **Plan**:
+  `docs/plans/2026-07-09-visionneuse-2d-replay.md` (reviewed in 2 passes).
+- **Code shipped (3 batches, each reviewed for spec+quality)**: ① crate `crates/storm-replay-viewer`
+  (events→normalised `[0,1]` JSON model extraction, authoritative player mapping via
+  `SPlayerSetupEvent`, golden test); ② endpoint `GET /api/matches/{id}/replay2d` (on-demand
+  decoding + disk cache, reuses the `raw.rs` path, player meta joined from Postgres);
+  ③ front canvas tab (`web/src/components/Replay2D.tsx` + `web/src/replay2d.ts` pure seek tested with
   vitest).
-- **Bugs réels attrapés en route** : seed `m_firstUnitIndex` des `SUnitPositionsEvent` ; repaint des
-  portraits au chargement ; **golden test fragile à `serde_json/preserve_order`** (échouait sous
-  `cargo test --workspace` via unification de features — corrigé en comparaison sémantique de `Value`).
-- **Smoke local E2E OK (2026-07-09)** : Postgres dev + serveur + upload du replay `silver-city-aram`
-  → parse → `/replay2d` (HTTP 200, 499 Ko, 10 héros + samples + 21 morts + 10 joueurs nommés, coords
-  toutes ∈ [0,1], cache écrit). Front : onglet rend 10 pastilles colorées par équipe + légende noms
-  réels, **scrub repositionne les héros**, **0 requête réseau par seek** (seek 100 % client prouvé),
-  fallback dégradé sur carte sans image OK, aucune erreur console.
-- **Calage vérifié (2026-07-09)** sur une **carte imagée** — approche read-only (aucune modif du box) :
-  1 replay Cursed Hollow + les 15 images de cartes tirés du box (`docker cp` → `/tmp` → scp/rsync,
-  nettoyés), rejoués dans un serveur local. Résultat : **fond = vraie image Cursed Hollow**, 10 héros
-  **bien placés et séparés par équipe** (bleu à gauche / rouge à droite au spawn, cohérent avec la
-  géométrie de la carte), **orientation/flip-Y correcte — aucune correction nécessaire**, scrub anime
-  les positions de façon plausible (teamfights, solo-lane Dehaka en bas…), 0 erreur console. Portraits
-  en initiales seulement parce que `dim_heroes` n'est pas répliqué en local (pas de HotsPatchNotes) —
-  sur le box il l'est → portraits réels. **Feature mergée sur `main`** (merge `feat/replay2d`).
-- **Reste (opérateur, optionnel)** : déployer sur le box (rsync + `docker compose up -d --build`,
-  `--exclude .env`) pour l'avoir en live ; c'est le seul « reste ». Runbook toujours valable :
+- **Real bugs caught along the way**: `m_firstUnitIndex` seed of the `SUnitPositionsEvent`s; repaint of the
+  portraits on load; **golden test fragile to `serde_json/preserve_order`** (failed under
+  `cargo test --workspace` through feature unification — fixed with a semantic comparison of `Value`).
+- **Local E2E smoke OK (2026-07-09)**: dev Postgres + server + upload of the `silver-city-aram` replay
+  → parse → `/replay2d` (HTTP 200, 499 KB, 10 heroes + samples + 21 deaths + 10 named players, coords
+  all ∈ [0,1], cache written). Front: the tab renders 10 markers coloured by team + a legend with the real
+  names, **the scrub repositions the heroes**, **0 network requests per seek** (100% client seek proven),
+  gradient fallback on a map without an image OK, no console error.
+- **Calibration verified (2026-07-09)** on a **map with an image** — read-only approach (no change to the box):
+  1 Cursed Hollow replay + the 15 map images pulled from the box (`docker cp` → `/tmp` → scp/rsync,
+  cleaned up), replayed in a local server. Result: **background = real Cursed Hollow image**, 10 heroes
+  **well placed and separated by team** (blue on the left / red on the right at spawn, consistent with the
+  map geometry), **orientation/Y flip correct — no correction needed**, the scrub animates
+  the positions plausibly (teamfights, Dehaka solo-laning at the bottom…), 0 console errors. Portraits
+  as initials only because `dim_heroes` is not replicated locally (no HotsPatchNotes) —
+  on the box it is → real portraits. **Feature merged into `main`** (merge `feat/replay2d`).
+- **Remaining (operator, optional)**: deploy on the box (rsync + `docker compose up -d --build`,
+  `--exclude .env`) to have it live; that is the only "remaining" item. Runbook still valid:
   `docs/runbooks/2026-07-09-visionneuse-2d-verif-box.md`.
 
-## Historique (2026-06-12 → 2026-08-03)
-Les sections de cette période (jalons 0→5, déploiement box, D1/D3, images, widget, campagne de
-tests, audit d'août, spec vivante, chat) sont dans [`STATUS-historique.md`](STATUS-historique.md).
+## History (2026-06-12 → 2026-08-03)
+The sections of this period (milestones 0→5, box deployment, D1/D3, images, widget, test
+campaign, August audit, living spec, chat) are in [`STATUS-historique.md`](STATUS-historique.md).
 
-## Jalons (résumé — détail et critères dans la spec)
-0 spike **GO ✅** → 1 storm-replay **✅** → 2 storm-stats **✅** (+ 2.5 cartes ARAM) →
-3 serveur+DB+backfill **✅** → 4 front parité **socle ✅** → 5 stream+Jarvis+bascule **code ✅ +
-déployé box (non invasif) ✅** → 6 publication **prêt** (publish = action opérateur).
+## Milestones (summary — detail and criteria in the spec)
+0 spike **GO ✅** → 1 storm-replay **✅** → 2 storm-stats **✅** (+ 2.5 ARAM maps) →
+3 server+DB+backfill **✅** → 4 front parity **base ✅** → 5 stream+Jarvis+cutover **code ✅ +
+deployed on the box (non-invasive) ✅** → 6 publication **ready** (publish = operator action).
 
-## Décisions verrouillées (ne pas rouvrir sans l'opérateur)
-Rust (**confirmé par le spike** — repli .NET écarté) · Postgres · design Nexus Codex ·
-remplacement serveur Node local (EBS Twitch Azure conservé en V1, alimenté par push) · V1 =
-parité totale · pas de pré-game · aucune migration de données (backfill + recréation manuelle)
-· nom Storm Codex.
+## Locked decisions (do not reopen without the operator)
+Rust (**confirmed by the spike** — .NET fallback dropped) · Postgres · Nexus Codex design ·
+replacement of the local Node server (Twitch Azure EBS kept in V1, fed by push) · V1 =
+full parity · no pre-game · no data migration (backfill + manual recreation)
+· name Storm Codex.
 
-## Bloquants / besoins opérateur
-- ~~Échantillon de replays pour le jalon 0~~ — résolu : le jalon 0 a tourné sur le PC de jeu
-  (2 652 replays locaux, corpus reproductible via `spike/sample_corpus.ps1`).
-- Création des repos publics GitHub (storm-replay/storm-stats) au moment du jalon 6 — d'ici là,
-  tout vit dans ce repo.
+## Blockers / operator needs
+- ~~Replay sample for milestone 0~~ — resolved: milestone 0 ran on the gaming PC
+  (2,652 local replays, reproducible corpus via `spike/sample_corpus.ps1`).
+- Creation of the public GitHub repos (storm-replay/storm-stats) at milestone 6 — until then,
+  everything lives in this repo.

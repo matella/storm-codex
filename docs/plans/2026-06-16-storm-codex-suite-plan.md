@@ -1,151 +1,151 @@
 # Storm Codex Suite — Implementation Plan
 
-> **For agentic workers:** implement lot by lot. Each lot is self-contained, produces working/testable
-> software, and ships (commit + déploiement box) on its own. Steps use checkbox (`- [ ]`) syntax.
+> **For agentic workers:** implement batch by batch. Each batch is self-contained, produces working/testable
+> software, and ships (commit + box deployment) on its own. Steps use checkbox (`- [ ]`) syntax.
 
-**Goal:** Regrouper la suite HotS en un produit unifié 100% Rust côté utilisateur, lançable via un seul
-`docker compose up`, pré-seedé, auto-frais.
+**Goal:** Group the HotS suite into a unified product, 100% Rust on the user side, launchable via a single
+`docker compose up`, pre-seeded, self-refreshing.
 
-**Architecture:** storm-codex (Rust) = site unique (stats + overlays + patch notes) + un Postgres
-partagé ; HotsPatchNotes (.NET) = outil mainteneur produisant un snapshot référentiel publié ;
-uploader headless dockerisable ; repo suite parapluie avec compose + images ghcr.io.
+**Architecture:** storm-codex (Rust) = single site (stats + overlays + patch notes) + a shared
+Postgres; HotsPatchNotes (.NET) = maintainer tool producing a published reference-data snapshot;
+dockerisable headless uploader; umbrella suite repo with compose + ghcr.io images.
 
-**Tech Stack:** Rust (axum, sqlx), React+Vite+TS, Postgres, .NET (ingester, hors bundle), Docker
+**Tech Stack:** Rust (axum, sqlx), React+Vite+TS, Postgres, .NET (ingester, outside the bundle), Docker
 Compose, GitHub Actions / ghcr.io.
 
-**Réf. spec :** `docs/specs/2026-06-16-storm-codex-suite-design.md`
+**Spec ref.:** `docs/specs/2026-06-16-storm-codex-suite-design.md`
 
-**Ordre d'exécution recommandé (valeur visible d'abord, packaging ensuite) :**
-Lot 3 → 2 → 4 → 1 → 5 → 8 → 9 → 10 → 6 → 7.
-Justif : les vues patch notes (lot 3) marchent **dès maintenant** contre l'API HotsPatchNotes live
-existante (storm-codex a déjà `HOTSPATCHNOTES_URL`) → valeur immédiate ; le snapshot/seeding (1-2) et
-le packaging (6-7) sont la couche « anyone runs it » qui vient après.
+**Recommended execution order (visible value first, packaging next):**
+Batch 3 → 2 → 4 → 1 → 5 → 8 → 9 → 10 → 6 → 7.
+Rationale: the patch notes views (batch 3) work **right now** against the existing live HotsPatchNotes API
+(storm-codex already has `HOTSPATCHNOTES_URL`) → immediate value; the snapshot/seeding (1-2) and
+the packaging (6-7) are the "anyone runs it" layer that comes after.
 
 ---
 
-## Chunk 3 : Vues patch notes intégrées (storm-codex) — valeur visible d'abord
+## Chunk 3: Integrated patch notes views (storm-codex) — visible value first
 
 **Files:**
-- Modify: `crates/storm-codex-server/src/read.rs` (handlers `patches_list`, `patch_detail` — proxy de
-  l'API HotsPatchNotes, comme `now_playing`)
+- Modify: `crates/storm-codex-server/src/read.rs` (handlers `patches_list`, `patch_detail` — proxy of
+  the HotsPatchNotes API, like `now_playing`)
 - Modify: `crates/storm-codex-server/src/main.rs` (routes `/api/patches`, `/api/patches/{id}`)
-- Create: `web/src/pages/Patches.tsx` (liste) · `web/src/pages/Patch.tsx` (détail)
+- Create: `web/src/pages/Patches.tsx` (list) · `web/src/pages/Patch.tsx` (detail)
 - Modify: `web/src/api.ts` (types Patch + fetchers) · `web/src/App.tsx` (routes) ·
-  `web/src/components/Layout.tsx` (onglet « Patch Notes »)
+  `web/src/components/Layout.tsx` ("Patch Notes" tab)
 
-- [ ] **Step 1** — read.rs : `patches_list`/`patch_detail` proxient `{HOTSPATCHNOTES_URL}/api/patches`
-  et `/api/patches/{id}` via `ureq`+`spawn_blocking` (calquer `now_playing`). Best-effort → `[]`/null si indispo.
-- [ ] **Step 2** — main.rs : enregistrer les 2 routes.
+- [ ] **Step 1** — read.rs: `patches_list`/`patch_detail` proxy `{HOTSPATCHNOTES_URL}/api/patches`
+  and `/api/patches/{id}` via `ureq`+`spawn_blocking` (model on `now_playing`). Best-effort → `[]`/null if unavailable.
+- [ ] **Step 2** — main.rs: register the 2 routes.
 - [ ] **Step 3** — `cargo check -p storm-codex-server` (PASS).
-- [ ] **Step 4** — vérifier `curl /api/patches` sur le box renvoie la liste (déjà servie par HotsPatchNotes).
-- [ ] **Step 5** — api.ts : `interface Patch`/`PatchDetail` + `fetchPatches()/fetchPatch(id)`.
-- [ ] **Step 6** — Patches.tsx : liste (patchName, type, date, heroCount/mapCount), filtre par type, lien détail.
-- [ ] **Step 7** — Patch.tsx : détail (changements héros/talents/cartes ; réutilise Avatar/talentInfo).
-- [ ] **Step 8** — App.tsx routes `/patches`, `/patch/:id` ; Layout onglet « Patch Notes ».
-- [ ] **Step 9** — `npm run build` (✓ built) ; déploiement box ; vérif rendu (preview).
-- [ ] **Step 10** — commit `feat(patches): vues patch notes intégrées (proxy API)`.
+- [ ] **Step 4** — check `curl /api/patches` on the box returns the list (already served by HotsPatchNotes).
+- [ ] **Step 5** — api.ts: `interface Patch`/`PatchDetail` + `fetchPatches()/fetchPatch(id)`.
+- [ ] **Step 6** — Patches.tsx: list (patchName, type, date, heroCount/mapCount), filter by type, detail link.
+- [ ] **Step 7** — Patch.tsx: detail (hero/talent/map changes; reuses Avatar/talentInfo).
+- [ ] **Step 8** — App.tsx routes `/patches`, `/patch/:id`; Layout tab "Patch Notes".
+- [ ] **Step 9** — `npm run build` (✓ built); box deployment; check rendering (preview).
+- [ ] **Step 10** — commit `feat(patches): integrated patch notes views (API proxy)`.
 
-## Chunk 2 : Snapshot référentiel + `dim_patches` (découple du HotsPatchNotes live)
+## Chunk 2: Reference-data snapshot + `dim_patches` (decouples from live HotsPatchNotes)
 
 **Files:**
-- Create: migration `crates/storm-codex-server/migrations/000X_dim_patches.sql` (table patches + données JSONB)
-- Modify: `crates/storm-codex-server/src/dim.rs` (`sync_patches` ; option ingestion depuis snapshot)
+- Create: migration `crates/storm-codex-server/migrations/000X_dim_patches.sql` (patches table + JSONB data)
+- Modify: `crates/storm-codex-server/src/dim.rs` (`sync_patches`; option of ingestion from a snapshot)
 - Modify: `crates/storm-codex-server/src/config.rs` (`referential_url: Option<String>`)
-- Modify: `crates/storm-codex-server/src/main.rs` (ingestion au boot + refresh périodique)
-- Côté .NET (box, repo HotsPatchNotes) : commande/endpoint `export` → `referential.tar.gz`
+- Modify: `crates/storm-codex-server/src/main.rs` (ingestion at boot + periodic refresh)
+- .NET side (box, HotsPatchNotes repo): `export` command/endpoint → `referential.tar.gz`
   (heroes.json, talents.json, patches.json, images/).
 
 - [ ] **Step 1** — migration `dim_patches (id TEXT PK, name, type, live_date, data JSONB)`.
-- [ ] **Step 2** — dim.rs `sync_patches(db, base)` : depuis l'API (live) → upsert dim_patches (pattern dim_heroes).
-- [ ] **Step 3** — read.rs : `patches_list/patch_detail` lisent **dim_patches** (plus le proxy).
-- [ ] **Step 4** — config `REFERENTIAL_URL` + `dim::ingest_snapshot(url)` : télécharge le tarball,
-  ingère heroes/talents/patches, décompresse images dans `images_dir` ; versionné (skip si à jour) ;
-  fallback baké.
-- [ ] **Step 5** — main.rs : au boot, si `REFERENTIAL_URL` → ingest_snapshot ; sinon sync live (compat).
-  Refresh périodique (~24 h).
-- [ ] **Step 6** — .NET : commande `export-snapshot` produisant le tarball.
-- [ ] **Step 7** — cargo check + build web + déploiement + vérif. Commit `feat(referential): snapshot + dim_patches`.
+- [ ] **Step 2** — dim.rs `sync_patches(db, base)`: from the (live) API → upsert dim_patches (dim_heroes pattern).
+- [ ] **Step 3** — read.rs: `patches_list/patch_detail` read **dim_patches** (no longer the proxy).
+- [ ] **Step 4** — config `REFERENTIAL_URL` + `dim::ingest_snapshot(url)`: downloads the tarball,
+  ingests heroes/talents/patches, unpacks images into `images_dir`; versioned (skip if up to date);
+  baked-in fallback.
+- [ ] **Step 5** — main.rs: at boot, if `REFERENTIAL_URL` → ingest_snapshot; otherwise live sync (compat).
+  Periodic refresh (~24 h).
+- [ ] **Step 6** — .NET: `export-snapshot` command producing the tarball.
+- [ ] **Step 7** — cargo check + web build + deployment + check. Commit `feat(referential): snapshot + dim_patches`.
 
-## Chunk 4 : Notifications nouveau patch
+## Chunk 4: New patch notifications
 
-**Files:** `crates/storm-codex-server/src/dim.rs` (détection version), `ws.rs` (event `patch.new`),
-`src/config.rs` (`patch_webhook_url`), `web/src/components/Layout.tsx` (toast/pastille).
+**Files:** `crates/storm-codex-server/src/dim.rs` (version detection), `ws.rs` (`patch.new` event),
+`src/config.rs` (`patch_webhook_url`), `web/src/components/Layout.tsx` (toast/dot).
 
-- [ ] **Step 1** — à l'ingestion, si nouvelle version → broadcast WS `{type:"patch.new", name,...}`.
-- [ ] **Step 2** — Layout : écouter `patch.new` → toast + pastille sur l'onglet Patch Notes (réutilise le mécanisme replays).
-- [ ] **Step 3** — config `PATCH_WEBHOOK_URL` ; POST `{patchName,type,date,link}` best-effort (Discord/ntfy/générique).
-- [ ] **Step 4** — build + déploiement ; commit `feat(patches): notif nouveau patch (toast + webhook)`.
+- [ ] **Step 1** — at ingestion, if new version → WS broadcast `{type:"patch.new", name,...}`.
+- [ ] **Step 2** — Layout: listen to `patch.new` → toast + dot on the Patch Notes tab (reuses the replays mechanism).
+- [ ] **Step 3** — config `PATCH_WEBHOOK_URL`; best-effort POST `{patchName,type,date,link}` (Discord/ntfy/generic).
+- [ ] **Step 4** — build + deployment; commit `feat(patches): new patch notification (toast + webhook)`.
 
-## Chunk 1 : Postgres partagé (HotsPatchNotes-api → Postgres)
+## Chunk 1: Shared Postgres (HotsPatchNotes-api → Postgres)
 
-**Files:** repo HotsPatchNotes (box) : `docker-compose.yml` (activer service postgres OU pointer le
-Postgres partagé), `appsettings`/env (`ConnectionStrings__DefaultConnection` → Host=postgres). Migration EF si nécessaire.
+**Files:** HotsPatchNotes repo (box): `docker-compose.yml` (enable the postgres service OR point to the
+shared Postgres), `appsettings`/env (`ConnectionStrings__DefaultConnection` → Host=postgres). EF migration if needed.
 
-- [ ] **Step 1** — basculer la connection string de SQLite → Postgres partagé (option déjà commentée).
-- [ ] **Step 2** — appliquer les migrations EF sur la base `hotspatchnotes`.
-- [ ] **Step 3** — rebuild hotspatchnotes-api ; vérifier `/api/patches` + `/api/heroes` OK sur Postgres.
-- [ ] **Step 4** — commit (repo HotsPatchNotes) `chore(db): Postgres partagé`.
+- [ ] **Step 1** — switch the connection string from SQLite → shared Postgres (option already commented out).
+- [ ] **Step 2** — apply the EF migrations on the `hotspatchnotes` database.
+- [ ] **Step 3** — rebuild hotspatchnotes-api; check `/api/patches` + `/api/heroes` OK on Postgres.
+- [ ] **Step 4** — commit (HotsPatchNotes repo) `chore(db): shared Postgres`.
 
-## Chunk 5 : Image uploader headless
+## Chunk 5: Headless uploader image
 
-**Files:** repo Hots-Overlay/client-rs : `Dockerfile` (build headless), un binaire/feature sans GUI
-(`--headless` ou crate-feature désactivant eframe/tray), config par env (SERVER_URL, AUTH_TOKEN, REPLAY_DIRS).
+**Files:** Hots-Overlay/client-rs repo: `Dockerfile` (headless build), a binary/feature without GUI
+(`--headless` or crate feature disabling eframe/tray), config from env (SERVER_URL, AUTH_TOKEN, REPLAY_DIRS).
 
-- [ ] **Step 1** — feature `headless` : `main` sans eframe/tray, lit env, lance watcher + re-scan périodique (déjà en place), boucle.
-- [ ] **Step 2** — Dockerfile (rust:alpine ou debian) buildant la feature headless.
-- [ ] **Step 3** — test local : `docker run -e SERVER_URL=… -v <replays>:/replays` → upload OK (re-scan).
-- [ ] **Step 4** — commit (Hots-Overlay) `feat(uploader): image headless dockerisable`.
+- [ ] **Step 1** — `headless` feature: `main` without eframe/tray, reads env, starts watcher + periodic re-scan (already in place), loop.
+- [ ] **Step 2** — Dockerfile (rust:alpine or debian) building the headless feature.
+- [ ] **Step 3** — local test: `docker run -e SERVER_URL=… -v <replays>:/replays` → upload OK (re-scan).
+- [ ] **Step 4** — commit (Hots-Overlay) `feat(uploader): dockerisable headless image`.
 
-## Chunk 8 : Onboarding + assistant 1er lancement
+## Chunk 8: Onboarding + first-launch wizard
 
 **Files:** `web/src/components/Onboarding.tsx` (tour + wizard), `web/src/pages/Admin.tsx` (section
-« Connect the uploader »), localStorage `onboarding_done`.
+"Connect the uploader" section), localStorage `onboarding_done`.
 
-- [ ] **Step 1** — détecter 1er lancement (pas de operator_names && pas de matchs) → wizard : pseudo
-  opérateur, **générer token upload**, afficher URLs OBS + commande uploader.
-- [ ] **Step 2** — tour guidé (driver.js ou stepper maison) re-déclenchable via bouton « ? ».
-- [ ] **Step 3** — Admin : page « Connect the uploader » (URL serveur, token, exemples natif/docker).
-- [ ] **Step 4** — build + déploiement ; commit `feat(onboarding): wizard 1er lancement + tour`.
+- [ ] **Step 1** — detect first launch (no operator_names && no matches) → wizard: operator
+  nickname, **generate upload token**, show OBS URLs + uploader command.
+- [ ] **Step 2** — guided tour (driver.js or home-made stepper) re-triggerable via a "?" button.
+- [ ] **Step 3** — Admin: "Connect the uploader" page (server URL, token, native/docker examples).
+- [ ] **Step 4** — build + deployment; commit `feat(onboarding): first-launch wizard + tour`.
 
-## Chunk 9 : « What's new » / changelog in-app
+## Chunk 9: "What's new" / in-app changelog
 
-**Files:** `web/src/whatsnew.ts` (entrées versionnées), `web/src/components/WhatsNew.tsx`, localStorage `seen_version`.
+**Files:** `web/src/whatsnew.ts` (versioned entries), `web/src/components/WhatsNew.tsx`, localStorage `seen_version`.
 
-- [ ] **Step 1** — fichier changelog (version → liste de nouveautés).
-- [ ] **Step 2** — au load, si `APP_VERSION` > `seen_version` → modale « What's new » ; dismiss = vu.
-- [ ] **Step 3** — build + déploiement ; commit `feat(ui): panneau What's new au changement de version`.
+- [ ] **Step 1** — changelog file (version → list of new features).
+- [ ] **Step 2** — on load, if `APP_VERSION` > `seen_version` → "What's new" modal; dismiss = seen.
+- [ ] **Step 3** — build + deployment; commit `feat(ui): What's new panel on version change`.
 
-## Chunk 10 : Sauvegardes (simple, local)
+## Chunk 10: Backups (simple, local)
 
-**Files:** repo suite : `scripts/backup.sh` (pg_dump → volume), doc restore dans README ; volume Postgres nommé.
+**Files:** suite repo: `scripts/backup.sh` (pg_dump → volume), restore doc in the README; named Postgres volume.
 
-- [ ] **Step 1** — script `backup.sh` : `pg_dump` vers `./backups/storm_codex-<date>.sql.gz`.
-- [ ] **Step 2** — documenter restore (`psql < dump`). Optionnel : service cron léger dans le compose.
-- [ ] **Step 3** — commit (repo suite) `feat(ops): backup/restore simple`.
+- [ ] **Step 1** — `backup.sh` script: `pg_dump` to `./backups/storm_codex-<date>.sql.gz`.
+- [ ] **Step 2** — document restore (`psql < dump`). Optional: light cron service in the compose.
+- [ ] **Step 3** — commit (suite repo) `feat(ops): simple backup/restore`.
 
-## Chunk 6 : CI publication d'images (ghcr.io)
+## Chunk 6: Image publishing CI (ghcr.io)
 
-**Files:** `.github/workflows/publish.yml` dans chaque repo (storm-codex, HotsPatchNotes, Hots-Overlay)
-+ une Action cron snapshot dans le repo suite.
+**Files:** `.github/workflows/publish.yml` in each repo (storm-codex, HotsPatchNotes, Hots-Overlay)
++ a snapshot cron Action in the suite repo.
 
-- [ ] **Step 1** — storm-codex : workflow build+push `ghcr.io/matella/storm-codex` (sur tag/main).
-- [ ] **Step 2** — HotsPatchNotes : workflow push `ghcr.io/matella/hotspatchnotes-api`.
-- [ ] **Step 3** — Hots-Overlay : workflow push `ghcr.io/matella/hots-uploader`.
-- [ ] **Step 4** — repo suite : Action cron → run ingestion .NET → export snapshot → GitHub Release.
-- [ ] **Step 5** — ⚠️ nécessite l'opérateur : droits ghcr + secrets. Vérifier un build CI.
+- [ ] **Step 1** — storm-codex: build+push workflow `ghcr.io/matella/storm-codex` (on tag/main).
+- [ ] **Step 2** — HotsPatchNotes: push workflow `ghcr.io/matella/hotspatchnotes-api`.
+- [ ] **Step 3** — Hots-Overlay: push workflow `ghcr.io/matella/hots-uploader`.
+- [ ] **Step 4** — suite repo: cron Action → run .NET ingestion → export snapshot → GitHub Release.
+- [ ] **Step 5** — ⚠️ requires the operator: ghcr rights + secrets. Check a CI build.
 
-## Chunk 7 : Repo suite + compose + docs
+## Chunk 7: Suite repo + compose + docs
 
-**Files:** nouveau repo `storm-codex-suite` : `docker-compose.yml`, `.env.example`, `README.md`.
+**Files:** new repo `storm-codex-suite`: `docker-compose.yml`, `.env.example`, `README.md`.
 
-- [ ] **Step 1** — compose : `postgres` partagé + `storm-codex-server` (image ghcr) + `uploader-headless` (profil optionnel).
-- [ ] **Step 2** — `.env.example` : DATABASE_URL, REFERENTIAL_URL, ADMIN_TOKEN (vide=ouvert), PATCH_WEBHOOK_URL, REPLAY_DIRS…
-- [ ] **Step 3** — README : « docker compose up », onboarding, brancher l'uploader (natif/docker).
-- [ ] **Step 4** — ⚠️ opérateur : `gh repo create matella/storm-codex-suite` ; push.
-- [ ] **Step 5** — test bout-en-bout sur une machine neuve : `docker compose up` → site + données + overlays.
+- [ ] **Step 1** — compose: shared `postgres` + `storm-codex-server` (ghcr image) + `uploader-headless` (optional profile).
+- [ ] **Step 2** — `.env.example`: DATABASE_URL, REFERENTIAL_URL, ADMIN_TOKEN (empty=open), PATCH_WEBHOOK_URL, REPLAY_DIRS…
+- [ ] **Step 3** — README: "docker compose up", onboarding, plug in the uploader (native/docker).
+- [ ] **Step 4** — ⚠️ operator: `gh repo create matella/storm-codex-suite`; push.
+- [ ] **Step 5** — end-to-end test on a fresh machine: `docker compose up` → site + data + overlays.
 
 ---
 
-**Hors scope (YAGNI) :** i18n, multi-utilisateurs/auth avancée, thème clair, données de démo, réécriture .NET→Rust.
+**Out of scope (YAGNI):** i18n, multi-user/advanced auth, light theme, demo data, .NET→Rust rewrite.
 
-**Points nécessitant l'opérateur :** droits/secrets ghcr (chunk 6), création du repo suite GitHub (chunk 7).
+**Points requiring the operator:** ghcr rights/secrets (chunk 6), creation of the GitHub suite repo (chunk 7).

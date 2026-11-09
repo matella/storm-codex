@@ -1,36 +1,36 @@
-# Runbook — publication des crates (jalon 6)
+# Runbook — publishing the crates (milestone 6)
 
-Action **opérateur** (compte crates.io). Publie `storm-replay` puis `storm-stats` sur crates.io.
-Dry-run validé (`storm-replay` : 54 fichiers, 2.4 MiB, build de vérification OK).
+**Operator** action (crates.io account). Publishes `storm-replay` then `storm-stats` to crates.io.
+Dry-run validated (`storm-replay`: 54 files, 2.4 MiB, verification build OK).
 
-## Pré-requis
-- Compte crates.io (se connecter via GitHub sur https://crates.io).
-- Jeton API : crates.io → **Account Settings → API Tokens → New Token** (portée publish).
-- `cargo login <jeton>` une fois sur la machine qui publie (ici le Mac : toolchain présente).
-- Vérifier que les noms `storm-replay` / `storm-stats` sont libres sur crates.io (sinon renommer).
+## Prerequisites
+- crates.io account (sign in via GitHub on https://crates.io).
+- API token: crates.io → **Account Settings → API Tokens → New Token** (publish scope).
+- `cargo login <token>` once on the machine that publishes (here the Mac: toolchain present).
+- Check that the names `storm-replay` / `storm-stats` are free on crates.io (otherwise rename).
 
-## Ordre de publication (IMPORTANT)
-`storm-stats` dépend de `storm-replay` → publier `storm-replay` **d'abord** (crates.io doit
-l'indexer avant que `storm-stats` puisse référencer `version = "0.1"`).
+## Publication order (IMPORTANT)
+`storm-stats` depends on `storm-replay` → publish `storm-replay` **first** (crates.io must
+index it before `storm-stats` can reference `version = "0.1"`).
 
 ```bash
-cd ~/Documents/GitHub/storm-codex          # repo racine (workspace)
-cargo publish -p storm-replay              # attendre ~30-60s que l'index se mette à jour
-cargo publish -p storm-stats               # référence storm-replay 0.1 (déjà publié)
+cd ~/Documents/GitHub/storm-codex          # repo root (workspace)
+cargo publish -p storm-replay              # wait ~30-60s for the index to update
+cargo publish -p storm-stats               # references storm-replay 0.1 (already published)
 ```
-Si `storm-stats` échoue avec « no matching package named storm-replay », attendre 1 min
-(propagation de l'index) et relancer.
+If `storm-stats` fails with "no matching package named storm-replay", wait 1 min
+(index propagation) and retry.
 
 ## Notes
-- **Permanent** : une version publiée ne se supprime pas (seulement `cargo yank` pour la masquer).
-  Publie quand tu es prêt à figer `0.1.0`.
-- `repository` pointe sur `github.com/matella/storm-codex` (monorepo, privé aujourd'hui). Pour des
-  liens publics fonctionnels : soit rendre `storm-codex` public, soit scinder les crates dans leurs
-  propres repos publics. La publication crates.io marche dans tous les cas (le crate se compile
-  seul — dry-run OK) ; seul le lien « Repository » sur crates.io serait mort tant que le repo est privé.
-- `storm-codex-server` n'est **pas** publié (binaire applicatif, pas une lib) — `publish = false`
-  implicite via l'absence d'intérêt ; seuls les deux crates lib sont publiés.
+- **Permanent**: a published version cannot be deleted (only `cargo yank` to hide it).
+  Publish when you are ready to freeze `0.1.0`.
+- `repository` points to `github.com/matella/storm-codex` (monorepo, private today). For working
+  public links: either make `storm-codex` public, or split the crates into their
+  own public repos. Publishing to crates.io works in every case (the crate compiles
+  on its own — dry-run OK); only the "Repository" link on crates.io would be dead while the repo is private.
+- `storm-codex-server` is **not** published (application binary, not a lib) — implicit
+  `publish = false` through lack of interest; only the two lib crates are published.
 
-## Après publication
-- Mettre à jour les README des crates avec le badge crates.io + un exemple d'usage.
-- (optionnel) Annoncer (le créneau « parseur HotS en Rust » est vacant).
+## After publication
+- Update the crates' READMEs with the crates.io badge + a usage example.
+- (optional) Announce it (the "HotS parser in Rust" niche is vacant).
