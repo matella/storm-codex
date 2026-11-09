@@ -1,54 +1,54 @@
-# Spec vivante — Storm Codex
+# Living spec — Storm Codex
 
-Documentation **vivante** du projet : elle décrit l'état **courant** des contrats (API, données,
-événements, invariants), pas l'histoire. C'est la référence à lire avant de modifier un
-comportement, et à **mettre à jour dans le même commit** que le changement.
+The project's **living** documentation: it describes the **current** state of the contracts (API,
+data, events, invariants), not the history. It is the reference to read before changing a
+behaviour, and to **update in the same commit** as the change.
 
-## Règle de maintenance (le « vivant » de la spec)
+## Maintenance rule (what keeps the spec "living")
 
-> **Tout commit qui change un contrat documenté ici met à jour la section correspondante.**
-> Un endpoint ajouté/modifié → `05-api.md`. Une migration → `06-modele-donnees.md`. Un event
-> WS/Redis → `07-evenements.md`. Une page/route SPA → `08-frontend.md`. Une variable d'env ou
-> une étape de déploiement → `04-serveur.md` / `09-operations.md`.
-> Le code reste la source de vérité de détail ; la spec vivante documente le **contrat et le
-> pourquoi** — si les deux divergent, c'est un bug de doc à corriger dans le commit qui le révèle.
+> **Any commit that changes a contract documented here updates the matching section.**
+> An added/changed endpoint → `05-api.md`. A migration → `06-modele-donnees.md`. A WS/Redis
+> event → `07-evenements.md`. An SPA page/route → `08-frontend.md`. An env variable or
+> a deployment step → `04-serveur.md` / `09-operations.md`.
+> The code remains the source of truth for details; the living spec documents the **contract and
+> the why** — if the two diverge, it is a doc bug to fix in the commit that reveals it.
 
-## Cartographie documentaire (qui fait quoi)
+## Documentation map (who does what)
 
-| Emplacement | Nature | Cycle de vie |
+| Location | Nature | Lifecycle |
 |---|---|---|
-| `docs/spec/` (**ici**) | contrats & invariants **courants** | vivant — maintenu à chaque changement |
-| `docs/STATUS.md` | journal d'avancement, prochaine étape | vivant — mis à jour en fin de session |
-| `docs/specs/` (datées) | décisions de conception validées par l'opérateur | figées — ne pas re-trancher sans lui |
-| `docs/plans/` | plans de jalons exécutés | archives |
-| `docs/research/` | preuves : benchs, rapports de parité, références | archives (référencées ici) |
-| `docs/runbooks/` | procédures opérateur pas-à-pas | maintenus au besoin |
-| `crates/*/README.md` | vitrine + contrat public de chaque crate (publication crates.io) | vivants |
+| `docs/spec/` (**here**) | **current** contracts & invariants | living — maintained with every change |
+| `docs/STATUS.md` | progress log, next step | living — updated at end of session |
+| `docs/specs/` (dated) | design decisions approved by the operator | frozen — do not re-decide without them |
+| `docs/plans/` | executed milestone plans | archives |
+| `docs/research/` | evidence: benches, parity reports, references | archives (referenced here) |
+| `docs/runbooks/` | step-by-step operator procedures | maintained as needed |
+| `crates/*/README.md` | showcase + public contract of each crate (crates.io publication) | living |
 
-## Sommaire
+## Contents
 
-1. [Architecture & invariants](01-architecture.md) — composants, 3 étages de données, budgets perf
-2. [storm-replay](02-storm-replay.md) — contrat du décodeur de replays
-3. [storm-stats](03-storm-stats.md) — contrat des stats, parité hots-parser, tolérances
-4. [Serveur](04-serveur.md) — pipeline upload→parse→projection, config env, référentiel
-5. [API](05-api.md) — référence REST + WebSocket
-6. [Modèle de données](06-modele-donnees.md) — schéma Postgres (migrations)
-7. [Événements](07-evenements.md) — WS `/ws` et contrat Jarvis (Redis)
-8. [Frontend](08-frontend.md) — pages SPA, overlays OBS
-9. [Opérations](09-operations.md) — dev, déploiement box, CI, sauvegardes, pièges
-10. [**Workflow de développement**](10-developpement.md) — **à lire avant toute modification** :
-    cycle spec-first, checklist doc/preuve par type de changement, définition de « fini »
+1. [Architecture & invariants](01-architecture.md) — components, 3 data tiers, perf budgets
+2. [storm-replay](02-storm-replay.md) — replay decoder contract
+3. [storm-stats](03-storm-stats.md) — stats contract, hots-parser parity, tolerances
+4. [Server](04-serveur.md) — upload→parse→projection pipeline, env config, reference data
+5. [API](05-api.md) — REST + WebSocket reference
+6. [Data model](06-modele-donnees.md) — Postgres schema (migrations)
+7. [Events](07-evenements.md) — WS `/ws` and Jarvis contract (Redis)
+8. [Frontend](08-frontend.md) — SPA pages, OBS overlays
+9. [Operations](09-operations.md) — dev, box deployment, CI, backups, pitfalls
+10. [**Development workflow**](10-developpement.md) — **read before any change**:
+    spec-first cycle, doc/proof checklist per type of change, definition of "done"
 
-## Carte du repo
+## Repo map
 
-| Chemin | Contenu | Statut |
+| Path | Contents | Status |
 |---|---|---|
-| `crates/storm-replay` · `storm-stats` | bibliothèques publiques (décodage, stats) | actif — publiables crates.io |
-| `crates/storm-codex-server` | serveur (API + front + overlays) + migrations | actif |
-| `web/` | SPA React (Vite) buildée dans `web/dist` | actif |
-| `tools/` | `protocol_gen.py` (tables de protocole), `crosscheck_streams.py` (parité décodage), `parity-harness/` (parité stats vs hots-parser) | outillage — requis pour les preuves |
-| `corpus/` | replays réels de test (`spike50` bench, `stats` parité) — **non committés** (gitignorés, NAS/box) | données locales |
-| `spike/` | jalon 0 (spike go/no-go décodage, benchs .NET/Python) | archive — ne plus toucher |
-| `scripts/` | `backup.sh` (pg_dump + rétention) | actif |
-| `.github/workflows/` | `ci.yml` (clippy + tests Rust/web, Postgres de service) · `publish.yml` (image Docker → ghcr.io à chaque push `main`) | actifs |
-| `docs/` | voir cartographie ci-dessus | — |
+| `crates/storm-replay` · `storm-stats` | public libraries (decoding, stats) | active — publishable on crates.io |
+| `crates/storm-codex-server` | server (API + front-end + overlays) + migrations | active |
+| `web/` | React SPA (Vite) built into `web/dist` | active |
+| `tools/` | `protocol_gen.py` (protocol tables), `crosscheck_streams.py` (decoding parity), `parity-harness/` (stats parity vs hots-parser) | tooling — required for evidence |
+| `corpus/` | real test replays (`spike50` bench, `stats` parity) — **not committed** (gitignored, NAS/box) | local data |
+| `spike/` | milestone 0 (go/no-go decoding spike, .NET/Python benches) | archive — do not touch |
+| `scripts/` | `backup.sh` (pg_dump + retention) | active |
+| `.github/workflows/` | `ci.yml` (clippy + Rust/web tests, service Postgres) · `publish.yml` (Docker image → ghcr.io on every `main` push) | active |
+| `docs/` | see documentation map above | — |

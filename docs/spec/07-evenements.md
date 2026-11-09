@@ -1,27 +1,27 @@
-# Événements — WebSocket `/ws` et contrat Jarvis
+# Events — WebSocket `/ws` and Jarvis contract
 
-## WebSocket `/ws` (broadcast interne — site, overlays OBS)
+## WebSocket `/ws` (internal broadcast — site, OBS overlays)
 
-Canal `AppState.events` (tokio broadcast, capacité 1024). Types émis aujourd'hui :
+Channel `AppState.events` (tokio broadcast, capacity 1024). Types emitted today:
 
-| `type` | Émis quand | Champs utiles | Consommateurs |
+| `type` | Emitted when | Useful fields | Consumers |
 |---|---|---|---|
-| `match.parsed` | projection d'un match réussie | `match_id`, `map`… | SPA (invalide les queries TanStack), widget OBS |
-| `draft.updated` | toute mutation du simulateur de draft | (re-fetch `/api/draft`) | console `/draft`, page `/draft/replay`, overlay `/draft/overlay` |
-| `cast.updated` | toute mutation de la régie de cast | (**aucun état** : re-fetch `/api/cast`) | pages de la régie de cast |
-| `patch.new` | nouveau patch détecté par le job référentiel | `internalId`, `name` | notif in-app (WhatsNew) |
-| `live.updated` | morceau du feed live qui ajoute des événements, nouvelle session, fin, fermeture | `session` (**aucun état** : la vue filtrée se lit par `GET /api/live`, pour que rien hors niveau de visibilité ne passe par le WS) | page `/live` |
+| `match.parsed` | a match projection succeeded | `match_id`, `map`… | SPA (invalidates TanStack queries), OBS widget |
+| `draft.updated` | any mutation of the draft simulator | (re-fetch `/api/draft`) | `/draft` console, `/draft/replay` page, `/draft/overlay` overlay |
+| `cast.updated` | any mutation of the cast control room | (**no state**: re-fetch `/api/cast`) | cast control room pages |
+| `patch.new` | new patch detected by the reference-data job | `internalId`, `name` | in-app notification (WhatsNew) |
+| `live.updated` | a live feed chunk that adds events, new session, end, close | `session` (**no state**: the filtered view is read via `GET /api/live`, so that nothing outside the visibility level goes through the WS) | `/live` page |
 
-Contrat côté client : les events sont des **signaux de re-fetch**, pas des données complètes —
-un client laggé (RecvError::Lagged) continue sans perte fonctionnelle.
-Ajouter un type d'event = l'ajouter à ce tableau.
+Client-side contract: events are **re-fetch signals**, not complete data —
+a lagging client (RecvError::Lagged) carries on with no functional loss.
+Adding an event type = adding it to this table.
 
 ## Jarvis (Redis pub/sub) — `jarvis.rs`
 
-Opt-in (`REDIS_URL` vide = no-op ; best-effort : une panne Redis ne casse jamais le parse).
-Canal prod box : `storm-codex:match_completed` (`JARVIS_CHANNEL`).
+Opt-in (empty `REDIS_URL` = no-op; best-effort: a Redis outage never breaks the parse).
+Production channel on the box: `storm-codex:match_completed` (`JARVIS_CHANNEL`).
 
-Événement `hots.match.completed`, invariants **spine** respectés :
+Event `hots.match.completed`, **spine** invariants respected:
 
 ```json
 {
@@ -37,21 +37,21 @@ Canal prod box : `storm-codex:match_completed` (`JARVIS_CHANNEL`).
 }
 ```
 
-⚠️ **Boundary Jarvis** : le modèle Event du spine n'accepte qu'**un point** dans le type — le
-bridge côté Jarvis (`jarvis/ingest/hots_matches.py`, repo Jarvis) adapte
-`hots.match.completed` → `hots.match_completed` à l'ingestion. Ne pas « corriger » l'émetteur :
-le format à deux points est l'invariant spine côté storm-codex ; l'adaptation appartient au
-consommateur.
+⚠️ **Jarvis boundary**: the spine's Event model only accepts **one dot** in the type — the
+bridge on the Jarvis side (`jarvis/ingest/hots_matches.py`, Jarvis repo) adapts
+`hots.match.completed` → `hots.match_completed` at ingestion. Do not "fix" the emitter:
+the two-dot format is the spine invariant on the storm-codex side; the adaptation belongs to the
+consumer.
 
-Chaîne aval (repo Jarvis) : bridge → table `events` du spine → worker brief FR
-(`jarvis/notify/hots_brief.py`, perspective opérateur via `HOTS_PLAYER_NAME`) → ntfy.
+Downstream chain (Jarvis repo): bridge → the spine's `events` table → French-language brief worker
+(`jarvis/notify/hots_brief.py`, operator perspective via `HOTS_PLAYER_NAME`) → ntfy.
 
-## Webhook « nouveau patch » (sortant, optionnel)
+## "New patch" webhook (outgoing, optional)
 
-`PATCH_WEBHOOK_URL` : POST JSON `{content, patchName, internalId}` (format Discord-compatible)
-à chaque patch détecté. Best-effort.
+`PATCH_WEBHOOK_URL`: POST JSON `{content, patchName, internalId}` (Discord-compatible format)
+on every detected patch. Best-effort.
 
-## Azure / extension Twitch — DORMANT
+## Azure / Twitch extension — DORMANT
 
-`azure.rs` existe mais n'est pas câblé (décision opérateur 2026-06-13 : overlay local
-uniquement). Ne pas raccorder sans décision inverse.
+`azure.rs` exists but is not wired in (operator decision 2026-06-13: local overlay
+only). Do not connect it without a decision to the contrary.

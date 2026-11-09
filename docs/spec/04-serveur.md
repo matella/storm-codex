@@ -1,177 +1,177 @@
 # storm-codex-server — pipeline & configuration
 
-Crate : `crates/storm-codex-server` (axum 0.8 + sqlx 0.8 + tokio). Un seul binaire : API + front
-+ overlays. `PARSER_VERSION` (dans `main.rs`) pilote le re-process — **le bumper à chaque
-changement de projection**.
+Crate: `crates/storm-codex-server` (axum 0.8 + sqlx 0.8 + tokio). A single binary: API + front-end
++ overlays. `PARSER_VERSION` (in `main.rs`) drives re-processing — **bump it on every
+projection change**.
 
-## Pipeline d'upload (`upload.rs`)
+## Upload pipeline (`upload.rs`)
 
 ```
-POST /api/upload(-raw)  [Bearer token nominatif]
-  → auth (SHA-256 du token vs upload_tokens.token_hash)
-  → archive du fichier brut (ARCHIVE_DIR)          ← AVANT toute tentative de parse
-  → dédup fichier (uploads.fingerprint = SHA-256 du contenu) → 409 duplicate
-  → parse en pool (Semaphore = nb de cœurs, spawn_blocking hors thread HTTP)
-  → projection Postgres (project.rs) + lien uploads.match_id
-  → WS `match.parsed` + (opt-in) PUBLISH Redis Jarvis + (dormant) push Azure
+POST /api/upload(-raw)  [personal Bearer token]
+  → auth (SHA-256 of the token vs upload_tokens.token_hash)
+  → archive the raw file (ARCHIVE_DIR)              ← BEFORE any parse attempt
+  → file dedup (uploads.fingerprint = SHA-256 of the content) → 409 duplicate
+  → parse in a pool (Semaphore = number of cores, spawn_blocking off the HTTP thread)
+  → Postgres projection (project.rs) + uploads.match_id link
+  → WS `match.parsed` + (opt-in) Jarvis Redis PUBLISH + (dormant) Azure push
 ```
 
-- **Sémantique de réponse** : `parsed` / `409 duplicate` / `parse_failed` si le résultat arrive
-  en ≤ 2 s ; sinon `202 accepted` (pool saturé — backfill), le résultat arrive par WS.
-- **Échecs classés** (`uploads.error_class` + `reject_class()`) : classes storm-replay (io,
-  décodage…) et statuts storm-stats (unsupported_map, stats_failure/-2, unverified_build/-7…) —
-  exhaustif, visible dans `GET /api/admin/uploads`.
-- **Corps limité à 64 Mo** (`DefaultBodyLimit`) : le défaut axum (2 Mo) rejetait en 413 muet les
-  replays longs (> 2 Mo) et faisait boucler l'uploader.
-- `X-Filename` est **percent-décodé** (apostrophes de cartes : Blackheart's Bay).
-- **Archive écrite de façon atomique** (fichier temporaire puis renommage) : un arrêt en pleine
-  écriture ne laisse jamais un replay tronqué comme source de vérité.
-- **Reprise au démarrage** (`upload::resume_pending`) : un `202 accepted` met le parse en file
-  d'attente en mémoire ; les uploads restés `pending` (redémarrage avant la fin du parse) sont
-  remis en file au démarrage depuis leur archive. Le client ne renvoie jamais un fichier accepté,
-  sans cette reprise ils restaient bloqués.
-- **Écritures de statut journalisées** : un échec d'écriture de `uploads.status` (parsed ou
-  parse_failed) est logué en `error`, jamais avalé.
+- **Response semantics**: `parsed` / `409 duplicate` / `parse_failed` if the result arrives
+  within ≤ 2 s; otherwise `202 accepted` (pool saturated — backfill), the result arrives over WS.
+- **Classified failures** (`uploads.error_class` + `reject_class()`): storm-replay classes (io,
+  decoding…) and storm-stats statuses (unsupported_map, stats_failure/-2, unverified_build/-7…) —
+  exhaustive, visible in `GET /api/admin/uploads`.
+- **Body limited to 64 MB** (`DefaultBodyLimit`): the axum default (2 MB) silently rejected long
+  replays (> 2 MB) with a 413 and made the uploader loop.
+- `X-Filename` is **percent-decoded** (apostrophes in map names: Blackheart's Bay).
+- **Archive written atomically** (temporary file then rename): a shutdown mid-write never
+  leaves a truncated replay as the source of truth.
+- **Resume at startup** (`upload::resume_pending`): a `202 accepted` queues the parse in
+  memory; uploads left `pending` (restart before the parse finished) are re-queued at startup
+  from their archive. The client never resends an accepted file; without this resume they stayed
+  stuck.
+- **Status writes logged**: a failure to write `uploads.status` (parsed or
+  parse_failed) is logged at `error`, never swallowed.
 
-## Cycle de vie du processus (`main.rs`)
+## Process lifecycle (`main.rs`)
 
-- **Arrêt propre** : Ctrl-C ou SIGTERM (`docker stop`) → le serveur n'accepte plus de connexions
-  et laisse finir les requêtes en cours (`with_graceful_shutdown`). Mesuré dans le conteneur :
-  arrêt en ~0,5 s, code de sortie 0 (avant : SIGTERM ignoré, SIGKILL au bout de 10 s). Les parses
-  non terminés sont repris au démarrage suivant (ci-dessus).
-- **Compression** : `CompressionLayer` (gzip / brotli selon `Accept-Encoding`) sur toutes les
-  réponses ; le prédicat par défaut saute les petites réponses, les images et les flux.
-- **Cache HTTP du SPA** : `/assets/*` (noms fingerprintés par Vite) en
-  `Cache-Control: public, max-age=31536000, immutable` — un asset absent répond 404, jamais
-  `index.html` ; `index.html` et les routes du SPA en `no-cache`.
-- **Garde des écritures cast/draft** : middleware `auth::guard_writes` (voir 05-api.md).
+- **Graceful shutdown**: Ctrl-C or SIGTERM (`docker stop`) → the server stops accepting connections
+  and lets in-flight requests finish (`with_graceful_shutdown`). Measured in the container:
+  shutdown in ~0.5 s, exit code 0 (before: SIGTERM ignored, SIGKILL after 10 s). Unfinished
+  parses are resumed at the next startup (above).
+- **Compression**: `CompressionLayer` (gzip / brotli depending on `Accept-Encoding`) on all
+  responses; the default predicate skips small responses, images and streams.
+- **SPA HTTP cache**: `/assets/*` (names fingerprinted by Vite) as
+  `Cache-Control: public, max-age=31536000, immutable` — a missing asset answers 404, never
+  `index.html`; `index.html` and the SPA routes as `no-cache`.
+- **Cast/draft write guard**: middleware `auth::guard_writes` (see 05-api.md).
 
-## Correction du héros joué (`project.rs`)
+## Played-hero correction (`project.rs`)
 
-En ARAM (3 héros proposés + reroll), l'attribut `4002` que lit le parser — fidèle à hots-parser
-7.55.7, qui fait pareil — capte souvent un héros **proposé**, pas celui joué (ex. Braxis Outpost,
-build 98348 : les 10 héros parser sont faux, Kel'Thuzad sort « Kharazim »). storm-stats reste un
-port fidèle ; la correction vit dans la projection :
+In ARAM (3 heroes offered + reroll), attribute `4002` read by the parser — faithful to hots-parser
+7.55.7, which does the same — often captures an **offered** hero, not the one played (e.g. Braxis
+Outpost, build 98348: all 10 parser heroes are wrong, Kel'Thuzad comes out as "Kharazim").
+storm-stats remains a faithful port; the correction lives in the projection:
 
-- héros joué = **vote majoritaire des talents** du joueur via `dim_talents.tree_id → hero_id`
-  (`talent_hero`) ; aucun talent résoluble ou référentiel vide → héros du parser conservé ;
-- résolu **avant** l'écriture de `matches.data`, et appliqué partout où storm-stats a copié le
-  héros au moment de l'événement : `players[].hero` (original tracé dans `heroCorrectedFrom`),
-  `victim.hero` / `killers[].hero` de `players[].deaths`, `players[].takedowns` (de **tous** les
-  joueurs) et `match.takedowns`. Remplacement **par handle** (`player`), jamais par nom de héros
-  (deux joueurs peuvent avoir le même héros parser) ; le killer `"0"` « Nexus Forces » est intact ;
-- ne couvre pas encore (même cause, encore aux noms `4002`) : `match.heroes`,
-  `match.teams[].heroes`, `players[].with.heroes`, `players[].against.heroes` et les picks.
+- played hero = **majority vote of the player's talents** via `dim_talents.tree_id → hero_id`
+  (`talent_hero`); no resolvable talent or empty reference data → parser hero kept;
+- resolved **before** `matches.data` is written, and applied everywhere storm-stats copied the
+  hero at event time: `players[].hero` (original recorded in `heroCorrectedFrom`),
+  `victim.hero` / `killers[].hero` of `players[].deaths`, `players[].takedowns` (of **all**
+  players) and `match.takedowns`. Replacement **by handle** (`player`), never by hero name
+  (two players may have the same parser hero); the `"0"` "Nexus Forces" killer is left intact;
+- does not yet cover (same cause, still on `4002` names): `match.heroes`,
+  `match.teams[].heroes`, `players[].with.heroes`, `players[].against.heroes` and the picks.
 
-Les comptes de morts/takedowns ne changent pas (seuls les noms sont réécrits). Un match projeté
-avant ce correctif se rafraîchit par `POST /api/admin/reprocess` (`PARSER_VERSION` 2), qui re-parse
-aussi les `scouting_games` — effet de bord : chaque rapport touché est recalculé
-(`facts_version + 1`), donc une analyse importée passe `stale` alors que ses faits ne dépendent
-pas de cette projection.
+Death/takedown counts do not change (only the names are rewritten). A match projected
+before this fix is refreshed by `POST /api/admin/reprocess` (`PARSER_VERSION` 2), which also
+re-parses the `scouting_games` — side effect: every affected report is recomputed
+(`facts_version + 1`), so an imported analysis turns `stale` even though its facts do not depend
+on this projection.
 
 ## Scouting (`scouting/`)
 
-Chemin **séparé** du pipeline d'upload : `POST /api/scouting/{id}/replays` archive dans
-`ARCHIVE_DIR/scouting/<sha256>.StormReplay`, parse sur le même pool (`parse_sem`), résume
-(`summary.rs`) et insère dans `scouting_games` — jamais dans `uploads`/`matches`. Cœur pur testé
-unitairement (`summary`, `side`, `facts`, `pack`, `xlsx`, `analysis`) ; `api.rs` recalcule les
-faits sous verrou de ligne du rapport (`SELECT … FOR UPDATE`) à chaque mutation. Rôles des héros :
-`dim_heroes.data->>'expandedRole'` (le `gameStats.Role` du parser vaut 0 en partie perso).
-`POST /api/admin/reprocess` re-parse aussi les `scouting_games` périmés puis recalcule.
+A path **separate** from the upload pipeline: `POST /api/scouting/{id}/replays` archives into
+`ARCHIVE_DIR/scouting/<sha256>.StormReplay`, parses on the same pool (`parse_sem`), summarises
+(`summary.rs`) and inserts into `scouting_games` — never into `uploads`/`matches`. Pure core
+unit-tested (`summary`, `side`, `facts`, `pack`, `xlsx`, `analysis`); `api.rs` recomputes the
+facts under the report's row lock (`SELECT … FOR UPDATE`) on every mutation. Hero roles:
+`dim_heroes.data->>'expandedRole'` (the parser's `gameStats.Role` is 0 in custom games).
+`POST /api/admin/reprocess` also re-parses stale `scouting_games` and then recomputes.
 
-## Fingerprints (dédup à deux niveaux)
+## Fingerprints (two-level dedup)
 
-- `uploads.fingerprint` = SHA-256 du **contenu du fichier** — dédup rapide pré-parse.
-- `matches.fingerprint` = hash de `date|map|length|toonsTriés` — dédup **de partie** (compat
-  overlay historique). `project_match` est idempotent (delete-then-insert dans une transaction,
-  reprise sur deadlock 40P01/40001, UPSERT `players` HORS transaction pour ne pas sérialiser le
-  backfill).
+- `uploads.fingerprint` = SHA-256 of the **file content** — fast pre-parse dedup.
+- `matches.fingerprint` = hash of `date|map|length|sortedToons` — **game** dedup (compatible
+  with the historical overlay). `project_match` is idempotent (delete-then-insert in a transaction,
+  retry on deadlock 40P01/40001, `players` UPSERT OUTSIDE the transaction so as not to serialise
+  the backfill).
 
-## Référentiel (`dim.rs`) — deux sources mutuellement exclusives
+## Reference data (`dim.rs`) — two mutually exclusive sources
 
-Tâche de fond au démarrage puis toutes les 24 h, **best-effort** ; tant que `dim_heroes` est
-vide (source injoignable au démarrage, ex. box éteint), nouvel essai toutes les **10 min**.
-Les écritures en échec sont journalisées (`warn`) :
-- `REFERENTIAL_URL` (**prioritaire**) : snapshot publié `referential.tar.gz` → bundle autonome
-  sans HotsPatchNotes live (`dim::ingest_snapshot`).
-- `HOTSPATCHNOTES_URL` : API live (setup mainteneur) → `sync_heroes`, `sync_talents`,
-  `vendor_images` (portraits/cartes copiés dans `IMAGES_DIR`, servis sur `/images`),
+Background task at startup then every 24 h, **best-effort**; as long as `dim_heroes` is
+empty (source unreachable at startup, e.g. box switched off), retry every **10 min**.
+Failed writes are logged (`warn`):
+- `REFERENTIAL_URL` (**takes priority**): published `referential.tar.gz` snapshot → self-contained
+  bundle without live HotsPatchNotes (`dim::ingest_snapshot`).
+- `HOTSPATCHNOTES_URL`: live API (maintainer setup) → `sync_heroes`, `sync_talents`,
+  `vendor_images` (portraits/maps copied into `IMAGES_DIR`, served on `/images`),
   `sync_patches`, `backfill_hero_sections`.
 
-Chaque **nouveau patch** détecté → event WS `patch.new` + webhook sortant optionnel
-(`PATCH_WEBHOOK_URL`, format Discord-compatible).
+Each **new patch** detected → WS event `patch.new` + optional outgoing webhook
+(`PATCH_WEBHOOK_URL`, Discord-compatible format).
 
-## Simulateur de draft (`draft/`)
+## Draft simulator (`draft/`)
 
-Moteur **pur, zéro I/O** (`mod.rs`) : un format = liste ordonnée d'étapes `{order, action}` ;
-`first_pick: Side` découple l'ordre (First/Second) du côté visuel (blue/red). État singleton
-autoritatif en mémoire (`AppState.draft`), **persisté** dans `draft_live` (JSONB, id=1),
-rechargé au démarrage. Chaque mutation broadcast `draft.updated` sur `/ws`.
-Design : `docs/specs/2026-06-19-draft-simulator-design.md`.
-**Draft depuis un replay** (`draft/replay.rs`, `schema_version` 2) : `DraftState.replay` (`#[serde(default)]`,
-donc les états v1 se rechargent) porte la file de parties Custom chargées (`LoadedGame` : script des 16 étapes,
-pseudos), la partie courante, `fearless`, la lecture auto (`playing`, `interval_ms` 30 000 par défaut,
-`next_at_ms`). `reveal_phase`/`back_phase` avancent par **phase** (bloc d'étapes consécutives de même rôle) ;
-`select_game` prépare un draft vide (fearless : series bans = picks des parties précédentes de la file) ;
-`select_game_with` / `add_game_with` / `set_fearless_with` prennent le format d'une série de cast active, qui
-l'emporte sur `replay.fearless` (M5 : Fearless → Fearless + series bans ; Standard/Normal → Standard, les scripts
-de replay suivant l'ordre Standard à 16 étapes).
-`public()` retire scripts et pseudos des picks non révélés (vue servie par `GET /api/draft`).
-Spec : `docs/specs/2026-10-25-draft-replay-design.md`.
+**Pure, zero-I/O** engine (`mod.rs`): a format = ordered list of steps `{order, action}`;
+`first_pick: Side` decouples the order (First/Second) from the visual side (blue/red). Authoritative
+singleton state in memory (`AppState.draft`), **persisted** in `draft_live` (JSONB, id=1),
+reloaded at startup. Each mutation broadcasts `draft.updated` on `/ws`.
+Design: `docs/specs/2026-06-19-draft-simulator-design.md`.
+**Draft from a replay** (`draft/replay.rs`, `schema_version` 2): `DraftState.replay` (`#[serde(default)]`,
+so v1 states reload) carries the queue of loaded Custom games (`LoadedGame`: script of the 16 steps,
+player names), the current game, `fearless`, auto-play (`playing`, `interval_ms` 30,000 by default,
+`next_at_ms`). `reveal_phase`/`back_phase` advance by **phase** (block of consecutive steps with the same role);
+`select_game` prepares an empty draft (fearless: series bans = picks of the queue's previous games);
+`select_game_with` / `add_game_with` / `set_fearless_with` take the format of an active cast series, which
+overrides `replay.fearless` (M5: Fearless → Fearless + series bans; Standard/Normal → Standard, the replay
+scripts following the 16-step Standard order).
+`public()` strips scripts and player names from unrevealed picks (view served by `GET /api/draft`).
+Spec: `docs/specs/2026-10-25-draft-replay-design.md`.
 
-## Régie de cast (`cast/`)
+## Cast control room (`cast/`)
 
-Module `cast/` : `mod.rs` (types `Series`, `Team`, `PoolMap`/`MapStatus`, `GameRecord`, `Scene`,
-`LineupMode`, `SlideState`, `CastError`), `series.rs` (opérations **pures**, zéro I/O : pool, parties,
-score, mode de lineup), `store.rs` (persistance), `lineup.rs` (héros récents par joueur, lecture seule de `match_players`), `summary.rs` (`GameSummary` extrait de la sortie storm-stats d'un replay Custom, pur), `replay.rs` (route `POST /api/cast/games/{n}/replay` : décodage à la volée, rien en base hors `cast_live`), `api.rs` (routes). Série singleton autoritative en
-mémoire (`AppState.cast`), **persistée** dans `cast_live` (JSONB, id=1), rechargée au démarrage ; tout
-état illisible (non-objet, `players` ≠ 5, scène/format/côté/statut inconnu) → repli sur une série neuve
-inactive, le démarrage n'échoue jamais. Chaque mutation : un seul write-lock sur une copie (une erreur
-`CastError` ne change rien), puis persistance et broadcast `cast.updated` sur `/ws`. **Persistance
-versionnée** : chaque mutation reçoit une version (`AppState.cast_version`, attribuée sous le write-lock) et
-persiste **son** instantané ; les écritures sont sérialisées (`AppState.cast_saved` = dernière version écrite)
-et un instantané plus ancien que le dernier écrit est ignoré — deux mutations concurrentes ne peuvent jamais
-laisser l'ancien état en base. Échec d'écriture → la route répond `500 persist_failed` (R24 ; l'état reste
-appliqué en mémoire et `cast.updated` est diffusé ; cas limite : si la sauvegarde v2 échoue puis qu'une sauvegarde v1 concurrente réussit, la base garde v1 et la mémoire v2 — l'appelant de v2 a reçu `500 persist_failed`, cohérent avec R24, un redémarrage rechargerait v1). **Synchro draft** (`api::sync_draft`) : relit l'état de
-cast **courant** sous read-lock pendant que le write-lock du draft est tenu (jamais les deux write-locks),
-pour qu'une mutation plus récente ne soit pas écrasée par l'instantané d'une plus ancienne. Chargement
-(`store::load`) : erreur de lecture en base journalisée en `error`, JSON illisible en `warn`, `schema_version`
-plus récent que le code en `warn` (chargé quand même, lecture tolérante). Erreurs : `CastError::code()` donne
-le code stable renvoyé par les routes. Mode ouvert comme
-`/api/draft`. Règles : `mark_map` refuse une carte déjà jouée (`MapAlreadyPlayed`) ; toute mutation sauf
-`POST /api/cast/series` et `/scene` exige `active` (`SeriesInactive`).
-`POST /api/cast/series` aligne aussi le draft (format, steps, partie et série neuves : `DraftState::align_to_series`, après la synchro équipes/score/Bo, locks jamais tenus ensemble) la file de replays est conservée mais sa partie courante est désélectionnée et la lecture auto stoppée (comme `/api/draft/config`), pour que le moteur ne diverge jamais du format de la série.
-Design : `docs/specs/2026-10-25-cast-control-room-design.md`.
+Module `cast/`: `mod.rs` (types `Series`, `Team`, `PoolMap`/`MapStatus`, `GameRecord`, `Scene`,
+`LineupMode`, `SlideState`, `CastError`), `series.rs` (**pure** operations, zero I/O: pool, games,
+score, lineup mode), `store.rs` (persistence), `lineup.rs` (recent heroes per player, read-only on `match_players`), `summary.rs` (`GameSummary` extracted from the storm-stats output of a Custom replay, pure), `replay.rs` (route `POST /api/cast/games/{n}/replay`: on-the-fly decoding, nothing stored outside `cast_live`), `api.rs` (routes). Authoritative singleton series in
+memory (`AppState.cast`), **persisted** in `cast_live` (JSONB, id=1), reloaded at startup; any
+unreadable state (non-object, `players` ≠ 5, unknown scene/format/side/status) → fallback to a fresh
+inactive series, startup never fails. Each mutation: a single write lock on a copy (a
+`CastError` changes nothing), then persistence and `cast.updated` broadcast on `/ws`. **Versioned
+persistence**: each mutation gets a version (`AppState.cast_version`, assigned under the write lock) and
+persists **its own** snapshot; writes are serialised (`AppState.cast_saved` = last version written)
+and a snapshot older than the last one written is ignored — two concurrent mutations can never
+leave the old state in the database. Write failure → the route answers `500 persist_failed` (R24; the state stays
+applied in memory and `cast.updated` is broadcast; edge case: if the v2 save fails and then a concurrent v1 save succeeds, the database keeps v1 and memory v2 — the v2 caller received `500 persist_failed`, consistent with R24, a restart would reload v1). **Draft sync** (`api::sync_draft`): re-reads the
+**current** cast state under a read lock while the draft write lock is held (never both write locks),
+so that a more recent mutation is not overwritten by the snapshot of an older one. Loading
+(`store::load`): database read error logged at `error`, unreadable JSON at `warn`, `schema_version`
+newer than the code at `warn` (loaded anyway, tolerant reading). Errors: `CastError::code()` gives
+the stable code returned by the routes. Open mode like
+`/api/draft`. Rules: `mark_map` refuses an already-played map (`MapAlreadyPlayed`); every mutation except
+`POST /api/cast/series` and `/scene` requires `active` (`SeriesInactive`).
+`POST /api/cast/series` also aligns the draft (format, steps, fresh game and series: `DraftState::align_to_series`, after the teams/score/Bo sync, locks never held together); the replay queue is kept but its current game is deselected and auto-play stopped (like `/api/draft/config`), so that the engine never diverges from the series format.
+Design: `docs/specs/2026-10-25-cast-control-room-design.md`.
 
-## Feed live (`live/`)
+## Live feed (`live/`)
 
-Partie en cours, alimentée par `POST /api/live/chunk` (blocs de `TempWriteReplayP1`). `mod.rs` :
-session unique en mémoire (`AppState.live`, jamais persistée — le replay archivé reste la source
-de vérité), un `storm_replay::StreamDecoder` par stream, idempotence par offset (`plan_chunk`,
-fonction pure : doublon ignoré, chevauchement rogné, trou → `409`), plafonds mémoire (64 Mo par
-stream → `413`, fil borné à 2 000 éléments, timelines d'aptitudes limitées à 3 min), statut `live`/`ended`/
-`unreadable` (une erreur de décodage fige la session sans jamais inventer d'état). `state.rs` :
-réducteur **pur** (héros, niveaux d'équipe, talents, morts/takedowns, camps, objectifs, ordres
-d'aptitude par `_userid` avec dédup 0,3 s) et vue filtrée par niveau `self`/`allies`/`all`.
-Héros : `hero_units.json` (unité du tracker → nom canonique, 90/90), dérivé de l'archive par
-`examples/derive_hero_units.rs`. Simulateur de bout en bout : `examples/live_sim.rs`.
-Design : `docs/specs/2026-10-24-feed-live-en-partie-design.md`.
+Game in progress, fed by `POST /api/live/chunk` (blocks of `TempWriteReplayP1`). `mod.rs`:
+single in-memory session (`AppState.live`, never persisted — the archived replay remains the source
+of truth), one `storm_replay::StreamDecoder` per stream, idempotence by offset (`plan_chunk`,
+pure function: duplicate ignored, overlap trimmed, gap → `409`), memory caps (64 MB per
+stream → `413`, feed bounded to 2,000 items, ability timelines limited to 3 min), status `live`/`ended`/
+`unreadable` (a decoding error freezes the session without ever inventing state). `state.rs`:
+**pure** reducer (heroes, team levels, talents, deaths/takedowns, camps, objectives, ability
+orders by `_userid` with 0.3 s dedup) and view filtered by level `self`/`allies`/`all`.
+Heroes: `hero_units.json` (tracker unit → canonical name, 90/90), derived from the archive by
+`examples/derive_hero_units.rs`. End-to-end simulator: `examples/live_sim.rs`.
+Design: `docs/specs/2026-10-24-feed-live-en-partie-design.md`.
 
-## Configuration (env — `config.rs`, modèle : `.env.example`)
+## Configuration (env — `config.rs`, template: `.env.example`)
 
-| Variable | Défaut | Rôle |
+| Variable | Default | Role |
 |---|---|---|
-| `DATABASE_URL` | **requise** | Postgres |
-| `BIND_ADDR` | `127.0.0.1:8088` | écoute HTTP |
-| `ARCHIVE_DIR` | `./.archive` | replays bruts (source de vérité) |
-| `RAW_CACHE_DIR` / `RAW_CACHE_MAX_BYTES` | `./.raw-cache` / 5 Gio | cache LRU des dumps |
-| `ADMIN_TOKEN` | vide = **mode ouvert** | vide : aucune auth admin (auto-hébergement LAN/Tailscale) ; défini : Bearer requis sur les écritures admin |
-| `WEB_DIR` | vide = API seule | front buildé servi sur `/` (fallback SPA, index en `no-cache`) |
-| `IMAGES_DIR` | `./.images` | images vendorisées, servies sur `/images` |
-| `REDIS_URL` / `JARVIS_CHANNEL` | vide = pas d'émission / `jarvis:events` (prod box : `storm-codex:match_completed`) | événements Jarvis |
-| `HOTSPATCHNOTES_URL` / `REFERENTIAL_URL` | vides | référentiel (cf. ci-dessus) |
-| `ORPHEUS_URL` | vide | proxy musique pour `/api/now-playing` |
-| `PATCH_WEBHOOK_URL` | vide | notif sortante nouveau patch |
-| `AZURE_PUSH_URL` / `AZURE_PUSH_TOKEN` | vides | **dormant** (extension Twitch abandonnée) |
+| `DATABASE_URL` | **required** | Postgres |
+| `BIND_ADDR` | `127.0.0.1:8088` | HTTP listen address |
+| `ARCHIVE_DIR` | `./.archive` | raw replays (source of truth) |
+| `RAW_CACHE_DIR` / `RAW_CACHE_MAX_BYTES` | `./.raw-cache` / 5 GiB | LRU cache of dumps |
+| `ADMIN_TOKEN` | empty = **open mode** | empty: no admin auth (LAN/Tailscale self-hosting); set: Bearer required on admin writes |
+| `WEB_DIR` | empty = API only | built front-end served on `/` (SPA fallback, index as `no-cache`) |
+| `IMAGES_DIR` | `./.images` | vendored images, served on `/images` |
+| `REDIS_URL` / `JARVIS_CHANNEL` | empty = no emission / `jarvis:events` (box production: `storm-codex:match_completed`) | Jarvis events |
+| `HOTSPATCHNOTES_URL` / `REFERENTIAL_URL` | empty | reference data (see above) |
+| `ORPHEUS_URL` | empty | music proxy for `/api/now-playing` |
+| `PATCH_WEBHOOK_URL` | empty | outgoing new-patch notification |
+| `AZURE_PUSH_URL` / `AZURE_PUSH_TOKEN` | empty | **dormant** (Twitch extension abandoned) |
 
-Serveur **stateless** hors dossiers de données : toute la config par env (V2-ready).
+**Stateless** server apart from the data directories: all config through env (V2-ready).

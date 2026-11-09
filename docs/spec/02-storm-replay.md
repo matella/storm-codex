@@ -1,59 +1,59 @@
-# storm-replay — contrat du décodeur
+# storm-replay — decoder contract
 
-Crate : `crates/storm-replay` (bibliothèque publique, MIT). Vitrine : son `README.md`.
+Crate: `crates/storm-replay` (public library, MIT). Showcase: its `README.md`.
 
-## Contrat
+## Contract
 
-- **Entrée** : un fichier `.StormReplay` (archive MPQ Blizzard).
-- **Sortie** : les **7 streams** du protocole, en `serde_json::Value` normalisé **identique à
-  heroprotocol** (parité bit-exacte prouvée par `tools/crosscheck_streams.py`) :
+- **Input**: a `.StormReplay` file (Blizzard MPQ archive).
+- **Output**: the protocol's **7 streams**, as normalised `serde_json::Value` **identical to
+  heroprotocol** (bit-exact parity proven by `tools/crosscheck_streams.py`):
   `header`, `replay.details`, `replay.initdata`, `replay.attributes.events`,
   `replay.message.events`, `replay.game.events`, `replay.tracker.events`.
-- **Décodage paresseux** : `Replay::open` ne décode que le header ; chaque stream à la demande
+- **Lazy decoding**: `Replay::open` only decodes the header; each stream on demand
   (`details()`, `tracker_events()`, `message_events()`, …).
-- **Erreurs typées** (`thiserror`), classes stables — le serveur s'en sert pour classer les
-  échecs d'upload (`error_class`).
-- **Streams bruts** : `battlelobby_raw()`, `tracker_events_raw()`, `game_events_raw()` rendent les
-  octets non décodés (simulateur live, tests).
+- **Typed errors** (`thiserror`), stable classes — the server uses them to classify
+  upload failures (`error_class`).
+- **Raw streams**: `battlelobby_raw()`, `tracker_events_raw()`, `game_events_raw()` return the
+  undecoded bytes (live simulator, tests).
 
-## Décodage par morceaux (`StreamDecoder`)
+## Chunked decoding (`StreamDecoder`)
 
-Pour le feed live (`docs/specs/2026-10-24-feed-live-en-partie-design.md`) : HotS écrit
-`replay.tracker.events` et `replay.game.events` pendant la partie, par blocs de 4 Ko, sans en-tête
-MPQ ni build.
+For the live feed (`docs/specs/2026-10-24-feed-live-en-partie-design.md`): HotS writes
+`replay.tracker.events` and `replay.game.events` during the game, in 4 KB blocks, with no MPQ
+header and no build.
 
-- `StreamDecoder::new(StreamKind::{Tracker, Game}, build: Option<u32>)` — `None` = dernier protocole
-  embarqué ; un build sans table → repli signalé par `protocol_fallback()`.
-- `feed(&[u8]) -> Result<Vec<Value>>` rend les événements **complets**, identiques champ pour champ
-  à `tracker_events()` / `game_events()` ; un événement coupé (`Error::Truncated`) attend le morceau
-  suivant. Toute autre erreur remonte et laisse le décodeur dans son état d'avant l'appel.
-- `consumed()`, `pending()`, `gameloop()` exposent le point de reprise.
-- Le chemin d'un replay entier (`tracker_events()`…) n'est pas modifié : budget perf inchangé.
+- `StreamDecoder::new(StreamKind::{Tracker, Game}, build: Option<u32>)` — `None` = latest embedded
+  protocol; a build without a table → fallback reported by `protocol_fallback()`.
+- `feed(&[u8]) -> Result<Vec<Value>>` returns the **complete** events, identical field for field
+  to `tracker_events()` / `game_events()`; a cut-off event (`Error::Truncated`) waits for the next
+  chunk. Any other error is propagated and leaves the decoder in its state from before the call.
+- `consumed()`, `pending()`, `gameloop()` expose the resume point.
+- The whole-replay path (`tracker_events()`…) is unchanged: perf budget unchanged.
 
-## Tables de protocole
+## Protocol tables
 
-- **Générées, jamais écrites à la main** : `tools/protocol_gen.py` exporte les typeinfos depuis
-  un clone GitHub de `Blizzard/heroprotocol` (pas le package PyPI, obsolète), déduplique
-  (390 builds → ~32 tables) et les embarque dans `protocols/` (committées).
-- **Build inconnu** → fallback sur le dernier protocole connu (comportement heroprotocol),
-  signalé par `Replay::protocol_fallback()` — jamais silencieux.
-- **À chaque patch HotS** : relancer `protocol_gen.py` si le build introduit un nouveau protocole.
+- **Generated, never hand-written**: `tools/protocol_gen.py` exports the typeinfos from
+  a GitHub clone of `Blizzard/heroprotocol` (not the PyPI package, which is obsolete), deduplicates
+  them (390 builds → ~32 tables) and embeds them in `protocols/` (committed).
+- **Unknown build** → fallback to the latest known protocol (heroprotocol behaviour),
+  reported by `Replay::protocol_fallback()` — never silent.
+- **On every HotS patch**: rerun `protocol_gen.py` if the build introduces a new protocol.
 
 ## Performance
 
-Médiane 102 ms les 7 streams (p95 205 ms, plancher bzip2 ~50–115 ms incompressible) ; hot path
-stats (header+details+tracker) ~12 ms. Feature `fast-alloc` (mimalloc) recommandée pour tout
-consommateur intensif (~×1,6 sur Windows). Archive réelle : 2 821/2 821 décodés (22 builds
+Median 102 ms for all 7 streams (p95 205 ms, bzip2 floor ~50–115 ms, incompressible); stats hot
+path (header+details+tracker) ~12 ms. The `fast-alloc` feature (mimalloc) is recommended for any
+heavy consumer (~×1.6 on Windows). Real archive: 2,821/2,821 decoded (22 builds
 2024→2026).
 
-## Binaires de diagnostic
+## Diagnostic binaries
 
-- `storm-replay-dump <replay> --stream <nom>` — dump JSON d'un stream ; `--bench <dir>`.
-- `storm-replay-verify <dir> [--csv]` — décode une archive entière, classe les échecs.
+- `storm-replay-dump <replay> --stream <name>` — JSON dump of a stream; `--bench <dir>`.
+- `storm-replay-verify <dir> [--csv]` — decodes a whole archive, classifies failures.
 
 ## Tests
 
-`tests/mini_corpus.rs` sur les replays committés de `tests/data/` (CI publique sans corpus
-privé). Le corpus complet vit sur le NAS/box (`fetch-corpus`). `tests/stream_decoder.rs` : le
-décodage par morceaux (4 Ko, tailles pseudo-aléatoires, octet par octet) égale le décodage entier ;
-des octets aléatoires ne font jamais paniquer.
+`tests/mini_corpus.rs` on the committed replays in `tests/data/` (public CI without the private
+corpus). The full corpus lives on the NAS/box (`fetch-corpus`). `tests/stream_decoder.rs`:
+chunked decoding (4 KB, pseudo-random sizes, byte by byte) equals whole decoding;
+random bytes never cause a panic.

@@ -1,78 +1,78 @@
-# Modèle de données — Postgres
+# Data model — Postgres
 
-Source de vérité : `crates/storm-codex-server/migrations/` (embarquées, exécutées au démarrage
-par `sqlx::migrate!`). Stratégie : **JSONB pour la projection sans perte** (re-process
-idempotent) + **colonnes scalaires promues** pour les axes de filtre/tri chauds (indexées).
+Source of truth: `crates/storm-codex-server/migrations/` (embedded, run at startup
+by `sqlx::migrate!`). Strategy: **JSONB for the lossless projection** (idempotent
+re-process) + **promoted scalar columns** for the hot filter/sort axes (indexed).
 
-## Cœur (0001, 0002)
+## Core (0001, 0002)
 
-| Table | Rôle | Points clés |
+| Table | Role | Key points |
 |---|---|---|
-| `upload_tokens` | tokens d'upload nominatifs | `token_hash` = SHA-256 hex (jamais le clair) ; `revoked_at` |
-| `uploads` | 1 ligne par fichier reçu (traçabilité) | `fingerprint` (contenu, UNIQUE), `archived_path`, `status` ∈ pending/parsed/duplicate/parse_failed, `error_class`/`error_msg`, `parser_version`, `match_id` → matches (0002) |
-| `matches` | projection d'une partie | `fingerprint` (partie, UNIQUE), scalaires promus (build, mode, map, length, played_at, winner, first_*), **`data` = objet `match` storm-stats complet** (sauf héros des `takedowns` : héros joué, cf. `04-serveur.md` § Correction du héros joué), `parser_version` |
-| `match_players` | 10 lignes par match | scalaires promus (hero, team, win, kills…), **`data` = objet `player` complet** — `hero` et les héros copiés dans `deaths`/`takedowns` = héros joué (talents), original dans `heroCorrectedFrom` —, UNIQUE (match_id, toon_handle), CASCADE ; **`hotkey_profile`** (migration 0015) = `SUserOptionsEvent.m_hotkeyProfile`, nom de profil de raccourcis du joueur (index sur `lower(btrim(…))`) ; NULL tant que le replay n'est pas re-traité (`PARSER_VERSION` 3) ; **`apm`** (migration 0016, `DOUBLE PRECISION`) = SCmdEvent du joueur ÷ minutes de partie (`matches.length`), NULL tant que non re-traité (`PARSER_VERSION` 4) ou durée inconnue |
-| `players` | référentiel joueurs agrégé | `toon_handle` PK, `last_name`, `names` (alias JSONB) — dénormalisé, best-effort, dérivable de `match_players`. **Ni `last_name` ni l'ordre de `names` ne sont chronologiques** (UPSERT dans l'ordre de traitement) : le pseudo actuel et l'ordre des pseudos viennent de l'**historique daté** `match_players.name` × `matches.played_at` (`players/names.rs` ; `played_at` NULL = le plus ancien) |
-| `player_links` | décisions « même personne » (0011) | `(toon_a, toon_b)` PK avec `CHECK toon_a < toon_b` (paire ordonnée, une ligne par paire), `status` ∈ confirmed/dismissed, `decided_at`. Les suggestions sont calculées à la demande, jamais stockées. Aucun `CREATE EXTENSION` |
+| `upload_tokens` | personal upload tokens | `token_hash` = hex SHA-256 (never the plaintext); `revoked_at` |
+| `uploads` | 1 row per received file (traceability) | `fingerprint` (content, UNIQUE), `archived_path`, `status` ∈ pending/parsed/duplicate/parse_failed, `error_class`/`error_msg`, `parser_version`, `match_id` → matches (0002) |
+| `matches` | projection of a game | `fingerprint` (game, UNIQUE), promoted scalars (build, mode, map, length, played_at, winner, first_*), **`data` = complete storm-stats `match` object** (except the heroes in `takedowns`: played hero, see `04-serveur.md` § Played-hero correction), `parser_version` |
+| `match_players` | 10 rows per match | promoted scalars (hero, team, win, kills…), **`data` = complete `player` object** — `hero` and the heroes copied into `deaths`/`takedowns` = played hero (talents), original in `heroCorrectedFrom` —, UNIQUE (match_id, toon_handle), CASCADE; **`hotkey_profile`** (migration 0015) = `SUserOptionsEvent.m_hotkeyProfile`, the player's hotkey profile name (index on `lower(btrim(…))`); NULL until the replay is re-processed (`PARSER_VERSION` 3); **`apm`** (migration 0016, `DOUBLE PRECISION`) = the player's SCmdEvents ÷ game minutes (`matches.length`), NULL until re-processed (`PARSER_VERSION` 4) or unknown duration |
+| `players` | aggregated player reference | `toon_handle` PK, `last_name`, `names` (JSONB aliases) — denormalised, best-effort, derivable from `match_players`. **Neither `last_name` nor the order of `names` is chronological** (UPSERT in processing order): the current name and the order of names come from the **dated history** `match_players.name` × `matches.played_at` (`players/names.rs`; NULL `played_at` = oldest) |
+| `player_links` | "same person" decisions (0011) | `(toon_a, toon_b)` PK with `CHECK toon_a < toon_b` (ordered pair, one row per pair), `status` ∈ confirmed/dismissed, `decided_at`. Suggestions are computed on demand, never stored. No `CREATE EXTENSION` |
 
-## Définitions manuelles (0001, 0004)
+## Manual definitions (0001, 0004)
 
-`teams` (roster JSONB de ToonHandles + colonne `league` texte — 0004), `leagues` (héritée,
-inutilisée : le groupement se fait par `teams.league`), `collections` (match_ids JSONB).
-Recréées à la main dans l'UI — **jamais** dérivées des replays.
+`teams` (roster JSONB of ToonHandles + `league` text column — 0004), `leagues` (legacy,
+unused: grouping is done by `teams.league`), `collections` (match_ids JSONB).
+Recreated by hand in the UI — **never** derived from replays.
 
-## Référentiel répliqué (0001, 0005, 0006, 0007) — propriété du job `dim.rs`
+## Replicated reference data (0001, 0005, 0006, 0007) — owned by the `dim.rs` job
 
-| Table | Contenu | Clé de jointure |
+| Table | Contents | Join key |
 |---|---|---|
-| `dim_heroes` | 90 héros (nom, rôle, univers, data) | nom interne |
-| `dim_talents` | ~1 900 talents | **`tree_id`** (0005) = `talentTreeId`, le même identifiant que `player.talents[TierNChoice]` écrit par le parser |
-| `dim_patches` | liste des patch notes | `internal_id` ; détail proxifié à la demande |
-| `patch_hero_sections` | sections héros des patchs (0007) | `hero_key` (nom normalisé) → liens héros ↔ patch, classification BUFF/NERF/MIXED |
+| `dim_heroes` | 90 heroes (name, role, universe, data) | internal name |
+| `dim_talents` | ~1,900 talents | **`tree_id`** (0005) = `talentTreeId`, the same identifier as `player.talents[TierNChoice]` written by the parser |
+| `dim_patches` | list of patch notes | `internal_id`; detail proxied on demand |
+| `patch_hero_sections` | hero sections of patches (0007) | `hero_key` (normalised name) → hero ↔ patch links, BUFF/NERF/MIXED classification |
 
-Ces tables sont **reconstruisibles** (refresh complet au démarrage/24 h) — pas de donnée primaire.
+These tables are **rebuildable** (full refresh at startup/24 h) — no primary data.
 
-## Réglages & draft (0003, 0008)
+## Settings & draft (0003, 0008)
 
-- `app_settings` (clé/valeur JSONB) : premier usage `operator_names` — les comptes de
-  l'opérateur, pour afficher SA perspective (session, matches, widget, brief Jarvis).
-- `draft_live` : singleton (id=1, CHECK) — tout l'état du simulateur de draft en JSONB
-  (config, picks/bans, historique fearless), horodaté.
+- `app_settings` (JSONB key/value): first use `operator_names` — the operator's
+  accounts, to display THEIR perspective (session, matches, widget, Jarvis brief).
+- `draft_live`: singleton (id=1, CHECK) — the whole draft simulator state as JSONB
+  (config, picks/bans, fearless history), timestamped.
 
-## Régie de cast (0012)
+## Cast control room (0012)
 
-- `cast_live` : singleton (id=1, CHECK) — toute la série de cast (équipes, pool de cartes, parties,
-  scène, diaporama) en JSONB, horodaté ; `schema_version` dans le JSON, champs manquants → défauts.
-  `series_id` (chaîne uuid, `""` avant la première série) : identité posée par `POST /api/cast/series`, re-vérifiée
-  par le dépôt de replay après le décodage (une série remplacée entre-temps → `409 series_changed`).
-  `games[].summary` (`GameSummary`, posé par `POST /api/cast/games/{n}/replay`, jamais re-décodé) :
-  `{duration_secs, winner, takedowns:[b,r], team_level, structures, merc_camps, objectives (chacun [b,r] ou null),
-  bans:[[héros],[héros]], players:[PlayerSummary], xp_lead:[[s, avance Blue]]}` ;
+- `cast_live`: singleton (id=1, CHECK) — the whole cast series (teams, map pool, games,
+  scene, slideshow) as JSONB, timestamped; `schema_version` in the JSON, missing fields → defaults.
+  `series_id` (uuid string, `""` before the first series): identity set by `POST /api/cast/series`, re-checked
+  by the replay upload after decoding (a series replaced in the meantime → `409 series_changed`).
+  `games[].summary` (`GameSummary`, set by `POST /api/cast/games/{n}/replay`, never re-decoded):
+  `{duration_secs, winner, takedowns:[b,r], team_level, structures, merc_camps, objectives (each [b,r] or null),
+  bans:[[heroes],[heroes]], players:[PlayerSummary], xp_lead:[[s, Blue lead]]}`;
   `PlayerSummary = {side, toon, name, hero, kills, takedowns, deaths, assists, hero_damage, siege_damage, healing}`
-  (chemins storm-stats : [03-storm-stats.md](03-storm-stats.md) « Guide de lecture »). Un `summary` illisible
-  à la relecture devient `null` (la série reste chargeable).
-- `cast_logo` (0013) : un logo par côté — `side` PK (`blue`|`red`, CHECK), `mime`, `bytes` BYTEA (≤ 512 Ko),
-  `updated_at` (sert de version `?v=` dans `Team.logo`).
+  (storm-stats paths: [03-storm-stats.md](03-storm-stats.md) "Reading guide"). A `summary` that is unreadable
+  when re-read becomes `null` (the series stays loadable).
+- `cast_logo` (0013): one logo per side — `side` PK (`blue`|`red`, CHECK), `mime`, `bytes` BYTEA (≤ 512 KB),
+  `updated_at` (used as the `?v=` version in `Team.logo`).
 
 ## Scouting (0010)
 
-Rapports de scouting (spec `docs/specs/2026-09-26-rapports-scouting-design.md`). **Isolés** des
-tables de stats personnelles : un replay adverse n'est jamais projeté dans `matches`.
+Scouting reports (spec `docs/specs/2026-09-26-rapports-scouting-design.md`). **Isolated** from the
+personal stats tables: an opponent's replay is never projected into `matches`.
 
-| Table | Rôle | Points clés |
+| Table | Role | Key points |
 |---|---|---|
-| `scouting_reports` | un rapport | `title`, `target_name`, `roster`/`anchors` (JSONB de toon_handles ; roster `[]` = détection auto), `facts` = instantané `{facts, detection, roster, roster_auto}` recalculé à chaque mutation, `facts_version`, `analysis` (JSON normalisé, une seule, écrasable) + `analysis_facts_version` / `analysis_model` / `analysis_imported_at` |
-| `scouting_games` | un replay d'un rapport | UNIQUE `(report_id, fingerprint)`, `file_sha256`, `archived_path` (`ARCHIVE_DIR/scouting/`), `target_team` + `target_source` (`roster`/`anchor`/`manual`), **`summary`** = résumé compact (seule entrée du calcul des faits), `data` = sortie storm-stats complète, `parser_version` ; CASCADE depuis le rapport |
+| `scouting_reports` | a report | `title`, `target_name`, `roster`/`anchors` (JSONB of toon_handles; roster `[]` = auto detection), `facts` = snapshot `{facts, detection, roster, roster_auto}` recomputed on every mutation, `facts_version`, `analysis` (normalised JSON, only one, overwritable) + `analysis_facts_version` / `analysis_model` / `analysis_imported_at` |
+| `scouting_games` | one replay of a report | UNIQUE `(report_id, fingerprint)`, `file_sha256`, `archived_path` (`ARCHIVE_DIR/scouting/`), `target_team` + `target_source` (`roster`/`anchor`/`manual`), **`summary`** = compact summary (the only input to the facts computation), `data` = complete storm-stats output, `parser_version`; CASCADE from the report |
 
-Le statut d'un rapport (`empty`/`ready`/`analyzed`/`stale`) est **dérivé**, jamais stocké.
+A report's status (`empty`/`ready`/`analyzed`/`stale`) is **derived**, never stored.
 
-## Conventions pour toute nouvelle migration
+## Conventions for any new migration
 
-1. Fichier `NNNN_description.sql` séquentiel — **jamais** modifier une migration appliquée
-   (contrôlé en CI : `scripts/check-migrations.sh` refuse toute modification d'une migration déjà
-   présente sur la branche cible). Fins de
-   ligne forcées en LF (`.gitattributes`) : sqlx vérifie la somme de contrôle des octets exacts, un
-   checkout Windows en CRLF donnait `VersionMismatch` sur une base migrée en LF.
-2. Grosse structure → JSONB ; axe de filtre/tri → colonne promue + index.
-3. Si la projection change de forme : bump `PARSER_VERSION` (main.rs) → `POST /api/admin/reprocess`.
-4. Mettre à jour **ce fichier** dans le même commit.
+1. Sequential `NNNN_description.sql` file — **never** modify an applied migration
+   (checked in CI: `scripts/check-migrations.sh` rejects any change to a migration already
+   present on the target branch). Line
+   endings forced to LF (`.gitattributes`): sqlx checks the checksum of the exact bytes, a
+   Windows checkout with CRLF gave `VersionMismatch` on a database migrated with LF.
+2. Large structure → JSONB; filter/sort axis → promoted column + index.
+3. If the projection changes shape: bump `PARSER_VERSION` (main.rs) → `POST /api/admin/reprocess`.
+4. Update **this file** in the same commit.
