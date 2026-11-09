@@ -1,16 +1,16 @@
-//! Décodage d'un stream d'événements **nu** (sans archive MPQ), alimenté par morceaux.
+//! Decoding of a **bare** event stream (without an MPQ archive), fed in chunks.
 //!
-//! Pendant une partie, HotS écrit `replay.tracker.events` et `replay.game.events` dans
-//! `%TEMP%\Heroes of the Storm\TempWriteReplayP1\` par blocs de 4 Ko ; le dernier événement d'un
-//! bloc est souvent coupé. [`StreamDecoder`] rend les événements complets au fil de l'eau et garde
-//! la queue coupée pour le morceau suivant. Mesures : `docs/research/2026-10-24-tempwritereplay-live.md`.
+//! During a game, HotS writes `replay.tracker.events` and `replay.game.events` into
+//! `%TEMP%\Heroes of the Storm\TempWriteReplayP1\` in 4 KB blocks; the last event of a
+//! block is often cut. [`StreamDecoder`] returns the complete events as they come and keeps
+//! the cut tail for the next chunk. Measurements: `docs/research/2026-10-24-tempwritereplay-live.md`.
 
 use crate::error::{Error, Result};
 use crate::protocol::{self, Protocol, StreamKind};
 use crate::value::Value;
 use std::sync::Arc;
 
-/// Décodeur reprenable d'un stream tracker ou game events.
+/// Resumable decoder for a tracker or game events stream.
 ///
 /// ```no_run
 /// # fn main() -> storm_replay::Result<()> {
@@ -19,7 +19,7 @@ use std::sync::Arc;
 /// let bloc = std::fs::read("replay.tracker.events")?;
 /// for chunk in bloc.chunks(4096) {
 ///     for event in dec.feed(chunk)? {
-///         // événements complets uniquement
+///         // complete events only
 ///         let _ = event;
 ///     }
 /// }
@@ -28,17 +28,17 @@ use std::sync::Arc;
 pub struct StreamDecoder {
     protocol: Arc<Protocol>,
     kind: StreamKind,
-    /// Octets reçus mais pas encore décodés en événement complet.
+    /// Bytes received but not yet decoded into a complete event.
     pending: Vec<u8>,
-    /// Gameloop du dernier événement complet (les deltas du stream partent de là).
+    /// Gameloop of the last complete event (the stream's deltas start from there).
     gameloop: i64,
     consumed: u64,
     fallback: Option<(u32, u32)>,
 }
 
 impl StreamDecoder {
-    /// `build = None` → dernier protocole embarqué. Un build sans table exacte est décodé avec le
-    /// dernier protocole connu ; [`StreamDecoder::protocol_fallback`] le signale.
+    /// `build = None` → last embedded protocol. A build without an exact table is decoded with the
+    /// last known protocol; [`StreamDecoder::protocol_fallback`] flags it.
     pub fn new(kind: StreamKind, build: Option<u32>) -> Result<StreamDecoder> {
         let (protocol, fallback) = match build {
             Some(b) => {
@@ -57,20 +57,20 @@ impl StreamDecoder {
         })
     }
 
-    /// Le stream décodé par ce décodeur.
+    /// The stream decoded by this decoder.
     pub fn kind(&self) -> StreamKind {
         self.kind
     }
 
-    /// `Some((build demandé, build utilisé))` si le build demandé n'a pas de table exacte.
+    /// `Some((requested build, used build))` if the requested build has no exact table.
     pub fn protocol_fallback(&self) -> Option<(u32, u32)> {
         self.fallback
     }
 
-    /// Ajoute des octets et rend les événements **complets** qu'ils terminent. Un événement coupé
-    /// en fin de morceau attend le suivant. Une erreur autre qu'une fin de données (grammaire,
-    /// eventid inconnu — typiquement un mauvais protocole) remonte, et le décodeur reste dans son
-    /// état d'avant l'appel : les octets fautifs ne sont pas consommés.
+    /// Adds bytes and returns the **complete** events they finish. An event cut
+    /// at the end of a chunk waits for the next one. An error other than an end of data (grammar,
+    /// unknown eventid — typically a wrong protocol) is returned, and the decoder stays in its
+    /// state from before the call: the faulty bytes are not consumed.
     pub fn feed(&mut self, bytes: &[u8]) -> Result<Vec<Value>> {
         self.pending.extend_from_slice(bytes);
         let partial = match self
@@ -84,9 +84,7 @@ impl StreamDecoder {
             }
         };
         if partial.consumed > self.pending.len() {
-            return Err(Error::Corrupted(
-                "décodage partiel au-delà du buffer".into(),
-            ));
+            return Err(Error::Corrupted("partial decode beyond the buffer".into()));
         }
         self.pending.drain(..partial.consumed);
         self.consumed += partial.consumed as u64;
@@ -94,17 +92,17 @@ impl StreamDecoder {
         Ok(partial.events)
     }
 
-    /// Octets déjà décodés en événements complets depuis le début du stream.
+    /// Bytes already decoded into complete events since the start of the stream.
     pub fn consumed(&self) -> u64 {
         self.consumed
     }
 
-    /// Octets en attente (un événement coupé).
+    /// Pending bytes (a cut event).
     pub fn pending(&self) -> usize {
         self.pending.len()
     }
 
-    /// Gameloop du dernier événement complet (0 avant le premier).
+    /// Gameloop of the last complete event (0 before the first one).
     pub fn gameloop(&self) -> i64 {
         self.gameloop
     }

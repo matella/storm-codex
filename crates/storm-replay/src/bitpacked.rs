@@ -1,7 +1,7 @@
-//! Décodeur « bitpacked » — port fidèle de `BitPackedBuffer`/`BitPackedDecoder`
-//! (heroprotocol/decoders.py, MIT). Lecture au bit près : requis par replay.initData,
-//! replay.game.events et replay.message.events ; les attributes utilisent le même buffer
-//! en little-endian.
+//! "Bitpacked" decoder — faithful port of `BitPackedBuffer`/`BitPackedDecoder`
+//! (heroprotocol/decoders.py, MIT). Bit-level reading: required by replay.initData,
+//! replay.game.events and replay.message.events; the attributes use the same buffer
+//! in little-endian.
 
 use crate::error::{Error, Result};
 use crate::typeinfo::TypeInfo;
@@ -50,15 +50,15 @@ impl<'a> BitReader<'a> {
             .used
             .checked_add(n)
             .filter(|&end| end <= self.data.len())
-            .ok_or_else(|| Error::Truncated(format!("{n} octets alignés à {}", self.used)))?;
+            .ok_or_else(|| Error::Truncated(format!("{n} aligned bytes at {}", self.used)))?;
         let s = &self.data[self.used..end];
         self.used = end;
         Ok(s)
     }
 
-    /// Port exact de `BitPackedBuffer.read_bits` : on consomme les bits de poids faible de
-    /// l'octet courant, placés en poids fort du résultat (big-endian) ou en poids faible
-    /// (little-endian). `bits` ≤ 64 — les bitarrays plus larges passent par `read_bits_big`.
+    /// Exact port of `BitPackedBuffer.read_bits`: we consume the low-order bits of
+    /// the current byte, placed in the high-order bits of the result (big-endian) or in the low-order bits
+    /// (little-endian). `bits` ≤ 64 — wider bitarrays go through `read_bits_big`.
     pub fn read_bits(&mut self, bits: u32) -> Result<u64> {
         debug_assert!(bits <= 64);
         let mut result: u64 = 0;
@@ -67,7 +67,7 @@ impl<'a> BitReader<'a> {
             if self.nextbits == 0 {
                 if self.used >= self.data.len() {
                     return Err(Error::Truncated(format!(
-                        "lecture de {bits} bits à l'octet {}",
+                        "reading {bits} bits at byte {}",
                         self.used
                     )));
                 }
@@ -82,17 +82,17 @@ impl<'a> BitReader<'a> {
             } else {
                 result |= copy << resultbits;
             }
-            self.next = (u16::from(self.next) >> copybits) as u8; // copybits peut valoir 8
+            self.next = (u16::from(self.next) >> copybits) as u8; // copybits can be 8
             self.nextbits -= copybits;
             resultbits += copybits;
         }
         Ok(result)
     }
 
-    /// Entier de `bits` bits (jusqu'à 255 pour les bitarrays) en octets big-endian alignés
-    /// à droite — même algorithme de chunks que `read_bits` (un appel unique en Python sur
-    /// gros entier ; NE PAS remplacer par des `read_bits` successifs : le placement des
-    /// fragments dépend de l'alignement du buffer et ne se compose pas).
+    /// Integer of `bits` bits (up to 255 for bitarrays) as right-aligned big-endian bytes
+    /// — same chunk algorithm as `read_bits` (a single call in Python on a
+    /// big integer; DO NOT replace with successive `read_bits` calls: the placement of the
+    /// fragments depends on the buffer's alignment and does not compose).
     pub fn read_bits_big(&mut self, bits: u64) -> Result<Vec<u8>> {
         let nbytes = bits.div_ceil(8) as usize;
         let mut out = vec![0u8; nbytes];
@@ -101,7 +101,7 @@ impl<'a> BitReader<'a> {
             if self.nextbits == 0 {
                 if self.used >= self.data.len() {
                     return Err(Error::Truncated(format!(
-                        "lecture de {bits} bits (gros entier) à l'octet {}",
+                        "reading {bits} bits (big integer) at byte {}",
                         self.used
                     )));
                 }
@@ -123,7 +123,7 @@ impl<'a> BitReader<'a> {
                     out[byte] |= 1 << (pos % 8);
                 }
             }
-            self.next = (u16::from(self.next) >> copybits) as u8; // copybits peut valoir 8
+            self.next = (u16::from(self.next) >> copybits) as u8; // copybits can be 8
             self.nextbits -= copybits as u32;
             resultbits += copybits;
         }
@@ -158,15 +158,15 @@ impl<'a> BitPackedDecoder<'a> {
 
     fn read_int(&mut self, lo: i64, bits: u32) -> Result<i64> {
         let v = self.buffer.read_bits(bits)?;
-        // lo + v en two's complement exact (couvre (-2^63, 64) comme (0, 32)) ;
-        // seul (0, 64) avec une valeur > i64::MAX déborderait — jamais vu en pratique.
+        // lo + v in exact two's complement (covers (-2^63, 64) as well as (0, 32));
+        // only (0, 64) with a value > i64::MAX would overflow — never seen in practice.
         let signed = i64::try_from(v).or_else(|_| {
             if lo == 0 {
                 Err(Error::Corrupted(format!(
-                    "entier {bits} bits hors plage i64 : {v}"
+                    "{bits}-bit integer out of i64 range: {v}"
                 )))
             } else {
-                Ok(v as i64) // lo = -2^63 : wrapping = arithmétique two's complement exacte
+                Ok(v as i64) // lo = -2^63: wrapping = exact two's complement arithmetic
             }
         })?;
         Ok(lo.wrapping_add(signed))
@@ -175,11 +175,11 @@ impl<'a> BitPackedDecoder<'a> {
     fn typeinfo(&self, typeid: usize) -> Result<&'a TypeInfo> {
         self.typeinfos
             .get(typeid)
-            .ok_or_else(|| Error::Protocol(format!("typeid {typeid} hors table")))
+            .ok_or_else(|| Error::Protocol(format!("typeid {typeid} outside the table")))
     }
 
-    /// Delta de gameloop (`NNet.SVarUint32` = choice de `_int`) sans matérialiser de `Value`
-    /// — chemin chaud : un appel par événement game/message.
+    /// Gameloop delta (`NNet.SVarUint32` = choice of `_int`) without materialising a `Value`
+    /// — hot path: one call per game/message event.
     pub fn svaruint32_value(&mut self, typeid: usize) -> Result<i64> {
         if let TypeInfo::Choice { lo, bits, fields } = self.typeinfo(typeid)? {
             let (lo, bits) = (*lo, *bits);
@@ -187,7 +187,7 @@ impl<'a> BitPackedDecoder<'a> {
             let chosen = fields
                 .get(&tag)
                 .map(|(_, t)| *t)
-                .ok_or_else(|| Error::Corrupted(format!("svaruint32 : tag inconnu {tag}")))?;
+                .ok_or_else(|| Error::Corrupted(format!("svaruint32: unknown tag {tag}")))?;
             if let TypeInfo::Int { lo, bits } = self.typeinfo(chosen)? {
                 let (lo, bits) = (*lo, *bits);
                 return self.read_int(lo, bits);
@@ -211,7 +211,7 @@ impl<'a> BitPackedDecoder<'a> {
             TypeInfo::Blob { lo, bits } => {
                 let (lo, bits) = (*lo, *bits);
                 let len = usize::try_from(self.read_int(lo, bits)?)
-                    .map_err(|_| Error::Corrupted("longueur de blob négative".into()))?;
+                    .map_err(|_| Error::Corrupted("negative blob length".into()))?;
                 Value::Blob(self.buffer.read_aligned_bytes(len)?.to_vec())
             }
             TypeInfo::Bool => Value::Bool(self.buffer.read_bits(1)? != 0),
@@ -234,7 +234,7 @@ impl<'a> BitPackedDecoder<'a> {
             TypeInfo::Array { lo, bits, typeid } => {
                 let (lo, bits, typeid) = (*lo, *bits, *typeid);
                 let len = usize::try_from(self.read_int(lo, bits)?)
-                    .map_err(|_| Error::Corrupted("longueur de tableau négative".into()))?;
+                    .map_err(|_| Error::Corrupted("negative array length".into()))?;
                 let mut items = Vec::with_capacity(len.min(4096));
                 for _ in 0..len {
                     items.push(self.instance(typeid)?);
@@ -244,7 +244,7 @@ impl<'a> BitPackedDecoder<'a> {
             TypeInfo::BitArray { lo, bits } => {
                 let (lo, bits) = (*lo, *bits);
                 let len = u64::try_from(self.read_int(lo, bits)?)
-                    .map_err(|_| Error::Corrupted("longueur de bitarray négative".into()))?;
+                    .map_err(|_| Error::Corrupted("negative bitarray length".into()))?;
                 Value::BitArrayInt {
                     bits: len,
                     value: self.buffer.read_bits_big(len)?,
@@ -262,14 +262,14 @@ impl<'a> BitPackedDecoder<'a> {
                 let (lo, bits) = (*lo, *bits);
                 let tag = self.read_int(lo, bits)?;
                 let (name, ftypeid) = fields.get(&tag).ok_or_else(|| {
-                    Error::Corrupted(format!("choice : tag inconnu {tag} (bitpacked)"))
+                    Error::Corrupted(format!("choice: unknown tag {tag} (bitpacked)"))
                 })?;
                 let (name, ftypeid) = (name.clone(), *ftypeid);
                 let v = self.instance(ftypeid)?;
                 Value::Struct(vec![(name, v)])
             }
             TypeInfo::Struct { fields } => {
-                // bitpacked : séquentiel, sans tags ni skip — tout champ se décode.
+                // bitpacked: sequential, without tags or skip — every field is decoded.
                 let n = fields.len();
                 let mut result: Vec<(std::sync::Arc<str>, Value)> = Vec::with_capacity(n);
                 for (name, ftypeid, _) in fields {
@@ -295,10 +295,10 @@ impl<'a> BitPackedDecoder<'a> {
 mod tests {
     use super::*;
 
-    /// Vérifié contre Python :
-    /// BitPackedBuffer(b'\xC5\x0F').read_bits(6) == 5 ; puis read_bits(6) == 60 ;
-    /// (1er octet 0xC5 : bits bas 000101 consommés d'abord, restent 11 ;
-    ///  6 bits suivants = 2 bits hauts de 0xC5 (11, poids fort) + 4 bits bas de 0x0F (1111)).
+    /// Checked against Python:
+    /// BitPackedBuffer(b'\xC5\x0F').read_bits(6) == 5; then read_bits(6) == 60;
+    /// (1st byte 0xC5: low bits 000101 consumed first, 11 remain;
+    ///  next 6 bits = 2 high bits of 0xC5 (11, high-order) + 4 low bits of 0x0F (1111)).
     #[test]
     fn read_bits_big_endian_reference() {
         let data = [0xC5u8, 0x0F];
@@ -307,7 +307,7 @@ mod tests {
         assert_eq!(r.read_bits(6).unwrap(), 0b11_1111 & ((0b11 << 4) | 0b1111));
     }
 
-    /// little-endian (attributes) : les fragments s'empilent en poids faible.
+    /// little-endian (attributes): the fragments stack up in the low-order bits.
     /// BitPackedBuffer(b'\xC5\x0F', 'little').read_bits(12) == 0xFC5.
     #[test]
     fn read_bits_little_endian_reference() {
@@ -316,11 +316,11 @@ mod tests {
         assert_eq!(r.read_bits(12).unwrap(), 0xFC5);
     }
 
-    /// read_bits_big : 12 bits 0xFC5 → octets [0x0F, 0xC5] (big-endian aligné à droite).
+    /// read_bits_big: 12 bits 0xFC5 → bytes [0x0F, 0xC5] (right-aligned big-endian).
     #[test]
     fn read_bits_big_int() {
-        // flux big-endian contenant 0xFC5 sur 12 bits : MSB d'abord
-        // bits : 1111 1100 0101 → octets construits pour que read_bits(12) == 0xFC5
+        // big-endian stream containing 0xFC5 on 12 bits: MSB first
+        // bits: 1111 1100 0101 → bytes built so that read_bits(12) == 0xFC5
         let data = [0b1111_1100u8, 0b0000_0101];
         let mut r = BitReader::new(&data, Endian::Big);
         let big = r.read_bits_big(12).unwrap();

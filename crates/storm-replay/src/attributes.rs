@@ -1,5 +1,5 @@
-//! Décodeur de `replay.attributes.events` — port de `decode_replay_attributes_events`
-//! (protocolXXXXX.py). Seul stream en little-endian.
+//! Decoder for `replay.attributes.events` — port of `decode_replay_attributes_events`
+//! (protocolXXXXX.py). The only little-endian stream.
 
 use crate::bitpacked::{BitReader, Endian};
 use crate::error::Result;
@@ -9,8 +9,8 @@ use std::collections::HashMap;
 pub struct AttributeValue {
     pub namespace: u32,
     pub attrid: u32,
-    /// 4 octets lus, inversés, dépouillés des `\x00` des deux côtés (référence Python
-    /// `[::-1].strip(b'\x00')`) — typiquement un code ASCII court (ex. `b"5v5"`).
+    /// 4 bytes read, reversed, stripped of `\x00` on both sides (Python reference
+    /// `[::-1].strip(b'\x00')`) — typically a short ASCII code (e.g. `b"5v5"`).
     pub value: Vec<u8>,
 }
 
@@ -18,7 +18,7 @@ pub struct AttributeValue {
 pub struct Attributes {
     pub source: u8,
     pub map_namespace: u32,
-    /// scope (16 = global, 1–15 = slot joueur) → attrid → valeurs.
+    /// scope (16 = global, 1–15 = player slot) → attrid → values.
     pub scopes: HashMap<u8, HashMap<u32, Vec<AttributeValue>>>,
 }
 

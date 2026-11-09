@@ -1,31 +1,31 @@
-//! Valeurs décodées — équivalent des structures Python produites par heroprotocol.
+//! Decoded values — equivalent of the Python structures produced by heroprotocol.
 
-/// Valeur décodée d'un stream de replay.
+/// Decoded value of a replay stream.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Null,
     Int(i64),
     Bool(bool),
     Blob(Vec<u8>),
-    /// Chaîne interne (annotations `_event` — évite une allocation par événement).
+    /// Interned string (`_event` annotations — avoids one allocation per event).
     Str(std::sync::Arc<str>),
     Fourcc([u8; 4]),
     Real(f64),
     Array(Vec<Value>),
-    /// `_bitarray` du décodeur **versioned** : octets alignés (référence : `(longueur, bytes)`).
+    /// `_bitarray` of the **versioned** decoder: aligned bytes (reference: `(length, bytes)`).
     BitArrayBytes {
         bits: u64,
         data: Vec<u8>,
     },
-    /// `_bitarray` du décodeur **bitpacked** : entier de `bits` bits (référence :
-    /// `(longueur, int)`). Stocké en octets big-endian alignés à droite car il peut
-    /// dépasser 64 bits (longueur encodée sur 8 bits → jusqu'à 255 bits).
+    /// `_bitarray` of the **bitpacked** decoder: integer of `bits` bits (reference:
+    /// `(length, int)`). Stored as right-aligned big-endian bytes because it can
+    /// exceed 64 bits (length encoded on 8 bits → up to 255 bits).
     BitArrayInt {
         bits: u64,
         value: Vec<u8>,
     },
-    /// Structs **et** choices (un choice = struct à un seul champ, comme en Python).
-    /// L'ordre d'insertion est préservé.
+    /// Structs **and** choices (a choice = a struct with a single field, as in Python).
+    /// Insertion order is preserved.
     Struct(Vec<(std::sync::Arc<str>, Value)>),
 }
 
@@ -54,7 +54,7 @@ impl Value {
         }
     }
 
-    /// Blobs texte (noms, titres…) : les replays HotS sont en UTF-8.
+    /// Text blobs (names, titles…): HotS replays are in UTF-8.
     pub fn as_str_lossy(&self) -> Option<String> {
         match self {
             Value::Str(s) => Some(s.to_string()),
@@ -71,7 +71,7 @@ impl Value {
         }
     }
 
-    /// Valeur du premier champ d'un struct/choice (sémantique `_varuint32_value`).
+    /// Value of the first field of a struct/choice (`_varuint32_value` semantics).
     pub fn first_field_int(&self) -> Option<i64> {
         match self {
             Value::Struct(fields) => fields.first().and_then(|(_, v)| v.as_int()),

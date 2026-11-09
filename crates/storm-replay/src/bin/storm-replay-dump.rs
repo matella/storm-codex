@@ -1,8 +1,8 @@
-//! Dump JSON d'un stream de replay, normalisé « comme heroprotocol » (blobs en latin-1,
-//! bitarrays bitpacked en hex, reals en `[f]`) — consommé par tools/crosscheck_streams.py.
-//! Modes :
+//! JSON dump of a replay stream, normalised "like heroprotocol" (blobs in latin-1,
+//! bitpacked bitarrays in hex, reals in `[f]`) — consumed by tools/crosscheck_streams.py.
+//! Modes:
 //!   storm-replay-dump <replay> --stream header|details|initdata|attributes|tracker|game|message
-//!   storm-replay-dump --bench <dir>   (7 streams, mono-thread, warm-up exclu)
+//!   storm-replay-dump --bench <dir>   (7 streams, single-threaded, warm-up excluded)
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -16,7 +16,7 @@ fn latin1(bytes: &[u8]) -> String {
     bytes.iter().map(|&b| char::from(b)).collect()
 }
 
-/// hex(int) Python : "0x0", "0x1f4"…
+/// Python hex(int): "0x0", "0x1f4"…
 fn hex_big(bytes: &[u8]) -> String {
     match bytes.iter().position(|&b| b != 0) {
         None => "0x0".into(),
@@ -91,7 +91,7 @@ fn run() -> storm_replay::Result<()> {
         [file, flag, stream] if flag == "--stream" => dump(Path::new(file), stream),
         _ => {
             eprintln!(
-                "usage : storm-replay-dump <replay> --stream <nom> | storm-replay-dump --bench <dir>"
+                "usage: storm-replay-dump <replay> --stream <name> | storm-replay-dump --bench <dir>"
             );
             std::process::exit(2);
         }
@@ -115,16 +115,16 @@ fn dump(path: &Path, stream: &str) -> storm_replay::Result<()> {
         "game" => print_events(replay.game_events()?),
         "message" => print_events(replay.message_events()?),
         "game-raw" => {
-            // extraction MPQ seule (décompression sans décodage) — diagnostic de perf
+            // MPQ extraction only (decompression without decoding) — perf diagnostic
             let t0 = Instant::now();
             let n = replay.game_events_raw_len()?;
             eprintln!(
-                "{n} octets extraits en {:.1} ms",
+                "{n} bytes extracted in {:.1} ms",
                 t0.elapsed().as_secs_f64() * 1000.0
             );
         }
         other => {
-            eprintln!("stream inconnu : {other}");
+            eprintln!("unknown stream: {other}");
             std::process::exit(2);
         }
     }
@@ -150,7 +150,7 @@ fn bench(dir: &Path) -> storm_replay::Result<()> {
     files.sort();
 
     if let Some(first) = files.first() {
-        decode_all_streams(first).ok(); // warm-up (cache des tables), mesure jetée
+        decode_all_streams(first).ok(); // warm-up (table cache), measurement discarded
     }
     let mut rows = vec!["name,ms,ok".to_owned()];
     let mut times = Vec::new();
@@ -185,13 +185,13 @@ fn bench(dir: &Path) -> storm_replay::Result<()> {
 
     times.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     if times.is_empty() {
-        eprintln!("aucune mesure");
+        eprintln!("no measurement");
         std::process::exit(1);
     }
     let median = times[times.len() / 2];
     let p95 = times[(0.95 * times.len() as f64).ceil() as usize - 1];
     println!(
-        "rust 7 streams : n={} échecs={fails} médiane={median:.1} ms p95={p95:.1} ms max={:.1} ms",
+        "rust 7 streams: n={} failures={fails} median={median:.1} ms p95={p95:.1} ms max={:.1} ms",
         times.len(),
         times.last().copied().unwrap_or_default(),
     );
@@ -200,7 +200,7 @@ fn bench(dir: &Path) -> storm_replay::Result<()> {
 
 fn main() {
     if let Err(e) = run() {
-        eprintln!("erreur : {e}");
+        eprintln!("error: {e}");
         std::process::exit(1);
     }
 }

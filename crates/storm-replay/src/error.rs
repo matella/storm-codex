@@ -1,31 +1,31 @@
-//! Erreurs typées du crate — les classes sont stables : elles alimenteront les statistiques
-//! d'échec de parse côté serveur (jalon 3, table `uploads.error_class`).
+//! Typed errors of the crate — the classes are stable: they will feed the server's
+//! parse failure statistics (milestone 3, table `uploads.error_class`).
 
-/// Erreur de décodage d'un `.StormReplay`.
+/// Decoding error of a `.StormReplay`.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    /// Lecture du fichier impossible.
-    #[error("E/S : {0}")]
+    /// The file cannot be read.
+    #[error("I/O: {0}")]
     Io(#[from] std::io::Error),
 
-    /// L'archive MPQ est invalide ou illisible.
-    #[error("archive MPQ invalide : {0}")]
+    /// The MPQ archive is invalid or unreadable.
+    #[error("invalid MPQ archive: {0}")]
     Mpq(String),
 
-    /// Un fichier embarqué attendu est absent ou illisible (ex. replay.tracker.events).
-    #[error("stream {0} absent ou illisible : {1}")]
+    /// An expected embedded file is missing or unreadable (e.g. replay.tracker.events).
+    #[error("stream {0} missing or unreadable: {1}")]
     MissingStream(&'static str, String),
 
-    /// Fin de données atteinte en plein décodage.
-    #[error("données tronquées : {0}")]
+    /// End of data reached in the middle of decoding.
+    #[error("truncated data: {0}")]
     Truncated(String),
 
-    /// Les données ne respectent pas la grammaire du protocole.
-    #[error("données corrompues : {0}")]
+    /// The data does not follow the protocol grammar.
+    #[error("corrupted data: {0}")]
     Corrupted(String),
 
-    /// Table de protocole invalide ou typeid hors table (bug de génération, pas du replay).
-    #[error("table de protocole invalide : {0}")]
+    /// Invalid protocol table or typeid outside the table (generation bug, not a replay bug).
+    #[error("invalid protocol table: {0}")]
     Protocol(String),
 }
 
