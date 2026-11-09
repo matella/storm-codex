@@ -1,6 +1,6 @@
 [package]
 name = "storm-replay-viewer"
-description = "Projection d'un replay décodé en géométrie normalisée pour la visionneuse 2D"
+description = "Projection of a decoded replay into normalised geometry for the 2D viewer"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true

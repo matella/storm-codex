@@ -13,23 +13,23 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
     let tracker = replay.tracker_events()?;
     let details = replay.details()?;
 
-    // 1) Étendue de carte via SStatGameEvent{GameStart}.MapSizeX/Y (×4096)
+    // 1) Map extent via SStatGameEvent{GameStart}.MapSizeX/Y (×4096)
     let (msx, msy) = map_size(&tracker).ok_or(Error::Missing("MapSize"))?;
-    let (map_w, map_h) = (msx / FIXED, msy / FIXED); // en tuiles
+    let (map_w, map_h) = (msx / FIXED, msy / FIXED); // in tiles
     let norm_tile = |x: i64, y: i64| (x as f64 / map_w, y as f64 / map_h);
-    // Coords game (TargetPoint) = tuiles ×4096, msx/msy aussi ×4096 → le facteur 4096 s'annule.
+    // Game coords (TargetPoint) = tiles ×4096, msx/msy also ×4096 → the 4096 factor cancels out.
     let norm_world = |x: i64, y: i64| (x as f64 / msx, y as f64 / msy);
 
-    // 2) unité(tagIndex) → (player, isHero) depuis SUnitBornEvent.
-    //    Clé = m_unitTagIndex SEUL (pas (index, recycle)) : SUnitPositionsEvent référence les
-    //    unités par index uniquement, donc on résout l'occupant COURANT de cet index — « dernier
-    //    Born gagne » donne exactement cela. Sûr pour les héros : une unité-héros ne libère jamais
-    //    son index en cours de partie (Died→Revived le conserve), donc l'occupant courant est
-    //    toujours le bon héros.
-    //    ⚠️ PAS sûr tel quel pour structures/minions (fast-follow) : créés/détruits en masse, un
-    //    index peut être recyclé pendant qu'un frère est vivant → résolution ambiguë. Avant
-    //    d'étendre ce pipeline aux unités non-héros, clé par (index, recycle) avec résolution par
-    //    événement (via m_unitTagRecycle).
+    // 2) unit(tagIndex) → (player, isHero) from SUnitBornEvent.
+    //    Key = m_unitTagIndex ALONE (not (index, recycle)): SUnitPositionsEvent references the
+    //    units by index only, so we resolve the CURRENT occupant of that index — "last
+    //    Born wins" gives exactly that. Safe for heroes: a hero unit never frees
+    //    its index during the game (Died→Revived keeps it), so the current occupant is
+    //    always the right hero.
+    //    ⚠️ NOT safe as is for structures/minions (fast-follow): created/destroyed in bulk, an
+    //    index can be recycled while a sibling is alive → ambiguous resolution. Before
+    //    extending this pipeline to non-hero units, key by (index, recycle) with per-event
+    //    resolution (via m_unitTagRecycle).
     let mut unit_player: HashMap<i64, (i64, bool)> = HashMap::new();
     for e in &tracker {
         if event_name(e) != "SUnitBornEvent" {
@@ -42,26 +42,26 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
             .and_then(Value::as_str_lossy)
             .map(|n| n.starts_with("Hero"))
             .unwrap_or(false);
-        // US-26 : les lane minions/camps sont contrôlés par l'IA d'équipe (11 = bleu, 12 = rouge,
-        // même convention que les structures) — élargi au-delà de 1..=10 pour que la résolution
-        // minions/camps (non-héros) fonctionne dans CETTE MÊME table (cf. avertissement
-        // recyclage d'index ci-dessus, accepté ici comme la dédup en aval l'atténue).
+        // US-26: lane minions/camps are controlled by the team AI (11 = blue, 12 = red,
+        // same convention as the structures) — widened beyond 1..=10 so that the resolution of
+        // minions/camps (non-heroes) works in THIS SAME table (see the index recycling
+        // warning above, accepted here since the downstream dedup mitigates it).
         if (1..=12).contains(&p) {
             unit_player.insert(idx, (p, is_hero));
         }
     }
 
-    // 3) samples exacts depuis SUnitPositionsEvent (m_items = [idxDelta, x, y]*). US-26 : la MÊME
-    //    passe alimente aussi les samples minions/camps (unités non-héros résolues) — pas de
-    //    second passage sur tracker pour ce volume, déjà le plus gros événement du fichier.
-    //    Dédup agressive par cellule de grille (~1/64 tuile) × bucket temporel (~2s) : on ne garde
-    //    qu'un point par (cellule, bucket, équipe), et un cap dur `MINION_CAP` protège le payload.
+    // 3) exact samples from SUnitPositionsEvent (m_items = [idxDelta, x, y]*). US-26: the SAME
+    //    pass also feeds the minion/camp samples (resolved non-hero units) — no
+    //    second tracker pass for this volume, already the largest event of the file.
+    //    Aggressive dedup per grid cell (~1/64 tile) × time bucket (~2s): we keep only
+    //    one point per (cell, bucket, team), and a hard cap `MINION_CAP` protects the payload.
     const MINION_CAP: usize = 15000;
     const MINION_TIME_BUCKET_SEC: f64 = 2.0;
     let mut samples: HashMap<i64, Vec<Sample>> = HashMap::new();
     let mut minions: Vec<MinionSample> = Vec::new();
     let mut minion_seen: HashSet<(i64, i64, i64, i64)> = HashSet::new();
-    let mut minion_seen_count: u64 = 0; // unités non-héros rencontrées (avant dédup), pour le warning de troncature
+    let mut minion_seen_count: u64 = 0; // non-hero units met (before dedup), for the truncation warning
     let mut minion_truncated = false;
     for e in &tracker {
         if event_name(e) != "SUnitPositionsEvent" {
@@ -73,8 +73,8 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
             .and_then(Value::as_array)
             .map(|a| a.iter().filter_map(Value::as_int).collect())
             .unwrap_or_default();
-        // Le premier index n'est pas 0 : m_firstUnitIndex donne le point de départ de la
-        // somme cumulative des deltas (les triplets suivants sont relatifs au précédent).
+        // The first index is not 0: m_firstUnitIndex gives the starting point of the
+        // cumulative sum of the deltas (the following triplets are relative to the previous one).
         let mut idx = field_int(e, "m_firstUnitIndex").unwrap_or(0);
         for tri in items.as_chunks::<3>().0 {
             idx += tri[0]; // index cumulatif
@@ -100,8 +100,8 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
                         _ => -1,
                     };
                     let (x, y) = norm_tile(tri[1], tri[2]);
-                    // Clamp [0,1] avant q3 comme héros/deaths/structures : norm_tile peut
-                    // légèrement déborder aux bords de carte (unités de jungle proches des limites).
+                    // Clamp [0,1] before q3 like heroes/deaths/structures: norm_tile can
+                    // slightly overflow at the map edges (jungle units close to the limits).
                     let (qx, qy) = (q3(x.clamp(0.0, 1.0)), q3(y.clamp(0.0, 1.0)));
                     let gx = (qx * 64.0).floor() as i64;
                     let gy = (qy * 64.0).floor() as i64;
@@ -124,18 +124,18 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
     }
     minions.sort_by(|a, b| a.t.total_cmp(&b.t));
 
-    // 4) densification via game events SCmd*/TargetPoint clé par _userid → playerId.
-    //    Mapping AUTORITAIRE via SPlayerSetupEvent (m_userId → m_playerId) — PAS l'hypothèse
-    //    fragile « slot+1 ». `user_to_player` construit une seule fois depuis le tracker.
+    // 4) densification via SCmd*/TargetPoint game events keyed by _userid → playerId.
+    //    AUTHORITATIVE mapping via SPlayerSetupEvent (m_userId → m_playerId) — NOT the fragile
+    //    "slot+1" assumption. `user_to_player` built once from the tracker.
     let user_to_player = user_to_player(&tracker); // m_userId → m_playerId (1..=10)
     let mut cmd_samples: HashMap<i64, Vec<Sample>> = HashMap::new();
-    // US-18 : casts d'aptitude — SCmdEvent avec m_abil non nul. On n'identifie PAS quelle
-    // aptitude (m_abilLink) — juste « un cast a eu lieu » ; c'est pourquoi cette collecte vit
-    // dans la MÊME passe que la densification de commandes plutôt qu'une passe dédiée.
+    // US-18: ability casts — SCmdEvent with a non-zero m_abil. We do NOT identify which
+    // ability (m_abilLink) — just "a cast happened"; that is why this collection lives
+    // in the SAME pass as the command densification rather than a dedicated pass.
     let mut cast_times: HashMap<i64, Vec<f64>> = HashMap::new();
-    // US-19 : picks de talent — SHeroTalentTreeSelectedEvent, une par pick, ordre d'arrivée =
-    // ordre de tier (1, 2, 3…). Repliée dans CETTE passe (pas de passe game-events dédiée) ;
-    // on stocke juste `t`, le tier (index+1) est assigné après tri.
+    // US-19: talent picks — SHeroTalentTreeSelectedEvent, one per pick, arrival order =
+    // tier order (1, 2, 3…). Folded into THIS pass (no dedicated game-events pass);
+    // we just store `t`, the tier (index+1) is assigned after sorting.
     let mut talent_times: HashMap<i64, Vec<f64>> = HashMap::new();
     replay.visit_game_events(|ev: Value| {
         let uid = ev
@@ -153,9 +153,9 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
             }
         }
 
-        // Cast d'aptitude : m_abil présent et non nul. Vérifié AVANT le early-return sur
-        // TargetPoint ci-dessous — un même SCmdEvent peut porter m_abil ET m_data.TargetPoint,
-        // les deux doivent pouvoir être extraits du même événement.
+        // Ability cast: m_abil present and non-zero. Checked BEFORE the early return on
+        // TargetPoint below — the same SCmdEvent can carry m_abil AND m_data.TargetPoint,
+        // both must be extractable from the same event.
         let is_cast = !matches!(ev.field("m_abil"), None | Some(Value::Null));
         if is_cast {
             if let Some(p) = p {
@@ -190,9 +190,9 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
         }
     })?;
 
-    // Tri + dédup temporelle des casts : un cast dans les CAST_DEDUP_SEC qui suivent le
-    // précédent cast retenu (même joueur) est jeté — évite un flash quasi continu quand
-    // plusieurs SCmdEvent d'affilée portent m_abil pour la même pression de touche.
+    // Sort + time dedup of the casts: a cast within the CAST_DEDUP_SEC following the
+    // previous kept cast (same player) is dropped — avoids a near-continuous flash when
+    // several consecutive SCmdEvents carry m_abil for the same key press.
     const CAST_DEDUP_SEC: f64 = 0.3;
     for v in cast_times.values_mut() {
         v.sort_by(|a, b| a.total_cmp(b));
@@ -205,8 +205,8 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
         *v = kept;
     }
 
-    // Talents : tri par t croissant, tier = ordre de pick (1-based). talent_id reste None (V1 —
-    // référentiel-free, cf. doc du champ dans model.rs).
+    // Talents: sorted by increasing t, tier = pick order (1-based). talent_id stays None (V1 —
+    // reference-data-free, see the field's doc in model.rs).
     let mut talents: HashMap<i64, Vec<TalentPick>> = HashMap::new();
     for (p, mut ts) in talent_times {
         ts.sort_by(|a, b| a.total_cmp(b));
@@ -223,8 +223,8 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
         );
     }
 
-    // 5) fusion samples (exacts + commande), tri par t croissant, dédup des points
-    //    quasi-immobiles (delta < EPS depuis le dernier retenu, même exact), clamp [0,1].
+    // 5) merge samples (exact + command), sort by increasing t, dedup of the
+    //    near-stationary points (delta < EPS since the last kept one, even exact), clamp [0,1].
     let mut player_ids: Vec<i64> = unit_player
         .values()
         .filter(|(_, is_hero)| *is_hero)
@@ -267,12 +267,12 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
         });
     }
 
-    // 6) intervalles de vie depuis Born(spawn)/Died/Revived de l'unité-héros du joueur
+    // 6) life intervals from Born(spawn)/Died/Revived of the player's hero unit
     let duration_sec = loop_to_sec(replay.header.elapsed_game_loops as i64);
     let mut life: HashMap<i64, Vec<Interval>> = HashMap::new();
     let mut open_from: HashMap<i64, f64> = HashMap::new();
 
-    // On rejoue tracker dans l'ordre pour construire born→died→revived par unité-héros.
+    // We replay the tracker in order to build born→died→revived per hero unit.
     for e in &tracker {
         let name = event_name(e);
         match name.as_str() {
@@ -302,7 +302,7 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
             _ => {}
         }
     }
-    // Clore le dernier intervalle ouvert de chaque héros à la fin de la partie.
+    // Close each hero's last open interval at the end of the game.
     for (p, from) in open_from {
         life.entry(p).or_default().push(Interval {
             from,
@@ -317,7 +317,7 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
         h.life = life.remove(&h.player_id).unwrap_or_default();
     }
 
-    // 7) deaths depuis SUnitDiedEvent des unités-héros suivies
+    // 7) deaths from the SUnitDiedEvents of the tracked hero units
     let mut deaths: Vec<Death> = Vec::new();
     for e in &tracker {
         if event_name(e) != "SUnitDiedEvent" {
@@ -343,14 +343,14 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
     }
     deaths.sort_by(|a, b| a.t.total_cmp(&b.t));
 
-    // 8) heroes déjà construits dans l'ordre de player_ids (trié + dédupliqué) — tri défensif pour
-    //    garantir l'invariant côté consommateur ; warnings = vec![] (US-7 plus tard).
+    // 8) heroes already built in player_ids order (sorted + deduplicated) — defensive sort to
+    //    guarantee the invariant on the consumer side; warnings = vec![] (US-7 later).
     heroes.sort_by_key(|h| h.player_id);
 
-    // 9) structures : SUnitBornEvent contrôlées par 11 (équipe 0) / 12 (équipe 1), types
-    //    Town*/KingsCore/HallOfStorms, en excluant le fantôme visuel post-destruction
-    //    ("...Destroyed"). Destruction = SUnitDiedEvent apparié par (tagIndex, tagRecycle) — PAS
-    //    tagIndex seul : les structures peuvent recycler un index pendant qu'une sœur est vivante.
+    // 9) structures: SUnitBornEvents controlled by 11 (team 0) / 12 (team 1), types
+    //    Town*/KingsCore/HallOfStorms, excluding the post-destruction visual ghost
+    //    ("...Destroyed"). Destruction = SUnitDiedEvent matched by (tagIndex, tagRecycle) — NOT
+    //    tagIndex alone: structures can recycle an index while a sibling is alive.
     let mut structures: Vec<Structure> = Vec::new();
     let mut tag_to_structure: HashMap<(i64, i64), usize> = HashMap::new();
     for e in &tracker {
@@ -416,10 +416,10 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
     }
     structures.sort_by(|a, b| (a.team, &a.kind).cmp(&(b.team, &b.kind)));
 
-    // 10) feed unifié : réutilise deaths/structures déjà calculés (aucune passe tracker lourde en
-    //     plus) + un scan léger des SStatGameEvent{JungleCampCapture} pour les camps. `team` reste
-    //     `None` pour les takedowns — c'est le FRONT qui le dérive de `players[]` (garde ce crate
-    //     indépendant du mapping playerId→équipe).
+    // 10) unified feed: reuses the already computed deaths/structures (no extra heavy tracker
+    //     pass) + a light scan of the SStatGameEvent{JungleCampCapture} for the camps. `team` stays
+    //     `None` for the takedowns — the FRONT derives it from `players[]` (keeps this crate
+    //     independent of the playerId→team mapping).
     let mut events: Vec<FeedEvent> = Vec::new();
     for d in &deaths {
         events.push(FeedEvent {
@@ -455,9 +455,9 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
             continue;
         }
         let t = loop_to_sec(field_int(e, "_gameloop").unwrap_or(0));
-        // Équipe capturante = m_fixedData["TeamID"] en fixed-point (÷4096) : 1 = bleu, 2 = rouge
-        // (cf. docs/research/hots-replay-data-reference.md). Notre convention interne : 0 = bleu,
-        // 1 = rouge → team = résolu − 1. None si le champ est absent.
+        // Capturing team = m_fixedData["TeamID"] in fixed-point (÷4096): 1 = blue, 2 = red
+        // (see docs/research/hots-replay-data-reference.md). Our internal convention: 0 = blue,
+        // 1 = red → team = resolved − 1. None if the field is missing.
         let team = fixed_data_int(e, "TeamID")
             .map(|v| (v as f64 / FIXED).round() as i64 - 1)
             .filter(|t| (0..=1).contains(t));
@@ -473,12 +473,12 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
     events.retain(|e| e.t >= 0.0);
     events.sort_by(|a, b| a.t.total_cmp(&b.t));
 
-    // 11) levels : SStatGameEvent{LevelUp}.m_intData = [{PlayerID}, {Level}] → playerId→équipe
-    // via le même croisement que player_toons (SPlayerSetupEvent.m_slotId × details.players
-    // .working_set_slot_id → team_id), PAS l'hypothèse « 1..5/6..10 » (vraie sur ce corpus mais
-    // non garantie par le format). ARAM = XP d'équipe partagée : ~5 SStatGameEvent quasi
-    // simultanés par level-up d'équipe → dédupliqués en un seul LevelTick (team, level) à la
-    // t la plus tôt.
+    // 11) levels: SStatGameEvent{LevelUp}.m_intData = [{PlayerID}, {Level}] → playerId→team
+    // via the same cross-reference as player_toons (SPlayerSetupEvent.m_slotId × details.players
+    // .working_set_slot_id → team_id), NOT the "1..5/6..10" assumption (true on this corpus but
+    // not guaranteed by the format). ARAM = shared team XP: ~5 near-simultaneous SStatGameEvents
+    // per team level-up → deduplicated into a single LevelTick (team, level) at the
+    // earliest t.
     let mut slot_to_team: HashMap<i64, i64> = HashMap::new();
     for p in &details.players {
         if let Some(slot) = p.working_set_slot_id {
@@ -498,7 +498,7 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
         }
     }
 
-    let mut level_first_t: HashMap<(i64, i64), f64> = HashMap::new(); // (team, level) → t la plus tôt
+    let mut level_first_t: HashMap<(i64, i64), f64> = HashMap::new(); // (team, level) → earliest t
     for e in &tracker {
         if event_name(e) != "SStatGameEvent" {
             continue;
@@ -532,19 +532,19 @@ pub(crate) fn build(replay: &Replay) -> Result<ViewerModel, Error> {
         .filter(|&((_, _), t)| t >= 0.0)
         .map(|((team, level), t)| LevelTick { t, team, level })
         .collect();
-    // Tri déterministe : `level_first_t` vient d'un HashMap (ordre d'itération randomisé par
-    // process) — deux entrées à t strictement égal (même gameloop, équipes/niveaux différents)
-    // doivent avoir un ordre STABLE d'un run à l'autre (golden JSON compare l'ordre des tableaux).
-    // Départage par (team, level) après t.
+    // Deterministic sort: `level_first_t` comes from a HashMap (iteration order randomised per
+    // process) — two entries at strictly equal t (same gameloop, different teams/levels)
+    // must have a STABLE order from one run to the next (the golden JSON compares array order).
+    // Tie-break by (team, level) after t.
     levels.sort_by(|a, b| {
         a.t.total_cmp(&b.t)
             .then(a.team.cmp(&b.team))
             .then(a.level.cmp(&b.level))
     });
 
-    // 12) objectifs par carte (US-21..24) : routage + extraction isolés dans `crate::maps` — cette
-    //     fonction `build` ne connaît AUCUNE logique spécifique à une carte. Cartes "gap" connues →
-    //     un warning explicite plutôt qu'un silence trompeur.
+    // 12) per-map objectives (US-21..24): routing + extraction isolated in `crate::maps` — this
+    //     `build` function knows NO map-specific logic. Known "gap" maps →
+    //     an explicit warning rather than a misleading silence.
     let map_name = details.title.clone();
     let (mut objectives, obj_warnings) = crate::maps::objectives(&map_name, &tracker);
     objectives.sort_by(|a, b| a.t.total_cmp(&b.t));
@@ -580,7 +580,7 @@ pub(crate) fn field_int(e: &Value, k: &str) -> Option<i64> {
     e.field(k).and_then(Value::as_int)
 }
 
-// Valeur d'un SStatGameEvent.m_fixedData par clé (même schéma key/value que map_size).
+// Value of an SStatGameEvent.m_fixedData by key (same key/value schema as map_size).
 fn fixed_data_int(e: &Value, key: &str) -> Option<i64> {
     let fixed = e.field("m_fixedData").and_then(Value::as_array)?;
     for kv in fixed {
@@ -591,8 +591,8 @@ fn fixed_data_int(e: &Value, key: &str) -> Option<i64> {
     None
 }
 
-// Valeur d'un SStatGameEvent.m_intData par clé (même schéma key/value que fixed_data_int, mais
-// m_value est un entier brut — pas fixed-point). Utilisé pour LevelUp (PlayerID/Level).
+// Value of an SStatGameEvent.m_intData by key (same key/value schema as fixed_data_int, but
+// m_value is a raw integer — not fixed-point). Used for LevelUp (PlayerID/Level).
 fn int_data_int(e: &Value, key: &str) -> Option<i64> {
     let data = e.field("m_intData").and_then(Value::as_array)?;
     for kv in data {
@@ -632,13 +632,13 @@ fn map_size(tracker: &[Value]) -> Option<(f64, f64)> {
     None
 }
 
-// Quantif à 3 décimales (stabilise le golden + réduit le payload).
+// Quantisation to 3 decimals (stabilises the golden + reduces the payload).
 fn q3(v: f64) -> f64 {
     (v * 1000.0).round() / 1000.0
 }
 
-// AUTORITAIRE : m_userId (des game events `_userid`) → m_playerId tracker (1..=10),
-// depuis SPlayerSetupEvent (m_type == 1 = joueur). Remplace l'hypothèse « slot+1 ».
+// AUTHORITATIVE: m_userId (from the game events' `_userid`) → tracker m_playerId (1..=10),
+// from SPlayerSetupEvent (m_type == 1 = player). Replaces the "slot+1" assumption.
 fn user_to_player(tracker: &[Value]) -> HashMap<i64, i64> {
     let mut m = HashMap::new();
     for e in tracker {
@@ -655,8 +655,8 @@ fn user_to_player(tracker: &[Value]) -> HashMap<i64, i64> {
     m
 }
 
-// playerId (1..=10) → toon_handle : SPlayerSetupEvent (m_playerId → m_slotId) croisé avec
-// details().players[*].working_set_slot_id → toon_handle. Utilisé par le serveur (Chunk 2).
+// playerId (1..=10) → toon_handle: SPlayerSetupEvent (m_playerId → m_slotId) cross-referenced with
+// details().players[*].working_set_slot_id → toon_handle. Used by the server (Chunk 2).
 pub(crate) fn player_toons(replay: &Replay) -> Result<Vec<(i64, String)>, crate::Error> {
     let tracker = replay.tracker_events()?;
     let details = replay.details()?;

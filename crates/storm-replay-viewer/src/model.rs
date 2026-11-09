@@ -23,7 +23,7 @@ pub struct ViewerModel {
 #[serde(rename_all = "camelCase")]
 pub struct Meta {
     pub map_name: String,
-    pub map_size: [f64; 2], // en tuiles (MapSize/4096), diagnostic
+    pub map_size: [f64; 2], // in tiles (MapSize/4096), diagnostic
     pub duration_sec: f64,
     pub loop_offset: i64,
     pub viewer_version: u32,
@@ -35,21 +35,21 @@ pub struct HeroTrack {
     pub player_id: i64, // playerId replay (m_controlPlayerId, 1..=10)
     pub samples: Vec<Sample>,
     pub life: Vec<Interval>,
-    pub casts: Vec<f64>, // instants (sec) de cast d'aptitude, triés, dédupliqués temporellement
-    pub talents: Vec<TalentPick>, // picks de talent, triés par t croissant (tier = ordre de pick)
+    pub casts: Vec<f64>, // ability cast times (sec), sorted, time-deduplicated
+    pub talents: Vec<TalentPick>, // talent picks, sorted by increasing t (tier = pick order)
 }
 
-// US-19 : un pick de talent. `talent_id` reste `None` en V1 — ce crate est référentiel-free (le
-// nom se résout côté front via dim_talents, à partir de match_players.talents).
+// US-19: a talent pick. `talent_id` stays `None` in V1 — this crate is reference-data-free (the
+// name is resolved on the front side via dim_talents, from match_players.talents).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TalentPick {
     pub t: f64,
-    pub tier: i64, // 1-based, ordre de pick (pas le niveau du tier HotS)
+    pub tier: i64, // 1-based, pick order (not the HotS tier level)
     pub talent_id: Option<String>,
 }
 
-// US-19 : un passage de niveau d'équipe (ARAM = XP partagée → toute l'équipe monte ensemble).
+// US-19: a team level-up (ARAM = shared XP → the whole team levels up together).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LevelTick {
@@ -66,15 +66,15 @@ pub struct Sample {
     pub exact: bool,
 }
 
-// US-26 : samples de position minions/camps (non-héros), agressivement dédupliqués (cf.
-// extract.rs) — volume potentiellement élevé, donc exclus du golden de test dédié.
+// US-26: minion/camp (non-hero) position samples, aggressively deduplicated (see
+// extract.rs) — potentially high volume, hence excluded from the dedicated test golden.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MinionSample {
     pub t: f64,
     pub x: f64,
     pub y: f64,
-    pub team: i64, // 0 = bleu, 1 = rouge, -1 = neutre/inconnu
+    pub team: i64, // 0 = blue, 1 = red, -1 = neutral/unknown
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -111,13 +111,13 @@ pub struct FeedEvent {
     pub team: Option<i64>,
     pub victim_player_id: Option<i64>,
     pub killer_player_id: Option<i64>,
-    pub structure_kind: Option<String>, // réutilise l'enum Structure.kind
+    pub structure_kind: Option<String>, // reuses the Structure.kind enum
 }
 
-// US-21..24 : objectif de carte STRUCTURÉ (pas de texte humain ici — mirroir de la décision
-// FeedEvent : le crate reste référentiel/UI-free, le FRONT compose le texte affiché). Routage et
-// extraction par carte vivent dans `crate::maps` (US-24) ; V1 ne couvre que Braxis (vagues zerg,
-// best-effort — US-21) ; les autres cartes renvoient un vec vide (+ un warning pour les cartes
+// US-21..24: STRUCTURED map objective (no human text here — mirror of the
+// FeedEvent decision: the crate stays reference-data/UI-free, the FRONT composes the displayed text). Routing and
+// per-map extraction live in `crate::maps` (US-24); V1 only covers Braxis (zerg waves,
+// best-effort — US-21); the other maps return an empty vec (+ a warning for the maps
 // "gap" connues, cf. US-7/22/23).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -125,5 +125,5 @@ pub struct Objective {
     pub t: f64,
     pub kind: String, // ex. "zerg_wave" (Braxis)
     pub team: Option<i64>,
-    pub value: Option<i64>, // ex. nombre d'unités zerg dans la vague
+    pub value: Option<i64>, // e.g. number of zerg units in the wave
 }
