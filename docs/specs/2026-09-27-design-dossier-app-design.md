@@ -1,101 +1,101 @@
-# Design « dossier » pour toute l'app
+# "Dossier" design for the whole app
 
-> Spec storm-codex. Demande opérateur du 2026-09-27 : « le style du scouting est vraiment bien,
-> peut-on faire quelque chose de similaire pour toute l'app ? ». Overlays OBS : « maquette pour
-> voir, mais très probablement hors périmètre ».
-> **Validée par l'opérateur le 2026-09-27** (« those look hella good, you can also do the entire
-> website »). Overlays : hors périmètre (pas de demande contraire). Ordre des lots : celui de la spec.
-> Maquettes : `2026-09-27-design-dossier-app-mockup.html` (Session, Match detail, Hero page) et
-> `2026-09-27-design-dossier-overlays-mockup.html` (exploration OBS).
+> storm-codex spec. Operator request of 2026-09-27: "the scouting style is really good,
+> can we do something similar for the whole app?". OBS overlays: "mockup to
+> see, but very probably out of scope".
+> **Approved by the operator on 2026-09-27** ("those look hella good, you can also do the entire
+> website"). Overlays: out of scope (no request to the contrary). Order of batches: the spec's.
+> Mockups: `2026-09-27-design-dossier-app-mockup.html` (Session, Match detail, Hero page) and
+> `2026-09-27-design-dossier-overlays-mockup.html` (OBS exploration).
 
-## Contexte et décision à prendre
+## Context and decision to make
 
-`01-architecture.md` verrouille « design Nexus Codex ». Cette spec **ne le remplace pas** : elle
-propose une **évolution** — « Nexus Codex · Dossier » — qui garde la palette et les tokens de la
-maquette du 2026-06-12 (fond `#06070b`, accent `#7f77dd`, victoire `#5dcaa5`, défaite `#e24b4a`,
-couleurs d'équipe et d'univers) et y ajoute la couche éditoriale née avec les rapports de scouting
-(export HTML, pages `/scouting`). Rouvrir une décision verrouillée revient à l'opérateur : valider
-cette spec vaut décision.
+`01-architecture.md` locks "Nexus Codex design". This spec **does not replace it**: it
+proposes an **evolution** — "Nexus Codex · Dossier" — that keeps the palette and tokens of the
+2026-06-12 mockup (background `#06070b`, accent `#7f77dd`, win `#5dcaa5`, loss `#e24b4a`,
+team and universe colours) and adds the editorial layer born with the scouting reports
+(HTML export, `/scouting` pages). Reopening a locked decision is up to the operator: approving
+this spec counts as the decision.
 
-## Le langage visuel
+## The visual language
 
-| Élément | Règle |
+| Element | Rule |
 |---|---|
-| Typographie | **Big Shoulders Display** (titrage condensé) pour titres de page, noms de héros/cartes et grands chiffres ; **Figtree** pour le texte ; **JetBrains Mono** pour libellés, métadonnées et nombres de tableaux |
-| Couverture | chaque page de détail ouvre sur un panneau « couverture » : kicker (contexte), titre en très grand, tuiles de stats, art de la carte en fond (minimap floutée ou découpée en biais) |
-| Sections | titres numérotés (`01 DRAFT`), filet, sous-titre à droite en mono |
-| Portraits | cercle à anneau de la couleur d'univers ; tons **pick** (halo vert), **ennemi** (halo rouge), **ban** (gris barré de rouge), **défaite** (anneau rouge) |
-| Résultats | pastilles V/D, verdict « VICTORY / DEFEAT » en titrage, bilans `k–n` en grands chiffres |
-| Barres | jauges fines (accent → accent clair ; rouges pour l'équipe adverse) |
-| Mouvement | apparition décalée des sections, respect de `prefers-reduced-motion` |
+| Typography | **Big Shoulders Display** (condensed display type) for page titles, hero/map names and large numbers; **Figtree** for text; **JetBrains Mono** for labels, metadata and table numbers |
+| Cover | each detail page opens on a "cover" panel: kicker (context), very large title, stat tiles, map art as background (minimap blurred or cut at an angle) |
+| Sections | numbered headings (`01 DRAFT`), rule, subtitle on the right in mono |
+| Portraits | circle with a ring in the universe colour; tones **pick** (green halo), **enemy** (red halo), **ban** (grey struck through in red), **loss** (red ring) |
+| Results | W/L pips, "VICTORY / DEFEAT" verdict in display type, `k–n` records in large numbers |
+| Bars | thin gauges (accent → light accent; reds for the opposing team) |
+| Motion | staggered appearance of sections, respects `prefers-reduced-motion` |
 
-**Règle de densité** : le titrage condensé ne va **jamais** dans les lignes de tableau. Les pages
-denses (Matches, Heroes, Trends) gardent des tableaux lisibles (chiffres en mono, lignes nettes) ;
-le nouveau langage les **encadre** (couverture, en-têtes, filtres), il ne les remplace pas.
+**Density rule**: the condensed display type **never** goes into table rows. Dense pages
+(Matches, Heroes, Trends) keep readable tables (numbers in mono, clean rows);
+the new language **frames** them (cover, headers, filters), it does not replace them.
 
-## Les trois maquettes (données réelles de l'archive)
+## The three mockups (real data from the archive)
 
-- **Session** — couverture « Tonight » : bilan de la soirée en très grand (4–0 le 2026-06-09),
-  pastilles, dernière partie (portrait halo, MVP, lien vers le match), tuiles (winrate, K/D/A, MVP,
-  héros). « Tonight's games » : une carte par partie (bandeau de carte, mode, héros, K/D/A, award ;
-  motif rayé pour les cartes ARAM sans minimap). « Your form » : 30 derniers résultats, winrate
-  global, 10 derniers, winrate par mode, héros les plus joués.
-- **Match detail** (2368, Braxis Holdout, Storm League) — couverture avec minimap découpée, verdict,
-  score takedowns / niveau / premier objectif / premier fort. Draft : deux panneaux (bans barrés
-  avec phase, picks dans l'ordre, « FIRST PICK », « YOU »). Scoreboard : barres relatives au max de
-  la partie, awards en étiquettes, ligne du joueur mise en évidence. Avance de niveau : courbe
-  au-dessus/en dessous de la ligne + premier fort. Build du joueur par palier.
-- **Hero page** (Gul'dan) — grand portrait à anneau d'univers, stats, meilleure carte (≥ 10
-  parties). Cartes en tuiles minimap colorées (≥ 60 % vert, < 45 % rouge). « Builds that win » :
-  chemins de talents par palier avec winrate. Historique de patchs avec étiquettes BUFF / NERF /
-  BUGFIX.
+- **Session** — "Tonight" cover: the evening's record very large (4–0 on 2026-06-09),
+  pips, latest game (halo portrait, MVP, link to the match), tiles (winrate, K/D/A, MVP,
+  heroes). "Tonight's games": one card per game (map banner, mode, hero, K/D/A, award;
+  striped pattern for ARAM maps without a minimap). "Your form": last 30 results, overall winrate,
+  last 10, winrate per mode, most-played heroes.
+- **Match detail** (2368, Braxis Holdout, Storm League) — cover with cropped minimap, verdict,
+  takedowns / level / first objective / first fort score. Draft: two panels (struck-through bans
+  with phase, picks in order, "FIRST PICK", "YOU"). Scoreboard: bars relative to the game's max,
+  awards as labels, the player's row highlighted. Level advantage: curve
+  above/below the line + first fort. The player's build per tier.
+- **Hero page** (Gul'dan) — large portrait with universe ring, stats, best map (≥ 10
+  games). Maps as coloured minimap tiles (≥ 60 % green, < 45 % red). "Builds that win":
+  talent paths per tier with winrate. Patch history with BUFF / NERF /
+  BUGFIX labels.
 
-Les maquettes du dépôt chargent les portraits depuis `../../.images/` (référentiel vendorisé
-localement, non versionné) et les minimaps depuis `../../assets/minimaps/` ; sans portraits, repli
-sur médaillons à initiales.
+The repository's mockups load portraits from `../../.images/` (reference data vendored
+locally, not versioned) and minimaps from `../../assets/minimaps/`; without portraits, they fall back
+to initials medallions.
 
-## Architecture technique
+## Technical architecture
 
-1. **Polices auto-hébergées** : les trois familles (licence SIL OFL) servies depuis le bundle
-   (`web/public/fonts/*.woff2`, sous-ensemble latin), plus de Google Fonts — l'app tourne en LAN
-   et dans OBS. Budget : ≤ 250 Ko de polices.
-2. **Tokens** : `theme.css` gagne les tokens typographiques et de tons ; les tokens de couleur
-   existants ne changent pas.
-3. **Composants partagés** `web/src/components/ds/` : `Portrait` (tons), `Cover`, `SectionHead`,
-   `StatTile`, `Pips`, `Chips`, `MapHeader`, `Bar`, `Verdict`, `EvidenceLine`. Les pages Scouting
-   migrent de leurs copies locales (`Dossier.tsx`, `scouting-dossier.css` scopé `.sd`) vers ces
-   composants — une seule source.
-4. **Chrome** : barre du haut redessinée (marque en titrage, onglets en mono capitales,
-   indicateur live) — voir maquettes.
-5. L'export HTML de scouting reste autonome (il n'utilise pas le bundle) et n'est pas modifié.
+1. **Self-hosted fonts**: the three families (SIL OFL licence) served from the bundle
+   (`web/public/fonts/*.woff2`, Latin subset), no more Google Fonts — the app runs on a LAN
+   and in OBS. Budget: ≤ 250 KB of fonts.
+2. **Tokens**: `theme.css` gains typography and tone tokens; the existing colour tokens
+   do not change.
+3. **Shared components** `web/src/components/ds/`: `Portrait` (tones), `Cover`, `SectionHead`,
+   `StatTile`, `Pips`, `Chips`, `MapHeader`, `Bar`, `Verdict`, `EvidenceLine`. The Scouting pages
+   migrate from their local copies (`Dossier.tsx`, `scouting-dossier.css` scoped `.sd`) to these
+   components — a single source.
+4. **Chrome**: redesigned top bar (brand in display type, tabs in mono uppercase,
+   live indicator) — see mockups.
+5. The scouting HTML export stays self-contained (it does not use the bundle) and is not modified.
 
-## Déploiement par lots (chacun livrable et vérifiable seul)
+## Rollout in batches (each deliverable and verifiable on its own)
 
-| Lot | Contenu |
+| Batch | Contents |
 |---|---|
-| 0 — fondations | polices auto-hébergées, tokens, composants `ds/`, chrome, migration des pages Scouting |
-| 1 — cœur | Session (Dashboard), Matches (cadre + filtres, tableau dense), Match detail |
-| 2 — référentiel | Heroes / Hero, Player, Maps |
+| 0 — foundations | self-hosted fonts, tokens, `ds/` components, chrome, migration of the Scouting pages |
+| 1 — core | Session (Dashboard), Matches (frame + filters, dense table), Match detail |
+| 2 — reference | Heroes / Hero, Player, Maps |
 | 3 — analyses | Synergies, Trends, Patch notes / Hero changes, Leagues |
-| 4 — outils | console Draft, Admin (allégé) |
-| Overlays OBS | **hors périmètre** par défaut (maquette d'exploration seulement). S'ils étaient retenus : habillage uniquement — tailles, ancrages et timings figés par leurs specs inchangés |
+| 4 — tools | Draft console, Admin (lightened) |
+| OBS overlays | **out of scope** by default (exploration mockup only). If they were retained: skin only — sizes, anchors and timings frozen by their specs unchanged |
 
-## Critères d'acceptation (par lot)
+## Acceptance criteria (per batch)
 
-- `npm test` et `npm run build` verts ; aucune régression des mises à jour temps réel (WS).
-- Vérification navigateur sur données réelles de chaque page du lot, en 1400 px et 390 px.
-- Lot 0 : polices servies par l'app (aucune requête vers Google Fonts), ≤ 250 Ko ; pages Scouting
-  identiques visuellement après migration ; sources OBS inchangées.
-- Pages denses : lisibilité des tableaux conservée (chiffres en mono, pas de titrage dans les lignes).
+- `npm test` and `npm run build` green; no regression of real-time updates (WS).
+- Browser check on real data of each page in the batch, at 1400 px and 390 px.
+- Batch 0: fonts served by the app (no request to Google Fonts), ≤ 250 KB; Scouting pages
+  visually identical after migration; OBS sources unchanged.
+- Dense pages: table readability preserved (numbers in mono, no display type in rows).
 
-## Impact documentaire
+## Documentation impact
 
-`08-frontend.md` (conventions de design, composants `ds/`, chaque page refaite) ;
-`01-architecture.md` (la ligne « design Nexus Codex » précise « · Dossier » une fois validé) ;
+`08-frontend.md` (design conventions, `ds/` components, each redone page);
+`01-architecture.md` (the "Nexus Codex design" line specifies "· Dossier" once approved);
 `docs/STATUS.md`.
 
-## Questions ouvertes pour l'opérateur
+## Open questions for the operator
 
-1. La direction des trois maquettes est-elle la bonne (et la barre du haut redessinée) ?
-2. Overlays OBS : confirmer « hors périmètre » après avoir vu la maquette d'exploration ?
-3. Ordre des lots : Session / Matches / Match detail d'abord, ou une autre priorité ?
+1. Is the direction of the three mockups the right one (and the redesigned top bar)?
+2. OBS overlays: confirm "out of scope" after seeing the exploration mockup?
+3. Order of batches: Session / Matches / Match detail first, or another priority?

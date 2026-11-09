@@ -1,177 +1,177 @@
-# Storm Codex sur GitHub Pages — design
+# Storm Codex on GitHub Pages — design
 
-> Spec storm-codex. Scope retenu par l'opérateur le 2026-09-08 (les quatre volets).
-> **En attente de validation** avant `writing-plans` et implémentation.
+> storm-codex spec. Scope chosen by the operator on 2026-09-08 (all four parts).
+> **Awaiting approval** before `writing-plans` and implementation.
 
-## But
+## Goal
 
-Publier sur `matella.github.io/storm-codex` la part de Storm Codex qui **peut vivre sans le box** :
-la doc, les crates, et surtout un **playground qui décode un replay entièrement dans le navigateur**.
-Le box ne tourne que le soir et n'est joignable qu'en Tailscale ; Pages est en ligne 24/7 et
-public. Ce sont deux surfaces disjointes, pas un miroir.
+Publish on `matella.github.io/storm-codex` the part of Storm Codex that **can live without the box**:
+the docs, the crates, and above all a **playground that decodes a replay entirely in the browser**.
+The box only runs in the evening and is only reachable over Tailscale; Pages is online 24/7 and
+public. They are two disjoint surfaces, not a mirror.
 
-## Ce que Pages impose (contraintes, non négociables)
+## What Pages imposes (constraints, non-negotiable)
 
-- **Statique uniquement** : pas d'API, pas de WS, pas de Postgres, pas de secret. Rien de
-  `storm-codex-server` ne part là-bas.
-- **Public par construction** : le repo `matella/storm-codex` est public (vérifié) — donc tout
-  fichier publié est lisible par n'importe qui, indexable, et un `git revert` ne dépublie pas ce
-  qui a été aspiré. **Aucune donnée de match personnelle par défaut** (volet 4 = opt-in explicite,
-  match par match).
-- Limites de la plateforme : site publié ≤ 1 Go, ~100 Go/mois de bande passante (soft), HTTPS
-  fourni. Déploiement par **GitHub Actions** (`actions/deploy-pages`), pas par branche `gh-pages`.
-- **Pas de réécriture d'URL côté serveur** → les liens profonds d'une SPA en routage `history`
-  cassent. Décision : le build Pages utilise **`HashRouter`**, pas `BrowserRouter` (le build box
-  reste inchangé).
+- **Static only**: no API, no WS, no Postgres, no secrets. Nothing from
+  `storm-codex-server` goes there.
+- **Public by construction**: the `matella/storm-codex` repo is public (checked) — so every
+  published file is readable by anyone, indexable, and a `git revert` does not unpublish what
+  has been scraped. **No personal match data by default** (part 4 = explicit opt-in,
+  match by match).
+- Platform limits: published site ≤ 1 GB, ~100 GB/month of bandwidth (soft), HTTPS
+  provided. Deployment by **GitHub Actions** (`actions/deploy-pages`), not via a `gh-pages` branch.
+- **No server-side URL rewriting** → deep links of an SPA using `history` routing
+  break. Decision: the Pages build uses **`HashRouter`**, not `BrowserRouter` (the box build
+  stays unchanged).
 
-## Décisions actées
+## Decisions made
 
-1. **Une seule Action `pages.yml`** qui construit et publie les quatre volets sous un même site,
-   par sous-chemins : `/` (landing), `/spec/`, `/api/` (rustdoc), `/play/`, `/share/`.
-2. **Aucun volet ne modifie le serveur ni la projection.** Si un volet exige un changement dans
-   `crates/`, il se fait par ajout (nouveau crate `storm-web`), jamais par modification du chemin
-   chaud du box.
-3. **Le playground ne téléverse rien.** Le replay déposé est lu par `FileReader`, décodé en wasm,
-   et n'existe que dans l'onglet. Pas d'analytics, pas de `fetch` sortant, pas de stockage.
-4. **Ordre de livraison** : volet 1 (doc) → volet 2 (rustdoc) → volet 3 (playground) → volet 4
-   (partage). Les deux premiers sont du YAML et débloquent la chaîne de déploiement ; le troisième
-   est le vrai travail ; le quatrième dépend du troisième.
+1. **A single `pages.yml` Action** that builds and publishes the four parts under one site,
+   by sub-paths: `/` (landing), `/spec/`, `/api/` (rustdoc), `/play/`, `/share/`.
+2. **No part modifies the server or the projection.** If a part requires a change in
+   `crates/`, it is done by addition (new `storm-web` crate), never by modifying the box's
+   hot path.
+3. **The playground uploads nothing.** The dropped replay is read by `FileReader`, decoded in wasm,
+   and only exists in the tab. No analytics, no outgoing `fetch`, no storage.
+4. **Delivery order**: part 1 (docs) → part 2 (rustdoc) → part 3 (playground) → part 4
+   (sharing). The first two are YAML and unlock the deployment chain; the third
+   is the real work; the fourth depends on the third.
 
-## Volet 1 — Site de doc
+## Part 1 — Docs site
 
-`docs/spec/` (spec vivante), `docs/specs/` (specs datées) et `docs/research/` rendus en site
-statique. Outil : **mdBook** (binaire unique, zéro dépendance JS, rendu Markdown proche de GitHub,
-recherche intégrée). `docs/runbooks/` et `docs/plans/` sont **exclus** : ce sont des notes
-d'exploitation qui nomment des hôtes et des chemins du box.
+`docs/spec/` (living spec), `docs/specs/` (dated specs) and `docs/research/` rendered as a static
+site. Tool: **mdBook** (single binary, zero JS dependency, Markdown rendering close to GitHub,
+built-in search). `docs/runbooks/` and `docs/plans/` are **excluded**: they are operational
+notes that name hosts and paths on the box.
 
-- `docs/book.toml` + `SUMMARY.md` généré (script `scripts/gen-summary.sh` ou table écrite à la
-  main, décidée à l'implémentation selon le volume).
-- Critère d'acceptation : le site se charge, la recherche trouve « parser_version », et **aucune
-  page de `runbooks/` ni de `plans/` n'est publiée** (vérifié par `grep` sur le répertoire de
-  sortie dans la CI).
+- `docs/book.toml` + generated `SUMMARY.md` (script `scripts/gen-summary.sh` or a hand-written
+  table, decided at implementation depending on volume).
+- Acceptance criterion: the site loads, search finds "parser_version", and **no
+  page from `runbooks/` or `plans/` is published** (checked by a `grep` on the output
+  directory in CI).
 
-## Volet 2 — Rustdoc + landing des crates
+## Part 2 — Rustdoc + crates landing page
 
-`cargo doc --workspace --no-deps` publié sous `/api/`, plus une page d'accueil qui présente les
-quatre crates (`storm-replay`, `storm-stats`, `storm-lobby`, `storm-replay-viewer`), leur état de
-publication et les chiffres de parité déjà mesurés. `storm-codex-server` est **exclu** de la doc
-publiée (`--exclude storm-codex-server`) : ses items nomment des routes d'admin et la forme de la
-base.
+`cargo doc --workspace --no-deps` published under `/api/`, plus a home page presenting the
+four crates (`storm-replay`, `storm-stats`, `storm-lobby`, `storm-replay-viewer`), their publication
+status and the parity figures already measured. `storm-codex-server` is **excluded** from the
+published docs (`--exclude storm-codex-server`): its items name admin routes and the shape of the
+database.
 
-- Critère d'acceptation : `/api/storm_replay/index.html` et `/api/storm_stats/index.html` répondent
-  200, `storm_codex_server` absent du site.
-- Note : docs.rs prendra le relais quand le jalon 6 publiera les crates ; Pages sert **avant**.
+- Acceptance criterion: `/api/storm_replay/index.html` and `/api/storm_stats/index.html` answer
+  200, `storm_codex_server` absent from the site.
+- Note: docs.rs will take over when milestone 6 publishes the crates; Pages serves **before**.
 
-## Volet 3 — Playground WASM « dépose un replay »
+## Part 3 — "Drop a replay" WASM playground
 
-Le volet central. Une page qui accepte un `.StormReplay` par glisser-déposer et affiche la fiche de
-match complète — score, talents, chat, visionneuse 2D — **sans serveur**.
+The central part. A page that accepts a `.StormReplay` by drag and drop and displays the complete
+match page — score, talents, chat, 2D viewer — **without a server**.
 
-### Go technique déjà mesuré (2026-09-08)
+### Technical go already measured (2026-09-08)
 
 ```
 cargo build -p storm-stats -p storm-replay-viewer --target wasm32-unknown-unknown --release
-→ Finished en 17,59 s, aucune modification de code
+→ Finished in 17.59 s, no code changes
 ```
 
-Toute la chaîne est pure Rust : `nom-mpq` → `bzip2-rs` + `flate2`/`miniz_oxide`, plus `regex`,
-`serde_json`, `serde`. **Aucune dépendance C**, qui était le seul risque bloquant. Le risque
-résiduel est de **taille et de temps**, pas de faisabilité — il est traité par les budgets ci-dessous.
+The whole chain is pure Rust: `nom-mpq` → `bzip2-rs` + `flate2`/`miniz_oxide`, plus `regex`,
+`serde_json`, `serde`. **No C dependency**, which was the only blocking risk. The residual
+risk is **size and time**, not feasibility — it is handled by the budgets below.
 
 ### Architecture
 
-- **Nouveau crate `crates/storm-web`** (`crate-type = ["cdylib", "rlib"]`, `wasm-bindgen`), qui
-  n'expose que deux fonctions :
-  - `parse_match(bytes: &[u8]) -> Result<JsValue, JsValue>` → l'objet `{match, players}` **exactement
-    à la forme de `GET /api/matches/{id}`**, pour que le front n'ait pas deux modèles de données ;
-  - `parse_replay2d(bytes: &[u8]) -> Result<JsValue, JsValue>` → la forme de
+- **New crate `crates/storm-web`** (`crate-type = ["cdylib", "rlib"]`, `wasm-bindgen`), which
+  only exposes two functions:
+  - `parse_match(bytes: &[u8]) -> Result<JsValue, JsValue>` → the `{match, players}` object **exactly
+    in the shape of `GET /api/matches/{id}`**, so the front-end does not have two data models;
+  - `parse_replay2d(bytes: &[u8]) -> Result<JsValue, JsValue>` → the shape of
     `GET /api/matches/{id}/replay2d`.
-  Ce crate est un **adaptateur, pas une ré-implémentation** : il appelle `storm_stats` et
-  `storm_replay_viewer` tels quels. Toute divergence de sortie entre wasm et serveur serait une
-  régression de parité — un test le verrouille (voir critères).
-- **Web Worker** : le décodage tourne hors du thread principal (100 k game events par replay), le
-  fichier est transféré en `ArrayBuffer` transférable. L'UI affiche une progression, ne gèle jamais.
-- **Front** : la même SPA, avec une **source de données commutable**. `web/src/api.ts` est déjà la
-  couche unique (convention de `08-frontend.md`) — on y introduit un adaptateur
-  `source = "remote" | "wasm"` piloté par `import.meta.env.VITE_SOURCE`. Le build box garde
-  `remote` et ne change pas de comportement.
-- **Routes du build Pages** : `/play` (dépôt + fiche de match) uniquement. Les pages qui n'ont de
-  sens que contre la base (Matches, Player, Heroes, Trends, Draft, Admin, overlays OBS) ne sont pas
-  montées ; la nav ne les affiche pas.
+  This crate is an **adapter, not a re-implementation**: it calls `storm_stats` and
+  `storm_replay_viewer` as they are. Any output divergence between wasm and server would be a
+  parity regression — a test locks it (see criteria).
+- **Web Worker**: decoding runs off the main thread (100k game events per replay), the
+  file is transferred as a transferable `ArrayBuffer`. The UI shows progress, never freezes.
+- **Front-end**: the same SPA, with a **switchable data source**. `web/src/api.ts` is already the
+  single layer (convention of `08-frontend.md`) — an adapter
+  `source = "remote" | "wasm"` driven by `import.meta.env.VITE_SOURCE` is introduced there. The box build keeps
+  `remote` and does not change behaviour.
+- **Pages build routes**: `/play` (drop + match page) only. Pages that only make
+  sense against the database (Matches, Player, Heroes, Trends, Draft, Admin, OBS overlays) are not
+  mounted; the nav does not show them.
 
-### Dégradations assumées (pas de référentiel `dim_*` hors du box)
+### Accepted degradations (no `dim_*` reference data outside the box)
 
-| Donnée | Sur le box | Sur Pages |
+| Data | On the box | On Pages |
 |---|---|---|
-| Minimaps de la visionneuse 2D | `/images/minimaps` | **identiques** — `assets/minimaps` est committé (5,2 Mo), embarqué dans le build |
-| Portraits de héros | téléchargés depuis HotsPatchNotes dans `images_dir` | **absents** → fallback initiales, déjà géré par `Avatar` |
-| Noms de talents (`dim_talents`) | résolus par `/api/dim/talents` | **`talentTreeId` décamelisé**, déjà le fallback de `TalentStrip` |
-| Couleur d'anneau par univers | `useDimHeroes` | neutre |
+| 2D viewer minimaps | `/images/minimaps` | **identical** — `assets/minimaps` is committed (5.2 MB), embedded in the build |
+| Hero portraits | downloaded from HotsPatchNotes into `images_dir` | **missing** → initials fallback, already handled by `Avatar` |
+| Talent names (`dim_talents`) | resolved by `/api/dim/talents` | **de-camelised `talentTreeId`**, already the fallback of `TalentStrip` |
+| Ring colour per universe | `useDimHeroes` | neutral |
 
-Une V2 possible (**hors de ce volet**) : publier un `dim-snapshot.json` généré depuis l'API du box
-et chargé à la demande, ce qui rétablirait noms de talents et portraits. À chiffrer avant de
-l'ouvrir — pas dans le périmètre validé ici.
+A possible V2 (**outside this part**): publish a `dim-snapshot.json` generated from the box's API
+and loaded on demand, which would restore talent names and portraits. To be costed before
+opening it — not in the scope approved here.
 
-### Budgets (contrats, à mesurer — pas à estimer)
+### Budgets (contracts, to be measured — not estimated)
 
-| Budget | Valeur | Comment on mesure |
+| Budget | Value | How it is measured |
 |---|---|---|
-| Taille du `.wasm` servi | **≤ 3 Mo gzip** | taille du fichier publié, imprimée par la CI |
-| Décodage + stats d'un replay type | **≤ 1 s** sur le PC de jeu, Chrome | `performance.now()` autour de l'appel worker, médiane sur les 4 replays de test |
-| Chargement initial de `/play` | ≤ 2 s | mesure navigateur, réseau non bridé |
+| Size of the served `.wasm` | **≤ 3 MB gzip** | size of the published file, printed by CI |
+| Decoding + stats of a typical replay | **≤ 1 s** on the gaming PC, Chrome | `performance.now()` around the worker call, median over the 4 test replays |
+| Initial load of `/play` | ≤ 2 s | browser measurement, unthrottled network |
 
-Référence : 133 ms en natif (`docs/spec/03-storm-stats.md`). Un facteur ~5 en wasm reste dans le
-budget ; au-delà de 1 s, `wasm-opt -Oz` puis, si nécessaire, réexamen du volet.
+Reference: 133 ms natively (`docs/spec/03-storm-stats.md`). A ~5× factor in wasm stays within the
+budget; beyond 1 s, `wasm-opt -Oz` then, if needed, re-examination of the part.
 
-### Critères d'acceptation
+### Acceptance criteria
 
-1. Les **4 replays de test committés** (`crates/*/tests/data/*.StormReplay`) déposés dans le
-   playground produisent une fiche de match complète : score, chat, timeline, visionneuse 2D qui
-   joue.
-2. **Parité wasm ↔ serveur prouvée** : un test compare, pour ces 4 replays, la sortie de
-   `storm_web::parse_match` à celle du chemin serveur — **égalité JSON stricte**. Une divergence
-   est un échec, pas une tolérance.
-3. Budgets ci-dessus mesurés et inscrits dans la spec vivante.
-4. **Aucune requête réseau sortante** pendant un décodage : vérifié par l'onglet réseau (seuls les
-   assets statiques du site apparaissent).
+1. The **4 committed test replays** (`crates/*/tests/data/*.StormReplay`) dropped into the
+   playground produce a complete match page: score, chat, timeline, 2D viewer that
+   plays.
+2. **wasm ↔ server parity proven**: a test compares, for those 4 replays, the output of
+   `storm_web::parse_match` with that of the server path — **strict JSON equality**. A divergence
+   is a failure, not a tolerance.
+3. The budgets above measured and written into the living spec.
+4. **No outgoing network request** during a decode: checked in the network tab (only the
+   site's static assets appear).
 
-## Volet 4 — Partage statique d'un match
+## Part 4 — Static sharing of a match
 
-Envoyer une partie à des coéquipiers sans ouvrir le box ni leur donner Tailscale.
+Send a game to teammates without opening the box or giving them Tailscale.
 
-- **Mécanique** : un export depuis la fiche de match du box produit un fichier
-  `share/<slug>.json` (l'objet `{match, players}` + le bloc `replay2d`) ; le fichier est committé
-  dans le repo, publié par la même Action, et lu par le viewer du volet 3 via `/play#/share/<slug>`.
-  Aucun code serveur nouveau : l'export est un bouton qui télécharge ce que l'API renvoie déjà.
-- **Décision de vie privée** (à trancher par l'opérateur, recommandation par défaut) : l'export
-  **pseudonymise les BattleTags des joueurs non-opérateur** (`Joueur 2`… ), avec une case pour
-  garder les vrais noms quand la partie est une partie d'équipe consentante. Les héros, stats,
-  positions et le **chat** ne sont pas anonymisables sans vider l'export de son intérêt : le fil de
-  chat part tel quel, ce que l'opérateur assume à l'export.
-- Critère d'acceptation : un match exporté depuis le box s'ouvre sur Pages, chat et visionneuse
-  compris, sans qu'aucune requête ne parte vers le box ; et un export pseudonymisé ne contient plus
-  aucun BattleTag des autres joueurs (`grep` sur le JSON dans le test).
+- **Mechanics**: an export from the box's match page produces a file
+  `share/<slug>.json` (the `{match, players}` object + the `replay2d` block); the file is committed
+  to the repo, published by the same Action, and read by part 3's viewer via `/play#/share/<slug>`.
+  No new server code: the export is a button that downloads what the API already returns.
+- **Privacy decision** (to be settled by the operator, default recommendation): the export
+  **pseudonymises the BattleTags of non-operator players** (`Player 2`… ), with a checkbox to
+  keep the real names when the game is a consenting team's game. Heroes, stats,
+  positions and **chat** cannot be anonymised without emptying the export of its value: the chat
+  feed goes out as is, which the operator accepts at export time.
+- Acceptance criterion: a match exported from the box opens on Pages, chat and viewer
+  included, without any request going to the box; and a pseudonymised export no longer contains
+  any BattleTag of the other players (`grep` on the JSON in the test).
 
-## Non-buts (explicites)
+## Non-goals (explicit)
 
-- Pas de miroir de la base sur Pages, pas de statistiques agrégées publiques.
-- Pas d'overlay OBS sur Pages (ils dépendent du WS et de l'état de session).
-- Pas de remplacement du box : Pages ne sert **jamais** de plan de repli pour le serveur.
-- Pas de nom de domaine dédié en V1 (`matella.github.io/storm-codex` suffit).
+- No mirror of the database on Pages, no public aggregated statistics.
+- No OBS overlay on Pages (they depend on the WS and on session state).
+- No replacement of the box: Pages **never** serves as a fallback for the server.
+- No dedicated domain name in V1 (`matella.github.io/storm-codex` is enough).
 
-## Impact documentaire (règle n° 0)
+## Documentation impact (rule no. 0)
 
-| Fichier | Ce qui change |
+| File | What changes |
 |---|---|
-| `docs/spec/09-operations.md` | nouvelle Action `pages.yml`, ce qu'elle publie, ce qu'elle exclut |
-| `docs/spec/08-frontend.md` | `VITE_SOURCE`, routage `HashRouter` du build Pages, route `/play`, dégradations |
-| `docs/spec/01-architecture.md` | budgets wasm mesurés ; Pages posé comme surface publique disjointe |
-| `docs/spec/README.md` | pointeur vers le crate `storm-web` |
+| `docs/spec/09-operations.md` | new `pages.yml` Action, what it publishes, what it excludes |
+| `docs/spec/08-frontend.md` | `VITE_SOURCE`, `HashRouter` routing of the Pages build, `/play` route, degradations |
+| `docs/spec/01-architecture.md` | measured wasm budgets; Pages set as a disjoint public surface |
+| `docs/spec/README.md` | pointer to the `storm-web` crate |
 
-## Questions ouvertes pour l'opérateur
+## Open questions for the operator
 
-1. **Volet 4** : pseudonymisation par défaut — d'accord, ou noms réels par défaut ?
-2. **Nom du site** : `matella.github.io/storm-codex` ou un domaine à toi plus tard ?
-3. Publier le **mini-corpus de replays** de test sur Pages pour que le playground ait un bouton
-   « essayer avec un exemple » — ces fichiers sont déjà committés dans le repo public, donc c'est
-   une exposition nulle en plus. Recommandation : oui.
+1. **Part 4**: pseudonymisation by default — agreed, or real names by default?
+2. **Site name**: `matella.github.io/storm-codex` or a domain of yours later?
+3. Publish the test **mini-corpus of replays** on Pages so the playground has a
+   "try with an example" button — these files are already committed to the public repo, so it is
+   zero additional exposure. Recommendation: yes.

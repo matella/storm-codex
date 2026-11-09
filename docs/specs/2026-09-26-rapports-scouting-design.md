@@ -1,126 +1,126 @@
-# Rapports de scouting
+# Scouting reports
 
-> Spec storm-codex. Besoin exprimé par l'opérateur le 2026-09-26.
-> **Validée par l'opérateur le 2026-09-26** (« You can go »). Volet A passé (drafts confirmés).
-> Plan : `docs/plans/2026-09-26-rapports-scouting.md`.
+> storm-codex spec. Need expressed by the operator on 2026-09-26.
+> **Approved by the operator on 2026-09-26** ("You can go"). Part A passed (drafts confirmed).
+> Plan: `docs/plans/2026-09-26-rapports-scouting.md`.
 
-## But
+## Goal
 
-Préparer un match contre une équipe adverse à partir de **ses replays** : l'opérateur dépose une
-liste de replays, storm-codex en tire un jeu de faits chiffrés (draft, cartes, pool de héros,
-déroulé des parties), les emballe dans un **pack** destiné à un LLM (ChatGPT, Claude ou un modèle
-local), puis **réimporte l'analyse** du LLM dans un format imposé pour l'afficher proprement, chaque
-affirmation adossée aux chiffres qui la justifient.
+Prepare a match against an opposing team from **its replays**: the operator drops a
+list of replays, storm-codex derives a set of quantified facts from them (draft, maps, hero pool,
+how the games unfold), wraps them in a **pack** meant for an LLM (ChatGPT, Claude or a local
+model), then **re-imports the LLM's analysis** in an imposed format to display it cleanly, each
+claim backed by the figures that justify it.
 
-Chaque rapport est un objet durable : titre libre modifiable, horodatage, liste de rapports.
+Each report is a durable object: free editable title, timestamp, list of reports.
 
-## Cadre fixé par l'opérateur (2026-09-26)
+## Frame set by the operator (2026-09-26)
 
-| Point | Décision |
+| Point | Decision |
 |---|---|
-| Usage | **scouting à 99 %** (analyse d'un adversaire, pas revue de sa propre équipe) |
-| Type de parties | **toutes en partie personnalisée** (mode `Custom`, draft de tournoi) |
-| Origine des replays | les parties de l'adversaire **contre d'autres équipes, et parfois contre nous** |
-| Utilisateurs | **l'opérateur seul** — pas de partage, pas de lien public |
-| Analyses | **une seule par rapport** ; réimporter **écrase** l'analyse en place |
-| Contenu de l'analyse (2026-09-26, après la v1) | **la draft uniquement, carte par carte** : quelles cartes choisir ou éviter, et pour chaque carte quoi bannir, quoi prendre, ce qu'ils vont probablement jouer, quoi prévoir ; plus un plan valable sur toute carte. Plus de notes joueurs ni de plan de jeu général → `format_version: 2` |
-| Règle de roster | le côté cible compte **toujours au moins 3 joueurs de l'équipe principale**, sauf exception ; pour les exceptions, l'opérateur peut désigner un **joueur ancre** |
-| Étape LLM | **manuelle** (copier-coller ou fichier) : l'opérateur n'a pas d'API OpenAI/Anthropic — aucun appel de LLM depuis l'app |
-| Noms des joueurs | **inclus** dans le pack, sans option pour les retirer (ce ne sont que des pseudos) |
-| Langue de l'analyse | **anglais** (comme l'UI) |
-| Lien avec `teams` | **non** — le roster d'un rapport vit dans le rapport |
+| Use | **scouting 99 % of the time** (analysis of an opponent, not a review of one's own team) |
+| Type of games | **all in custom games** (`Custom` mode, tournament draft) |
+| Origin of the replays | the opponent's games **against other teams, and sometimes against us** |
+| Users | **the operator alone** — no sharing, no public link |
+| Analyses | **a single one per report**; re-importing **overwrites** the analysis in place |
+| Content of the analysis (2026-09-26, after v1) | **the draft only, map by map**: which maps to pick or avoid, and for each map what to ban, what to pick, what they will probably play, what to plan for; plus a plan valid on any map. No more player notes or general game plan → `format_version: 2` |
+| Roster rule | the target side **always has at least 3 players from the main team**, barring exceptions; for the exceptions, the operator can designate an **anchor player** |
+| LLM step | **manual** (copy-paste or file): the operator has no OpenAI/Anthropic API — no LLM call from the app |
+| Player names | **included** in the pack, with no option to remove them (they are only nicknames) |
+| Language of the analysis | **English** (like the UI) |
+| Link with `teams` | **no** — a report's roster lives in the report |
 
-## L'existant (état au 2026-09-26)
+## What exists (state as of 2026-09-26)
 
-| Élément | Où | Ce qui sert ici |
+| Element | Where | What it is used for here |
 |---|---|---|
-| Draft des parties perso | `crates/storm-stats/src/process.rs:2239` | `match.bans`, `match.picks` (+ `first`), `players.*.turn` — le mode `Custom` est dans la liste des modes draftés (`process.rs:2246-2255`) |
-| Upload + parse | `crates/storm-codex-server/src/upload.rs` | pipeline archive → parse → projection, `game_fingerprint` (`upload.rs:22`) |
-| Auth d'écriture | `crates/storm-codex-server/src/auth.rs` | `is_admin` : Bearer `ADMIN_TOKEN`, mode ouvert s'il est absent |
-| Simulateur de draft | `/draft`, `draft_live` | passerelle éventuelle (volet F) |
-| Export CSV | `GET /api/matches.csv` | précédent d'export, **non réutilisé** (voir décision 1) |
+| Draft of custom games | `crates/storm-stats/src/process.rs:2239` | `match.bans`, `match.picks` (+ `first`), `players.*.turn` — the `Custom` mode is in the list of drafted modes (`process.rs:2246-2255`) |
+| Upload + parse | `crates/storm-codex-server/src/upload.rs` | archive → parse → projection pipeline, `game_fingerprint` (`upload.rs:22`) |
+| Write auth | `crates/storm-codex-server/src/auth.rs` | `is_admin`: `ADMIN_TOKEN` Bearer, open mode if absent |
+| Draft simulator | `/draft`, `draft_live` | possible bridge (part F) |
+| CSV export | `GET /api/matches.csv` | export precedent, **not reused** (see decision 1) |
 
-## Décisions actées
+## Decisions made
 
-1. **Les replays de scouting ne vont pas dans `matches`.** Ce sont majoritairement des parties
-   d'autres joueurs : projetées dans `matches`/`match_players`, elles pollueraient toutes les stats
-   personnelles (`/api/heroes`, `/api/players`, `/api/maps`, `/api/synergies`, dashboard, lobby…).
-   Un drapeau `source` sur `matches` obligerait à filtrer la quarantaine de requêtes qui lisent
-   ces tables (`read.rs` : 24, `lobby/enrich.rs` : 6, `project.rs` : 6…) — une seule oubliée et la
-   pollution est silencieuse. On stocke donc dans des **tables dédiées** : zéro changement des
-   requêtes existantes, isolation garantie par construction.
-   Une partie adverse **contre nous** peut ainsi exister aux deux endroits (dans `matches` via
-   `client-rs`, et dans le rapport) : c'est voulu, les deux usages sont indépendants.
-2. **Aucun changement de storm-stats ni de `PARSER_VERSION`.** Tous les faits sont calculés à partir
-   de l'objet `match`/`players` que storm-stats produit déjà. Pas de diff de parité à refaire.
-3. **Les faits sont calculés en Rust, pas par le LLM.** Un LLM calcule mal des taux sur des
-   centaines de lignes et invente volontiers des chiffres ; il reçoit donc des agrégats déjà
-   calculés, chacun avec son **effectif `n`**, et il **interprète**. Le calcul est un module
-   **pur** (zéro I/O) `crates/storm-codex-server/src/scouting/facts.rs`, testé unitairement, comme
-   le moteur de draft.
-4. **Chaque fait a un identifiant stable** (`map.cursed_hollow.record`, `p2.hero.johanna`…) et
-   **chaque affirmation de l'analyse doit citer les identifiants** qui la fondent. À l'import, les
-   identifiants sont résolus : l'UI affiche la vraie valeur et son `n` à côté de l'affirmation, et
-   **signale** toute affirmation sans preuve ou citant un identifiant inexistant. C'est le garde-fou
-   contre l'hallucination sur des échantillons de 10–20 parties.
-5. **Les faits sont un instantané stocké**, recalculé à chaque changement du rapport (ajout/retrait
-   de replay, roster modifié) et versionné (`facts_version`). Les lectures ne re-décodent rien et
-   ne rechargent pas 30 objets `match` : elles servent l'instantané.
-6. **Les joueurs sont désignés `p1`…`pN` dans le pack**, pas par leur BattleTag : identifiants
-   courts que le LLM recopie sans erreur, et que l'UI retraduit. Les noms figurent toujours dans
-   une table de correspondance du pack (décision opérateur : ce ne sont que des pseudos).
-7. **Routes d'écriture protégées** comme la gestion existante (`is_admin`, 🔒 si `ADMIN_TOKEN`).
+1. **Scouting replays do not go into `matches`.** They are mostly games of
+   other players: projected into `matches`/`match_players`, they would pollute all the personal
+   stats (`/api/heroes`, `/api/players`, `/api/maps`, `/api/synergies`, dashboard, lobby…).
+   A `source` flag on `matches` would require filtering the forty or so queries that read
+   these tables (`read.rs`: 24, `lobby/enrich.rs`: 6, `project.rs`: 6…) — a single one forgotten and the
+   pollution is silent. We therefore store in **dedicated tables**: zero change to the
+   existing queries, isolation guaranteed by construction.
+   An opposing game **against us** can thus exist in both places (in `matches` via
+   `client-rs`, and in the report): this is intended, the two uses are independent.
+2. **No change to storm-stats or `PARSER_VERSION`.** All facts are computed from
+   the `match`/`players` object that storm-stats already produces. No parity diff to redo.
+3. **Facts are computed in Rust, not by the LLM.** An LLM computes rates poorly over
+   hundreds of rows and readily invents figures; it therefore receives already-computed
+   aggregates, each with its **sample size `n`**, and it **interprets**. The computation is a
+   **pure** module (zero I/O) `crates/storm-codex-server/src/scouting/facts.rs`, unit-tested, like
+   the draft engine.
+4. **Each fact has a stable identifier** (`map.cursed_hollow.record`, `p2.hero.johanna`…) and
+   **each claim of the analysis must cite the identifiers** it rests on. On import, the
+   identifiers are resolved: the UI shows the real value and its `n` next to the claim, and
+   **flags** any claim without evidence or citing a non-existent identifier. This is the safeguard
+   against hallucination on samples of 10–20 games.
+5. **Facts are a stored snapshot**, recomputed at each change of the report (replay added/removed,
+   roster modified) and versioned (`facts_version`). Reads re-decode nothing and
+   do not reload 30 `match` objects: they serve the snapshot.
+6. **Players are designated `p1`…`pN` in the pack**, not by their BattleTag: short
+   identifiers that the LLM copies without error, and that the UI translates back. The names always appear in
+   a mapping table of the pack (operator decision: they are only nicknames).
+7. **Write routes protected** like the existing management (`is_admin`, 🔒 if `ADMIN_TOKEN`).
 
-## Volet A — Vérification préalable : le draft des parties perso (porte d'entrée)
+## Part A — Prior check: the draft of custom games (entry gate)
 
-Le code déclare `Custom` comme mode drafté, mais rien ne prouve que les bans et l'ordre de pick
-sortent justes sur **de vraies parties de tournoi**. Première tâche, avant tout le reste : décoder
-3 replays de parties perso avec draft et comparer `bans`, `picks.first` et l'ordre des picks à ce
-qu'on voit en rejouant la partie dans le client HotS (confirmation opérateur).
+The code declares `Custom` as a drafted mode, but nothing proves that the bans and pick order
+come out right on **real tournament games**. First task, before everything else: decode
+3 replays of custom games with draft and compare `bans`, `picks.first` and the pick order with
+what is seen when replaying the game in the HotS client (operator confirmation).
 
-Si c'est faux ou incomplet : on documente l'écart ici, et le volet « Draft » des faits est retiré
-de la v1 (cartes, pool de héros et déroulé restent livrables) — une correction de storm-stats
-serait une divergence de parité à instruire dans `03-storm-stats.md`, spec séparée.
+If it is wrong or incomplete: the gap is documented here, and the "Draft" part of the facts is removed
+from v1 (maps, hero pool and game flow remain deliverable) — a storm-stats fix
+would be a parity divergence to investigate in `03-storm-stats.md`, separate spec.
 
-### Résultat du décodage (2026-09-26) — **confirmé par l'opérateur** (volet A passé)
+### Decoding result (2026-09-26) — **confirmed by the operator** (part A passed)
 
-3 replays fournis par l'opérateur (une série du 2026-07-22, build 97605, mêmes 10 joueurs ; ancre
-un joueur de l'équipe scoutée) : Tomb of the Spider Queen, Alterac Pass, Braxis Holdout. Décodage sans erreur ;
-`mode = -1` = `Custom` dans `constants.json` (valeur attendue, et la draft est bien extraite).
-Cohérence interne vérifiée : 3 bans par équipe (2 + 1), 5 picks par équipe, aucun héros banni
-n'est pické dans la même partie, aucun doublon.
+3 replays provided by the operator (a series from 2026-07-22, build 97605, same 10 players; anchor
+a player of the scouted team): Tomb of the Spider Queen, Alterac Pass, Braxis Holdout. Decoded without error;
+`mode = -1` = `Custom` in `constants.json` (expected value, and the draft is indeed extracted).
+Internal consistency checked: 3 bans per team (2 + 1), 5 picks per team, no banned hero
+is picked in the same game, no duplicate.
 
-Ce qui est **lu** dans le replay et ce qui est **déduit** — à garder en tête pour les faits :
+What is **read** from the replay and what is **derived** — to keep in mind for the facts:
 
-| Donnée | Origine |
+| Data | Origin |
 |---|---|
-| Héros bannis par chaque équipe, et phase (2 premiers / 1 du milieu) | lu (attributs 4023/4025/4043 et 4028/4030/4045) |
-| Codes de ban → nom de héros | `data/attr.json` (`Crus` → Johanna…) — **le pack doit résoudre les codes** |
-| Équipe au first pick, ordre des picks au sein d'une équipe | lu |
-| Entrelacement global (ban A, ban B, ban A, ban B, pick A, B B, A A, ban B, ban A, B B, A A, B) | **déduit** : ordre standard codé en dur dans le parser (`process.rs:2343-2378`), pas lu |
+| Heroes banned by each team, and phase (first 2 / 1 in the middle) | read (attributes 4023/4025/4043 and 4028/4030/4045) |
+| Ban codes → hero name | `data/attr.json` (`Crus` → Johanna…) — **the pack must resolve the codes** |
+| Team with first pick, pick order within a team | read |
+| Global interleaving (ban A, ban B, ban A, ban B, pick A, B B, A A, ban B, ban A, B B, A A, B) | **derived**: standard order hard-coded in the parser (`process.rs:2343-2378`), not read |
 
-Conséquence : les faits de draft parlent de « bans de 1re phase / de milieu de draft » et d'« ordre
-de pick dans l'équipe », jamais d'un rang global qui ne serait qu'une hypothèse.
+Consequence: the draft facts speak of "first-phase / mid-draft bans" and of "pick order
+within the team", never of a global rank that would only be a hypothesis.
 
-## Volet B — Stockage, dépôt des replays, détection de l'équipe cible
+## Part B — Storage, replay drop, target team detection
 
-### Modèle de données — migration `NNNN_scouting.sql`
+### Data model — migration `NNNN_scouting.sql`
 
-Numéro = prochain libre au moment de l'implémentation (`0010` est réservé par la spec « chat de
-match » si elle passe avant).
+Number = next free one at implementation time (`0010` is reserved by the "match
+chat" spec if it goes first).
 
 ```sql
 CREATE TABLE scouting_reports (
     id                   BIGSERIAL PRIMARY KEY,
     title                TEXT        NOT NULL,
-    target_name          TEXT,                       -- nom libre de l'équipe scoutée
-    roster               JSONB       NOT NULL DEFAULT '[]',  -- toon_handles confirmés par l'opérateur
-    anchors              JSONB       NOT NULL DEFAULT '[]',  -- toon_handles ancres (exceptions)
-    facts                JSONB,                      -- instantané des faits (volet C)
+    target_name          TEXT,                       -- free name of the scouted team
+    roster               JSONB       NOT NULL DEFAULT '[]',  -- toon_handles confirmed by the operator
+    anchors              JSONB       NOT NULL DEFAULT '[]',  -- anchor toon_handles (exceptions)
+    facts                JSONB,                      -- snapshot of the facts (part C)
     facts_version        INT         NOT NULL DEFAULT 0,
-    analysis             JSONB,                      -- analyse importée validée (volet E), écrasable
-    analysis_facts_version INT,                      -- facts_version au moment de l'import
-    analysis_model       TEXT,                       -- déclaré par le LLM ou saisi, informatif
+    analysis             JSONB,                      -- validated imported analysis (part E), overwritable
+    analysis_facts_version INT,                      -- facts_version at import time
+    analysis_model       TEXT,                       -- declared by the LLM or entered, informative
     analysis_imported_at TIMESTAMPTZ,
     created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -136,112 +136,114 @@ CREATE TABLE scouting_games (
     played_at      TIMESTAMPTZ,
     map            TEXT,
     build          INT,
-    target_team    INT,                              -- 0/1 ; NULL = équipe cible non déterminée
-    target_source  TEXT,                             -- 'roster' | 'anchor' | 'manual' ; NULL si non déterminée
-    data           JSONB       NOT NULL,             -- sortie storm-stats complète {match, players}
+    target_team    INT,                              -- 0/1; NULL = target team not determined
+    target_source  TEXT,                             -- 'roster' | 'anchor' | 'manual'; NULL if not determined
+    data           JSONB       NOT NULL,             -- full storm-stats output {match, players}
     parser_version INT         NOT NULL,
     UNIQUE (report_id, fingerprint)
 );
 CREATE INDEX scouting_games_report_idx ON scouting_games (report_id);
 ```
 
-- **Écart d'implémentation assumé (2026-09-26)** : `scouting_games` porte aussi `summary JSONB`
-  (résumé compact : équipes, héros, bans, picks, stats, niveaux, objectifs), et `scouting_reports`
-  des ids `GENERATED ALWAYS AS IDENTITY` (convention des migrations récentes). Le recalcul des
-  faits ne lit que les résumés, pas N objets `match` complets ; `data` reste la projection
-  complète. `facts` stocke l'instantané `{facts, detection, roster, roster_auto}`.
-- **Replay brut archivé** sous `ARCHIVE_DIR/scouting/<sha256>.StormReplay` (règle des 3 étages :
-  le brut reste la source de vérité).
-- **Re-process** : `POST /api/admin/reprocess` couvre aussi `scouting_games` (même critère
-  `parser_version`), puis recalcule les faits des rapports touchés. Idempotent.
-- Le même replay peut appartenir à deux rapports (unicité par `(report_id, fingerprint)`).
+(The applied migration file keeps its original French comments; it is never edited.)
 
-### Détection de l'équipe cible
+- **Accepted implementation deviation (2026-09-26)**: `scouting_games` also carries `summary JSONB`
+  (compact summary: teams, heroes, bans, picks, stats, levels, objectives), and `scouting_reports`
+  `GENERATED ALWAYS AS IDENTITY` ids (convention of recent migrations). Recomputing the
+  facts only reads the summaries, not N complete `match` objects; `data` remains the complete
+  projection. `facts` stores the snapshot `{facts, detection, roster, roster_auto}`.
+- **Raw replay archived** under `ARCHIVE_DIR/scouting/<sha256>.StormReplay` (3-tier rule:
+  the raw file remains the source of truth).
+- **Re-process**: `POST /api/admin/reprocess` also covers `scouting_games` (same
+  `parser_version` criterion), then recomputes the facts of the affected reports. Idempotent.
+- The same replay can belong to two reports (uniqueness per `(report_id, fingerprint)`).
 
-Les parties sont celles de l'adversaire contre des équipes variées, parfois contre nous :
+### Target team detection
 
-Règle de l'opérateur : le côté cible compte **toujours au moins 3 joueurs de l'équipe
-principale**, sauf exception — et pour les exceptions, un **joueur ancre**.
+The games are the opponent's against various teams, sometimes against us:
 
-1. **Candidats** : les `toon_handle` présents dans au moins 50 % des parties du rapport. Si une
-   ancre est déjà définie, la détection part d'elle : candidats = joueurs du même côté que l'ancre
-   dans au moins 50 % des parties de l'ancre (plus robuste quand le lot contient beaucoup de
-   parties contre une même équipe, nous compris).
-2. **Côté cible d'une partie**, dans cet ordre :
-   1. le côté qui contient **au moins 3 joueurs du roster confirmé** → `target_source = 'roster'` ;
-   2. sinon, le côté qui contient **un joueur ancre** → `'anchor'` (l'exception : line-up remaniée) ;
-   3. sinon, **choix manuel** de l'opérateur dans l'onglet Games → `'manual'`.
+Operator's rule: the target side **always has at least 3 players from the main
+team**, barring exceptions — and for the exceptions, an **anchor player**.
 
-   Tant qu'aucune règle ne tranche : `target_team = NULL`, partie affichée « team not found » et
-   **exclue des faits**. Une ancre présente des deux côtés (cas impossible en jeu, donc donnée
-   corrompue) → non déterminée.
-3. L'opérateur **confirme ou corrige** le roster (coche/décoche, ajoute un joueur) et désigne
-   **0, 1 ou plusieurs ancres** ; toute modification relance l'étape 2 (les choix manuels sont
-   conservés) puis le calcul des faits.
-4. Joueurs du côté cible hors roster confirmé : comptés comme **remplaçants** (apparaissent dans
-   les faits joueurs avec leur nombre de parties).
+1. **Candidates**: the `toon_handle`s present in at least 50 % of the report's games. If an
+   anchor is already defined, detection starts from it: candidates = players on the same side as the anchor
+   in at least 50 % of the anchor's games (more robust when the batch contains many
+   games against the same team, us included).
+2. **Target side of a game**, in this order:
+   1. the side that contains **at least 3 players of the confirmed roster** → `target_source = 'roster'`;
+   2. otherwise, the side that contains **an anchor player** → `'anchor'` (the exception: reshuffled line-up);
+   3. otherwise, **manual choice** by the operator in the Games tab → `'manual'`.
 
-Identifiant de joueur = `toon_handle`, jamais le nom affiché (qui change et se ressemble d'un joueur
-à l'autre).
+   As long as no rule decides: `target_team = NULL`, game shown as "team not found" and
+   **excluded from the facts**. An anchor present on both sides (impossible in game, so corrupted
+   data) → not determined.
+3. The operator **confirms or corrects** the roster (ticks/unticks, adds a player) and designates
+   **0, 1 or several anchors**; any modification reruns step 2 (manual choices are
+   kept) then the facts computation.
+4. Players on the target side outside the confirmed roster: counted as **substitutes** (appear in
+   the player facts with their number of games).
 
-### Dépôt
+Player identifier = `toon_handle`, never the displayed name (which changes and looks alike from one player
+to another).
 
-Le front envoie les fichiers **un par un** (barre de progression, statut par fichier : ajouté /
-doublon / échec de parse / équipe non trouvée) via `POST /api/scouting/{id}/replays` — corps =
-octets bruts, header `X-Filename`, même contrat que `/api/upload`. Parse sur le même pool que
-l'upload ; budget parse existant (< 150 ms/replay).
+### Drop
 
-## Volet C — Faits calculés
+The front-end sends the files **one by one** (progress bar, status per file: added /
+duplicate / parse failure / team not found) via `POST /api/scouting/{id}/replays` — body =
+raw bytes, `X-Filename` header, same contract as `/api/upload`. Parse on the same pool as
+the upload; existing parse budget (< 150 ms/replay).
 
-Catalogue v1. **La liste exacte des champs sources est fixée au plan**, après vérification de leur
-présence dans l'objet `match` des parties perso ; un fait dont la source manque est retiré, pas
-approximé.
+## Part C — Computed facts
 
-| Famille | Faits (id indicatif) |
+v1 catalogue. **The exact list of source fields is fixed in the plan**, after checking their
+presence in the `match` object of custom games; a fact whose source is missing is removed, not
+approximated.
+
+| Family | Facts (indicative id) |
 |---|---|
-| Vue d'ensemble | parties, bilan V/D, période couverte, builds/patchs, durée moyenne (`overview.*`) |
-| Cartes | par carte : parties, V/D, winrate + **intervalle de Wilson 95 %** (`map.<carte>.record`) |
-| Joueurs | par joueur `pN` : parties, héros joués (parties, victoires), répartition des rôles, KDA moyen, dégâts héros/min, siège/min, soins/min, morts/partie, part des dégâts de l'équipe (`pN.*`) |
-| Héros × carte | héros pris par la cible sur chaque carte (`map.<carte>.picks`) |
-| Draft | taux de first pick ; bans faits par la cible (global, par carte, par phase) ; bans subis ; héros pris en first pick ; rôle pris en premier ; derniers picks ; **héros joués contre eux** avec leur bilan dans ces parties (`draft.faced.*`) (`draft.*`) |
-| Picks par carte | héros pris par la cible sur chaque carte **avec le joueur `pN` qui l'a joué** (`map.<carte>.pick.*`) |
-| Déroulé | winrate selon premier à 10, premier fort, premier objectif ; écart de niveau moyen à 10/15/20 min ; winrate par tranche de durée ; remontées et parties perdues en tête (`flow.*`) |
+| Overview | games, W/L record, period covered, builds/patches, average duration (`overview.*`) |
+| Maps | per map: games, W/L, winrate + **95 % Wilson interval** (`map.<map>.record`) |
+| Players | per player `pN`: games, heroes played (games, wins), role breakdown, average KDA, hero damage/min, siege/min, healing/min, deaths/game, share of the team's damage (`pN.*`) |
+| Hero × map | heroes picked by the target on each map (`map.<map>.picks`) |
+| Draft | first pick rate; bans made by the target (overall, per map, per phase); bans received; heroes taken first pick; role taken first; last picks; **heroes played against them** with their record in those games (`draft.faced.*`) (`draft.*`) |
+| Picks per map | heroes picked by the target on each map **with the player `pN` who played it** (`map.<map>.pick.*`) |
+| Game flow | winrate by first to 10, first boss, first objective; average level gap at 10/15/20 min; winrate per duration bracket; comebacks and games lost while ahead (`flow.*`) |
 
-Règles :
-- **Chaque fait porte son `n`.** Un fait avec `n < 3` est marqué « faible échantillon » dans le
-  pack (le prompt interdit d'en tirer une conclusion ferme) et grisé dans l'UI.
-- Taux présentés en `k/n` **et** en pourcentage, jamais en pourcentage seul.
-- Module pur `scouting/facts.rs` : entrée = parties + roster, sortie = `Facts` sérialisable.
+Rules:
+- **Each fact carries its `n`.** A fact with `n < 3` is marked "small sample" in the
+  pack (the prompt forbids drawing a firm conclusion from it) and greyed out in the UI.
+- Rates presented as `k/n` **and** as a percentage, never as a percentage alone.
+- Pure module `scouting/facts.rs`: input = games + roster, output = serialisable `Facts`.
 
-## Volet D — Le pack LLM
+## Part D — The LLM pack
 
-Deux sorties, même contenu :
+Two outputs, same content:
 
-1. **`GET /api/scouting/{id}/pack.md`** (et bouton « Copier le pack ») — **format principal**,
-   lisible par tous les LLM y compris locaux :
-   - le **prompt** d'analyse de scouting, **en anglais**, réponse exigée en anglais (rôle, objectif : préparer draft et plan de jeu contre
-     cette équipe ; règles : citer les ids, ne rien affirmer sans fait, signaler les faibles
-     échantillons) ;
-   - la **définition** de chaque famille de faits ;
-   - la table `pN` → nom ;
-   - les **faits**, en tableaux Markdown, chaque ligne avec son id ;
-   - le **format de réponse imposé** (JSON Schema, volet E) et un exemple minimal ;
-   - `report_id` et `facts_version`, à recopier dans la réponse.
-2. **`GET /api/scouting/{id}/pack.xlsx`** — un onglet par famille de faits + un onglet Parties
-   (1 ligne par partie : date, carte, adversaire du jour, résultat, durée, bans, compositions)
-   + un onglet README. Pour la lecture humaine et pour les LLM qui lisent l'Excel.
-   Bibliothèque d'écriture choisie au plan, **doc vérifiée via Context7**.
+1. **`GET /api/scouting/{id}/pack.md`** (and a "Copy pack" button) — **main format**,
+   readable by all LLMs including local ones:
+   - the scouting analysis **prompt**, **in English**, answer required in English (role, goal: prepare draft and game plan against
+     this team; rules: cite the ids, assert nothing without a fact, flag small
+     samples);
+   - the **definition** of each family of facts;
+   - the `pN` → name table;
+   - the **facts**, as Markdown tables, each row with its id;
+   - the **imposed response format** (JSON Schema, part E) and a minimal example;
+   - `report_id` and `facts_version`, to be copied into the response.
+2. **`GET /api/scouting/{id}/pack.xlsx`** — one sheet per family of facts + a Games sheet
+   (1 row per game: date, map, opponent of the day, result, duration, bans, compositions)
+   + a README sheet. For human reading and for LLMs that read Excel.
+   Writing library chosen in the plan, **docs checked via Context7**.
 
-Le prompt vit dans un fichier versionné du dépôt (`crates/storm-codex-server/src/scouting/prompt.md`,
-embarqué), pas en dur dans le code.
+The prompt lives in a versioned file of the repo (`crates/storm-codex-server/src/scouting/prompt.md`,
+embedded), not hard-coded.
 
-## Volet E — Import de l'analyse
+## Part E — Importing the analysis
 
-### Format imposé (`format_version: 2` — plan de draft carte par carte)
+### Imposed format (`format_version: 2` — map-by-map draft plan)
 
-La v1 (notes joueurs, tendances, plan de jeu général) est remplacée le 2026-09-26 à la demande de
-l'opérateur : il ne veut que la draft, carte par carte. Une réponse v1 est refusée à l'import
-(« copy the pack again »).
+v1 (player notes, tendencies, general game plan) was replaced on 2026-09-26 at the
+operator's request: they only want the draft, map by map. A v1 response is refused on import
+("copy the pack again").
 
 ```json
 {
@@ -249,14 +251,14 @@ l'opérateur : il ne veut que la draft, carte par carte. Une réponse v1 est ref
   "report_id": 12,
   "facts_version": 3,
   "model": "claude-opus-5-5",
-  "summary": "… identité de draft de l'équipe (3-5 phrases)",
+  "summary": "… the team's draft identity (3-5 sentences)",
   "map_choice": {
     "pick":  [{ "map": "…", "why": "…", "evidence": ["map.x.record"] }],
     "avoid": [{ "map": "…", "why": "…", "evidence": ["…"] }]
   },
   "maps": [{
     "map": "Braxis Holdout", "confidence": "low|medium|high",
-    "overview": "ce qu'on attend d'eux sur cette carte", "evidence": ["…"],
+    "overview": "what we expect from them on this map", "evidence": ["…"],
     "bans":        [{ "hero": "…", "phase": "first|mid", "why": "…", "evidence": ["…"] }],
     "picks":       [{ "hero": "…", "why": "…", "evidence": ["…"] }],
     "their_picks": [{ "hero": "…", "player": "p3", "why": "…", "evidence": ["…"] }],
@@ -266,163 +268,163 @@ l'opérateur : il ne veut que la draft, carte par carte. Une réponse v1 est ref
 }
 ```
 
-Une entrée `maps` par carte présente dans les faits ; `general` vaut pour toute carte, y compris
-celles absentes des replays. Chaque élément porte ses `evidence` (vérifiées à l'import).
+One `maps` entry per map present in the facts; `general` applies to any map, including
+those absent from the replays. Each item carries its `evidence` (checked on import).
 
-Le JSON Schema est un fichier du dépôt, embarqué dans le pack et utilisé à la validation.
+The JSON Schema is a file of the repo, embedded in the pack and used for validation.
 
 ### Import — `PUT /api/scouting/{id}/analysis`
 
-Corps = **texte brut** de la réponse du LLM (collé ou fichier déposé). Le serveur :
+Body = **raw text** of the LLM's response (pasted or dropped file). The server:
 
-1. **Extrait** le JSON : bloc ```` ```json ```` s'il existe, sinon premier objet JSON équilibré du
-   texte (les modèles locaux l'entourent souvent de prose).
-2. **Valide** contre le schéma v1 — tolérant : champs inconnus ignorés, sections absentes
-   acceptées. JSON cassé ou `format_version` inconnu → refus avec l'erreur exacte, rien n'est
-   écrasé.
-3. **Résout les preuves** : chaque id cité est cherché dans les faits courants ; affirmation sans
-   preuve ou avec id inconnu → marquée `unsupported` (conservée, signalée).
-4. **Contrôle de cohérence** : `report_id` différent → refus ; `facts_version` antérieur → accepté
-   avec avertissement « analyse faite sur un état antérieur du rapport ».
-5. **Écrase** l'analyse existante (décision opérateur) — l'UI demande confirmation avant l'envoi
-   quand une analyse existe déjà.
+1. **Extracts** the JSON: ```` ```json ```` block if there is one, otherwise the first balanced JSON object in the
+   text (local models often surround it with prose).
+2. **Validates** against the v1 schema — tolerant: unknown fields ignored, absent sections
+   accepted. Broken JSON or unknown `format_version` → refused with the exact error, nothing is
+   overwritten.
+3. **Resolves the evidence**: each cited id is looked up in the current facts; a claim without
+   evidence or with an unknown id → marked `unsupported` (kept, flagged).
+4. **Consistency check**: different `report_id` → refused; earlier `facts_version` → accepted
+   with the warning "analysis made on an earlier state of the report".
+5. **Overwrites** the existing analysis (operator decision) — the UI asks for confirmation before sending
+   when an analysis already exists.
 
-Réponse : l'analyse validée + un rapport d'import (nb d'affirmations, nb `unsupported`,
-avertissements). `DELETE /api/scouting/{id}/analysis` retire l'analyse.
+Response: the validated analysis + an import report (number of claims, number of `unsupported`,
+warnings). `DELETE /api/scouting/{id}/analysis` removes the analysis.
 
-### Statut d'un rapport (dérivé, pas stocké)
+### Status of a report (derived, not stored)
 
-`empty` (aucune partie) → `ready` (faits calculés, pas d'analyse) → `analyzed` → `stale` (analyse
-importée sur un `facts_version` antérieur : des replays ont été ajoutés/retirés depuis).
+`empty` (no game) → `ready` (facts computed, no analysis) → `analyzed` → `stale` (analysis
+imported on an earlier `facts_version`: replays have been added/removed since).
 
 ## Interface
 
-Langue de l'UI : anglais (convention `08-frontend.md`).
+UI language: English (`08-frontend.md` convention).
 
-### `/scouting` — liste des rapports
+### `/scouting` — list of reports
 
-Cartes triées par date de création décroissante : **titre**, équipe cible, date de création,
-nombre de parties, période/patchs couverts, **badge de statut**, date d'import de l'analyse.
-Bouton « New report » (titre + nom d'équipe → ouvre le rapport).
+Cards sorted by descending creation date: **title**, target team, creation date,
+number of games, period/patches covered, **status badge**, analysis import date.
+"New report" button (title + team name → opens the report).
 
-### `/scouting/:id` — un rapport
+### `/scouting/:id` — a report
 
-- **En-tête** : titre **éditable en place**, équipe cible, dates de création / mise à jour,
-  statut, actions : *Copy pack*, *Download .md*, *Download .xlsx*, *Import analysis*.
-- **Onglets** :
-  - **Overview** — synthèse de draft + **choix de carte** (à prendre / à éviter) ;
-    faits d'ensemble.
-  - **Players** — une carte par joueur (`pN` + nom + avatar) : pool de héros, rôles, stats clés,
-    niveau de menace et notes de l'analyse.
-  - **Draft** — plan « toute carte » de l'analyse, puis bans, first/last picks, héros joués contre
-    eux avec leur bilan.
-  - **Maps** — **le plan de draft** : une carte par map (bilan + intervalle, ce qu'ils ont pris et
-    par qui, leurs bans, les bans subis), puis « We ban » (avec phase), « We pick », « They will
-    likely pick » (avec le joueur), « Consider », et le niveau de confiance. Les cartes que
-    l'analyse traite sans qu'elles soient dans les replays apparaissent aussi (« not in these
-    replays »).
-  - **Games** — la liste des replays du rapport, zone de dépôt, statut par fichier, côté cible
-    détecté et **par quelle règle** (roster / ancre / manuel), choix manuel du côté pour une
-    partie non déterminée, retrait d'un replay.
-  - **Roster** — candidats détectés, cases à cocher, remplaçants, **désignation des ancres**.
-- **Preuves** : chaque affirmation de l'analyse porte des **puces** avec la valeur réelle et `k/n`
-  (survol = détail du fait) ; une affirmation `unsupported` est visiblement marquée.
-- **Import** : fenêtre avec zone de collage + dépôt de fichier, aperçu du rapport d'import avant
-  confirmation, confirmation d'écrasement si une analyse existe.
-- Le rapport est **utile sans analyse** : tous les onglets affichent les faits seuls.
+- **Header**: title **editable in place**, target team, creation / update dates,
+  status, actions: *Copy pack*, *Download .md*, *Download .xlsx*, *Import analysis*.
+- **Tabs**:
+  - **Overview** — draft summary + **map choice** (to pick / to avoid);
+    overall facts.
+  - **Players** — one card per player (`pN` + name + avatar): hero pool, roles, key stats,
+    threat level and notes from the analysis.
+  - **Draft** — the analysis's "any map" plan, then bans, first/last picks, heroes played against
+    them with their record.
+  - **Maps** — **the draft plan**: one card per map (record + interval, what they picked and
+    by whom, their bans, the bans received), then "We ban" (with phase), "We pick", "They will
+    likely pick" (with the player), "Consider", and the confidence level. The maps that
+    the analysis covers without them being in the replays also appear ("not in these
+    replays").
+  - **Games** — the list of the report's replays, drop zone, status per file, target side
+    detected and **by which rule** (roster / anchor / manual), manual choice of side for an
+    undetermined game, removal of a replay.
+  - **Roster** — detected candidates, checkboxes, substitutes, **designation of anchors**.
+- **Evidence**: each claim of the analysis carries **chips** with the real value and `k/n`
+  (hover = detail of the fact); an `unsupported` claim is visibly marked.
+- **Import**: dialog with a paste area + file drop, preview of the import report before
+  confirmation, overwrite confirmation if an analysis exists.
+- The report is **useful without an analysis**: all tabs show the facts alone.
 
-## API (récapitulatif)
+## API (summary)
 
-| Route | Rôle |
+| Route | Role |
 |---|---|
-| `GET /api/scouting` | liste (sans `facts` ni `analysis`) |
-| `POST /api/scouting` 🔒 | créer `{title, target_name}` |
-| `GET /api/scouting/{id}` | rapport complet : méta, parties (sans `data`), candidats roster, faits, analyse avec preuves résolues, statut |
-| `PATCH /api/scouting/{id}` 🔒 | `title`, `target_name`, `roster` (→ recalcul) |
-| `DELETE /api/scouting/{id}` 🔒 | supprimer (parties en cascade ; les bruts archivés restent) |
-| `POST /api/scouting/{id}/replays` 🔒 | ajouter un replay (octets bruts, `X-Filename`) |
-| `DELETE /api/scouting/{id}/replays/{gid}` 🔒 | retirer un replay (→ recalcul) |
-| `GET /api/scouting/{id}/pack.md` · `/pack.xlsx` | pack LLM |
-| `PUT /api/scouting/{id}/analysis` 🔒 | importer (écrase) |
-| `DELETE /api/scouting/{id}/analysis` 🔒 | retirer l'analyse |
+| `GET /api/scouting` | list (without `facts` or `analysis`) |
+| `POST /api/scouting` 🔒 | create `{title, target_name}` |
+| `GET /api/scouting/{id}` | complete report: meta, games (without `data`), roster candidates, facts, analysis with resolved evidence, status |
+| `PATCH /api/scouting/{id}` 🔒 | `title`, `target_name`, `roster` (→ recompute) |
+| `DELETE /api/scouting/{id}` 🔒 | delete (games cascade; archived raw files remain) |
+| `POST /api/scouting/{id}/replays` 🔒 | add a replay (raw bytes, `X-Filename`) |
+| `DELETE /api/scouting/{id}/replays/{gid}` 🔒 | remove a replay (→ recompute) |
+| `GET /api/scouting/{id}/pack.md` · `/pack.xlsx` | LLM pack |
+| `PUT /api/scouting/{id}/analysis` 🔒 | import (overwrites) |
+| `DELETE /api/scouting/{id}/analysis` 🔒 | remove the analysis |
 
-**Budget** : `GET /api/scouting/{id}` p95 < 100 ms (contrat d'API) sur un rapport de 30 parties —
-tenu par l'instantané de faits (décision 5), mesuré.
+**Budget**: `GET /api/scouting/{id}` p95 < 100 ms (API contract) on a 30-game report —
+held by the facts snapshot (decision 5), measured.
 
-## Volet G — Export HTML à partager (demande opérateur, 2026-09-27)
+## Part G — Shareable HTML export (operator request, 2026-09-27)
 
-Bouton **Export HTML** sur la page d'un rapport : télécharge **un seul fichier `.html` autonome**
-que l'opérateur envoie à ses coéquipiers (Discord, mail). Exigence : « highly visual ».
+**Export HTML** button on a report's page: downloads **a single standalone `.html` file**
+that the operator sends to their teammates (Discord, mail). Requirement: "highly visual".
 
-- **Autonome** : portraits des héros et minimaps embarqués en `data:` URI (réduits dans le
-  navigateur : portraits 128 px, minimaps 900 px, WebP) ; aucune dépendance à l'app ni au box.
-  Seules les polices viennent de Google Fonts, avec repli système si hors ligne.
-- **Généré côté navigateur** (`web/src/reportExport.ts` charge les images ; `web/src/reportHtml.ts`
-  rend — fonction **pure**, testée en vitest). Aucune route serveur nouvelle.
-- **Sécurité** : tout texte venu du LLM ou des replays est échappé (le fichier circule hors de l'app).
-- **Direction artistique** : « dossier de scouting » dans le langage de l'écran de draft HotS.
-  Couverture (nom de l'équipe en grand, bilan avec pastilles V/D, first pick, avertissement de
-  faible échantillon, médaillons du roster), identité de draft (synthèse + bans/ouvertures en
-  portraits), choix de carte (tuiles sur minimap), **un tableau de draft par carte** (en-tête
-  minimap, jauge de confiance, colonnes « We ban » — portraits barrés de rouge avec la phase —,
-  « We pick » — halo vert —, « They will likely pick » — halo orange + joueur —, « Consider », puis
-  ce qu'ils ont joué/banni sur la carte), plan « toute carte », cartes joueurs (pool en barres),
-  héros affrontés (ceux qui les ont battus en évidence), journal des parties. Chaque recommandation
-  garde ses preuves (libellé + valeur) ; « ⚠ unverified » si aucune. Navigation par cartes en tête,
-  responsive, impression propre, animations respectant `prefers-reduced-motion`.
-- Fonctionne sans analyse importée (faits seuls) et sans portraits (médaillons à initiales sur
-  l'anneau de couleur de l'univers).
+- **Standalone**: hero portraits and minimaps embedded as `data:` URIs (shrunk in the
+  browser: portraits 128 px, minimaps 900 px, WebP); no dependency on the app or the box.
+  Only the fonts come from Google Fonts, with a system fallback if offline.
+- **Generated in the browser** (`web/src/reportExport.ts` loads the images; `web/src/reportHtml.ts`
+  renders — a **pure** function, tested in vitest). No new server route.
+- **Security**: any text coming from the LLM or the replays is escaped (the file circulates outside the app).
+- **Art direction**: a "scouting dossier" in the language of the HotS draft screen.
+  Cover (team name in large type, record with W/L pips, first pick, small-sample
+  warning, roster medallions), draft identity (summary + bans/openings as
+  portraits), map choice (tiles on the minimap), **a draft board per map** (minimap
+  header, confidence gauge, columns "We ban" — portraits struck through in red with the phase —,
+  "We pick" — green glow —, "They will likely pick" — orange glow + player —, "Consider", then
+  what they played/banned on the map), "any map" plan, player cards (pool as bars),
+  heroes faced (those who beat them highlighted), game log. Each recommendation
+  keeps its evidence (label + value); "⚠ unverified" if none. Map navigation at the top,
+  responsive, clean printing, animations respecting `prefers-reduced-motion`.
+- Works without an imported analysis (facts alone) and without portraits (initial medallions on
+  the universe colour ring).
 
-### Page de l'app au même style (demande opérateur, 2026-09-27)
+### App page in the same style (operator request, 2026-09-27)
 
-« Les mêmes visuels dans le site, sans toucher à l'export » : les pages `/scouting` et
-`/scouting/:id` adoptent le langage de l'export (couverture, tableaux de draft par carte, portraits
-barrés / lumineux, preuves compactes). L'export n'est **pas modifié** : la page réutilise seulement
-ses helpers purs (`compactEvidence`, `humanize`) et sa table de couleurs d'univers. Les styles de
-l'export stylisent `body`/`h1`/`main` : ils sont **portés** dans une feuille scopée `.sd`, pas
-injectés. Les onglets disparaissent au profit d'une page unique avec barre de sections ; dépôt,
-côté manuel et roster deviennent les deux dernières sections.
+"The same visuals in the site, without touching the export": the `/scouting` and
+`/scouting/:id` pages adopt the export's language (cover, draft boards per map, struck-through /
+glowing portraits, compact evidence). The export is **not modified**: the page only reuses
+its pure helpers (`compactEvidence`, `humanize`) and its universe colour table. The export's styles
+style `body`/`h1`/`main`: they are **ported** into a stylesheet scoped to `.sd`, not
+injected. The tabs disappear in favour of a single page with a section bar; drop,
+manual side and roster become the last two sections.
 
-## Volet F — Plus tard, hors v1
+## Part F — Later, outside v1
 
-- **Fiche de partie pour les replays de scouting** (réutiliser `MatchDetail` et la visionneuse 2D
-  sur une source `/api/scouting/{id}/games/{gid}` de même forme que `/api/matches/{id}`).
-- **Passerelle vers le simulateur de draft** : charger les tendances et bans recommandés du rapport
-  dans `/draft` pendant une vraie draft.
+- **Match page for scouting replays** (reuse `MatchDetail` and the 2D viewer
+  on a `/api/scouting/{id}/games/{gid}` source with the same shape as `/api/matches/{id}`).
+- **Bridge to the draft simulator**: load the report's tendencies and recommended bans
+  into `/draft` during a real draft.
 
-**Non-but** : aucun appel de LLM depuis l'app (l'opérateur n'a pas d'API OpenAI/Anthropic).
-L'étape LLM est manuelle : copier le pack, le coller dans ChatGPT/Claude/modèle local, recoller la
-réponse. D'où l'importance du bouton « Copy pack » et d'un import tolérant.
+**Non-goal**: no LLM call from the app (the operator has no OpenAI/Anthropic API).
+The LLM step is manual: copy the pack, paste it into ChatGPT/Claude/a local model, paste the
+response back. Hence the importance of the "Copy pack" button and of a tolerant import.
 
-## Ordre de livraison
+## Delivery order
 
-A (porte d'entrée) → B → C → D (`.md` d'abord, `.xlsx` ensuite) → E + UI. Chaque volet est
-vérifiable seul ; B–C sont utiles sans LLM.
+A (entry gate) → B → C → D (`.md` first, `.xlsx` next) → E + UI. Each part is
+verifiable on its own; B–C are useful without an LLM.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-| Volet | Critère mesurable |
+| Part | Measurable criterion |
 |---|---|
-| A | 3 replays réels de parties perso avec draft : bans, first pick et ordre des picks identiques à ce que montre le client HotS (confirmation opérateur) — sinon l'écart est écrit ici et le volet Draft retiré |
-| B | Migration appliquée sur le Postgres dev ; sur un lot réel de replays d'une équipe, le roster détecté correspond à l'équipe (confirmation opérateur) ; **isolation prouvée** : réponses de `/api/heroes`, `/api/maps`, `/api/players/{toon}` identiques avant/après l'ajout de 20 replays de scouting (test d'intégration) ; reprocess idempotent sur `scouting_games` |
-| C | Tests unitaires de `scouting/facts.rs` : bilans, Wilson, exclusion des parties sans côté cible, remplaçants, `n` sur chaque fait ; tests de la détection de côté : ≥ 3 du roster, repli sur l'ancre, choix manuel conservé après changement de roster, ancre des deux côtés → non déterminée |
-| D | Pack `.md` d'un rapport réel donné à Claude **et** à ChatGPT : les deux renvoient une réponse que l'import accepte ; `.xlsx` ouvert sans erreur dans Excel |
-| E | Tests de l'extraction (bloc fenced, prose autour, JSON cassé → refus sans écrasement, `report_id` faux → refus) et de la résolution des preuves (id inconnu → `unsupported`) ; `GET /api/scouting/{id}` mesuré p95 < 100 ms sur 30 parties ; vérif navigateur sur un rapport réel, analyse importée puis réimportée (écrasement) |
+| A | 3 real replays of custom games with draft: bans, first pick and pick order identical to what the HotS client shows (operator confirmation) — otherwise the gap is written here and the Draft part removed |
+| B | Migration applied on the dev Postgres; on a real batch of a team's replays, the detected roster matches the team (operator confirmation); **isolation proven**: responses of `/api/heroes`, `/api/maps`, `/api/players/{toon}` identical before/after adding 20 scouting replays (integration test); idempotent reprocess on `scouting_games` |
+| C | Unit tests of `scouting/facts.rs`: records, Wilson, exclusion of games without a target side, substitutes, `n` on each fact; tests of side detection: ≥ 3 from the roster, fallback on the anchor, manual choice kept after a roster change, anchor on both sides → not determined |
+| D | `.md` pack of a real report given to Claude **and** to ChatGPT: both return a response that the import accepts; `.xlsx` opened without error in Excel |
+| E | Tests of the extraction (fenced block, surrounding prose, broken JSON → refused without overwriting, wrong `report_id` → refused) and of evidence resolution (unknown id → `unsupported`); `GET /api/scouting/{id}` measured p95 < 100 ms on 30 games; browser check on a real report, analysis imported then re-imported (overwrite) |
 
-## Impact documentaire (règle n° 0)
+## Documentation impact (rule no. 0)
 
-| Fichier | Ce qui change |
+| File | What changes |
 |---|---|
-| `docs/spec/05-api.md` | section « Scouting » (routes ci-dessus) |
+| `docs/spec/05-api.md` | "Scouting" section (routes above) |
 | `docs/spec/06-modele-donnees.md` | tables `scouting_reports`, `scouting_games`, migration |
 | `docs/spec/08-frontend.md` | routes `/scouting`, `/scouting/:id` |
-| `docs/spec/04-serveur.md` | archivage `ARCHIVE_DIR/scouting/`, reprocess étendu |
-| `docs/spec/01-architecture.md` | p95 mesuré de `GET /api/scouting/{id}` |
+| `docs/spec/04-serveur.md` | archiving `ARCHIVE_DIR/scouting/`, extended reprocess |
+| `docs/spec/01-architecture.md` | measured p95 of `GET /api/scouting/{id}` |
 
-## Questions tranchées (2026-09-26)
+## Questions settled (2026-09-26)
 
-1. **Roster** : au moins 3 joueurs de l'équipe principale, sinon joueur ancre (et choix manuel en
-   dernier recours) — intégré au volet B.
-2. **Lien avec `teams`** : non.
-3. **Noms dans le pack** : toujours inclus.
-4. **Langue de l'analyse** : anglais.
+1. **Roster**: at least 3 players from the main team, otherwise an anchor player (and manual choice as a
+   last resort) — integrated into part B.
+2. **Link with `teams`**: no.
+3. **Names in the pack**: always included.
+4. **Language of the analysis**: English.
