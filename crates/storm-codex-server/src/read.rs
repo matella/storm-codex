@@ -1,5 +1,5 @@
-//! Endpoints REST de lecture (l'API que le front consommera au jalon 4). Postgres construit
-//! le JSON (jsonb_agg / jsonb_build_object) ; le handler ne fait que le relayer.
+//! Read REST endpoints (the API the front will consume at milestone 4). Postgres builds
+//! the JSON (jsonb_agg / jsonb_build_object); the handler only relays it.
 
 use crate::AppState;
 use axum::{
@@ -14,7 +14,7 @@ use serde_json::Value as J;
 type Resp = Result<Json<J>, (StatusCode, Json<J>)>;
 
 fn db_err(e: sqlx::Error) -> (StatusCode, Json<J>) {
-    tracing::error!("lecture : {e}");
+    tracing::error!("read: {e}");
     (
         StatusCode::INTERNAL_SERVER_ERROR,
         Json(serde_json::json!({"error": "db"})),
@@ -27,17 +27,17 @@ pub struct MatchFilter {
     mode: Option<i32>,
     hero: Option<String>,
     player: Option<String>,
-    /// compte opérateur précis (sinon : n'importe lequel des operator_names)
+    /// specific operator account (otherwise: any of the operator_names)
     account: Option<String>,
-    /// "win" | "loss" — perspective opérateur
+    /// "win" | "loss" — operator perspective
     result: Option<String>,
-    /// true = uniquement les parties où l'opérateur fut MVP
+    /// true = only the games where the operator was MVP
     #[serde(default)]
     mvp: bool,
-    /// true = restreint aux lignes/parties de l'opérateur (operator_names) — agrégats Heroes/Maps
+    /// true = restricted to the operator's rows/games (operator_names) — Heroes/Maps aggregates
     #[serde(default)]
     mine: bool,
-    /// plage de dates (ISO) sur played_at : `from` inclus, `to` exclu
+    /// date range (ISO) on played_at: `from` included, `to` excluded
     from: Option<String>,
     to: Option<String>,
     #[serde(default)]
@@ -46,8 +46,8 @@ pub struct MatchFilter {
     offset: Option<i64>,
 }
 
-/// GET /api/matches — liste filtrable, paginée, récents d'abord. Filtres : carte, mode, héros (tout
-/// joueur), joueur (toon), + perspective opérateur (compte, résultat V/D, MVP, plage de dates).
+/// GET /api/matches — filterable, paginated list, most recent first. Filters: map, mode, hero (any
+/// player), player (toon), + operator perspective (account, W/L result, MVP, date range).
 pub async fn list_matches(State(s): State<AppState>, Query(f): Query<MatchFilter>) -> Resp {
     let limit = f.limit.unwrap_or(50).clamp(1, 200);
     let offset = f.offset.unwrap_or(0).max(0);
@@ -67,8 +67,8 @@ pub async fn list_matches(State(s): State<AppState>, Query(f): Query<MatchFilter
                  ORDER BY mp.team, mp.id)
               FROM match_players mp WHERE mp.match_id = m.id) AS players
            FROM matches m
-           -- ligne de l'opérateur dans ce match : compte précis ($7) sinon n'importe quel
-           -- operator_name. Sert aux filtres résultat / MVP / compte.
+           -- operator's row in this match: specific account ($7) otherwise any
+           -- operator_name. Used by the result / MVP / account filters.
            LEFT JOIN LATERAL (
              SELECT p.win, p.name, (p.data #>> '{gameStats,awards,0}') AS award
              FROM match_players p
@@ -109,7 +109,7 @@ pub async fn list_matches(State(s): State<AppState>, Query(f): Query<MatchFilter
     Ok(Json(v))
 }
 
-/// GET /api/matches/{id} — détail complet (forme `{match, players}` de storm-stats).
+/// GET /api/matches/{id} — complete detail (storm-stats `{match, players}` shape).
 pub async fn get_match(State(s): State<AppState>, Path(id): Path<i64>) -> Resp {
     let v: Option<J> = sqlx::query_scalar(
         "SELECT jsonb_build_object(
@@ -133,10 +133,10 @@ pub async fn get_match(State(s): State<AppState>, Path(id): Path<i64>) -> Resp {
     }
 }
 
-/// GET /api/players/{toon} — résumé joueur + hero pool.
+/// GET /api/players/{toon} — player summary + hero pool.
 pub async fn get_player(State(s): State<AppState>, Path(toon): Path<String>) -> Resp {
-    // Pseudo actuel et liste des pseudos viennent de l'historique daté (récent d'abord), pas de
-    // `players.last_name`/`names` (ordre de traitement). Repli sur l'ancien comportement si vide.
+    // Current nickname and nickname list come from the dated history (most recent first), not from
+    // `players.last_name`/`names` (processing order). Fallback on the old behaviour if empty.
     let history = crate::players::names::name_history(&s.db, &toon)
         .await
         .map_err(db_err)?;
@@ -177,7 +177,7 @@ pub async fn get_player(State(s): State<AppState>, Path(toon): Path<String>) -> 
     Ok(Json(v))
 }
 
-/// GET /api/heroes — stats agrégées par héros (games/wins).
+/// GET /api/heroes — aggregated stats per hero (games/wins).
 pub async fn list_heroes(State(s): State<AppState>, Query(f): Query<MatchFilter>) -> Resp {
     let v: J = sqlx::query_scalar(
         "WITH ops AS (
@@ -206,15 +206,15 @@ pub async fn list_heroes(State(s): State<AppState>, Query(f): Query<MatchFilter>
     Ok(Json(v))
 }
 
-/// GET /api/hero/{hero} — fiche héros du point de vue opérateur : volume + WR + KDA moyen, WR par
-/// carte, et builds de talents les plus joués (avec WR) pour ce héros.
+/// GET /api/hero/{hero} — hero sheet from the operator's point of view: volume + WR + average KDA, WR per
+/// map, and most played talent builds (with WR) for this hero.
 pub async fn hero_detail(
     State(s): State<AppState>,
     Path(hero): Path<String>,
     Query(f): Query<MatchFilter>,
 ) -> Resp {
-    // Mêmes filtres que /api/heroes (mode/from/to/mine/account) → cohérence liste ↔ fiche.
-    // Défaut (mine=false, account absent) = tous les joueurs, comme la liste.
+    // Same filters as /api/heroes (mode/from/to/mine/account) → list ↔ sheet consistency.
+    // Default (mine=false, no account) = all players, like the list.
     let v: J = sqlx::query_scalar(
         "WITH ops AS (
             SELECT lower(jsonb_array_elements_text(value)) AS name FROM app_settings WHERE key='operator_names'
@@ -257,8 +257,8 @@ pub async fn hero_detail(
     Ok(Json(v))
 }
 
-/// GET /api/synergies — perspective opérateur : alliés avec qui tu gagnes le plus (≥3 parties
-/// ensemble) et héros adverses rencontrés (≥3 fois) avec ton WR contre eux.
+/// GET /api/synergies — operator perspective: allies you win the most with (≥3 games
+/// together) and enemy heroes met (≥3 times) with your WR against them.
 pub async fn synergies(State(s): State<AppState>) -> Resp {
     let v: J = sqlx::query_scalar(
         "WITH ops AS (
@@ -288,7 +288,7 @@ pub async fn synergies(State(s): State<AppState>) -> Resp {
     Ok(Json(v))
 }
 
-/// GET /api/dim/heroes — référentiel héros (nom → univers/rôle/icône) pour les anneaux d'univers.
+/// GET /api/dim/heroes — hero reference data (name → universe/role/icon) for the universe rings.
 pub async fn dim_heroes(State(s): State<AppState>) -> Resp {
     let v: J = sqlx::query_scalar(
         "SELECT COALESCE(jsonb_object_agg(name, jsonb_build_object(
@@ -301,16 +301,16 @@ pub async fn dim_heroes(State(s): State<AppState>) -> Resp {
     Ok(Json(v))
 }
 
-/// GET /api/dim/hero-attributes — code attribut héros (4 lettres) → nom canonique du parser
-/// (`heroAttribute` de `attr.json`, figé dans storm-stats). Sert à résoudre les bans du draft,
-/// que storm-stats stocke bruts (`match.bans[t][i].hero` = « Crus », « DEAT »…). Statique, sans DB :
-/// `dim_heroes` ne porte pas l'`attributeId` (absent de la liste HotsPatchNotes).
+/// GET /api/dim/hero-attributes — hero attribute code (4 letters) → canonical parser name
+/// (`heroAttribute` of `attr.json`, frozen in storm-stats). Used to resolve the draft bans,
+/// which storm-stats stores raw (`match.bans[t][i].hero` = "Crus", "DEAT"…). Static, without a DB:
+/// `dim_heroes` does not carry the `attributeId` (missing from the HotsPatchNotes list).
 pub async fn dim_hero_attributes() -> Json<J> {
     Json(storm_stats::constants::hero_attribute().clone())
 }
 
-/// GET /api/dim/talents — référentiel talents (`talentTreeId` → nom/tier/héros/icône) pour
-/// afficher les builds dans la fiche de match. Clé = la valeur stockée par le parser.
+/// GET /api/dim/talents — talent reference data (`talentTreeId` → name/tier/hero/icon) to
+/// show the builds in the match sheet. Key = the value stored by the parser.
 pub async fn dim_talents(State(s): State<AppState>) -> Resp {
     let v: J = sqlx::query_scalar(
         "SELECT COALESCE(jsonb_object_agg(tree_id, jsonb_build_object(
@@ -323,7 +323,7 @@ pub async fn dim_talents(State(s): State<AppState>) -> Resp {
     Ok(Json(v))
 }
 
-/// GET /api/matches.csv — export CSV des matchs (filtres identiques à /api/matches).
+/// GET /api/matches.csv — CSV export of the matches (same filters as /api/matches).
 pub async fn matches_csv(
     State(s): State<AppState>,
     Query(f): Query<MatchFilter>,
@@ -402,7 +402,7 @@ pub async fn matches_csv(
         .into_response())
 }
 
-/// GET /api/maps — parties par carte + winrate équipe bleue.
+/// GET /api/maps — games per map + blue team win rate.
 pub async fn list_maps(State(s): State<AppState>, Query(f): Query<MatchFilter>) -> Resp {
     let v: J = sqlx::query_scalar(
         "WITH ops AS (
@@ -416,7 +416,7 @@ pub async fn list_maps(State(s): State<AppState>, Query(f): Query<MatchFilter>) 
                    count(me.win) AS my_games,
                    count(*) FILTER (WHERE me.win) AS my_wins
             FROM matches m
-            -- ligne de l'opérateur (compte précis $5 sinon operator_names) : pour le WR perso/carte
+            -- operator's row (specific account $5 otherwise operator_names): for the personal/map WR
             LEFT JOIN LATERAL (
               SELECT p.win FROM match_players p
               WHERE p.match_id = m.id
@@ -442,8 +442,8 @@ pub async fn list_maps(State(s): State<AppState>, Query(f): Query<MatchFilter>) 
     Ok(Json(v))
 }
 
-/// Proxy GET best-effort vers HotsPatchNotes (`hotspatchnotes_url`) ; `fallback` si indispo/non
-/// configuré. Même mécanique que `now_playing` (ureq + spawn_blocking, jamais sur le thread HTTP).
+/// Best-effort GET proxy to HotsPatchNotes (`hotspatchnotes_url`); `fallback` if unavailable/not
+/// configured. Same mechanism as `now_playing` (ureq + spawn_blocking, never on the HTTP thread).
 async fn hpn_proxy(s: &AppState, path: String, fallback: J) -> Json<J> {
     let Some(base) = s.cfg.hotspatchnotes_url.clone() else {
         return Json(fallback);
@@ -458,8 +458,8 @@ async fn hpn_proxy(s: &AppState, path: String, fallback: J) -> Json<J> {
     Json(res.unwrap_or(fallback))
 }
 
-/// GET /api/patches — liste des patch notes depuis `dim_patches` (storm-codex propriétaire ; peuplée
-/// au démarrage par dim::sync_patches). Forme `{items:[…]}` (compat front).
+/// GET /api/patches — list of the patch notes from `dim_patches` (owned by storm-codex; populated
+/// at startup by dim::sync_patches). `{items:[…]}` shape (front compat).
 pub async fn patches_list(State(s): State<AppState>) -> Json<J> {
     let v: J = sqlx::query_scalar(
         "SELECT jsonb_build_object('items', COALESCE(jsonb_agg(jsonb_build_object(
@@ -475,8 +475,8 @@ pub async fn patches_list(State(s): State<AppState>) -> Json<J> {
     Json(v)
 }
 
-/// GET /api/patches/{id} — détail d'un patch (clé = `internalId`, pas l'id numérique). En mode
-/// bundle (snapshot), le détail est stocké hors-ligne dans `dim_patches.data.detail` ; sinon on
+/// GET /api/patches/{id} — detail of a patch (key = `internalId`, not the numeric id). In
+/// bundle mode (snapshot), the detail is stored offline in `dim_patches.data.detail`; otherwise we
 /// proxyfie HotsPatchNotes live.
 pub async fn patch_detail(State(s): State<AppState>, Path(id): Path<String>) -> Json<J> {
     let stored: Option<J> = sqlx::query_scalar("SELECT data FROM dim_patches WHERE internal_id=$1")
@@ -504,8 +504,8 @@ pub struct HeroChangesFilter {
     offset: Option<i64>,
 }
 
-/// GET /api/hero-changes — fil global des ajustements héros (toutes sections de type Hero), récents
-/// d'abord, filtrable par héros / classification / patch + paginé. Alimente la vue « par héros ».
+/// GET /api/hero-changes — global feed of the hero adjustments (all Hero-type sections), most recent
+/// first, filterable by hero / classification / patch + paginated. Feeds the "by hero" view.
 pub async fn hero_changes(
     State(s): State<AppState>,
     Query(f): Query<HeroChangesFilter>,
@@ -543,8 +543,8 @@ pub async fn hero_changes(
     Json(v)
 }
 
-/// GET /api/hero-changes/heroes — un héros = une ligne : nombre de changements, dernier patch/date/
-/// classification. Pour la vue « par héros » (groupée). Filtrable par classification / patch.
+/// GET /api/hero-changes/heroes — one hero = one row: number of changes, last patch/date/
+/// classification. For the (grouped) "by hero" view. Filterable by classification / patch.
 pub async fn hero_changes_heroes(
     State(s): State<AppState>,
     Query(f): Query<HeroChangesFilter>,
@@ -572,8 +572,8 @@ pub async fn hero_changes_heroes(
     Json(v)
 }
 
-/// GET /api/hero/{hero}/patches — sections de patch notes concernant ce héros (sens héros → patch),
-/// les plus récentes d'abord. Jointure tolérante via la clé normalisée (cf. `dim::hero_key`).
+/// GET /api/hero/{hero}/patches — patch note sections concerning this hero (hero → patch direction),
+/// most recent first. Tolerant join through the normalised key (see `dim::hero_key`).
 pub async fn hero_patches(State(s): State<AppState>, Path(hero): Path<String>) -> Json<J> {
     let key = crate::dim::hero_key(&hero);
     let v: J = sqlx::query_scalar(
@@ -591,10 +591,10 @@ pub async fn hero_patches(State(s): State<AppState>, Path(hero): Path<String>) -
     Json(v)
 }
 
-/// GET /api/now-playing — proxifie Orpheus (`/api/playback/now` = lecture Spotify LIVE +
-/// `/api/auth/status`) pour le widget musique OBS. `/now` reflète ce qui joue réellement sur
-/// Spotify (indépendant de l'engine DJ). Best-effort : Orpheus absent/non authentifié →
-/// `{authenticated:false}` (le widget affiche « music off »). Évite CORS, garde l'URL côté serveur.
+/// GET /api/now-playing — proxies Orpheus (`/api/playback/now` = LIVE Spotify playback +
+/// `/api/auth/status`) for the OBS music widget. `/now` reflects what really plays on
+/// Spotify (independent of the DJ engine). Best-effort: Orpheus missing/not authenticated →
+/// `{authenticated:false}` (the widget shows "music off"). Avoids CORS, keeps the URL on the server side.
 pub async fn now_playing(State(s): State<AppState>) -> Json<J> {
     let Some(base) = s.cfg.orpheus_url.clone() else {
         return Json(serde_json::json!({ "authenticated": false }));

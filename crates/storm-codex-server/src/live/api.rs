@@ -1,7 +1,7 @@
-//! Routes du feed live. `POST /api/live/chunk` suit le contrat d'upload brut (`Bearer` + corps
-//! binaire) avec trois en-têtes : `X-Session`, `X-Stream` (`tracker` | `game`), `X-Offset`, plus
-//! `X-Build` facultatif. Le WS ne reçoit qu'un signal `live.updated` (aucun état) : la vue filtrée
-//! se lit par `GET /api/live?scope=…`, donc rien hors niveau de visibilité ne sort du serveur.
+//! Live feed routes. `POST /api/live/chunk` follows the raw upload contract (`Bearer` + binary
+//! body) with three headers: `X-Session`, `X-Stream` (`tracker` | `game`), `X-Offset`, plus
+//! optional `X-Build`. The WS only receives a `live.updated` signal (no state): the filtered view
+//! is read through `GET /api/live?scope=…`, so nothing outside the visibility level leaves the server.
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -27,9 +27,9 @@ fn bad(msg: &str) -> (StatusCode, Json<J>) {
     )
 }
 
-/// Indices du lobby courant, **seulement s'il appartient à cette session** (hash du battlelobby =
-/// id de session, contrat de `X-Session`). Sinon `None` : mieux vaut un « me » indéterminé qu'un
-/// « me » tiré du lobby d'une autre partie.
+/// Hints of the current lobby, **only if it belongs to this session** (battlelobby hash =
+/// session id, `X-Session` contract). Otherwise `None`: an undetermined "me" is better than a
+/// "me" taken from the lobby of another game.
 async fn lobby_hint(s: &AppState, session: &str) -> Option<LobbyHint> {
     let lobby = s.lobby.read().await;
     lobby
@@ -42,7 +42,7 @@ async fn lobby_hint(s: &AppState, session: &str) -> Option<LobbyHint> {
         })
 }
 
-/// `POST /api/live/chunk` — octets ajoutés d'un stream, `Bearer` d'upload.
+/// `POST /api/live/chunk` — bytes appended to a stream, upload `Bearer`.
 pub async fn chunk(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -82,7 +82,7 @@ pub async fn chunk(
             match LiveSession::new(session.to_owned(), build) {
                 Ok(l) => *live = Some(l),
                 Err(e) => {
-                    tracing::error!("session live impossible : {e}");
+                    tracing::error!("live session impossible: {e}");
                     return (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         Json(json!({ "status": "error" })),
@@ -135,7 +135,7 @@ pub struct EndBody {
     pub session: String,
 }
 
-/// `POST /api/live/end` — fin de partie signalée par le client (apparition de `replay.details`).
+/// `POST /api/live/end` — end of game reported by the client (`replay.details` appears).
 pub async fn end(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -178,7 +178,7 @@ pub struct ViewQuery {
     pub me: Option<i64>,
 }
 
-/// `GET /api/live?scope=self|allies|all&me=<playerId>` — vue filtrée ; `204` si aucune partie.
+/// `GET /api/live?scope=self|allies|all&me=<playerId>` — filtered view; `204` if no game.
 pub async fn get(State(s): State<AppState>, Query(q): Query<ViewQuery>) -> Response {
     let Some(session) = s.live.read().await.as_ref().map(|l| l.id.clone()) else {
         return StatusCode::NO_CONTENT.into_response();
@@ -191,8 +191,8 @@ pub async fn get(State(s): State<AppState>, Query(q): Query<ViewQuery>) -> Respo
     }
 }
 
-/// `DELETE /api/live` — ferme la session courante. Écriture d'administration : garde
-/// `ADMIN_TOKEN` (mode ouvert s'il n'est pas configuré), comme les autres routes de gestion.
+/// `DELETE /api/live` — closes the current session. Administration write: guarded by
+/// `ADMIN_TOKEN` (open mode if it is not configured), like the other management routes.
 pub async fn clear(State(s): State<AppState>, headers: HeaderMap) -> (StatusCode, Json<J>) {
     if !crate::manage::is_admin(&headers, &s) {
         return (

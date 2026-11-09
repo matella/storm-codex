@@ -1,11 +1,11 @@
-//! Émission d'événements vers Jarvis (Redis). Respecte les invariants du spine :
+//! Event emission to Jarvis (Redis). Respects the spine invariants:
 //! `schema_version`, `correlation_id`/`causation_id`, `occurred_at`/`recorded_at`,
-//! type `entity.verb` au passé (`hots.match.completed`). Absent `REDIS_URL` → no-op.
+//! past-tense `entity.verb` type (`hots.match.completed`). Missing `REDIS_URL` → no-op.
 
 use chrono::Utc;
 use serde_json::{json, Value as J};
 
-/// Construit l'événement `hots.match.completed` (invariants spine) depuis un match projeté.
+/// Builds the `hots.match.completed` event (spine invariants) from a projected match.
 pub fn match_completed_event(match_id: i64, out: &storm_stats::Output) -> J {
     let now = Utc::now().to_rfc3339();
     let m = out.match_.as_ref();
@@ -14,7 +14,7 @@ pub fn match_completed_event(match_id: i64, out: &storm_stats::Output) -> J {
     let length = m.and_then(|m| m.get("length")).cloned().unwrap_or(J::Null);
     let winner = m.and_then(|m| m.get("winner")).cloned().unwrap_or(J::Null);
 
-    // joueurs résumés (héros, équipe, victoire, KDA) — Jarvis extrait la perspective voulue
+    // summarised players (hero, team, win, KDA) — Jarvis extracts the wanted perspective
     let players: Vec<J> = out
         .players
         .as_ref()
@@ -42,7 +42,7 @@ pub fn match_completed_event(match_id: i64, out: &storm_stats::Output) -> J {
         "type": "hots.match.completed",
         "correlation_id": uuid::Uuid::new_v4().to_string(),
         "causation_id": uuid::Uuid::new_v4().to_string(),
-        "occurred_at": now,   // fin de partie (≈ instant du parse, source unique)
+        "occurred_at": now,   // end of game (≈ time of the parse, single source)
         "recorded_at": now,
         "data": {
             "match_id": match_id,
@@ -55,12 +55,12 @@ pub fn match_completed_event(match_id: i64, out: &storm_stats::Output) -> J {
     })
 }
 
-/// Publie l'événement sur le canal Redis (`JARVIS_CHANNEL`, défaut `jarvis:events`).
-/// Best-effort : une panne Redis ne casse jamais le parse.
+/// Publishes the event on the Redis channel (`JARVIS_CHANNEL`, default `jarvis:events`).
+/// Best-effort: a Redis outage never breaks the parse.
 pub async fn publish(redis_url: &str, channel: &str, event: &J) {
     match try_publish(redis_url, channel, event).await {
         Ok(_) => {}
-        Err(e) => tracing::warn!("publication Jarvis échouée : {e}"),
+        Err(e) => tracing::warn!("Jarvis publication failed: {e}"),
     }
 }
 
@@ -105,7 +105,7 @@ mod tests {
         }
     }
 
-    /// Invariants spine (règle dure n° 6) : schema_version, type `entity.verb` au passé,
+    /// Spine invariants (hard rule no. 6): schema_version, past-tense `entity.verb` type,
     /// correlation/causation, occurred_at/recorded_at RFC3339.
     #[test]
     fn evenement_respecte_les_invariants_spine() {

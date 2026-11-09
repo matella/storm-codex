@@ -1,11 +1,11 @@
-//! Calculs purs des indices de similarité entre deux comptes (aucune DB). Alimentent
-//! `similarity::PairFeatures` ; testés isolément.
+//! Pure computations of the similarity indices between two accounts (no DB). Feed
+//! `similarity::PairFeatures`; tested in isolation.
 
 use serde_json::Value as J;
 use std::collections::{BTreeMap, HashMap};
 use std::hash::Hash;
 
-/// Cosinus de deux distributions de comptes (héros, heures…), 0..1. 0 si l'une est vide.
+/// Cosine of two count distributions (heroes, hours…), 0..1. 0 if either is empty.
 pub fn cosine<K: Hash + Eq>(a: &HashMap<K, u32>, b: &HashMap<K, u32>) -> f32 {
     let dot: f64 = a
         .iter()
@@ -28,8 +28,8 @@ pub fn cosine<K: Hash + Eq>(a: &HashMap<K, u32>, b: &HashMap<K, u32>) -> f32 {
     }
 }
 
-/// Deux parties se chevauchent-elles dans le temps ? Intervalles `(début, fin)` en secondes,
-/// fermés. Un même humain ne joue pas deux parties en même temps : un chevauchement exclut le lien.
+/// Do two games overlap in time? `(start, end)` intervals in seconds,
+/// closed. The same human does not play two games at the same time: an overlap excludes the link.
 pub fn intervals_overlap(a: &[(i64, i64)], b: &[(i64, i64)]) -> bool {
     let (mut a, mut b) = (a.to_vec(), b.to_vec());
     a.sort_unstable();
@@ -39,7 +39,7 @@ pub fn intervals_overlap(a: &[(i64, i64)], b: &[(i64, i64)]) -> bool {
         if a[i].0 <= b[j].1 && b[j].0 <= a[i].1 {
             return true;
         }
-        // avancer celui qui se termine le premier
+        // advance the one that ends first
         if a[i].1 < b[j].1 {
             i += 1;
         } else {
@@ -49,8 +49,8 @@ pub fn intervals_overlap(a: &[(i64, i64)], b: &[(i64, i64)]) -> bool {
     false
 }
 
-/// Parties jouées et choix de talent le plus joué par palier (`Tier1Choice`…), pour un héros.
-/// Palier → (choix → nombre de parties).
+/// Games played and most played talent choice per tier (`Tier1Choice`…), for one hero.
+/// Tier → (choice → number of games).
 type TierCounts = BTreeMap<String, HashMap<String, u32>>;
 
 type HeroTalents = (u32, BTreeMap<String, String>);
@@ -81,7 +81,7 @@ fn modal_talents(games: &[(String, J)]) -> HashMap<&str, HeroTalents> {
             let modal = tiers
                 .into_iter()
                 .filter_map(|(tier, cs)| {
-                    // égalité → choix lexicographiquement le plus petit (déterministe)
+                    // tie → lexicographically smallest choice (deterministic)
                     cs.into_iter()
                         .max_by(|x, y| x.1.cmp(&y.1).then(y.0.cmp(&x.0)))
                         .map(|(c, _)| (tier, c))
@@ -92,8 +92,8 @@ fn modal_talents(games: &[(String, J)]) -> HashMap<&str, HeroTalents> {
         .collect()
 }
 
-/// Accord des talents sur les héros joués au moins `MIN_HERO_GAMES` fois par les deux comptes :
-/// part des paliers où le choix le plus joué est identique. `None` si aucun héros ne qualifie.
+/// Talent agreement on the heroes played at least `MIN_HERO_GAMES` times by both accounts:
+/// share of the tiers where the most played choice is identical. `None` if no hero qualifies.
 pub fn talent_agreement(a: &[(String, J)], b: &[(String, J)]) -> Option<f32> {
     const MIN_HERO_GAMES: u32 = 3;
     let (ma, mb) = (modal_talents(a), modal_talents(b));
@@ -131,7 +131,7 @@ mod tests {
         assert!((cosine(&a, &a) - 1.0).abs() < 1e-6);
         assert_eq!(cosine(&a, &m(&[("Diablo", 7)])), 0.0);
         assert_eq!(cosine(&a, &HashMap::new()), 0.0);
-        // proportionnel = identique (parts de parties, pas volumes)
+        // proportional = identical (shares of games, not volumes)
         assert!((cosine(&a, &m(&[("Muradin", 100), ("Kerrigan", 50)])) - 1.0).abs() < 1e-6);
     }
 
@@ -148,7 +148,7 @@ mod tests {
             &[(20, 30), (200, 210)]
         ));
         assert!(!intervals_overlap(&[], &[(0, 1)]));
-        assert!(intervals_overlap(&[(5, 5)], &[(5, 5)])); // même instant (ex. même partie, durée inconnue)
+        assert!(intervals_overlap(&[(5, 5)], &[(5, 5)])); // same instant (e.g. same game, unknown duration)
     }
 
     fn g(hero: &str, t1: &str, t2: &str) -> (String, J) {
@@ -165,10 +165,10 @@ mod tests {
         assert_eq!(talent_agreement(&a, &same), Some(1.0));
         let half: Vec<_> = (0..4).map(|_| g("Muradin", "A", "Z")).collect();
         assert_eq!(talent_agreement(&a, &half), Some(0.5));
-        // moins de 3 parties chez l'un des deux → héros ignoré → None
+        // fewer than 3 games for one of the two → hero ignored → None
         let few: Vec<_> = (0..2).map(|_| g("Muradin", "A", "B")).collect();
         assert_eq!(talent_agreement(&a, &few), None);
-        // aucun héros en commun
+        // no hero in common
         assert_eq!(
             talent_agreement(
                 &a,
@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     fn talents_choix_modal_pas_dernier_choix() {
-        // 3 parties A / 1 partie Q : le choix modal est A
+        // 3 games A / 1 game Q: the modal choice is A
         let mut a: Vec<_> = (0..3).map(|_| g("Muradin", "A", "B")).collect();
         a.push(g("Muradin", "Q", "B"));
         let b: Vec<_> = (0..3).map(|_| g("Muradin", "A", "B")).collect();

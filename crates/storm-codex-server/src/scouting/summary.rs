@@ -1,12 +1,12 @@
-//! `Output` storm-stats → `GameSummary` : le strict nécessaire au calcul des faits de scouting,
-//! stocké dans `scouting_games.summary`. Le recalcul des faits (à chaque ajout de replay) ne lit
-//! que ces résumés — quelques Ko par partie au lieu de l'objet `match` complet.
+//! storm-stats `Output` → `GameSummary`: the bare minimum for computing the scouting facts,
+//! stored in `scouting_games.summary`. The recompute of the facts (at each replay added) only reads
+//! these summaries — a few KB per game instead of the complete `match` object.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as J};
 
-/// Phase d'un ban. Le parser écrit `order = 2` pour le ban de milieu de draft, avant comme après
-/// le build 66292 (`process.rs:2277-2303`) — c'est le seul critère stable entre les deux formats.
+/// Phase of a ban. The parser writes `order = 2` for the mid-draft ban, before as after
+/// build 66292 (`process.rs:2277-2303`) — it is the only stable criterion between the two formats.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BanPhase {
@@ -20,7 +20,7 @@ pub struct Ban {
     pub phase: BanPhase,
 }
 
-/// Stats d'un joueur retenues pour le scouting (gameStats du parser).
+/// Player stats kept for scouting (the parser's gameStats).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct PlayerStats {
     pub kills: f64,
@@ -45,7 +45,7 @@ pub struct Player {
     pub stats: PlayerStats,
 }
 
-/// Segment de la chronologie d'avantage de niveau : `diff` = niveau équipe 0 − niveau équipe 1.
+/// Segment of the level advantage timeline: `diff` = team 0 level − team 1 level.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LevelSegment {
     pub start: f64,
@@ -59,25 +59,25 @@ pub struct GameSummary {
     pub map: String,
     pub build: Option<i64>,
     pub length_s: f64,
-    /// Équipe gagnante (0/1).
+    /// Winning team (0/1).
     pub winner: Option<u8>,
     pub teams: [Vec<Player>; 2],
     pub bans: [Vec<Ban>; 2],
-    /// Héros pickés par équipe, dans l'ordre de pick de l'équipe (lu dans le replay).
+    /// Heroes picked per team, in the team's pick order (read from the replay).
     pub picks: [Vec<String>; 2],
     pub first_pick: Option<u8>,
     pub first_fort: Option<u8>,
     pub first_objective: Option<u8>,
-    /// Instant (s) où chaque équipe atteint le niveau 10 ; `None` si jamais atteint.
+    /// Time (s) at which each team reaches level 10; `None` if never reached.
     pub level10: [Option<f64>; 2],
     pub level_diff: Vec<LevelSegment>,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum SummaryError {
-    #[error("sortie de parse sans match/players")]
+    #[error("parse output without match/players")]
     Empty,
-    #[error("champ manquant : {0}")]
+    #[error("missing field: {0}")]
     Missing(&'static str),
 }
 
@@ -96,7 +96,7 @@ fn gs(p: &J, k: &str) -> f64 {
         .unwrap_or(0.0)
 }
 
-/// Code attribut de ban (`Crus`) → nom canonique parser (`Johanna`) ; inchangé si inconnu.
+/// Ban attribute code (`Crus`) → canonical parser name (`Johanna`); unchanged if unknown.
 pub fn ban_hero_name(code: &str) -> String {
     storm_stats::constants::hero_attribute()
         .get(code)
@@ -126,7 +126,7 @@ pub fn summarize(out: &storm_stats::Output) -> Result<GameSummary, SummaryError>
         .to_string();
 
     let mut teams: [Vec<Player>; 2] = [Vec::new(), Vec::new()];
-    // ordre stable (toon) : la sortie du parser est une map, l'ordre d'insertion n'a pas de sens
+    // stable order (toon): the parser's output is a map, insertion order has no meaning
     let mut toons: Vec<&String> = players.keys().collect();
     toons.sort();
     for toon in toons {
@@ -265,7 +265,7 @@ mod tests {
         assert!(s.winner.is_some());
         assert!(s.length_s > 0.0);
         assert!(!s.level_diff.is_empty());
-        // aller-retour JSON (stockage dans scouting_games.summary)
+        // JSON round trip (storage in scouting_games.summary)
         let back: GameSummary = serde_json::from_value(serde_json::to_value(&s).unwrap()).unwrap();
         assert_eq!(back, s);
     }

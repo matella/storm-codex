@@ -1,6 +1,6 @@
-//! Résumé de partie (post-game breakdown) depuis la sortie storm-stats d'un replay Custom.
-//! Chemins JSON lus : guide de lecture de docs/spec/03-storm-stats.md (« Résumé de cast »).
-//! Une valeur absente donne `None` / vide — jamais une valeur inventée.
+//! Game summary (post-game breakdown) from the storm-stats output of a Custom replay.
+//! JSON paths read: reading guide of docs/spec/03-storm-stats.md ("Cast summary").
+//! A missing value gives `None` / empty — never an invented value.
 use super::{GameSummary, PlayerSummary};
 use crate::draft::Side;
 use serde_json::{Map, Value as J};
@@ -16,7 +16,7 @@ pub enum SummaryError {
     Missing(&'static str),
 }
 
-/// Équipe storm-stats (0/1) → côté de la série (0 = Blue, comme le draft depuis replay).
+/// storm-stats team (0/1) → series side (0 = Blue, like the draft from a replay).
 fn side_of(team: i64) -> Option<Side> {
     match team {
         0 => Some(Side::Blue),
@@ -25,7 +25,7 @@ fn side_of(team: i64) -> Option<Side> {
     }
 }
 
-/// Entier positif d'un nombre JSON (entier ou flottant ; storm-stats écrit parfois `28.0`).
+/// Positive integer from a JSON number (integer or float; storm-stats sometimes writes `28.0`).
 fn uint(v: Option<&J>) -> Option<u64> {
     let v = v?;
     v.as_u64().or_else(|| {
@@ -39,14 +39,14 @@ fn u32_of(v: Option<&J>) -> Option<u32> {
     uint(v).map(|n| u32::try_from(n).unwrap_or(u32::MAX))
 }
 
-/// `f(équipe)` pour les deux équipes ; `None` dès qu'une manque.
+/// `f(team)` for both teams; `None` as soon as one is missing.
 fn both(f: impl Fn(&str) -> Option<u32>) -> Option<[u32; 2]> {
     Some([f("0")?, f("1")?])
 }
 
-/// Forts + keeps détruits par l'équipe : `teams[t].stats.structures.{Fort,Keep}.destroyed`
-/// (bâtiments seuls, sans tours ni puits). Carte sans aucune sous-clé `Fort`/`Keep` (dans aucune
-/// équipe) → `None` (ligne retirée, pas de 0–0 inventé) ; sinon une sous-clé absente compte 0.
+/// Forts + keeps destroyed by the team: `teams[t].stats.structures.{Fort,Keep}.destroyed`
+/// (buildings only, without towers or wells). Map without any `Fort`/`Keep` subkey (in no
+/// team) → `None` (row removed, no invented 0–0); otherwise a missing subkey counts as 0.
 fn forts_keeps(m: &Map<String, J>) -> Option<[u32; 2]> {
     let st = |t: &str| {
         m.get("teams")?
@@ -66,12 +66,12 @@ fn forts_keeps(m: &Map<String, J>) -> Option<[u32; 2]> {
     })
 }
 
-/// Cartes (clés `MapType` de storm-stats) dont `objective[t].events` sont des objectifs remportés,
-/// vérifié sur l'événement qui les produit (process.rs) et les comptes du corpus Custom :
-/// TowersOfDoom = `AltarCaptured` ; CursedHollow = `TributeCollected` ; DragonShire =
-/// `DragonKnightActivated` ; HauntedWoods = `GardenTerrorActivated` ; Crypts = `SpidersSpawned` ;
-/// Volskaya = naissance du `Triglav` capturé ; BlackheartsBay = `GhostShipCaptured`.
-/// Toute autre carte → `None` (ligne retirée) : guide de lecture de docs/spec/03-storm-stats.md.
+/// Maps (storm-stats `MapType` keys) whose `objective[t].events` are won objectives,
+/// checked on the event that produces them (process.rs) and the Custom corpus counts:
+/// TowersOfDoom = `AltarCaptured`; CursedHollow = `TributeCollected`; DragonShire =
+/// `DragonKnightActivated`; HauntedWoods = `GardenTerrorActivated`; Crypts = `SpidersSpawned`;
+/// Volskaya = birth of the captured `Triglav`; BlackheartsBay = `GhostShipCaptured`.
+/// Any other map → `None` (row removed): reading guide of docs/spec/03-storm-stats.md.
 const OBJECTIVE_EVENT_MAPS: [&str; 7] = [
     "TowersOfDoom",
     "CursedHollow",
@@ -81,15 +81,15 @@ const OBJECTIVE_EVENT_MAPS: [&str; 7] = [
     "Volskaya",
     "BlackheartsBay",
 ];
-/// Battlefield of Eternity : `objective.results[].winner` (`ImmortalDefeated`).
+/// Battlefield of Eternity: `objective.results[].winner` (`ImmortalDefeated`).
 const OBJECTIVE_RESULTS_MAP: &str = "BattlefieldOfEternity";
 
 fn is_map(m: &Map<String, J>, key: &str) -> bool {
     m.get("map").and_then(J::as_str) == Some(storm_stats::constants::rt_str("MapType", key))
 }
 
-/// Objectifs de carte par équipe, cartes de la liste blanche seulement ; comme `objectiveEvents`
-/// de la fiche, un événement sans `time` n'est pas compté.
+/// Map objectives per team, allow-listed maps only; like the sheet's `objectiveEvents`,
+/// an event without `time` is not counted.
 fn objectives(m: &Map<String, J>) -> Option<[u32; 2]> {
     let o = m.get("objective")?.as_object()?;
     let timed = |e: &&J| e.get("time").is_some_and(|t| !t.is_null());
@@ -117,9 +117,9 @@ fn objectives(m: &Map<String, J>) -> Option<[u32; 2]> {
 }
 
 impl GameSummary {
-    /// Même partie vue de l'autre côté : équipe 0 du replay = Red. Paires et bans échangés,
-    /// vainqueur et côtés des joueurs inversés, avance d'XP négée, joueurs re-triés (Blue d'abord,
-    /// ordre de pick conservé).
+    /// Same game seen from the other side: replay team 0 = Red. Pairs and bans swapped,
+    /// winner and player sides inverted, XP lead negated, players re-sorted (Blue first,
+    /// pick order kept).
     pub fn swapped(mut self) -> GameSummary {
         let sw = |p: &mut [u32; 2]| p.swap(0, 1);
         self.winner = self.winner.other();
@@ -147,9 +147,9 @@ impl GameSummary {
     }
 }
 
-/// Avance d'XP de Blue par échantillon de `XPBreakdown` : somme des champs numériques de
-/// `breakdown` hors champs de temps (même calcul que la courbe « Team XP » de la fiche),
-/// équipes appariées par `loop`.
+/// Blue's XP lead per `XPBreakdown` sample: sum of the numeric fields of
+/// `breakdown` excluding the time fields (same computation as the sheet's "Team XP" curve),
+/// teams paired by `loop`.
 fn xp_lead(m: &Map<String, J>) -> Vec<(u32, i32)> {
     let Some(rows) = m.get("XPBreakdown").and_then(J::as_array) else {
         return Vec::new();
@@ -217,7 +217,7 @@ fn player(toon: &str, p: &J) -> Option<PlayerSummary> {
     })
 }
 
-/// Joueurs Blue puis Red, dans l'ordre de pick de `match.picks[t]` (héros absent des picks : à la fin).
+/// Blue then Red players, in the pick order of `match.picks[t]` (hero missing from the picks: at the end).
 fn players(m: &Map<String, J>, players: &Map<String, J>) -> Vec<PlayerSummary> {
     let mut v: Vec<PlayerSummary> = players
         .iter()
@@ -301,11 +301,11 @@ mod tests {
         }
     }
 
-    /// Fixture = replay Custom réel (Tomb of the Spider Queen, 2026-09-27), réduit et anonymisé.
-    /// Les littéraux ont été recoupés par un second chemin de la sortie complète : niveau =
-    /// max(`levelTimes`), camps = `mercs.captures` par équipe, forts·keeps = `match.structures`
-    /// (Fort/Keep détruits chez l'adversaire). Sur CE fixture, la somme des `SoloKill` d'une équipe
-    /// égale `teamNTakedowns` (28 / 15) : vrai ici, pas un invariant général de storm-stats.
+    /// Fixture = real Custom replay (Tomb of the Spider Queen, 2026-09-27), reduced and anonymised.
+    /// The literals were cross-checked through a second path of the full output: level =
+    /// max(`levelTimes`), camps = `mercs.captures` per team, forts·keeps = `match.structures`
+    /// (Fort/Keep destroyed on the opponent's side). On THIS fixture, the sum of a team's `SoloKill`
+    /// equals `teamNTakedowns` (28 / 15): true here, not a general storm-stats invariant.
     #[test]
     fn summary_matches_match_sheet_values() {
         let s = summary_from_output(&output(&fixture())).unwrap();
@@ -336,7 +336,7 @@ mod tests {
         );
         let heal = s.players.iter().find(|p| p.hero == "Malfurion").unwrap();
         assert_eq!(heal.healing, 161589);
-        // Blue puis Red, ordre de pick de chaque équipe
+        // Blue then Red, pick order of each team
         let heroes: Vec<_> = s
             .players
             .iter()
@@ -345,7 +345,7 @@ mod tests {
         assert_eq!(heroes[4], (Side::Blue, "Junkrat"));
         assert_eq!(heroes[5], (Side::Red, "Blaze"));
         assert_eq!(heroes[9], (Side::Red, "Greymane"));
-        // K/D/A d'équipe = sommes des joueurs (ligne « Team total » de la fiche)
+        // team K/D/A = sums of the players ("Team total" row of the sheet)
         let sum = |side: Side, f: fn(&PlayerSummary) -> u32| {
             s.players
                 .iter()
@@ -361,7 +361,7 @@ mod tests {
             ),
             (28, 15, 87)
         );
-        // avance d'XP : 27 échantillons appariés par `loop`, (s, Blue − Red)
+        // XP lead: 27 samples paired by `loop`, (s, Blue − Red)
         assert_eq!(s.xp_lead.len(), 27);
         assert_eq!(s.xp_lead[0], (60, 710));
         assert_eq!(s.xp_lead[26], (1583, 13120));
@@ -440,8 +440,8 @@ mod tests {
         assert_eq!(s.team_level, Some([25, 24]));
     }
 
-    /// Item 9 : carte sans Fort ni Keep (dans aucune équipe) → pas de ligne forts·keeps, jamais 0–0 ;
-    /// une équipe sans sous-clé quand l'autre en a → 0 pour elle.
+    /// Item 9: map without Fort or Keep (in no team) → no forts·keeps row, never 0–0;
+    /// a team without a subkey when the other has one → 0 for it.
     #[test]
     fn forts_keeps_absent_on_maps_without_them() {
         let mut fx = fixture();
@@ -461,7 +461,7 @@ mod tests {
         );
     }
 
-    /// R17 : liste blanche de cartes (`MapType`) ; événements sans `time` non comptés.
+    /// R17: allow-list of maps (`MapType`); events without `time` not counted.
     #[test]
     fn objectives_follow_allowlist() {
         let mut fx = fixture();
@@ -469,7 +469,7 @@ mod tests {
             fx["match"]["map"] = json!(map);
             fx["match"]["objective"] = obj;
         };
-        // carte de la liste (Tomb = Crypts) : événements datés seulement
+        // map of the list (Tomb = Crypts): dated events only
         set(
             &mut fx,
             "Tomb of the Spider Queen",
@@ -499,7 +499,7 @@ mod tests {
             summary_from_output(&output(&fx)).unwrap().objectives,
             Some([1, 2])
         );
-        // hors liste → pas de ligne, même avec des événements par équipe
+        // outside the list → no row, even with per-team events
         for map in [
             "Sky Temple",
             "Alterac Pass",

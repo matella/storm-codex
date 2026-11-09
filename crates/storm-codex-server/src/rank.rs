@@ -1,7 +1,7 @@
-//! Résultats de rang lus à l'écran de fin de partie — `POST /api/rank/result` (Aegis, token d'upload).
-//! Spec : `docs/specs/2026-10-31-ocr-rang-fin-de-partie-design.md`. Le serveur ne devine rien : une
-//! lecture `valide` doit être cohérente (total + requis pour la promotion = 1000 quand le requis existe).
-//! Une seule lecture par session : la dernière gagne, et garde le rattachement déjà acquis.
+//! Rank results read on the end-of-game screen — `POST /api/rank/result` (Aegis, upload token).
+//! Spec: `docs/specs/2026-10-31-ocr-rang-fin-de-partie-design.md`. The server guesses nothing: a
+//! `valide` reading must be consistent (total + required for promotion = 1000 when the requirement exists).
+//! A single reading per session: the last one wins, and keeps the link already acquired.
 use crate::upload::token_id;
 use crate::AppState;
 use axum::{
@@ -13,7 +13,7 @@ use axum::{
 use serde::Deserialize;
 use serde_json::{json, Value as J};
 
-/// Total + points requis pour la promotion : l'échelle de la page Play en Storm League.
+/// Total + points required for promotion: the scale of the Play page in Storm League.
 pub const RANK_SCALE: i32 = 1000;
 const MAX_TEXT: usize = 64;
 const MAX_REASON: usize = 200;
@@ -34,7 +34,7 @@ impl Status {
     }
 }
 
-/// Corps JSON de la route. La session n'y figure pas : elle vient de l'en-tête `X-Session`.
+/// JSON body of the route. The session is not in it: it comes from the `X-Session` header.
 #[derive(Debug, Deserialize)]
 pub struct RankResultBody {
     pub status: Status,
@@ -50,7 +50,7 @@ pub struct RankResultBody {
     pub reason: Option<String>,
 }
 
-/// Session depuis `X-Session` : SHA-256 hex du battlelobby (64 caractères), normalisée en minuscules.
+/// Session from `X-Session`: hex SHA-256 of the battlelobby (64 characters), normalised to lowercase.
 pub fn session_from_headers(headers: &HeaderMap) -> Result<String, &'static str> {
     let raw = headers
         .get("x-session")
@@ -65,12 +65,12 @@ pub fn session_from_headers(headers: &HeaderMap) -> Result<String, &'static str>
     }
 }
 
-/// Un texte fourni mais vide (ou que des espaces) est refusé : il ne dit rien.
+/// A provided but empty text (or only spaces) is refused: it says nothing.
 fn blank(s: &Option<String>) -> bool {
     s.as_deref().is_some_and(|t| t.trim().is_empty())
 }
 
-/// Code d'erreur (stable, lisible par Aegis) si le corps est incohérent ; `Ok` sinon.
+/// Error code (stable, readable by Aegis) if the body is inconsistent; `Ok` otherwise.
 pub fn validate(b: &RankResultBody) -> Result<(), &'static str> {
     if b.rank_name
         .as_deref()
@@ -120,16 +120,16 @@ pub fn validate(b: &RankResultBody) -> Result<(), &'static str> {
     }
 }
 
-/// Match de la session, si le lobby courant est déjà lié à un match (`content_hash` = session,
-/// `match_id` posé par `lobby::lier_match` à l'upload). `None` sinon : la lecture reste en attente.
+/// Match of the session, if the current lobby is already linked to a match (`content_hash` = session,
+/// `match_id` set by `lobby::lier_match` at upload). `None` otherwise: the reading stays pending.
 pub fn linked_match(lobby: Option<(&str, Option<i64>)>, session: &str) -> Option<i64> {
     lobby
         .filter(|(hash, _)| *hash == session)
         .and_then(|(_, m)| m)
 }
 
-/// Rattache les lectures en attente de la session au match `match_id` (lobby lié à l'upload) et
-/// mémorise l'empreinte du match, pour retrouver le rattachement après un re-process. Idempotent.
+/// Attaches the pending readings of the session to the match `match_id` (lobby linked at upload) and
+/// remembers the match fingerprint, to find the link again after a re-process. Idempotent.
 pub async fn attach_to_match(
     db: &sqlx::PgPool,
     session: &str,
@@ -147,9 +147,9 @@ pub async fn attach_to_match(
     Ok(done.rows_affected())
 }
 
-/// Rattache les lectures liées à l'empreinte `fingerprint` au match `match_id`. Appelé à chaque
-/// projection de partie : un re-process supprime et recrée le match (nouvel id), et `ON DELETE SET NULL`
-/// détache les lectures ; l'empreinte, elle, est stable et permet de les rattacher à nouveau.
+/// Attaches the readings linked to the fingerprint `fingerprint` to the match `match_id`. Called at each
+/// projection of a game: a re-process deletes and recreates the match (new id), and `ON DELETE SET NULL`
+/// detaches the readings; the fingerprint, however, is stable and allows attaching them again.
 pub async fn attach_by_fingerprint(
     db: &sqlx::PgPool,
     fingerprint: &str,
@@ -169,11 +169,11 @@ fn reply(code: StatusCode, body: J) -> (StatusCode, Json<J>) {
     (code, Json(body))
 }
 
-/// POST /api/rank/result — en-tête `X-Session`, corps JSON `RankResultBody`. Règle de la spec : la dernière
-/// lecture **valide** de la session l'emporte ; une lecture `indisponible` n'écrase jamais une `valide`.
-/// 201 `{id}` (lecture enregistrée) ; 200 `{id, kept: true}` (lecture `indisponible` ignorée, une `valide`
-/// existe) ; 401 sans token valide ; 422 `{error}` si la session ou le corps est incohérent (rien n'est écrit) ;
-/// 500 `{error: "db"}` si la base échoue. Le token est contrôlé avant tout traitement du corps.
+/// POST /api/rank/result — `X-Session` header, `RankResultBody` JSON body. Spec rule: the last
+/// **valide** reading of the session wins; an `indisponible` reading never overwrites a `valide` one.
+/// 201 `{id}` (reading recorded); 200 `{id, kept: true}` (`indisponible` reading ignored, a `valide` one
+/// exists); 401 without a valid token; 422 `{error}` if the session or the body is inconsistent (nothing is written);
+/// 500 `{error: "db"}` if the database fails. The token is checked before any processing of the body.
 pub async fn post_result(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -199,8 +199,8 @@ pub async fn post_result(
         return reply(StatusCode::UNPROCESSABLE_ENTITY, json!({ "error": code }));
     }
 
-    // Le verrou de lecture du lobby reste tenu jusqu'au commit : `run_parse` ne peut pas lier le lobby
-    // entre le contrôle du `match_id` et l'écriture (sinon la lecture resterait orpheline).
+    // The lobby read lock stays held until the commit: `run_parse` cannot link the lobby
+    // between the `match_id` check and the write (otherwise the reading would stay orphaned).
     let lobby = s.lobby.read().await;
     let linked = linked_match(
         lobby
@@ -212,7 +212,7 @@ pub async fn post_result(
         tracing::error!("rank insert: {e}");
         reply(StatusCode::INTERNAL_SERVER_ERROR, json!({ "error": "db" }))
     };
-    // Un match lié qui n'existe plus (re-process en cours ou terminé) ne doit pas être posé : clé étrangère cassée.
+    // A linked match that no longer exists (re-process in progress or finished) must not be set: broken foreign key.
     let (match_id, fingerprint) = match linked {
         Some(m) => {
             match sqlx::query_scalar::<_, String>("SELECT fingerprint FROM matches WHERE id = $1")
@@ -227,8 +227,8 @@ pub async fn post_result(
         }
         None => (None, None),
     };
-    // Upsert atomique sur la session (contrainte UNIQUE) : deux POST simultanés ne créent pas deux lignes.
-    // La mise à jour ne s'applique que si la nouvelle lecture est `valide`, ou si l'existante ne l'est pas.
+    // Atomic upsert on the session (UNIQUE constraint): two simultaneous POSTs do not create two rows.
+    // The update only applies if the new reading is `valide`, or if the existing one is not.
     let written: Result<Option<i64>, sqlx::Error> = sqlx::query_scalar(
         "INSERT INTO ranked_results
             (session_id, status, rank_name, total_points, promotion_required, points_delta, reason, token_id, match_id, match_fingerprint)
@@ -257,7 +257,7 @@ pub async fn post_result(
     drop(lobby);
     match written {
         Ok(Some(id)) => reply(StatusCode::CREATED, json!({ "id": id })),
-        // indisponible reçue après une valide : rien n'est écrit, la valide reste
+        // indisponible received after a valide: nothing is written, the valide stays
         Ok(None) => {
             let id: Result<i64, sqlx::Error> =
                 sqlx::query_scalar("SELECT id FROM ranked_results WHERE session_id = $1")
@@ -303,12 +303,12 @@ mod tests {
 
     #[test]
     fn scale_1000_is_checked_when_promotion_is_shown() {
-        // lecture observée : 535 + 465 = 1000
+        // observed reading: 535 + 465 = 1000
         assert_eq!(validate(&valid(535, Some(465))), Ok(()));
         assert_eq!(validate(&valid(535, Some(460))), Err("scale_mismatch"));
-        // pas de seuil affiché (ex. Grandmaster) : pas de contrôle croisé
+        // no displayed threshold (e.g. Grandmaster): no cross-check
         assert_eq!(validate(&valid(535, None)), Ok(()));
-        // addition qui déborde : refus, pas de panique
+        // overflowing addition: refused, no panic
         assert_eq!(
             validate(&valid(1000, Some(i32::MAX))),
             Err("scale_mismatch")
@@ -385,7 +385,7 @@ mod db_tests {
     use crate::upload::sha256_hex;
     use axum::http::HeaderValue;
 
-    /// Token d'upload connu (hash en base, clair dans l'en-tête) ; renvoie le clair.
+    /// Known upload token (hash in the database, clear value in the header); returns the clear value.
     async fn token(db: &sqlx::PgPool) -> String {
         let clear = format!("rank-test-{}", uuid::Uuid::new_v4());
         sqlx::query("INSERT INTO upload_tokens (name, token_hash) VALUES ($1, $2)")
@@ -442,7 +442,7 @@ mod db_tests {
         let sid = session();
         let (st, _) = post_result(State(state.clone()), headers(None, &sid), body(535, 465)).await;
         assert_eq!(st, StatusCode::UNAUTHORIZED);
-        // corps invalide sans token : 401, pas 422 (le token passe avant le corps)
+        // invalid body without a token: 401, not 422 (the token comes before the body)
         let (st, _) = post_result(
             State(state.clone()),
             headers(None, &sid),
@@ -479,7 +479,7 @@ mod db_tests {
         );
     }
 
-    /// Règle de la spec : une `indisponible` reçue après une `valide` ne l'écrase pas (200, `kept`).
+    /// Spec rule: an `indisponible` received after a `valide` does not overwrite it (200, `kept`).
     #[tokio::test]
     async fn unavailable_never_overwrites_a_valid_reading() {
         let Some(state) = test_state(None).await else {
@@ -509,7 +509,7 @@ mod db_tests {
         );
     }
 
-    /// Deux envois de la même session (ex. relance après timeout) : une seule ligne.
+    /// Two sends of the same session (e.g. retry after a timeout): a single row.
     #[tokio::test]
     async fn same_session_twice_keeps_one_row() {
         let Some(state) = test_state(None).await else {
@@ -595,8 +595,8 @@ mod db_tests {
         );
     }
 
-    /// Re-process : la partie est supprimée puis recréée (nouvel id) avec la même empreinte. Le rattachement
-    /// doit revenir par l'empreinte, sans passer par le lobby.
+    /// Re-process: the game is deleted then recreated (new id) with the same fingerprint. The link
+    /// must come back through the fingerprint, without going through the lobby.
     #[tokio::test]
     async fn link_survives_a_reprocess_through_the_fingerprint() {
         let Some(state) = test_state(None).await else {
@@ -618,7 +618,7 @@ mod db_tests {
             .fetch_one(&state.db)
             .await
             .unwrap();
-        // suppression : ON DELETE SET NULL détache la lecture
+        // deletion: ON DELETE SET NULL detaches the reading
         sqlx::query("DELETE FROM matches WHERE id = $1")
             .bind(first)
             .execute(&state.db)
@@ -628,7 +628,7 @@ mod db_tests {
             rows_for(&state.db, &sid).await,
             vec![("valide".into(), 535, None)]
         );
-        // recréation avec la même empreinte, puis rattachement par empreinte
+        // recreation with the same fingerprint, then link by fingerprint
         let second = crate::players::testutil::insert_match(&state.db, None, &[]).await;
         sqlx::query("UPDATE matches SET fingerprint = $1 WHERE id = $2")
             .bind(&fp)

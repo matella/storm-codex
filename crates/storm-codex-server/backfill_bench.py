@@ -1,11 +1,11 @@
-# Jalon 3 T10 — backfill de l'archive complète vers storm-codex-server + critères d'acceptation.
-# Uploader headless concurrent (la GUI client-rs étant impraticable à piloter en CI).
-# Usage : python backfill_bench.py <archive_dir> [token] [lobby_blob]
+# Milestone 3 T10 — backfill of the whole archive into storm-codex-server + acceptance criteria.
+# Concurrent headless uploader (the client-rs GUI being impractical to drive in CI).
+# Usage: python backfill_bench.py <archive_dir> [token] [lobby_blob]
 #
-# [lobby_blob] (optionnel, ou variable d'environnement LOBBY_BLOB) : chemin d'un blob de lobby brut,
-# pour mesurer POST /api/lobby (companion live) en plus du backfill. Sans lui, cette passe est
-# sautée proprement — le reste du harnais tourne normalement. Pour produire un blob depuis un
-# replay déjà archivé :
+# [lobby_blob] (optional, or the LOBBY_BLOB environment variable): path of a raw lobby blob,
+# to measure POST /api/lobby (companion live) on top of the backfill. Without it, this pass is
+# cleanly skipped — the rest of the harness runs normally. To produce a blob from an
+# already archived replay:
 #   cargo run -q -p storm-replay --example dump_lobby -- "<replay.StormReplay>" /tmp/lobby.bin
 import concurrent.futures as cf
 import glob
@@ -56,23 +56,23 @@ def upload_one(path, token):
 
 
 def bench_lobby(token, blob_path):
-    """/api/lobby (companion live) : seul budget perf que la spec attache à cette fonctionnalité
-    (p95 < 100 ms), et jusqu'ici le seul endpoint que ce harnais ne mesurait pas — un chiffre
-    documenté ailleurs n'était donc appuyé par aucun outil du dépôt. Deux chemins, deux coûts :
-    GET sert l'état depuis la mémoire (pas de SQL) ; POST décode le blob ET exécute
-    l'enrichissement SQL — c'est celui qui porte le budget.
+    """/api/lobby (companion live): the only perf budget the spec attaches to this feature
+    (p95 < 100 ms), and until now the only endpoint this harness did not measure — a figure
+    documented elsewhere was therefore backed by no tool of the repository. Two paths, two costs:
+    GET serves the state from memory (no SQL); POST decodes the blob AND runs
+    the SQL enrichment — it is the one that carries the budget.
     """
     print("\n=== /api/lobby (companion live) ===")
 
     if not blob_path:
-        print("POST /api/lobby : SAUTÉ (aucun blob fourni — 3e argument ou variable LOBBY_BLOB).")
-        print('  Pour en produire un : cargo run -q -p storm-replay --example dump_lobby -- '
+        print("POST /api/lobby: SKIPPED (no blob given — 3rd argument or LOBBY_BLOB variable).")
+        print('  To produce one: cargo run -q -p storm-replay --example dump_lobby -- '
               '"<replay.StormReplay>" /tmp/lobby.bin')
-        print("GET  /api/lobby : SAUTÉ (dépend d'un état enrichi posé par le POST ci-dessus).")
+        print("GET  /api/lobby: SKIPPED (depends on an enriched state set by the POST above).")
         return
     if not os.path.exists(blob_path):
-        print(f"POST /api/lobby : SAUTÉ (blob introuvable : {blob_path}).")
-        print("GET  /api/lobby : SAUTÉ (dépend d'un état enrichi posé par le POST ci-dessus).")
+        print(f"POST /api/lobby: SKIPPED (blob not found: {blob_path}).")
+        print("GET  /api/lobby: SKIPPED (depends on an enriched state set by the POST above).")
         return
 
     with open(blob_path, "rb") as f:
@@ -80,25 +80,25 @@ def bench_lobby(token, blob_path):
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/octet-stream"}
     lat_post = []
     for _ in range(20):
-        # DELETE avant chaque POST : sans ça, à partir du 2e envoi le serveur juge le blob
-        # identique au lobby déjà enregistré (mêmes BattleTags) et répond `unchanged` sans
-        # ré-enrichir — on ne mesurerait alors que la comparaison en mémoire du 2e appel, pas le
-        # budget réel (décodage + enrichissement SQL) que ce test doit prouver.
+        # DELETE before each POST: without it, from the 2nd send the server considers the blob
+        # identical to the lobby already stored (same BattleTags) and answers `unchanged` without
+        # re-enriching — we would then only measure the in-memory comparison of the 2nd call, not the
+        # real budget (decoding + SQL enrichment) this test must prove.
         delete("/api/lobby")
         t = time.perf_counter()
         code, _ = post("/api/lobby", blob, headers)
         lat_post.append((time.perf_counter() - t) * 1000)
         if code not in (200, 202):
-            print(f"  ⚠️ POST /api/lobby a répondu {code}")
+            print(f"  ⚠️ POST /api/lobby answered {code}")
     lat_post.sort()
     p95_post = lat_post[int(0.95 * len(lat_post)) - 1]
-    print(f"POST /api/lobby : n={len(lat_post)} médiane={statistics.median(lat_post):.1f}ms "
-          f"p95={p95_post:.1f}ms max={lat_post[-1]:.1f}ms (décodage + enrichissement SQL)")
+    print(f"POST /api/lobby: n={len(lat_post)} median={statistics.median(lat_post):.1f}ms "
+          f"p95={p95_post:.1f}ms max={lat_post[-1]:.1f}ms (decoding + SQL enrichment)")
 
-    # Mesurée APRÈS le POST ci-dessus (jamais avant) : la dernière itération de la boucle se
-    # termine sur un POST, sans DELETE derrière — l'état en mémoire au moment de ce GET est donc
-    # l'état enrichi complet (dix joueurs, historiques, build), pas un `204` sur mémoire vide. Un
-    # GET mesuré avant le premier POST ne prouverait rien sur le coût réel de sérialisation.
+    # Measured AFTER the POST above (never before): the last iteration of the loop
+    # ends on a POST, with no DELETE after it — the in-memory state at the time of this GET is therefore
+    # the complete enriched state (ten players, histories, build), not a `204` on empty memory. A
+    # GET measured before the first POST would prove nothing about the real serialisation cost.
     lat_get = []
     for _ in range(30):
         t = time.perf_counter()
@@ -106,14 +106,14 @@ def bench_lobby(token, blob_path):
         lat_get.append((time.perf_counter() - t) * 1000)
     lat_get.sort()
     p95_get = lat_get[int(0.95 * len(lat_get)) - 1]
-    print(f"GET  /api/lobby : n={len(lat_get)} médiane={statistics.median(lat_get):.1f}ms "
-          f"p95={p95_get:.1f}ms max={lat_get[-1]:.1f}ms (état enrichi en mémoire, pas de SQL)")
+    print(f"GET  /api/lobby: n={len(lat_get)} median={statistics.median(lat_get):.1f}ms "
+          f"p95={p95_get:.1f}ms max={lat_get[-1]:.1f}ms (enriched state in memory, no SQL)")
 
 
 def main():
     archive = sys.argv[1]
     files = glob.glob(os.path.join(archive, "**", "*.StormReplay"), recursive=True)
-    print(f"{len(files)} replays à backfiller")
+    print(f"{len(files)} replays to backfill")
     token = sys.argv[2] if len(sys.argv) > 2 else admin_token()
 
     t0 = time.perf_counter()
@@ -122,10 +122,10 @@ def main():
         for code in ex.map(lambda p: upload_one(p, token), files):
             sent += 1
             if sent % 250 == 0:
-                print(f"  envoyés {sent}/{len(files)}")
-    print(f"tous envoyés en {time.perf_counter() - t0:.0f}s ; attente fin des parses…")
+                print(f"  sent {sent}/{len(files)}")
+    print(f"all sent in {time.perf_counter() - t0:.0f}s; waiting for the parses to finish…")
 
-    # attendre qu'il n'y ait plus de 'pending'
+    # wait until there is no 'pending' left
     while True:
         _, h = get("/api/admin/uploads", {"Authorization": "Bearer dev-admin-token"})
         pending = h["by_status"].get("pending", 0)
@@ -135,17 +135,17 @@ def main():
     elapsed = time.perf_counter() - t0
     _, h = get("/api/admin/uploads", {"Authorization": "Bearer dev-admin-token"})
 
-    print(f"\n=== BACKFILL TERMINÉ en {elapsed:.0f}s ({elapsed / 60:.1f} min) ===")
-    print("par statut :", h["by_status"])
-    print("par classe d'erreur :", h["by_error_class"])
+    print(f"\n=== BACKFILL DONE in {elapsed:.0f}s ({elapsed / 60:.1f} min) ===")
+    print("by status:", h["by_status"])
+    print("by error class:", h["by_error_class"])
     total = sum(h["by_status"].values())
     parsed = h["by_status"].get("parsed", 0)
-    # « tentés » = tout sauf pending ; « parsés » inclut les rejets connus classés
+    # "attempted" = everything but pending; "parsed" includes the known classified rejections
     failed = h["by_status"].get("parse_failed", 0)
-    print(f"total tentés : {total} | parsés : {parsed} ({100 * parsed / total:.1f}%) | "
-          f"échecs classés : {failed} ({100 * failed / total:.1f}%)")
+    print(f"total attempted: {total} | parsed: {parsed} ({100 * parsed / total:.1f}%) | "
+          f"classified failures: {failed} ({100 * failed / total:.1f}%)")
 
-    # p95 API (lecture)
+    # API p95 (read)
     _, matches = get("/api/matches?limit=50")
     ids = [m["id"] for m in matches][:30]
     lat = []
@@ -156,7 +156,7 @@ def main():
             lat.append((time.perf_counter() - t) * 1000)
     lat.sort()
     p95 = lat[int(0.95 * len(lat)) - 1]
-    print(f"API lecture : n={len(lat)} médiane={statistics.median(lat):.1f}ms "
+    print(f"API read: n={len(lat)} median={statistics.median(lat):.1f}ms "
           f"p95={p95:.1f}ms max={lat[-1]:.1f}ms")
 
     lobby_blob = sys.argv[3] if len(sys.argv) > 3 else os.environ.get("LOBBY_BLOB")

@@ -1,20 +1,20 @@
-//! Import de l'analyse du LLM (spec volet E). Module pur : texte brut collé par l'opérateur →
-//! JSON extrait → structure validée (tolérante) → preuves résolues contre l'index des faits.
+//! Import of the LLM analysis (spec part E). Pure module: raw text pasted by the operator →
+//! extracted JSON → validated (lenient) structure → evidence resolved against the facts index.
 //!
-//! L'étape LLM est manuelle et les modèles locaux entourent volontiers leur JSON de prose : on
-//! extrait d'abord un bloc ```json, sinon le premier objet JSON équilibré qui se parse.
+//! The LLM step is manual and local models readily wrap their JSON in prose: we
+//! first extract a ```json block, otherwise the first balanced JSON object that parses.
 
 use super::facts::FactRef;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as J;
 use std::collections::BTreeMap;
 
-/// Version du format de réponse attendu. v2 (2026-09-26) : plan de draft carte par carte — la v1
-/// (notes joueurs + plan de jeu général) n'est plus acceptée à l'import.
+/// Version of the expected response format. v2 (2026-09-26): map-by-map draft plan — v1
+/// (player notes + general game plan) is no longer accepted on import.
 pub const FORMAT_VERSION: i64 = 2;
 
-/// Un héros à bannir, à prendre, ou attendu en face. `phase` (bans) : `first` / `mid` ;
-/// `player` (picks adverses attendus) : `pN`.
+/// A hero to ban, to pick, or expected on the other side. `phase` (bans): `first` / `mid`;
+/// `player` (expected opposing picks): `pN`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct HeroCall {
     #[serde(default)]
@@ -47,7 +47,7 @@ pub struct MapCall {
     pub evidence: Vec<String>,
 }
 
-/// Cartes à choisir / à éviter quand on a le choix de la carte.
+/// Maps to choose / to avoid when we have the map choice.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct MapChoice {
     #[serde(default)]
@@ -56,14 +56,14 @@ pub struct MapChoice {
     pub avoid: Vec<MapCall>,
 }
 
-/// Plan de draft pour une carte.
+/// Draft plan for one map.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct MapPlan {
     #[serde(default)]
     pub map: String,
     #[serde(default)]
     pub confidence: Option<String>,
-    /// Ce qu'on attend d'eux sur cette carte (preuves dans `evidence`).
+    /// What we expect from them on this map (evidence in `evidence`).
     #[serde(default)]
     pub overview: String,
     #[serde(default)]
@@ -78,7 +78,7 @@ pub struct MapPlan {
     pub considerations: Vec<Point>,
 }
 
-/// Plan valable sur n'importe quelle carte (cartes absentes des replays incluses).
+/// Plan valid on any map (maps missing from the replays included).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct General {
     #[serde(default)]
@@ -89,8 +89,8 @@ pub struct General {
     pub considerations: Vec<Point>,
 }
 
-/// Analyse normalisée, telle que stockée dans `scouting_reports.analysis`. Les champs inconnus
-/// sont ignorés, les sections absentes valent vide.
+/// Normalised analysis, as stored in `scouting_reports.analysis`. Unknown fields
+/// are ignored, missing sections are empty.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Analysis {
     #[serde(default)]
@@ -124,7 +124,7 @@ pub struct Imported {
     pub warnings: Vec<String>,
 }
 
-/// Premier bloc ```json … ``` (ou ``` … ``` dont le contenu commence par `{`).
+/// First ```json … ``` block (or ``` … ``` whose content starts with `{`).
 fn fenced(text: &str) -> Option<&str> {
     let mut rest = text;
     while let Some(start) = rest.find("```") {
@@ -142,7 +142,7 @@ fn fenced(text: &str) -> Option<&str> {
     None
 }
 
-/// Objet équilibré commençant à `start` (qui pointe sur `{`), accolades des chaînes ignorées.
+/// Balanced object starting at `start` (which points at `{`), braces inside strings ignored.
 fn balanced_from(text: &str, start: usize) -> Option<&str> {
     let (mut depth, mut in_str, mut esc) = (0i32, false, false);
     for (i, c) in text[start..].char_indices() {
@@ -170,7 +170,7 @@ fn balanced_from(text: &str, start: usize) -> Option<&str> {
     None
 }
 
-/// Extrait la valeur JSON de la réponse : bloc fenced, sinon premier objet équilibré qui se parse.
+/// Extracts the JSON value from the response: fenced block, otherwise the first balanced object that parses.
 pub fn extract(text: &str) -> Result<J, ImportError> {
     if let Some(block) = fenced(text) {
         return serde_json::from_str(block).map_err(|e| ImportError::Invalid(e.to_string()));
@@ -188,7 +188,7 @@ pub fn extract(text: &str) -> Result<J, ImportError> {
     Err(last_err.map_or(ImportError::NoJson, ImportError::Invalid))
 }
 
-/// Entier tolérant : `12` ou `"12"`.
+/// Lenient integer: `12` or `"12"`.
 fn int(v: Option<&J>) -> Option<i64> {
     match v? {
         J::Number(n) => n.as_i64(),
@@ -197,8 +197,8 @@ fn int(v: Option<&J>) -> Option<i64> {
     }
 }
 
-/// Texte collé → analyse validée. `current_facts_version` sert à avertir d'une analyse faite sur
-/// un état antérieur du rapport ; elle est tout de même acceptée.
+/// Pasted text → validated analysis. `current_facts_version` is used to warn about an analysis made on
+/// an earlier state of the report; it is accepted anyway.
 pub fn import(
     text: &str,
     report_id: i64,
@@ -249,8 +249,8 @@ pub struct Tally {
     pub unknown_ids: u32,
 }
 
-/// Remplace chaque `evidence: [id]` par `[{id, known, label, text, n, low}]` et ajoute
-/// `unsupported` (aucune preuve connue) — contre les faits **courants**. Renvoie aussi le décompte.
+/// Replaces each `evidence: [id]` with `[{id, known, label, text, n, low}]` and adds
+/// `unsupported` (no known evidence) — against the **current** facts. Also returns the count.
 pub fn resolve(analysis: &Analysis, index: &BTreeMap<String, FactRef>) -> (J, Tally) {
     let mut v = serde_json::to_value(analysis).unwrap_or(J::Null);
     let mut tally = Tally::default();

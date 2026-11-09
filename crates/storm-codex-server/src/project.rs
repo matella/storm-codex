@@ -1,14 +1,14 @@
-//! Projection d'un `storm_stats::Output` (parse réussi) en lignes Postgres, dans une
-//! transaction idempotente : delete-then-insert par fingerprint (re-process piloté par
-//! `parser_version`). Grosses structures en JSONB `data`, scalaires promus pour les filtres.
+//! Projection of a `storm_stats::Output` (successful parse) into Postgres rows, in an
+//! idempotent transaction: delete-then-insert by fingerprint (re-process driven by
+//! `parser_version`). Large structures in JSONB `data`, scalars promoted for the filters.
 
 use chrono::{DateTime, Utc};
 use serde_json::{Map, Value as J};
 use sqlx::PgPool;
 use std::collections::HashMap;
 
-/// Actions par minute : `actions` commandes sur `length_secs` secondes de jeu. `None` si la durée est
-/// inconnue ou nulle (pas de division par zéro, pas de valeur inventée).
+/// Actions per minute: `actions` commands over `length_secs` seconds of play. `None` if the duration is
+/// unknown or zero (no division by zero, no invented value).
 pub fn apm(actions: i64, length_secs: Option<f64>) -> Option<f64> {
     let minutes = length_secs.filter(|l| *l > 0.0)? / 60.0;
     Some(actions as f64 / minutes)
@@ -16,9 +16,9 @@ pub fn apm(actions: i64, length_secs: Option<f64>) -> Option<f64> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
-    #[error("base : {0}")]
+    #[error("database: {0}")]
     Db(#[from] sqlx::Error),
-    #[error("sortie de parse sans match/players")]
+    #[error("parse output without match/players")]
     Empty,
 }
 
@@ -32,12 +32,12 @@ fn gs_i(p: &J, k: &str) -> Option<i64> {
         .map(|v| v as i64)
 }
 
-/// Héros réellement joué, dérivé des talents via `dim_talents`. Locale-indépendant et immunisé au
-/// shuffle ARAM (où l'attribut 4002 lu par le parser peut être un des héros *proposés*, pas celui
-/// joué — cf. talents de Johanna stockés alors que `hero`="D.Va"). Vote majoritaire : un talent
-/// générique ambigu ne peut pas l'emporter sur les talents spécifiques du héros. `None` si aucun
-/// talent n'est résoluble (joueur sans talent, ou référentiel `dim_talents` vide/incomplet) →
-/// l'appelant garde alors le `hero` du parser.
+/// Hero really played, derived from the talents via `dim_talents`. Locale-independent and immune to the
+/// ARAM shuffle (where attribute 4002 read by the parser can be one of the *offered* heroes, not the one
+/// played — see Johanna's talents stored while `hero`="D.Va"). Majority vote: an ambiguous generic
+/// talent cannot win over the hero's specific talents. `None` if no
+/// talent is resolvable (player without talents, or empty/incomplete `dim_talents` reference data) →
+/// the caller then keeps the parser's `hero`.
 fn talent_hero(p: &J, lut: &HashMap<String, String>) -> Option<String> {
     let talents = p.get("talents").and_then(J::as_object)?;
     let mut tally: HashMap<&str, u32> = HashMap::new();
@@ -52,8 +52,8 @@ fn talent_hero(p: &J, lut: &HashMap<String, String>) -> Option<String> {
         .map(|(h, _)| h.to_string())
 }
 
-/// Toon → héros joué, pour les seuls joueurs dont le héros résolu par les talents diffère du
-/// héros du parser (attribut 4002).
+/// Toon → played hero, only for the players whose hero resolved through the talents differs from the
+/// parser's hero (attribute 4002).
 fn hero_corrections(
     players: &Map<String, J>,
     lut: &HashMap<String, String>,
@@ -68,9 +68,9 @@ fn hero_corrections(
         .collect()
 }
 
-/// Réécrit le héros de chaque copie `victim`/`killers[]` d'un tableau de takedowns, par handle
-/// du joueur (jamais par nom de héros : deux joueurs peuvent partager le même héros parser).
-/// Le killer `player: "0"` (« Nexus Forces ») n'est dans aucune correction → intact.
+/// Rewrites the hero of each `victim`/`killers[]` copy of a takedowns array, by the player's
+/// handle (never by hero name: two players can share the same parser hero).
+/// The killer `player: "0"` ("Nexus Forces") is in no correction → intact.
 fn fix_takedown_heroes(tds: Option<&mut J>, fix: &HashMap<String, String>) {
     let Some(tds) = tds.and_then(J::as_array_mut) else {
         return;
@@ -94,10 +94,10 @@ fn fix_takedown_heroes(tds: Option<&mut J>, fix: &HashMap<String, String>) {
     }
 }
 
-/// Applique les corrections de héros partout où storm-stats a copié le héros du parser :
-/// `players[].hero` (original tracé dans `heroCorrectedFrom`), `players[].deaths`,
-/// `players[].takedowns` (de **tous** les joueurs : un joueur non corrigé peut avoir un killer
-/// corrigé) et `match.takedowns`. Aucune correction → entrée inchangée.
+/// Applies the hero corrections everywhere storm-stats copied the parser's hero:
+/// `players[].hero` (original traced in `heroCorrectedFrom`), `players[].deaths`,
+/// `players[].takedowns` (of **all** the players: an uncorrected player can have a corrected
+/// killer) and `match.takedowns`. No correction → input unchanged.
 fn apply_hero_corrections(
     match_: &mut Map<String, J>,
     players: &mut Map<String, J>,
@@ -121,14 +121,14 @@ fn apply_hero_corrections(
     fix_takedown_heroes(match_.get_mut("takedowns"), fix);
 }
 
-/// `true` si l'erreur est un deadlock (40P01) ou un échec de sérialisation (40001) — transitoire,
-/// donc re-tentable.
+/// `true` if the error is a deadlock (40P01) or a serialisation failure (40001) — transient,
+/// hence retryable.
 fn is_retryable(e: &sqlx::Error) -> bool {
     matches!(e, sqlx::Error::Database(db) if matches!(db.code().as_deref(), Some("40P01") | Some("40001")))
 }
 
-/// Projette le match avec reprise sur deadlock (backfill concurrent : plusieurs transactions
-/// touchent les mêmes lignes `players` / `matches`).
+/// Projects the match with retry on deadlock (concurrent backfill: several transactions
+/// touch the same `players` / `matches` rows).
 pub async fn project_match(
     db: &PgPool,
     fingerprint: &str,
@@ -147,7 +147,7 @@ pub async fn project_match(
     }
 }
 
-/// Insère/replace le match et ses joueurs (une tentative). Renvoie l'id du match.
+/// Inserts/replaces the match and its players (one attempt). Returns the match id.
 async fn project_once(
     db: &PgPool,
     fingerprint: &str,
@@ -178,15 +178,15 @@ async fn project_once(
     let first_keep = i(m, "firstKeep").map(|v| v as i32);
 
     let mut tx = db.begin().await?;
-    // idempotence : un match existant (même replay) est remplacé (cascade match_players)
+    // idempotence: an existing match (same replay) is replaced (cascade match_players)
     sqlx::query("DELETE FROM matches WHERE fingerprint = $1")
         .bind(fingerprint)
         .execute(&mut *tx)
         .await?;
 
-    // Correction héros (cf. talent_hero) : on résout le héros joué via dim_talents pour tous les
-    // talents du match en une requête, AVANT d'écrire `matches.data` (qui porte `takedowns`).
-    // Best-effort — référentiel vide → LUT vide → on garde le héros du parser.
+    // Hero correction (see talent_hero): we resolve the played hero via dim_talents for all the
+    // talents of the match in one query, BEFORE writing `matches.data` (which carries `takedowns`).
+    // Best-effort — empty reference data → empty LUT → we keep the parser's hero.
     let talent_ids: Vec<String> = players
         .values()
         .filter_map(|p| p.get("talents").and_then(J::as_object))
@@ -261,16 +261,16 @@ async fn project_once(
 
     tx.commit().await?;
 
-    // lectures de rang rattachées à l'empreinte : retrouvent leur partie après un re-process (best-effort)
+    // rank readings attached to the fingerprint: find their game again after a re-process (best-effort)
     if let Err(e) = crate::rank::attach_by_fingerprint(db, fingerprint, match_id).await {
         tracing::error!("rank attach (empreinte): {e}");
     }
 
-    // Référentiel joueurs (agrégat dénormalisé, dérivable de match_players) : UPSERT HORS de la
-    // transaction du match, en statements autonomes. Toutes les parties partagent des joueurs
-    // (le propriétaire de l'archive est dans toutes) ; garder ces UPSERT dans la transaction
-    // sérialiserait tout le backfill sur cette ligne. En autocommit, le verrou n'est tenu qu'un
-    // instant. Best-effort : un échec ici ne défait pas le match déjà projeté.
+    // Player reference data (denormalised aggregate, derivable from match_players): UPSERT OUTSIDE the
+    // match transaction, in autonomous statements. All the games share players
+    // (the archive owner is in all of them); keeping these UPSERTs in the transaction
+    // would serialise the whole backfill on that row. In autocommit, the lock is only held for an
+    // instant. Best-effort: a failure here does not undo the already projected match.
     let mut roster: Vec<(&String, &str)> = players
         .iter()
         .filter_map(|(toon, p)| p.get("name").and_then(J::as_str).map(|n| (toon, n)))
@@ -291,7 +291,7 @@ async fn project_once(
         .execute(db)
         .await
         {
-            tracing::warn!("référentiel joueurs : upsert de {toon} en échec : {e}");
+            tracing::warn!("player reference data: upsert of {toon} failed: {e}");
         }
     }
 
@@ -323,13 +323,13 @@ mod tests {
         let lut: HashMap<String, String> = [
             ("CrusaderPassiveDivineFortress", "Johanna"),
             ("CrusaderBlessedHammer", "Johanna"),
-            ("GenericMountTalent", "Autre"), // talent ambigu (partagé) → minoritaire
+            ("GenericMountTalent", "Autre"), // ambiguous (shared) talent → minority
         ]
         .into_iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
 
-        // 2 talents Johanna + 1 ambigu → Johanna l'emporte (immunisé au shuffle ARAM).
+        // 2 Johanna talents + 1 ambiguous → Johanna wins (immune to the ARAM shuffle).
         let p = serde_json::json!({"talents": {
             "Tier1Choice": "CrusaderPassiveDivineFortress",
             "Tier2Choice": "GenericMountTalent",
@@ -337,19 +337,19 @@ mod tests {
         }});
         assert_eq!(talent_hero(&p, &lut).as_deref(), Some("Johanna"));
 
-        // aucun talent résoluble → None (l'appelant garde le héros du parser).
+        // no resolvable talent → None (the caller keeps the parser's hero).
         let p2 = serde_json::json!({"talents": {"Tier1Choice": "Inconnu"}});
         assert_eq!(talent_hero(&p2, &lut), None);
-        // pas de talents du tout → None.
+        // no talents at all → None.
         assert_eq!(talent_hero(&serde_json::json!({}), &lut), None);
     }
 
-    /// Régression (ARAM Braxis Outpost, build 98348) : `players[].hero` était corrigé mais les
-    /// copies du héros dans les morts gardaient le héros parser (Kel'Thuzad affiché « Kharazim »).
+    /// Regression (ARAM Braxis Outpost, build 98348): `players[].hero` was corrected but the
+    /// copies of the hero in the deaths kept the parser hero (Kel'Thuzad shown as "Kharazim").
     #[test]
     fn corrections_propagees_aux_morts_et_takedowns() {
         use serde_json::json;
-        // A et B ont le MÊME héros parser (Stukov) mais jouent Arthas / Rehgar ; C est correct.
+        // A and B have the SAME parser hero (Stukov) but play Arthas / Rehgar; C is correct.
         let td_a_dies = json!({"victim": {"player": "A", "hero": "Stukov"},
             "killers": [{"player": "C", "hero": "Zagara"}, {"player": "B", "hero": "Stukov"}]});
         let td_c_dies = json!({"victim": {"player": "C", "hero": "Zagara"},
@@ -368,7 +368,7 @@ mod tests {
         let mut match_: Map<String, J> =
             serde_json::from_value(json!({"takedowns": [td_a_dies, td_c_dies, td_creep]})).unwrap();
 
-        // référentiel vide → aucune correction → entrée strictement inchangée
+        // empty reference data → no correction → input strictly unchanged
         let empty = hero_corrections(&players, &HashMap::new());
         assert!(empty.is_empty());
         let (p0, m0) = (players.clone(), match_.clone());
@@ -384,16 +384,16 @@ mod tests {
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
         let fix = hero_corrections(&players, &lut);
-        assert_eq!(fix.len(), 2, "C est déjà correct : {fix:?}");
+        assert_eq!(fix.len(), 2, "C is already correct: {fix:?}");
         apply_hero_corrections(&mut match_, &mut players, &fix);
 
         assert_eq!(players["A"]["hero"], "Arthas");
         assert_eq!(players["A"]["heroCorrectedFrom"], "Stukov");
         assert!(players["C"].get("heroCorrectedFrom").is_none());
-        // victime corrigée, killers corrigés par handle (A ≠ B malgré le même héros parser)
+        // victim corrected, killers corrected by handle (A ≠ B despite the same parser hero)
         assert_eq!(players["A"]["deaths"][0]["victim"]["hero"], "Arthas");
         assert_eq!(players["A"]["deaths"][0]["killers"][1]["hero"], "Rehgar");
-        // joueur non corrigé (C) : ses copies voient quand même le killer corrigé
+        // uncorrected player (C): their copies still see the corrected killer
         assert_eq!(players["C"]["deaths"][0]["victim"]["hero"], "Zagara");
         assert_eq!(players["C"]["deaths"][0]["killers"][0]["hero"], "Arthas");
         assert_eq!(players["C"]["takedowns"][0]["victim"]["hero"], "Arthas");
@@ -403,18 +403,18 @@ mod tests {
             "Nexus Forces"
         );
         assert_eq!(players["B"]["deaths"][0]["victim"]["hero"], "Rehgar");
-        // match.takedowns aussi
+        // match.takedowns too
         assert_eq!(match_["takedowns"][0]["victim"]["hero"], "Arthas");
         assert_eq!(match_["takedowns"][1]["killers"][0]["hero"], "Arthas");
         assert_eq!(match_["takedowns"][2]["victim"]["hero"], "Rehgar");
     }
 
-    /// Test d'intégration : projette un replay et vérifie l'idempotence. Ignoré si DATABASE_URL
-    /// absent (CI sans DB) — lancer avec le Postgres Docker du dev.
+    /// Integration test: projects a replay and checks idempotence. Skipped if DATABASE_URL is
+    /// missing (CI without a DB) — run with the dev Docker Postgres.
     #[tokio::test]
     async fn projette_et_reste_idempotent() {
         let Ok(url) = std::env::var("DATABASE_URL") else {
-            eprintln!("DATABASE_URL absent → test de projection ignoré");
+            eprintln!("DATABASE_URL missing → projection test skipped");
             return;
         };
         let db = PgPoolOptions::new().connect(&url).await.expect("connexion");
@@ -423,16 +423,16 @@ mod tests {
             .await
             .expect("migrations");
 
-        // un replay du mini-corpus de storm-replay (committé)
+        // a replay of storm-replay's mini-corpus (committed)
         let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../storm-replay/tests/data");
         let replay = std::fs::read_dir(&dir)
             .expect("tests/data")
             .filter_map(|e| e.ok().map(|e| e.path()))
             .find(|p| p.extension().is_some_and(|x| x == "StormReplay"))
-            .expect("au moins un replay");
+            .expect("at least one replay");
 
         let out = storm_stats::process_replay(&replay, "test.StormReplay");
-        assert_eq!(out.status, 1, "replay de test non parsé");
+        assert_eq!(out.status, 1, "test replay not parsed");
 
         let fp = "test-projection-fingerprint";
         sqlx::query("DELETE FROM matches WHERE fingerprint = $1")
@@ -447,7 +447,7 @@ mod tests {
             .fetch_one(&db)
             .await
             .unwrap();
-        assert_eq!(n, 10, "attendu 10 joueurs");
+        assert_eq!(n, 10, "expected 10 players");
         let with_profile: i64 = sqlx::query_scalar(
             "SELECT count(*) FROM match_players WHERE match_id = $1 AND hotkey_profile IS NOT NULL",
         )
@@ -458,7 +458,7 @@ mod tests {
         assert_eq!(
             with_profile,
             i64::try_from(out.hotkey_profiles.len()).unwrap(),
-            "profils de raccourcis projetés"
+            "hotkey profiles projected"
         );
         assert!(with_profile > 0);
         let with_apm: i64 = sqlx::query_scalar(
@@ -471,11 +471,11 @@ mod tests {
         assert_eq!(
             with_apm,
             i64::try_from(out.actions.len()).unwrap(),
-            "APM projetée pour chaque joueur compté"
+            "APM projected for each counted player"
         );
         assert!(with_apm > 0);
 
-        // re-projection (re-process) : remplace, pas de doublon
+        // re-projection (re-process): replaces, no duplicate
         let id2 = project_match(&db, fp, 1, &out).await.expect("projection 2");
         let matches: i64 =
             sqlx::query_scalar("SELECT count(*) FROM matches WHERE fingerprint = $1")
@@ -483,8 +483,8 @@ mod tests {
                 .fetch_one(&db)
                 .await
                 .unwrap();
-        assert_eq!(matches, 1, "re-process a créé un doublon");
-        assert_ne!(id1, id2, "l'id devrait changer après delete+insert");
+        assert_eq!(matches, 1, "re-process created a duplicate");
+        assert_ne!(id1, id2, "the id should change after delete+insert");
         let n2: i64 = sqlx::query_scalar("SELECT count(*) FROM match_players WHERE match_id = $1")
             .bind(id2)
             .fetch_one(&db)

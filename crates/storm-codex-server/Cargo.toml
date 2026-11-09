@@ -1,7 +1,7 @@
 [package]
 name = "storm-codex-server"
 version = "0.1.0"
-description = "Serveur storm-codex : upload, parse, Postgres, WebSocket, REST (axum)"
+description = "storm-codex server: upload, parse, Postgres, WebSocket, REST (axum)"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true

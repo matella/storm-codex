@@ -1,11 +1,11 @@
-//! Opérations pures sur la série.
+//! Pure operations on the series.
 use super::{CastError, GameRecord, GameSummary, LineupMode, MapStatus, Player, PoolMap, Series};
 use crate::draft::Side;
 use std::collections::{HashMap, HashSet};
 
-/// Comment l'orientation d'un replay a été décidée (R16) : preuve par les joueurs liés, hypothèse
-/// équipe 0 = Blue faute de preuve, ou échange forcé par l'opérateur (`?swap=1`) — éventuellement
-/// **contre** une preuve d'orientation directe.
+/// How the orientation of a replay was decided (R16): evidence from the linked players, assumption
+/// team 0 = Blue for lack of evidence, or swap forced by the operator (`?swap=1`) — possibly
+/// **against** direct orientation evidence.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Orientation {
     Evidence,
@@ -24,9 +24,9 @@ impl Orientation {
 }
 
 impl Series {
-    /// Remplace le pool (ordre donné) ; les cartes conservées gardent leur statut, les autres sont retirées.
+    /// Replaces the pool (given order); kept maps keep their status, the others are removed.
     pub fn set_pool(&mut self, names: &[String]) {
-        // Linéaire (HashMap/HashSet) : un pool énorme ne doit pas coûter du quadratique sous verrou.
+        // Linear (HashMap/HashSet): a huge pool must not cost quadratic time under the lock.
         let old: HashMap<&str, MapStatus> = self
             .pool
             .iter()
@@ -101,8 +101,8 @@ impl Series {
         Ok(number)
     }
 
-    /// Pose (ou corrige, R21 : erreur de clic) le vainqueur saisi à la main ; refusé si la partie a
-    /// un résumé de replay (il porte son propre vainqueur et son orientation).
+    /// Sets (or corrects, R21: misclick) the winner entered by hand; refused if the game has
+    /// a replay summary (it carries its own winner and orientation).
     pub fn set_winner(&mut self, number: u8, side: Side) -> Result<(), CastError> {
         let g = self
             .games
@@ -116,9 +116,9 @@ impl Series {
         Ok(())
     }
 
-    /// Retire la partie `number` lancée par erreur (R21) : seulement la dernière, et seulement
-    /// sans vainqueur ni résumé. Le statut de la carte (pickée/decider) est inchangé : elle redevient
-    /// lançable. Une partie épinglée dans le diaporama est désépinglée.
+    /// Removes game `number` launched by mistake (R21): only the last one, and only
+    /// without a winner or summary. The map's status (picked/decider) is unchanged: it becomes
+    /// launchable again. A game pinned in the slideshow is unpinned.
     pub fn remove_game(&mut self, number: u8) -> Result<(), CastError> {
         let idx = self
             .games
@@ -139,8 +139,8 @@ impl Series {
         Ok(())
     }
 
-    /// Remplit la partie `number` depuis le résumé de son replay (qui fait foi : remplace un
-    /// vainqueur/takedowns/durée saisis à la main, et un résumé précédent).
+    /// Fills game `number` from its replay's summary (which is authoritative: replaces a
+    /// winner/takedowns/duration entered by hand, and a previous summary).
     fn fill_from_summary(&mut self, number: u8, summary: GameSummary) -> Result<(), CastError> {
         let g = self
             .games
@@ -154,13 +154,13 @@ impl Series {
         Ok(())
     }
 
-    /// Orientation d'un résumé par rapport à la série (R16) : chaque ligne joueur est rattachée à
-    /// un joueur de `blue` ou `red` par la règle R14 (toon lié identique, puis pseudo exact trim /
-    /// insensible à la casse — sauf si les deux toons existent et diffèrent). `Some(true)` = l'équipe
-    /// 0 du replay est la Red de la série (à échanger), `Some(false)` = orientation directe, `None` =
-    /// pas de preuve nette (aucun rattachement, ou autant dans les deux sens). Majorité simple :
-    /// une ligne rattachée dans le mauvais sens est compensée par une dans le bon. Un joueur listé
-    /// dans LES DEUX équipes de la série (saisie incohérente) ne prouve rien : sa ligne est ignorée.
+    /// Orientation of a summary relative to the series (R16): each player row is attached to
+    /// a `blue` or `red` player by rule R14 (identical linked toon, then exact trimmed /
+    /// case-insensitive nickname — unless both toons exist and differ). `Some(true)` = replay team
+    /// 0 is the series' Red (to swap), `Some(false)` = direct orientation, `None` =
+    /// no clear evidence (no attachment, or as many in both directions). Simple majority:
+    /// a row attached in the wrong direction is offset by one in the right direction. A player listed
+    /// in BOTH teams of the series (inconsistent input) proves nothing: their row is ignored.
     pub fn orient(&self, s: &GameSummary) -> Option<bool> {
         let matches = |p: &Player, row: &super::PlayerSummary| {
             if let Some(t) = p.toon.as_deref().filter(|t| !t.is_empty()) {
@@ -188,10 +188,10 @@ impl Series {
         }
     }
 
-    /// Remplit la partie `number` depuis le résumé de son replay, orienté (R16) : `force_swap`
-    /// (choix de l'opérateur) ou preuve par les joueurs → `swapped()` ; sans preuve, un vainqueur
-    /// déjà saisi qui contredit le replay → `SideMismatch` (rien ne change) ; sinon équipe 0 = Blue.
-    /// Renvoie le résumé tel qu'enregistré.
+    /// Fills game `number` from its replay's summary, oriented (R16): `force_swap`
+    /// (operator choice) or evidence from the players → `swapped()`; without evidence, an already
+    /// entered winner that contradicts the replay → `SideMismatch` (nothing changes); otherwise team 0 = Blue.
+    /// Returns the summary as recorded.
     pub fn fill_from_replay(
         &mut self,
         number: u8,
@@ -202,7 +202,7 @@ impl Series {
             .map(|(s, _)| s)
     }
 
-    /// Comme `fill_from_replay`, et dit comment l'orientation a été décidée (réponse de la route).
+    /// Like `fill_from_replay`, and tells how the orientation was decided (route response).
     pub fn fill_from_replay_oriented(
         &mut self,
         number: u8,
@@ -217,7 +217,7 @@ impl Series {
             .winner;
         let evidence = self.orient(&summary);
         let (swap, how) = match (force_swap, evidence) {
-            // échange forcé alors que les joueurs liés prouvent l'orientation directe
+            // forced swap while the linked players prove the direct orientation
             (true, e) => (
                 true,
                 Orientation::Forced {
@@ -237,7 +237,7 @@ impl Series {
         Ok((s, how))
     }
 
-    /// [blue, red] : override si présent, sinon victoires comptées.
+    /// [blue, red]: override if present, otherwise counted wins.
     pub fn score(&self) -> [u8; 2] {
         if let Some(s) = self.score_override {
             return s;
@@ -246,7 +246,7 @@ impl Series {
         [wins(Side::Blue), wins(Side::Red)]
     }
 
-    /// Première carte pickée/decider (ordre du pool) sans partie associée.
+    /// First picked/decider map (pool order) without an associated game.
     pub fn next_map(&self) -> Option<&str> {
         self.pool
             .iter()
@@ -254,7 +254,7 @@ impl Series {
             .map(|m| m.name.as_str())
     }
 
-    /// `A` ou `B` : en `Auto`, A avant la 1re partie terminée, B ensuite.
+    /// `A` or `B`: in `Auto`, A before the 1st finished game, B afterwards.
     pub fn lineup_mode_effective(&self) -> LineupMode {
         match self.lineup_mode {
             LineupMode::Auto => {
@@ -410,8 +410,8 @@ mod tests {
         assert_eq!(s.set_winner(9, Side::Blue), Err(CastError::UnknownGame));
     }
 
-    /// R21 : sans résumé, un second vainqueur corrige le premier (score et lineup suivent) ;
-    /// avec un résumé de replay, refus `WinnerAlreadySet`, état inchangé.
+    /// R21: without a summary, a second winner corrects the first (score and lineup follow);
+    /// with a replay summary, `WinnerAlreadySet` refusal, state unchanged.
     #[test]
     fn set_winner_overwrites_manual_winner_but_not_replay_summary() {
         let mut s = with_game();
@@ -445,12 +445,12 @@ mod tests {
         assert_eq!(status(&s, "B"), MapStatus::Decider);
         assert_eq!(s.next_map(), Some("B"));
         assert_eq!(s.start_game("B"), Ok(2));
-        // vainqueur posé : non retirable
+        // winner set: not removable
         s.set_winner(2, Side::Red).unwrap();
         let before = s.clone();
         assert_eq!(s.remove_game(2), Err(CastError::GameHasResult));
         assert_eq!(s, before);
-        // résumé sans vainqueur saisi (cas théorique) : non retirable non plus
+        // summary without an entered winner (theoretical case): not removable either
         let mut s = with_game();
         s.games[0].summary = Some(replay_summary());
         assert_eq!(s.remove_game(1), Err(CastError::GameHasResult));
@@ -550,7 +550,7 @@ mod tests {
         }
     }
 
-    /// Résumé où l'équipe 0 du replay (Blue) a gagné, joueurs `a*` en équipe 0 et `b*` en équipe 1.
+    /// Summary where replay team 0 (Blue) won, players `a*` in team 0 and `b*` in team 1.
     fn replay_summary() -> GameSummary {
         GameSummary {
             map: None,
@@ -602,7 +602,7 @@ mod tests {
 
     #[test]
     fn orient_swaps_on_toon_evidence() {
-        // la Blue de la série joue en équipe 1 du replay (toons tb*)
+        // the series' Blue plays in replay team 1 (toons tb*)
         let mut s = replay_game(
             team(&[(Some("tb1"), "x"), (Some("tb2"), "y")]),
             team(&[(Some("ta1"), "z")]),
@@ -625,7 +625,7 @@ mod tests {
             Some(Side::Red),
         );
         assert_eq!(s.orient(&replay_summary()), Some(false));
-        // preuve nette : le replay fait foi, même contre un vainqueur saisi
+        // clear evidence: the replay is authoritative, even against an entered winner
         s.fill_from_replay(1, replay_summary(), false).unwrap();
         assert_eq!(
             (s.games[0].winner, s.games[0].takedowns),
@@ -641,7 +641,7 @@ mod tests {
             None,
         );
         assert_eq!(s.orient(&replay_summary()), Some(true));
-        // même pseudo mais toons différents : pas une preuve (homonyme d'un autre compte)
+        // same nickname but different toons: not evidence (namesake of another account)
         let s = replay_game(team(&[(Some("other"), "Beta1")]), team(&[]), None);
         assert_eq!(s.orient(&replay_summary()), None);
     }
@@ -656,29 +656,29 @@ mod tests {
             Err(CastError::SideMismatch)
         );
         assert_eq!(s, before);
-        // choix explicite de l'opérateur : échange forcé, accepté
+        // explicit operator choice: forced swap, accepted
         s.fill_from_replay(1, replay_summary(), true).unwrap();
         assert_eq!(s.games[0].winner, Some(Side::Red));
     }
 
-    /// Preuves mêlées : la majorité décide, l'égalité n'est pas une preuve.
+    /// Mixed evidence: the majority decides, a tie is not evidence.
     #[test]
     fn orient_mixed_evidence_majority_and_tie() {
-        // 2 rattachements croisés (Beta1, Beta2 dans la Blue) contre 1 direct (Alpha1 dans la Blue) → échange
+        // 2 crossed attachments (Beta1, Beta2 in the Blue) against 1 direct (Alpha1 in the Blue) → swap
         let s = replay_game(
             team(&[(None, "Beta1"), (None, "Beta2"), (None, "Alpha1")]),
             team(&[]),
             None,
         );
         assert_eq!(s.orient(&replay_summary()), Some(true));
-        // 2 directs (Alpha1, Alpha2) contre 1 croisé (Beta1) → direct
+        // 2 direct (Alpha1, Alpha2) against 1 crossed (Beta1) → direct
         let s = replay_game(
             team(&[(None, "Alpha1"), (None, "Alpha2"), (None, "Beta1")]),
             team(&[]),
             None,
         );
         assert_eq!(s.orient(&replay_summary()), Some(false));
-        // 1 contre 1 → pas de preuve ; avec un vainqueur saisi contraire → SideMismatch
+        // 1 against 1 → no evidence; with a contrary entered winner → SideMismatch
         let mut s = replay_game(
             team(&[(None, "Alpha1"), (None, "Beta1")]),
             team(&[]),
@@ -691,12 +691,12 @@ mod tests {
         );
     }
 
-    /// Un joueur listé dans les deux équipes de la série est ignoré (pas une preuve).
+    /// A player listed in both teams of the series is ignored (not evidence).
     #[test]
     fn orient_ignores_player_listed_in_both_teams() {
         let s = replay_game(team(&[(None, "Beta1")]), team(&[(None, "Beta1")]), None);
         assert_eq!(s.orient(&replay_summary()), None);
-        // la preuve d'un autre joueur reste prise en compte
+        // another player's evidence is still taken into account
         let s = replay_game(
             team(&[(None, "Beta1"), (None, "Beta2")]),
             team(&[(None, "Beta1")]),
@@ -705,7 +705,7 @@ mod tests {
         assert_eq!(s.orient(&replay_summary()), Some(true));
     }
 
-    /// Item 12 : la route dit comment l'orientation a été décidée.
+    /// Item 12: the route tells how the orientation was decided.
     #[test]
     fn orientation_reports_evidence_assumed_and_forced() {
         let mut s = replay_game(team(&[(Some("ta1"), "x")]), team(&[]), None);
@@ -731,7 +731,7 @@ mod tests {
                 against_evidence: false
             }
         );
-        // échange forcé alors que la preuve dit « direct »
+        // forced swap while the evidence says "direct"
         let mut s = replay_game(team(&[(Some("ta1"), "x")]), team(&[]), None);
         let (got, how) = s
             .fill_from_replay_oriented(1, replay_summary(), true)
@@ -743,7 +743,7 @@ mod tests {
             }
         );
         assert_eq!(got.winner, Side::Red);
-        // échange forcé dans le sens de la preuve : pas « contre »
+        // forced swap in the direction of the evidence: not "against"
         let mut s = replay_game(team(&[(Some("tb1"), "x")]), team(&[]), None);
         assert_eq!(
             s.fill_from_replay_oriented(1, replay_summary(), true)
@@ -774,7 +774,7 @@ mod tests {
             (s.games[0].winner, s.games[0].takedowns),
             (Some(Side::Blue), [10, 4])
         );
-        // vainqueur saisi concordant : pas d'erreur
+        // concordant entered winner: no error
         let mut s = replay_game(team(&[]), team(&[]), Some(Side::Blue));
         assert!(s.fill_from_replay(1, replay_summary(), false).is_ok());
     }

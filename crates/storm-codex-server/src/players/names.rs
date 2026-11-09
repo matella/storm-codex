@@ -1,5 +1,5 @@
-//! Historique daté des pseudos. Le pseudo actuel d'un compte est le dernier vu **dans le temps**
-//! (`matches.played_at`), pas `players.last_name` (écrasé dans l'ordre de traitement du backfill).
+//! Dated history of the nicknames. The current nickname of an account is the last one seen **in time**
+//! (`matches.played_at`), not `players.last_name` (overwritten in the backfill's processing order).
 
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
@@ -12,7 +12,7 @@ pub struct NameSpan {
     pub games: i64,
 }
 
-/// Triés du plus récent au plus ancien (`last_seen` DESC, NULL en dernier, puis nom ASC : ordre stable).
+/// Sorted from the most recent to the oldest (`last_seen` DESC, NULL last, then name ASC: stable order).
 pub async fn name_history(db: &PgPool, toon: &str) -> Result<Vec<NameSpan>, sqlx::Error> {
     sqlx::query_as(
         "SELECT mp.name AS name, min(m.played_at) AS first_seen, max(m.played_at) AS last_seen, count(*) AS games
@@ -26,7 +26,7 @@ pub async fn name_history(db: &PgPool, toon: &str) -> Result<Vec<NameSpan>, sqlx
     .await
 }
 
-/// Pseudo actuel = premier de `name_history`, sinon `players.last_name`, sinon `None`.
+/// Current nickname = first of `name_history`, otherwise `players.last_name`, otherwise `None`.
 pub async fn current_name(db: &PgPool, toon: &str) -> Result<Option<String>, sqlx::Error> {
     if let Some(first) = name_history(db, toon).await?.into_iter().next() {
         return Ok(Some(first.name));
@@ -51,7 +51,7 @@ mod tests {
         let (toon, u) = (format!("t-{}", uid()), uid());
         let (old, new, undated) = (format!("Old{u}"), format!("New{u}"), format!("Undated{u}"));
         let t = |d| Utc.with_ymd_and_hms(2025, d, 1, 20, 0, 0).unwrap();
-        // Ordre d'insertion volontairement faux : le récent d'abord (backfill en désordre).
+        // Deliberately wrong insertion order: the recent one first (backfill out of order).
         insert_match(&db, Some(t(9)), &[row(&toon, &new, 0, "Muradin")]).await;
         insert_match(&db, Some(t(2)), &[row(&toon, &old, 0, "Muradin")]).await;
         insert_match(&db, Some(t(3)), &[row(&toon, &old, 0, "Muradin")]).await;

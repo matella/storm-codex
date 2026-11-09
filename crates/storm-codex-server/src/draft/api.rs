@@ -1,12 +1,12 @@
-//! Routes REST du draft. Chaque mutation prend le write-lock, persiste, puis diffuse `draft.updated`
-//! sur le WS (les clients refetch `GET /api/draft`). Mode ouvert (auto-hébergement local), pas d'auth.
+//! REST routes of the draft. Each mutation takes the write-lock, persists, then broadcasts `draft.updated`
+//! on the WS (the clients refetch `GET /api/draft`). Open mode (local self-hosting), no auth.
 use crate::draft::{store, DraftState, Format, Side, TeamInfo};
 use crate::AppState;
 use axum::{extract::State, http::StatusCode, Json};
 use serde::Deserialize;
 use serde_json::{json, Value as J};
 
-/// Persiste l'état courant + diffuse l'event temps réel.
+/// Persists the current state + broadcasts the real-time event.
 pub(crate) async fn persist(s: &AppState) {
     let snapshot = { s.draft.read().await.clone() };
     if let Err(e) = store::save(&s.db, &snapshot).await {
@@ -15,8 +15,8 @@ pub(crate) async fn persist(s: &AppState) {
     let _ = s.events.send(json!({ "type": "draft.updated" }));
 }
 
-/// Format imposé par la série de cast quand elle est active (`None` sinon). Le verrou cast est
-/// relâché avant tout verrou draft (jamais les deux en même temps).
+/// Format imposed by the cast series when it is active (`None` otherwise). The cast lock is
+/// released before any draft lock (never both at the same time).
 pub(crate) async fn series_format(s: &AppState) -> Option<Format> {
     let c = s.cast.read().await;
     c.active.then_some(c.format)
@@ -29,9 +29,9 @@ fn series_active() -> (StatusCode, Json<J>) {
     )
 }
 
-/// GET /api/draft — état courant.
+/// GET /api/draft — current state.
 pub async fn get_draft(State(s): State<AppState>) -> Json<DraftState> {
-    // vue publique : sans scripts de replay ni pseudos des picks non révélés
+    // public view: without replay scripts or the nicknames of unrevealed picks
     Json(s.draft.read().await.public())
 }
 
@@ -48,12 +48,12 @@ pub struct ConfigBody {
     bo: Option<u8>,
 }
 
-/// POST /api/draft/config — (re)configure la partie courante. PRÉSERVE le contexte de série
-/// (fearless), les prébans manuels, le score et les équipes : changer la map/format ne doit pas
-/// effacer les prébans ni le score. Seuls format/map/first_pick/bo + picks de la game sont remis.
+/// POST /api/draft/config — (re)configures the current game. KEEPS the series context
+/// (fearless), the manual pre-bans, the score and the teams: changing the map/format must not
+/// erase the pre-bans or the score. Only format/map/first_pick/bo + the game's picks are reset.
 ///
-/// Série de cast active : équipes, pseudos, Bo (copiés depuis la série) et format appartiennent à la
-/// série — `blue`/`red`/`bo` du corps sont ignorés et `format` forcé ; map et first_pick restent libres.
+/// Active cast series: teams, nicknames, Bo (copied from the series) and format belong to the
+/// series — the body's `blue`/`red`/`bo` are ignored and `format` forced; map and first_pick stay free.
 pub async fn config(State(s): State<AppState>, Json(b): Json<ConfigBody>) -> Json<DraftState> {
     let forced = series_format(&s).await;
     let prev = { s.draft.read().await.clone() };
@@ -71,7 +71,7 @@ pub async fn config(State(s): State<AppState>, Json(b): Json<ConfigBody>) -> Jso
     d.series_games = prev.series_games;
     d.series_bans = prev.series_bans;
     d.manual_unavailable = prev.manual_unavailable;
-    // la file de replays survit à une reconfiguration (partie courante désélectionnée, lecture stoppée)
+    // the replay queue survives a reconfiguration (current game deselected, playback stopped)
     d.replay = super::ReplayState {
         current: None,
         playing: false,
@@ -88,7 +88,7 @@ pub struct HeroBody {
     hero: String,
 }
 
-/// POST /api/draft/action — assigne un héros à l'étape courante.
+/// POST /api/draft/action — assigns a hero to the current step.
 pub async fn action(State(s): State<AppState>, Json(b): Json<HeroBody>) -> (StatusCode, Json<J>) {
     let res = { s.draft.write().await.apply(&b.hero) };
     match res {
@@ -131,7 +131,7 @@ pub struct UnavailableBody {
     value: bool,
 }
 
-/// POST /api/draft/unavailable — override manuel de la disponibilité d'un héros.
+/// POST /api/draft/unavailable — manual override of a hero's availability.
 pub async fn unavailable(
     State(s): State<AppState>,
     Json(b): Json<UnavailableBody>,
@@ -147,7 +147,7 @@ pub struct ScoreBody {
     red: u8,
 }
 
-/// POST /api/draft/score — 409 `series_active` tant qu'une série de cast est active.
+/// POST /api/draft/score — 409 `series_active` as long as a cast series is active.
 pub async fn score(
     State(s): State<AppState>,
     Json(b): Json<ScoreBody>,
@@ -169,8 +169,8 @@ pub struct TeamsBody {
     red: TeamInfo,
 }
 
-/// POST /api/draft/teams — met à jour noms + pseudos SANS réinitialiser le draft en cours.
-/// 409 `series_active` tant qu'une série de cast est active (la série est la source de vérité).
+/// POST /api/draft/teams — updates names + nicknames WITHOUT resetting the ongoing draft.
+/// 409 `series_active` as long as a cast series is active (the series is the source of truth).
 pub async fn teams(
     State(s): State<AppState>,
     Json(b): Json<TeamsBody>,
@@ -187,14 +187,14 @@ pub async fn teams(
     Ok(get_draft(State(s)).await)
 }
 
-/// POST /api/draft/series/next — clôt la partie courante, cumule les bans fearless, repart.
+/// POST /api/draft/series/next — closes the current game, accumulates the fearless bans, restarts.
 pub async fn series_next(State(s): State<AppState>) -> Json<DraftState> {
     s.draft.write().await.start_next_game();
     persist(&s).await;
     get_draft(State(s)).await
 }
 
-/// POST /api/draft/series/new — nouvelle série (vide l'historique + les series bans).
+/// POST /api/draft/series/new — new series (clears the history + the series bans).
 pub async fn series_new(State(s): State<AppState>) -> Json<DraftState> {
     s.draft.write().await.new_series();
     persist(&s).await;

@@ -1,7 +1,7 @@
-//! Feed live d'une partie en cours : les blocs de `replay.tracker.events` / `replay.game.events`
-//! écrits par HotS pendant la partie arrivent par `POST /api/live/chunk`, sont décodés au fil de
-//! l'eau (`storm_replay::StreamDecoder`) et réduits en un état en mémoire, jetable : le replay
-//! archivé reste la source de vérité. Spec : `docs/specs/2026-10-24-feed-live-en-partie-design.md`.
+//! Live feed of a game in progress: the blocks of `replay.tracker.events` / `replay.game.events`
+//! written by HotS during the game arrive through `POST /api/live/chunk`, are decoded as they
+//! come (`storm_replay::StreamDecoder`) and reduced into an in-memory, disposable state: the archived
+//! replay stays the source of truth. Spec: `docs/specs/2026-10-24-feed-live-en-partie-design.md`.
 pub mod api;
 pub mod state;
 
@@ -9,37 +9,37 @@ use serde_json::{json, Value as J};
 use state::{LiveState, Scope};
 use storm_replay::{StreamDecoder, StreamKind};
 
-/// Version du schéma de la vue `GET /api/live`.
+/// Schema version of the `GET /api/live` view.
 pub const LIVE_SCHEMA_VERSION: u32 = 1;
-/// Plafond par stream et par session. Mesuré : ~240 Ko de tracker et ~64 Ko de game events pour
-/// 10 min contre l'IA ; une partie matchmakée de 30 min reste très en dessous. Au-delà, le
-/// morceau est refusé (`413`) — garde-fou contre un client fou, pas une limite d'usage.
+/// Cap per stream and per session. Measured: ~240 KB of tracker and ~64 KB of game events for
+/// 10 min against the AI; a 30-min matchmade game stays well below. Beyond it, the
+/// chunk is refused (`413`) — a safeguard against a runaway client, not a usage limit.
 pub const MAX_STREAM_BYTES: u64 = 64 * 1024 * 1024;
 
-/// Ce que le lobby de **cette** partie apprend à la vue. Fourni seulement si le hash du lobby
-/// (`lobby_live.content_hash`, SHA-256 du battlelobby) est l'id de session : un lobby d'une autre
-/// partie donnerait un mauvais slot, donc les aptitudes d'un autre joueur en `self`.
+/// What the lobby of **this** game teaches the view. Provided only if the lobby hash
+/// (`lobby_live.content_hash`, SHA-256 of the battlelobby) is the session id: a lobby of another
+/// game would give a wrong slot, hence another player's abilities in `self`.
 #[derive(Debug, Clone, Default)]
 pub struct LobbyHint {
     pub map: Option<String>,
-    /// Slot de l'opérateur (index du joueur dans le lobby = slot de travail).
+    /// Operator slot (index of the player in the lobby = working slot).
     pub me_slot: Option<i64>,
-    /// Nombre de joueurs humains du lobby.
+    /// Number of human players in the lobby.
     pub humans: usize,
 }
 
-/// Que faire d'un morceau, selon ce qui a déjà été reçu sur ce stream.
+/// What to do with a chunk, depending on what was already received on this stream.
 #[derive(Debug, PartialEq, Eq)]
 pub enum ChunkPlan {
-    /// Déjà reçu en entier : ignoré (idempotence).
+    /// Already fully received: ignored (idempotence).
     Duplicate,
-    /// Trou avant ce morceau : le client doit renvoyer depuis `expected`.
+    /// Gap before this chunk: the client must resend from `expected`.
     Gap { expected: u64 },
-    /// À appliquer, en sautant les `skip` premiers octets déjà reçus (chevauchement).
+    /// To apply, skipping the first `skip` bytes already received (overlap).
     Apply { skip: usize },
 }
 
-/// Fonction pure : `received` = octets déjà acceptés sur le stream.
+/// Pure function: `received` = bytes already accepted on the stream.
 #[must_use]
 pub fn plan_chunk(received: u64, offset: u64, len: usize) -> ChunkPlan {
     if offset > received {
@@ -58,7 +58,7 @@ pub fn plan_chunk(received: u64, offset: u64, len: usize) -> ChunkPlan {
 pub enum Status {
     Live,
     Ended,
-    /// Le décodage a échoué (protocole faux après un patch, ou données corrompues).
+    /// Decoding failed (wrong protocol after a patch, or corrupted data).
     Unreadable(String),
 }
 
@@ -77,7 +77,7 @@ struct StreamFeed {
     received: u64,
 }
 
-/// Résultat de l'application d'un morceau, renvoyé tel quel au client.
+/// Result of applying a chunk, returned as is to the client.
 #[derive(Debug, PartialEq, Eq)]
 pub enum ChunkOutcome {
     Applied {
@@ -89,13 +89,13 @@ pub enum ChunkOutcome {
     Gap {
         expected: u64,
     },
-    /// Session illisible : le morceau est compté reçu mais n'est plus décodé.
+    /// Unreadable session: the chunk is counted as received but no longer decoded.
     Ignored,
-    /// Le stream dépasserait [`MAX_STREAM_BYTES`] : refusé.
+    /// The stream would exceed [`MAX_STREAM_BYTES`]: refused.
     TooLarge,
 }
 
-/// Une partie en cours (une seule à la fois).
+/// A game in progress (only one at a time).
 pub struct LiveSession {
     pub id: String,
     pub started_at: chrono::DateTime<chrono::Utc>,
@@ -109,7 +109,7 @@ pub struct LiveSession {
 }
 
 impl LiveSession {
-    /// `build = None` → dernier protocole embarqué (repli signalé dans la vue).
+    /// `build = None` → latest embedded protocol (fallback flagged in the view).
     pub fn new(id: String, build: Option<u32>) -> storm_replay::Result<LiveSession> {
         let tracker = StreamDecoder::new(StreamKind::Tracker, build)?;
         let game = StreamDecoder::new(StreamKind::Game, build)?;
@@ -133,7 +133,7 @@ impl LiveSession {
         })
     }
 
-    /// Applique un morceau `bytes` reçu à `offset` sur le stream `kind`.
+    /// Applies a chunk `bytes` received at `offset` on stream `kind`.
     pub fn apply_chunk(&mut self, kind: StreamKind, offset: u64, bytes: &[u8]) -> ChunkOutcome {
         let feed = match kind {
             StreamKind::Tracker => &mut self.tracker,
@@ -170,15 +170,15 @@ impl LiveSession {
             Err(e) => {
                 let build = self
                     .build
-                    .map_or("dernier embarqué".to_owned(), |b| b.to_string());
-                tracing::warn!("feed live illisible ({kind:?}, build {build}) : {e}");
+                    .map_or("latest embedded".to_owned(), |b| b.to_string());
+                tracing::warn!("live feed unreadable ({kind:?}, build {build}): {e}");
                 self.status = Status::Unreadable(format!("{kind:?} : {e}"));
                 ChunkOutcome::Ignored
             }
         }
     }
 
-    /// Vue servie au front : état filtré + métadonnées de session.
+    /// View served to the front: filtered state + session metadata.
     #[must_use]
     pub fn view(&self, scope: Scope, me: Option<i64>, lobby: Option<&LobbyHint>) -> J {
         let (me, me_source) =
@@ -261,7 +261,7 @@ mod tests {
         let mut off = 0usize;
         for chunk in tracker.chunks(4096) {
             once.apply_chunk(StreamKind::Tracker, off as u64, chunk);
-            // le même morceau deux fois, puis un chevauchement d'un demi-bloc
+            // the same chunk twice, then an overlap of half a block
             noisy.apply_chunk(StreamKind::Tracker, off as u64, chunk);
             assert_eq!(
                 noisy.apply_chunk(StreamKind::Tracker, off as u64, chunk),
@@ -290,7 +290,7 @@ mod tests {
             .map(|i| (i.wrapping_mul(2_654_435_761) >> 13) as u8)
             .collect();
         let out = s.apply_chunk(StreamKind::Tracker, 0, &junk);
-        // Soit le hasard forme des événements tronqués (attente), soit c'est illisible ; jamais de panique.
+        // Either chance forms truncated events (waiting), or it is unreadable; never a panic.
         if s.status != Status::Live {
             assert_eq!(out, ChunkOutcome::Ignored);
             assert_eq!(s.view(Scope::Me, None, None)["status"], "unreadable");

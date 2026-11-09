@@ -1,6 +1,6 @@
-//! Réducteur pur du feed live : consomme les événements décodés (tracker + game) d'une partie en
-//! cours et maintient l'état ; produit la vue filtrée par niveau de visibilité. Zéro I/O.
-//! Spec : `docs/specs/2026-10-24-feed-live-en-partie-design.md` (§ Réducteur, § Fair-play).
+//! Pure reducer of the live feed: consumes the decoded events (tracker + game) of a game in
+//! progress and maintains the state; produces the view filtered by visibility level. Zero I/O.
+//! Spec: `docs/specs/2026-10-24-feed-live-en-partie-design.md` (§ Reducer, § Fair play).
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value as J};
@@ -8,44 +8,44 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::sync::OnceLock;
 use storm_replay::Value;
 
-/// Game loops par seconde de jeu.
+/// Game loops per second of game time.
 pub const LOOPS_PER_SEC: i64 = 16;
-/// Deux pressions de la même aptitude à moins de 0,3 s = une seule (règle de la visionneuse).
+/// Two presses of the same ability less than 0.3 s apart = a single one (the viewer's rule).
 const ABILITY_DEDUP_LOOPS: i64 = 5;
-/// Fenêtre de la timeline d'aptitudes servie au front.
+/// Window of the ability timeline served to the front.
 const ABILITY_WINDOW_LOOPS: i64 = 180 * LOOPS_PER_SEC;
-/// Avant de conclure « un seul humain » (partie contre l'IA), les game events doivent couvrir au
-/// moins cette durée : en partie à 10 humains, tous émettent des événements (caméra, sélection)
-/// bien avant — un premier bloc peut n'en contenir qu'un seul.
+/// Before concluding "a single human" (game against the AI), the game events must cover at
+/// least this duration: in a 10-human game, all of them emit events (camera, selection)
+/// well before — a first block may contain only one.
 const SINGLE_HUMAN_MIN_LOOPS: i64 = 60 * LOOPS_PER_SEC;
-/// Taille maximale du fil servi au front (les plus récents).
+/// Maximum size of the feed served to the front (the most recent ones).
 const FEED_MAX: usize = 200;
-/// Taille maximale du fil conservé : au-delà, les plus anciens sont jetés (une partie réelle en
-/// produit quelques centaines ; borne la mémoire face à un client qui enverrait n'importe quoi).
+/// Maximum size of the kept feed: beyond it, the oldest are dropped (a real game
+/// produces a few hundred; bounds the memory against a client that would send anything).
 const FEED_KEEP: usize = 2_000;
 
-/// Niveau de visibilité choisi par l'opérateur (spec § Fair-play). `self` par défaut.
+/// Visibility level chosen by the operator (spec § Fair play). `self` by default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Scope {
-    /// Tableau des scores + tes aptitudes.
+    /// Scoreboard + your abilities.
     #[default]
     #[serde(rename = "self")]
     Me,
-    /// + les aptitudes de tes alliés.
+    /// + your allies' abilities.
     Allies,
-    /// + les aptitudes des adversaires.
+    /// + the opponents' abilities.
     All,
 }
 
-/// Table « unité du tracker → nom canonique » (`HeroMonk` → `Kharazim`), dérivée de l'archive
-/// par `examples/derive_hero_units.rs`.
+/// "Tracker unit → canonical name" table (`HeroMonk` → `Kharazim`), derived from the archive
+/// by `examples/derive_hero_units.rs`.
 fn hero_units() -> &'static HashMap<String, String> {
     static T: OnceLock<HashMap<String, String>> = OnceLock::new();
     T.get_or_init(|| serde_json::from_str(include_str!("hero_units.json")).unwrap_or_default())
 }
 
-/// Nom canonique d'une unité de héros ; à défaut, le nom d'unité sans `Hero` (jamais vide).
+/// Canonical name of a hero unit; failing that, the unit name without `Hero` (never empty).
 #[must_use]
 pub fn hero_name(unit: &str) -> String {
     hero_units()
@@ -91,25 +91,25 @@ pub struct FeedItem {
     pub detail: J,
 }
 
-/// État complet d'une partie en cours, alimenté événement par événement.
+/// Complete state of a game in progress, fed event by event.
 #[derive(Debug, Clone, Default)]
 pub struct LiveState {
     gates_loop: Option<i64>,
     tracker_loop: i64,
     game_loop: i64,
-    /// Gameloop du premier game event reçu.
+    /// Gameloop of the first game event received.
     game_first_loop: Option<i64>,
-    /// `_userid` ayant émis au moins un game event (tous types : caméra, sélection, ordres).
+    /// `_userid`s that emitted at least one game event (all types: camera, selection, orders).
     game_users: BTreeSet<i64>,
     players: BTreeMap<i64, PlayerLive>,
     user_to_player: HashMap<i64, i64>,
     team_levels: [i64; 2],
     feed: VecDeque<FeedItem>,
-    /// Aptitudes par `_userid` (les game events peuvent précéder le `SPlayerSetupEvent`).
+    /// Abilities per `_userid` (game events can precede the `SPlayerSetupEvent`).
     abilities: BTreeMap<i64, BTreeMap<(i64, i64), AbilityStat>>,
 }
 
-/// Équipe d'un joueur du tracker : 1–5 → 0, 6–10 → 1.
+/// Team of a tracker player: 1–5 → 0, 6–10 → 1.
 #[must_use]
 pub fn team_of(player: i64) -> u8 {
     u8::from(player > 5)
@@ -123,7 +123,7 @@ fn int(v: &Value, k: &str) -> Option<i64> {
     v.field(k).and_then(Value::as_int)
 }
 
-/// Paires clé/valeur d'un tableau `m_intData` / `m_stringData` d'un `SStatGameEvent`.
+/// Key/value pairs of an `m_intData` / `m_stringData` array of an `SStatGameEvent`.
 fn kv(ev: &Value, field: &str) -> Vec<(String, J)> {
     ev.field(field)
         .and_then(Value::as_array)
@@ -154,7 +154,7 @@ fn first_str(pairs: &[(String, J)], key: &str) -> Option<String> {
         .and_then(|(_, v)| v.as_str().map(str::to_owned))
 }
 
-/// `SStatGameEvent` qui ne vont pas dans le fil : bruit (globes, XP périodique) ou déjà traités.
+/// `SStatGameEvent`s that do not go into the feed: noise (globes, periodic XP) or already handled.
 fn feed_ignored(name: &str) -> bool {
     name.starts_with("EndOfGame")
         || matches!(
@@ -172,7 +172,7 @@ fn feed_ignored(name: &str) -> bool {
 }
 
 impl LiveState {
-    /// Applique un événement du tracker.
+    /// Applies a tracker event.
     pub fn apply_tracker(&mut self, ev: &Value) {
         let at = int(ev, "_gameloop").unwrap_or(0);
         self.tracker_loop = self.tracker_loop.max(at);
@@ -299,7 +299,7 @@ impl LiveState {
         });
     }
 
-    /// Applique un événement game (seuls les ordres d'aptitude nous intéressent).
+    /// Applies a game event (only the ability orders interest us).
     pub fn apply_game(&mut self, ev: &Value) {
         let at = int(ev, "_gameloop").unwrap_or(0);
         self.game_loop = self.game_loop.max(at);
@@ -334,21 +334,21 @@ impl LiveState {
         }
         stat.count += 1;
         stat.loops.push(at);
-        // Seule la fenêtre récente est servie : on jette le reste (le compteur, lui, est total).
+        // Only the recent window is served: the rest is dropped (the counter, however, is total).
         let keep_from = at - ABILITY_WINDOW_LOOPS;
         if stat.loops.first().is_some_and(|&l| l < keep_from) {
             stat.loops.retain(|&l| l >= keep_from);
         }
     }
 
-    /// Détermine l'opérateur. Un « me » indéterminé est sûr (aucune aptitude affichée en `self`) ;
-    /// un « me » faux montrerait celles d'un autre joueur — d'où des règles prudentes :
-    /// 1. `explicit` s'il désigne un joueur connu ;
-    /// 2. le slot de l'opérateur dans le lobby **de cette partie** (l'appelant ne passe le lobby
-    ///    que si son hash est l'id de session) ;
-    /// 3. si le lobby compte plusieurs humains : rien ;
-    /// 4. sinon, l'unique joueur humain ayant émis un game event, à condition que les game events
-    ///    couvrent au moins une minute (partie contre l'IA).
+    /// Determines the operator. An undetermined "me" is safe (no ability shown in `self`);
+    /// a wrong "me" would show another player's — hence careful rules:
+    /// 1. `explicit` if it designates a known player;
+    /// 2. the operator's slot in the lobby **of this game** (the caller passes the lobby
+    ///    only if its hash is the session id);
+    /// 3. if the lobby counts several humans: nothing;
+    /// 4. otherwise, the only human player who emitted a game event, provided that the game events
+    ///    cover at least one minute (game against the AI).
     #[must_use]
     pub fn resolve_me(
         &self,
@@ -382,8 +382,8 @@ impl LiveState {
         (None, None)
     }
 
-    /// Vue servie au front, filtrée par niveau : les aptitudes hors niveau ne sont jamais
-    /// sérialisées (`abilities: null` = masquées, `[]` = visibles mais aucune).
+    /// View served to the front, filtered by level: the abilities outside the level are never
+    /// serialised (`abilities: null` = hidden, `[]` = visible but none).
     #[must_use]
     pub fn view(&self, scope: Scope, me: Option<i64>) -> J {
         let visible = |player: i64| -> bool {
@@ -464,7 +464,7 @@ mod tests {
         v
     }
 
-    /// Rejoue un replay par blocs de 4 Ko, comme le feed live les reçoit.
+    /// Replays a replay in 4 KB blocks, as the live feed receives them.
     fn replay_live(path: &PathBuf) -> LiveState {
         let r = Replay::open(path).unwrap();
         let mut st = LiveState::default();
@@ -485,7 +485,7 @@ mod tests {
         st
     }
 
-    /// `PlayerInit` du tracker : id joueur → toon handle (clé des joueurs de storm-stats).
+    /// Tracker `PlayerInit`: player id → toon handle (key of the storm-stats players).
     fn handles(path: &PathBuf) -> HashMap<i64, String> {
         let r = Replay::open(path).unwrap();
         let mut m = HashMap::new();
@@ -511,8 +511,8 @@ mod tests {
             let live_players = view["players"].as_array().unwrap();
             assert_eq!(live_players.len(), 10, "{name}");
 
-            // Héros : comparés à `details` (le héros réellement joué). L'attribut 4002 de
-            // storm-stats porte le choix de lobby, faux en ARAM — d'où l'appariement par id.
+            // Heroes: compared to `details` (the hero really played). storm-stats' attribute 4002
+            // carries the lobby choice, wrong in ARAM — hence the pairing by id.
             let details = Replay::open(&path).unwrap().details().unwrap();
             for lp in live_players {
                 let id = lp["player_id"].as_i64().unwrap();
@@ -521,15 +521,15 @@ mod tests {
                     .players
                     .iter()
                     .find(|d| d.working_set_slot_id == slot)
-                    .unwrap_or_else(|| panic!("{name}: P{id} sans joueur details"));
+                    .unwrap_or_else(|| panic!("{name}: P{id} without a details player"));
                 if d.hero.is_ascii() {
-                    assert_eq!(lp["hero"], d.hero.as_str(), "{name} P{id}: héros");
+                    assert_eq!(lp["hero"], d.hero.as_str(), "{name} P{id}: hero");
                 }
             }
 
-            // Morts, takedowns, talents : comparés à storm-stats, joueur par joueur.
+            // Deaths, takedowns, talents: compared to storm-stats, player by player.
             let out = storm_stats::process_replay(&path, &name);
-            let players = out.players.expect("storm-stats sans joueurs");
+            let players = out.players.expect("storm-stats without players");
             let handles = handles(&path);
             for lp in live_players {
                 let id = lp["player_id"].as_i64().unwrap();
@@ -579,7 +579,7 @@ mod tests {
         assert_eq!(shown(Scope::Me), vec![3]);
         assert_eq!(shown(Scope::Allies), vec![1, 2, 3, 4, 5]);
         assert_eq!(shown(Scope::All), (1..=10).collect::<Vec<_>>());
-        // Sans opérateur connu, seul `all` montre des aptitudes.
+        // Without a known operator, only `all` shows abilities.
         assert!(live.view(Scope::Allies, None)["players"]
             .as_array()
             .unwrap()
@@ -597,10 +597,7 @@ mod tests {
             .iter()
             .filter(|p| p["abilities"].as_array().is_some_and(|a| !a.is_empty()))
             .count();
-        assert_eq!(
-            with_presses, 10,
-            "10 humains → 10 joueurs avec des aptitudes"
-        );
+        assert_eq!(with_presses, 10, "10 humans → 10 players with abilities");
     }
 
     #[test]
@@ -645,9 +642,9 @@ mod tests {
             st.resolve_me(Some(2), Some(0), None),
             (Some(2), Some("explicit"))
         );
-        // Lobby à plusieurs humains sans slot opérateur : jamais de déduction.
+        // Lobby with several humans without an operator slot: never a deduction.
         assert_eq!(st.resolve_me(None, None, Some(10)), (None, None));
-        // Moins d'une minute de game events : trop tôt pour conclure « un seul humain ».
+        // Less than a minute of game events: too early to conclude "a single human".
         let early = one_human_state(SINGLE_HUMAN_MIN_LOOPS - 1);
         assert_eq!(early.resolve_me(None, None, None), (None, None));
     }
@@ -666,7 +663,7 @@ mod tests {
             for ev in gdec.feed(block).unwrap() {
                 st.apply_game(&ev);
             }
-            // À aucun moment de la partie la déduction « un seul humain » ne doit se déclencher.
+            // At no point of the game must the "a single human" deduction trigger.
             assert_eq!(st.resolve_me(None, None, None), (None, None), "bloc {n}");
         }
     }

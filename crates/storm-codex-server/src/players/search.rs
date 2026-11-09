@@ -1,5 +1,5 @@
-//! Recherche de joueurs par pseudo actuel, ancien pseudo ou fragment (`lower()` + `ILIKE`, sans
-//! extension Postgres). Tri : exact > préfixe > sous-chaîne, puis nombre de parties.
+//! Player search by current nickname, old nickname or fragment (`lower()` + `ILIKE`, without a
+//! Postgres extension). Sort: exact > prefix > substring, then number of games.
 
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
@@ -11,20 +11,20 @@ pub const MAX_LIMIT: i64 = 50;
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SearchHit {
     pub toon: String,
-    /// Pseudo actuel (historique daté).
+    /// Current nickname (dated history).
     pub name: Option<String>,
-    /// Pseudo qui a matché la requête.
+    /// Nickname that matched the query.
     pub matched_name: String,
-    /// `true` si `matched_name` n'est plus le pseudo actuel (« was … »).
+    /// `true` if `matched_name` is no longer the current nickname ("was …").
     pub matched_old: bool,
     pub games: i64,
     pub wins: i64,
-    /// Deux rôles les plus joués `(rôle, parties)`, via `dim_heroes` (vide si référentiel absent).
+    /// Two most played roles `(role, games)`, via `dim_heroes` (empty if no reference data).
     pub roles: Vec<(String, i64)>,
     pub last_seen: Option<DateTime<Utc>>,
 }
 
-/// Échappe `\`, `%`, `_` pour un motif `LIKE ... ESCAPE '\'` : `Kerrigan_Main` se cherche littéralement.
+/// Escapes `\`, `%`, `_` for a `LIKE ... ESCAPE '\'` pattern: `Kerrigan_Main` is searched literally.
 pub fn escape_like(q: &str) -> String {
     let mut out = String::with_capacity(q.len());
     for c in q.chars() {
@@ -36,7 +36,7 @@ pub fn escape_like(q: &str) -> String {
     out
 }
 
-/// Requête nettoyée (trim, minuscules), ou `None` si trop courte pour être cherchée.
+/// Cleaned query (trim, lowercase), or `None` if too short to be searched.
 pub fn normalize_query(q: &str) -> Option<String> {
     let q = q.trim().to_lowercase();
     (q.chars().count() >= MIN_QUERY_CHARS).then_some(q)
@@ -53,8 +53,8 @@ struct HitRow {
     roles: sqlx::types::Json<Vec<(String, i64)>>,
 }
 
-/// Les agrégats coûteux (victoires, pseudo actuel, rôles) ne sont calculés que pour les `limit`
-/// lignes retenues ; seul le nombre de parties (tri) est compté pour tous les candidats.
+/// The expensive aggregates (wins, current nickname, roles) are only computed for the `limit`
+/// kept rows; only the number of games (sort) is counted for all the candidates.
 const SEARCH_SQL: &str = "
 WITH cand AS (
     SELECT p.toon_handle,
@@ -142,7 +142,7 @@ mod tests {
         let Some(db) = test_pool().await else { return };
         let u = uid();
         let (a, b, c) = (format!("ta-{u}"), format!("tb-{u}"), format!("tc-{u}"));
-        // A : ancien « Zed{u}Night », actuel « Zed{u}Knight ».
+        // A: old "Zed{u}Night", current "Zed{u}Knight".
         insert_match(
             &db,
             Some(t(1)),
@@ -155,7 +155,7 @@ mod tests {
             &[row(&a, &format!("Zed{u}Knight"), 0, "Muradin")],
         )
         .await;
-        // B : « Zed{u}_Main » ; C : « Zed{u}XMain » (ne doit PAS sortir pour « _M »).
+        // B: "Zed{u}_Main"; C: "Zed{u}XMain" (must NOT come out for "_M").
         insert_match(
             &db,
             Some(t(3)),
@@ -173,7 +173,7 @@ mod tests {
         let ha = hits
             .iter()
             .find(|h| h.toon == a)
-            .expect("A trouvé par son ancien pseudo");
+            .expect("A found by their old nickname");
         assert!(ha.matched_old);
         assert_eq!(ha.matched_name, format!("Zed{u}Night"));
         assert_eq!(ha.name.as_deref(), Some(format!("Zed{u}Knight").as_str()));
@@ -186,14 +186,14 @@ mod tests {
         assert!(hits.iter().any(|h| h.toon == b));
         assert!(
             !hits.iter().any(|h| h.toon == c),
-            "« _ » doit être littéral, pas un joker"
+            "\"_\" must be literal, not a wildcard"
         );
     }
 
-    /// Budget perf (spec : p95 < 100 ms) sur le corpus réel de la base pointée par `DATABASE_URL`.
+    /// Perf budget (spec: p95 < 100 ms) on the real corpus of the database pointed to by `DATABASE_URL`.
     /// `cargo test -p storm-codex-server mesure_p95_recherche -- --ignored --nocapture`
     #[tokio::test]
-    #[ignore = "mesure sur corpus réel"]
+    #[ignore = "measurement on the real corpus"]
     async fn mesure_p95_recherche() {
         let Some(db) = test_pool().await else { return };
         let qs = [
@@ -205,7 +205,7 @@ mod tests {
             let t0 = std::time::Instant::now();
             let n = search(&db, q, DEFAULT_LIMIT).await.unwrap().len();
             ms.push(t0.elapsed().as_secs_f64() * 1000.0);
-            eprintln!("{q:>7}: {n:>3} hits en {:.1} ms", ms[ms.len() - 1]);
+            eprintln!("{q:>7}: {n:>3} hits in {:.1} ms", ms[ms.len() - 1]);
         }
         ms.sort_by(f64::total_cmp);
         let p95 = ms[(ms.len() * 95).div_ceil(100) - 1];

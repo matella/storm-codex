@@ -1,6 +1,6 @@
-//! Dump décodé à la demande (`GET /api/matches/{id}/raw?stream=…`) : décode le fichier archivé
-//! à la volée (storm-replay) avec un cache disque **LRU borné** (RAW_CACHE_MAX_BYTES). Jamais
-//! de pré-décodage massif — 3e étage de données de la spec.
+//! Dump decoded on demand (`GET /api/matches/{id}/raw?stream=…`): decodes the archived file
+//! on the fly (storm-replay) with a **bounded LRU** disk cache (RAW_CACHE_MAX_BYTES). Never
+//! any mass pre-decoding — the spec's 3rd data tier.
 
 use crate::AppState;
 use axum::{
@@ -44,7 +44,7 @@ pub async fn get_raw(
         )
             .into_response();
     }
-    // fichier archivé d'un upload ayant produit ce match
+    // archived file of an upload that produced this match
     let archived: Option<String> = sqlx::query_scalar(
         "SELECT archived_path FROM uploads WHERE match_id = $1 AND status = 'parsed'
          AND archived_path IS NOT NULL LIMIT 1",
@@ -63,13 +63,13 @@ pub async fn get_raw(
     };
 
     let cache = s.cfg.raw_cache_dir.join(format!("{id}-{}.json", q.stream));
-    // hit : on touche le fichier (LRU par mtime d'accès) et on sert
+    // hit: we touch the file (LRU by access mtime) and serve it
     if let Ok(bytes) = tokio::fs::read(&cache).await {
         let _ = filetime_now(&cache);
         return json_response(bytes);
     }
 
-    // miss : décodage à la volée (CPU) hors thread runtime
+    // miss: decoding on the fly (CPU) off the runtime thread
     let stream = q.stream.clone();
     let decoded =
         tokio::task::spawn_blocking(move || decode_stream(&PathBuf::from(archived), &stream)).await;
@@ -86,18 +86,18 @@ pub async fn get_raw(
     json_response(bytes)
 }
 
-/// Réutilisé par `replay2d.rs` (même pattern cache-disque LRU + réponse JSON).
+/// Reused by `replay2d.rs` (same LRU disk-cache pattern + JSON response).
 pub(crate) fn json_response(bytes: Vec<u8>) -> Response {
     ([(header::CONTENT_TYPE, "application/json")], bytes).into_response()
 }
 
 pub(crate) fn filetime_now(path: &std::path::Path) -> std::io::Result<()> {
-    // « touch » : réécrit l'heure d'accès/modif pour le classement LRU
+    // "touch": rewrites the access/modification time for the LRU ranking
     let f = std::fs::OpenOptions::new().append(true).open(path)?;
     f.set_modified(std::time::SystemTime::now())
 }
 
-/// Éviction LRU : tant que la somme des tailles dépasse `max`, supprime le plus ancien (mtime).
+/// LRU eviction: as long as the sum of the sizes exceeds `max`, deletes the oldest (mtime).
 pub(crate) async fn enforce_lru(dir: &std::path::Path, max: u64) {
     let dir = dir.to_path_buf();
     let _ = tokio::task::spawn_blocking(move || {
@@ -119,7 +119,7 @@ pub(crate) async fn enforce_lru(dir: &std::path::Path, max: u64) {
         if total <= max {
             return;
         }
-        files.sort_by_key(|(_, _, t)| *t); // plus ancien d'abord
+        files.sort_by_key(|(_, _, t)| *t); // oldest first
         for (path, size, _) in files {
             if total <= max {
                 break;
@@ -141,7 +141,7 @@ fn decode_stream(path: &std::path::Path, stream: &str) -> Result<J, String> {
         "initdata" => value_to_json(&replay.initdata_raw().map_err(to_err)?),
         "attributes" => {
             let a = replay.attributes().map_err(to_err)?;
-            // structure légère (les attributes sont peu volumineux)
+            // light structure (the attributes are small)
             serde_json::json!({"source": a.source, "mapNamespace": a.map_namespace})
         }
         "tracker" => events_to_json(replay.tracker_events().map_err(to_err)?),
@@ -155,7 +155,7 @@ fn events_to_json(events: Vec<Value>) -> J {
     J::Array(events.iter().map(value_to_json).collect())
 }
 
-/// `storm_replay::Value` → JSON (blobs en UTF-8 lossy, bitarrays neutralisés).
+/// `storm_replay::Value` → JSON (blobs as lossy UTF-8, bitarrays neutralised).
 fn value_to_json(v: &Value) -> J {
     match v {
         Value::Null => J::Null,

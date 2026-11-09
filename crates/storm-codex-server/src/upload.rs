@@ -1,5 +1,5 @@
-//! Pipeline d'upload (parser.js du jalon 3) : token → archive d'abord → pool de parse →
-//! projection → statut. Sémantique : attend le résultat jusqu'à 2 s, sinon `202 accepted`.
+//! Upload pipeline (milestone 3's parser.js): token → archive first → parse pool →
+//! projection → status. Semantics: waits for the result up to 2 s, otherwise `202 accepted`.
 
 use crate::{project, AppState, PARSER_VERSION};
 use axum::{
@@ -18,13 +18,13 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(h.finalize())
 }
 
-/// Fingerprint de partie (compat overlay) : SHA-256("date|map|length|toonsTriés").
+/// Game fingerprint (overlay compat): SHA-256("date|map|length|sortedToons").
 pub(crate) fn game_fingerprint(out: &storm_stats::Output) -> Option<String> {
     let m = out.match_.as_ref()?;
     let players = out.players.as_ref()?;
     let date = m.get("date").and_then(|v| v.as_str())?;
     let map = m.get("map").and_then(|v| v.as_str())?;
-    // `${length}` JS : entier sans .0, sinon décimal court (f64 Display == String JS ici)
+    // JS `${length}`: integer without .0, otherwise short decimal (f64 Display == JS String here)
     let length = m.get("length").and_then(|v| v.as_f64())?;
     let mut toons: Vec<&str> = players.keys().map(String::as_str).collect();
     toons.sort_unstable();
@@ -32,17 +32,17 @@ pub(crate) fn game_fingerprint(out: &storm_stats::Output) -> Option<String> {
     Some(sha256_hex(src.as_bytes()))
 }
 
-/// storm-stats statut ≠ 1 → classe d'erreur typée (visible en Admin). Exhaustif sur les
-/// constantes `storm_stats::status` (cf. constants.rs).
+/// storm-stats status ≠ 1 → typed error class (visible in Admin). Exhaustive over the
+/// `storm_stats::status` constants (see constants.rs).
 pub(crate) fn reject_class(status: i64) -> &'static str {
     match status {
-        0 => "unsupported_mode",  // UNSUPPORTED — brawl / mode non géré
-        -2 => "stats_failure",    // FAILURE — échec interne du moteur de stats
-        -3 => "unsupported_map",  // carte hors table (et hors EXTRA_MAPS)
-        -4 => "computer_player",  // partie avec IA
-        -5 => "incomplete",       // replay tronqué / partie incomplète
-        -6 => "too_old",          // build trop ancien (carte absente du référentiel)
-        -7 => "unverified_build", // build trop récent / non vérifié
+        0 => "unsupported_mode",  // UNSUPPORTED — brawl / unhandled mode
+        -2 => "stats_failure",    // FAILURE — internal failure of the stats engine
+        -3 => "unsupported_map",  // map outside the table (and outside EXTRA_MAPS)
+        -4 => "computer_player",  // game with AI
+        -5 => "incomplete",       // truncated replay / incomplete game
+        -6 => "too_old",          // build too old (map missing from the reference data)
+        -7 => "unverified_build", // build too recent / unverified
         _ => "parse_failed",
     }
 }
@@ -64,13 +64,13 @@ fn bearer(headers: &HeaderMap) -> Option<String> {
         .map(|s| s.trim().to_owned())
 }
 
-/// Vrai si l'en-tête porte un `Bearer` correspondant à un token d'upload non révoqué.
-/// Partagé avec `lobby::api::ingest` : les deux endpoints ont le même contrat d'authentification.
+/// True if the header carries a `Bearer` matching a non-revoked upload token.
+/// Shared with `lobby::api::ingest`: both endpoints have the same authentication contract.
 pub async fn token_valide(db: &sqlx::PgPool, headers: &HeaderMap) -> bool {
     token_id(db, headers).await.is_some()
 }
 
-/// L'id du token, quand il est valide (l'upload en a besoin pour tracer `uploads.token_id`).
+/// The token id, when it is valid (the upload needs it to trace `uploads.token_id`).
 pub async fn token_id(db: &sqlx::PgPool, headers: &HeaderMap) -> Option<i64> {
     let tok = bearer(headers)?;
     let h = sha256_hex(tok.as_bytes());
@@ -87,7 +87,7 @@ pub async fn upload(
     headers: HeaderMap,
     bytes: Bytes,
 ) -> (StatusCode, Json<UploadResponse>) {
-    // 1. authentification par token (token_hash = SHA-256 du token en clair)
+    // 1. authentication by token (token_hash = SHA-256 of the clear token)
     let Some(token_id) = token_id(&state.db, &headers).await else {
         return (
             StatusCode::UNAUTHORIZED,
@@ -99,7 +99,7 @@ pub async fn upload(
         );
     };
 
-    // 2. dédup fichier (hash de contenu) — réponse immédiate si déjà traité
+    // 2. file dedup (content hash) — immediate response if already processed
     let content_hash = sha256_hex(&bytes);
     if let Ok(Some(st)) =
         sqlx::query_scalar::<_, String>("SELECT status FROM uploads WHERE fingerprint = $1")
@@ -108,7 +108,7 @@ pub async fn upload(
             .await
     {
         if st == "parsed" || st == "duplicate" {
-            // 409 Conflict : compat avec le handling « doublon » de client-rs
+            // 409 Conflict: compat with client-rs's "duplicate" handling
             return (
                 StatusCode::CONFLICT,
                 Json(UploadResponse {
@@ -120,13 +120,13 @@ pub async fn upload(
         }
     }
 
-    // 3. archive d'abord (source de vérité), puis ligne uploads(pending)
+    // 3. archive first (source of truth), then uploads(pending) row
     let archived = state
         .cfg
         .archive_dir
         .join(format!("{content_hash}.StormReplay"));
     if let Err(e) = write_atomic(&archived, &bytes).await {
-        tracing::error!("archivage : {e}");
+        tracing::error!("archiving: {e}");
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(UploadResponse {
@@ -151,7 +151,7 @@ pub async fn upload(
     {
         Ok(id) => id,
         Err(e) => {
-            tracing::error!("insert upload : {e}");
+            tracing::error!("insert upload: {e}");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(UploadResponse {
@@ -163,11 +163,11 @@ pub async fn upload(
         }
     };
 
-    // 4. parse en pool (jamais sur le thread HTTP) ; pool saturé → 202 accepted
+    // 4. parse in the pool (never on the HTTP thread); saturated pool → 202 accepted
     let permit = match state.parse_sem.clone().try_acquire_owned() {
         Ok(p) => p,
         Err(_) => {
-            // backfill : on accepte, le parse suivra dès qu'un worker se libère
+            // backfill: we accept, the parse will follow as soon as a worker is free
             let st = state.clone();
             tokio::spawn(async move {
                 if let Ok(p) = st.parse_sem.clone().acquire_owned().await {
@@ -185,7 +185,7 @@ pub async fn upload(
         }
     };
 
-    // attend le résultat jusqu'à 2 s (typique < 0,5 s)
+    // waits for the result up to 2 s (typically < 0.5 s)
     let st = state.clone();
     let handle = tokio::spawn(async move { run_parse(st, upload_id, archived, permit).await });
     match tokio::time::timeout(Duration::from_secs(2), handle).await {
@@ -219,7 +219,7 @@ impl Outcome {
     }
 }
 
-/// Parse CPU-bound (spawn_blocking) + projection + mise à jour `uploads`. Diffuse l'event WS.
+/// CPU-bound parse (spawn_blocking) + projection + `uploads` update. Broadcasts the WS event.
 async fn run_parse(
     state: AppState,
     upload_id: i64,
@@ -227,7 +227,7 @@ async fn run_parse(
     _permit: tokio::sync::OwnedSemaphorePermit,
 ) -> Outcome {
     let path = archived.clone();
-    // catch_unwind via spawn_blocking : un panic worker n'abat pas le serveur
+    // catch_unwind via spawn_blocking: a worker panic does not bring the server down
     let parsed = tokio::task::spawn_blocking(move || {
         storm_stats::process_replay(&path, &path.to_string_lossy())
     })
@@ -296,14 +296,14 @@ async fn run_parse(
             .execute(&state.db)
             .await
             {
-                // le match est projeté ; l'upload reste `pending` et sera repris au démarrage
-                tracing::error!("upload {upload_id} : statut parsed non écrit : {e}");
+                // the match is projected; the upload stays `pending` and will be resumed at startup
+                tracing::error!("upload {upload_id}: parsed status not written: {e}");
             }
 
-            // Si ce match est la partie du lobby ouvert, le companion bascule en debrief. Verrou
-            // tenu pour la lecture (`lier_match` interroge `match_players` sous ce verrou), la
-            // mutation et la persistance (même patron que `muter` dans `lobby/api.rs`) : la
-            // diffusion WS se fait après le `drop` explicite.
+            // If this match is the game of the open lobby, the companion switches to debrief. Lock
+            // held for the read (`lier_match` queries `match_players` under this lock), the
+            // mutation and the persistence (same pattern as `muter` in `lobby/api.rs`): the
+            // WS broadcast happens after the explicit `drop`.
             let mut lobby_lie = false;
             let mut guard = state.lobby.write().await;
             if let Some(st) = guard.as_mut() {
@@ -311,7 +311,7 @@ async fn run_parse(
                     if let Err(e) = crate::lobby::store::save(&state.db, st).await {
                         tracing::error!("lobby save: {e}");
                     }
-                    // lectures de rang en attente de cette session (le hash du lobby = id de session)
+                    // pending rank readings of this session (the lobby hash = session id)
                     if let Err(e) =
                         crate::rank::attach_to_match(&state.db, &st.content_hash, match_id).await
                     {
@@ -327,13 +327,13 @@ async fn run_parse(
                     .send(serde_json::json!({ "type": "lobby.updated" }));
             }
 
-            // push temps réel (jalon 3 T5)
+            // real-time push (milestone 3 T5)
             let _ = state.events.send(serde_json::json!({
                 "type": "match.parsed",
                 "match_id": match_id,
                 "map": out.match_.as_ref().and_then(|m| m.get("map")).cloned(),
             }));
-            // événement Jarvis (jalon 5) — best-effort, n'affecte pas la réponse
+            // Jarvis event (milestone 5) — best-effort, does not affect the response
             let event = crate::jarvis::match_completed_event(match_id, &out);
             if let Some(url) = &state.cfg.redis_url {
                 let (url, chan) = (url.clone(), state.cfg.jarvis_channel.clone());
@@ -372,12 +372,12 @@ async fn mark_failed(db: &sqlx::PgPool, upload_id: i64, class: &str, msg: &str) 
     .execute(db)
     .await
     {
-        tracing::error!("upload {upload_id} : statut parse_failed ({class}) non écrit : {e}");
+        tracing::error!("upload {upload_id}: parse_failed status ({class}) not written: {e}");
     }
 }
 
-/// Écrit l'archive via un fichier temporaire puis un renommage : un arrêt en pleine écriture ne
-/// laisse jamais un replay tronqué à la place de la source de vérité.
+/// Writes the archive through a temporary file then a rename: a stop in the middle of writing never
+/// leaves a truncated replay in place of the source of truth.
 async fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
     let tmp = path.with_extension(format!("tmp-{}", uuid::Uuid::new_v4()));
     if let Err(e) = tokio::fs::write(&tmp, bytes).await {
@@ -387,10 +387,10 @@ async fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<(
     tokio::fs::rename(&tmp, path).await
 }
 
-/// Reprend au démarrage les uploads restés `pending` : un `202 accepted` met le parse en file
-/// d'attente en mémoire seulement, donc un redémarrage avant la fin les laissait bloqués (le
-/// client ne renvoie pas un fichier accepté). Le fichier archivé est la source de vérité ;
-/// `project_match` est idempotent. Renvoie le nombre d'uploads remis en file.
+/// Resumes at startup the uploads left `pending`: a `202 accepted` queues the parse
+/// in memory only, so a restart before the end left them stuck (the
+/// client does not resend an accepted file). The archived file is the source of truth;
+/// `project_match` is idempotent. Returns the number of uploads queued again.
 pub(crate) async fn resume_pending(state: &AppState) -> Result<usize, sqlx::Error> {
     let rows: Vec<(i64, String)> = sqlx::query_as(
         "SELECT id, archived_path FROM uploads
@@ -417,9 +417,9 @@ pub(crate) fn filename(headers: &HeaderMap) -> Option<String> {
         .map(percent_decode)
 }
 
-/// Décode les séquences `%XX` du header X-Filename. Le client (client-rs) percent-encode les
-/// caractères non-ASCII et l'apostrophe (`'` → `%27`) pour un transport HTTP sûr ; on restitue le
-/// nom lisible (« Blackheart's Bay.StormReplay »). Octets invalides UTF-8 → on garde le brut.
+/// Decodes the `%XX` sequences of the X-Filename header. The client (client-rs) percent-encodes the
+/// non-ASCII characters and the apostrophe (`'` → `%27`) for a safe HTTP transport; we restore the
+/// readable name ("Blackheart's Bay.StormReplay"). Invalid UTF-8 bytes → we keep the raw value.
 fn percent_decode(s: &str) -> String {
     let bytes = s.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
@@ -452,17 +452,17 @@ mod tests {
             percent_decode("2024-12-25 21.30.45 Blackheart%27s Bay.StormReplay"),
             "2024-12-25 21.30.45 Blackheart's Bay.StormReplay"
         );
-        // pas de séquence → inchangé
+        // no sequence → unchanged
         assert_eq!(
             percent_decode("Cursed Hollow.StormReplay"),
             "Cursed Hollow.StormReplay"
         );
-        // % en fin de chaîne sans 2 hexa → conservé tel quel
+        // % at the end of the string without 2 hex digits → kept as is
         assert_eq!(percent_decode("weird%2"), "weird%2");
     }
 
-    /// Chaque statut de rejet storm-stats a sa classe typée (lisible en Admin) ; un statut
-    /// inconnu retombe sur `parse_failed`, jamais de panique.
+    /// Each storm-stats rejection status has its typed class (readable in Admin); an unknown
+    /// status falls back to `parse_failed`, never a panic.
     #[test]
     fn reject_class_exhaustif_et_sans_trou() {
         let known = [
@@ -497,24 +497,20 @@ mod tests {
         }
     }
 
-    /// Le fingerprint de partie est stable (dédup) : indépendant de l'ordre des toons,
-    /// sensible au contenu. `length` entier s'affiche sans `.0` (compat JS de l'overlay).
+    /// The game fingerprint is stable (dedup): independent of the toon order,
+    /// sensitive to the content. An integer `length` is shown without `.0` (JS compat of the overlay).
     #[test]
     fn game_fingerprint_stable_et_ordre_independant() {
         let a = output("2026-06-09", "Sky Temple", 900.0, &["b", "a", "c"]);
         let b = output("2026-06-09", "Sky Temple", 900.0, &["c", "a", "b"]);
-        assert_eq!(
-            game_fingerprint(&a),
-            game_fingerprint(&b),
-            "ordre des toons"
-        );
+        assert_eq!(game_fingerprint(&a), game_fingerprint(&b), "toon order");
         let c = output("2026-06-09", "Sky Temple", 901.0, &["a", "b", "c"]);
         assert_ne!(
             game_fingerprint(&a),
             game_fingerprint(&c),
-            "length différente"
+            "different length"
         );
-        // sans match (rejet) → pas de fingerprint
+        // without a match (rejection) → no fingerprint
         assert_eq!(
             game_fingerprint(&storm_stats::Output {
                 hotkey_profiles: Default::default(),
@@ -533,7 +529,7 @@ mod tests {
 mod resume_tests {
     use crate::api_tests::test_state;
 
-    /// Un upload resté `pending` (202 puis redémarrage) est repris et parsé au démarrage.
+    /// An upload left `pending` (202 then restart) is resumed and parsed at startup.
     #[tokio::test]
     async fn pending_upload_is_resumed_and_parsed() {
         let Some(state) = test_state(None).await else {
@@ -541,7 +537,7 @@ mod resume_tests {
         };
         let replay = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../storm-replay/tests/data/2026-05-27 22.37.45 Industrial District.StormReplay");
-        let bytes = std::fs::read(&replay).expect("replay committé");
+        let bytes = std::fs::read(&replay).expect("committed replay");
         let hash = super::sha256_hex(&bytes);
         let archived = state.cfg.archive_dir.join(format!("{hash}.StormReplay"));
         super::write_atomic(&archived, &bytes).await.unwrap();
@@ -561,7 +557,7 @@ mod resume_tests {
         .unwrap();
 
         let n = super::resume_pending(&state).await.unwrap();
-        assert!(n >= 1, "l'upload pending doit être remis en file");
+        assert!(n >= 1, "the pending upload must be queued again");
         let mut status = String::new();
         for _ in 0..100 {
             status = sqlx::query_scalar("SELECT status FROM uploads WHERE id = $1")
@@ -575,7 +571,7 @@ mod resume_tests {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
         assert_eq!(status, "parsed");
-        // aucun fichier temporaire laissé à côté de l'archive
+        // no temporary file left next to the archive
         let leftovers = std::fs::read_dir(&state.cfg.archive_dir)
             .unwrap()
             .filter(|e| {

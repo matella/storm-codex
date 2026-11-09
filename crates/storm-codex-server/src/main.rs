@@ -1,5 +1,5 @@
-//! `storm-codex-server` — serveur unique (axum + Postgres) : upload, parse, projection,
-//! WebSocket, REST. Jalon 3. Config par env (cf. `.env.example`).
+//! `storm-codex-server` — single server (axum + Postgres): upload, parse, projection,
+//! WebSocket, REST. Milestone 3. Config through env (see `.env.example`).
 
 mod admin;
 mod auth;
@@ -32,30 +32,30 @@ use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock, Semaphore};
 
-/// Version du projecteur — bumper quand la projection change ; pilote le re-process idempotent.
+/// Projector version — bump when the projection changes; drives the idempotent re-process.
 pub const PARSER_VERSION: i32 = 4;
 
 #[derive(Clone)]
 pub struct AppState {
     pub cfg: Arc<Config>,
     pub db: PgPool,
-    /// Limite les parses CPU concurrents (= nb de cœurs).
+    /// Limits the concurrent CPU parses (= number of cores).
     pub parse_sem: Arc<Semaphore>,
-    /// Diffusion temps réel (WS) — `match.parsed`, progression backfill, `draft.updated`.
+    /// Real-time broadcast (WS) — `match.parsed`, backfill progress, `draft.updated`.
     pub events: broadcast::Sender<serde_json::Value>,
-    /// État autoritatif du simulateur de draft (singleton, persisté dans `draft_live`).
+    /// Authoritative state of the draft simulator (singleton, persisted in `draft_live`).
     pub draft: Arc<RwLock<draft::DraftState>>,
-    /// Série de la régie de cast (singleton, persisté dans `cast_live`).
+    /// Series of the cast control room (singleton, persisted in `cast_live`).
     pub cast: Arc<RwLock<cast::Series>>,
-    /// Version de l'état de cast en mémoire (attribuée sous le write-lock de chaque mutation) et
-    /// dernière version écrite en base : un instantané plus ancien n'écrase jamais un plus récent.
+    /// Version of the in-memory cast state (assigned under the write-lock of each mutation) and
+    /// last version written to the database: an older snapshot never overwrites a more recent one.
     pub cast_version: Arc<std::sync::atomic::AtomicU64>,
     pub cast_saved: Arc<tokio::sync::Mutex<u64>>,
-    /// Lobby live courant (singleton, persisté dans `lobby_live`). `None` = aucun lobby.
+    /// Current live lobby (singleton, persisted in `lobby_live`). `None` = no lobby.
     pub lobby: Arc<RwLock<Option<lobby::LobbyState>>>,
-    /// Partie en cours (feed live, en mémoire, jetable). `None` = aucune.
+    /// Game in progress (live feed, in memory, disposable). `None` = none.
     pub live: Arc<RwLock<Option<live::LiveSession>>>,
-    /// Minuterie de lecture auto du draft depuis un replay (une seule à la fois).
+    /// Auto playback timer of the draft from a replay (only one at a time).
     pub replay_timer: Arc<std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
 }
 
@@ -69,21 +69,21 @@ async fn main() {
         .init();
 
     if let Err(e) = run().await {
-        tracing::error!("démarrage impossible : {e}");
+        tracing::error!("startup failed: {e}");
         std::process::exit(1);
     }
 }
 
-/// Copie les minimaps bakées (`bundle`, ex. `assets/minimaps`) dans `images_dir/minimaps`
-/// (idempotent : saute les fichiers déjà présents). Servies ensuite sur `/images/minimaps` par le
-/// ServeDir existant. Best-effort : une erreur ne bloque pas le démarrage (fallback front sur l'art peint).
+/// Copies the baked minimaps (`bundle`, e.g. `assets/minimaps`) into `images_dir/minimaps`
+/// (idempotent: skips the files already present). Then served on `/images/minimaps` by the
+/// existing ServeDir. Best-effort: an error does not block startup (front fallback on the painted art).
 fn bundle_minimaps(bundle: &std::path::Path, images_dir: &std::path::Path) {
     let dst = images_dir.join("minimaps");
     if std::fs::create_dir_all(&dst).is_err() {
         return;
     }
     let Ok(entries) = std::fs::read_dir(bundle) else {
-        return; // bundle absent (dev sans assets) → pas de minimaps, fallback front
+        return; // bundle missing (dev without assets) → no minimaps, front fallback
     };
     let mut copied = 0u32;
     for e in entries.flatten() {
@@ -99,32 +99,32 @@ fn bundle_minimaps(bundle: &std::path::Path, images_dir: &std::path::Path) {
         }
     }
     if copied > 0 {
-        tracing::info!("minimaps bakées : {copied} copiées dans {}", dst.display());
+        tracing::info!("baked minimaps: {copied} copied into {}", dst.display());
     }
 }
 
 async fn run() -> Result<(), String> {
     let cfg = Config::from_env()?;
-    std::fs::create_dir_all(&cfg.archive_dir).map_err(|e| format!("archive_dir : {e}"))?;
-    std::fs::create_dir_all(&cfg.raw_cache_dir).map_err(|e| format!("raw_cache_dir : {e}"))?;
+    std::fs::create_dir_all(&cfg.archive_dir).map_err(|e| format!("archive_dir: {e}"))?;
+    std::fs::create_dir_all(&cfg.raw_cache_dir).map_err(|e| format!("raw_cache_dir: {e}"))?;
     bundle_minimaps(&cfg.minimaps_bundle_dir, &cfg.images_dir);
 
     let db = PgPoolOptions::new()
         .max_connections(16)
         .connect(&cfg.database_url)
         .await
-        .map_err(|e| format!("connexion Postgres : {e}"))?;
+        .map_err(|e| format!("Postgres connection: {e}"))?;
 
     sqlx::migrate!("./migrations")
         .run(&db)
         .await
-        .map_err(|e| format!("migrations : {e}"))?;
+        .map_err(|e| format!("migrations: {e}"))?;
 
     let cores = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4);
     let (events, _) = broadcast::channel(1024);
-    // État de draft : repris du disque si présent, sinon neuf (Standard, blue first-pick, Sky Temple).
+    // Draft state: restored from disk if present, otherwise fresh (Standard, blue first-pick, Sky Temple).
     let mut draft = draft::store::load(&db).await.unwrap_or_else(|| {
         draft::DraftState::new(
             draft::Format::Standard,
@@ -132,9 +132,9 @@ async fn run() -> Result<(), String> {
             "Sky Temple".into(),
         )
     });
-    // Aucune minuterie après un redémarrage : la lecture auto repart en pause (curseur conservé).
+    // No timer after a restart: auto playback restarts paused (cursor kept).
     draft.after_restart();
-    // Série de cast : reprise du disque si lisible, sinon état neuf inactif (jamais d'échec au démarrage).
+    // Cast series: restored from disk if readable, otherwise a fresh inactive state (never a startup failure).
     let cast_initial = cast::store::load(&db)
         .await
         .unwrap_or_else(cast::Series::new);
@@ -153,11 +153,11 @@ async fn run() -> Result<(), String> {
         replay_timer: Arc::default(),
     };
 
-    // Référentiel héros/talents/patches + images (best-effort, refresh 24 h ; chaque nouveau patch →
-    // notif WS in-app + webhook optionnel). Deux sources mutuellement exclusives :
-    //  - REFERENTIAL_URL  : snapshot publié (`referential.tar.gz`) → bundle autonome, sans HPN live.
-    //  - HOTSPATCHNOTES_URL : API HotsPatchNotes live (setup mainteneur).
-    // Le snapshot est prioritaire quand les deux sont définis.
+    // Hero/talent/patch reference data + images (best-effort, 24 h refresh; each new patch →
+    // in-app WS notification + optional webhook). Two mutually exclusive sources:
+    //  - REFERENTIAL_URL  : published snapshot (`referential.tar.gz`) → standalone bundle, without live HPN.
+    //  - HOTSPATCHNOTES_URL : live HotsPatchNotes API (maintainer setup).
+    // The snapshot takes precedence when both are set.
     if state.cfg.referential_url.is_some() || state.cfg.hotspatchnotes_url.is_some() {
         let st = state.clone();
         tokio::spawn(async move {
@@ -165,12 +165,12 @@ async fn run() -> Result<(), String> {
                 let new_patches = if let Some(url) = st.cfg.referential_url.clone() {
                     dim::ingest_snapshot(&st.db, &st.cfg.images_dir, &url).await
                 } else if let Some(url) = st.cfg.hotspatchnotes_url.clone() {
-                    // sync une-fois des héros/talents/images au 1er tour (idempotent ensuite).
+                    // one-time sync of heroes/talents/images on the 1st round (idempotent afterwards).
                     dim::sync_heroes(&st.db, &url).await;
                     dim::sync_talents(&st.db, &url).await;
                     dim::vendor_images(&st.cfg.images_dir, &url).await;
                     let np = dim::sync_patches(&st.db, &url).await;
-                    dim::backfill_hero_sections(&st.db, &url).await; // projette les sections héros (live)
+                    dim::backfill_hero_sections(&st.db, &url).await; // projects the hero sections (live)
                     np
                 } else {
                     Vec::new()
@@ -190,8 +190,8 @@ async fn run() -> Result<(), String> {
                         .await;
                     }
                 }
-                // Référentiel encore vide (source injoignable au démarrage, ex. box éteint) :
-                // nouvel essai dans 10 min plutôt que 24 h.
+                // Reference data still empty (source unreachable at startup, e.g. box off):
+                // new attempt in 10 min rather than 24 h.
                 let vide =
                     sqlx::query_scalar::<_, bool>("SELECT NOT EXISTS (SELECT 1 FROM dim_heroes)")
                         .fetch_one(&st.db)
@@ -204,38 +204,38 @@ async fn run() -> Result<(), String> {
     }
     match upload::resume_pending(&state).await {
         Ok(0) => {}
-        Ok(n) => tracing::info!("{n} upload(s) en attente repris au démarrage"),
-        Err(e) => tracing::error!("reprise des uploads en attente : {e}"),
+        Ok(n) => tracing::info!("{n} pending upload(s) resumed at startup"),
+        Err(e) => tracing::error!("resuming the pending uploads: {e}"),
     }
     let bind = state.cfg.bind_addr.clone();
     let app = api_router(&state);
     let app = serve_spa(app, state.cfg.web_dir.as_deref())
         .with_state(state)
-        // Limite de corps de requête : le défaut axum (2 Mo) rejetait en 413 — AVANT le handler, donc
-        // sans trace ni ligne uploads — les replays de longues parties (un Braxis Holdout 5v5 dépasse
-        // 2 Mo), faisant boucler l'uploader. 64 Mo couvre largement (replays < ~10 Mo).
+        // Request body limit: the axum default (2 MB) rejected with 413 — BEFORE the handler, so
+        // without a trace or an uploads row — the replays of long games (a 5v5 Braxis Holdout exceeds
+        // 2 MB), making the uploader loop. 64 MB covers it widely (replays < ~10 MB).
         .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024))
-        // gzip/brotli selon `Accept-Encoding` (JSON de l'API, bundle JS/CSS) ; le prédicat par défaut
-        // saute les petites réponses, les images et les flux (WS : réponse 101 sans corps).
+        // gzip/brotli according to `Accept-Encoding` (API JSON, JS/CSS bundle); the default predicate
+        // skips small responses, images and streams (WS: 101 response without a body).
         .layer(tower_http::compression::CompressionLayer::new());
 
     let listener = tokio::net::TcpListener::bind(&bind)
         .await
-        .map_err(|e| format!("bind {bind} : {e}"))?;
-    tracing::info!("storm-codex-server à l'écoute sur {bind}");
+        .map_err(|e| format!("bind {bind}: {e}"))?;
+    tracing::info!("storm-codex-server listening on {bind}");
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await
-        .map_err(|e| format!("serve : {e}"))
+        .map_err(|e| format!("serve: {e}"))
 }
 
-/// Ctrl-C ou SIGTERM (`docker stop`) : le serveur cesse d'accepter des connexions et laisse
-/// finir les requêtes en cours. Les parses non terminés restent `pending` et sont repris au
-/// prochain démarrage (`upload::resume_pending`).
+/// Ctrl-C or SIGTERM (`docker stop`): the server stops accepting connections and lets
+/// the ongoing requests finish. Unfinished parses stay `pending` and are resumed at the
+/// next startup (`upload::resume_pending`).
 async fn shutdown_signal() {
     let ctrl_c = async {
         if let Err(e) = tokio::signal::ctrl_c().await {
-            tracing::error!("signal Ctrl-C : {e}");
+            tracing::error!("Ctrl-C signal: {e}");
             std::future::pending::<()>().await;
         }
     };
@@ -246,7 +246,7 @@ async fn shutdown_signal() {
                 s.recv().await;
             }
             Err(e) => {
-                tracing::error!("signal SIGTERM : {e}");
+                tracing::error!("SIGTERM signal: {e}");
                 std::future::pending::<()>().await;
             }
         }
@@ -257,16 +257,16 @@ async fn shutdown_signal() {
         () = ctrl_c => {},
         () = term => {},
     }
-    tracing::info!("arrêt demandé : fin des requêtes en cours");
+    tracing::info!("shutdown requested: finishing the ongoing requests");
 }
 
-/// Toutes les routes API + images (sans le fallback SPA) — extraite pour les tests d'intégration.
+/// All the API routes + images (without the SPA fallback) — extracted for the integration tests.
 fn api_router(state: &AppState) -> Router<AppState> {
     Router::new()
         .route("/api/health", get(health))
         .route("/api/upload", post(upload::upload))
-        // alias compat client-rs (Hots-Overlay) : il poste sur /api/upload-raw (octets bruts,
-        // header X-Filename, Bearer) — même handler, mêmes garanties.
+        // client-rs (Hots-Overlay) compat alias: it posts to /api/upload-raw (raw bytes,
+        // X-Filename header, Bearer) — same handler, same guarantees.
         .route("/api/upload-raw", post(upload::upload))
         .route("/api/matches", get(read::list_matches))
         .route("/api/matches/{id}", get(read::get_match))
@@ -333,7 +333,7 @@ fn api_router(state: &AppState) -> Router<AppState> {
         )
         .route("/api/admin/uploads", get(admin::uploads_health))
         .route("/api/admin/reprocess", post(admin::reprocess))
-        // Régie de cast (état autoritatif serveur + broadcast WS cast.updated), mode ouvert
+        // Cast control room (server authoritative state + WS broadcast cast.updated), open mode
         .route("/api/cast", get(cast::api::get_cast))
         .route(
             "/api/cast/series",
@@ -417,7 +417,7 @@ fn api_router(state: &AppState) -> Router<AppState> {
                 ))
                 .get(cast::api::get_logo),
         )
-        // Simulateur de draft (état autoritatif serveur + broadcast WS draft.updated)
+        // Draft simulator (server authoritative state + WS broadcast draft.updated)
         .route("/api/draft", get(draft::api::get_draft))
         .route("/api/draft/config", post(draft::api::config))
         .route("/api/draft/action", post(draft::api::action))
@@ -447,7 +447,7 @@ fn api_router(state: &AppState) -> Router<AppState> {
             "/api/draft/replay/queue/{i}",
             axum::routing::delete(draft::replay_api::remove),
         )
-        // Lobby live (companion) : détection pendant l'écran de chargement + broadcast WS lobby.detected
+        // Live lobby (companion): detection during the loading screen + WS broadcast lobby.detected
         .route(
             "/api/lobby",
             get(lobby::api::get)
@@ -457,11 +457,11 @@ fn api_router(state: &AppState) -> Router<AppState> {
         .route("/api/lobby/hero", post(lobby::api::set_hero))
         .route("/api/lobby/map", post(lobby::api::set_map))
         .route("/api/lobby/teams", post(lobby::api::set_teams))
-        // Feed live d'une partie en cours (blocs TempWriteReplayP1) + broadcast WS live.updated
+        // Live feed of a game in progress (TempWriteReplayP1 blocks) + WS broadcast live.updated
         .route("/api/live", get(live::api::get).delete(live::api::clear))
         .route("/api/live/chunk", post(live::api::chunk))
         .route("/api/live/end", post(live::api::end))
-        // Rapports de scouting (tables dédiées, jamais projetés dans matches)
+        // Scouting reports (dedicated tables, never projected into matches)
         .route(
             "/api/scouting",
             get(scouting::api::list).post(scouting::api::create),
@@ -490,20 +490,20 @@ fn api_router(state: &AppState) -> Router<AppState> {
             axum::routing::put(scouting::api::put_analysis).delete(scouting::api::delete_analysis),
         )
         .route("/ws", any(ws::ws_handler))
-        // portraits héros + images de cartes vendorisés (servis depuis images_dir)
+        // vendored hero portraits + map images (served from images_dir)
         .nest_service(
             "/images",
             tower_http::services::ServeDir::new(&state.cfg.images_dir),
         )
-        // écritures cast/draft : Bearer admin exigé quand ADMIN_TOKEN est défini
+        // cast/draft writes: admin Bearer required when ADMIN_TOKEN is set
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
             auth::guard_writes,
         ))
 }
 
-/// Front buildé (SPA) : ServeDir sert les assets ; toute route inconnue renvoie index.html
-/// (statut 200) pour que le routing client React fonctionne sur les liens profonds.
+/// Built front (SPA): ServeDir serves the assets; any unknown route returns index.html
+/// (status 200) so that React client routing works on deep links.
 fn serve_spa<S: Clone + Send + Sync + 'static>(
     app: Router<S>,
     web_dir: Option<&std::path::Path>,
@@ -511,9 +511,9 @@ fn serve_spa<S: Clone + Send + Sync + 'static>(
     match web_dir {
         Some(dir) => {
             let index = std::fs::read_to_string(dir.join("index.html")).unwrap_or_default();
-            // index.html en `no-cache` : non fingerprinté, il doit toujours être revalidé sinon
-            // un redeploy (nouveau hash de bundle) laisse le navigateur sur un bundle 404 → page
-            // blanche. Les assets (fingerprintés) restent cachables par ServeDir.
+            // index.html as `no-cache`: not fingerprinted, it must always be revalidated otherwise
+            // a redeploy (new bundle hash) leaves the browser on a 404 bundle → blank
+            // page. The (fingerprinted) assets stay cacheable by ServeDir.
             let spa = axum::routing::get(move || {
                 let index = index.clone();
                 async move {
@@ -523,10 +523,10 @@ fn serve_spa<S: Clone + Send + Sync + 'static>(
                     )
                 }
             });
-            // `append_index_html_on_directories(false)` → "/" tombe sur le handler SPA (no-cache)
-            // au lieu d'être servi par ServeDir sans en-tête de cache.
-            // `/assets/*` : noms fingerprintés par Vite (hash du contenu) → cachables un an sans
-            // revalidation. Un asset absent répond 404 (jamais index.html à la place d'un .js).
+            // `append_index_html_on_directories(false)` → "/" falls on the SPA handler (no-cache)
+            // instead of being served by ServeDir without a cache header.
+            // `/assets/*`: names fingerprinted by Vite (content hash) → cacheable for a year without
+            // revalidation. A missing asset answers 404 (never index.html instead of a .js).
             let assets = tower_http::set_header::SetResponseHeader::overriding(
                 tower_http::services::ServeDir::new(dir.join("assets")),
                 axum::http::header::CACHE_CONTROL,
@@ -559,9 +559,9 @@ async fn health(State(state): State<AppState>) -> (StatusCode, Json<serde_json::
     )
 }
 
-/// Tests d'intégration niveau routeur (tower::oneshot, sans écoute réseau). Ignorés sans
-/// `DATABASE_URL` (pattern du test de projection) — lancer avec le Postgres Docker du dev,
-/// exécutés en CI contre un service Postgres.
+/// Router-level integration tests (tower::oneshot, without network listening). Skipped without
+/// `DATABASE_URL` (pattern of the projection test) — run with the dev Docker Postgres,
+/// run in CI against a Postgres service.
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod spa_tests {
@@ -569,7 +569,7 @@ mod spa_tests {
     use axum::http::{header, Request, StatusCode};
     use tower::util::ServiceExt;
 
-    /// Assets fingerprintés : cache d'un an ; index.html : no-cache ; asset absent : 404.
+    /// Fingerprinted assets: one-year cache; index.html: no-cache; missing asset: 404.
     #[tokio::test]
     async fn assets_immuables_index_revalide() {
         let dir = std::env::temp_dir().join(format!("storm-codex-spa-{}", uuid::Uuid::new_v4()));
@@ -628,7 +628,7 @@ pub(crate) mod api_tests {
 
     pub(crate) async fn test_state(admin_token: Option<&str>) -> Option<AppState> {
         let Ok(url) = std::env::var("DATABASE_URL") else {
-            eprintln!("DATABASE_URL absent → test d'intégration API ignoré");
+            eprintln!("DATABASE_URL missing → API integration test skipped");
             return None;
         };
         let db = sqlx::postgres::PgPoolOptions::new()
@@ -705,8 +705,8 @@ pub(crate) mod api_tests {
         assert_eq!(v["parser_version"], PARSER_VERSION);
     }
 
-    /// `name` = pseudo actuel de l'historique daté (pas `players.last_name`, écrasé dans l'ordre de
-    /// traitement) ; `names` récent d'abord ; les champs historiques du résumé restent présents.
+    /// `name` = current nickname from the dated history (not `players.last_name`, overwritten in
+    /// processing order); `names` most recent first; the historical fields of the summary stay present.
     #[tokio::test]
     async fn get_player_pseudo_actuel_vient_de_lhistorique_date() {
         use crate::players::testutil::{insert_match, row, uid};
@@ -718,7 +718,7 @@ pub(crate) mod api_tests {
         let (old, new) = (format!("Old{u}"), format!("New{u}"));
         let t = |m| chrono::Utc.with_ymd_and_hms(2025, m, 1, 20, 0, 0).unwrap();
         insert_match(&state.db, Some(t(9)), &[row(&toon, &new, 0, "Muradin")]).await;
-        insert_match(&state.db, Some(t(1)), &[row(&toon, &old, 0, "Muradin")]).await; // traité en dernier
+        insert_match(&state.db, Some(t(1)), &[row(&toon, &old, 0, "Muradin")]).await; // processed last
         let resp = app(&state)
             .oneshot(
                 Request::get(format!("/api/players/{toon}"))
@@ -732,12 +732,12 @@ pub(crate) mod api_tests {
         assert_eq!(v["name"], new.as_str());
         assert_eq!(v["names"], serde_json::json!([new, old]));
         for k in ["toon", "matches", "wins", "avg_kills", "heroes", "recent"] {
-            assert!(v.get(k).is_some(), "champ {k} manquant");
+            assert!(v.get(k).is_some(), "field {k} missing");
         }
     }
 
-    /// `/api/players/search` (statique) ne doit pas tomber dans `/api/players/{toon}` ; requête
-    /// courte → liste vide ; `_` littéral ; `limit` plafonné.
+    /// `/api/players/search` (static) must not fall into `/api/players/{toon}`; short
+    /// query → empty list; literal `_`; `limit` capped.
     #[tokio::test]
     async fn players_search_route_dediee_et_litterale() {
         use crate::players::testutil::{insert_match, row, uid};
@@ -768,7 +768,7 @@ pub(crate) mod api_tests {
             .unwrap()
             .iter()
             .any(|h| h["toon"] == toon.as_str()));
-        assert!(v.get("toon").is_none(), "tombé dans get_player");
+        assert!(v.get("toon").is_none(), "fell into get_player");
         let v = json_body(get("/api/players/search?q=a".into()).await).await;
         assert_eq!(v["hits"], serde_json::json!([]));
         assert_eq!(
@@ -821,7 +821,7 @@ pub(crate) mod api_tests {
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
         assert!(
             json_body(resp).await["error"].is_string(),
-            "404 applicatif, pas route absente"
+            "application 404, not a missing route"
         );
         let toon = format!("t-{}", uid());
         insert_match(&state.db, None, &[row(&toon, "Solo", 0, "Muradin")]).await;
@@ -865,7 +865,7 @@ pub(crate) mod api_tests {
         let bad = put_link(&state, &a, &b, "maybe", Some("sekret"))
             .await
             .status();
-        assert!(bad.is_client_error(), "statut invalide refusé, reçu {bad}");
+        assert!(bad.is_client_error(), "invalid status refused, got {bad}");
         let ghost = format!("t-ghost-{}", uid());
         assert_eq!(
             put_link(&state, &a, &ghost, "confirmed", Some("sekret"))
@@ -907,7 +907,7 @@ pub(crate) mod api_tests {
         .fetch_one(&state.db)
         .await
         .unwrap();
-        assert_eq!(n, 1, "A→B puis B→A = une seule ligne");
+        assert_eq!(n, 1, "A→B then B→A = a single row");
         for (me, other, other_name) in [(&a, &b, "NameB"), (&b, &a, "NameA")] {
             let v = json_body(get_identity(&state, me).await).await;
             let conf = v["confirmed"].as_array().unwrap();
@@ -936,11 +936,11 @@ pub(crate) mod api_tests {
             .unwrap()
             .iter()
             .find(|s| s["toon"] == w.smurf.as_str())
-            .expect("smurf suggéré");
+            .expect("smurf suggested");
         assert_eq!(s["level"], "high");
         assert!(s["score"].as_u64().unwrap() >= 50);
         assert!(!s["reasons"].as_array().unwrap().is_empty());
-        // écarter → plus proposé, depuis la cible comme depuis le smurf
+        // dismiss → no longer offered, from the target as from the smurf
         assert_eq!(
             put_link(&state, &w.target, &w.smurf, "dismissed", None)
                 .await
@@ -956,7 +956,7 @@ pub(crate) mod api_tests {
                     .unwrap()
                     .iter()
                     .all(|s| s["toon"] != other.as_str()),
-                "écarté mais reproposé"
+                "dismissed but offered again"
             );
             assert!(v["confirmed"].as_array().unwrap().is_empty());
         }
@@ -983,7 +983,7 @@ pub(crate) mod api_tests {
         )
         .await;
         let m3 = insert_match(&state.db, None, &[row(&a, "A", 0, "Muradin")]).await;
-        // A : 100 puis 140 APM, plus une partie d'avant le re-process (NULL, hors moyenne) ; B : 60
+        // A: 100 then 140 APM, plus a game from before the re-process (NULL, outside the average); B: 60
         for (m, toon, apm) in [
             (m1, &a, Some(100.0)),
             (m2, &a, Some(140.0)),
@@ -1013,7 +1013,7 @@ pub(crate) mod api_tests {
             }
         };
         let va = get(format!("/api/players/{a}")).await;
-        assert_eq!(va["avg_apm"], 120, "moyenne des parties mesurées seulement");
+        assert_eq!(va["avg_apm"], 120, "average of the measured games only");
         assert_eq!(va["apm_games"], 2);
         let recent = va["recent"].as_array().unwrap();
         assert!(recent
@@ -1076,9 +1076,9 @@ pub(crate) mod api_tests {
             va["top_words"],
             serde_json::json!([{"word": "noob", "count": 3}])
         );
-        assert!(!va.to_string().contains("annonce"), "aucun texte exposé");
+        assert!(!va.to_string().contains("annonce"), "no text exposed");
         assert!(va.get("text").is_none() && !va.to_string().contains("salut"));
-        // messages d'un autre joueur, ou mot trop rare : jamais dans la réponse de A
+        // another player's messages, or a too rare word: never in A's response
         assert!(va["top_words"]
             .as_array()
             .unwrap()
@@ -1119,20 +1119,16 @@ pub(crate) mod api_tests {
         let (games, rows) = crate::players::chat::load_rows_with(&state.db, &a, 2)
             .await
             .unwrap();
-        assert_eq!(games, 2, "games = taille de la fenêtre");
-        assert_eq!(
-            rows.len(),
-            2,
-            "messages des 2 parties les plus récentes seulement"
-        );
+        assert_eq!(games, 2, "games = window size");
+        assert_eq!(rows.len(), 2, "messages of the 2 most recent games only");
         let texts: Vec<_> = rows.iter().filter_map(|r| r.text.as_deref()).collect();
         assert!(
             !texts.iter().any(|t| t.ends_with('0')),
-            "la plus ancienne est exclue"
+            "the oldest is excluded"
         );
     }
 
-    /// Codes attribut des bans → noms parser (attr.json), y compris les codes en capitales.
+    /// Ban attribute codes → parser names (attr.json), including the upper-case codes.
     #[tokio::test]
     async fn dim_hero_attributes_resout_les_codes_de_ban() {
         let Some(state) = test_state(None).await else {
@@ -1159,7 +1155,7 @@ pub(crate) mod api_tests {
         let Some(state) = test_state(Some("s3cret")).await else {
             return;
         };
-        // sans token → 401
+        // without a token → 401
         let resp = app(&state)
             .oneshot(
                 Request::post("/api/admin/tokens")
@@ -1170,7 +1166,7 @@ pub(crate) mod api_tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-        // avec le bon Bearer → créé
+        // with the right Bearer → created
         let resp = app(&state)
             .oneshot(
                 Request::post("/api/admin/tokens")
@@ -1186,9 +1182,9 @@ pub(crate) mod api_tests {
         assert!(v["token"].as_str().is_some_and(|t| !t.is_empty()));
     }
 
-    /// ADMIN_TOKEN défini : les écritures cast/draft exigent le Bearer, les lectures restent libres
-    /// (overlays OBS sans token). Corps invalide avec le Bearer → 4xx du handler (la garde est
-    /// passée) sans muter l'état partagé.
+    /// ADMIN_TOKEN set: the cast/draft writes require the Bearer, the reads stay free
+    /// (OBS overlays without a token). Invalid body with the Bearer → 4xx from the handler (the guard is
+    /// passed) without mutating the shared state.
     #[tokio::test]
     async fn ecritures_cast_draft_gardees_quand_admin_token() {
         let Some(state) = test_state(Some("s3cret")).await else {
@@ -1204,7 +1200,11 @@ pub(crate) mod api_tests {
                 )
                 .await
                 .unwrap();
-            assert_eq!(resp.status(), StatusCode::UNAUTHORIZED, "{path} sans token");
+            assert_eq!(
+                resp.status(),
+                StatusCode::UNAUTHORIZED,
+                "{path} without a token"
+            );
         }
         let resp = app(&state)
             .oneshot(
@@ -1228,9 +1228,9 @@ pub(crate) mod api_tests {
         assert_eq!(resp.status(), StatusCode::OK);
     }
 
-    /// Scouting bout-en-bout : création → dépôt d'un replay → lot ambigu (1 partie : les 10
-    /// joueurs à 100 %) → ancre → côté trouvé → faits → pack .md/.xlsx → import d'analyse →
-    /// écrasement. Et l'isolation : rien n'est écrit dans uploads/matches pour ce replay.
+    /// End-to-end scouting: creation → replay drop → ambiguous batch (1 game: the 10
+    /// players at 100%) → anchor → side found → facts → .md/.xlsx pack → analysis import →
+    /// overwrite. And the isolation: nothing is written into uploads/matches for this replay.
     #[tokio::test]
     async fn scouting_cycle_complet_et_isolation() {
         let Some(state) = test_state(None).await else {
@@ -1238,7 +1238,7 @@ pub(crate) mod api_tests {
         };
         let replay = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../storm-replay/tests/data/2024-10-07 22.29.55 Industrial District.StormReplay");
-        let bytes = std::fs::read(&replay).expect("replay committé");
+        let bytes = std::fs::read(&replay).expect("committed replay");
         let sha = crate::upload::sha256_hex(&bytes);
         let out = storm_stats::process_replay(&replay, "x");
         let fp = crate::upload::game_fingerprint(&out).unwrap();
@@ -1289,7 +1289,7 @@ pub(crate) mod api_tests {
         assert_eq!(v["status"], "added", "{v}");
         assert!(
             v["target_team"].is_null(),
-            "lot d'une partie = ambigu, pas de côté : {v}"
+            "a one-game batch = ambiguous, no side: {v}"
         );
         let v = json_body(app(&state).oneshot(add(bytes.clone())).await.unwrap()).await;
         assert_eq!(v["status"], "duplicate");
@@ -1309,7 +1309,7 @@ pub(crate) mod api_tests {
             .unwrap()
             .to_owned();
 
-        // ancre côté 1 → côté trouvé, roster = les 5 coéquipiers, 1 partie analysée
+        // anchor on side 1 → side found, roster = the 5 teammates, 1 game analysed
         let body = serde_json::json!({ "anchors": [anchor] }).to_string();
         let detail = json_body(
             app(&state)
@@ -1328,7 +1328,7 @@ pub(crate) mod api_tests {
         assert_eq!(detail["snapshot"]["facts"]["overview"]["games"], 1);
         let fv = detail["facts_version"].as_i64().unwrap();
 
-        // côté manuel puis retour à l'automatique
+        // manual side then back to automatic
         let body = r#"{"target_team":0}"#.to_string();
         let gid = detail["games"][0]["gid"].as_i64().unwrap();
         let d2 = json_body(
@@ -1390,7 +1390,7 @@ pub(crate) mod api_tests {
         let x = resp.into_body().collect().await.unwrap().to_bytes();
         assert_eq!(&x[..2], b"PK");
 
-        // import : JSON cassé → 422 et rien d'écrit ; valide → importé ; ré-import → écrasé
+        // import: broken JSON → 422 and nothing written; valid → imported; re-import → overwritten
         let resp = app(&state)
             .oneshot(req(
                 "PUT",
@@ -1400,7 +1400,7 @@ pub(crate) mod api_tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
-        // plan de draft v2 : 1 carte citant un fait réel + un id inconnu, 1 considération sans preuve
+        // v2 draft plan: 1 card citing a real fact + an unknown id, 1 consideration without evidence
         let analysis = |summary: &str| {
             format!(
             "Here you go:\n```json\n{{\"format_version\":2,\"report_id\":{id},\"facts_version\":{fv},\"summary\":\"{summary}\",\"maps\":[{{\"map\":\"Industrial District\",\"confidence\":\"low\",\"overview\":\"o\",\"evidence\":[\"map.industrial_district.record\",\"nope\"],\"considerations\":[{{\"point\":\"y\",\"evidence\":[]}}]}}]}}\n```")
@@ -1437,7 +1437,7 @@ pub(crate) mod api_tests {
         assert_eq!(detail["analysis"]["maps"][0]["evidence"][0]["known"], true);
         assert_eq!(detail["analysis"]["maps"][0]["evidence"][1]["known"], false);
 
-        // isolation : aucune écriture dans uploads/matches pour ce replay
+        // isolation: no write into uploads/matches for this replay
         assert_eq!(counts(state.db.clone(), sha, fp).await, before);
 
         let resp = app(&state)
@@ -1447,14 +1447,14 @@ pub(crate) mod api_tests {
         assert_eq!(resp.status(), StatusCode::NO_CONTENT);
     }
 
-    /// Bout-en-bout réel : création de token → upload d'un replay committé → parse → projection
-    /// → lecture du détail (avec `match.messages`) → dédup 409 au re-upload.
+    /// Real end to end: token creation → upload of a committed replay → parse → projection
+    /// → reading the detail (with `match.messages`) → 409 dedup on re-upload.
     #[tokio::test]
     async fn upload_parse_lecture_et_dedup() {
         let Some(state) = test_state(None).await else {
             return;
         };
-        // token d'upload (mode admin ouvert)
+        // upload token (open admin mode)
         let resp = app(&state)
             .oneshot(
                 Request::post("/api/admin/tokens")
@@ -1467,11 +1467,11 @@ pub(crate) mod api_tests {
         assert_eq!(resp.status(), StatusCode::CREATED);
         let token = json_body(resp).await["token"].as_str().unwrap().to_owned();
 
-        // upload du replay de référence (alias compat client-rs)
+        // upload of the reference replay (client-rs compat alias)
         let replay = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../storm-replay/tests/data/2026-06-09 20.35.02 Industrial District.StormReplay");
-        let bytes = std::fs::read(&replay).expect("replay committé");
-        // purge d'un éventuel run précédent (idempotence du test)
+        let bytes = std::fs::read(&replay).expect("committed replay");
+        // purge of a possible previous run (test idempotence)
         let hash = crate::upload::sha256_hex(&bytes);
         sqlx::query("DELETE FROM uploads WHERE fingerprint = $1")
             .bind(&hash)
@@ -1494,10 +1494,10 @@ pub(crate) mod api_tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         let v = json_body(resp).await;
-        assert_eq!(v["status"], "parsed", "réponse : {v}");
+        assert_eq!(v["status"], "parsed", "response: {v}");
         let match_id = v["match_id"].as_i64().expect("match_id");
 
-        // lecture du détail : forme {match, players}, messages présents (chat + pings)
+        // reading the detail: {match, players} shape, messages present (chat + pings)
         let resp = app(&state)
             .oneshot(
                 Request::get(format!("/api/matches/{match_id}"))
@@ -1514,7 +1514,7 @@ pub(crate) mod api_tests {
             detail["match"]["messages"]
                 .as_array()
                 .is_some_and(|m| !m.is_empty()),
-            "messages absents du détail"
+            "messages missing from the detail"
         );
 
         // re-upload identique → 409 duplicate
@@ -1524,7 +1524,7 @@ pub(crate) mod api_tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::CONFLICT);
 
-        // sans token → 401
+        // without a token → 401
         let resp = app(&state)
             .oneshot(
                 Request::post("/api/upload-raw")
@@ -1537,7 +1537,7 @@ pub(crate) mod api_tests {
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     }
 
-    // ── draft depuis un replay ────────────────────────────────────────────────
+    // ── draft from a replay ──────────────────────────────────────────────────
 
     async fn with_game(state: &AppState) {
         let fx: serde_json::Value =
@@ -1558,7 +1558,7 @@ pub(crate) mod api_tests {
         state.draft.write().await.add_game(g);
     }
 
-    /// Attend (au plus 5 s) que l'état de draft vérifie `ok`, et renvoie le curseur observé.
+    /// Waits (at most 5 s) for the draft state to satisfy `ok`, and returns the observed cursor.
     async fn wait_until(state: &AppState, ok: impl Fn(&draft::DraftState) -> bool) -> usize {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         loop {
@@ -1594,7 +1594,7 @@ pub(crate) mod api_tests {
         )
     }
 
-    /// Requête à corps brut (octets) ; renvoie statut + octets de la réponse.
+    /// Raw-body (bytes) request; returns status + response bytes.
     pub(crate) async fn call_raw(
         state: &AppState,
         method: &str,
@@ -1670,12 +1670,12 @@ pub(crate) mod api_tests {
         assert_eq!(
             call(&state, "POST", "/api/draft/replay/next", None).await.0,
             StatusCode::CONFLICT
-        ); // pas de partie
+        ); // no game
         with_game(&state).await;
         assert_eq!(
             call(&state, "POST", "/api/draft/replay/back", None).await.0,
             StatusCode::CONFLICT
-        ); // au début
+        ); // at the start
         for _ in 0..12 {
             assert_eq!(
                 call(&state, "POST", "/api/draft/replay/next", None).await.0,
@@ -1685,7 +1685,7 @@ pub(crate) mod api_tests {
         assert_eq!(
             call(&state, "POST", "/api/draft/replay/next", None).await.0,
             StatusCode::CONFLICT
-        ); // fini
+        ); // finished
         assert_eq!(state.draft.read().await.cursor, 16);
     }
 
@@ -1728,9 +1728,9 @@ pub(crate) mod api_tests {
         )
         .await;
         assert_eq!(st, StatusCode::OK);
-        // attente bornée au lieu d'un sommeil fixe : un runner CI chargé peut retarder les ticks
+        // bounded wait instead of a fixed sleep: a loaded CI runner can delay the ticks
         let c = wait_until(&state, |d| d.cursor >= 2).await;
-        assert!(c >= 2, "la lecture auto n'avance pas (curseur {c})");
+        assert!(c >= 2, "auto playback does not advance (cursor {c})");
         call(
             &state,
             "POST",
@@ -1784,7 +1784,7 @@ pub(crate) mod api_tests {
         )
         .await;
         call(&state, "POST", "/api/draft/replay/next", None).await;
-        // 1 phase = 1 étape de ban → curseur 1 exactement, le timer 60 s n'a pas tiré
+        // 1 phase = 1 ban step → cursor exactly 1, the 60 s timer has not fired
         assert_eq!(state.draft.read().await.cursor, 1);
         call(
             &state,

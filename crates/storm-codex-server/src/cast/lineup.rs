@@ -1,13 +1,13 @@
-//! Héros récents par joueur pour les cartes d'équipe de la régie : fenêtre des 20 dernières
-//! parties (tous modes) du toon, 3 héros les plus joués (parties puis récence). Moins de
-//! `MIN_GAMES` parties dans la fenêtre → liste vide (masquée, jamais partielle).
+//! Recent heroes per player for the control room's team cards: window of the last 20
+//! games (all modes) of the toon, the 3 most played heroes (games then recency). Fewer than
+//! `MIN_GAMES` games in the window → empty list (hidden, never partial).
 use serde::Serialize;
 use sqlx::PgPool;
 
 pub const WINDOW: i64 = 20;
 pub const MIN_GAMES: usize = 5;
 pub const TOP: usize = 3;
-/// Nombre maximal de toons par équipe acceptés par la route.
+/// Maximum number of toons per team accepted by the route.
 pub const MAX_PER_SIDE: usize = 10;
 
 #[derive(Clone, PartialEq, Eq, Debug, Serialize)]
@@ -16,8 +16,8 @@ pub struct HeroCount {
     pub games: u32,
 }
 
-/// Une seule requête pour tous les toons (LATERAL sur `match_players_toon_idx`) ; la sortie garde
-/// la position : `out[i]` correspond à `toons[i]` (toon vide = joueur non lié → liste vide).
+/// A single query for all the toons (LATERAL on `match_players_toon_idx`); the output keeps
+/// the position: `out[i]` matches `toons[i]` (empty toon = unlinked player → empty list).
 pub async fn recent_heroes_many(
     db: &PgPool,
     toons: &[String],
@@ -30,7 +30,7 @@ pub async fn recent_heroes_many(
     Ok(tally(toons.len(), &rows))
 }
 
-/// API à un seul toon, pour les tests (la route passe par `recent_heroes_many`).
+/// Single-toon API, for the tests (the route goes through `recent_heroes_many`).
 #[cfg(test)]
 pub async fn recent_heroes(db: &PgPool, toon: &str) -> Result<Vec<HeroCount>, sqlx::Error> {
     Ok(recent_heroes_many(db, &[toon.to_owned()])
@@ -53,11 +53,11 @@ CROSS JOIN LATERAL (
 WHERE t.toon <> ''
 ORDER BY t.ord, w.played_at DESC NULLS LAST, w.id DESC";
 
-/// `rows` : `(position 1-based, héros)` triés par position puis récence décroissante. Une ligne au
-/// héros NULL compte dans le seuil `MIN_GAMES` (c'est une partie jouée) mais pas dans le décompte.
+/// `rows`: `(1-based position, hero)` sorted by position then decreasing recency. A row with a
+/// NULL hero counts towards the `MIN_GAMES` threshold (it is a played game) but not in the tally.
 fn tally(n: usize, rows: &[(i32, Option<String>)]) -> Vec<Vec<HeroCount>> {
     let mut games = vec![0usize; n];
-    // par position : (héros, parties, rang de la 1re apparition = récence)
+    // per position: (hero, games, rank of the 1st appearance = recency)
     let mut per: Vec<Vec<(String, u32, usize)>> = vec![Vec::new(); n];
     for (ord, hero) in rows {
         let Some(i) = usize::try_from(*ord)
@@ -98,7 +98,7 @@ mod tests {
     use chrono::{Duration, TimeZone, Utc};
     use std::time::{Duration as StdDuration, Instant};
 
-    /// `heroes[i]` joué à la partie i (la plus ancienne d'abord), une partie par jour.
+    /// `heroes[i]` played in game i (the oldest first), one game per day.
     async fn seed(db: &PgPool, toon: &str, heroes: &[&str]) {
         let t0 = Utc.with_ymd_and_hms(2025, 1, 1, 20, 0, 0).unwrap();
         for (i, h) in heroes.iter().enumerate() {
@@ -124,7 +124,7 @@ mod tests {
     async fn recent_heroes_top3_over_last_20_games() {
         let Some(db) = test_pool().await else { return };
         let toon = format!("t-lu{}", uid());
-        // 5 plus anciennes : Muradin (hors fenêtre) ; 20 récentes : 10 Kerrigan, 6 Diablo, 3 Arthas, 1 Zeratul
+        // 5 oldest: Muradin (outside the window); 20 recent: 10 Kerrigan, 6 Diablo, 3 Arthas, 1 Zeratul
         let mut h = rep("Muradin", 5);
         h.extend(rep("Kerrigan", 10));
         h.extend(rep("Diablo", 6));
@@ -205,8 +205,8 @@ mod tests {
         );
     }
 
-    /// Nettoyage des lignes insérées par le test, même s'il panique : `Drop` ne peut pas `.await`,
-    /// on supprime donc depuis un thread dédié (runtime et connexion propres).
+    /// Cleanup of the rows inserted by the test, even if it panics: `Drop` cannot `.await`,
+    /// so we delete from a dedicated thread (own runtime and connection).
     struct Cleanup {
         ids: Vec<i64>,
         toons: Vec<String>,
@@ -265,8 +265,8 @@ mod tests {
                 .ids
                 .push(insert_match(&state.db, Some(t0 + Duration::days(g as i64)), &rows).await);
         }
-        // EXPLAIN : le plan doit passer par l'index `match_players_toon_idx` (scan séquentiel désactivé
-        // sur cette connexion : le test ne dépend pas de la taille de la base de dev/CI)
+        // EXPLAIN: the plan must go through the `match_players_toon_idx` index (sequential scan disabled
+        // on this connection: the test does not depend on the size of the dev/CI database)
         let mut conn = state.db.acquire().await.unwrap();
         sqlx::query("SET enable_seqscan = off")
             .execute(&mut *conn)
@@ -287,7 +287,7 @@ mod tests {
         eprintln!("{plan}");
         assert!(
             plan.contains("match_players_toon_idx"),
-            "plan sans match_players_toon_idx :\n{plan}"
+            "plan without match_players_toon_idx:\n{plan}"
         );
 
         let q = format!(
@@ -301,12 +301,12 @@ mod tests {
         assert_eq!(st, axum::http::StatusCode::OK);
         assert_eq!(v["blue"].as_array().unwrap().len(), 5);
         assert_eq!(v["red"][0].as_array().unwrap().len(), 3);
-        assert_eq!(v["blue"][0][0]["games"], 4); // 20 parties, 5 héros en rotation
+        assert_eq!(v["blue"][0][0]["games"], 4); // 20 games, 5 heroes in rotation
         assert!(elapsed < StdDuration::from_millis(100), "{elapsed:?}");
-        // nettoyage des lignes insérées : `cleanup` (Drop), aussi en cas de panique
+        // cleanup of the inserted rows: `cleanup` (Drop), also in case of panic
     }
 
-    /// Une partie au héros NULL compte dans le seuil des 5 parties mais pas dans le décompte.
+    /// A game with a NULL hero counts towards the 5-game threshold but not in the tally.
     #[test]
     fn null_hero_counts_toward_threshold_not_tally() {
         let rows: Vec<(i32, Option<String>)> = vec![

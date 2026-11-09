@@ -1,6 +1,6 @@
-//! Routes `/api/scouting/*` (spec volets B à E). Écritures protégées comme la gestion existante
-//! (`ADMIN_TOKEN`, mode ouvert s'il est absent). Toute mutation d'un rapport (replay ajouté ou
-//! retiré, roster, ancres, côté manuel) relance `recompute`, sous verrou de ligne du rapport.
+//! `/api/scouting/*` routes (spec parts B to E). Writes protected like the existing management
+//! (`ADMIN_TOKEN`, open mode if it is missing). Any mutation of a report (replay added or
+//! removed, roster, anchors, manual side) triggers `recompute`, under the report's row lock.
 
 use super::analysis;
 use super::facts::{self, slug, FactRef, Facts, GameInput};
@@ -26,7 +26,7 @@ fn err(code: StatusCode, msg: impl Into<String>) -> Err {
     (code, Json(serde_json::json!({ "error": msg.into() })))
 }
 fn db_err(e: sqlx::Error) -> Err {
-    tracing::error!("scouting : {e}");
+    tracing::error!("scouting: {e}");
     err(StatusCode::INTERNAL_SERVER_ERROR, "db")
 }
 fn guard(h: &HeaderMap, s: &AppState) -> Result<(), Err> {
@@ -40,8 +40,8 @@ fn not_found() -> Err {
     err(StatusCode::NOT_FOUND, "rapport inconnu")
 }
 
-/// Statut dérivé (jamais stocké) : `empty` → `ready` → `analyzed`, ou `stale` si l'analyse a été
-/// faite sur un état antérieur des faits.
+/// Derived status (never stored): `empty` → `ready` → `analyzed`, or `stale` if the analysis was
+/// made on an earlier state of the facts.
 const STATUS_SQL: &str = "CASE
     WHEN (SELECT count(*) FROM scouting_games g WHERE g.report_id = r.id) = 0 THEN 'empty'
     WHEN r.analysis IS NULL THEN 'ready'
@@ -50,7 +50,7 @@ const STATUS_SQL: &str = "CASE
 
 // ── recalcul ─────────────────────────────────────────────────────────────────
 
-/// Rôle par héros (slug du nom → rôle moderne `expandedRole`, repli sur le rôle historique).
+/// Role per hero (name slug → modern `expandedRole` role, fallback on the historical role).
 async fn load_roles(db: &sqlx::PgPool) -> HashMap<String, String> {
     let rows: Vec<(String, String, Option<String>)> =
         sqlx::query_as("SELECT id, name, COALESCE(data->>'expandedRole', role) FROM dim_heroes")
@@ -77,8 +77,8 @@ fn strings(v: &J) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Recalcule côtés cibles et faits d'un rapport ; incrémente `facts_version`. Idempotent quant au
-/// contenu. Le verrou `FOR UPDATE` sérialise les recalculs concurrents d'un même rapport.
+/// Recomputes the target sides and facts of a report; increments `facts_version`. Idempotent as to the
+/// content. The `FOR UPDATE` lock serialises the concurrent recomputes of the same report.
 pub async fn recompute(db: &sqlx::PgPool, report_id: i64) -> Result<(), sqlx::Error> {
     let roles = load_roles(db).await;
     let mut tx = db.begin().await?;
@@ -167,7 +167,7 @@ pub async fn recompute(db: &sqlx::PgPool, report_id: i64) -> Result<(), sqlx::Er
 
 // ── rapports ─────────────────────────────────────────────────────────────────
 
-/// GET /api/scouting — liste, du plus récent au plus ancien (sans faits ni analyse).
+/// GET /api/scouting — list, from the most recent to the oldest (without facts or analysis).
 pub async fn list(State(s): State<AppState>) -> Resp {
     let v: J = sqlx::query_scalar(&format!(
         "SELECT COALESCE(jsonb_agg(x ORDER BY x->>'created_at' DESC), '[]'::jsonb) FROM (
@@ -196,7 +196,7 @@ pub struct CreateBody {
     target_name: Option<String>,
 }
 
-/// POST /api/scouting — crée un rapport vide.
+/// POST /api/scouting — creates an empty report.
 pub async fn create(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -228,8 +228,8 @@ fn index_of(snapshot: &J) -> BTreeMap<String, FactRef> {
     serde_json::from_value(snapshot["facts"]["index"].clone()).unwrap_or_default()
 }
 
-/// GET /api/scouting/{id} — rapport complet : faits (instantané), parties, détection du roster,
-/// analyse avec preuves résolues contre les faits COURANTS, statut dérivé.
+/// GET /api/scouting/{id} — complete report: facts (snapshot), games, roster detection,
+/// analysis with evidence resolved against the CURRENT facts, derived status.
 pub async fn get(State(s): State<AppState>, Path(id): Path<i64>) -> Resp {
     let v: Option<J> = sqlx::query_scalar(&format!(
         "SELECT jsonb_build_object(
@@ -277,7 +277,7 @@ pub struct PatchBody {
     anchors: Option<Vec<String>>,
 }
 
-/// PATCH /api/scouting/{id} — titre, équipe, roster, ancres (les deux derniers → recalcul).
+/// PATCH /api/scouting/{id} — title, team, roster, anchors (the last two → recompute).
 pub async fn patch(
     State(s): State<AppState>,
     Path(id): Path<i64>,
@@ -323,7 +323,7 @@ pub async fn patch(
     get(State(s), Path(id)).await
 }
 
-/// DELETE /api/scouting/{id} — les parties partent en cascade ; les bruts archivés restent.
+/// DELETE /api/scouting/{id} — the games go in cascade; the archived raw files stay.
 pub async fn delete(
     State(s): State<AppState>,
     Path(id): Path<i64>,
@@ -343,7 +343,7 @@ pub async fn delete(
 
 // ── replays ──────────────────────────────────────────────────────────────────
 
-/// Parse + résumé d'un replay archivé (CPU, hors thread HTTP).
+/// Parse + summary of an archived replay (CPU, off the HTTP thread).
 async fn parse(
     s: &AppState,
     path: std::path::PathBuf,
@@ -365,8 +365,8 @@ async fn parse(
     Ok((out, sum, fp))
 }
 
-/// POST /api/scouting/{id}/replays — ajoute un replay (octets bruts, header `X-Filename`), même
-/// contrat que `/api/upload`. Réponse : `added` / `duplicate` / `parse_failed`.
+/// POST /api/scouting/{id}/replays — adds a replay (raw bytes, `X-Filename` header), same
+/// contract as `/api/upload`. Response: `added` / `duplicate` / `parse_failed`.
 pub async fn add_replay(
     State(s): State<AppState>,
     Path(id): Path<i64>,
@@ -397,7 +397,7 @@ pub async fn add_replay(
         ));
     }
 
-    // archive d'abord (source de vérité), comme l'upload principal
+    // archive first (source of truth), like the main upload
     let dir = s.cfg.archive_dir.join("scouting");
     let path = dir.join(format!("{sha}.StormReplay"));
     let written = async {
@@ -405,7 +405,7 @@ pub async fn add_replay(
         tokio::fs::write(&path, &bytes).await
     };
     if let Err(e) = written.await {
-        tracing::error!("archivage scouting : {e}");
+        tracing::error!("scouting archiving: {e}");
         return Err(err(StatusCode::INTERNAL_SERVER_ERROR, "io"));
     }
     let filename = crate::upload::filename(&headers);
@@ -446,7 +446,7 @@ pub async fn add_replay(
     .await
     .map_err(db_err)?;
     let Some(gid) = gid else {
-        // même partie, fichier différent (ré-export) : doublon au sens de la partie
+        // same game, different file (re-export): duplicate in the game sense
         return Ok(Json(serde_json::json!({ "status": "duplicate" })));
     };
     recompute(&s.db, id).await.map_err(db_err)?;
@@ -465,11 +465,11 @@ pub async fn add_replay(
 
 #[derive(Deserialize)]
 pub struct SideBody {
-    /// 0/1 = côté fixé à la main ; `null` = revenir à la détection automatique.
+    /// 0/1 = side set by hand; `null` = back to automatic detection.
     target_team: Option<u8>,
 }
 
-/// PATCH /api/scouting/{id}/replays/{gid} — côté cible manuel (ou retour à l'automatique).
+/// PATCH /api/scouting/{id}/replays/{gid} — manual target side (or back to automatic).
 pub async fn set_side(
     State(s): State<AppState>,
     Path((id, gid)): Path<(i64, i64)>,
@@ -588,7 +588,7 @@ pub async fn pack_xlsx(State(s): State<AppState>, Path(id): Path<i64>) -> Result
         target_name: target.as_deref(),
     };
     let bytes = super::xlsx::workbook(&meta, &facts).map_err(|e| {
-        tracing::error!("xlsx : {e}");
+        tracing::error!("xlsx: {e}");
         err(StatusCode::INTERNAL_SERVER_ERROR, "xlsx")
     })?;
     Ok((
@@ -609,8 +609,8 @@ pub async fn pack_xlsx(State(s): State<AppState>, Path(id): Path<i64>) -> Result
 
 // ── analyse ──────────────────────────────────────────────────────────────────
 
-/// PUT /api/scouting/{id}/analysis — corps = texte brut de la réponse du LLM. Écrase l'analyse
-/// existante (décision opérateur) ; refus sans rien écraser si le JSON est invalide.
+/// PUT /api/scouting/{id}/analysis — body = raw text of the LLM response. Overwrites the existing
+/// analysis (operator decision); refuses without overwriting anything if the JSON is invalid.
 pub async fn put_analysis(
     State(s): State<AppState>,
     Path(id): Path<i64>,
@@ -674,8 +674,8 @@ pub async fn delete_analysis(
 
 // ── re-process ───────────────────────────────────────────────────────────────
 
-/// Re-parse les replays de scouting dont `parser_version` est périmé, puis recalcule les rapports
-/// touchés. Appelé par `POST /api/admin/reprocess` (en arrière-plan). Renvoie le nombre de replays.
+/// Re-parses the scouting replays whose `parser_version` is outdated, then recomputes the
+/// affected reports. Called by `POST /api/admin/reprocess` (in the background). Returns the number of replays.
 pub async fn reprocess_stale(s: &AppState) -> usize {
     let targets: Vec<(i64, i64, String, Option<String>)> = sqlx::query_as(
         "SELECT id, report_id, archived_path, filename FROM scouting_games WHERE parser_version < $1",
@@ -703,15 +703,15 @@ pub async fn reprocess_stale(s: &AppState) -> usize {
                     Ok(_) => {
                         reports.insert(rid);
                     }
-                    Err(e) => tracing::error!("reprocess scouting {gid} : écriture : {e}"),
+                    Err(e) => tracing::error!("reprocess scouting {gid}: write: {e}"),
                 }
             }
-            Err(class) => tracing::warn!("reprocess scouting {gid} : {class}"),
+            Err(class) => tracing::warn!("reprocess scouting {gid}: {class}"),
         }
     }
     for rid in reports {
         if let Err(e) = recompute(&s.db, rid).await {
-            tracing::error!("recalcul scouting {rid} : {e}");
+            tracing::error!("scouting recompute {rid}: {e}");
         }
     }
     n

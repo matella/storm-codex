@@ -1,5 +1,5 @@
-//! WebSocket `/ws` — diffuse les événements serveur (`match.parsed`, progression backfill) à
-//! tous les clients (site, overlay OBS, extension Twitch). Source : le canal broadcast d'AppState.
+//! WebSocket `/ws` — broadcasts the server events (`match.parsed`, backfill progress) to
+//! all the clients (site, OBS overlay, Twitch extension). Source: AppState's broadcast channel.
 
 use crate::AppState;
 use axum::{
@@ -18,7 +18,7 @@ async fn handle(mut socket: WebSocket, state: AppState) {
     let mut rx = state.events.subscribe();
     loop {
         tokio::select! {
-            // événement serveur → client
+            // server event → client
             ev = rx.recv() => match ev {
                 Ok(value) => {
                     let txt = value.to_string();
@@ -26,11 +26,11 @@ async fn handle(mut socket: WebSocket, state: AppState) {
                         break; // client parti
                     }
                 }
-                // a pris du retard sur le canal : on continue (les events ne sont pas critiques)
+                // lagged behind on the channel: we continue (the events are not critical)
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
             },
-            // message client (ping/close) — on ne consomme rien d'utile, on détecte la fermeture
+            // client message (ping/close) — we consume nothing useful, we detect the closing
             msg = socket.recv() => match msg {
                 Some(Ok(Message::Close(_))) | None => break,
                 Some(Ok(_)) => {}

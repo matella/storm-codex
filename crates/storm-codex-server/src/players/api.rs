@@ -1,4 +1,4 @@
-//! Routes `/api/players/*` de la recherche et de l'identité (spec recherche-joueurs).
+//! `/api/players/*` routes of the search and identity (players-search spec).
 
 use super::{chat, identity, names, profiles, search};
 use crate::AppState;
@@ -18,7 +18,7 @@ fn err(code: StatusCode, msg: &str) -> Err {
 }
 
 fn db_err(e: sqlx::Error) -> Err {
-    tracing::error!("players : {e}");
+    tracing::error!("players: {e}");
     (
         StatusCode::INTERNAL_SERVER_ERROR,
         Json(json!({ "error": "db" })),
@@ -32,7 +32,7 @@ pub struct SearchQuery {
     limit: Option<i64>,
 }
 
-/// GET /api/players/search?q=&limit= — `{ "hits": [...] }`. Moins de 2 caractères → liste vide.
+/// GET /api/players/search?q=&limit= — `{ "hits": [...] }`. Fewer than 2 characters → empty list.
 pub async fn search(State(s): State<AppState>, Query(p): Query<SearchQuery>) -> Resp {
     let hits = search::search(&s.db, &p.q, p.limit.unwrap_or(search::DEFAULT_LIMIT))
         .await
@@ -50,8 +50,8 @@ async fn known(db: &sqlx::PgPool, toon: &str) -> Result<bool, sqlx::Error> {
     .await
 }
 
-/// GET /api/players/{toon}/identity — historique daté des pseudos, comptes liés **devinés**
-/// (estimation, jamais un fait) et liens confirmés par l'opérateur.
+/// GET /api/players/{toon}/identity — dated history of the nicknames, **guessed** linked accounts
+/// (estimate, never a fact) and links confirmed by the operator.
 pub async fn identity(State(s): State<AppState>, Path(toon): Path<String>) -> Resp {
     if !known(&s.db, &toon).await.map_err(db_err)? {
         return Err(err(StatusCode::NOT_FOUND, "joueur inconnu"));
@@ -83,7 +83,7 @@ pub async fn identity(State(s): State<AppState>, Path(toon): Path<String>) -> Re
     })))
 }
 
-/// GET /api/players/{toon}/chat — habitudes de chat (mesures seulement, jamais le texte).
+/// GET /api/players/{toon}/chat — chat habits (measurements only, never the text).
 pub async fn chat(State(s): State<AppState>, Path(toon): Path<String>) -> Resp {
     if !known(&s.db, &toon).await.map_err(db_err)? {
         return Err(err(StatusCode::NOT_FOUND, "joueur inconnu"));
@@ -104,8 +104,8 @@ pub struct LinkBody {
     status: LinkStatus,
 }
 
-/// PUT /api/players/{toon}/links/{other} 🔒 — confirme (« même personne », une note : aucune
-/// fusion de profils) ou écarte une suggestion. Paire normalisée (min, max) : A→B ≡ B→A, idempotent.
+/// PUT /api/players/{toon}/links/{other} 🔒 — confirms ("same person", a note: no
+/// profile merge) or dismisses a suggestion. Normalised pair (min, max): A→B ≡ B→A, idempotent.
 pub async fn put_link(
     State(s): State<AppState>,
     headers: HeaderMap,

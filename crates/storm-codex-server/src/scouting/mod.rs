@@ -1,7 +1,7 @@
-//! Rapports de scouting (spec `docs/specs/2026-09-26-rapports-scouting-design.md`) : replays d'une
-//! équipe adverse → faits chiffrés → pack LLM → analyse réimportée. Cœur pur (`summary`, `side`,
-//! `facts`, `pack`, `xlsx`, `analysis`) + couche HTTP/DB (`api`). Les replays de scouting vivent
-//! dans leurs propres tables : ils ne touchent jamais `matches`/`match_players`.
+//! Scouting reports (spec `docs/specs/2026-09-26-rapports-scouting-design.md`): replays of an
+//! opposing team → numeric facts → LLM pack → re-imported analysis. Pure core (`summary`, `side`,
+//! `facts`, `pack`, `xlsx`, `analysis`) + HTTP/DB layer (`api`). The scouting replays live
+//! in their own tables: they never touch `matches`/`match_players`.
 
 pub mod analysis;
 pub mod api;

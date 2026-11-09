@@ -1,15 +1,15 @@
-//! Faits de scouting (spec volet C) : calculés en Rust, jamais par le LLM. Module pur — entrée =
-//! résumés de parties dont le côté cible est connu, sortie = sections structurées + `index` plat
-//! `id → valeur affichable`. Chaque fait porte son effectif `n` ; `low` = `n < 3`.
+//! Scouting facts (spec part C): computed in Rust, never by the LLM. Pure module — input =
+//! game summaries whose target side is known, output = structured sections + flat `index`
+//! `id → displayable value`. Each fact carries its sample size `n`; `low` = `n < 3`.
 //!
-//! Tout est vu **depuis l'équipe cible** : « bans » = bans qu'elle fait, « bans subis » = bans de
-//! ses adversaires, écart de niveau > 0 = la cible est devant.
+//! Everything is seen **from the target team**: "bans" = bans it makes, "bans received" = bans of
+//! its opponents, level gap > 0 = the target is ahead.
 
 use super::summary::{BanPhase, GameSummary, Player};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
-/// Effectif sous lequel un fait est « faible échantillon » (le prompt interdit d'en conclure).
+/// Sample size below which a fact is a "small sample" (the prompt forbids drawing conclusions from it).
 pub const LOW_SAMPLE: u32 = 3;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -36,7 +36,7 @@ impl Rate {
     }
 }
 
-/// Intervalle de Wilson à 95 % (en %) — un 3-0 sur une carte ne dit presque rien, l'intervalle le
+/// 95% Wilson interval (in %) — a 3-0 on a map says almost nothing, the interval
 /// montre.
 pub fn wilson(r: Rate) -> Option<(f64, f64)> {
     if r.n == 0 {
@@ -53,7 +53,7 @@ pub fn wilson(r: Rate) -> Option<(f64, f64)> {
     ))
 }
 
-/// Identifiant stable pour les ids de faits : `Braxis Holdout` → `braxis_holdout`,
+/// Stable identifier for the fact ids: `Braxis Holdout` → `braxis_holdout`,
 /// `Anub'arak` → `anubarak`, `E.T.C.` → `etc`, `Sgt. Hammer` → `sgt_hammer`.
 pub fn slug(s: &str) -> String {
     let mut out = String::new();
@@ -88,15 +88,15 @@ pub struct Overview {
     pub avg_length_s: f64,
 }
 
-/// Un héros compté : `picks` = parties où il est pris (sur l'effectif de la section),
-/// `record` = victoires quand il est pris.
+/// A counted hero: `picks` = games where it is picked (over the section's sample),
+/// `record` = wins when it is picked.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HeroRow {
     pub id: String,
     pub hero: String,
     pub picks: Rate,
     pub record: Rate,
-    /// Joueurs (`pN`) qui l'ont joué, une entrée par partie — renseigné pour les picks par carte.
+    /// Players (`pN`) who played it, one entry per game — filled for the per-map picks.
     #[serde(default)]
     pub by: Vec<String>,
 }
@@ -127,7 +127,7 @@ pub struct PlayerFacts {
     pub pid: String,
     pub toon: String,
     pub name: String,
-    /// Dans le roster (sinon remplaçant).
+    /// In the roster (otherwise a substitute).
     pub core: bool,
     pub record: Rate,
     pub heroes: Vec<HeroRow>,
@@ -148,7 +148,7 @@ pub struct MapFacts {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct DraftFacts {
-    /// Parties avec une draft exploitable (bans ou 5 picks).
+    /// Games with a usable draft (bans or 5 picks).
     pub games: u32,
     pub first_pick: Rate,
     pub first_pick_record: Rate,
@@ -159,8 +159,8 @@ pub struct DraftFacts {
     pub openers: Vec<Count>,
     pub opener_roles: Vec<Count>,
     pub last_picks: Vec<Count>,
-    /// Héros joués **contre** eux (toutes parties) : `picks` = parties où ils l'ont affronté,
-    /// `record` = leur bilan dans ces parties.
+    /// Heroes played **against** them (all games): `picks` = games where they faced it,
+    /// `record` = their record in those games.
     #[serde(default)]
     pub faced: Vec<HeroRow>,
 }
@@ -182,7 +182,7 @@ pub struct Bucket {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct FlowFacts {
-    /// La cible atteint le niveau 10 la première (sur les parties où quelqu'un l'atteint).
+    /// The target reaches level 10 first (over the games where someone reaches it).
     pub first_to_10: Rate,
     pub first_to_10_record: Rate,
     pub first_fort: Rate,
@@ -191,9 +191,9 @@ pub struct FlowFacts {
     pub first_objective_record: Rate,
     pub level_diff: Vec<LevelDiffAt>,
     pub length: Vec<Bucket>,
-    /// Victoires après avoir été menée de 2 niveaux ou plus (sur les parties où c'est arrivé).
+    /// Wins after being behind by 2 levels or more (over the games where it happened).
     pub comebacks: Rate,
-    /// Défaites après avoir mené de 2 niveaux ou plus (sur les parties où c'est arrivé).
+    /// Losses after being ahead by 2 levels or more (over the games where it happened).
     pub throws: Rate,
 }
 
@@ -230,16 +230,16 @@ pub struct Facts {
     pub index: BTreeMap<String, FactRef>,
 }
 
-/// Une partie dont le côté cible est connu.
+/// A game whose target side is known.
 pub struct GameInput<'a> {
     pub gid: i64,
     pub summary: &'a GameSummary,
     pub side: u8,
 }
 
-/// Comptage générique « clé → Rate » trié (effectif décroissant, puis clé).
+/// Generic "key → Rate" count, sorted (decreasing sample size, then key).
 #[derive(Default)]
-struct Tally(BTreeMap<String, (u32, u32)>); // clé → (occurrences, victoires)
+struct Tally(BTreeMap<String, (u32, u32)>); // key → (occurrences, wins)
 
 impl Tally {
     fn hit(&mut self, key: &str, won: bool) {
@@ -278,7 +278,7 @@ impl Tally {
     }
 }
 
-/// Écart de niveau (point de vue cible) à l'instant `t`, si la partie dure jusque-là.
+/// Level gap (target's point of view) at time `t`, if the game lasts until then.
 fn diff_at(g: &GameSummary, side: u8, t: f64) -> Option<f64> {
     if g.length_s < t {
         return None;
@@ -301,7 +301,7 @@ fn theirs<'a>(g: &GameInput<'a>) -> &'a [Player] {
     &g.summary.teams[1 - g.side as usize]
 }
 
-/// `roles` : slug du héros → rôle (référentiel `dim_heroes`).
+/// `roles`: hero slug → role (`dim_heroes` reference data).
 pub fn compute(
     games: &[GameInput],
     roster: &[String],
@@ -311,7 +311,7 @@ pub fn compute(
     let n_games = games.len() as u32;
     let won = |g: &GameInput| g.summary.winner == Some(g.side);
 
-    // ── vue d'ensemble ──
+    // ── overview ──
     let mut record = Rate::default();
     let mut dates: Vec<&str> = Vec::new();
     let mut builds: Vec<i64> = Vec::new();
@@ -344,7 +344,7 @@ pub fn compute(
         },
     };
 
-    // ── joueurs : p1…pN, roster d'abord puis remplaçants, par nombre de parties ──
+    // ── players: p1…pN, roster first then substitutes, by number of games ──
     struct Acc<'a> {
         name: &'a str,
         record: Rate,
@@ -370,7 +370,7 @@ pub fn compute(
                 seconds_dead: 0.0,
                 seconds: 0.0,
             });
-            a.name = p.name.as_str(); // dernier nom vu
+            a.name = p.name.as_str(); // last name seen
             a.record.add(w);
             a.heroes.hit(&p.hero, w);
             a.roles.hit(role_of(roles, &p.hero), w);
@@ -429,7 +429,7 @@ pub fn compute(
         });
     }
 
-    // ── cartes ──
+    // ── maps ──
     let mut by_map: BTreeMap<&str, Vec<&GameInput>> = BTreeMap::new();
     for g in games {
         by_map.entry(g.summary.map.as_str()).or_default().push(g);
@@ -548,7 +548,7 @@ pub fn compute(
     }
     draft.faced = faced.heroes("draft.faced", n_games);
 
-    // ── déroulé ──
+    // ── flow ──
     let mut flow = FlowFacts::default();
     for g in games {
         let s = g.summary;
@@ -636,14 +636,14 @@ pub fn compute(
         });
     }
 
-    // ── parties ──
+    // ── games ──
     let mut game_rows: Vec<GameRow> = games
         .iter()
         .map(|g| {
             let s = g.summary;
             let (me, other) = (g.side as usize, 1 - g.side as usize);
             let picks_of = |side: usize| -> Vec<GamePick> {
-                // ordre de pick lu dans le replay quand il est complet, sinon ordre du résumé
+                // pick order read from the replay when it is complete, otherwise the summary's order
                 let team = &s.teams[side];
                 let ordered: Vec<&str> = if s.picks[side].len() == team.len() {
                     s.picks[side].iter().map(String::as_str).collect()
@@ -715,13 +715,13 @@ fn fmt_len(s: f64) -> String {
     format!("{}:{:02}", (s / 60.0) as u32, (s % 60.0) as u32)
 }
 
-/// Index plat de tous les faits citables : c'est ce que l'import résout (`evidence`).
+/// Flat index of all the citable facts: it is what the import resolves (`evidence`).
 pub fn build_index(f: &Facts) -> BTreeMap<String, FactRef> {
     ordered_index(f).into_iter().collect()
 }
 
-/// Même contenu que l'index, dans l'ordre de lecture (vue d'ensemble, joueurs, cartes, draft,
-/// déroulé, parties) — l'ordre du pack et du classeur.
+/// Same content as the index, in reading order (overview, players, maps, draft,
+/// flow, games) — the order of the pack and of the workbook.
 pub fn ordered_index(f: &Facts) -> Vec<(String, FactRef)> {
     let mut ix = Vec::new();
     let mut put = |id: &str, r: FactRef| {
@@ -956,15 +956,15 @@ pub fn ordered_index(f: &Facts) -> Vec<(String, FactRef)> {
             },
         );
     }
-    // un fait sans aucune partie (ex. tranche de durée vide) n'apporte rien au LLM : hors index
+    // a fact without any game (e.g. empty duration bucket) brings nothing to the LLM: outside the index
     ix.retain(|(id, r)| r.n > 0 || id.starts_with("overview."));
-    // ordre de lecture orienté draft : cartes et draft avant les joueurs (tri stable)
+    // draft-oriented reading order: maps and draft before the players (stable sort)
     ix.sort_by_key(|(id, _)| section_rank(id));
     ix
 }
 
-/// Rang d'une section de faits dans le pack : vue d'ensemble, cartes, draft, joueurs, déroulé,
-/// parties.
+/// Rank of a facts section in the pack: overview, maps, draft, players, flow,
+/// games.
 pub fn section_rank(id: &str) -> u8 {
     match id.split('.').next().unwrap_or("") {
         "overview" => 0,
@@ -1000,7 +1000,7 @@ mod tests {
 
     #[test]
     fn wilson_valeurs_de_reference() {
-        // 3/3 → [43.8 ; 100] ; 5/10 → [23.7 ; 76.3]
+        // 3/3 → [43.8; 100]; 5/10 → [23.7; 76.3]
         let (lo, hi) = wilson(Rate { k: 3, n: 3 }).unwrap();
         assert!(
             (lo - 43.85).abs() < 0.1 && (hi - 100.0).abs() < 1e-9,
@@ -1039,7 +1039,7 @@ mod tests {
 
     fn sample() -> Vec<GameSummary> {
         let them = ["o1", "o2", "o3", "o4", "o5"];
-        let mut g1 = game(&US, &them); // cible côté 0, gagne
+        let mut g1 = game(&US, &them); // target on side 0, wins
         g1.winner = Some(0);
         g1.first_pick = Some(0);
         g1.bans = [
@@ -1073,7 +1073,7 @@ mod tests {
                 diff: 1.0,
             },
         ];
-        let mut g2 = game(&them, &["r1", "r2", "r3", "r4", "sub"]); // cible côté 1, perd
+        let mut g2 = game(&them, &["r1", "r2", "r3", "r4", "sub"]); // target on side 1, loses
         g2.winner = Some(0);
         g2.map = "Cursed Hollow".into();
         g2.length_s = 1300.0;
@@ -1093,7 +1093,7 @@ mod tests {
         assert_eq!(f.overview.games, 2);
         assert_eq!(f.overview.record, Rate { k: 1, n: 2 });
         assert_eq!(f.overview.excluded, 1);
-        // roster d'abord (r1..r4 : 2 parties, r5 : 1), le remplaçant en dernier
+        // roster first (r1..r4: 2 games, r5: 1), the substitute last
         assert_eq!(f.players.len(), 6);
         assert!(f.players[..5].iter().all(|p| p.core));
         let sub = f.players.last().unwrap();
@@ -1110,7 +1110,7 @@ mod tests {
     fn draft_vue_depuis_la_cible() {
         let f = run(&sample(), &[0, 1]);
         let d = &f.draft;
-        // g1 : bans + 5 picks ; g2 : aucun ban ni pick → hors draft
+        // g1: bans + 5 picks; g2: no ban or pick → outside the draft
         assert_eq!(d.games, 1);
         assert_eq!(d.first_pick, Rate { k: 1, n: 1 });
         assert_eq!(d.bans_first[0].id, "draft.ban_first.johanna");
@@ -1123,7 +1123,7 @@ mod tests {
     #[test]
     fn heros_affrontes_et_picks_par_carte_attribues() {
         let f = run(&sample(), &[0, 1]);
-        // o1..o5 sont en face dans les deux parties (1 victoire, 1 défaite de la cible)
+        // o1..o5 are opposite in both games (1 win, 1 loss of the target)
         let o1 = f.draft.faced.iter().find(|h| h.hero == "H_o1").unwrap();
         assert_eq!(o1.id, "draft.faced.h_o1");
         assert_eq!(o1.picks, Rate { k: 2, n: 2 });
@@ -1131,7 +1131,7 @@ mod tests {
         assert!(f.index["draft.faced.h_o1"]
             .text
             .contains("their record 1/2"));
-        // picks par carte : qui l'a joué
+        // picks per map: who played it
         let braxis = f.maps.iter().find(|m| m.map == "Braxis Holdout").unwrap();
         let r1 = braxis.picks.iter().find(|h| h.hero == "H_r1").unwrap();
         assert_eq!(r1.by, vec!["p1".to_string()]);
@@ -1142,18 +1142,18 @@ mod tests {
     fn deroule_depuis_la_cible() {
         let f = run(&sample(), &[0, 1]);
         let fl = &f.flow;
-        // g1 : cible (0) à 10 en premier ; g2 : l'adversaire (côté 0) seul à 10
+        // g1: target (0) at 10 first; g2: the opponent (side 0) alone at 10
         assert_eq!(fl.first_to_10, Rate { k: 1, n: 2 });
         assert_eq!(fl.first_fort, Rate { k: 1, n: 1 });
-        // g1 : cible côté 0, diff -2 → menée de 2, puis gagne → remontée.
-        // g2 : diff (équipe 0 − équipe 1) = -3 et la cible est côté 1 → elle MÈNE de 3 et perd.
+        // g1: target on side 0, diff -2 → behind by 2, then wins → comeback.
+        // g2: diff (team 0 − team 1) = -3 and the target is on side 1 → it LEADS by 3 and loses.
         assert_eq!(fl.comebacks, Rate { k: 1, n: 1 });
         assert_eq!(fl.throws, Rate { k: 1, n: 1 });
-        // écart à 10 min : g1 → -2 (côté 0) ; g2 → +3 (côté 1, signe inversé) ; moyenne +0,5
+        // gap at 10 min: g1 → -2 (side 0); g2 → +3 (side 1, inverted sign); average +0.5
         let at10 = &fl.level_diff[0];
         assert_eq!(at10.n, 2);
         assert!((at10.avg - 0.5).abs() < 1e-9, "{}", at10.avg);
-        // tranches : g1 900 s → 15–20 ; g2 1300 s → 20–25
+        // buckets: g1 900 s → 15–20; g2 1300 s → 20–25
         assert_eq!(fl.length[1].record, Rate { k: 1, n: 1 });
         assert_eq!(fl.length[2].record, Rate { k: 0, n: 1 });
     }
@@ -1166,8 +1166,8 @@ mod tests {
                 .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '.')
         };
         for (id, r) in &f.index {
-            assert!(ok(id), "id mal formé : {id}");
-            // une référence de partie désigne UNE partie : pas un taux, donc pas « faible échantillon »
+            assert!(ok(id), "malformed id: {id}");
+            // a game reference designates ONE game: not a rate, hence not a "small sample"
             if !id.starts_with("game.") {
                 assert_eq!(r.low, r.n < LOW_SAMPLE, "{id}");
             }
@@ -1185,9 +1185,9 @@ mod tests {
             "flow.length.15_20",
             "game.1",
         ] {
-            assert!(f.index.contains_key(id), "id absent : {id}");
+            assert!(f.index.contains_key(id), "missing id: {id}");
         }
-        // parties : picks attribués aux pN
+        // games: picks attributed to the pNs
         assert_eq!(f.games[0].picks[0].player, "p1");
     }
 

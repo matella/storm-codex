@@ -1,21 +1,21 @@
-//! Habitudes de chat d'un compte : **mesures seulement** (volume, destinataire, moment, mots
-//! récurrents). Aucun jugement de toxicité, aucun texte exposé. Spec :
+//! Chat habits of an account: **measurements only** (volume, recipient, timing, recurring
+//! words). No toxicity judgement, no text exposed. Spec:
 //! docs/specs/2026-11-08-signaux-replay-supplementaires-design.md (section C).
 
 use serde::Serialize;
 use sqlx::PgPool;
 use std::collections::{HashMap, HashSet};
 
-/// Parties minimales pour présenter des pourcentages.
+/// Minimum games to present percentages.
 pub const MIN_GAMES: i64 = 5;
-/// Un mot n'est affiché qu'à partir de ce nombre d'occurrences (jamais un message isolé).
+/// A word is shown only from this number of occurrences (never an isolated message).
 pub const MIN_WORD_COUNT: i64 = 3;
 pub const MAX_WORDS: usize = 8;
 const MIN_WORD_LEN: usize = 3;
-/// Au-delà, ce n'est pas un mot (CJK sans espaces, phrase collée) : jamais affiché.
+/// Beyond it, it is not a word (CJK without spaces, glued sentence): never shown.
 const MAX_WORD_LEN: usize = 20;
 
-/// Mots vides ignorés (français et anglais).
+/// Ignored stop words (French and English).
 const STOP_WORDS: &[&str] = &[
     "the", "and", "you", "for", "are", "not", "but", "with", "this", "that", "have", "was", "its",
     "your", "they", "them", "will", "can", "get", "got", "just", "out", "all", "one", "our", "has",
@@ -24,15 +24,15 @@ const STOP_WORDS: &[&str] = &[
     "par", "mon", "ton", "son", "ces", "cet", "ses", "tes", "mes", "plus", "fait", "tout",
 ];
 
-/// Un message de chat d'un compte, tel que lu dans `matches.data.messages`.
+/// A chat message of an account, as read in `matches.data.messages`.
 #[derive(Debug, Clone, Default)]
 pub struct ChatRow {
     pub text: Option<String>,
-    /// 0 = tous, 1 = équipe.
+    /// 0 = all, 1 = team.
     pub recipient: Option<i64>,
-    /// Secondes depuis le début de la partie.
+    /// Seconds since the start of the game.
     pub time: Option<f64>,
-    /// Durée de la partie en secondes.
+    /// Duration of the game in seconds.
     pub length: Option<f64>,
 }
 
@@ -71,12 +71,12 @@ fn share(n: i64, total: i64) -> f64 {
 
 type RawRow = (Option<String>, Option<i64>, Option<f64>, Option<f64>);
 
-/// Parties récentes prises en compte : borne le coût (p95 < 100 ms) et garde `games` et `messages`
-/// sur la même fenêtre.
+/// Recent games taken into account: bounds the cost (p95 < 100 ms) and keeps `games` and `messages`
+/// on the same window.
 pub const WINDOW_GAMES: i64 = 500;
 
-/// `(parties de la fenêtre, messages de chat du compte dans ces parties)` — les `WINDOW_GAMES`
-/// parties les plus récentes du compte.
+/// `(games of the window, chat messages of the account in those games)` — the `WINDOW_GAMES`
+/// most recent games of the account.
 pub async fn load_rows(db: &PgPool, toon: &str) -> Result<(i64, Vec<ChatRow>), sqlx::Error> {
     load_rows_with(db, toon, WINDOW_GAMES).await
 }
@@ -149,7 +149,7 @@ pub fn habits(games: i64, rows: &[ChatRow]) -> ChatHabits {
             }
         }
         if let Some(text) = &r.text {
-            // un mot compte une fois par message : ≥ 3 occurrences = ≥ 3 messages distincts
+            // a word counts once per message: ≥ 3 occurrences = ≥ 3 distinct messages
             let lower = text.to_lowercase();
             let distinct: HashSet<&str> = lower
                 .split(|c: char| !c.is_alphanumeric())
@@ -249,7 +249,7 @@ mod tests {
         let h = habits(5, &rows);
         assert!(
             h.top_words.is_empty(),
-            "« gg » fait 2 caractères ; « bonjour » 2 fois : sous le seuil"
+            "\"gg\" is 2 characters; \"bonjour\" twice: below the threshold"
         );
         let rows = [
             row("noob", 1, 0.5),
@@ -292,7 +292,7 @@ mod tests {
 
     #[test]
     fn phrase_sans_espaces_envoyee_trois_fois_n_est_pas_un_mot() {
-        // CJK : aucune coupe sur les espaces, la phrase entière serait un seul « mot »
+        // CJK: no split on spaces, the whole sentence would be a single "word"
         let phrase = "这是一个很长很长很长很长很长很长很长的句子没有空格";
         let rows = [
             row(phrase, 1, 0.5),

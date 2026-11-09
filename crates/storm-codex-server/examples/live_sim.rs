@@ -1,11 +1,11 @@
-//! Simulateur du feed live : rejoue un `.StormReplay` comme si la partie se déroulait, en postant
-//! au serveur ce que le watcher `client-rs` postera depuis `TempWriteReplayP1` — le battlelobby,
-//! puis `tracker.events` et `game.events` par blocs de 4 Ko, dans l'ordre des game loops, au rythme
-//! du jeu multiplié par `--speed`, et enfin la fin de partie.
+//! Live feed simulator: replays a `.StormReplay` as if the game were in progress, posting
+//! to the server what the `client-rs` watcher will post from `TempWriteReplayP1` — the battlelobby,
+//! then `tracker.events` and `game.events` in 4 KB blocks, in game loop order, at the game's pace
+//! multiplied by `--speed`, and finally the end of game.
 //!
 //! ```text
 //! cargo run --release -p storm-codex-server --example live_sim -- <replay> \
-//!     [--url http://127.0.0.1:8089] [--token <jeton d'upload> | env STORM_TOKEN] [--speed 8]
+//!     [--url http://127.0.0.1:8089] [--token <upload token> | env STORM_TOKEN] [--speed 8]
 //! ```
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
@@ -20,7 +20,7 @@ struct Chunk {
     kind: StreamKind,
     offset: usize,
     bytes: Vec<u8>,
-    /// Le jeu écrit un bloc une fois son contenu produit : disponible à ce gameloop.
+    /// The game writes a block once its content is produced: available at this gameloop.
     ready_loop: i64,
 }
 
@@ -50,18 +50,18 @@ fn schedule(kind: StreamKind, raw: &[u8], build: u32) -> Vec<Chunk> {
 fn main() {
     let path = std::env::args()
         .nth(1)
-        .expect("usage : live_sim <replay> [--url] [--token] [--speed]");
+        .expect("usage: live_sim <replay> [--url] [--token] [--speed]");
     let url = arg("--url").unwrap_or_else(|| "http://127.0.0.1:8089".into());
     let token = arg("--token")
         .or_else(|| std::env::var("STORM_TOKEN").ok())
-        .expect("--token ou STORM_TOKEN requis (jeton d'upload)");
+        .expect("--token or STORM_TOKEN required (upload token)");
     let speed: f64 = arg("--speed").and_then(|s| s.parse().ok()).unwrap_or(8.0);
 
     let bytes = std::fs::read(&path).unwrap();
     let replay = Replay::from_bytes(bytes).unwrap();
     let build = replay.header.base_build;
-    // Contrat de `X-Session` : SHA-256 du battlelobby, que le serveur rapproche du lobby courant
-    // (`lobby_live.content_hash`) pour en tirer la carte et l'opérateur.
+    // `X-Session` contract: SHA-256 of the battlelobby, which the server matches against the current lobby
+    // (`lobby_live.content_hash`) to get the map and the operator from it.
     let lobby = replay.battlelobby_raw().unwrap();
     let session = hex::encode(<sha2::Sha256 as sha2::Digest>::digest(&lobby));
     let agent: ureq::Agent = ureq::Agent::config_builder()
@@ -70,11 +70,11 @@ fn main() {
         .into();
     let auth = format!("Bearer {token}");
 
-    // 0. Repart d'une session vierge (rejouer le même replay réutiliserait son id).
+    // 0. Start from a fresh session (replaying the same replay would reuse its id).
     let r = agent.delete(format!("{url}/api/live")).call().unwrap();
     println!("reset → {}", r.status());
 
-    // 1. Le battlelobby, comme pendant l'écran de chargement.
+    // 1. The battlelobby, as during the loading screen.
     let mut r = agent
         .post(format!("{url}/api/lobby"))
         .header("Authorization", &auth)
@@ -86,7 +86,7 @@ fn main() {
         r.body_mut().read_to_string().unwrap_or_default()
     );
 
-    // 2. Les blocs des deux streams, dans l'ordre où le jeu les écrirait.
+    // 2. The blocks of both streams, in the order the game would write them.
     let mut chunks = schedule(
         StreamKind::Tracker,
         &replay.tracker_events_raw().unwrap(),
@@ -99,7 +99,7 @@ fn main() {
     ));
     chunks.sort_by_key(|c| c.ready_loop);
     println!(
-        "session {session} : {} blocs, build {build}, vitesse ×{speed}",
+        "session {session}: {} blocks, build {build}, speed ×{speed}",
         chunks.len()
     );
 
@@ -124,8 +124,8 @@ fn main() {
             .header("X-Build", build.to_string())
             .send(&c.bytes[..])
             .unwrap();
-        // La réponse part après le broadcast WS : l'aller-retour majore « morceau reçu →
-        // live.updated émis » (critère d'acceptation 2 : < 200 ms).
+        // The response leaves after the WS broadcast: the round trip is an upper bound of "chunk received →
+        // live.updated emitted" (acceptance criterion 2: < 200 ms).
         latencies_ms.push(sent.elapsed().as_secs_f64() * 1000.0);
         let secs = c.ready_loop as f64 / LOOPS_PER_SEC;
         println!(
@@ -141,14 +141,14 @@ fn main() {
     latencies_ms.sort_by(f64::total_cmp);
     let pct = |p: f64| latencies_ms[((latencies_ms.len() as f64 - 1.0) * p).round() as usize];
     println!(
-        "latence POST /api/live/chunk (aller-retour, {} blocs) : p50 {:.1} ms · p95 {:.1} ms · max {:.1} ms",
+        "POST /api/live/chunk latency (round trip, {} blocks): p50 {:.1} ms · p95 {:.1} ms · max {:.1} ms",
         latencies_ms.len(),
         pct(0.5),
         pct(0.95),
         pct(1.0)
     );
 
-    // 3. Fin de partie (apparition de replay.details côté jeu).
+    // 3. End of game (replay.details appears on the game side).
     let mut r = agent
         .post(format!("{url}/api/live/end"))
         .header("Authorization", &auth)

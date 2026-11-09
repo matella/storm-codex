@@ -1,12 +1,12 @@
-//! Référentiel héros/talents (`dim_*`) répliqué depuis l'API HotsPatchNotes au démarrage —
-//! source unique (pas de second pipeline de sync). Best-effort : une indispo n'empêche pas le
-//! serveur de démarrer (le front a un fallback couleur). Config `HOTSPATCHNOTES_URL`.
+//! Hero/talent reference data (`dim_*`) replicated from the HotsPatchNotes API at startup —
+//! single source (no second sync pipeline). Best-effort: an outage does not prevent the
+//! server from starting (the front has a colour fallback). Config `HOTSPATCHNOTES_URL`.
 
 use sqlx::PgPool;
 use std::path::{Path, PathBuf};
 
-/// Réplique les héros depuis `<base>/api/heroes` dans `dim_heroes`. Clé = `name` (storm-stats
-/// utilise les noms de héros). Best-effort.
+/// Replicates the heroes from `<base>/api/heroes` into `dim_heroes`. Key = `name` (storm-stats
+/// uses the hero names). Best-effort.
 pub async fn sync_heroes(db: &PgPool, base_url: &str) {
     let url = format!("{}/api/heroes", base_url.trim_end_matches('/'));
     let fetched = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, String> {
@@ -23,12 +23,12 @@ pub async fn sync_heroes(db: &PgPool, base_url: &str) {
     let heroes = match fetched {
         Ok(Ok(serde_json::Value::Array(h))) => h,
         Ok(Ok(_)) => {
-            tracing::warn!("dim_heroes : réponse inattendue de HotsPatchNotes");
+            tracing::warn!("dim_heroes: unexpected response from HotsPatchNotes");
             return;
         }
         Ok(Err(e)) => {
             tracing::warn!(
-                "dim_heroes : HotsPatchNotes indispo ({e}) — anneaux d'univers en fallback"
+                "dim_heroes: HotsPatchNotes unavailable ({e}) — universe rings fall back"
             );
             return;
         }
@@ -47,7 +47,7 @@ pub async fn sync_heroes(db: &PgPool, base_url: &str) {
              ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, role=EXCLUDED.role,
                 universe=EXCLUDED.universe, data=EXCLUDED.data",
         )
-        .bind(name) // id = name (clé de jointure avec storm-stats)
+        .bind(name) // id = name (join key with storm-stats)
         .bind(name)
         .bind(role)
         .bind(universe)
@@ -55,16 +55,16 @@ pub async fn sync_heroes(db: &PgPool, base_url: &str) {
         .execute(db)
         .await
         {
-            tracing::warn!("référentiel : écriture en échec : {e}");
+            tracing::warn!("reference data: write failed: {e}");
         }
         n += 1;
     }
-    tracing::info!("dim_heroes synchronisé : {n} héros depuis HotsPatchNotes");
+    tracing::info!("dim_heroes synced: {n} heroes from HotsPatchNotes");
 }
 
-/// Réplique la LISTE des patch notes depuis `<base>/api/patches` dans `dim_patches` (storm-codex en
-/// devient propriétaire). Retourne les patches NOUVEAUX (absents avant) → l'appelant les notifie.
-/// Aucun « nouveau » au tout premier seed (table vide) pour éviter 200 notifications. Best-effort.
+/// Replicates the LIST of patch notes from `<base>/api/patches` into `dim_patches` (storm-codex
+/// becomes their owner). Returns the NEW patches (missing before) → the caller notifies them.
+/// No "new" ones on the very first seed (empty table) to avoid 200 notifications. Best-effort.
 pub async fn sync_patches(db: &PgPool, base_url: &str) -> Vec<(String, String)> {
     let url = format!(
         "{}/api/patches?page=1&pageSize=200",
@@ -77,7 +77,7 @@ pub async fn sync_patches(db: &PgPool, base_url: &str) -> Vec<(String, String)> 
             .cloned()
             .unwrap_or_default(),
         _ => {
-            tracing::warn!("dim_patches : HotsPatchNotes indispo");
+            tracing::warn!("dim_patches: HotsPatchNotes unavailable");
             return Vec::new();
         }
     };
@@ -115,7 +115,7 @@ pub async fn sync_patches(db: &PgPool, base_url: &str) -> Vec<(String, String)> 
         }
     }
     tracing::info!(
-        "dim_patches synchronisé : {} patches ({} nouveaux)",
+        "dim_patches synced: {} patches ({} new)",
         items.len(),
         new_patches.len()
     );
@@ -123,20 +123,20 @@ pub async fn sync_patches(db: &PgPool, base_url: &str) -> Vec<(String, String)> 
         Vec::new()
     } else {
         new_patches
-    } // seed initial → pas de notif
+    } // initial seed → no notification
 }
 
-/// Réplique les talents par héros depuis `<base>/api/heroes/{shortName}` dans `dim_talents`.
-/// Clé de jointure `tree_id` = `talentTreeId`, qui matche `player.talents[TierNChoice]` écrit par
-/// le parser. ~90 requêtes séquentielles (bloquant), lancé en tâche de fond ; refresh complet
-/// (DELETE + INSERT en transaction). Best-effort : une indispo n'empêche rien (front a un fallback
-/// texte sur l'id brut). `tier` = niveau héros (1,4,7,10,13,16,20), `hero_id` = nom (métadonnée).
+/// Replicates the talents per hero from `<base>/api/heroes/{shortName}` into `dim_talents`.
+/// Join key `tree_id` = `talentTreeId`, which matches `player.talents[TierNChoice]` written by
+/// the parser. ~90 sequential (blocking) requests, run as a background task; full refresh
+/// (DELETE + INSERT in a transaction). Best-effort: an outage prevents nothing (the front has a text
+/// fallback on the raw id). `tier` = hero level (1,4,7,10,13,16,20), `hero_id` = name (metadata).
 pub async fn sync_talents(db: &PgPool, base_url: &str) {
     let base = base_url.trim_end_matches('/').to_string();
     let rows = match tokio::task::spawn_blocking(move || collect_talents(&base)).await {
         Ok(r) if !r.is_empty() => r,
         Ok(_) => {
-            tracing::warn!("dim_talents : aucun talent collecté (HotsPatchNotes indispo ?)");
+            tracing::warn!("dim_talents: no talent collected (HotsPatchNotes unavailable?)");
             return;
         }
         Err(_) => return, // join error
@@ -145,7 +145,7 @@ pub async fn sync_talents(db: &PgPool, base_url: &str) {
     let mut tx = match db.begin().await {
         Ok(t) => t,
         Err(e) => {
-            tracing::warn!("dim_talents : begin échoué ({e})");
+            tracing::warn!("dim_talents: begin failed ({e})");
             return;
         }
     };
@@ -175,19 +175,19 @@ pub async fn sync_talents(db: &PgPool, base_url: &str) {
         }
     }
     if tx.commit().await.is_ok() {
-        tracing::info!("dim_talents synchronisé : {n} talents depuis HotsPatchNotes");
+        tracing::info!("dim_talents synced: {n} talents from HotsPatchNotes");
     }
 }
 
-/// Collecte bloquante : liste héros → détail par `shortName` → talents aplatis.
+/// Blocking collection: hero list → detail per `shortName` → flattened talents.
 /// Tuple = (hero_id, tier=niveau, name, tree_id=talentTreeId, data{icon,type,description}).
-/// `hero_id` = **nom canonique du parser** (via `attributeId` HotsPatchNotes → `attr.json` de
-/// storm-stats), pas le nom HotsPatchNotes : ils diffèrent en ponctuation/articles (« Li-Ming » vs
-/// « LiMing », « The Lost Vikings » vs « LostVikings »). L'aligner sur le parser évite de fausses
-/// corrections lors de la résolution du héros joué (cf. project.rs::talent_hero).
+/// `hero_id` = **canonical parser name** (via the HotsPatchNotes `attributeId` → storm-stats'
+/// `attr.json`), not the HotsPatchNotes name: they differ in punctuation/articles ("Li-Ming" vs
+/// "LiMing", "The Lost Vikings" vs "LostVikings"). Aligning it on the parser avoids false
+/// corrections when resolving the played hero (see project.rs::talent_hero).
 fn collect_talents(base: &str) -> Vec<(String, i32, String, String, serde_json::Value)> {
     let mut out = Vec::new();
-    // code attribut (4 lettres) → nom canonique parser (table figée de hots-parser).
+    // attribute code (4 letters) → canonical parser name (frozen hots-parser table).
     let code_to_name: std::collections::HashMap<String, String> =
         storm_stats::constants::hero_attribute()
             .as_object()
@@ -211,7 +211,7 @@ fn collect_talents(base: &str) -> Vec<(String, i32, String, String, serde_json::
             continue;
         };
         // attributeId HotsPatchNotes == code attr.json (ex. Johanna="Crus", E.T.C.="L90E") →
-        // nom canonique parser ; fallback sur le nom HotsPatchNotes si absent/non mappé.
+        // canonical parser name; fallback on the HotsPatchNotes name if missing/not mapped.
         let hero_name = detail
             .get("attributeId")
             .and_then(|v| v.as_str())
@@ -249,38 +249,38 @@ fn collect_talents(base: &str) -> Vec<(String, i32, String, String, serde_json::
     out
 }
 
-/// Vendorise (une fois) les portraits héros + images de cartes depuis HotsPatchNotes dans
-/// `images_dir` (servi sur `/images`). Idempotent : saute les fichiers déjà présents. Best-effort
-/// — une indispo n'empêche rien (le front a un fallback). Rend storm-codex auto-suffisant.
+/// Vendors (once) the hero portraits + map images from HotsPatchNotes into
+/// `images_dir` (served on `/images`). Idempotent: skips the files already present. Best-effort
+/// — an outage prevents nothing (the front has a fallback). Makes storm-codex self-sufficient.
 pub async fn vendor_images(images_dir: &Path, base_url: &str) {
     let base = base_url.trim_end_matches('/').to_string();
     let dir = images_dir.to_path_buf();
     let _ = tokio::task::spawn_blocking(move || {
         let mut got = 0;
-        // /api/heroes → champ "icon" ("/images/heroes/<slug>.png")
+        // /api/heroes → "icon" field ("/images/heroes/<slug>.png")
         if let Ok(list) = fetch_array(&format!("{base}/api/heroes")) {
             got += download_referenced(&list, "icon", &base, &dir);
         }
-        // /api/battlegrounds → champ "imageUrl" ("/images/battlegrounds/<slug>.png")
+        // /api/battlegrounds → "imageUrl" field ("/images/battlegrounds/<slug>.png")
         if let Ok(list) = fetch_array(&format!("{base}/api/battlegrounds")) {
             got += download_referenced(&list, "imageUrl", &base, &dir);
         }
-        tracing::info!("images vendorisées : {got} nouveaux fichiers dans {dir:?}");
+        tracing::info!("images vendored: {got} new files in {dir:?}");
     })
     .await;
 }
 
-/// Ingestion du **snapshot référentiel** (mode bundle autonome) : télécharge `referential.tar.gz`
-/// (`REFERENTIAL_URL`), le décompresse, et peuple `dim_heroes` / `dim_talents` / `dim_patches`
-/// (+ détail patch fusionné dans `data.detail` pour lecture offline) puis vendorise les images dans
-/// `images_dir`. Aucune dépendance runtime à HotsPatchNotes. Retourne les patches NOUVEAUX (pour
-/// notif), comme `sync_patches` ; aucun « nouveau » au premier seed (table vide). Best-effort.
+/// Ingestion of the **reference-data snapshot** (standalone bundle mode): downloads `referential.tar.gz`
+/// (`REFERENTIAL_URL`), unpacks it, and populates `dim_heroes` / `dim_talents` / `dim_patches`
+/// (+ patch detail merged into `data.detail` for offline reading) then vendors the images into
+/// `images_dir`. No runtime dependency on HotsPatchNotes. Returns the NEW patches (for
+/// notification), like `sync_patches`; no "new" ones on the first seed (empty table). Best-effort.
 pub async fn ingest_snapshot(db: &PgPool, images_dir: &Path, url: &str) -> Vec<(String, String)> {
     let url = url.to_string();
     let dir = images_dir.to_path_buf();
     let tmp = std::env::temp_dir().join("storm-codex-referential");
 
-    // Téléchargement + décompression (bloquant : réseau + tar/gzip).
+    // Download + unpacking (blocking: network + tar/gzip).
     let prep = tokio::task::spawn_blocking({
         let tmp = tmp.clone();
         move || -> Result<(), String> {
@@ -303,7 +303,7 @@ pub async fn ingest_snapshot(db: &PgPool, images_dir: &Path, url: &str) -> Vec<(
     match prep {
         Ok(Ok(())) => {}
         Ok(Err(e)) => {
-            tracing::warn!("référentiel : snapshot indispo ({e}) — anneaux d'univers en fallback");
+            tracing::warn!("reference data: snapshot unavailable ({e}) — universe rings fall back");
             return Vec::new();
         }
         Err(_) => return Vec::new(),
@@ -315,7 +315,7 @@ pub async fn ingest_snapshot(db: &PgPool, images_dir: &Path, url: &str) -> Vec<(
             .and_then(|s| serde_json::from_str(&s).ok())
     };
 
-    // dim_heroes (même schéma que sync_heroes : id = name).
+    // dim_heroes (same schema as sync_heroes: id = name).
     if let Some(serde_json::Value::Array(heroes)) = read("heroes.json") {
         let mut n = 0;
         for h in &heroes {
@@ -336,15 +336,15 @@ pub async fn ingest_snapshot(db: &PgPool, images_dir: &Path, url: &str) -> Vec<(
             .execute(db)
             .await
             {
-                tracing::warn!("référentiel : écriture en échec : {e}");
+                tracing::warn!("reference data: write failed: {e}");
             }
             n += 1;
         }
-        tracing::info!("dim_heroes (snapshot) : {n} héros");
+        tracing::info!("dim_heroes (snapshot): {n} heroes");
     }
 
-    // dim_talents depuis hero-details.json ({shortName: détail}). Même mapping canonique que
-    // collect_talents : attributeId HotsPatchNotes → nom parser (attr.json) ; fallback nom HPN.
+    // dim_talents from hero-details.json ({shortName: detail}). Same canonical mapping as
+    // collect_talents: HotsPatchNotes attributeId → parser name (attr.json); fallback HPN name.
     if let Some(serde_json::Value::Object(details)) = read("hero-details.json") {
         let code_to_name: std::collections::HashMap<String, String> =
             storm_stats::constants::hero_attribute()
@@ -406,13 +406,13 @@ pub async fn ingest_snapshot(db: &PgPool, images_dir: &Path, url: &str) -> Vec<(
                     }
                 }
                 if tx.commit().await.is_ok() {
-                    tracing::info!("dim_talents (snapshot) : {n} talents");
+                    tracing::info!("dim_talents (snapshot): {n} talents");
                 }
             }
         }
     }
 
-    // dim_patches : items + détail fusionné (data.detail) pour le rendu offline du patch.
+    // dim_patches: items + merged detail (data.detail) for the offline rendering of the patch.
     let mut new_patches: Vec<(String, String)> = Vec::new();
     if let Some(items) =
         read("patches.json").and_then(|v| v.get("items").and_then(|i| i.as_array()).cloned())
@@ -453,7 +453,7 @@ pub async fn ingest_snapshot(db: &PgPool, images_dir: &Path, url: &str) -> Vec<(
             if inserted == Some(true) {
                 new_patches.push((iid.to_string(), name.to_string()));
             }
-            // Projection des sections héros (sens héros ↔ patch) — le détail est déjà en main.
+            // Projection of the hero sections (hero ↔ patch direction) — the detail is already at hand.
             if let Some(detail) = pdetails.get(iid) {
                 project_patch_sections(
                     db,
@@ -467,29 +467,29 @@ pub async fn ingest_snapshot(db: &PgPool, images_dir: &Path, url: &str) -> Vec<(
             }
         }
         tracing::info!(
-            "dim_patches (snapshot) : {} patches ({} nouveaux)",
+            "dim_patches (snapshot): {} patches ({} new)",
             items.len(),
             new_patches.len()
         );
         if was_empty == 0 {
-            new_patches.clear(); // seed initial → pas de notif
+            new_patches.clear(); // initial seed → no notification
         }
     }
 
-    // Images : copie images/** du snapshot vers images_dir (idempotent, saute l'existant).
+    // Images: copy images/** of the snapshot to images_dir (idempotent, skips what exists).
     let img_src = tmp.join("images");
     let _ = tokio::task::spawn_blocking(move || {
         let got = copy_tree(&img_src, &dir);
         let _ = std::fs::remove_dir_all(&tmp);
-        tracing::info!("images (snapshot) : {got} fichiers copiés vers {dir:?}");
+        tracing::info!("images (snapshot): {got} files copied to {dir:?}");
     })
     .await;
 
     new_patches
 }
 
-/// Copie récursive `src` → `dst` (crée les dossiers, saute les fichiers déjà présents). Retourne le
-/// nombre de fichiers écrits. Best-effort (les erreurs par fichier sont ignorées).
+/// Recursive copy `src` → `dst` (creates the folders, skips the files already present). Returns the
+/// number of files written. Best-effort (per-file errors are ignored).
 fn copy_tree(src: &Path, dst: &Path) -> u32 {
     let mut n = 0;
     let Ok(entries) = std::fs::read_dir(src) else {
@@ -516,8 +516,8 @@ fn copy_tree(src: &Path, dst: &Path) -> u32 {
     n
 }
 
-/// Normalise un nom de héros pour la jointure (miroir de `heroKey()` côté front) : repli des accents,
-/// minuscule, alphanumérique seul, « the » initial retiré. Self-consistant (insert + requête côté Rust).
+/// Normalises a hero name for the join (mirror of `heroKey()` on the front side): accent folding,
+/// lowercase, alphanumeric only, leading "the" removed. Self-consistent (insert + query on the Rust side).
 pub fn hero_key(s: &str) -> String {
     let folded: String = s.chars().map(fold_accent).collect();
     let k: String = folded
@@ -541,8 +541,8 @@ fn fold_accent(c: char) -> char {
     }
 }
 
-/// Projette les sections de type `Hero` d'un patch dans `patch_hero_sections` (sens héros ↔ patch).
-/// Refresh complet pour ce patch (DELETE + INSERT). Best-effort. `detail` = réponse `/api/patches/{id}`.
+/// Projects the `Hero`-type sections of a patch into `patch_hero_sections` (hero ↔ patch direction).
+/// Full refresh for this patch (DELETE + INSERT). Best-effort. `detail` = `/api/patches/{id}` response.
 pub async fn project_patch_sections(
     db: &PgPool,
     internal_id: &str,
@@ -559,7 +559,7 @@ pub async fn project_patch_sections(
         .execute(db)
         .await
     {
-        tracing::warn!("référentiel : écriture en échec : {e}");
+        tracing::warn!("reference data: write failed: {e}");
     }
     for s in sections {
         if s.get("sectionType").and_then(|v| v.as_str()) != Some("Hero") {
@@ -599,13 +599,13 @@ pub async fn project_patch_sections(
         .bind(live_date)
         .execute(db)
         .await {
-tracing::warn!("référentiel : écriture en échec : {e}");
+tracing::warn!("reference data: write failed: {e}");
 }
     }
 }
 
-/// Backfill (live HPN) : pour chaque patch de `dim_patches` sans sections héros projetées, récupère
-/// le détail depuis HotsPatchNotes et projette. HPN est local → rapide ; idempotent, best-effort.
+/// Backfill (live HPN): for each patch of `dim_patches` without projected hero sections, fetches
+/// the detail from HotsPatchNotes and projects it. HPN is local → fast; idempotent, best-effort.
 pub async fn backfill_hero_sections(db: &PgPool, base_url: &str) {
     let base = base_url.trim_end_matches('/').to_string();
     let pending: Vec<(String, String, Option<String>, Option<String>)> = sqlx::query_as(
@@ -629,7 +629,7 @@ pub async fn backfill_hero_sections(db: &PgPool, base_url: &str) {
         }
     }
     tracing::info!(
-        "patch_hero_sections : backfill de {done}/{} patch(s)",
+        "patch_hero_sections: backfill of {done}/{} patch(es)",
         pending.len()
     );
 }
@@ -643,7 +643,7 @@ fn fetch_array(url: &str) -> Result<Vec<serde_json::Value>, String> {
         .map_err(|e| e.to_string())?;
     match serde_json::from_str(&body) {
         Ok(serde_json::Value::Array(a)) => Ok(a),
-        _ => Err("réponse non-array".into()),
+        _ => Err("non-array response".into()),
     }
 }
 
@@ -657,8 +657,8 @@ fn fetch_json(url: &str) -> Result<serde_json::Value, String> {
     serde_json::from_str(&body).map_err(|e| e.to_string())
 }
 
-/// Pour chaque objet, lit `field` (chemin `/images/...`), télécharge `<base><path>` vers
-/// `<images_dir><path sans /images>` si absent. Retourne le nombre de fichiers téléchargés.
+/// For each object, reads `field` (path `/images/...`), downloads `<base><path>` to
+/// `<images_dir><path without /images>` if missing. Returns the number of files downloaded.
 fn download_referenced(
     list: &[serde_json::Value],
     field: &str,
@@ -670,7 +670,7 @@ fn download_referenced(
         let Some(path) = obj.get(field).and_then(|v| v.as_str()) else {
             continue;
         };
-        // attendu : "/images/heroes/x.png" ou "/images/battlegrounds/x.png"
+        // expected: "/images/heroes/x.png" or "/images/battlegrounds/x.png"
         let Some(rel) = path.strip_prefix("/images/") else {
             continue;
         };
@@ -682,7 +682,7 @@ fn download_referenced(
             let _ = std::fs::create_dir_all(parent);
         }
         let url = format!("{base}{path}");
-        // 404 / corps vide (ex. carte ARAM sans image) → on saute, le front a un fallback
+        // 404 / empty body (e.g. ARAM map without an image) → skip, the front has a fallback
         match ureq::get(&url)
             .call()
             .and_then(|mut r| r.body_mut().read_to_vec())

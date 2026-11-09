@@ -1,7 +1,7 @@
-//! Routes du lobby live. `POST /api/lobby` reçoit les octets bruts du fichier de lobby (même
-//! contrat que `/api/upload-raw` : `Bearer` + corps binaire), le décode, l'enrichit, le persiste et
-//! diffuse `lobby.detected`. Le parseur vivant côté serveur, une casse de format Blizzard se
-//! corrige par un redéploiement du box, sans jamais retoucher le binaire Windows.
+//! Live lobby routes. `POST /api/lobby` receives the raw bytes of the lobby file (same
+//! contract as `/api/upload-raw`: `Bearer` + binary body), decodes it, enriches it, persists it and
+//! broadcasts `lobby.detected`. With the parser living on the server side, a Blizzard format break
+//! is fixed by a redeployment of the box, without ever touching the Windows binary again.
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
@@ -10,30 +10,30 @@ use serde_json::{json, Value as J};
 use crate::lobby::{store, LobbyState};
 use crate::AppState;
 
-/// Deuxième ligne de défense de l'idempotence, après la garde par hash de `ingest` (voir
-/// [`decider`]) : celle-ci absorbe tout repost octet pour octet identique — y compris sur un
-/// lobby déjà lié, ce qui protège le debrief d'un simple redémarrage du watcher qui repose sur
-/// disque le même `replay.server.battlelobby`. `meme_lobby` ne voit donc jamais deux blobs
-/// identiques ; elle ne traite que le cas où le hash a changé mais où les BattleTags pourraient
-/// tout de même désigner « le même lobby » (le jeu réécrit le fichier en plusieurs passes autour
-/// de la bonne lecture). On compare l'ensemble des BattleTags.
+/// Second line of defence of idempotence, after the hash guard of `ingest` (see
+/// [`decider`]): this one absorbs any byte-for-byte identical repost — including on an
+/// already linked lobby, which protects the debrief from a simple restart of the watcher that re-posts from
+/// disk the same `replay.server.battlelobby`. `meme_lobby` therefore never sees two identical
+/// blobs; it only handles the case where the hash changed but the BattleTags could
+/// still designate "the same lobby" (the game rewrites the file in several passes around
+/// the right read). We compare the set of BattleTags.
 fn meme_lobby(a: &LobbyState, b: &LobbyState) -> bool {
-    // (c) Un lobby déjà lié à un match (`a.match_id.is_some()`) décrit une partie terminée : un
-    // blob dont le hash diffère (sinon la garde de `decider` l'aurait absorbé avant d'arriver
-    // ici) mais dont les BattleTags coïncident n'est donc jamais « le même lobby » qu'un blob qui
-    // vient d'être ingéré. Scénario réel : revanche en ligue/scrim entre la même composition (cf.
-    // `FENETRE_LIAISON_HEURES` dans `lobby/mod.rs`, qui documente que ce cas est fréquent). Sans
-    // cette garde, le blob de la partie 2 serait jugé identique à celui — déjà lié — de la partie
-    // 1 : `unchanged`, pas de ré-enrichissement, pas de `lobby.detected`, et la page resterait
-    // affichée en debrief de la partie 1 pendant tout le chargement de la partie 2.
+    // (c) A lobby already linked to a match (`a.match_id.is_some()`) describes a finished game: a
+    // blob whose hash differs (otherwise the `decider` guard would have absorbed it before reaching
+    // here) but whose BattleTags coincide is therefore never "the same lobby" as a blob that
+    // was just ingested. Real scenario: rematch in a league/scrim between the same line-up (see
+    // `FENETRE_LIAISON_HEURES` in `lobby/mod.rs`, which documents that this case is frequent). Without
+    // this guard, the blob of game 2 would be judged identical to the — already linked — one of game
+    // 1: `unchanged`, no re-enrichment, no `lobby.detected`, and the page would stay
+    // shown in the debrief of game 1 during the whole loading of game 2.
     if a.match_id.is_some() {
         return false;
     }
-    // (a) Idempotence des états illisibles. `unreadable()` produit `players: []` avec
-    // `status: "parse_failed"` : sans ce cas, le garde `players.is_empty()` ci-dessous ferait
-    // juger « différents » deux blobs illisibles reposés coup sur coup, donc chaque repost
-    // resauvegarderait et rediffuserait `lobby.detected` pour rien. Deux `parse_failed` sans
-    // joueur sont le même lobby.
+    // (a) Idempotence of unreadable states. `unreadable()` produces `players: []` with
+    // `status: "parse_failed"`: without this case, the `players.is_empty()` guard below would
+    // judge two unreadable blobs re-posted back to back as "different", so each repost
+    // would re-save and re-broadcast `lobby.detected` for nothing. Two `parse_failed` without
+    // players are the same lobby.
     if a.status.as_deref() == Some("parse_failed") && b.status.as_deref() == Some("parse_failed") {
         return true;
     }
@@ -47,13 +47,13 @@ fn meme_lobby(a: &LobbyState, b: &LobbyState) -> bool {
     x == y
 }
 
-/// (b) Un `parse_failed` ne doit jamais écraser un lobby lisible tout juste détecté : le jeu
-/// réécrit le fichier de lobby pendant quelques secondes autour de la bonne lecture, ce qui
-/// produit une lecture tronquée transitoire — pas une vraie fin de partie. Deux parties réelles
-/// sont séparées d'au moins une dizaine de minutes, donc une fenêtre de 2 minutes couvre
-/// largement le cas transitoire sans jamais retarder un lobby réellement neuf, y compris le jour
-/// où Blizzard casse le format et où tous les blobs deviennent illisibles (le lobby suivant, lui
-/// aussi `parse_failed`, sera accepté dès que `prec` aura plus de 2 minutes).
+/// (b) A `parse_failed` must never overwrite a readable lobby just detected: the game
+/// rewrites the lobby file for a few seconds around the right read, which
+/// produces a transient truncated read — not a real end of game. Two real games
+/// are separated by at least ten minutes or so, so a 2-minute window covers
+/// the transient case widely without ever delaying a really new lobby, including the day
+/// Blizzard breaks the format and all the blobs become unreadable (the next lobby, itself
+/// `parse_failed` too, will be accepted as soon as `prec` is more than 2 minutes old).
 fn parse_failed_transitoire(prec: &LobbyState, nouveau: &LobbyState) -> bool {
     if nouveau.status.as_deref() != Some("parse_failed") || prec.players.is_empty() {
         return false;
@@ -62,29 +62,29 @@ fn parse_failed_transitoire(prec: &LobbyState, nouveau: &LobbyState) -> bool {
         Ok(detecte) => {
             chrono::Utc::now().signed_duration_since(detecte) < chrono::Duration::minutes(2)
         }
-        // Date illisible : on n'accepte jamais de bloquer un état sur une date qu'on ne sait
-        // pas interpréter — le nouvel état (parse_failed) passe normalement.
+        // Unreadable date: we never accept to block a state on a date we cannot
+        // interpret — the new state (parse_failed) goes through normally.
         Err(_) => false,
     }
 }
 
-/// Décision d'idempotence de `ingest`, extraite en fonction pure pour être testable sans
-/// `AppState` (même motif que `meme_lobby`/`appliquer_teams`).
+/// Idempotence decision of `ingest`, extracted as a pure function to be testable without
+/// `AppState` (same pattern as `meme_lobby`/`appliquer_teams`).
 #[derive(Debug, PartialEq, Eq)]
 enum Decision {
     Unchanged,
     Ingerer,
 }
 
-/// Règle appliquée dans cet ordre, `prec` étant l'état actuellement en mémoire (`None` si aucun
-/// lobby n'a encore été détecté) :
-/// 1. **hash identique à `prec`** → `Unchanged`, quoi qu'il arrive, y compris si `prec` est déjà
-///    lié à un match. C'est la garde qui protège le debrief : `replay.server.battlelobby` survit
-///    sur le disque entre deux parties, donc un redémarrage du watcher qui le repose ne doit
-///    jamais réécraser un état déjà enrichi avec `match_id: None`.
-/// 2. sinon, les règles existantes (`meme_lobby`, `parse_failed_transitoire`) s'appliquent
-///    inchangées — la garde « déjà lié » de `meme_lobby` comprise : un blob différent avec les
-///    mêmes BattleTags sur un lobby lié est une revanche, et doit être ingéré.
+/// Rule applied in this order, `prec` being the state currently in memory (`None` if no
+/// lobby has been detected yet):
+/// 1. **hash identical to `prec`** → `Unchanged`, whatever happens, including if `prec` is already
+///    linked to a match. It is the guard that protects the debrief: `replay.server.battlelobby` survives
+///    on disk between two games, so a restart of the watcher that re-posts it must
+///    never overwrite an already enriched state with `match_id: None`.
+/// 2. otherwise, the existing rules (`meme_lobby`, `parse_failed_transitoire`) apply
+///    unchanged — the "already linked" guard of `meme_lobby` included: a different blob with the
+///    same BattleTags on a linked lobby is a rematch, and must be ingested.
 fn decider(prec: Option<&LobbyState>, nouveau: &LobbyState) -> Decision {
     let Some(prec) = prec else {
         return Decision::Ingerer;
@@ -98,7 +98,7 @@ fn decider(prec: Option<&LobbyState>, nouveau: &LobbyState) -> Decision {
     Decision::Ingerer
 }
 
-/// `POST /api/lobby` — octets bruts, `Bearer` d'upload.
+/// `POST /api/lobby` — raw bytes, upload `Bearer`.
 pub async fn ingest(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -111,16 +111,16 @@ pub async fn ingest(
         );
     }
 
-    // Calculé avant le décodage, sur les octets bruts : c'est le même helper que l'upload de
-    // replay (`crate::upload::sha256_hex`), et il doit être posé même si le blob s'avère
-    // illisible plus bas — un blob illisible reposté doit lui aussi être reconnu comme un repost.
+    // Computed before decoding, on the raw bytes: it is the same helper as the replay
+    // upload (`crate::upload::sha256_hex`), and it must be set even if the blob turns out
+    // unreadable below — a re-posted unreadable blob must also be recognised as a repost.
     let content_hash = crate::upload::sha256_hex(&bytes);
     let detected_at = chrono::Utc::now().to_rfc3339();
     let mut state = match storm_lobby::parse(&bytes) {
         Ok(lobby) => LobbyState::from_lobby(&lobby, detected_at),
         Err(e) => {
-            // Pas une erreur HTTP : la page doit s'ouvrir quand même, avec le sélecteur manuel.
-            tracing::warn!("lobby illisible ({} octets) : {e}", bytes.len());
+            // Not an HTTP error: the page must open anyway, with the manual selector.
+            tracing::warn!("unreadable lobby ({} bytes): {e}", bytes.len());
             LobbyState::unreadable(detected_at)
         }
     };
@@ -147,7 +147,7 @@ pub async fn ingest(
     )
 }
 
-/// `GET /api/lobby` — l'état enrichi courant, `204` si aucun lobby.
+/// `GET /api/lobby` — the current enriched state, `204` if no lobby.
 pub async fn get(State(s): State<AppState>) -> (StatusCode, Json<J>) {
     match s.lobby.read().await.as_ref() {
         None => (StatusCode::NO_CONTENT, Json(J::Null)),
@@ -158,7 +158,7 @@ pub async fn get(State(s): State<AppState>) -> (StatusCode, Json<J>) {
     }
 }
 
-/// `DELETE /api/lobby` — fermer le companion.
+/// `DELETE /api/lobby` — close the companion.
 pub async fn clear(State(s): State<AppState>) -> Json<J> {
     if let Err(e) = store::clear(&s.db).await {
         tracing::error!("lobby clear: {e}");
@@ -170,11 +170,11 @@ pub async fn clear(State(s): State<AppState>) -> Json<J> {
 
 #[derive(serde::Deserialize)]
 pub struct HeroBody {
-    /// Clé `dim_heroes.id`. `null` pour effacer la saisie.
+    /// `dim_heroes.id` key. `null` to clear the input.
     pub hero: Option<String>,
 }
 
-/// `POST /api/lobby/hero` — le héros n'est jamais dans le blob : c'est le seul tap obligatoire.
+/// `POST /api/lobby/hero` — the hero is never in the blob: it is the only mandatory tap.
 pub async fn set_hero(State(s): State<AppState>, Json(b): Json<HeroBody>) -> (StatusCode, Json<J>) {
     muter(s, |st| st.hero = b.hero).await
 }
@@ -184,11 +184,11 @@ pub struct MapBody {
     pub map: Option<String>,
 }
 
-/// `POST /api/lobby/map` — repli quand la carte n'a pas pu être déduite des hashes `.s2ma`.
+/// `POST /api/lobby/map` — fallback when the map could not be deduced from the `.s2ma` hashes.
 pub async fn set_map(State(s): State<AppState>, Json(b): Json<MapBody>) -> (StatusCode, Json<J>) {
     muter(s, |st| {
-        // `map_manual` reflète l'état réel : vrai seulement si une carte est effectivement
-        // saisie, faux si la saisie est effacée (`map: null`) — jamais « corrigé » sur du vide.
+        // `map_manual` reflects the real state: true only if a map is actually
+        // entered, false if the input is cleared (`map: null`) — never "corrected" on nothing.
         st.map_manual = b.map.is_some();
         st.map = b.map;
     })
@@ -197,16 +197,16 @@ pub async fn set_map(State(s): State<AppState>, Json(b): Json<MapBody>) -> (Stat
 
 #[derive(serde::Deserialize)]
 pub struct TeamsBody {
-    /// `battletag → équipe (0 ou 1)`. Les joueurs absents de la table gardent leur équipe.
+    /// `battletag → team (0 or 1)`. The players missing from the table keep their team.
     pub teams: std::collections::HashMap<String, u8>,
 }
 
-/// `POST /api/lobby/teams` — réassignation par joueur, pas un bouton d'inversion. Mesuré sur
-/// 3 322 parties réelles (plan 1) : la déduction d'équipe est fiable à 100 % en matchmaking mais
-/// se trompe souvent en partie personnalisée, et parmi les échecs seuls 5,3 % sont une inversion
-/// des deux camps — les 94,7 % restants sont des ordres qui ne portent aucune information
-/// d'équipe. Un bouton « inverser » serait donc inutile 19 fois sur 20 : seule une saisie
-/// explicite par joueur peut reconstruire l'équipe correcte dans le cas général.
+/// `POST /api/lobby/teams` — per-player reassignment, not a swap button. Measured on
+/// 3,322 real games (plan 1): the team deduction is 100% reliable in matchmaking but
+/// is often wrong in custom games, and among the failures only 5.3% are a swap
+/// of the two sides — the remaining 94.7% are orders that carry no team
+/// information. A "swap" button would therefore be useless 19 times out of 20: only an explicit
+/// per-player entry can rebuild the correct team in the general case.
 pub async fn set_teams(
     State(s): State<AppState>,
     Json(b): Json<TeamsBody>,
@@ -214,9 +214,9 @@ pub async fn set_teams(
     muter(s, |st| appliquer_teams(&mut st.players, &b.teams)).await
 }
 
-/// Cœur de `set_teams`, extrait en fonction pure pour être testable sans `AppState` (pas de pool
-/// Postgres, pas de `RwLock`). Strictement additive : un joueur absent de `teams`, ou dont la
-/// valeur n'est pas 0/1, garde son équipe et son `team_manual` d'origine intacts.
+/// Core of `set_teams`, extracted as a pure function to be testable without `AppState` (no Postgres
+/// pool, no `RwLock`). Strictly additive: a player missing from `teams`, or whose
+/// value is not 0/1, keeps their original team and `team_manual` intact.
 fn appliquer_teams(
     players: &mut [crate::lobby::LobbyPlayerState],
     teams: &std::collections::HashMap<String, u8>,
@@ -231,19 +231,19 @@ fn appliquer_teams(
     }
 }
 
-/// Mutation + ré-enrichissement + persistance + diffusion, factorisés : les trois routes
-/// `set_hero`/`set_map`/`set_teams` ci-dessus ne diffèrent que par la mutation elle-même.
+/// Mutation + re-enrichment + persistence + broadcast, factored: the three routes
+/// `set_hero`/`set_map`/`set_teams` above only differ by the mutation itself.
 ///
-/// Le write-lock est gardé pendant `enrich` (SQL) et `save` : c'est délibéré, pas un oubli, **pour
-/// ces trois routes de saisie**. Le serveur n'a qu'un seul utilisateur donc la contention est
-/// nulle — mais le verrou reste leur frontière de correction : deux saisies rapprochées depuis
-/// l'UI ne doivent jamais s'entrelacer au milieu d'un enrichissement. `ingest` (le `POST
-/// /api/lobby` qui reçoit le blob) est aussi une mutation mais suit un patron différent : il
-/// n'enrichit qu'après avoir relâché le verrou de lecture qui sert à détecter les doublons — un
-/// nouveau blob n'a pas besoin d'être empêché de s'entrelacer avec l'enrichissement d'un autre
-/// puisqu'il n'y a par construction qu'un seul lobby en cours de détection à la fois côté jeu. La
-/// diffusion WebSocket, elle, se fait après le `drop(guard)` explicite ci-dessous : elle n'a pas
-/// besoin du verrou et ne doit pas retarder sa libération.
+/// The write-lock is held during `enrich` (SQL) and `save`: this is deliberate, not an oversight, **for
+/// these three input routes**. The server has a single user so contention is
+/// nil — but the lock stays their correctness boundary: two close inputs from
+/// the UI must never interleave in the middle of an enrichment. `ingest` (the `POST
+/// /api/lobby` that receives the blob) is also a mutation but follows a different pattern: it
+/// only enriches after releasing the read lock used to detect duplicates — a
+/// new blob does not need to be prevented from interleaving with the enrichment of another
+/// since by construction there is only one lobby being detected at a time on the game side. The
+/// WebSocket broadcast, for its part, happens after the explicit `drop(guard)` below: it does not
+/// need the lock and must not delay its release.
 async fn muter<F>(s: AppState, f: F) -> (StatusCode, Json<J>)
 where
     F: FnOnce(&mut LobbyState),
@@ -334,10 +334,10 @@ mod tests {
 
     #[test]
     fn un_lobby_deja_lie_n_est_jamais_le_meme_qu_un_blob_entrant() {
-        // Revanche entre les mêmes dix joueurs (ligue/scrim) : la partie 1 est déjà liée à son
-        // replay (`match_id: Some(...)`) quand le lobby de la partie 2, même composition, arrive.
-        // Sans la garde (c) de `meme_lobby`, ce test échouerait : les BattleTags identiques
-        // feraient juger les deux lobbys identiques, et la partie 2 ne serait jamais ingérée.
+        // Rematch between the same ten players (league/scrim): game 1 is already linked to its
+        // replay (`match_id: Some(...)`) when the lobby of game 2, same line-up, arrives.
+        // Without guard (c) of `meme_lobby`, this test would fail: the identical BattleTags
+        // would make the two lobbies be judged identical, and game 2 would never be ingested.
         let mut a = lobby_avec(&dix_battletags());
         a.match_id = Some(42);
         let b = lobby_avec(&dix_battletags());
@@ -346,10 +346,10 @@ mod tests {
 
     #[test]
     fn meme_hash_sur_lobby_deja_lie_est_unchanged() {
-        // C'est le cas qui protège le debrief : `replay.server.battlelobby` survit sur le disque
-        // entre deux parties, un redémarrage du watcher le repose à l'identique. Sans la garde
-        // par hash en tête de `decider`, `meme_lobby` jugerait (à raison, vu la garde (c)) que ce
-        // n'est *pas* le même lobby puisque `match_id.is_some()` — et écraserait le debrief.
+        // This is the case that protects the debrief: `replay.server.battlelobby` survives on disk
+        // between two games, a restart of the watcher re-posts it identically. Without the hash
+        // guard at the head of `decider`, `meme_lobby` would judge (rightly, given guard (c)) that this
+        // is *not* the same lobby since `match_id.is_some()` — and would overwrite the debrief.
         let mut prec = lobby_avec(&dix_battletags());
         prec.match_id = Some(42);
         prec.content_hash = "abc123".to_string();
@@ -360,9 +360,9 @@ mod tests {
 
     #[test]
     fn hash_different_memes_battletags_sur_lobby_lie_est_ingere() {
-        // La revanche entre les mêmes dix joueurs doit continuer à être ingérée : ce test
-        // vérifie que la garde par hash ne réintroduit pas le bug que la garde (c) de
-        // `meme_lobby` avait corrigé.
+        // The rematch between the same ten players must still be ingested: this test
+        // checks that the hash guard does not reintroduce the bug that guard (c) of
+        // `meme_lobby` had fixed.
         let mut prec = lobby_avec(&dix_battletags());
         prec.match_id = Some(42);
         prec.content_hash = "abc123".to_string();
@@ -373,8 +373,8 @@ mod tests {
 
     #[test]
     fn meme_hash_sur_lobby_non_lie_est_unchanged() {
-        // Repost ordinaire (watcher redémarré, lobby pas encore lié) : cas déjà couvert avant
-        // l'introduction du hash, à ne pas régresser.
+        // Ordinary repost (watcher restarted, lobby not linked yet): case already covered before
+        // the introduction of the hash, not to regress.
         let mut prec = lobby_avec(&dix_battletags());
         prec.content_hash = "abc123".to_string();
         let mut nouveau = lobby_avec(&dix_battletags());
@@ -414,7 +414,7 @@ mod tests {
 
     #[test]
     fn parse_failed_sur_lobby_deja_illisible_n_est_pas_transitoire() {
-        // Ce cas relève de `meme_lobby` (règle a), pas de la règle b : rien à ignorer ici.
+        // This case belongs to `meme_lobby` (rule a), not to rule b: nothing to ignore here.
         let prec = LobbyState::unreadable(chrono::Utc::now().to_rfc3339());
         let nouveau = LobbyState::unreadable(chrono::Utc::now().to_rfc3339());
         assert!(!parse_failed_transitoire(&prec, &nouveau));
@@ -439,10 +439,10 @@ mod tests {
 
     #[test]
     fn appliquer_teams_est_additive_les_absents_gardent_leur_etat() {
-        // Propriété la plus importante : un joueur absent de la table ne doit être touché ni
-        // dans son équipe ni dans son `team_manual`, même si un autre joueur du même appel est
-        // réassigné. Ce test échouerait si `appliquer_teams` réinitialisait les joueurs absents
-        // (par ex. `p.team = None` par défaut avant la boucle).
+        // Most important property: a player missing from the table must be touched neither
+        // in their team nor in their `team_manual`, even if another player of the same call is
+        // reassigned. This test would fail if `appliquer_teams` reset the missing players
+        // (e.g. `p.team = None` by default before the loop).
         let mut joueurs = vec![joueur("a#1"), joueur("b#2")];
         joueurs[1].team = Some(0);
         joueurs[1].team_manual = true;
@@ -454,8 +454,8 @@ mod tests {
 
     #[test]
     fn appliquer_teams_ignore_une_valeur_hors_0_1() {
-        // Ce test échouerait si le filtre `<= 1` était retiré : `team` passerait à `Some(2)` et
-        // `team_manual` à `true` au lieu de rester intacts.
+        // This test would fail if the `<= 1` filter were removed: `team` would become `Some(2)` and
+        // `team_manual` `true` instead of staying intact.
         let mut joueurs = vec![joueur("a#1")];
         let teams = std::collections::HashMap::from([("a#1".to_string(), 2u8)]);
         appliquer_teams(&mut joueurs, &teams);

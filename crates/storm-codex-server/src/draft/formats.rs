@@ -1,10 +1,10 @@
-//! Séquences de draft = data. Écrites en rôle d'ordre (First/Second), indépendantes du côté
-//! blue/red : `DraftState::side_of` résout le rôle en côté via le réglage `first_pick`.
+//! Draft sequences = data. Written in order role (First/Second), independent of the
+//! blue/red side: `DraftState::side_of` resolves the role into a side via the `first_pick` setting.
 use crate::draft::{Action, Format, Order, Step};
 use Action::{Ban, Pick};
 use Order::{First, Second};
 
-// Séquence Standard HotS (confirmée opérateur). First = équipe first-pick.
+// Standard HotS sequence (confirmed by the operator). First = first-pick team.
 // ban F · ban S · ban F · ban S · pick F · pick S×2 · pick F×2 · ban S · ban F · pick S×2 · pick F×2 · pick S.
 const STANDARD: [(Order, Action); 16] = [
     (First, Ban),
@@ -25,8 +25,8 @@ const STANDARD: [(Order, Action); 16] = [
     (Second, Pick),
 ];
 
-/// Étapes d'un format. Normal = Standard sans les bans ; Fearless = Standard (les series bans sont
-/// gérés par l'état, pas par la séquence).
+/// Steps of a format. Normal = Standard without the bans; Fearless = Standard (the series bans are
+/// handled by the state, not by the sequence).
 pub fn steps_for(format: Format) -> Vec<Step> {
     STANDARD
         .iter()

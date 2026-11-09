@@ -1,23 +1,23 @@
-//! Draft depuis un replay : file de parties chargées + révélation par phase. Pur (aucune I/O) ;
-//! le décodage d'un `.StormReplay` et les routes vivent ailleurs. Cf. `docs/specs/2026-10-25-draft-replay-design.md`.
+//! Draft from a replay: queue of loaded games + per-phase reveal. Pure (no I/O);
+//! the decoding of a `.StormReplay` and the routes live elsewhere. See `docs/specs/2026-10-25-draft-replay-design.md`.
 use crate::draft::{Action, DraftError, DraftState, Format, Side};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-/// Intervalle de lecture auto par défaut : 30 s par phase (décision opérateur).
+/// Default auto playback interval: 30 s per phase (operator decision).
 pub const DEFAULT_INTERVAL_MS: u32 = 30_000;
 
-/// Draft complet d'une partie, préparé mais caché.
+/// Complete draft of a game, prepared but hidden.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LoadedGame {
     pub source: String,
     pub map: String,
     pub first_pick: Side,
-    /// Héros de l'étape i (ordre Standard, 16 étapes) ; `None` = étape vide (ban absent…).
+    /// Hero of step i (Standard order, 16 steps); `None` = empty step (missing ban…).
     pub script: Vec<Option<String>>,
-    /// Pseudo du joueur de l'étape i (picks seulement).
+    /// Nickname of the player of step i (picks only).
     pub pick_players: Vec<Option<String>>,
-    /// Pseudos rangés par ordinal de pick de leur côté (ordre des étapes).
+    /// Nicknames ordered by the pick ordinal of their side (step order).
     pub blue_players: [String; 5],
     pub red_players: [String; 5],
 }
@@ -29,7 +29,7 @@ pub struct ReplayState {
     pub fearless: bool,
     pub playing: bool,
     pub interval_ms: u32,
-    /// Horodatage (ms epoch) du prochain tick de lecture auto, pour le compte à rebours.
+    /// Timestamp (ms epoch) of the next auto playback tick, for the countdown.
     pub next_at_ms: Option<i64>,
 }
 
@@ -46,7 +46,7 @@ impl Default for ReplayState {
     }
 }
 
-/// Bornes `[début, fin)` des phases : blocs d'étapes consécutives du même rôle d'ordre.
+/// `[start, end)` bounds of the phases: blocks of consecutive steps of the same order role.
 fn phase_bounds(d: &DraftState) -> Vec<(usize, usize)> {
     let mut out: Vec<(usize, usize)> = Vec::new();
     for (i, s) in d.steps.iter().enumerate() {
@@ -63,8 +63,8 @@ impl DraftState {
         self.replay.current.and_then(|i| self.replay.queue.get(i))
     }
 
-    /// Révèle toute la phase courante (les 2 picks d'une phase doubles apparaissent ensemble).
-    /// Écrit le script tel quel, sans contrôle d'unicité : un replay Custom peut dupliquer un héros.
+    /// Reveals the whole current phase (the 2 picks of a double phase appear together).
+    /// Writes the script as is, without a uniqueness check: a Custom replay can duplicate a hero.
     pub fn reveal_phase(&mut self) -> Result<(), DraftError> {
         let script = self
             .current_game()
@@ -81,7 +81,7 @@ impl DraftState {
         Ok(())
     }
 
-    /// Annule la dernière phase révélée (ou la phase en cours si elle est entamée).
+    /// Undoes the last revealed phase (or the current phase if it has started).
     pub fn back_phase(&mut self) -> Result<(), DraftError> {
         if self.cursor == 0 {
             return Err(DraftError::NothingToUndo);
@@ -97,17 +97,17 @@ impl DraftState {
         Ok(())
     }
 
-    /// Prépare la partie `index` de la file : draft vide à l'étape 0, équipes/joueurs/map/first-pick
-    /// du replay ; en fearless, les picks des parties précédentes de la file sont indisponibles.
-    /// Conserve score, Bo, noms d'équipe, prébans manuels et la file.
+    /// Prepares game `index` of the queue: empty draft at step 0, teams/players/map/first-pick
+    /// of the replay; in fearless, the picks of the previous games of the queue are unavailable.
+    /// Keeps score, Bo, team names, manual pre-bans and the queue.
     pub fn select_game(&mut self, index: usize) -> Result<(), DraftError> {
         self.select_game_with(index, None)
     }
 
-    /// Comme `select_game`, avec le format imposé par une série de cast active (`Some`) : il
-    /// l'emporte sur `replay.fearless` (M5 — la file de replays ne contourne pas le format de la
-    /// série). Fearless → Fearless + series bans de la file ; Standard/Normal → Standard (les
-    /// scripts de replay suivent l'ordre Standard à 16 étapes, bans compris).
+    /// Like `select_game`, with the format imposed by an active cast series (`Some`): it
+    /// wins over `replay.fearless` (M5 — the replay queue does not bypass the series
+    /// format). Fearless → Fearless + the queue's series bans; Standard/Normal → Standard (the
+    /// replay scripts follow the 16-step Standard order, bans included).
     pub fn select_game_with(
         &mut self,
         index: usize,
@@ -153,12 +153,12 @@ impl DraftState {
         Ok(())
     }
 
-    /// Ajoute une partie ; la première ajoutée est sélectionnée d'office.
+    /// Adds a game; the first one added is selected automatically.
     pub fn add_game(&mut self, g: LoadedGame) {
         self.add_game_with(g, None);
     }
 
-    /// `add_game` ; la sélection d'office suit le format de la série active (cf. `select_game_with`).
+    /// `add_game`; the automatic selection follows the format of the active series (see `select_game_with`).
     pub fn add_game_with(&mut self, g: LoadedGame, series_format: Option<Format>) {
         self.replay.queue.push(g);
         if self.replay.current.is_none() {
@@ -195,7 +195,7 @@ impl DraftState {
         let g = self.replay.queue.remove(from);
         self.replay.queue.insert(to, g);
         if let Some(c) = cur_hero {
-            // La partie courante suit son déplacement ; les autres indices se décalent.
+            // The current game follows its move; the other indices shift.
             self.replay.current = Some(if c == from {
                 to
             } else if from < c && c <= to {
@@ -209,13 +209,13 @@ impl DraftState {
         Ok(())
     }
 
-    /// Bascule fearless et re-prépare la partie courante (ses series bans changent).
+    /// Toggles fearless and re-prepares the current game (its series bans change).
     pub fn set_fearless(&mut self, value: bool) {
         self.set_fearless_with(value, None);
     }
 
-    /// `set_fearless` ; la re-préparation suit le format de la série active (cf. `select_game_with`) :
-    /// le drapeau est mémorisé mais ne change pas le format tant que la série l'impose.
+    /// `set_fearless`; the re-preparation follows the format of the active series (see `select_game_with`):
+    /// the flag is remembered but does not change the format as long as the series imposes it.
     pub fn set_fearless_with(&mut self, value: bool, series_format: Option<Format>) {
         self.replay.fearless = value;
         if let Some(c) = self.replay.current {
@@ -223,15 +223,15 @@ impl DraftState {
         }
     }
 
-    /// Après un redémarrage du serveur aucune minuterie ne tourne : la lecture auto repart en pause
-    /// (le curseur et la file sont conservés).
+    /// After a server restart no timer runs: auto playback restarts paused
+    /// (the cursor and the queue are kept).
     pub fn after_restart(&mut self) {
         self.replay.playing = false;
         self.replay.next_at_ms = None;
     }
 
-    /// Vue publique (`GET /api/draft`, overlay) : sans script, et sans le pseudo d'un pick non
-    /// révélé en mode replay — l'overlay ne spoile rien.
+    /// Public view (`GET /api/draft`, overlay): without the script, and without the nickname of an unrevealed
+    /// pick in replay mode — the overlay spoils nothing.
     pub fn public(&self) -> DraftState {
         let mut p = self.clone();
         for g in &mut p.replay.queue {
@@ -267,7 +267,7 @@ fn picks_of(games: &[LoadedGame]) -> BTreeSet<String> {
         .iter()
         .flat_map(|g| {
             g.script.iter().enumerate().filter_map(|(i, h)| {
-                // étapes de pick du format Standard (les bans ne sont pas des héros « joués »)
+                // pick steps of the Standard format (bans are not "played" heroes)
                 crate::draft::steps_for(Format::Standard)
                     .get(i)
                     .filter(|s| s.action == Action::Pick)
@@ -383,7 +383,7 @@ mod tests {
         assert_eq!(d.first_pick, Side::Red);
         assert_eq!(d.map, "Map b");
         assert_eq!(d.blue.players[0], "bb0");
-        // picks (étapes 4,5,6,7,8,11,12,13,14,15) de la partie « a », pas ses bans
+        // picks (steps 4,5,6,7,8,11,12,13,14,15) of game "a", not its bans
         let want: BTreeSet<String> = [4, 5, 6, 7, 8, 11, 12, 13, 14, 15]
             .iter()
             .map(|i| format!("ah{i}"))
@@ -391,7 +391,7 @@ mod tests {
         assert_eq!(d.series_bans, want);
     }
 
-    /// M5 : une série de cast active impose son format à la file de replays, dans les deux sens.
+    /// M5: an active cast series imposes its format on the replay queue, in both directions.
     #[test]
     fn select_game_with_series_format_overrides_replay_fearless() {
         let mut d = loaded();
@@ -406,10 +406,10 @@ mod tests {
         d.select_game_with(1, Some(Format::Standard)).unwrap();
         assert_eq!(d.format, Format::Standard);
         assert!(d.series_bans.is_empty());
-        // Normal (sans bans) → Standard : les scripts de replay ont 16 étapes
+        // Normal (without bans) → Standard: the replay scripts have 16 steps
         d.select_game_with(1, Some(Format::Normal)).unwrap();
         assert_eq!((d.format, d.steps.len()), (Format::Standard, 16));
-        // set_fearless / add_game suivent aussi la série
+        // set_fearless / add_game also follow the series
         d.set_fearless_with(false, Some(Format::Fearless));
         assert_eq!(d.format, Format::Fearless);
         let mut e = DraftState::new(Format::Standard, Side::Blue, "x".into());
@@ -445,7 +445,7 @@ mod tests {
             .chain(p.red.players.iter())
             .all(String::is_empty));
         for _ in 0..4 {
-            d.reveal_phase().unwrap(); // 3 bans de plus puis le 1er pick Blue
+            d.reveal_phase().unwrap(); // 3 more bans then the 1st Blue pick
         }
         let p = d.public();
         assert_eq!(p.blue.players[0], "ab0");

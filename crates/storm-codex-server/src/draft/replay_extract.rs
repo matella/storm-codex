@@ -1,5 +1,5 @@
-//! Extraction du draft d'une partie Custom depuis la sortie de storm-stats : reconstruit l'ordre
-//! global des 16 étapes (miroir de `selections` dans `process_draft`, storm-stats/src/process/draft.rs).
+//! Extraction of the draft of a Custom game from the storm-stats output: rebuilds the global
+//! order of the 16 steps (mirror of `selections` in `process_draft`, storm-stats/src/process/draft.rs).
 use super::replay::LoadedGame;
 use super::Side;
 use serde_json::{Map, Value as J};
@@ -21,10 +21,10 @@ enum Slot {
     Pick(usize),
 }
 
-/// Build à partir duquel les bans de 1re phase sont 2 par équipe + 1 en 2e phase (cf. process.rs).
+/// Build from which the 1st-phase bans are 2 per team + 1 in the 2nd phase (see process.rs).
 const NEW_BAN_BUILD: f64 = 66292.0;
 
-/// (équipe, créneau) pour chaque étape ; `a` = équipe first-pick, `b` = l'autre.
+/// (team, slot) for each step; `a` = first-pick team, `b` = the other.
 fn sequence(a: usize, b: usize, old_build: bool) -> [(usize, Slot); 16] {
     use Slot::{Ban, Pick};
     [
@@ -54,7 +54,7 @@ fn team_list(v: Option<&J>, team: usize) -> Vec<J> {
         .unwrap_or_default()
 }
 
-/// Construit le `LoadedGame` d'une sortie storm-stats. `attrs` : code attribut des bans → nom canonique.
+/// Builds the `LoadedGame` of a storm-stats output. `attrs`: ban attribute code → canonical name.
 pub fn loaded_game_from_output(
     out: &storm_stats::Output,
     source: &str,
@@ -78,7 +78,7 @@ pub fn loaded_game_from_output(
     }
     let bans_t = [team_list(bans, 0), team_list(bans, 1)];
 
-    // Même défaut que le parser : sans `picks.first`, l'équipe 1 draft en premier.
+    // Same default as the parser: without `picks.first`, team 1 drafts first.
     let a = if picks.and_then(|p| p.get("first")).and_then(J::as_i64) == Some(0) {
         0
     } else {
@@ -99,7 +99,7 @@ pub fn loaded_game_from_output(
     for (i, (team, slot)) in sequence(a, b, old_build).into_iter().enumerate() {
         let (hero, player) = match slot {
             Slot::Ban(k) => {
-                // Builds anciens : les bans 3 et 4 n'existent pas (« N/A » côté parser) → étape vide.
+                // Old builds: bans 3 and 4 do not exist ("N/A" on the parser side) → empty step.
                 let skipped = old_build && (i == 2 || i == 3);
                 let code = (!skipped).then(|| bans_t[team].get(k)).flatten();
                 let code = code
@@ -143,7 +143,7 @@ pub fn loaded_game_from_output(
     })
 }
 
-/// Pseudo du joueur de l'équipe `team` qui joue `hero` (premier non encore attribué).
+/// Nickname of the player of team `team` who plays `hero` (first one not yet assigned).
 fn owner(
     players: &Map<String, J>,
     team: usize,
@@ -180,7 +180,7 @@ mod tests {
             .collect()
     }
 
-    /// Sortie synthétique : 5 bans × 2 équipes (codes réels), picks `T<t>H<k>`, joueurs `P<t><k>`.
+    /// Synthetic output: 5 bans × 2 teams (real codes), picks `T<t>H<k>`, players `P<t><k>`.
     fn output(mode: &str, first: i64, build: i64) -> storm_stats::Output {
         let c = codes(6);
         let ban = |i: usize| json!({"hero": c[i].0, "order": 1, "absolute": 1});
@@ -250,7 +250,7 @@ mod tests {
     fn bans_resolved_to_canonical_names() {
         let g = load(&output("Custom", 0, 90000)).unwrap();
         let c = codes(6);
-        // ordre des bans : a0 b0 a1 b1 | b2 a2
+        // ban order: a0 b0 a1 b1 | b2 a2
         let expect = [
             (0, &c[0]),
             (1, &c[3]),
@@ -260,7 +260,7 @@ mod tests {
             (10, &c[2]),
         ];
         for (i, (_, hero)) in expect {
-            assert_eq!(g.script[i].as_deref(), Some(hero.as_str()), "étape {i}");
+            assert_eq!(g.script[i].as_deref(), Some(hero.as_str()), "step {i}");
         }
     }
 
@@ -305,8 +305,8 @@ mod tests {
         assert_eq!(load(&o), Err(ReplayError::NoDraft));
     }
 
-    /// Fixture réelle (Custom, build 98025, pseudos anonymisés) : le script reconstruit doit placer
-    /// chaque héros à l'étape `turn` calculée par le parser (storm-stats `process_draft`).
+    /// Real fixture (Custom, build 98025, anonymised nicknames): the rebuilt script must place
+    /// each hero at the `turn` step computed by the parser (storm-stats `process_draft`).
     #[test]
     fn real_custom_fixture_matches_parser_turns() {
         let fx: J = serde_json::from_str(include_str!("fixtures/custom_draft.json")).unwrap();
@@ -318,7 +318,7 @@ mod tests {
             players: fx["players"].as_object().cloned(),
         };
         let g = load(&out).unwrap();
-        assert_eq!(g.first_pick, Side::Red); // picks.first = 1 → équipe 1 (Red) draft en premier
+        assert_eq!(g.first_pick, Side::Red); // picks.first = 1 → team 1 (Red) drafts first
         for p in fx["players"].as_object().unwrap().values() {
             let (hero, turn) = (p["hero"].as_str().unwrap(), p["turn"].as_i64().unwrap());
             assert_eq!(
