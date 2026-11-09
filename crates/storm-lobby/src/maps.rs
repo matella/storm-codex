@@ -1,15 +1,15 @@
-//! Table `hash .s2ma → nom de carte`, GÉNÉRÉE — ne pas éditer à la main.
+//! `.s2ma hash → map name` table, GENERATED — do not edit by hand.
 //!
-//! Produite par `cargo run --release -p storm-lobby --example derive_maps -- <dossier>`
-//! sur l'archive du box. Un hash n'est retenu que s'il n'a JAMAIS été observé sur une autre
-//! carte. Une même carte a plusieurs hashes : Blizzard republie ses fichiers `.s2ma` à chaque
-//! patch, donc exiger qu'un seul hash couvre tous les replays d'une carte éliminerait les cartes
-//! les plus jouées. Mesuré une fois, lors de la mise au point de ce critère : la couverture totale
-//! ne validait que 9 cartes sur 19 ; le critère retenu ici (jamais observé ailleurs) validait les
-//! 19. Ce critère de couverture totale n'existe plus dans le code — le chiffre n'est donc pas
-//! rejouable, seulement attesté par cette run de dérivation initiale.
+//! Produced by `cargo run --release -p storm-lobby --example derive_maps -- <folder>`
+//! on the box's archive. A hash is kept only if it was NEVER observed on another
+//! map. The same map has several hashes: Blizzard republishes its `.s2ma` files at each
+//! patch, so requiring a single hash to cover all the replays of a map would eliminate the
+//! most played maps. Measured once, while tuning this criterion: full coverage
+//! only validated 9 maps out of 19; the criterion kept here (never observed elsewhere) validated
+//! all 19. That full-coverage criterion no longer exists in the code — so the figure cannot be
+//! replayed, only attested by this initial derivation run.
 
-/// `(hash, nom de carte)`, trié par hash — les noms sont ceux que `matches.map` stocke.
+/// `(hash, map name)`, sorted by hash — the names are the ones `matches.map` stores.
 pub(crate) const MAP_BY_HASH: &[(&str, &str)] = &[
     ("0032e18768b17de15fd0723272e565e4", "Braxis Outpost"),
     ("00e2239229cb4a4ed0defc57023d72d6", "Industrial District"),

@@ -233,7 +233,7 @@ fn main() -> anyhow::Result<()> {
 
     eprintln!("maps covered : {}",
         table.iter().map(|(_, c)| c).collect::<BTreeSet<_>>().len());
-    eprintln!("hashes retenus   : {}", table.len());
+    eprintln!("hashes kept  : {}", table.len());
     eprintln!("maps seen    : {}", replays_par_carte.len());
     Ok(())
 }

@@ -1,9 +1,9 @@
-//! `parse` consomme du binaire potentiellement mal formé (nouveau build Blizzard, fichier lu
-//! pendant son écriture par le jeu). Il doit TOUJOURS retourner, jamais paniquer.
+//! `parse` consumes potentially malformed binary (new Blizzard build, file read
+//! while the game is writing it). It must ALWAYS return, never panic.
 //!
-//! Dans les deux derniers tests, **l'absence de panique EST l'assertion** : le harnais de test
-//! échoue de lui-même si `parse` panique. Le résultat est volontairement ignoré, car aucune valeur
-//! de retour n'est « correcte » sur une entrée corrompue — seule l'absence de panique l'est.
+//! In the last two tests, **the absence of panic IS the assertion**: the test harness
+//! fails by itself if `parse` panics. The result is deliberately ignored, because no return
+//! value is "correct" on a corrupted input — only the absence of panic is.
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
@@ -18,12 +18,12 @@ fn blob_reel() -> Vec<u8> {
 
 #[test]
 fn entree_vide_est_une_erreur() {
-    assert!(storm_lobby::parse(&[]).is_err(), "blob vide accepté");
+    assert!(storm_lobby::parse(&[]).is_err(), "empty blob accepted");
 }
 
 #[test]
 fn entree_aleatoire_est_une_erreur_pas_une_panique() {
-    // Générateur déterministe (xorshift) : pas de dépendance, résultat reproductible.
+    // Deterministic generator (xorshift): no dependency, reproducible result.
     let mut state: u32 = 0x1234_5678;
     let mut bytes = Vec::with_capacity(4096);
     for _ in 0..4096 {
@@ -34,15 +34,15 @@ fn entree_aleatoire_est_une_erreur_pas_une_panique() {
     }
     assert!(
         storm_lobby::parse(&bytes).is_err(),
-        "du bruit aléatoire a été accepté comme lobby"
+        "random noise was accepted as a lobby"
     );
 }
 
 #[test]
 fn blob_tronque_a_toute_longueur_ne_panique_jamais() {
     let blob = blob_reel();
-    // Un fichier lu pendant son écriture est un préfixe du fichier complet : on exerce exactement
-    // ce cas, à tous les points de troncature (pas de 97 pour rester rapide).
+    // A file read while being written is a prefix of the complete file: we exercise exactly
+    // that case, at every truncation point (step of 97 to stay fast).
     for n in (0..blob.len()).step_by(97) {
         let _ = storm_lobby::parse(&blob[..n]);
     }

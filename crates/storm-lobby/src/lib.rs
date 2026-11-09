@@ -1,16 +1,16 @@
-//! Parseur autonome du fichier de lobby Heroes of the Storm.
+//! Standalone parser of the Heroes of the Storm lobby file.
 //!
-//! Le jeu écrit `replay.server.battlelobby` pendant l'écran de chargement, avant que le replay
-//! n'existe. Ce crate lit ce blob **seul** — sans le stream `details` du replay — pour identifier
-//! les joueurs d'une partie en cours.
+//! The game writes `replay.server.battlelobby` during the loading screen, before the replay
+//! exists. This crate reads that blob **alone** — without the replay's `details` stream — to identify
+//! the players of a game in progress.
 //!
-//! Ce que le format expose réellement, et ce qu'il n'expose pas, est constaté dans
-//! `docs/research/2026-08-27-lobby-format.md` : les BattleTags sont en clair, mais ni le toon
-//! handle, ni le héros pické, ni la carte, ni un champ d'équipe explicite ne s'y trouvent. Le type
-//! public ne porte donc que ce qui est réellement décodable. La résolution BattleTag → identité
-//! applicative se fait en aval, côté serveur, contre l'archive des parties déjà jouées.
+//! What the format really exposes, and what it does not, is recorded in
+//! `docs/research/2026-08-27-lobby-format.md`: the BattleTags are in clear text, but neither the toon
+//! handle, nor the picked hero, nor the map, nor an explicit team field are in it. The public
+//! type therefore only carries what is really decodable. The resolution BattleTag → application
+//! identity happens downstream, on the server side, against the archive of games already played.
 //!
-//! Crate pur : aucune I/O, aucune dépendance sur `storm-replay`.
+//! Pure crate: no I/O, no dependency on `storm-replay`.
 
 use std::collections::HashSet;
 use std::sync::OnceLock;
@@ -20,100 +20,100 @@ use thiserror::Error;
 
 mod maps;
 
-/// Longueur minimale d'un blob pouvant contenir un BattleTag valide : nom (3 caractères) + `#` +
-/// discriminant (4 chiffres). En dessous, aucun match n'est possible par construction — inutile de
-/// lancer la regex, autant le signaler explicitement via `LobbyError::TooShort`.
+/// Minimum length of a blob that can contain a valid BattleTag: name (3 characters) + `#` +
+/// discriminator (4 digits). Below that, no match is possible by construction — no point
+/// running the regex, better to report it explicitly via `LobbyError::TooShort`.
 const MIN_BLOB_LEN: usize = 8;
 
-/// Regex de production, identique à celle de `storm-stats::process::get_battletags`
-/// (`crates/storm-stats/src/process/mod.rs`) — validée sur le corpus de référence. `\p{L}` couvre les
-/// alphabets non-ASCII (cyrillique notamment) ; le suffixe `[zØ]?` optionnel capture du bruit
-/// binaire collé après le discriminant, retiré ensuite (cf. `parse`).
+/// Production regex, identical to the one of `storm-stats::process::get_battletags`
+/// (`crates/storm-stats/src/process/mod.rs`) — validated on the reference corpus. `\p{L}` covers
+/// non-ASCII alphabets (Cyrillic in particular); the optional `[zØ]?` suffix captures binary
+/// noise stuck after the discriminator, removed afterwards (see `parse`).
 fn battletag_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
         Regex::new(r"[\p{L}\d]{3,24}#\d{4,10}[zØ]?")
-            .unwrap_or_else(|e| unreachable!("regex de battletag invalide : {e}"))
+            .unwrap_or_else(|e| unreachable!("invalid battletag regex: {e}"))
     })
 }
 
-/// Un joueur du lobby.
+/// A lobby player.
 ///
-/// `#[non_exhaustive]` : ce crate est destiné à crates.io et gagnera vraisemblablement des champs
-/// (le héros pické, si Blizzard l'expose un jour dans ce blob) — un ajout de champ ne doit pas
-/// casser la construction par les consommateurs externes.
+/// `#[non_exhaustive]`: this crate is meant for crates.io and will likely gain fields
+/// (the picked hero, if Blizzard ever exposes it in this blob) — adding a field must not
+/// break construction by external consumers.
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LobbyPlayer {
-    /// Nom du compte, sans le discriminant. Peut contenir de l'UTF-8 non-ASCII (cf. le cas
-    /// cyrillique documenté dans le rapport de format).
+    /// Account name, without the discriminator. May contain non-ASCII UTF-8 (see the
+    /// Cyrillic case documented in the format report).
     pub name: String,
-    /// Discriminant seul, la partie après `#`.
+    /// Discriminator alone, the part after `#`.
     pub discriminant: String,
-    /// 0 ou 1. `None` quand l'appartenance n'a pas pu être déterminée — le format ne porte aucun
-    /// champ d'équipe, elle est déduite de l'ordre (cf. `parse`).
+    /// 0 or 1. `None` when the membership could not be determined — the format carries no
+    /// team field, it is deduced from the order (see `parse`).
     pub team: Option<u8>,
 }
 
 impl LobbyPlayer {
-    /// `"nom#1234"` — la clé d'identité du joueur. C'est ce que le serveur rapprochera de
-    /// `match_players.name` + `match_players.data->>'tag'` pour retrouver son historique.
+    /// `"name#1234"` — the player's identity key. It is what the server will match against
+    /// `match_players.name` + `match_players.data->>'tag'` to find their history.
     #[must_use]
     pub fn battletag(&self) -> String {
         format!("{}#{}", self.name, self.discriminant)
     }
 }
 
-/// Un lobby décodé. `players` est dans l'ordre d'apparition dans le blob.
+/// A decoded lobby. `players` is in order of appearance in the blob.
 ///
-/// `#[non_exhaustive]` pour la même raison que [`LobbyPlayer`] : marge d'évolution sans rupture de
-/// semver pour un crate publié sur crates.io.
+/// `#[non_exhaustive]` for the same reason as [`LobbyPlayer`]: room to evolve without breaking
+/// semver for a crate published on crates.io.
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Lobby {
     pub players: Vec<LobbyPlayer>,
-    /// Carte, déduite des hashes `.s2ma` via une table dérivée de l'archive. `None` si aucun hash
-    /// connu — le format ne nomme jamais la carte.
+    /// Map, deduced from the `.s2ma` hashes via a table derived from the archive. `None` if no
+    /// known hash — the format never names the map.
     ///
-    /// Portée de la garantie : la table est dérivée de l'archive **et** validée sur elle, ce qui
-    /// est circulaire par construction. Elle ne peut pas se tromper sur un replay ayant servi à la
-    /// dérivation ; le risque résiduel est un hash partagé avec une carte absente de ce corpus —
-    /// carte jamais jouée, ou replay écarté au traitement (parse en échec, blob illisible). Le
-    /// consommateur doit donc traiter cette valeur comme une commodité, pas comme une vérité —
-    /// c'est pourquoi la saisie manuelle de la carte reste disponible côté serveur.
+    /// Scope of the guarantee: the table is derived from the archive **and** validated on it, which
+    /// is circular by construction. It cannot be wrong on a replay used for the
+    /// derivation; the residual risk is a hash shared with a map missing from this corpus —
+    /// a map never played, or a replay discarded during processing (failed parse, unreadable blob). The
+    /// consumer must therefore treat this value as a convenience, not as a truth —
+    /// which is why manual entry of the map stays available on the server side.
     pub map: Option<String>,
 }
 
-/// `#[non_exhaustive]` ici aussi : c'est l'outil idiomatique pour garder la marge d'ajout d'une
-/// variante sans rupture semver — et c'est ce qui permettra un jour de retirer `Unrecognized`
-/// (aujourd'hui inconstructible) sans casser les appelants.
+/// `#[non_exhaustive]` here too: it is the idiomatic tool to keep room for adding a
+/// variant without a semver break — and it is what will one day allow removing `Unrecognized`
+/// (not constructible today) without breaking the callers.
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum LobbyError {
-    #[error("blob trop court ({0} octets) pour contenir un lobby")]
+    #[error("blob too short ({0} bytes) to contain a lobby")]
     TooShort(usize),
-    #[error("aucun joueur identifiable dans le blob")]
+    #[error("no identifiable player in the blob")]
     NoPlayers,
-    /// Non construite aujourd'hui : le décodage actuel est une simple recherche par regex, qui ne
-    /// distingue pas de structure binaire à valider. Conservée (plutôt que supprimée) pour un futur
-    /// décodage structurel (ex. lecture de champs binaires typés au lieu du texte brut) qui pourrait
-    /// détecter une forme de blob reconnaissable mais invalide — retirer cette variante publique
-    /// aujourd'hui reviendrait à la réintroduire plus tard en rupture de semver pour un crate publié.
-    #[error("structure de lobby non reconnue : {0}")]
+    /// Not constructed today: the current decoding is a simple regex search, which does not
+    /// distinguish any binary structure to validate. Kept (rather than removed) for a future
+    /// structural decoding (e.g. reading typed binary fields instead of raw text) that could
+    /// detect a recognisable but invalid blob shape — removing this public variant
+    /// today would mean reintroducing it later as a semver break for a published crate.
+    #[error("unrecognised lobby structure: {0}")]
     Unrecognized(String),
 }
 
-/// Hashes des fichiers `.s2ma` (cartes) référencés par le blob, dans l'ordre d'apparition,
-/// dédupliqués. Le blob ne nomme jamais la carte : ces hashes sont la seule piste, et leur
-/// correspondance vers un nom vit dans [`maps`] (dérivée de l'archive).
+/// Hashes of the `.s2ma` files (maps) referenced by the blob, in order of appearance,
+/// deduplicated. The blob never names the map: these hashes are the only lead, and their
+/// mapping to a name lives in [`maps`] (derived from the archive).
 #[must_use]
 pub fn map_hashes(bytes: &[u8]) -> Vec<String> {
     static RE: OnceLock<Regex> = OnceLock::new();
-    // Même motif que `parse()` : le littéral est vérifié par les tests, donc l'échec de
-    // compilation de la regex est impossible en usage normal — mais pas de `unwrap()` nu.
+    // Same pattern as `parse()`: the literal is checked by the tests, so a failure to
+    // compile the regex is impossible in normal use — but no bare `unwrap()`.
     let re = RE.get_or_init(|| match Regex::new(r"([0-9a-f]{32})\.s2ma") {
         Ok(r) => r,
-        Err(e) => unreachable!("regex .s2ma invalide : {e}"),
+        Err(e) => unreachable!("invalid .s2ma regex: {e}"),
     });
     let text = String::from_utf8_lossy(bytes);
     let mut out: Vec<String> = Vec::new();
@@ -128,19 +128,19 @@ pub fn map_hashes(bytes: &[u8]) -> Vec<String> {
     out
 }
 
-/// Décode un blob `replay.server.battlelobby`.
+/// Decodes a `replay.server.battlelobby` blob.
 ///
 /// # Errors
-/// Retourne [`LobbyError`] si le blob est trop court ou ne contient aucun joueur identifiable.
-/// Ne panique jamais, quelle que soit l'entrée.
+/// Returns [`LobbyError`] if the blob is too short or contains no identifiable player.
+/// Never panics, whatever the input.
 pub fn parse(bytes: &[u8]) -> Result<Lobby, LobbyError> {
     if bytes.len() < MIN_BLOB_LEN {
         return Err(LobbyError::TooShort(bytes.len()));
     }
 
-    // `from_utf8_lossy` décode les séquences UTF-8 multi-octets valides (BattleTags cyrilliques
-    // inclus) et ne fait planter la recherche sur aucune entrée : les octets invalides deviennent
-    // des `U+FFFD`, qui ne matchent ni `\p{L}` ni `\d` et agissent donc comme des séparateurs.
+    // `from_utf8_lossy` decodes valid multi-byte UTF-8 sequences (Cyrillic BattleTags
+    // included) and does not crash the search on any input: invalid bytes become
+    // `U+FFFD`s, which match neither `\p{L}` nor `\d` and therefore act as separators.
     let text = String::from_utf8_lossy(bytes);
     let re = battletag_regex();
 
@@ -152,15 +152,15 @@ pub fn parse(bytes: &[u8]) -> Result<Lobby, LobbyError> {
             continue;
         };
         let name = &full[..hash];
-        // Ne conserver que les chiffres du discriminant : la regex autorise un suffixe `z`/`Ø`
-        // final qui appartient au bruit binaire environnant, pas au BattleTag (cf. brief tâche 3,
-        // résolution 1). Le parseur de référence compare à un entier (`js_parse_int`).
+        // Keep only the digits of the discriminator: the regex allows a final `z`/`Ø` suffix
+        // that belongs to the surrounding binary noise, not to the BattleTag (see brief task 3,
+        // resolution 1). The reference parser compares to an integer (`js_parse_int`).
         //
-        // Cette troncature aux chiffres ASCII est délibérée et alignée sur `js_parse_int`
-        // (`crates/storm-stats/src/process/js.rs`) : les deux parseurs doivent produire exactement la
-        // même clé `nom#discriminant` pour qu'un lobby décodé en live et une archive décodée après
-        // coup se rejoignent sur la même identité. Un désaccord sur ce point casserait la liaison
-        // replay ↔ lobby documentée dans la spec companion, en silence.
+        // This truncation to ASCII digits is deliberate and aligned with `js_parse_int`
+        // (`crates/storm-stats/src/process/js.rs`): both parsers must produce exactly the
+        // same `name#discriminator` key so that a lobby decoded live and an archive decoded after
+        // the fact meet on the same identity. A disagreement on this point would break the
+        // replay ↔ lobby link documented in the companion spec, silently.
         let discriminant: String = full[hash + 1..]
             .chars()
             .take_while(char::is_ascii_digit)
@@ -171,7 +171,7 @@ pub fn parse(bytes: &[u8]) -> Result<Lobby, LobbyError> {
 
         let battletag = format!("{name}#{discriminant}");
         if !seen.insert(battletag) {
-            // Déjà vu : on garde la première occurrence (et donc l'ordre qu'elle porte).
+            // Already seen: we keep the first occurrence (and therefore the order it carries).
             continue;
         }
 
@@ -186,17 +186,17 @@ pub fn parse(bytes: &[u8]) -> Result<Lobby, LobbyError> {
         return Err(LobbyError::NoPlayers);
     }
 
-    // Le format ne porte aucun champ d'équipe explicite (cf. rapport de format, Q3). L'ordre
-    // d'apparition n'est une preuve d'équipe que sur une partie 5v5 complète : ailleurs, une
-    // équipe fausse serait pire qu'une équipe absente (cf. brief tâche 3, résolution 4).
+    // The format carries no explicit team field (see format report, Q3). The order
+    // of appearance is only proof of team on a complete 5v5 game: elsewhere, a
+    // wrong team would be worse than a missing team (see brief task 3, resolution 4).
     if players.len() == 10 {
         for (i, p) in players.iter_mut().enumerate() {
             p.team = Some(u8::from(i >= 5));
         }
     }
 
-    // Le blob ne nomme jamais la carte : elle se déduit des hashes `.s2ma` qu'il référence, via la
-    // table dérivée de l'archive (cf. `maps`). `None` si aucun hash connu.
+    // The blob never names the map: it is deduced from the `.s2ma` hashes it references, via the
+    // table derived from the archive (see `maps`). `None` if no known hash.
     let map = map_hashes(bytes).iter().find_map(|h| {
         maps::MAP_BY_HASH
             .iter()
