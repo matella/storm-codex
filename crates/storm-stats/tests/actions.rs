@@ -1,4 +1,4 @@
-//! Extension storm-codex : `Output::actions` (nombre de commandes `SCmdEvent` par toon, partie en cours).
+//! storm-codex extension: `Output::actions` (number of `SCmdEvent` commands per toon, game in progress).
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::path::PathBuf;
@@ -17,22 +17,22 @@ fn commandes_comptees_par_toon_et_plausibles() {
     let Some(players) = out.players.as_ref() else {
         return;
     };
-    assert!(!out.actions.is_empty(), "au moins un joueur compté");
+    assert!(!out.actions.is_empty(), "at least one player counted");
     let length = out
         .match_
         .as_ref()
         .and_then(|m| m.get("length"))
         .and_then(serde_json::Value::as_f64)
-        .expect("durée de partie");
+        .expect("game duration");
     for (toon, n) in &out.actions {
         assert!(
             players.contains_key(toon),
-            "compte rattaché à un joueur connu"
+            "count attached to a known player"
         );
         let apm = *n as f64 / (length / 60.0);
         assert!(
             (5.0..=600.0).contains(&apm),
-            "APM plausible, vu {apm} pour {toon}"
+            "plausible APM, saw {apm} for {toon}"
         );
     }
 }

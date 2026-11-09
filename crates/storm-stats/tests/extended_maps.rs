@@ -1,6 +1,6 @@
-//! Extension storm-stats : les cartes ARAM récentes (absentes de hots-parser 7.55.7) doivent
-//! parser avec des invariants structurels sains. Pas de baseline Node (la référence les rejette)
-//! → on valide la structure, pas une parité champ par champ. Voir EXTRA_MAPS dans process.rs.
+//! storm-stats extension: the recent ARAM maps (missing from hots-parser 7.55.7) must
+//! parse with sound structural invariants. No Node baseline (the reference rejects them)
+//! → we validate the structure, not a field-by-field parity. See EXTRA_MAPS in process.rs.
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
@@ -11,25 +11,22 @@ fn aram_map_parses_with_sane_structure() {
     let path =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/silver-city-aram.StormReplay");
     let out = storm_stats::process_replay(&path, "silver-city-aram.StormReplay");
-    assert_eq!(out.status, 1, "carte ARAM rejetée (statut {})", out.status);
+    assert_eq!(out.status, 1, "ARAM map rejected (status {})", out.status);
     let json = out.to_json();
 
     let m = &json["match"];
-    assert_eq!(m["map"], "Silver City", "carte mal résolue");
-    // ARAM = pas d'objectif PvE : objectif minimal {type}, firstObjective null
+    assert_eq!(m["map"], "Silver City", "map wrongly resolved");
+    // ARAM = no PvE objective: minimal objective {type}, firstObjective null
     assert_eq!(m["objective"], serde_json::json!({"type": "Silver City"}));
     assert!(
         m["firstObjective"].is_null(),
-        "ARAM ne doit pas avoir de firstObjective"
+        "ARAM must not have a firstObjective"
     );
     assert!(
         m["takedowns"].as_array().is_some_and(|a| !a.is_empty()),
         "takedowns absents"
     );
-    assert!(
-        m["teams"]["0"]["stats"].is_object(),
-        "stats d'équipe absentes"
-    );
+    assert!(m["teams"]["0"]["stats"].is_object(), "team stats missing");
 
     let players = m["winner"].as_i64();
     assert!(
@@ -38,12 +35,12 @@ fn aram_map_parses_with_sane_structure() {
     );
 
     let ps = json["players"].as_object().expect("players");
-    assert_eq!(ps.len(), 10, "attendu 10 joueurs");
+    assert_eq!(ps.len(), 10, "expected 10 players");
     let wins = ps.values().filter(|p| p["win"] == true).count();
     assert_eq!(wins, 5, "attendu 5 vainqueurs");
     for p in ps.values() {
-        assert!(!p["hero"].as_str().unwrap_or("").is_empty(), "héros vide");
-        // le score screen complet doit être présent (chemin universel)
+        assert!(!p["hero"].as_str().unwrap_or("").is_empty(), "empty hero");
+        // the full score screen must be present (universal path)
         assert!(p["gameStats"]["Takedowns"].is_number(), "gameStats absent");
     }
 }

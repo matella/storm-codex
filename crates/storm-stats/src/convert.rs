@@ -1,5 +1,5 @@
-//! Conversion `storm_replay::Value` → `serde_json::Value`, dans la représentation du port JS
-//! de heroprotocol qu'utilise hots-parser : blobs = chaînes UTF-8, structs = objets.
+//! Conversion `storm_replay::Value` → `serde_json::Value`, in the representation of the JS port
+//! of heroprotocol used by hots-parser: blobs = UTF-8 strings, structs = objects.
 
 use serde_json::Value as J;
 use storm_replay::Value;
@@ -14,7 +14,7 @@ pub fn jval(v: &Value) -> J {
         Value::Str(s) => J::from(s.as_ref()),
         Value::Fourcc(b) => J::from(String::from_utf8_lossy(b).into_owned()),
         Value::Array(items) => J::Array(items.iter().map(jval).collect()),
-        // jamais lus par hots-parser — formes neutres
+        // never read by hots-parser — neutral shapes
         Value::BitArrayBytes { bits, data } => {
             serde_json::json!([bits, String::from_utf8_lossy(data)])
         }

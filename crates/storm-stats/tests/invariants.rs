@@ -1,12 +1,12 @@
-//! Invariants structurels du pipeline complet (decode + stats) sur un replay réel committé.
-//! Complète le harnais de parité Node (non exécutable en CI) : toute régression grossière du
-//! moteur (messages, timeline, score, draft) casse ici sans dépendance externe.
+//! Structural invariants of the full pipeline (decode + stats) on a real committed replay.
+//! Complements the Node parity harness (not runnable in CI): any gross regression of the
+//! engine (messages, timeline, score, draft) breaks here without an external dependency.
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use std::path::Path;
 
-/// Replay du mini-corpus de storm-replay (committé) — partie ARAM complète de 2026.
+/// Replay of storm-replay's mini-corpus (committed) — a complete 2026 ARAM game.
 fn replay() -> serde_json::Value {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../storm-replay/tests/data/2026-06-09 20.35.02 Industrial District.StormReplay");
@@ -14,7 +14,7 @@ fn replay() -> serde_json::Value {
         storm_stats::process_replay(&path, "2026-06-09 20.35.02 Industrial District.StormReplay");
     assert_eq!(
         out.status, 1,
-        "replay de référence non parsé ({})",
+        "reference replay not parsed ({})",
         out.status
     );
     out.to_json()
@@ -26,32 +26,32 @@ fn identite_et_coherence_du_match() {
     let m = &json["match"];
     assert_eq!(m["map"], "Industrial District");
     let length = m["length"].as_f64().expect("length");
-    assert!(length > 60.0, "partie anormalement courte : {length}");
-    // loopLength ≈ 16 boucles/s ; la durée en secondes doit en être cohérente (marge large :
-    // `length` est comptée depuis le début de partie, après draft/chargement)
+    assert!(length > 60.0, "abnormally short game: {length}");
+    // loopLength ≈ 16 loops/s; the duration in seconds must be consistent with it (wide margin:
+    // `length` is counted from the start of the game, after draft/loading)
     let loops = m["loopLength"].as_f64().expect("loopLength");
     assert!(
         (loops / 16.0) > length && (loops / 16.0) < length + 120.0,
-        "loopLength {loops} incohérent avec length {length}"
+        "loopLength {loops} inconsistent with length {length}"
     );
     let winner = m["winner"].as_i64().expect("winner");
     assert!(winner == 0 || winner == 1);
 
-    // 10 joueurs, 5 par équipe, 5 vainqueurs, tous du côté `winner`
+    // 10 players, 5 per team, 5 winners, all on the `winner` side
     let ps = json["players"].as_object().expect("players");
     assert_eq!(ps.len(), 10);
     for team in [0, 1] {
         assert_eq!(
             ps.values().filter(|p| p["team"] == team).count(),
             5,
-            "équipe {team} incomplète"
+            "team {team} incomplete"
         );
     }
     for p in ps.values() {
         assert_eq!(
             p["win"] == true,
             p["team"] == winner,
-            "win/team incohérents"
+            "win/team inconsistent"
         );
     }
 }
@@ -60,7 +60,7 @@ fn identite_et_coherence_du_match() {
 fn messages_chat_pings_annonces_bien_formes() {
     let json = replay();
     let msgs = json["match"]["messages"].as_array().expect("messages");
-    assert!(!msgs.is_empty(), "aucun message");
+    assert!(!msgs.is_empty(), "no message");
     let toons: Vec<&str> = json["players"]
         .as_object()
         .expect("players")
@@ -71,38 +71,38 @@ fn messages_chat_pings_annonces_bien_formes() {
     let mut last_loop = i64::MIN;
     let (mut chats, mut pings) = (0, 0);
     for msg in msgs {
-        // ordre chronologique (le front s'y fie)
+        // chronological order (the front relies on it)
         let loop_ = msg["loop"].as_i64().expect("loop");
-        assert!(loop_ >= last_loop, "messages non triés par loop");
+        assert!(loop_ >= last_loop, "messages not sorted by loop");
         last_loop = loop_;
-        // l'auteur est un des 10 joueurs (les observateurs sont filtrés)
+        // the author is one of the 10 players (observers are filtered)
         let player = msg["player"].as_str().expect("player");
-        assert!(toons.contains(&player), "auteur inconnu : {player}");
+        assert!(toons.contains(&player), "unknown author: {player}");
         assert!(msg["team"] == 0 || msg["team"] == 1);
-        // charge utile par type (MessageType de constants.json)
+        // payload per type (MessageType from constants.json)
         match msg["type"].as_i64().expect("type") {
             0 => {
                 chats += 1;
                 assert!(
                     msg["text"].as_str().is_some_and(|t| !t.is_empty()),
-                    "chat sans texte"
+                    "chat without text"
                 );
             }
             1 => {
                 pings += 1;
                 assert!(
                     msg["point"]["x"].is_number() && msg["point"]["y"].is_number(),
-                    "ping sans coordonnées"
+                    "ping without coordinates"
                 );
             }
             5 => assert!(msg["announcement"].is_object() || msg["announcement"].is_number()),
-            2 => panic!("LoadingProgress doit être filtré"),
-            t => panic!("type de message inattendu : {t}"),
+            2 => panic!("LoadingProgress must be filtered"),
+            t => panic!("unexpected message type: {t}"),
         }
     }
-    // ce replay précis contient du chat et des pings (vérifié à l'écriture du test)
-    assert!(chats >= 1, "chat attendu dans le replay de référence");
-    assert!(pings >= 1, "pings attendus dans le replay de référence");
+    // this specific replay contains chat and pings (checked when the test was written)
+    assert!(chats >= 1, "chat expected in the reference replay");
+    assert!(pings >= 1, "pings expected in the reference replay");
 }
 
 #[test]
@@ -117,25 +117,25 @@ fn score_talents_takedowns_presents() {
             "HeroDamage",
             "ExperienceContribution",
         ] {
-            assert!(g[k].is_number(), "{toon} : gameStats.{k} absent");
+            assert!(g[k].is_number(), "{toon}: gameStats.{k} missing");
         }
-        assert!(!p["hero"].as_str().unwrap_or("").is_empty(), "héros vide");
-        // partie complète (niveau 10+) → au moins 4 paliers de talents choisis
+        assert!(!p["hero"].as_str().unwrap_or("").is_empty(), "empty hero");
+        // complete game (level 10+) → at least 4 talent tiers chosen
         let talents = p["talents"].as_object().expect("talents");
         assert!(
             talents.keys().filter(|k| k.starts_with("Tier")).count() >= 4,
-            "{toon} : talents incomplets"
+            "{toon}: incomplete talents"
         );
     }
-    // les takedowns du match référencent des victimes connues, avec au moins un tueur
+    // the match's takedowns reference known victims, with at least one killer
     let tds = json["match"]["takedowns"].as_array().expect("takedowns");
     assert!(!tds.is_empty());
     for td in tds {
         let victim = td["victim"]["player"].as_str().expect("victime");
-        assert!(ps.contains_key(victim), "victime inconnue : {victim}");
+        assert!(ps.contains_key(victim), "unknown victim: {victim}");
         assert!(
             td["killers"].as_array().is_some_and(|k| !k.is_empty()),
-            "takedown sans tueur"
+            "takedown without a killer"
         );
     }
 }
@@ -150,7 +150,7 @@ fn timeline_xp_monotone() {
     let mut last = f64::MIN;
     for point in xp {
         let t = point["time"].as_f64().expect("time");
-        assert!(t >= last, "XPBreakdown non trié");
+        assert!(t >= last, "XPBreakdown not sorted");
         last = t;
     }
 }

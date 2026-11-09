@@ -1,6 +1,6 @@
-//! Dump JSON de storm-stats, comparé à tools/parity-harness/dump.js (hots-parser).
-//! Usage : storm-stats-dump <replay> <sortie.json> [--filename <chaîne>]
-//!         storm-stats-dump --bench <dir>   (decode + stats, mono-thread, warm-up exclu)
+//! storm-stats JSON dump, compared with tools/parity-harness/dump.js (hots-parser).
+//! Usage: storm-stats-dump <replay> <output.json> [--filename <string>]
+//!         storm-stats-dump --bench <dir>   (decode + stats, single-threaded, warm-up excluded)
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -23,7 +23,7 @@ fn main() {
             (file.clone(), out.clone(), name.clone())
         }
         _ => {
-            eprintln!("usage : storm-stats-dump <replay> <sortie.json> [--filename <chaîne>]");
+            eprintln!("usage: storm-stats-dump <replay> <output.json> [--filename <string>]");
             eprintln!("        storm-stats-dump --bench <dir>");
             std::process::exit(2);
         }
@@ -32,20 +32,20 @@ fn main() {
     match serde_json::to_string(&output.to_json()) {
         Ok(s) => {
             if let Err(e) = std::fs::write(&out, s) {
-                eprintln!("écriture {out} : {e}");
+                eprintln!("writing {out}: {e}");
                 std::process::exit(1);
             }
         }
         Err(e) => {
-            eprintln!("sérialisation : {e}");
+            eprintln!("serialisation: {e}");
             std::process::exit(1);
         }
     }
 }
 
-/// decode + stats par replay (mono-thread, warm-up exclu). Sépare les replays au parse
-/// complet (status OK) des rejets (cartes hors MapType, etc.) — seuls les premiers reflètent
-/// le coût réel du pipeline complet.
+/// decode + stats per replay (single-threaded, warm-up excluded). Separates the fully parsed
+/// replays (status OK) from the rejections (maps outside MapType, etc.) — only the former reflect
+/// the real cost of the full pipeline.
 fn bench(dir: &Path) {
     let mut files: Vec<PathBuf> = match std::fs::read_dir(dir) {
         Ok(rd) => rd
@@ -53,13 +53,13 @@ fn bench(dir: &Path) {
             .filter(|p| p.extension().is_some_and(|x| x == "StormReplay"))
             .collect(),
         Err(e) => {
-            eprintln!("lecture {} : {e}", dir.display());
+            eprintln!("reading {}: {e}", dir.display());
             std::process::exit(1);
         }
     };
     files.sort();
     if let Some(first) = files.first() {
-        let _ = storm_stats::process_replay(first, "warmup"); // mesure jetée
+        let _ = storm_stats::process_replay(first, "warmup"); // measurement discarded
     }
     let mut full = Vec::new();
     let mut rejected = 0usize;
@@ -75,13 +75,13 @@ fn bench(dir: &Path) {
         }
     }
     if full.is_empty() {
-        eprintln!("aucun replay au parse complet");
+        eprintln!("no fully parsed replay");
         std::process::exit(1);
     }
     full.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let pct = |p: f64| full[((p * full.len() as f64).ceil() as usize).saturating_sub(1)];
     println!(
-        "storm-stats decode+stats : n={} (rejets {rejected}) médiane={:.1} ms p95={:.1} ms max={:.1} ms",
+        "storm-stats decode+stats: n={} (rejected {rejected}) median={:.1} ms p95={:.1} ms max={:.1} ms",
         full.len(),
         full[full.len() / 2],
         pct(0.95),

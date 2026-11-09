@@ -1,10 +1,10 @@
-//! Équipes : agrégats d'équipe, temps de présence des héros et avantage de niveau.
+//! Teams: team aggregates, hero uptime and level advantage.
 
 use super::*;
 
-/// Construit `match.teams` (squelette + per-player) puis `collectTeamStats` (2659-2787),
-/// `analyzeLevelAdv` (3047-3081), `analyzeUptime` (2789-2926) et les copies passive XP, et
-/// recopie aces/wipes/timeWithHeroAdv/pctWithHeroAdv dans gameStats (2385-2391).
+/// Builds `match.teams` (skeleton + per-player) then `collectTeamStats` (2659-2787),
+/// `analyzeLevelAdv` (3047-3081), `analyzeUptime` (2789-2926) and the passive XP copies, and
+/// copies aces/wipes/timeWithHeroAdv/pctWithHeroAdv into gameStats (2385-2391).
 #[allow(clippy::too_many_arguments)]
 pub(super) fn build_teams(
     match_: &mut Map<String, J>,
@@ -15,7 +15,7 @@ pub(super) fn build_teams(
     passive_diff: &[f64; 2],
     passive_gain: &[f64; 2],
 ) -> R<()> {
-    // ---- squelette match.teams + remplissage par joueur (parser.js:2132-2191) ----
+    // ---- match.teams skeleton + per-player filling (parser.js:2132-2191) ----
     let team_td = [
         js_number(match_.get("team0Takedowns")),
         js_number(match_.get("team1Takedowns")),
@@ -34,7 +34,7 @@ pub(super) fn build_teams(
         let t = match team {
             Some(0) => 0usize,
             Some(1) => 1usize,
-            _ => continue, // observateurs : ignorés (parser.js n'a pas de branche)
+            _ => continue, // observers: ignored (parser.js has no branch)
         };
         let level = p
             .and_then(|p| get(p, &["gameStats", "Level"]))
@@ -122,8 +122,8 @@ pub(super) fn build_teams(
         let other = 1 - t;
         let stats = &mut team_stats[t];
 
-        // NB : structure.team / merc.team sont des flottants (0.0/1.0) ; en JS `0.0 === 0`
-        // est vrai → comparaison numérique, pas as_i64 (qui échoue sur un Number flottant).
+        // NB: structure.team / merc.team are floats (0.0/1.0); in JS `0.0 === 0`
+        // is true → numeric comparison, not as_i64 (which fails on a float Number).
         let team_eq = |v: Option<&J>, k: usize| js_number(v) == k as f64;
 
         // merc captures
@@ -133,7 +133,7 @@ pub(super) fn build_teams(
             .count() as i64;
         stats.insert("mercCaptures".into(), J::from(merc_captures));
 
-        // merc uptime (combine intervals, somme des durées)
+        // merc uptime (combine intervals, sum of the durations)
         let mut intervals: Vec<(f64, f64)> = Vec::new();
         for unit in &mercs_units {
             if team_eq(get(unit, &["team"]), t) {
@@ -151,7 +151,7 @@ pub(super) fn build_teams(
         stats.insert("mercUptime".into(), jnum(merc_uptime));
         stats.insert("mercUptimePercent".into(), jnum(merc_uptime / length));
 
-        // structures par nom {lost, destroyed, first}
+        // structures by name {lost, destroyed, first}
         let mut structures: Map<String, J> = Map::new();
         for s in &structures_all {
             let name = js_prop(get(s, &["name"]));
@@ -182,7 +182,7 @@ pub(super) fn build_teams(
         }
         stats.insert("structures".into(), J::Object(structures));
 
-        // KDA d'équipe
+        // team KDA
         stats.insert("KDA".into(), jnum(team_td[t] / js_max(team_td[other], 1.0)));
 
         // people per kill
@@ -200,7 +200,7 @@ pub(super) fn build_teams(
         }
         stats.insert("PPK".into(), jnum(ppk / js_max(team_td[t], 1.0)));
 
-        // timeTo10 / timeTo20 (clés conditionnelles)
+        // timeTo10 / timeTo20 (conditional keys)
         let lt = get(&level_times, &[t.to_string().as_str()]).unwrap_or(&J::Null);
         for lvl in ["10", "20"] {
             if let Some(e) = get(lt, &[lvl]) {
@@ -280,7 +280,7 @@ pub(super) fn build_teams(
         )
     };
     let histo_json = |hc: &[(f64, f64)]| -> J {
-        // heroCount : objet {str: durée}, clés dans l'ordre de première rencontre
+        // heroCount: object {str: duration}, keys in order of first appearance
         let mut m = Map::new();
         for (s, d) in hc {
             m.insert(js_prop(Some(&jnum(*s))), jnum(*d));
@@ -312,7 +312,7 @@ pub(super) fn build_teams(
         team_stats[t].insert("passiveXPGain".into(), jnum(passive_gain[t]));
     }
 
-    // monte les stats dans les équipes puis dans match.teams
+    // puts the stats into the teams then into match.teams
     let mut teams_map = Map::new();
     for (t, mut team) in teams.into_iter().enumerate() {
         team.insert(
@@ -323,7 +323,7 @@ pub(super) fn build_teams(
     }
     match_.insert("teams".into(), J::Object(teams_map));
 
-    // ---- copies aces/wipes/timeWithHeroAdv/pctWithHeroAdv dans gameStats (2385-2388) ----
+    // ---- copies of aces/wipes/timeWithHeroAdv/pctWithHeroAdv into gameStats (2385-2388) ----
     for handle in order {
         let team = players
             .get(handle)
@@ -331,7 +331,7 @@ pub(super) fn build_teams(
         let t = match team {
             Some(0) => 0usize,
             Some(1) => 1usize,
-            _ => return Err(Abort::Throw("teamStats copie: équipe invalide".into())),
+            _ => return Err(Abort::Throw("teamStats copy: invalid team".into())),
         };
         let copy: Vec<(String, J)> = ["aces", "wipes", "timeWithHeroAdv", "pctWithHeroAdv"]
             .iter()
@@ -360,7 +360,7 @@ pub(super) fn team_stats_value(match_: &Map<String, J>, t: usize, key: &str) -> 
 
 pub(super) struct TeamUptime {
     pub(super) team_lifespan: Vec<(f64, f64)>, // (time, heroes)
-    pub(super) hero_count: Vec<(f64, f64)>,    // (heroes, durée), ordre de première rencontre
+    pub(super) hero_count: Vec<(f64, f64)>,    // (heroes, duration), order of first appearance
     pub(super) wipes: i64,
     pub(super) avg_heroes_alive: f64,
 }
