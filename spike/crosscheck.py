@@ -1,12 +1,12 @@
-# Jalon 0 — cross-check : sortie storm-decode (Rust) vs heroprotocol (Python) sur les
-# 3 replays les plus récents du corpus. Champ par champ : build, carte, joueurs
-# (nom/héros/résultat), nombre de tracker events, elapsed_game_loops.
+# Milestone 0 — cross-check: storm-decode (Rust) output vs heroprotocol (Python) on the
+# 3 most recent replays of the corpus. Field by field: build, map, players
+# (name/hero/result), number of tracker events, elapsed_game_loops.
 import json
 import subprocess
 import sys
 from pathlib import Path
 
-from bench_python import LATEST, load_protocol  # réutilise le loader (pip cassé sur 3.12+)
+from bench_python import LATEST, load_protocol  # reuses the loader (pip broken on 3.12+)
 import mpyq
 
 ROOT = Path(__file__).parent.parent

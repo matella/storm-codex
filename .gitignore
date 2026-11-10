@@ -9,10 +9,10 @@ __pycache__/
 tools/parity-harness/node_modules/
 
 
-# jalon 3 serveur
+# milestone 3 server
 .archive/
 .raw-cache/
-# IMAGES_DIR par défaut : repeuplé à chaque démarrage, jamais à committer.
+# default IMAGES_DIR: repopulated at every start, never to be committed.
 .images/
 .env
 

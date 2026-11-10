@@ -1,11 +1,11 @@
-//! Port fidèle du `VersionedDecoder` de heroprotocol/decoders.py (référence Blizzard, MIT).
-//! Le format « versioned » est intégralement aligné sur l'octet (tous les accès passent par
-//! read_bits(8) ou read_aligned_bytes dans la référence) → un simple curseur d'octets suffit.
+//! Faithful port of the `VersionedDecoder` from heroprotocol/decoders.py (Blizzard reference, MIT).
+//! The "versioned" format is fully byte-aligned (every access goes through
+//! read_bits(8) or read_aligned_bytes in the reference) → a simple byte cursor is enough.
 
 use anyhow::{anyhow, bail, Result};
 use std::collections::HashMap;
 
-/// Équivalent des valeurs Python produites par le décodeur de référence.
+/// Equivalent of the Python values produced by the reference decoder.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Null,
@@ -16,7 +16,7 @@ pub enum Value {
     Real(f64),
     Array(Vec<Value>),
     BitArray { bits: u64, data: Vec<u8> },
-    /// Structs ET choices (un choice = struct à un seul champ, comme en Python).
+    /// Structs AND choices (a choice = struct with a single field, as in Python).
     Struct(Vec<(String, Value)>),
 }
 
@@ -35,7 +35,7 @@ impl Value {
         }
     }
 
-    /// Blobs texte (noms, titres) : UTF-8 avec remplacement (les replays sont UTF-8).
+    /// Text blobs (names, titles): UTF-8 with replacement (replays are UTF-8).
     pub fn as_str_lossy(&self) -> Option<String> {
         match self {
             Value::Blob(b) => Some(String::from_utf8_lossy(b).into_owned()),
@@ -43,7 +43,7 @@ impl Value {
         }
     }
 
-    /// Premier champ d'un struct/choice (sémantique `_varuint32_value` de la référence).
+    /// First field of a struct/choice (`_varuint32_value` semantics of the reference).
     pub fn first_field_int(&self) -> Option<i64> {
         match self {
             Value::Struct(fields) => fields.first().and_then(|(_, v)| v.as_int()),
@@ -52,7 +52,7 @@ impl Value {
     }
 }
 
-/// `typeinfos` pré-parsées depuis le JSON exporté de heroprotocol.
+/// `typeinfos` pre-parsed from the JSON exported from heroprotocol.
 #[derive(Debug)]
 pub enum TypeInfo {
     Int,
@@ -70,11 +70,11 @@ pub enum TypeInfo {
 }
 
 pub fn parse_typeinfos(json: &serde_json::Value) -> Result<Vec<TypeInfo>> {
-    let list = json.as_array().ok_or_else(|| anyhow!("typeinfos: pas un tableau"))?;
+    let list = json.as_array().ok_or_else(|| anyhow!("typeinfos: not an array"))?;
     let mut out = Vec::with_capacity(list.len());
     for (i, entry) in list.iter().enumerate() {
-        let pair = entry.as_array().ok_or_else(|| anyhow!("typeinfo {i} invalide"))?;
-        let method = pair[0].as_str().ok_or_else(|| anyhow!("typeinfo {i}: méthode"))?;
+        let pair = entry.as_array().ok_or_else(|| anyhow!("typeinfo {i} invalid"))?;
+        let method = pair[0].as_str().ok_or_else(|| anyhow!("typeinfo {i}: method"))?;
         let args = pair[1].as_array().ok_or_else(|| anyhow!("typeinfo {i}: args"))?;
         let ti = match method {
             "_int" => TypeInfo::Int,
@@ -99,7 +99,7 @@ pub fn parse_typeinfos(json: &serde_json::Value) -> Result<Vec<TypeInfo>> {
                     fields.insert(
                         tag.parse::<i64>()?,
                         (
-                            f[0].as_str().ok_or_else(|| anyhow!("choice {i}: nom"))?.to_owned(),
+                            f[0].as_str().ok_or_else(|| anyhow!("choice {i}: name"))?.to_owned(),
                             f[1].as_u64().ok_or_else(|| anyhow!("choice {i}: typeid"))? as usize,
                         ),
                     );
@@ -112,14 +112,14 @@ pub fn parse_typeinfos(json: &serde_json::Value) -> Result<Vec<TypeInfo>> {
                 for field in list {
                     let f = field.as_array().ok_or_else(|| anyhow!("struct {i}: field"))?;
                     fields.push((
-                        f[0].as_str().ok_or_else(|| anyhow!("struct {i}: nom"))?.to_owned(),
+                        f[0].as_str().ok_or_else(|| anyhow!("struct {i}: name"))?.to_owned(),
                         f[1].as_u64().ok_or_else(|| anyhow!("struct {i}: typeid"))? as usize,
                         f[2].as_i64().ok_or_else(|| anyhow!("struct {i}: tag"))?,
                     ));
                 }
                 TypeInfo::Struct { fields }
             }
-            other => bail!("typeinfo {i}: méthode inconnue {other}"),
+            other => bail!("typeinfo {i}: unknown method {other}"),
         };
         out.push(ti);
     }
@@ -149,7 +149,7 @@ impl<'a> VersionedDecoder<'a> {
         let b = *self
             .data
             .get(self.pos)
-            .ok_or_else(|| anyhow!("tronqué à l'octet {}", self.pos))?;
+            .ok_or_else(|| anyhow!("truncated at byte {}", self.pos))?;
         self.pos += 1;
         Ok(b)
     }
@@ -157,7 +157,7 @@ impl<'a> VersionedDecoder<'a> {
     fn read_bytes(&mut self, n: usize) -> Result<&'a [u8]> {
         let end = self.pos + n;
         if end > self.data.len() {
-            bail!("tronqué : {n} octets demandés à {}", self.pos);
+            bail!("truncated: {n} bytes requested at {}", self.pos);
         }
         let s = &self.data[self.pos..end];
         self.pos = end;
@@ -167,12 +167,12 @@ impl<'a> VersionedDecoder<'a> {
     fn expect_skip(&mut self, expected: u8) -> Result<()> {
         let got = self.read_u8()?;
         if got != expected {
-            bail!("corrompu : tag {got} ≠ {expected} à l'octet {}", self.pos - 1);
+            bail!("corrupt: tag {got} ≠ {expected} at byte {}", self.pos - 1);
         }
         Ok(())
     }
 
-    /// Varint zigzag de la référence : bit 0 du 1er octet = signe, puis 7 bits/octet.
+    /// Zigzag varint of the reference: bit 0 of the 1st byte = sign, then 7 bits/byte.
     fn vint(&mut self) -> Result<i64> {
         let b = self.read_u8()? as i64;
         let negative = b & 1 != 0;
@@ -192,7 +192,7 @@ impl<'a> VersionedDecoder<'a> {
         let ti = self
             .typeinfos
             .get(typeid)
-            .ok_or_else(|| anyhow!("typeid {typeid} hors table"))?;
+            .ok_or_else(|| anyhow!("typeid {typeid} out of table"))?;
         Ok(match ti {
             TypeInfo::Int => {
                 self.expect_skip(9)?;
@@ -220,7 +220,7 @@ impl<'a> VersionedDecoder<'a> {
             TypeInfo::Real64 => {
                 self.expect_skip(8)?;
                 let b = self.read_bytes(8)?;
-                Value::Real(f64::from_be_bytes(b.try_into().expect("8 octets")))
+                Value::Real(f64::from_be_bytes(b.try_into().expect("8 bytes")))
             }
             TypeInfo::Null => Value::Null,
             TypeInfo::Array { typeid } => {
@@ -255,7 +255,7 @@ impl<'a> VersionedDecoder<'a> {
                         Value::Struct(vec![(name.clone(), v)])
                     }
                     None => {
-                        // comportement référence : champ inconnu → skip + struct vide
+                        // reference behaviour: unknown field → skip + empty struct
                         self.skip_instance()?;
                         Value::Struct(Vec::new())
                     }
@@ -280,7 +280,7 @@ impl<'a> VersionedDecoder<'a> {
                                 result.push((name.clone(), v));
                             }
                         }
-                        None => self.skip_instance()?, // champ inconnu (compat builds)
+                        None => self.skip_instance()?, // unknown field (build compat)
                     }
                 }
                 Value::Struct(result)
@@ -339,7 +339,7 @@ impl<'a> VersionedDecoder<'a> {
             9 => {
                 self.vint()?;
             }
-            other => bail!("skip : tag inconnu {other} à l'octet {}", self.pos - 1),
+            other => bail!("skip: unknown tag {other} at byte {}", self.pos - 1),
         }
         Ok(())
     }

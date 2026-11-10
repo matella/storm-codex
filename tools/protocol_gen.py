@@ -1,15 +1,15 @@
-# protocol-gen — génère les tables de protocole de storm-replay depuis Blizzard/heroprotocol.
-# À relancer à chaque patch HotS :
-#   python tools/protocol_gen.py            (clone auto dans %TEMP%/heroprotocol si absent)
-#   python tools/protocol_gen.py --clone-dir <chemin d'un clone existant>
+# protocol-gen — generates the storm-replay protocol tables from Blizzard/heroprotocol.
+# Rerun at every HotS patch:
+#   python tools/protocol_gen.py            (auto clone into %TEMP%/heroprotocol if missing)
+#   python tools/protocol_gen.py --clone-dir <path to an existing clone>
 #
-# IMPORTANT : source = clone GitHub, jamais le package PyPI (en retard de ~5000 builds et
-# cassé sur Python >= 3.12 — voir docs/research/2026-06-12-jalon0-bench.md).
+# IMPORTANT: source = GitHub clone, never the PyPI package (~5000 builds behind and
+# broken on Python >= 3.12 — see docs/research/2026-06-12-jalon0-bench.md).
 #
-# Sortie (committée) : crates/storm-replay/protocols/
+# Output (committed): crates/storm-replay/protocols/
 #   tables/<hash12>.json  — contenus distincts (390 builds -> ~32 tables)
 #   index.json            — build -> hash, + latest
-#   embed.rs              — include_str! de toutes les tables (généré, ne pas éditer)
+#   embed.rs              — include_str! of all the tables (generated, do not edit)
 import argparse
 import hashlib
 import importlib.util
@@ -62,7 +62,7 @@ def main():
     args = ap.parse_args()
 
     if not (args.clone_dir / "heroprotocol" / "versions").is_dir():
-        print(f"clone de Blizzard/heroprotocol vers {args.clone_dir}…")
+        print(f"cloning Blizzard/heroprotocol into {args.clone_dir}…")
         subprocess.run(
             ["git", "clone", "--depth", "1",
              "https://github.com/Blizzard/heroprotocol.git", str(args.clone_dir)],
@@ -94,7 +94,7 @@ def main():
         for name, err in skipped:
             print(f"skip {name}: {err}", file=sys.stderr)
     if not builds:
-        sys.exit("aucun protocole exporté")
+        sys.exit("no protocol exported")
 
     for h, canon in contents.items():
         (tables_dir / f"{h}.json").write_text(canon, encoding="utf-8", newline="\n")

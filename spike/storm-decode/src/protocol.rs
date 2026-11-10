@@ -1,5 +1,5 @@
-//! Protocoles exportés en JSON (spike/export_protocols.py) : chargement + décodage des streams,
-//! en suivant l'enchaînement canonique de heroprotocol (hero_cli.py / protocolXXXXX.py).
+//! Protocols exported as JSON (spike/export_protocols.py): loading + stream decoding,
+//! following heroprotocol's canonical chain (hero_cli.py / protocolXXXXX.py).
 
 use crate::versioned::{parse_typeinfos, TypeInfo, Value, VersionedDecoder};
 use anyhow::{anyhow, Context, Result};
@@ -7,26 +7,26 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub struct Protocol {
-    #[allow(dead_code)] // utile au débogage, pas encore lu par le binaire
+    #[allow(dead_code)] // useful for debugging, not read by the binary yet
     pub base_build: u32,
     typeinfos: Vec<TypeInfo>,
     replay_header_typeid: usize,
     game_details_typeid: usize,
     tracker_eventid_typeid: usize,
     svaruint32_typeid: usize,
-    /// eventid → (typeid du struct, nom de l'événement)
+    /// eventid → (typeid of the struct, event name)
     tracker_event_types: HashMap<i64, (usize, String)>,
 }
 
 impl Protocol {
     pub fn load(path: &std::path::Path) -> Result<Protocol> {
-        let raw = std::fs::read(path).with_context(|| format!("lecture {}", path.display()))?;
+        let raw = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
         let json: serde_json::Value = serde_json::from_slice(&raw)?;
         let get = |k: &str| -> Result<usize> {
             json.get(k)
                 .and_then(|v| v.as_u64())
                 .map(|v| v as usize)
-                .ok_or_else(|| anyhow!("{k} absent de {}", path.display()))
+                .ok_or_else(|| anyhow!("{k} missing from {}", path.display()))
         };
         let mut tracker_event_types = HashMap::new();
         if let Some(map) = json.get("tracker_event_types").and_then(|v| v.as_object()) {
@@ -35,7 +35,7 @@ impl Protocol {
                 tracker_event_types.insert(
                     k.parse::<i64>()?,
                     (
-                        pair[0].as_u64().ok_or_else(|| anyhow!("typeid événement"))? as usize,
+                        pair[0].as_u64().ok_or_else(|| anyhow!("event typeid"))? as usize,
                         pair[1].as_str().unwrap_or("?").to_owned(),
                     ),
                 );
@@ -44,7 +44,7 @@ impl Protocol {
         Ok(Protocol {
             base_build: get("base_build")? as u32,
             typeinfos: parse_typeinfos(
-                json.get("typeinfos").ok_or_else(|| anyhow!("typeinfos absentes"))?,
+                json.get("typeinfos").ok_or_else(|| anyhow!("typeinfos missing"))?,
             )?,
             replay_header_typeid: get("replay_header_typeid")?,
             game_details_typeid: get("game_details_typeid")?,
@@ -62,7 +62,7 @@ impl Protocol {
         VersionedDecoder::new(content, &self.typeinfos).instance(self.game_details_typeid)
     }
 
-    /// Port de `_decode_event_stream` (tracker : pas de userid, byte-aligned par construction).
+    /// Port of `_decode_event_stream` (tracker: no userid, byte-aligned by construction).
     pub fn decode_tracker_events(&self, content: &[u8]) -> Result<Vec<(String, Value)>> {
         let mut decoder = VersionedDecoder::new(content, &self.typeinfos);
         let mut events = Vec::new();
@@ -71,16 +71,16 @@ impl Protocol {
             let delta = decoder
                 .instance(self.svaruint32_typeid)?
                 .first_field_int()
-                .ok_or_else(|| anyhow!("delta svaruint32 invalide"))?;
+                .ok_or_else(|| anyhow!("invalid svaruint32 delta"))?;
             gameloop += delta;
             let eventid = decoder
                 .instance(self.tracker_eventid_typeid)?
                 .as_int()
-                .ok_or_else(|| anyhow!("eventid invalide"))?;
+                .ok_or_else(|| anyhow!("invalid eventid"))?;
             let (typeid, name) = self
                 .tracker_event_types
                 .get(&eventid)
-                .ok_or_else(|| anyhow!("eventid inconnu {eventid} à l'octet {}", decoder.used_bytes()))?;
+                .ok_or_else(|| anyhow!("unknown eventid {eventid} at byte {}", decoder.used_bytes()))?;
             let mut event = decoder.instance(*typeid)?;
             if let Value::Struct(fields) = &mut event {
                 fields.push(("_gameloop".into(), Value::Int(gameloop)));
@@ -91,8 +91,8 @@ impl Protocol {
     }
 }
 
-/// Répertoire de protocoles + cache (un protocole n'est parsé qu'une fois par bench,
-/// comme les imports Python ou les tables compilées du parseur .NET).
+/// Protocol directory + cache (a protocol is parsed only once per bench,
+/// like the Python imports or the compiled tables of the .NET parser).
 pub struct ProtocolStore {
     dir: PathBuf,
     latest_build: u32,
@@ -102,7 +102,7 @@ pub struct ProtocolStore {
 impl ProtocolStore {
     pub fn open(dir: PathBuf) -> Result<ProtocolStore> {
         let latest_build = std::fs::read_to_string(dir.join("latest.txt"))
-            .with_context(|| format!("latest.txt absent de {}", dir.display()))?
+            .with_context(|| format!("latest.txt missing from {}", dir.display()))?
             .trim()
             .parse::<u32>()?;
         Ok(ProtocolStore { dir, latest_build, cache: HashMap::new() })
@@ -112,7 +112,7 @@ impl ProtocolStore {
         self.for_exact_build(self.latest_build)
     }
 
-    /// Protocole du build demandé, fallback « dernier protocole connu » (comportement spec).
+    /// Protocol of the requested build, "latest known protocol" fallback (spec behaviour).
     pub fn for_build(&mut self, build: u32) -> Result<&Protocol> {
         let build = if self.dir.join(format!("{build}.json")).exists() {
             build
@@ -127,6 +127,6 @@ impl ProtocolStore {
             let p = Protocol::load(&self.dir.join(format!("{build}.json")))?;
             self.cache.insert(build, p);
         }
-        Ok(self.cache.get(&build).expect("inséré ci-dessus"))
+        Ok(self.cache.get(&build).expect("inserted above"))
     }
 }

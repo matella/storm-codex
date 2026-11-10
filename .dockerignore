@@ -1,4 +1,4 @@
-# Contexte de build minimal : pas d'artefacts lourds ni de secrets.
+# Minimal build context: no heavy artefacts and no secrets.
 target/
 **/node_modules/
 web/dist/

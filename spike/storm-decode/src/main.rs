@@ -1,6 +1,6 @@
-//! Jalon 0 — spike : `storm-decode <replay>` (résumé JSON) ou `storm-decode --bench <dir>`
-//! (bench aligné sur bench_python.py / bench-dotnet : mono-thread, warm-up exclu,
-//! header + details + tracker events, un échec n'arrête pas le bench).
+//! Milestone 0 — spike: `storm-decode <replay>` (JSON summary) or `storm-decode --bench <dir>`
+//! (bench aligned with bench_python.py / bench-dotnet: single-threaded, warm-up excluded,
+//! header + details + tracker events, a failure does not stop the bench).
 
 mod protocol;
 mod versioned;
@@ -16,30 +16,30 @@ struct Summary {
     signature: String,
     elapsed_game_loops: i64,
     map: String,
-    players: Vec<(String, String, i64)>, // (nom, héros, result 1=victoire 2=défaite)
+    players: Vec<(String, String, i64)>, // (name, hero, result 1=win 2=loss)
     tracker_events: usize,
     stats_events: usize,
     score_events: usize,
 }
 
 fn decode_file(store: &mut ProtocolStore, path: &Path) -> Result<Summary> {
-    let bytes = std::fs::read(path).with_context(|| format!("lecture {}", path.display()))?;
-    let (_, mpq) = nom_mpq::parser::parse(&bytes).map_err(|e| anyhow!("MPQ : {e:?}"))?;
+    let bytes = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
+    let (_, mpq) = nom_mpq::parser::parse(&bytes).map_err(|e| anyhow!("MPQ: {e:?}"))?;
 
     let user_data = mpq
         .user_data
         .as_ref()
-        .ok_or_else(|| anyhow!("pas de section user data (header)"))?;
+        .ok_or_else(|| anyhow!("no user data section (header)"))?;
     let header = store.latest()?.decode_header(&user_data.content)?;
     let signature = header
         .field("m_signature")
         .and_then(Value::as_str_lossy)
-        .ok_or_else(|| anyhow!("m_signature absent"))?;
-    let version = header.field("m_version").ok_or_else(|| anyhow!("m_version absent"))?;
+        .ok_or_else(|| anyhow!("m_signature missing"))?;
+    let version = header.field("m_version").ok_or_else(|| anyhow!("m_version missing"))?;
     let base_build = version
         .field("m_baseBuild")
         .and_then(Value::as_int)
-        .ok_or_else(|| anyhow!("m_baseBuild absent"))? as u32;
+        .ok_or_else(|| anyhow!("m_baseBuild missing"))? as u32;
     let elapsed_game_loops = header
         .field("m_elapsedGameLoops")
         .and_then(Value::as_int)
@@ -49,12 +49,12 @@ fn decode_file(store: &mut ProtocolStore, path: &Path) -> Result<Summary> {
 
     let (_, details_bytes) = mpq
         .read_mpq_file_sector("replay.details", false, &bytes)
-        .map_err(|e| anyhow!("replay.details : {e:?}"))?;
+        .map_err(|e| anyhow!("replay.details: {e:?}"))?;
     let details = proto.decode_details(&details_bytes)?;
     let map = details
         .field("m_title")
         .and_then(Value::as_str_lossy)
-        .ok_or_else(|| anyhow!("m_title absent"))?;
+        .ok_or_else(|| anyhow!("m_title missing"))?;
     let mut players = Vec::new();
     if let Some(Value::Array(list)) = details.field("m_playerList") {
         for p in list {
@@ -68,7 +68,7 @@ fn decode_file(store: &mut ProtocolStore, path: &Path) -> Result<Summary> {
 
     let (_, tracker_bytes) = mpq
         .read_mpq_file_sector("replay.tracker.events", false, &bytes)
-        .map_err(|e| anyhow!("replay.tracker.events : {e:?}"))?;
+        .map_err(|e| anyhow!("replay.tracker.events: {e:?}"))?;
     let events = proto.decode_tracker_events(&tracker_bytes)?;
     let count = |suffix: &str| events.iter().filter(|(n, _)| n.ends_with(suffix)).count();
 
@@ -105,15 +105,15 @@ fn bench(store: &mut ProtocolStore, dir: &Path) -> Result<()> {
         .filter(|p| p.extension().is_some_and(|x| x == "StormReplay"))
         .collect();
     files.sort();
-    anyhow::ensure!(files.len() == 50, "corpus inattendu : {} fichiers", files.len());
+    anyhow::ensure!(files.len() == 50, "unexpected corpus: {} files", files.len());
 
-    decode_file(store, &files[0]).ok(); // warm-up (caches protocoles), mesure jetée
+    decode_file(store, &files[0]).ok(); // warm-up (protocol caches), measurement discarded
 
     let mut rows = vec!["name,ms,base_build,events,ok".to_owned()];
     let mut times = Vec::new();
     let mut fails = 0;
     for f in &files {
-        let name = f.file_name().expect("nom de fichier").to_string_lossy().into_owned();
+        let name = f.file_name().expect("file name").to_string_lossy().into_owned();
         let t0 = Instant::now();
         let res = decode_file(store, f);
         let ms = t0.elapsed().as_secs_f64() * 1000.0;
@@ -133,13 +133,13 @@ fn bench(store: &mut ProtocolStore, dir: &Path) -> Result<()> {
     std::fs::create_dir_all(&out)?;
     std::fs::write(out.join("rust.csv"), rows.join("\n") + "\n")?;
 
-    times.sort_by(|a, b| a.partial_cmp(b).expect("pas de NaN"));
+    times.sort_by(|a, b| a.partial_cmp(b).expect("no NaN"));
     let median = times[times.len() / 2];
     let p95 = times[(0.95 * times.len() as f64).ceil() as usize - 1];
     println!(
-        "rust : n={} échecs={fails} médiane={median:.1} ms p95={p95:.1} ms max={:.1} ms",
+        "rust : n={} failures={fails} median={median:.1} ms p95={p95:.1} ms max={:.1} ms",
         times.len(),
-        times.last().expect("au moins une mesure"),
+        times.last().expect("at least one measurement"),
     );
     Ok(())
 }
@@ -155,6 +155,6 @@ fn main() -> Result<()> {
             println!("{}", serde_json::to_string_pretty(&summary_json(&s))?);
             Ok(())
         }
-        _ => Err(anyhow!("usage : storm-decode (<replay> | --bench <dir>)")),
+        _ => Err(anyhow!("usage: storm-decode (<replay> | --bench <dir>)")),
     }
 }

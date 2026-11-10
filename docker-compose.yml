@@ -1,9 +1,9 @@
-# Déploiement de prod storm-codex (box). Postgres dédié + le serveur (front inclus).
-# Déploiement non invasif : ports neufs, lit HotsPatchNotes en lecture seule, NE TOUCHE PAS au
-# Redis Jarvis ni à l'overlay tant que `REDIS_URL`/`AZURE_*` ne sont pas renseignés (push = opt-in,
-# best-effort, absent = pas d'émission). La bascule réelle (cf. runbook) renseigne ces variables.
+# storm-codex production deployment (box). Dedicated Postgres + the server (front-end included).
+# Non-invasive deployment: new ports, reads HotsPatchNotes read-only, DOES NOT TOUCH the
+# Jarvis Redis or the overlay while `REDIS_URL`/`AZURE_*` are not set (push = opt-in,
+# best-effort, absent = no emission). The actual switchover (see runbook) sets these variables.
 #
-# Box : rsync du repo → `docker compose up -d --build`. Secrets dans le .env du box (jamais commité).
+# Box: rsync the repo → `docker compose up -d --build`. Secrets in the box's .env (never committed).
 services:
   postgres:
     image: postgres:17
@@ -21,8 +21,8 @@ services:
       timeout: 3s
       retries: 10
 
-  # Une fois par démarrage : /data appartient à l'utilisateur non root du serveur (uid 10001).
-  # Nécessaire pour un volume créé par une image plus ancienne qui tournait en root ; sans effet sinon.
+  # Once per start: /data belongs to the server's non-root user (uid 10001).
+  # Needed for a volume created by an older image that ran as root; no effect otherwise.
   storm-codex-init:
     image: busybox:1.37
     user: "0:0"
@@ -35,7 +35,7 @@ services:
     build: .
     container_name: storm-codex-server
     restart: unless-stopped
-    # `docker stop` : SIGTERM → fin des requêtes en cours (arrêt propre), puis SIGKILL après ce délai.
+    # `docker stop`: SIGTERM → in-flight requests finish (clean shutdown), then SIGKILL after this delay.
     stop_grace_period: 20s
     depends_on:
       postgres:
@@ -45,14 +45,14 @@ services:
     ports:
       - "${STORM_CODEX_PORT:-8088}:8088"
     environment:
-      # nom de conteneur unique (pas l'alias 'postgres' : il entre en collision avec jarvis-postgres
-      # sur le réseau jarvis_default partagé).
+      # unique container name (not the 'postgres' alias: it collides with jarvis-postgres
+      # on the shared jarvis_default network).
       DATABASE_URL: postgres://storm:${POSTGRES_PASSWORD:-storm}@storm-codex-pg:5432/storm_codex
-      # vide/absent = mode ouvert (auto-hébergement local) ; défini = auth admin par Bearer.
+      # empty/absent = open mode (local self-hosting); set = admin auth by Bearer.
       ADMIN_TOKEN: ${ADMIN_TOKEN:-}
-      # référentiel héros/talents (lecture seule) — HotsPatchNotes sur l'hôte box
+      # hero/talent reference data (read-only) — HotsPatchNotes on the box host
       HOTSPATCHNOTES_URL: ${HOTSPATCHNOTES_URL:-http://host.docker.internal:5001}
-      # push opt-in (vides au déploiement initial ; renseignés à la bascule)
+      # opt-in push (empty at initial deployment; set at switchover)
       REDIS_URL: ${REDIS_URL:-}
       JARVIS_CHANNEL: ${JARVIS_CHANNEL:-storm-codex:match_completed}
       AZURE_PUSH_URL: ${AZURE_PUSH_URL:-}
@@ -62,8 +62,8 @@ services:
       - "host.docker.internal:host-gateway"
     networks:
       - default
-      # réseau de Jarvis (externe) : permet de publier l'event match sur jarvis-redis.
-      # Activé seulement si présent ; non invasif (storm-codex ne fait que PUBLISH un canal dédié).
+      # Jarvis network (external): lets the match event be published on jarvis-redis.
+      # Only enabled if present; non-invasive (storm-codex only PUBLISHes a dedicated channel).
       - jarvis
     volumes:
       - storm-codex-data:/data

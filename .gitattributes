@@ -1,14 +1,14 @@
-# Les migrations sqlx sont vérifiées par somme de contrôle sur leurs octets exacts : un checkout
-# Windows (autocrlf) en CRLF les rend « modifiées » pour une base migrée en LF (VersionMismatch).
+# sqlx migrations are checked by checksum over their exact bytes: a Windows checkout
+# (autocrlf) in CRLF makes them "modified" for a database migrated in LF (VersionMismatch).
 crates/storm-codex-server/migrations/*.sql text eol=lf
 
-# GADS : les fichiers gérés sont vérifiés par somme SHA-256 (gads/install.json) ; un checkout
-# Windows (autocrlf) en CRLF les ferait passer pour modifiés (audit, upgrade et uninstall).
+# GADS: managed files are checked by SHA-256 sum (gads/install.json); a Windows checkout
+# (autocrlf) in CRLF would make them look modified (audit, upgrade and uninstall).
 AGENTS.md text eol=lf
 CLAUDE.md text eol=lf
 gads/** text eol=lf
 .claude/agents/** text eol=lf
 .claude/settings.json text eol=lf
 
-# scripts shell exécutés en CI (Linux)
+# shell scripts run in CI (Linux)
 *.sh text eol=lf
