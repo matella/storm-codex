@@ -118,7 +118,11 @@ pub async fn purge(db: &PgPool) -> u64 {
         "DELETE FROM upload_tokens WHERE name LIKE 'test-%'".to_owned(),
         "DELETE FROM matches WHERE fingerprint LIKE 'test-%'".to_owned(),
     ] {
-        n += sqlx::query(&q).execute(db).await.unwrap().rows_affected();
+        n += sqlx::query(sqlx::AssertSqlSafe(q))
+            .execute(db)
+            .await
+            .unwrap()
+            .rows_affected();
     }
     n
 }
