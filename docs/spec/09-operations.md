@@ -53,7 +53,9 @@ Tests: `cargo test` (the projection test is skipped without `DATABASE_URL`); par
   **new** migration. Modifying a migration added in the same PR is still allowed.
 - `rust`: strict clippy (`-D warnings`) + `cargo test --workspace` against a **Postgres 17
   service** (DB-gated integration tests actually run).
-- `audit`: `cargo audit` (RustSec database) on `Cargo.lock`.
+- `audit`: `cargo audit` (RustSec database) on `Cargo.lock`. Ignored advisories are listed in
+  `.cargo/audit.toml`, each with its reason; only crates that are in the lockfile but compiled for
+  no target qualify.
 - `web`: `npm ci`, `npm audit --omit=dev --audit-level=high` (dependencies shipped in the
   bundle), `npm test` (vitest), `npm run build`. Node version: `.nvmrc` (22).
 - `publish`: **only on push** (or manual run) **and only if the four previous jobs

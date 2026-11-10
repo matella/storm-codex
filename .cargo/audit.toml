@@ -5,4 +5,8 @@ ignore = [
   # sqlx-mysql) and is compiled for no target: `cargo tree -i rsa --target all` is empty.
   # Remove as soon as a fix exists or the crate leaves the lockfile.
   "RUSTSEC-2023-0071",
+  # libsqlite3-sys (C SQLite CVE-2026-119375): the fix (>= 0.39) needs a sqlx major upgrade.
+  # Same case as rsa: only in Cargo.lock (pulled in by sqlx-sqlite) and compiled for no target:
+  # `cargo tree -i libsqlite3-sys --target all` is empty. Remove with the sqlx upgrade.
+  "RUSTSEC-2026-0459",
 ]
