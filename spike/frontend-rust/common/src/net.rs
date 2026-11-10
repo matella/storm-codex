@@ -15,6 +15,26 @@ pub async fn fetch_cast() -> Result<CastSeries, String> {
     r.json::<CastSeries>().await.map_err(|e| e.to_string())
 }
 
+/// `GET path` decoded as JSON; the error text is shown to the user (`path -> status`, like `get()` in api.ts).
+pub async fn get_json<T: serde::de::DeserializeOwned>(path: &str) -> Result<T, String> {
+    let r = Request::get(path).send().await.map_err(|e| e.to_string())?;
+    if !r.ok() {
+        return Err(format!("{path} → {}", r.status()));
+    }
+    r.json::<T>().await.map_err(|e| e.to_string())
+}
+
+/// `fmtTime`: `dd/mm hh:mm` in the viewer's local time, French format.
+pub fn fmt_time(iso: Option<&str>) -> String {
+    let Some(iso) = iso else { return "—".into() };
+    let opts = js_sys::Object::new();
+    for k in ["day", "month", "hour", "minute"] {
+        let _ = js_sys::Reflect::set(&opts, &k.into(), &"2-digit".into());
+    }
+    let d = js_sys::Date::new(&iso.into());
+    d.to_locale_string("fr-FR", &opts).as_string().unwrap_or_default()
+}
+
 pub fn now_ms() -> u64 {
     js_sys::Date::now() as u64
 }

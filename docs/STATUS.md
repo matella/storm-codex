@@ -1,12 +1,14 @@
 # STATUS — read first, update last
 
-## Rust front-end migration — step 0 spike started: cast overlay done in both frameworks (2026-11-10)
+## Rust front-end migration — step 0 spike: overlay, profile, canvas, sanitising done (2026-11-10)
 `spike/frontend-rust/` (own workspace, excluded from the root one; results in its `RESULTS.md`).
-The cast overlay (`ingame` + `series` map strip) runs in Leptos 0.8 and Dioxus 0.7 against the real
-server with a shared Rust core: DOM identical to React's, transparent body, 300 ms fade, WS live
-update and reconnection verified; overlay ≈ 128 kB (Leptos) / ≈ 220 kB (Dioxus) transferred vs ≈ 143 kB
-for React. **Not done**: other overlay scenes, player profile, reduced control room, canvas +
-`MediaRecorder`, sanitising, real-OBS check (operator), cold time-to-first-scene. No go decision yet.
+The cast overlay (`ingame` + `series` map strip) and the player profile (Stats / Identity tabs) run in
+Leptos 0.8 and Dioxus 0.7 against the real server with a shared Rust core: DOM identical to React's,
+overlay behaviour (fade, live update, reconnection) and profile behaviour (`?tab=`, show all) verified.
+Overlay ≈ 128 kB (Leptos) / ≈ 220 kB (Dioxus) transferred vs ≈ 143 kB for React; profile ≈ 215 / 294 kB
+gzip. Canvas + `MediaRecorder` and sanitising pass, but the Rust sanitiser alone costs ≈ 296 kB gzip, so
+it cannot live in the bundle the overlays load. **Not done**: reduced control room, other overlay scenes,
+real-OBS check (operator), cold time-to-first-scene, a real patch page. No go decision yet.
 Tools installed on the PC: `trunk` 0.22.0-beta.1 (0.22.1 needs rustc 1.96), `dioxus-cli` 0.7.10,
 `wasm-bindgen-cli` 0.2.130.
 
