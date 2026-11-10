@@ -1,5 +1,14 @@
 # STATUS — read first, update last
 
+## Rust front-end migration — spec validated, step 0 next (2026-11-10)
+Spec `docs/specs/2026-11-09-rust-frontend-migration-design.md`: port `web/` to Rust/WASM served by the
+same Axum server, page by page under `/v2/`, React kept until the operator approves the switch.
+Step 0 = throwaway go/no-go spike in `spike/frontend-rust/` (Leptos vs Dioxus on the player profile,
+cast control room and cast overlay). **An overlay that misses its size/time limit ends the whole
+port** (operator decision). Real-OBS checks are the operator's. Dependencies upgraded the same day
+(PR #19: sqlx 0.9, redis 1, sha2 0.11, tower-http 0.7, React 19, TypeScript 7; `libsqlite3-sys`
+RUSTSEC-2026-0459 ignore stays until sqlx allows >= 0.39).
+
 ## APM per game and per player (2026-11-08, branch `feat/apm`)
 Spec `docs/specs/2026-11-08-apm-par-partie-design.md` (operator request, batch D "keyboard" reduced to APM).
 `storm-stats` counts the `SCmdEvent`s per toon (`Output.actions`, outside parity), migration `0016`
