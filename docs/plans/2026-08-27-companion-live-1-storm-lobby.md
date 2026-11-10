@@ -1,124 +1,124 @@
-# Companion live — Plan 1 : crate `storm-lobby` (parser autonome + parité)
+# Companion live — Plan 1: `storm-lobby` crate (standalone parser + parity)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task.
 > Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** produire un crate Rust pur qui, à partir des seuls octets d'un
-`replay.server.battlelobby`, retrouve les joueurs d'une partie par leur **BattleTag** et déduit
-leur équipe, prouvé à **≥ 99 %** contre le parse complet sur l'archive.
+**Goal:** produce a pure Rust crate that, from the bytes of a
+`replay.server.battlelobby` alone, finds the players of a game by their **BattleTag** and infers
+their team, proven at **≥ 99%** against the full parse on the archive.
 
-> **Révisé le 2026-08-27 après la tâche 1.** L'investigation a établi que le blob ne porte **ni
-> toon handle, ni héros pické, ni carte, ni champ d'équipe explicite** — seulement les BattleTags,
-> en clair. Les tâches 2 à 5 ont été réécrites en conséquence ; la tâche 1 est close et son
-> constat fait foi : `docs/research/2026-08-27-lobby-format.md`.
+> **Revised on 2026-08-27 after task 1.** The investigation established that the blob carries **no
+> toon handle, no picked hero, no map and no explicit team field** — only the BattleTags,
+> in clear text. Tasks 2 to 5 were rewritten accordingly; task 1 is closed and its
+> findings are authoritative: `docs/research/2026-08-27-lobby-format.md`.
 
-**Architecture:** `storm-lobby` ne dépend de rien (il reçoit `&[u8]`). Sa vérité de référence est
-`storm-stats`, qui connaît la composition réelle de chaque partie : chaque `.StormReplay` archivé
-contient le même blob lobby que celui écrit en live, donc chaque replay est à la fois un
-échantillon et sa propre correction. `storm-replay` et `storm-stats` n'entrent qu'en
-**dev-dependencies** — le crate publié reste pur.
+**Architecture:** `storm-lobby` depends on nothing (it receives `&[u8]`). Its reference truth is
+`storm-stats`, which knows the real composition of each game: each archived `.StormReplay`
+contains the same lobby blob as the one written live, so each replay is both a
+sample and its own answer key. `storm-replay` and `storm-stats` only come in as
+**dev-dependencies** — the published crate stays pure.
 
-**Tech Stack:** Rust 2021, `thiserror`, tests intégration `cargo test`, exemples `cargo run
+**Tech Stack:** Rust 2021, `thiserror`, `cargo test` integration tests, `cargo run
 --example`.
 
-## Pourquoi ce plan s'arrête au parser
+## Why this plan stops at the parser
 
-La spec couvre aussi le serveur, le front et le watcher `client-rs`. Ils ne sont **pas** dans ce
-plan : le format binaire du battlelobby est inconnu à ce jour, et écrire aujourd'hui le code exact
-des tâches serveur/front reviendrait à figer des détails (présence du héros, de la carte) que
-seule la tâche 1 peut trancher. Le plan 2 (serveur + front) s'écrit dès que ce plan est vert ;
-le plan 3 (watcher `client-rs`, repo Hots-Overlay) en dernier, c'est le seul qui exige le PC de jeu.
+The spec also covers the server, the front and the `client-rs` watcher. They are **not** in this
+plan: the battlelobby binary format is unknown to date, and writing the exact code of the
+server/front tasks today would freeze details (presence of the hero, of the map) that
+only task 1 can decide. Plan 2 (server + front) is written as soon as this plan is green;
+plan 3 (`client-rs` watcher, Hots-Overlay repo) last, it is the only one that needs the gaming PC.
 
-Ce plan produit à lui seul un livrable utile et testable : un parser prouvé et chiffré.
+This plan alone produces a useful and testable deliverable: a proven parser, with figures.
 
 ## Global Constraints
 
-- Rust édition 2021 ; lints workspace : `clippy::unwrap_used = deny`, `clippy::expect_used = warn`.
-  Les fichiers de test ouvrent par `#![allow(clippy::expect_used, clippy::unwrap_used)]`, comme
+- Rust edition 2021; workspace lints: `clippy::unwrap_used = deny`, `clippy::expect_used = warn`.
+  Test files open with `#![allow(clippy::expect_used, clippy::unwrap_used)]`, like
   `crates/storm-stats/tests/extended_maps.rs`.
-- Erreurs typées via `thiserror`. Aucun `unwrap()` hors tests.
-- `storm-lobby` est **pur** : aucune I/O, aucune dépendance runtime à `storm-replay`/`storm-stats`.
-- Tout champ dont la présence n'est pas garantie par le format est un `Option`. Le parser ne comble
-  jamais un trou par une valeur inventée.
-- Commits conventionnels. Co-auteur non requis pour ce repo.
-- Tâches 1 à 4 : 100 % sur le Mac, aucun accès au box. Seule la tâche 5 lit l'archive du box
-  (Tailscale, le soir), **en lecture seule**.
-- Toute la V1 se fait sur la branche `feat/companion-live`.
+- Typed errors via `thiserror`. No `unwrap()` outside tests.
+- `storm-lobby` is **pure**: no I/O, no runtime dependency on `storm-replay`/`storm-stats`.
+- Any field whose presence is not guaranteed by the format is an `Option`. The parser never fills
+  a gap with an invented value.
+- Conventional commits. Co-author not required for this repo.
+- Tasks 1 to 4: 100% on the Mac, no box access. Only task 5 reads the box's archive
+  (Tailscale, in the evening), **read-only**.
+- All of V1 happens on the `feat/companion-live` branch.
 
 ---
 
-## Préparation
+## Preparation
 
-- [ ] **Étape 1 : Créer la branche**
+- [ ] **Step 1: Create the branch**
 
 ```bash
 git checkout -b feat/companion-live
 ```
 
-- [ ] **Étape 2 : Vérifier que la base est verte avant de toucher quoi que ce soit**
+- [ ] **Step 2: Check that the base is green before touching anything**
 
 Run: `cargo test --workspace`
-Expected: PASS (aucun échec préexistant à confondre avec les nôtres)
+Expected: PASS (no pre-existing failure to confuse with ours)
 
 ---
 
-## Fichiers
+## Files
 
-| Fichier | Responsabilité |
+| File | Responsibility |
 |---|---|
-| `crates/storm-replay/examples/dump_lobby.rs` | extraire le blob lobby d'un `.StormReplay` vers un fichier (outil d'inspection) |
-| `docs/research/2026-08-27-lobby-format.md` | rapport d'inspection : ce que le blob contient, réponses aux 4 questions ouvertes |
-| `crates/storm-lobby/Cargo.toml` | manifeste ; deps runtime minimales, oracle en dev-deps |
+| `crates/storm-replay/examples/dump_lobby.rs` | extract the lobby blob of a `.StormReplay` to a file (inspection tool) |
+| `docs/research/2026-08-27-lobby-format.md` | inspection report: what the blob contains, answers to the 4 open questions |
+| `crates/storm-lobby/Cargo.toml` | manifest; minimal runtime deps, oracle in dev-deps |
 | `crates/storm-lobby/src/lib.rs` | API publique (`parse`, `Lobby`, `LobbyPlayer`, `LobbyError`) |
-| `crates/storm-lobby/tests/oracle.rs` | parité contre `storm-stats` sur les 5 replays committés |
-| `crates/storm-lobby/tests/robustness.rs` | entrées tronquées / vides / aléatoires → `Err`, jamais `panic` |
-| `crates/storm-lobby/examples/parity.rs` | harnais de parité sur un dossier d'archive (tâche 5) |
-| `Cargo.toml` (racine) | ajouter `crates/storm-lobby` aux membres du workspace |
-| `docs/research/2026-08-27-lobby-parity.md` | rapport go/no-go chiffré |
+| `crates/storm-lobby/tests/oracle.rs` | parity against `storm-stats` on the 5 committed replays |
+| `crates/storm-lobby/tests/robustness.rs` | truncated / empty / random inputs → `Err`, never `panic` |
+| `crates/storm-lobby/examples/parity.rs` | parity harness over an archive folder (task 5) |
+| `Cargo.toml` (root) | add `crates/storm-lobby` to the workspace members |
+| `docs/research/2026-08-27-lobby-parity.md` | go/no-go report with figures |
 
 ---
 
-## Task 1 : Outil de dump et inspection du format
+## Task 1: Dump tool and format inspection
 
 **Files:**
 - Create: `crates/storm-replay/examples/dump_lobby.rs`
 - Create: `docs/research/2026-08-27-lobby-format.md`
 
 **Interfaces:**
-- Consomme : `storm_replay::Replay::open()` et `::battlelobby_raw()` (existants,
-  `crates/storm-replay/src/lib.rs:90` et `:258`).
-- Produit : les réponses factuelles dont la tâche 3 a besoin pour écrire le parser, et les fichiers
-  `.bin` de travail.
+- Consumes: `storm_replay::Replay::open()` and `::battlelobby_raw()` (existing,
+  `crates/storm-replay/src/lib.rs:90` and `:258`).
+- Produces: the factual answers task 3 needs to write the parser, and the working
+  `.bin` files.
 
-Cette tâche est de l'investigation, pas du TDD : on ne peut pas tester une hypothèse sur un format
-qu'on n'a pas encore lu. Son livrable est un **document de constat**, et il conditionne tout le reste.
+This task is investigation, not TDD: you cannot test a hypothesis about a format
+you have not read yet. Its deliverable is a **findings document**, and everything else depends on it.
 
-- [ ] **Étape 1 : Écrire l'outil de dump**
+- [ ] **Step 1: Write the dump tool**
 
 ```rust
-//! Extrait le stream `replay.server.battlelobby` d'un .StormReplay vers un fichier brut.
-//! C'est le même blob que celui écrit en live par le jeu dans
+//! Extracts the `replay.server.battlelobby` stream of a .StormReplay to a raw file.
+//! It is the same blob as the one written live by the game in
 //! `%TEMP%\Heroes of the Storm\TempWriteReplayP1\replay.server.battlelobby`.
 //!
-//! Usage : cargo run -p storm-replay --example dump_lobby -- <replay> <sortie.bin>
+//! Usage: cargo run -p storm-replay --example dump_lobby -- <replay> <output.bin>
 use std::path::PathBuf;
 
 fn main() -> anyhow::Result<()> {
     let mut args = std::env::args_os().skip(1);
-    let usage = || anyhow::anyhow!("usage: dump_lobby <replay.StormReplay> <sortie.bin>");
+    let usage = || anyhow::anyhow!("usage: dump_lobby <replay.StormReplay> <output.bin>");
     let input: PathBuf = args.next().ok_or_else(usage)?.into();
     let output: PathBuf = args.next().ok_or_else(usage)?.into();
 
     let replay = storm_replay::Replay::open(&input)?;
     let blob = replay.battlelobby_raw()?;
     std::fs::write(&output, &blob)?;
-    println!("{} octets → {}", blob.len(), output.display());
+    println!("{} bytes → {}", blob.len(), output.display());
     Ok(())
 }
 ```
 
-- [ ] **Étape 2 : Vérifier que l'outil tourne**
+- [ ] **Step 2: Check that the tool runs**
 
 ```bash
 mkdir -p /tmp/lobby && \
@@ -126,9 +126,9 @@ cargo run -p storm-replay --example dump_lobby -- \
   "crates/storm-stats/tests/data/silver-city-aram.StormReplay" /tmp/lobby/silver-city.bin
 ```
 
-Expected: une ligne `NNNNN octets → /tmp/lobby/silver-city.bin`, taille non nulle.
+Expected: a line `NNNNN bytes → /tmp/lobby/silver-city.bin`, non-zero size.
 
-- [ ] **Étape 3 : Dumper les 5 replays committés**
+- [ ] **Step 3: Dump the 5 committed replays**
 
 ```bash
 for f in crates/storm-replay/tests/data/*.StormReplay crates/storm-stats/tests/data/*.StormReplay; do
@@ -138,93 +138,93 @@ done
 ls -l /tmp/lobby/
 ```
 
-Expected: 4 ou 5 fichiers `.bin` (un replay peut apparaître deux fois s'il est partagé).
+Expected: 4 or 5 `.bin` files (a replay may appear twice if it is shared).
 
-- [ ] **Étape 4 : Extraire les chaînes lisibles**
+- [ ] **Step 4: Extract the readable strings**
 
 ```bash
 strings -n 3 /tmp/lobby/silver-city.bin | head -80
 ```
 
-Noter : les BattleTags (`nom#1234`) apparaissent-ils ? Dans quel ordre ? Y a-t-il des noms
-ressemblant à des identifiants de héros (`HeroTychus`, `Tychus`…) ou de carte ?
+Note: do the BattleTags (`name#1234`) appear? In what order? Are there names
+that look like hero identifiers (`HeroTychus`, `Tychus`…) or map identifiers?
 
-- [ ] **Étape 5 : Localiser les ancres à l'octet près**
+- [ ] **Step 5: Locate the anchors to the byte**
 
 ```bash
 xxd /tmp/lobby/silver-city.bin | head -60
 xxd /tmp/lobby/silver-city.bin | grep -i -m5 'tychus'
 ```
 
-But : repérer comment un enregistrement joueur est délimité (longueur préfixée ? séparateur ?) et
-ce qui entoure chaque BattleTag.
+Goal: find out how a player record is delimited (length-prefixed? separator?) and
+what surrounds each BattleTag.
 
-- [ ] **Étape 6 : Comparer un blob live à son homologue archivé (question n° 4 de la spec)**
+- [ ] **Step 6: Compare a live blob with its archived counterpart (spec question no. 4)**
 
-À faire quand tu es sur le PC de jeu, ou à reporter en tâche 5 si tu ne l'es pas. Copier
-`%TEMP%\Heroes of the Storm\TempWriteReplayP1\replay.server.battlelobby` juste après un chargement,
-puis, la partie finie, dumper le blob du replay correspondant et comparer :
+To do when you are on the gaming PC, or to postpone to task 5 if you are not. Copy
+`%TEMP%\Heroes of the Storm\TempWriteReplayP1\replay.server.battlelobby` right after a load,
+then, once the game is over, dump the blob of the matching replay and compare:
 
 ```bash
 cmp /tmp/lobby/live.bin /tmp/lobby/archive.bin && echo "IDENTIQUES" || echo "DIFFERENTS"
 ```
 
-Si identiques → la liaison replay↔lobby pourra se faire par hash d'octets (plus exact).
-Sinon → on garde la liaison par ensemble de `toon_handle`, comme prévu par défaut.
+If identical → the replay↔lobby link can be made by a byte hash (more exact).
+Otherwise → we keep the link by set of `toon_handle`, as planned by default.
 
-- [ ] **Étape 7 : Écrire le rapport de constat**
+- [ ] **Step 7: Write the findings report**
 
-Créer `docs/research/2026-08-27-lobby-format.md` répondant explicitement, **par oui ou non et avec
-la preuve à l'appui** (extrait hexadécimal ou de `strings`) :
+Create `docs/research/2026-08-27-lobby-format.md` answering explicitly, **with yes or no and
+the supporting proof** (hex excerpt or `strings` excerpt):
 
-1. Les BattleTags sont-ils présents, et dans l'ordre du lobby ?
-2. Les composantes du toon handle (`m_region`, `m_programId`, `m_realm`, `m_id`) sont-elles
-   présentes, ou faut-il reconstituer le handle autrement ?
-3. L'appartenance à une équipe est-elle déductible (champ explicite, ou position/ordre) ?
-4. **Le héros pické est-il présent ?** Si oui : sous quelle forme, et est-ce le héros réellement
-   joué en ARAM (où le shuffle à 3 choix pollue l'attribut 4002 du replay — cf. `docs/STATUS.md`) ?
-5. La carte et le mode sont-ils présents ?
-6. Le blob live est-il bit-à-bit identique au blob archivé (étape 6, ou « non testé »).
+1. Are the BattleTags present, and in lobby order?
+2. Are the components of the toon handle (`m_region`, `m_programId`, `m_realm`, `m_id`)
+   present, or does the handle have to be rebuilt another way?
+3. Can team membership be inferred (explicit field, or position/order)?
+4. **Is the picked hero present?** If so: in what form, and is it the hero actually
+   played in ARAM (where the 3-choice shuffle pollutes the replay's attribute 4002 — see `docs/STATUS.md`)?
+5. Are the map and the mode present?
+6. Is the live blob bit-for-bit identical to the archived blob (step 6, or "not tested").
 
-Toute réponse inconnue doit être écrite « inconnu », jamais devinée.
+Any unknown answer must be written "unknown", never guessed.
 
-- [ ] **Étape 8 : Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add crates/storm-replay/examples/dump_lobby.rs docs/research/2026-08-27-lobby-format.md
-git commit -m "feat(storm-replay): exemple dump_lobby + rapport d'inspection du format battlelobby"
+git commit -m "feat(storm-replay): dump_lobby example + battlelobby format inspection report"
 ```
 
 ---
 
-## Task 2 : Crate `storm-lobby` et oracle de parité (rouge)
+## Task 2: `storm-lobby` crate and parity oracle (red)
 
-> **Révision du 2026-08-27, après la tâche 1.** Le blob ne contient **ni toon handle, ni héros, ni
-> carte, ni champ d'équipe explicite** (`docs/research/2026-08-27-lobby-format.md`). La seule
-> identité qu'il expose est le **BattleTag** (`nom#discriminant`), en clair, préfixé par une
-> longueur **en octets UTF-8**. L'oracle compare donc des BattleTags, et le type public ne porte
-> plus de champ que le format ne sait pas remplir.
+> **Revision of 2026-08-27, after task 1.** The blob contains **no toon handle, no hero, no
+> map and no explicit team field** (`docs/research/2026-08-27-lobby-format.md`). The only
+> identity it exposes is the **BattleTag** (`name#discriminant`), in clear text, prefixed with a
+> length **in UTF-8 bytes**. The oracle therefore compares BattleTags, and the public type no longer
+> carries any field the format cannot fill.
 
 **Files:**
 - Create: `crates/storm-lobby/Cargo.toml`
 - Create: `crates/storm-lobby/src/lib.rs`
 - Create: `crates/storm-lobby/tests/oracle.rs`
-- Modify: `Cargo.toml` (racine, `members`)
+- Modify: `Cargo.toml` (root, `members`)
 
 **Interfaces:**
-- Produit : `storm_lobby::parse(&[u8]) -> Result<Lobby, LobbyError>`, `Lobby { players:
-  Vec<LobbyPlayer> }`, `LobbyPlayer { name: String, discriminant: String, team: Option<u8> }` et
-  `LobbyPlayer::battletag() -> String`. Ces noms sont ceux que le plan 2 (serveur) consommera —
-  ne pas les renommer.
-- Consomme (dev only) : `storm_replay::Replay`, `storm_stats::process_replay`.
+- Produces: `storm_lobby::parse(&[u8]) -> Result<Lobby, LobbyError>`, `Lobby { players:
+  Vec<LobbyPlayer> }`, `LobbyPlayer { name: String, discriminant: String, team: Option<u8> }` and
+  `LobbyPlayer::battletag() -> String`. These names are the ones plan 2 (server) will consume —
+  do not rename them.
+- Consumes (dev only): `storm_replay::Replay`, `storm_stats::process_replay`.
 
-- [ ] **Étape 1 : Créer le manifeste**
+- [ ] **Step 1: Create the manifest**
 
 ```toml
 [package]
 name = "storm-lobby"
 version = "0.1.0"
-description = "Parseur autonome du fichier de lobby Heroes of the Storm (replay.server.battlelobby)"
+description = "Standalone parser for the Heroes of the Storm lobby file (replay.server.battlelobby)"
 keywords = ["heroes-of-the-storm", "lobby", "parser", "blizzard"]
 categories = ["parser-implementations", "games"]
 edition.workspace = true
@@ -235,8 +235,8 @@ repository.workspace = true
 regex = "1"
 thiserror = "2"
 
-# L'oracle a besoin du décodeur et du parseur complets pour connaître la vérité de chaque replay.
-# En dev-dependencies uniquement : le crate publié reste pur.
+# The oracle needs the full decoder and parser to know the truth of each replay.
+# In dev-dependencies only: the published crate stays pure.
 [dev-dependencies]
 storm-replay = { path = "../storm-replay" }
 storm-stats = { path = "../storm-stats" }
@@ -247,58 +247,58 @@ anyhow = "1"
 workspace = true
 ```
 
-- [ ] **Étape 2 : Déclarer le crate dans le workspace**
+- [ ] **Step 2: Declare the crate in the workspace**
 
-Dans `Cargo.toml` à la racine, remplacer la ligne `members` par :
+In the root `Cargo.toml`, replace the `members` line with:
 
 ```toml
 members = ["crates/storm-replay", "crates/storm-stats", "crates/storm-codex-server", "crates/storm-replay-viewer", "crates/storm-lobby"]
 ```
 
-- [ ] **Étape 3 : Écrire l'API publique, sans implémentation**
+- [ ] **Step 3: Write the public API, without implementation**
 
-`crates/storm-lobby/src/lib.rs` :
+`crates/storm-lobby/src/lib.rs`:
 
 ```rust
-//! Parseur autonome du fichier de lobby Heroes of the Storm.
+//! Standalone parser for the Heroes of the Storm lobby file.
 //!
-//! Le jeu écrit `replay.server.battlelobby` pendant l'écran de chargement, avant que le replay
-//! n'existe. Ce crate lit ce blob **seul** — sans le stream `details` du replay — pour identifier
-//! les joueurs d'une partie en cours.
+//! The game writes `replay.server.battlelobby` during the loading screen, before the replay
+//! exists. This crate reads that blob **alone** — without the replay's `details` stream — to identify
+//! the players of a game in progress.
 //!
-//! Ce que le format expose réellement, et ce qu'il n'expose pas, est constaté dans
-//! `docs/research/2026-08-27-lobby-format.md` : les BattleTags sont en clair, mais ni le toon
-//! handle, ni le héros pické, ni la carte, ni un champ d'équipe explicite ne s'y trouvent. Le type
-//! public ne porte donc que ce qui est réellement décodable. La résolution BattleTag → identité
-//! applicative se fait en aval, côté serveur, contre l'archive des parties déjà jouées.
+//! What the format really exposes, and what it does not, is recorded in
+//! `docs/research/2026-08-27-lobby-format.md`: the BattleTags are in clear text, but neither the toon
+//! handle, nor the picked hero, nor the map, nor an explicit team field can be found there. The public
+//! type therefore only carries what is really decodable. Resolving BattleTag → application
+//! identity happens downstream, on the server, against the archive of games already played.
 //!
-//! Crate pur : aucune I/O, aucune dépendance sur `storm-replay`.
+//! Pure crate: no I/O, no dependency on `storm-replay`.
 
 use thiserror::Error;
 
-/// Un joueur du lobby.
+/// A lobby player.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LobbyPlayer {
-    /// Nom du compte, sans le discriminant. Peut contenir de l'UTF-8 non-ASCII (cf. le cas
-    /// cyrillique documenté dans le rapport de format).
+    /// Account name, without the discriminant. May contain non-ASCII UTF-8 (see the
+    /// Cyrillic case documented in the format report).
     pub name: String,
-    /// Discriminant seul, la partie après `#`.
+    /// Discriminant alone, the part after `#`.
     pub discriminant: String,
-    /// 0 ou 1. `None` quand l'appartenance n'a pas pu être déterminée — le format ne porte aucun
-    /// champ d'équipe, elle est déduite de l'ordre (cf. `parse`).
+    /// 0 or 1. `None` when membership could not be determined — the format carries no
+    /// team field, it is inferred from the order (see `parse`).
     pub team: Option<u8>,
 }
 
 impl LobbyPlayer {
-    /// `"nom#1234"` — la clé d'identité du joueur. C'est ce que le serveur rapprochera de
-    /// `match_players.name` + `match_players.data->>'tag'` pour retrouver son historique.
+    /// `"name#1234"` — the player's identity key. This is what the server will match against
+    /// `match_players.name` + `match_players.data->>'tag'` to find their history.
     #[must_use]
     pub fn battletag(&self) -> String {
         format!("{}#{}", self.name, self.discriminant)
     }
 }
 
-/// Un lobby décodé. `players` est dans l'ordre d'apparition dans le blob.
+/// A decoded lobby. `players` is in order of appearance in the blob.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Lobby {
     pub players: Vec<LobbyPlayer>,
@@ -306,37 +306,37 @@ pub struct Lobby {
 
 #[derive(Debug, Error)]
 pub enum LobbyError {
-    #[error("blob trop court ({0} octets) pour contenir un lobby")]
+    #[error("blob too short ({0} bytes) to contain a lobby")]
     TooShort(usize),
-    #[error("aucun joueur identifiable dans le blob")]
+    #[error("no identifiable player in the blob")]
     NoPlayers,
-    #[error("structure de lobby non reconnue : {0}")]
+    #[error("unrecognised lobby structure: {0}")]
     Unrecognized(String),
 }
 
-/// Décode un blob `replay.server.battlelobby`.
+/// Decodes a `replay.server.battlelobby` blob.
 ///
 /// # Errors
-/// Retourne [`LobbyError`] si le blob est trop court ou ne contient aucun joueur identifiable.
-/// Ne panique jamais, quelle que soit l'entrée.
+/// Returns [`LobbyError`] if the blob is too short or contains no identifiable player.
+/// Never panics, whatever the input.
 pub fn parse(bytes: &[u8]) -> Result<Lobby, LobbyError> {
     Err(LobbyError::Unrecognized(format!(
-        "parse non implémenté ({} octets)",
+        "parse not implemented ({} bytes)",
         bytes.len()
     )))
 }
 ```
 
-- [ ] **Étape 4 : Écrire l'oracle**
+- [ ] **Step 4: Write the oracle**
 
-`crates/storm-lobby/tests/oracle.rs` :
+`crates/storm-lobby/tests/oracle.rs`:
 
 ```rust
-//! Oracle de parité : à partir du seul blob lobby, le parser doit retrouver les joueurs que le
-//! parse complet du replay identifie — par BattleTag, seule identité que le format expose.
+//! Parity oracle: from the lobby blob alone, the parser must find the players that the
+//! full parse of the replay identifies — by BattleTag, the only identity the format exposes.
 //!
-//! Chaque `.StormReplay` porte le même blob que celui écrit en live par le jeu : chaque replay est
-//! donc à la fois un échantillon et sa propre correction.
+//! Each `.StormReplay` carries the same blob as the one written live by the game: each replay is
+//! therefore both a sample and its own answer key.
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
@@ -347,7 +347,7 @@ fn data(rel: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(rel)
 }
 
-/// Les replays committés dans le workspace.
+/// The replays committed in the workspace.
 fn replays() -> Vec<PathBuf> {
     [
         "crates/storm-replay/tests/data/2024-10-07 22.29.55 Industrial District.StormReplay",
@@ -360,16 +360,16 @@ fn replays() -> Vec<PathBuf> {
     .collect()
 }
 
-/// Vérité de référence : `{battletag: équipe}` d'après le parse complet du replay.
-/// Les joueurs dont le parse complet n'a pas résolu le discriminant sont écartés : l'oracle ne
-/// peut pas juger ce que sa propre référence ignore.
+/// Reference truth: `{battletag: team}` according to the full parse of the replay.
+/// Players whose discriminant the full parse did not resolve are set aside: the oracle
+/// cannot judge what its own reference does not know.
 fn truth(path: &Path) -> BTreeMap<String, i64> {
     let filename = path
         .file_name()
         .and_then(|s| s.to_str())
-        .expect("nom de fichier");
+        .expect("file name");
     let out = storm_stats::process_replay(path, filename);
-    assert_eq!(out.status, 1, "{filename} : parse complet rejeté");
+    assert_eq!(out.status, 1, "{filename}: full parse rejected");
     let json = out.to_json();
     json["players"]
         .as_object()
@@ -395,7 +395,7 @@ fn parse_retrouve_les_battletags_du_replay() {
     for path in replays() {
         let label = path.file_name().and_then(|s| s.to_str()).expect("nom");
         let expected = truth(&path);
-        assert_eq!(expected.len(), 10, "{label} : référence incomplète");
+        assert_eq!(expected.len(), 10, "{label}: incomplete reference");
 
         let decoded: BTreeMap<String, Option<u8>> = lobby_of(&path)
             .players
@@ -405,13 +405,13 @@ fn parse_retrouve_les_battletags_du_replay() {
 
         let attendus: Vec<&String> = expected.keys().collect();
         let obtenus: Vec<&String> = decoded.keys().collect();
-        assert_eq!(obtenus, attendus, "{label} : BattleTags divergents");
+        assert_eq!(obtenus, attendus, "{label}: divergent BattleTags");
     }
 }
 
-/// Le format ne porte aucun champ d'équipe : elle est déduite de l'ordre (5 premiers / 5 derniers).
-/// Cette hypothèse n'a été observée que sur 2 échantillons en tâche 1 — ce test la vérifie sur le
-/// corpus committé, et le harnais de parité (tâche 5) la vérifie sur l'archive complète.
+/// The format carries no team field: it is inferred from the order (first 5 / last 5).
+/// This assumption was only observed on 2 samples in task 1 — this test checks it on the
+/// committed corpus, and the parity harness (task 5) checks it on the full archive.
 #[test]
 fn les_equipes_deduites_correspondent_au_replay() {
     for path in replays() {
@@ -421,20 +421,20 @@ fn les_equipes_deduites_correspondent_au_replay() {
             let Some(team) = p.team else { continue };
             let attendu = expected
                 .get(&p.battletag())
-                .unwrap_or_else(|| panic!("{label} : BattleTag inconnu « {} »", p.battletag()));
+                .unwrap_or_else(|| panic!("{label}: unknown BattleTag \"{}\"", p.battletag()));
             assert_eq!(
                 i64::from(team),
                 *attendu,
-                "{label} : équipe divergente pour {}",
+                "{label}: divergent team for {}",
                 p.battletag()
             );
         }
     }
 }
 
-/// Régression. Un BattleTag cyrillique est présent dans ce replay en UTF-8 multi-octets ; `strings`
-/// ne le voit pas. Un parser qui supposerait de l'ASCII perdrait silencieusement un joueur sur dix
-/// dans les parties européennes — sans échouer, ce qui est pire. Cf. le rapport de format, Q1.
+/// Regression. A Cyrillic BattleTag is present in this replay as multi-byte UTF-8; `strings`
+/// does not see it. A parser that assumed ASCII would silently lose one player out of ten
+/// in European games — without failing, which is worse. See the format report, Q1.
 #[test]
 fn battletag_non_ascii_est_decode() {
     let path = data("crates/storm-replay/tests/data/2026-06-09 20.35.02 Industrial District.StormReplay");
@@ -444,71 +444,71 @@ fn battletag_non_ascii_est_decode() {
             .players
             .iter()
             .any(|p| p.name == "ЛовкийЭльф" && p.discriminant == "215346"),
-        "BattleTag cyrillique absent — décodés : {:?}",
+        "Cyrillic BattleTag missing — decoded: {:?}",
         lobby.players.iter().map(LobbyPlayer::battletag).collect::<Vec<_>>()
     );
 }
 ```
 
-Note : le dernier `assert!` référence `LobbyPlayer` ; ajouter `use storm_lobby::LobbyPlayer;` en
-tête du fichier si le compilateur le réclame, ou remplacer par `|p| p.battletag()`.
+Note: the last `assert!` references `LobbyPlayer`; add `use storm_lobby::LobbyPlayer;` at the
+top of the file if the compiler asks for it, or replace it with `|p| p.battletag()`.
 
-- [ ] **Étape 5 : Lancer l'oracle et vérifier qu'il échoue pour la bonne raison**
+- [ ] **Step 5: Run the oracle and check that it fails for the right reason**
 
 Run: `cargo test -p storm-lobby --test oracle`
-Expected: les 3 tests FAIL sur `parse lobby` → `Unrecognized("parse non implémenté (… octets)")`.
-Un échec sur autre chose (compilation, replay introuvable, `status != 1`, `référence incomplète`)
-doit être corrigé avant la tâche 3 — sinon l'oracle ne prouve rien.
+Expected: the 3 tests FAIL on `parse lobby` → `Unrecognized("parse not implemented (… bytes)")`.
+A failure on anything else (compilation, replay not found, `status != 1`, `incomplete reference`)
+must be fixed before task 3 — otherwise the oracle proves nothing.
 
-- [ ] **Étape 6 : Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add Cargo.toml crates/storm-lobby
-git commit -m "test(storm-lobby): squelette du crate + oracle de parité par BattleTag (rouge)"
+git commit -m "test(storm-lobby): crate skeleton + BattleTag parity oracle (red)"
 ```
 
 ---
 
-## Task 3 : Implémenter le parser jusqu'au vert
+## Task 3: Implement the parser until green
 
 **Files:**
 - Modify: `crates/storm-lobby/src/lib.rs`
 
 **Interfaces:**
-- Consomme : `docs/research/2026-08-27-lobby-format.md` (constats de la tâche 1).
-- Produit : `parse()` fonctionnel. Signature et types **inchangés** par rapport à la tâche 2.
+- Consumes: `docs/research/2026-08-27-lobby-format.md` (task 1 findings).
+- Produces: a working `parse()`. Signature and types **unchanged** compared with task 2.
 
-- [ ] **Étape 1 : Extraire les BattleTags**
+- [ ] **Step 1: Extract the BattleTags**
 
-Réutiliser la regex déjà éprouvée en production dans `crates/storm-stats/src/process.rs:313` :
+Reuse the regex already proven in production in `crates/storm-stats/src/process.rs:313`:
 
 ```rust
 r"[\p{L}\d]{3,24}#\d{4,10}[zØ]?"
 ```
 
-appliquée à `String::from_utf8_lossy(bytes)`. `\p{L}` couvre le cyrillique, et `from_utf8_lossy`
-décode correctement l'UTF-8 multi-octets — c'est `strings` qui ne les voyait pas en tâche 1, pas
-cette approche. Le test `battletag_non_ascii_est_decode` de la tâche 2 est le juge de ce point
-précis : ne pas le désactiver ni l'assouplir.
+applied to `String::from_utf8_lossy(bytes)`. `\p{L}` covers Cyrillic, and `from_utf8_lossy`
+decodes multi-byte UTF-8 correctly — it was `strings` that did not see them in task 1, not
+this approach. The task 2 test `battletag_non_ascii_est_decode` is the judge of this precise
+point: do not disable or loosen it.
 
-Découper chaque occurrence au premier `#` : la partie gauche est `name`, la droite `discriminant`.
-Conserver l'ordre d'apparition et **dédupliquer** — le blob peut contenir la même chaîne plusieurs
-fois ; c'est la première occurrence de chaque BattleTag qui fait foi pour l'ordre.
+Split each occurrence at the first `#`: the left part is `name`, the right one `discriminant`.
+Keep the order of appearance and **deduplicate** — the blob may contain the same string several
+times; the first occurrence of each BattleTag is authoritative for the order.
 
 Run: `cargo test -p storm-lobby --test oracle`
-Expected: `parse_retrouve_les_battletags_du_replay` et `battletag_non_ascii_est_decode` PASS ;
-`les_equipes_deduites_correspondent_au_replay` PASS trivialement tant que `team` vaut `None`.
+Expected: `parse_retrouve_les_battletags_du_replay` and `battletag_non_ascii_est_decode` PASS;
+`les_equipes_deduites_correspondent_au_replay` PASS trivially as long as `team` is `None`.
 
-- [ ] **Étape 2 : Déduire les équipes par l'ordre**
+- [ ] **Step 2: Infer the teams from the order**
 
-Le format ne porte aucun champ d'équipe (rapport de format, Q3). Règle, et rien de plus
-ambitieux : **si et seulement si exactement 10 joueurs ont été décodés**, les 5 premiers reçoivent
-`Some(0)` et les 5 derniers `Some(1)`. Dans tous les autres cas — 9 joueurs, 11, un mode non
-standard — laisser `None` pour tous.
+The format carries no team field (format report, Q3). Rule, and nothing more
+ambitious: **if and only if exactly 10 players were decoded**, the first 5 get
+`Some(0)` and the last 5 `Some(1)`. In every other case — 9 players, 11, a non-standard
+mode — leave `None` for all.
 
-C'est délibérément conservateur : une équipe fausse est pire qu'une équipe absente, puisqu'elle
-afficherait un adversaire comme allié. Le harnais de la tâche 5 mesurera si l'hypothèse d'ordre
-tient sur l'archive ; tant qu'elle n'est pas mesurée, elle ne vaut que pour 10 joueurs pile.
+This is deliberately conservative: a wrong team is worse than a missing team, since it
+would show an opponent as an ally. The task 5 harness will measure whether the order assumption
+holds on the archive; as long as it is not measured, it only applies to exactly 10 players.
 
 ```rust
 if players.len() == 10 {
@@ -519,52 +519,52 @@ if players.len() == 10 {
 ```
 
 Run: `cargo test -p storm-lobby --test oracle`
-Expected: les 3 tests PASS.
+Expected: the 3 tests PASS.
 
-- [ ] **Étape 3 : Traiter les cas dégénérés**
+- [ ] **Step 3: Handle the degenerate cases**
 
-`parse` doit retourner `LobbyError::TooShort(len)` sur un blob manifestement trop court pour
-contenir un lobby, et `LobbyError::NoPlayers` quand aucun BattleTag n'est trouvé. Ne jamais
-retourner un `Lobby` vide en `Ok` : le serveur du plan 2 distingue « lobby illisible » de « lobby
-lu » pour choisir ce qu'il affiche.
+`parse` must return `LobbyError::TooShort(len)` on a blob obviously too short to
+contain a lobby, and `LobbyError::NoPlayers` when no BattleTag is found. Never
+return an empty `Lobby` as `Ok`: plan 2's server distinguishes "unreadable lobby" from "lobby
+read" to choose what it shows.
 
-- [ ] **Étape 4 : Vérifier le vert et la propreté**
+- [ ] **Step 4: Check green and cleanliness**
 
 Run: `cargo test -p storm-lobby`
 Expected: PASS
 
 Run: `cargo clippy -p storm-lobby --all-targets -- -D warnings`
-Expected: aucun avertissement (`unwrap_used` est `deny` au niveau workspace).
+Expected: no warning (`unwrap_used` is `deny` at the workspace level).
 
-- [ ] **Étape 5 : Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add crates/storm-lobby
-git commit -m "feat(storm-lobby): extraction des BattleTags et déduction des équipes — oracle vert"
+git commit -m "feat(storm-lobby): BattleTag extraction and team inference — oracle green"
 ```
 
 ---
 
-## Task 4 : Robustesse aux entrées mal formées
+## Task 4: Robustness to malformed inputs
 
 **Files:**
 - Create: `crates/storm-lobby/tests/robustness.rs`
-- Modify: `crates/storm-lobby/src/lib.rs` (si un test met en évidence une panique)
+- Modify: `crates/storm-lobby/src/lib.rs` (if a test reveals a panic)
 
 **Interfaces:**
-- Consomme : `storm_lobby::parse`, `storm_lobby::LobbyError`.
-- Produit : la garantie « ne panique jamais », dont dépend l'endpoint serveur du plan 2 — un
-  `panic!` dans un handler axum tuerait la requête à chaque changement de build Blizzard.
+- Consumes: `storm_lobby::parse`, `storm_lobby::LobbyError`.
+- Produces: the "never panics" guarantee, which plan 2's server endpoint depends on — a
+  `panic!` in an axum handler would kill the request at every Blizzard build change.
 
-- [ ] **Étape 1 : Écrire les tests de robustesse**
+- [ ] **Step 1: Write the robustness tests**
 
 ```rust
-//! `parse` consomme du binaire potentiellement mal formé (nouveau build Blizzard, fichier lu
-//! pendant son écriture par le jeu). Il doit TOUJOURS retourner, jamais paniquer.
+//! `parse` consumes potentially malformed binary (new Blizzard build, file read
+//! while the game is writing it). It must ALWAYS return, never panic.
 //!
-//! Dans les deux derniers tests, **l'absence de panique EST l'assertion** : le harnais de test
-//! échoue de lui-même si `parse` panique. Le résultat est volontairement ignoré, car aucune valeur
-//! de retour n'est « correcte » sur une entrée corrompue — seule l'absence de panique l'est.
+//! In the last two tests, **the absence of panic IS the assertion**: the test harness
+//! fails by itself if `parse` panics. The result is deliberately ignored, since no return
+//! value is "correct" on a corrupted input — only the absence of panic is.
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
@@ -579,12 +579,12 @@ fn blob_reel() -> Vec<u8> {
 
 #[test]
 fn entree_vide_est_une_erreur() {
-    assert!(storm_lobby::parse(&[]).is_err(), "blob vide accepté");
+    assert!(storm_lobby::parse(&[]).is_err(), "empty blob accepted");
 }
 
 #[test]
 fn entree_aleatoire_est_une_erreur_pas_une_panique() {
-    // Générateur déterministe (xorshift) : pas de dépendance, résultat reproductible.
+    // Deterministic generator (xorshift): no dependency, reproducible result.
     let mut state: u32 = 0x1234_5678;
     let mut bytes = Vec::with_capacity(4096);
     for _ in 0..4096 {
@@ -595,15 +595,15 @@ fn entree_aleatoire_est_une_erreur_pas_une_panique() {
     }
     assert!(
         storm_lobby::parse(&bytes).is_err(),
-        "du bruit aléatoire a été accepté comme lobby"
+        "random noise was accepted as a lobby"
     );
 }
 
 #[test]
 fn blob_tronque_a_toute_longueur_ne_panique_jamais() {
     let blob = blob_reel();
-    // Un fichier lu pendant son écriture est un préfixe du fichier complet : on exerce exactement
-    // ce cas, à tous les points de troncature (pas de 97 pour rester rapide).
+    // A file read while being written is a prefix of the complete file: we exercise exactly
+    // that case, at every truncation point (step of 97 to stay fast).
     for n in (0..blob.len()).step_by(97) {
         let _ = storm_lobby::parse(&blob[..n]);
     }
@@ -621,50 +621,50 @@ fn blob_corrompu_en_son_milieu_ne_panique_jamais() {
 }
 ```
 
-- [ ] **Étape 2 : Lancer les tests**
+- [ ] **Step 2: Run the tests**
 
 Run: `cargo test -p storm-lobby --test robustness`
-Expected: PASS. Une panique (`index out of bounds`, `byte index … is not a char boundary`) est un
-défaut réel à corriger dans `parse` — remplacer l'indexation directe par `get()`/`get(..n)` et
-propager `LobbyError::TooShort`.
+Expected: PASS. A panic (`index out of bounds`, `byte index … is not a char boundary`) is a
+real defect to fix in `parse` — replace direct indexing with `get()`/`get(..n)` and
+propagate `LobbyError::TooShort`.
 
-- [ ] **Étape 3 : Vérifier que rien n'a régressé**
+- [ ] **Step 3: Check that nothing regressed**
 
 Run: `cargo test --workspace`
 Expected: PASS
 
-- [ ] **Étape 4 : Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add crates/storm-lobby
-git commit -m "test(storm-lobby): robustesse — entrées vides, tronquées, corrompues, aléatoires"
+git commit -m "test(storm-lobby): robustness — empty, truncated, corrupted, random inputs"
 ```
 
 ---
 
-## Task 5 : Harnais de parité sur l'archive et rapport go/no-go
+## Task 5: Parity harness on the archive and go/no-go report
 
 **Files:**
 - Create: `crates/storm-lobby/examples/parity.rs`
 - Create: `docs/research/2026-08-27-lobby-parity.md`
 
 **Interfaces:**
-- Consomme : `storm_lobby::parse`, `storm_replay::Replay`, `storm_stats::process_replay`.
-- Produit : les deux chiffres qui décident du go/no-go — le taux de lobbies dont **les 10
-  BattleTags** sont exacts (critère : **≥ 99 %**), et le taux dont **les équipes déduites par
-  l'ordre** sont exactes, qui décide si l'on affiche deux équipes ou une liste plate de 10.
+- Consumes: `storm_lobby::parse`, `storm_replay::Replay`, `storm_stats::process_replay`.
+- Produces: the two figures that decide the go/no-go — the rate of lobbies whose **10
+  BattleTags** are exact (criterion: **≥ 99%**), and the rate whose **teams inferred from
+  the order** are exact, which decides whether we show two teams or a flat list of 10.
 
-- [ ] **Étape 1 : Écrire le harnais**
+- [ ] **Step 1: Write the harness**
 
 ```rust
-//! Parité du parser autonome contre le parse complet, sur un dossier de replays.
+//! Parity of the standalone parser against the full parse, over a folder of replays.
 //!
-//! Usage : cargo run --release -p storm-lobby --example parity -- <dossier> [max]
+//! Usage: cargo run --release -p storm-lobby --example parity -- <folder> [max]
 //!
-//! Deux mesures indépendantes, à ne pas confondre :
-//!   - `battletags exacts` : le parser retrouve exactement les 10 BattleTags de la partie.
-//!   - `équipes exactes`   : parmi ceux-là, la déduction par l'ordre (5+5) correspond à la vérité.
-//! La première décide du go/no-go ; la seconde décide si le companion affiche deux équipes.
+//! Two independent measurements, not to be confused:
+//!   - `exact battletags`: the parser finds exactly the game's 10 BattleTags.
+//!   - `exact teams`     : among those, the inference from the order (5+5) matches the truth.
+//! The first decides the go/no-go; the second decides whether the companion shows two teams.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -678,10 +678,10 @@ struct Tally {
     equipes_exactes: usize,
     equipes_evaluables: usize,
     divergents: Vec<(String, String)>,
-    par_build: BTreeMap<u32, (usize, usize)>, // build → (évalués, battletags exacts)
+    par_build: BTreeMap<u32, (usize, usize)>, // build → (evaluated, exact battletags)
 }
 
-/// `{battletag: équipe}` d'après le parse complet, ou `None` si le replay est rejeté.
+/// `{battletag: team}` according to the full parse, or `None` if the replay is rejected.
 fn verite(path: &Path) -> Option<BTreeMap<String, i64>> {
     let filename = path.file_name()?.to_str()?;
     let out = storm_stats::process_replay(path, filename);
@@ -758,7 +758,7 @@ fn main() -> anyhow::Result<()> {
                     && lobby.players.iter().all(|p| attendu.contains_key(&p.battletag()));
                 if !tags_ok {
                     t.divergents
-                        .push((label, format!("{} battletags décodés", lobby.players.len())));
+                        .push((label, format!("{} battletags decoded", lobby.players.len())));
                     continue;
                 }
                 t.battletags_exacts += 1;
@@ -772,7 +772,7 @@ fn main() -> anyhow::Result<()> {
                     }) {
                         t.equipes_exactes += 1;
                     } else {
-                        t.divergents.push((label, "équipes divergentes".into()));
+                        t.divergents.push((label, "divergent teams".into()));
                     }
                 }
             }
@@ -781,26 +781,26 @@ fn main() -> anyhow::Result<()> {
 
     let base = t.total - t.stats_rejete;
     let pct = |n: usize, d: usize| if d == 0 { 0.0 } else { 100.0 * n as f64 / d as f64 };
-    println!("replays vus          : {}", t.total);
-    println!("écartés (stats)      : {}", t.stats_rejete);
-    println!("base de comparaison  : {base}");
+    println!("replays seen         : {}", t.total);
+    println!("rejected (stats)     : {}", t.stats_rejete);
+    println!("comparison base      : {base}");
     println!(
-        "battletags exacts    : {} ({:.2} %)",
+        "exact battletags     : {} ({:.2} %)",
         t.battletags_exacts,
         pct(t.battletags_exacts, base)
     );
-    println!("erreurs de parse     : {}", t.lobby_err);
+    println!("parse errors         : {}", t.lobby_err);
     println!(
-        "équipes exactes      : {} / {} évaluables ({:.2} %)",
+        "exact teams          : {} / {} evaluable ({:.2} %)",
         t.equipes_exactes,
         t.equipes_evaluables,
         pct(t.equipes_exactes, t.equipes_evaluables)
     );
-    println!("\npar build (build: battletags exacts/évalués)");
+    println!("\nper build (build: exact battletags/evaluated)");
     for (build, (evalues, exacts)) in &t.par_build {
         println!("  {build}: {exacts}/{evalues}");
     }
-    println!("\n20 premières divergences");
+    println!("\nfirst 20 divergences");
     for (f, why) in t.divergents.iter().take(20) {
         println!("  {f} — {why}");
     }
@@ -808,19 +808,19 @@ fn main() -> anyhow::Result<()> {
 }
 ```
 
-- [ ] **Étape 2 : Rodage sur le corpus local**
+- [ ] **Step 2: Trial run on the local corpus**
 
 ```bash
 cargo run --release -p storm-lobby --example parity -- crates/storm-replay/tests/data
 ```
 
-Expected: `battletags exacts : 3 (100.00 %)`. Un écart ici signale un bug du harnais, pas du
-parser — l'oracle de la tâche 2 couvre déjà ces replays.
+Expected: `exact battletags : 3 (100.00 %)`. A gap here points to a harness bug, not a
+parser bug — the task 2 oracle already covers these replays.
 
-- [ ] **Étape 3 : Récupérer l'archive du box (lecture seule)**
+- [ ] **Step 3: Fetch the box's archive (read-only)**
 
-Le box tourne le soir. Approche read-only, comme le runbook
-`docs/runbooks/2026-07-09-visionneuse-2d-verif-box.md` :
+The box runs in the evening. Read-only approach, like the runbook
+`docs/runbooks/2026-07-09-visionneuse-2d-verif-box.md`:
 
 ```bash
 mkdir -p /tmp/archive && \
@@ -828,59 +828,59 @@ rsync -av --include='*.StormReplay' --exclude='*' \
   matella@192.168.129.85:~/apps/storm-codex/data/archive/ /tmp/archive/ | tail -3
 ```
 
-Si le chemin de l'archive diffère, le retrouver sans rien modifier :
+If the archive path differs, find it without changing anything:
 
 ```bash
 ssh matella@192.168.129.85 "docker inspect storm-codex-server --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -i -E 'archive|data'"
 ```
 
-Si le box est injoignable, **s'arrêter là et le signaler** — ne pas inventer un verdict sur le seul
-corpus local de 4 replays, qui est déjà couvert par l'oracle et ne prouve rien à l'échelle.
+If the box is unreachable, **stop there and report it** — do not invent a verdict from the
+local corpus of 4 replays alone, which is already covered by the oracle and proves nothing at scale.
 
-- [ ] **Étape 4 : Lancer la parité sur l'archive complète**
+- [ ] **Step 4: Run the parity on the full archive**
 
 ```bash
 cargo run --release -p storm-lobby --example parity -- /tmp/archive 2>&1 | tee /tmp/lobby-parity.txt
 ```
 
-- [ ] **Étape 5 : Écrire le rapport go/no-go**
+- [ ] **Step 5: Write the go/no-go report**
 
-`docs/research/2026-08-27-lobby-parity.md` : la sortie du harnais, puis le verdict.
+`docs/research/2026-08-27-lobby-parity.md`: the harness output, then the verdict.
 
 - **BattleTags ≥ 99 % → GO.**
-- **BattleTags < 99 % → analyser les divergences par build** avant tout verdict. Si l'échec se
-  concentre sur quelques builds anciens, c'est acceptable et à documenter (le companion sert le
-  présent, pas 2024) — donner alors le taux **sur les builds de l'année en cours**, qui est le
-  chiffre qui compte. Si l'échec est uniforme, c'est un no-go : le remonter à l'opérateur, ne pas
-  ajuster le seuil.
-- **Équipes** : donner le taux séparément, sans le mélanger au précédent. Sous ~99 %, la
-  recommandation est de renvoyer `team: None` en toutes circonstances et d'afficher une liste plate
-  de 10 joueurs plutôt que deux équipes dont une partie serait fausse. Écrire la recommandation ;
-  la décision revient à l'opérateur.
+- **BattleTags < 99% → analyse the divergences per build** before any verdict. If the failure is
+  concentrated on a few old builds, it is acceptable and to be documented (the companion serves the
+  present, not 2024) — then give the rate **over the current year's builds**, which is the
+  figure that matters. If the failure is uniform, it is a no-go: report it to the operator, do not
+  adjust the threshold.
+- **Teams**: give the rate separately, without mixing it with the previous one. Below ~99%, the
+  recommendation is to return `team: None` in all circumstances and show a flat list
+  of 10 players rather than two teams of which a part would be wrong. Write the recommendation;
+  the decision belongs to the operator.
 
-- [ ] **Étape 6 : Nettoyer**
+- [ ] **Step 6: Clean up**
 
 ```bash
 rm -rf /tmp/archive /tmp/lobby
 ```
 
-- [ ] **Étape 7 : Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add crates/storm-lobby/examples/parity.rs docs/research/2026-08-27-lobby-parity.md
-git commit -m "test(storm-lobby): harnais de parité sur l'archive + rapport go/no-go"
+git commit -m "test(storm-lobby): parity harness on the archive + go/no-go report"
 ```
 
 ---
 
-## Fin de plan
+## End of plan
 
-- [ ] `cargo test --workspace` vert
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings` vert
-- [ ] `docs/research/2026-08-27-lobby-format.md` répond aux 6 questions, sans « peut-être »
-- [ ] `docs/research/2026-08-27-lobby-parity.md` porte deux chiffres et un verdict
-- [ ] `docs/STATUS.md` mis à jour (état + prochaine étape), conformément à `CLAUDE.md`
+- [ ] `cargo test --workspace` green
+- [ ] `cargo clippy --workspace --all-targets -- -D warnings` green
+- [ ] `docs/research/2026-08-27-lobby-format.md` answers the 6 questions, without any "maybe"
+- [ ] `docs/research/2026-08-27-lobby-parity.md` carries two figures and a verdict
+- [ ] `docs/STATUS.md` updated (state + next step), as required by `CLAUDE.md`
 
-Puis : écrire le plan 2 (migration `0009`, module `lobby.rs`, routes, `/companion`, `/builds`),
-sachant désormais que le héros et la carte seront saisis à la main, et que l'identité des joueurs
-se résout par BattleTag contre l'archive.
+Then: write plan 2 (migration `0009`, module `lobby.rs`, routes, `/companion`, `/builds`),
+knowing now that the hero and the map will be entered by hand, and that player identity
+is resolved by BattleTag against the archive.

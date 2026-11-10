@@ -1,8 +1,8 @@
-//! Événements de partie : XP, morts de joueurs, camps, montées de niveau, unités, positions, talents.
+//! Game events: XP, player deaths, camps, level-ups, units, positions, talents.
 
 use super::*;
 
-/// `event.m_unitTagIndex + '-' + event.m_unitTagRecycle` (concaténation JS).
+/// `event.m_unitTagIndex + '-' + event.m_unitTagRecycle` (JS concatenation).
 pub(super) fn unit_uid(event: &J) -> String {
     format!(
         "{}-{}",
@@ -11,10 +11,10 @@ pub(super) fn unit_uid(event: &J) -> String {
     )
 }
 
-/// `xpb.breakdown` : m_fixedData → `{ m_key: m_value/4096 }` (parser.js:850-853, 874-877).
+/// `xpb.breakdown`: m_fixedData → `{ m_key: m_value/4096 }` (parser.js:850-853, 874-877).
 pub(super) fn xp_fixed_breakdown(event: &J) -> R<Map<String, J>> {
     let mut breakdown = Map::new();
-    // `for..in` sur undefined : zéro itération, pas d'exception
+    // `for..in` over undefined: zero iterations, no exception
     if let Some(fd) = get(event, &["m_fixedData"]).and_then(J::as_array) {
         for item in fd {
             if !item.is_object() {
@@ -63,7 +63,7 @@ pub(super) fn process_periodic_xp(
         match js_num_str(team).as_str() {
             "0" => jnum(possible_minion_xp[0]),
             "1" => jnum(possible_minion_xp[1]),
-            _ => J::Null, // possibleMinionXP[team] indéfini → undefined → null
+            _ => J::Null, // possibleMinionXP[team] undefined → undefined → null
         },
     );
     match_
@@ -74,8 +74,8 @@ pub(super) fn process_periodic_xp(
     Ok(())
 }
 
-/// EndOfGameXPBreakdown (parser.js:856-883) : cache le dernier breakdown de chaque équipe,
-/// poussé dans match.XPBreakdown après la boucle (parser.js:2128-2129).
+/// EndOfGameXPBreakdown (parser.js:856-883): caches the last breakdown of each team,
+/// pushed into match.XPBreakdown after the loop (parser.js:2128-2129).
 pub(super) fn process_eog_xp(
     event: &J,
     players: &Map<String, J>,
@@ -100,10 +100,10 @@ pub(super) fn process_eog_xp(
     let handle = player_id_map
         .get(&key)
         .and_then(J::as_str)
-        .ok_or_else(|| Abort::Throw(format!("xp: tracker id {key} non mappé")))?;
+        .ok_or_else(|| Abort::Throw(format!("xp: tracker id {key} not mapped")))?;
     let player = players
         .get(handle)
-        .ok_or_else(|| Abort::Throw(format!("xp: joueur {handle} inconnu")))?;
+        .ok_or_else(|| Abort::Throw(format!("xp: unknown player {handle}")))?;
     let team = get(player, &["team"]).cloned().unwrap_or(J::Null);
     xpb.insert("team".into(), team.clone());
     xpb.insert(
@@ -123,8 +123,8 @@ pub(super) fn process_eog_xp(
     Ok(())
 }
 
-/// PlayerDeath (parser.js:884-941) : objet takedown partagé entre match.takedowns, les
-/// deaths de la victime et les takedowns de chaque killer (clones ici — jamais muté ensuite).
+/// PlayerDeath (parser.js:884-941): takedown object shared between match.takedowns, the
+/// victim's deaths and each killer's takedowns (clones here — never mutated afterwards).
 pub(super) fn process_player_death(
     event: &J,
     match_: &mut Map<String, J>,
@@ -170,17 +170,17 @@ pub(super) fn process_player_death(
                 .get(&pid)
                 .and_then(J::as_str)
                 .map(str::to_owned);
-            // players[playerIDMap[id]].hero : id non mappé → players[undefined].hero lève
+            // players[playerIDMap[id]].hero: unmapped id → players[undefined].hero throws
             let hero = match &handle {
                 Some(h) => get(
                     players
                         .get(h)
-                        .ok_or_else(|| Abort::Throw(format!("death: joueur {h} inconnu")))?,
+                        .ok_or_else(|| Abort::Throw(format!("death: unknown player {h}")))?,
                     &["hero"],
                 )
                 .cloned()
                 .unwrap_or(J::Null),
-                None => return Err(Abort::Throw(format!("death: victime {pid} non mappée"))),
+                None => return Err(Abort::Throw(format!("death: victim {pid} not mapped"))),
             };
             victim_doc = Some(json!({
                 "player": handle.as_deref().map_or(J::Null, J::from),
@@ -200,7 +200,7 @@ pub(super) fn process_player_death(
                     let hero = get(
                         players
                             .get(h)
-                            .ok_or_else(|| Abort::Throw(format!("death: killer {h} inconnu")))?,
+                            .ok_or_else(|| Abort::Throw(format!("death: unknown killer {h}")))?,
                         &["hero"],
                     )
                     .cloned()
@@ -208,7 +208,7 @@ pub(super) fn process_player_death(
                     json!({"player": h.as_str(), "hero": hero})
                 }
             };
-            killer_handles.push(handle); // undefined poussé tel quel en JS, filtré plus bas
+            killer_handles.push(handle); // undefined pushed as is in JS, filtered below
             td_killers.push(tdo);
         }
     }
@@ -218,8 +218,8 @@ pub(super) fn process_player_death(
     }
     let td = J::Object(td);
 
-    // players[victim].team : aucun PlayerID → players[undefined] lève
-    let victim = victim.ok_or_else(|| Abort::Throw("death: pas de PlayerID".into()))?;
+    // players[victim].team: no PlayerID → players[undefined] throws
+    let victim = victim.ok_or_else(|| Abort::Throw("death: no PlayerID".into()))?;
     let vteam = players
         .get(&victim)
         .and_then(|p| get(p, &["team"]))
@@ -253,7 +253,7 @@ pub(super) fn process_player_death(
             .and_then(J::as_object_mut)
             .and_then(|p| p.get_mut("takedowns"))
             .and_then(J::as_array_mut)
-            .ok_or_else(|| Abort::Throw(format!("death: killer {h} inconnu")))?
+            .ok_or_else(|| Abort::Throw(format!("death: unknown killer {h}")))?
             .push(td.clone());
     }
     Ok(())
@@ -288,7 +288,7 @@ pub(super) fn process_camp_capture(
         .and_then(J::as_array_mut)
         .ok_or_else(|| Abort::Throw("mercs.captures absent".into()))?
         .push(J::Object(cap));
-    // Towers of Doom : boss → match.objective (parser.js:1138-1151)
+    // Towers of Doom: boss → match.objective (parser.js:1138-1151)
     if is_map(match_, "TowersOfDoom") && get_str(sd0, &["m_value"]) == Some("Boss Camp") {
         let slot = obj_slot_mut(match_, &js_num_str(team))?;
         slot_events_mut(slot)?.push(json!({
@@ -318,10 +318,10 @@ pub(super) fn process_level_up(
     let handle = player_id_map
         .get(&key)
         .and_then(J::as_str)
-        .ok_or_else(|| Abort::Throw(format!("levelup: tracker id {key} non mappé")))?;
+        .ok_or_else(|| Abort::Throw(format!("levelup: tracker id {key} not mapped")))?;
     let player = players
         .get(handle)
-        .ok_or_else(|| Abort::Throw(format!("levelup: joueur {handle} inconnu")))?;
+        .ok_or_else(|| Abort::Throw(format!("levelup: unknown player {handle}")))?;
     let team = get(player, &["team"]).cloned().unwrap_or(J::Null);
     let gameloop = js_number(get(event, &["_gameloop"]));
     let lobj = json!({
@@ -341,8 +341,8 @@ pub(super) fn process_level_up(
     Ok(())
 }
 
-/// UnitBorn (parser.js:1239-1540) : XP théorique des minions, unités d'objectif par carte,
-/// mercs, structures, unités héros.
+/// UnitBorn (parser.js:1239-1540): theoretical minion XP, objective units per map,
+/// mercs, structures, hero units.
 pub(super) fn process_unit_born(
     event: &J,
     match_: &mut Map<String, J>,
@@ -358,7 +358,7 @@ pub(super) fn process_unit_born(
         |g: &str| unit_type.is_some_and(|t| rt[g].as_object().is_some_and(|o| o.contains_key(t)));
     let gameloop = js_number(get(event, &["_gameloop"]));
     if in_group("MinionXP") {
-        // parser.js:1245-1261 — XP théorique par minute écoulée (plafond 30)
+        // parser.js:1245-1261 — theoretical XP per elapsed minute (capped at 30)
         let t = unit_type.unwrap_or_default();
         let secs = loops_to_seconds(gameloop - loop_game_start);
         let mut mins = js_parse_int_num(secs / 60.0);
@@ -370,8 +370,8 @@ pub(super) fn process_unit_born(
         } else {
             get(rt, &["MinionXP", t])
         }
-        .ok_or_else(|| Abort::Throw(format!("table XP minion absente pour {t}")))?;
-        // index hors bornes/négatif/NaN → undefined → accumulation NaN, comme en JS
+        .ok_or_else(|| Abort::Throw(format!("minion XP table missing for {t}")))?;
+        // out-of-bounds/negative/NaN index → undefined → NaN accumulation, as in JS
         let xp = get(table, &[js_num_str(mins).as_str()]).map_or(f64::NAN, |v| js_number(Some(v)));
         let upkeep = get(event, &["m_upkeepPlayerId"]).and_then(J::as_i64);
         if upkeep == Some(11) {
@@ -443,10 +443,10 @@ pub(super) fn process_unit_born(
             .ok_or_else(|| Abort::Throw("structures absent".into()))?
             .insert(unit_uid(event), J::Object(s));
     } else if unit_type
-        .ok_or_else(|| Abort::Throw("UnitBorn sans m_unitTypeName".into()))?
+        .ok_or_else(|| Abort::Throw("UnitBorn without m_unitTypeName".into()))?
         .starts_with("Hero")
     {
-        // parser.js:1513-1539 — « see: lost vikings », le contrôleur TLV n'est pas une unité
+        // parser.js:1513-1539 — "see: lost vikings", the TLV controller is not a unit
         let t = unit_type.unwrap_or_default();
         if t != "HeroLostVikingsController" {
             let key = js_prop(get(event, &["m_controlPlayerId"]));
@@ -465,7 +465,7 @@ pub(super) fn process_unit_born(
                     .and_then(J::as_object_mut)
                     .and_then(|p| p.get_mut("units"))
                     .and_then(J::as_object_mut)
-                    .ok_or_else(|| Abort::Throw(format!("born: joueur {handle} inconnu")))?
+                    .ok_or_else(|| Abort::Throw(format!("born: unknown player {handle}")))?
                     .insert(unit_uid(event), json!({"lives": [life], "name": t}));
             }
         }
@@ -473,7 +473,7 @@ pub(super) fn process_unit_born(
     Ok(())
 }
 
-/// UnitRevived (parser.js:1541-1559) : nouvelle vie pour l'unité héros correspondante.
+/// UnitRevived (parser.js:1541-1559): new life for the matching hero unit.
 pub(super) fn process_unit_revived(
     event: &J,
     players: &mut Map<String, J>,
@@ -493,7 +493,7 @@ pub(super) fn process_unit_revived(
             .and_then(J::as_object_mut)
             .and_then(|p| p.get_mut("units"))
             .and_then(J::as_object_mut)
-            .ok_or_else(|| Abort::Throw(format!("revive: joueur {handle} inconnu")))?;
+            .ok_or_else(|| Abort::Throw(format!("revive: unknown player {handle}")))?;
         if let Some(lives) = units
             .get_mut(&uid)
             .and_then(J::as_object_mut)
@@ -513,7 +513,7 @@ pub(super) fn process_unit_revived(
     Ok(())
 }
 
-/// UnitPositions (parser.js:1560-1595) : trace des héros (vie courante) et des mercs vivants.
+/// UnitPositions (parser.js:1560-1595): trace of the heroes (current life) and of the living mercs.
 pub(super) fn process_unit_positions(
     event: &J,
     match_: &mut Map<String, J>,
@@ -544,7 +544,7 @@ pub(super) fn process_unit_positions(
         unit_index += js_number(items.get(i));
         let x = items.get(i + 1).cloned().unwrap_or(J::Null);
         let y = items.get(i + 2).cloned().unwrap_or(J::Null);
-        // BUG parser.js:1573/1588 reproduit : startsWith(index) — « 12 » matche aussi « 120-0 »
+        // BUG parser.js:1573/1588 reproduced: startsWith(index) — "12" also matches "120-0"
         let prefix = js_num_str(unit_index);
         for handle in &handles {
             let units = players
@@ -552,7 +552,7 @@ pub(super) fn process_unit_positions(
                 .and_then(J::as_object_mut)
                 .and_then(|p| p.get_mut("units"))
                 .and_then(J::as_object_mut)
-                .ok_or_else(|| Abort::Throw(format!("positions: joueur {handle} inconnu")))?;
+                .ok_or_else(|| Abort::Throw(format!("positions: unknown player {handle}")))?;
             let uids: Vec<String> = units.keys().cloned().collect();
             for uid in uids {
                 if uid.starts_with(&prefix) {
@@ -570,7 +570,7 @@ pub(super) fn process_unit_positions(
                 }
             }
         }
-        // mercs : index correspondant ET unité vivante (duration falsy → pas encore morte)
+        // mercs: matching index AND living unit (falsy duration → not dead yet)
         let mercs = match_
             .get_mut("mercs")
             .and_then(J::as_object_mut)
@@ -597,9 +597,9 @@ pub(super) fn process_unit_positions(
     Ok(())
 }
 
-/// UnitDied (parser.js:1596-1653) : cores (vraie fin de partie), mercs, structures,
-/// vies de héros ; les branches par carte (golems, terreurs, dragon…) suivent dans
-/// `obj_unit_died`, appelé juste après par la boucle principale.
+/// UnitDied (parser.js:1596-1653): cores (real end of game), mercs, structures,
+/// hero lives; the per-map branches (golems, terrors, dragon…) follow in
+/// `obj_unit_died`, called right after by the main loop.
 pub(super) fn process_unit_died(
     event: &J,
     match_: &mut Map<String, J>,
@@ -611,7 +611,7 @@ pub(super) fn process_unit_died(
     let uid = unit_uid(event);
     let gameloop_j = get(event, &["_gameloop"]).cloned().unwrap_or(J::Null);
     let gameloop = js_number(get(event, &["_gameloop"]));
-    // mort du core → match.loopLength + match.length réassignés (parser.js:1602-1606)
+    // core death → match.loopLength + match.length reassigned (parser.js:1602-1606)
     if cores.contains(&uid) {
         match_.insert("loopLength".into(), gameloop_j.clone());
         match_.insert(
@@ -650,7 +650,7 @@ pub(super) fn process_unit_died(
             jnum(loops_to_seconds(gameloop - loop_game_start)),
         );
     }
-    // unités héros (parser.js:1637-1653)
+    // hero units (parser.js:1637-1653)
     let died = loops_to_seconds(gameloop - loop_game_start);
     for pid in js_for_in_keys(player_id_map) {
         let handle = player_id_map
@@ -663,7 +663,7 @@ pub(super) fn process_unit_died(
             .and_then(J::as_object_mut)
             .and_then(|p| p.get_mut("units"))
             .and_then(J::as_object_mut)
-            .ok_or_else(|| Abort::Throw(format!("died: joueur {handle} inconnu")))?;
+            .ok_or_else(|| Abort::Throw(format!("died: unknown player {handle}")))?;
         if units.contains_key(&uid) {
             let last = units
                 .get_mut(&uid)
@@ -689,18 +689,18 @@ pub(super) fn process_unit_died(
     Ok(())
 }
 
-/// EndOfGameTalentChoices (parser.js:801-830) : win, internalHeroName, talents Tier*.
+/// EndOfGameTalentChoices (parser.js:801-830): win, internalHeroName, Tier* talents.
 pub(super) fn process_talent_choices(
     event: &J,
     players: &mut Map<String, J>,
     player_id_map: &Map<String, J>,
 ) -> R<()> {
-    // event.m_intData[0].m_value : absence → exception JS quelque part avant l'écriture
+    // event.m_intData[0].m_value: missing → JS exception somewhere before the write
     let key = js_prop(get(event, &["m_intData", "0", "m_value"]));
     let handle = player_id_map
         .get(&key)
         .and_then(J::as_str)
-        .ok_or_else(|| Abort::Throw(format!("talents: tracker id {key} non mappé")))?
+        .ok_or_else(|| Abort::Throw(format!("talents: tracker id {key} not mapped")))?
         .to_owned();
     let sd = get(event, &["m_stringData"])
         .and_then(J::as_array)
@@ -717,7 +717,7 @@ pub(super) fn process_talent_choices(
     let pdoc = players
         .get_mut(&handle)
         .and_then(J::as_object_mut)
-        .ok_or_else(|| Abort::Throw(format!("talents: joueur {handle} inconnu")))?;
+        .ok_or_else(|| Abort::Throw(format!("talents: unknown player {handle}")))?;
     pdoc.insert("win".into(), J::from(win));
     if let Some(v) = internal {
         pdoc.insert("internalHeroName".into(), v);
@@ -727,11 +727,11 @@ pub(super) fn process_talent_choices(
         .and_then(J::as_object_mut)
         .ok_or_else(|| Abort::Throw("talents: objet absent".into()))?;
     for item in &sd {
-        // m_key absent → undefined.startsWith lève
+        // m_key missing → undefined.startsWith throws
         let k = get_str(item, &["m_key"])
             .ok_or_else(|| Abort::Throw("talents: m_key absent".into()))?;
         if k.starts_with("Tier") {
-            // legacyTalentKeys=false (défaut) : clé sans espaces
+            // legacyTalentKeys=false (default): key without spaces
             if let Some(v) = get(item, &["m_value"]) {
                 talents.insert(js_strip_ws(k), v.clone());
             }

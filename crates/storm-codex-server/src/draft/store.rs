@@ -1,9 +1,9 @@
-//! Persistance de l'état de draft (singleton `draft_live`, id=1). Requêtes runtime (pas de macro
-//! vérifiée), comme le reste du serveur.
+//! Persistence of the draft state (singleton `draft_live`, id=1). Runtime queries (no checked
+//! macro), like the rest of the server.
 use crate::draft::DraftState;
 use sqlx::PgPool;
 
-/// Charge l'état persistant, ou `None` si absent/illisible (→ état neuf au démarrage).
+/// Loads the persisted state, or `None` if missing/unreadable (→ fresh state at startup).
 pub async fn load(db: &PgPool) -> Option<DraftState> {
     let row: Option<serde_json::Value> =
         sqlx::query_scalar("SELECT state FROM draft_live WHERE id = 1")
@@ -14,7 +14,7 @@ pub async fn load(db: &PgPool) -> Option<DraftState> {
     row.and_then(|j| serde_json::from_value(j).ok())
 }
 
-/// Écrit l'état (upsert sur la ligne unique).
+/// Writes the state (upsert on the single row).
 pub async fn save(db: &PgPool, state: &DraftState) -> Result<(), sqlx::Error> {
     let v = serde_json::to_value(state).unwrap_or_else(|_| serde_json::json!({}));
     sqlx::query(

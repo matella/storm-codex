@@ -1,5 +1,5 @@
-//! Admin (`/api/admin/*`) : gestion des tokens d'upload, re-process idempotent (piloté par
-//! `parser_version`), santé/observabilité. Protégé par `ADMIN_TOKEN` (Bearer).
+//! Admin (`/api/admin/*`): upload token management, idempotent re-process (driven by
+//! `parser_version`), health/observability. Protected by `ADMIN_TOKEN` (Bearer).
 
 use crate::{project, upload::sha256_hex, AppState, PARSER_VERSION};
 use axum::{
@@ -27,7 +27,7 @@ pub struct NewToken {
     name: String,
 }
 
-/// POST /api/admin/tokens — crée un token nominatif. Le clair n'est renvoyé qu'ici (jamais stocké).
+/// POST /api/admin/tokens — creates a named token. The clear value is only returned here (never stored).
 pub async fn create_token(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -53,7 +53,7 @@ pub async fn create_token(
             Json(serde_json::json!({"id": id, "name": body.name, "token": token})),
         ),
         Err(e) => {
-            tracing::error!("create_token : {e}");
+            tracing::error!("create_token: {e}");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"error": "db"})),
@@ -62,7 +62,7 @@ pub async fn create_token(
     }
 }
 
-/// DELETE /api/admin/tokens/{id} — révoque un token.
+/// DELETE /api/admin/tokens/{id} — revokes a token.
 pub async fn revoke_token(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -71,7 +71,7 @@ pub async fn revoke_token(
     if !is_admin(&headers, &s) {
         return forbidden();
     }
-    // `COALESCE` : révoquer deux fois garde la date de la première révocation (idempotent).
+    // `COALESCE`: revoking twice keeps the date of the first revocation (idempotent).
     match sqlx::query(
         "UPDATE upload_tokens SET revoked_at = COALESCE(revoked_at, now()) WHERE id = $1",
     )
@@ -85,7 +85,7 @@ pub async fn revoke_token(
         ),
         Ok(_) => (StatusCode::OK, Json(serde_json::json!({"revoked": id}))),
         Err(e) => {
-            tracing::error!("revoke_token {id} : {e}");
+            tracing::error!("revoke_token {id}: {e}");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"error": "db"})),
@@ -94,7 +94,7 @@ pub async fn revoke_token(
     }
 }
 
-/// GET /api/admin/uploads — santé : compte par statut + échecs par classe + derniers échecs.
+/// GET /api/admin/uploads — health: count per status + failures per class + latest failures.
 pub async fn uploads_health(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -121,13 +121,13 @@ pub async fn uploads_health(
     (StatusCode::OK, Json(v))
 }
 
-/// POST /api/admin/reprocess — re-parse les fichiers archivés dont `parser_version` est périmé
-/// (ou tout). Idempotent (project_match remplace). Lancé en arrière-plan.
+/// POST /api/admin/reprocess — re-parses the archived files whose `parser_version` is outdated
+/// (or all of them). Idempotent (project_match replaces). Runs in the background.
 pub async fn reprocess(State(s): State<AppState>, headers: HeaderMap) -> (StatusCode, Json<J>) {
     if !is_admin(&headers, &s) {
         return forbidden();
     }
-    // uploads à reprendre : parsés avec une version de parser périmée, ou échecs re-tentables
+    // uploads to resume: parsed with an outdated parser version, or retryable failures
     let targets: Vec<(i64, String)> = match sqlx::query_as(
         "SELECT id, archived_path FROM uploads
          WHERE archived_path IS NOT NULL
@@ -139,7 +139,7 @@ pub async fn reprocess(State(s): State<AppState>, headers: HeaderMap) -> (Status
     {
         Ok(t) => t,
         Err(e) => {
-            tracing::error!("reprocess : sélection impossible : {e}");
+            tracing::error!("reprocess: selection failed: {e}");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"error": "db"})),
@@ -154,10 +154,10 @@ pub async fn reprocess(State(s): State<AppState>, headers: HeaderMap) -> (Status
             let _permit = state.parse_sem.acquire().await;
             reprocess_one(&state, upload_id, &path).await;
         }
-        tracing::info!("re-process terminé ({queued} fichiers)");
-        // replays de scouting (tables dédiées) : même critère parser_version, puis recalcul des faits
+        tracing::info!("re-process done ({queued} files)");
+        // scouting replays (dedicated tables): same parser_version criterion, then recompute the facts
         let n = crate::scouting::api::reprocess_stale(&state).await;
-        tracing::info!("re-process scouting terminé ({n} replays)");
+        tracing::info!("scouting re-process done ({n} replays)");
     });
     (
         StatusCode::ACCEPTED,
@@ -172,12 +172,12 @@ async fn reprocess_one(state: &AppState, upload_id: i64, path: &str) {
         match tokio::task::spawn_blocking(move || storm_stats::process_replay(&p, &fname)).await {
             Ok(out) => out,
             Err(e) => {
-                tracing::error!("reprocess upload {upload_id} : worker en échec : {e}");
+                tracing::error!("reprocess upload {upload_id}: worker failed: {e}");
                 return;
             }
         };
     if out.status != 1 {
-        return; // l'échec reste classé tel quel
+        return; // the failure stays classified as is
     }
     if let Some(fp) = crate::upload::game_fingerprint(&out) {
         match project::project_match(&state.db, &fp, PARSER_VERSION, &out).await {
@@ -192,10 +192,10 @@ async fn reprocess_one(state: &AppState, upload_id: i64, path: &str) {
                 .execute(&state.db)
                 .await
                 {
-                    tracing::error!("reprocess upload {upload_id} : statut non écrit : {e}");
+                    tracing::error!("reprocess upload {upload_id}: status not written: {e}");
                 }
             }
-            Err(e) => tracing::error!("reprocess upload {upload_id} : projection : {e}"),
+            Err(e) => tracing::error!("reprocess upload {upload_id}: projection: {e}"),
         }
     }
 }

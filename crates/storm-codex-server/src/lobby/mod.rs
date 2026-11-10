@@ -1,6 +1,6 @@
-//! Lobby live : état courant d'une partie en cours de chargement. Singleton persisté (calque de
-//! `draft_live`) — le lobby courant écrase le précédent, il n'y a pas d'historique de lobbies : le
-//! replay archivé reste la source de vérité (étage 1 des trois étages de données).
+//! Live lobby: current state of a game being loaded. Persisted singleton (modelled on
+//! `draft_live`) — the current lobby overwrites the previous one, there is no lobby history: the
+//! archived replay stays the source of truth (tier 1 of the three data tiers).
 pub mod api;
 pub mod enrich;
 pub mod store;
@@ -8,24 +8,24 @@ pub mod store;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as J;
 
-/// Version du schéma de `lobby_live.state` — un état d'une version inconnue est ignoré au
-/// démarrage plutôt que désérialisé de travers.
+/// Schema version of `lobby_live.state` — a state of an unknown version is ignored at
+/// startup rather than deserialised wrongly.
 pub const LOBBY_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LobbyPlayerState {
     pub name: String,
     pub discriminant: String,
-    /// `"nom#1234"` — la clé d'identité issue du blob.
+    /// `"name#1234"` — the identity key from the blob.
     pub battletag: String,
-    /// Équipe : celle déduite par `storm-lobby`, ou celle fixée à la main (tâche 5).
+    /// Team: the one deduced by `storm-lobby`, or the one set by hand (task 5).
     pub team: Option<u8>,
-    /// `true` si l'équipe a été corrigée à la main — le front l'affiche différemment.
+    /// `true` if the team was corrected by hand — the front shows it differently.
     #[serde(default)]
     pub team_manual: bool,
-    /// Identité applicative, résolue contre l'archive. `None` = joueur jamais croisé.
+    /// Application identity, resolved against the archive. `None` = player never met.
     pub toon_handle: Option<String>,
-    /// Agrégats d'archive (tâche 4). `null` tant que non enrichi ou si joueur inconnu.
+    /// Archive aggregates (task 4). `null` as long as not enriched or if the player is unknown.
     #[serde(default)]
     pub history: Option<J>,
 }
@@ -35,42 +35,42 @@ pub struct LobbyState {
     pub schema_version: u32,
     pub detected_at: String,
     pub players: Vec<LobbyPlayerState>,
-    /// Carte : déduite des hashes `.s2ma`, ou saisie à la main.
+    /// Map: deduced from the `.s2ma` hashes, or entered by hand.
     pub map: Option<String>,
     #[serde(default)]
     pub map_manual: bool,
-    /// Héros de l'opérateur — jamais dans le blob, toujours saisi (tâche 5).
+    /// Operator hero — never in the blob, always entered (task 5).
     pub hero: Option<String>,
-    /// Index dans `players` du joueur identifié comme l'opérateur, si trouvé.
+    /// Index in `players` of the player identified as the operator, if found.
     pub me: Option<usize>,
-    /// Build suggéré + alternatives (tâche 4).
+    /// Suggested build + alternatives (task 4).
     #[serde(default)]
     pub build: Option<J>,
-    /// Stats de l'opérateur sur ce héros / cette carte (tâche 4).
+    /// Operator stats on this hero / this map (task 4).
     #[serde(default)]
     pub me_stats: Option<J>,
-    /// Rempli quand le replay correspondant est parsé (tâche 6) → bascule en debrief.
+    /// Filled when the matching replay is parsed (task 6) → switches to debrief.
     #[serde(default)]
     pub match_id: Option<i64>,
-    /// `parse_failed` quand le blob est illisible : la page affiche alors le sélecteur manuel
-    /// plutôt qu'une page vide.
+    /// `parse_failed` when the blob is unreadable: the page then shows the manual selector
+    /// rather than an empty page.
     #[serde(default)]
     pub status: Option<String>,
-    /// SHA-256 hexadécimal des octets bruts reçus par `POST /api/lobby` (avant décodage) —
-    /// calculé avec `crate::upload::sha256_hex`, le même helper que l'upload de replay. Sert de
-    /// garde d'idempotence de premier niveau dans `lobby::api::ingest` : un hash identique à
-    /// celui de l'état courant est *toujours* un repost du même fichier, y compris quand l'état
-    /// est déjà lié à un match (`match_id.is_some()`) — c'est ce qui protège le debrief d'un
-    /// simple redémarrage du watcher qui repose le `replay.server.battlelobby` resté sur le
-    /// disque. `#[serde(default)]` : un état persisté par une version antérieure du serveur n'a
-    /// pas ce champ et doit rester désérialisable (il vaut alors `""`, qui ne collisionne avec
-    /// aucun hash réel).
+    /// Hexadecimal SHA-256 of the raw bytes received by `POST /api/lobby` (before decoding) —
+    /// computed with `crate::upload::sha256_hex`, the same helper as the replay upload. Serves as
+    /// first-level idempotence guard in `lobby::api::ingest`: a hash identical to
+    /// that of the current state is *always* a repost of the same file, including when the state
+    /// is already linked to a match (`match_id.is_some()`) — that is what protects the debrief from a
+    /// simple restart of the watcher that re-posts the `replay.server.battlelobby` left on the
+    /// disk. `#[serde(default)]`: a state persisted by an earlier version of the server does not have
+    /// this field and must stay deserialisable (it is then `""`, which collides with
+    /// no real hash).
     #[serde(default)]
     pub content_hash: String,
 }
 
 impl LobbyState {
-    /// Construit l'état brut depuis un lobby décodé, avant enrichissement.
+    /// Builds the raw state from a decoded lobby, before enrichment.
     #[must_use]
     pub fn from_lobby(lobby: &storm_lobby::Lobby, detected_at: String) -> Self {
         Self {
@@ -101,8 +101,8 @@ impl LobbyState {
         }
     }
 
-    /// État dégradé quand le blob n'a pas pu être décodé (nouveau build Blizzard). La page reste
-    /// utilisable : l'opérateur saisit son héros, le build s'affiche.
+    /// Degraded state when the blob could not be decoded (new Blizzard build). The page stays
+    /// usable: the operator enters their hero, the build is shown.
     #[must_use]
     pub fn unreadable(detected_at: String) -> Self {
         Self {
@@ -122,19 +122,19 @@ impl LobbyState {
     }
 }
 
-/// Fenêtre au-delà de laquelle un lobby ouvert ne se lie plus à un match nouvellement parsé.
-/// Très largement au-delà de la durée d'une partie (20-30 min) plus le temps d'upload, donc aucune
-/// liaison légitime n'est jamais perdue à cause de cette limite ; assez courte pour qu'un lobby
-/// resté ouvert par erreur (partie annulée, replay jamais uploadé) ne capte pas, le lendemain ou
-/// plus tard, une partie ultérieure entre les mêmes dix joueurs — en ligue et en scrim la même
-/// composition se réaffronte régulièrement, et la comparaison de BattleTags seule ne peut alors pas
-/// distinguer les deux parties.
+/// Window beyond which an open lobby no longer links to a newly parsed match.
+/// Very far beyond the duration of a game (20-30 min) plus the upload time, so no
+/// legitimate link is ever lost because of this limit; short enough that a lobby
+/// left open by mistake (cancelled game, replay never uploaded) does not capture, the next day or
+/// later, a later game between the same ten players — in leagues and scrims the same
+/// line-up meets again regularly, and comparing BattleTags alone cannot then
+/// tell the two games apart.
 const FENETRE_LIAISON_HEURES: i64 = 6;
 
-/// Vrai si `detected_at` remonte à plus de [`FENETRE_LIAISON_HEURES`]. Extrait de `lier_match` en
-/// fonction pure pour être testable sans pool Postgres. Même motif que `parse_failed_transitoire`
-/// dans `api.rs` : une date illisible ne doit jamais bloquer une liaison par ailleurs valide — on
-/// préfère perdre la protection temporelle sur ce cas dégénéré plutôt que la fonctionnalité.
+/// True if `detected_at` is more than [`FENETRE_LIAISON_HEURES`] old. Extracted from `lier_match` as a
+/// pure function to be testable without a Postgres pool. Same pattern as `parse_failed_transitoire`
+/// in `api.rs`: an unreadable date must never block an otherwise valid link — we
+/// prefer losing the time protection on this degenerate case rather than the feature.
 fn lobby_trop_ancien(detected_at: &str) -> bool {
     match chrono::DateTime::parse_from_rfc3339(detected_at) {
         Ok(detecte) => {
@@ -145,11 +145,11 @@ fn lobby_trop_ancien(detected_at: &str) -> bool {
     }
 }
 
-/// Relie un match fraîchement parsé au lobby courant, si c'est la même partie. Critère : l'ensemble
-/// des BattleTags, et la fraîcheur du lobby (voir [`lobby_trop_ancien`]). Le parse complet
-/// reconstruit les mêmes `nom#tag` depuis le blob embarqué dans le replay (`storm_stats`,
-/// `get_battletags`), donc les deux côtés portent la même clé — sans rien supposer du format
-/// binaire. Renvoie `true` si la liaison a eu lieu (l'appelant sait alors qu'il doit persister et
+/// Links a freshly parsed match to the current lobby, if it is the same game. Criterion: the set
+/// of BattleTags, and the freshness of the lobby (see [`lobby_trop_ancien`]). The full parse
+/// rebuilds the same `name#tag` from the blob embedded in the replay (`storm_stats`,
+/// `get_battletags`), so both sides carry the same key — without assuming anything about the binary
+/// format. Returns `true` if the link happened (the caller then knows it must persist and
 /// diffuser).
 pub async fn lier_match(db: &sqlx::PgPool, state: &mut LobbyState, match_id: i64) -> bool {
     if state.match_id.is_some() || state.players.is_empty() {
@@ -176,10 +176,10 @@ pub async fn lier_match(db: &sqlx::PgPool, state: &mut LobbyState, match_id: i64
     true
 }
 
-/// Cœur de `lier_match`, extrait en fonction pure pour être testable sans pool Postgres (même
-/// motif que `meme_lobby` dans `api.rs`) : deux ensembles de BattleTags décrivent la même partie
-/// s'ils contiennent exactement les mêmes tags, indépendamment de l'ordre. Un ensemble vide n'est
-/// jamais considéré comme correspondant à lui-même — sans joueur, la comparaison ne prouve rien.
+/// Core of `lier_match`, extracted as a pure function to be testable without a Postgres pool (same
+/// pattern as `meme_lobby` in `api.rs`): two sets of BattleTags describe the same game
+/// if they contain exactly the same tags, regardless of order. An empty set is
+/// never considered as matching itself — without players, the comparison proves nothing.
 fn memes_battletags(a: &[String], b: &[String]) -> bool {
     if a.is_empty() || b.is_empty() || a.len() != b.len() {
         return false;
@@ -227,11 +227,11 @@ mod tests {
         assert!(!memes_battletags(&a, &b));
     }
 
-    /// Fige la comparaison en multiensemble : mêmes éléments, mêmes longueurs, multiplicités
-    /// différentes ("a" apparaît deux fois d'un côté, "b" deux fois de l'autre) → ne doit jamais
-    /// correspondre. Une implémentation qui « simplifierait » vers un `HashSet` (qui dédoublonne)
-    /// verrait les deux ensembles devenir `{a#1, b#2}` des deux côtés et déclarerait, à tort, la
-    /// même partie.
+    /// Pins down the multiset comparison: same elements, same lengths, different
+    /// multiplicities ("a" appears twice on one side, "b" twice on the other) → must never
+    /// match. An implementation that would "simplify" to a `HashSet` (which deduplicates)
+    /// would see both sets become `{a#1, b#2}` on both sides and would wrongly declare the
+    /// same game.
     #[test]
     fn des_multiplicites_differentes_ne_correspondent_jamais() {
         let a = tags(&["a#1", "a#1", "b#2"]);

@@ -1,10 +1,10 @@
-//! Persistance du lobby courant (singleton `lobby_live`, id=1). Requêtes runtime, comme le reste
-//! du serveur. Copie assumée du motif de `draft/store.rs` : deux singletons indépendants, chacun
-//! avec son cycle de vie ; les factoriser coûterait plus en indirection qu'il ne rapporterait.
+//! Persistence of the current lobby (singleton `lobby_live`, id=1). Runtime queries, like the rest
+//! of the server. Deliberate copy of the pattern of `draft/store.rs`: two independent singletons, each
+//! with its own life cycle; factoring them would cost more in indirection than it would bring.
 use crate::lobby::{LobbyState, LOBBY_SCHEMA_VERSION};
 use sqlx::PgPool;
 
-/// Charge l'état persistant. Un état d'une autre version de schéma est ignoré (→ pas de lobby).
+/// Loads the persisted state. A state of another schema version is ignored (→ no lobby).
 pub async fn load(db: &PgPool) -> Option<LobbyState> {
     let row: Option<serde_json::Value> =
         sqlx::query_scalar("SELECT state FROM lobby_live WHERE id = 1")
@@ -16,7 +16,7 @@ pub async fn load(db: &PgPool) -> Option<LobbyState> {
     (state.schema_version == LOBBY_SCHEMA_VERSION).then_some(state)
 }
 
-/// Écrit l'état (upsert sur la ligne unique).
+/// Writes the state (upsert on the single row).
 pub async fn save(db: &PgPool, state: &LobbyState) -> Result<(), sqlx::Error> {
     let v = serde_json::to_value(state).unwrap_or_else(|_| serde_json::json!({}));
     sqlx::query(
@@ -29,7 +29,7 @@ pub async fn save(db: &PgPool, state: &LobbyState) -> Result<(), sqlx::Error> {
     .map(|_| ())
 }
 
-/// Efface le lobby courant.
+/// Clears the current lobby.
 pub async fn clear(db: &PgPool) -> Result<(), sqlx::Error> {
     sqlx::query("DELETE FROM lobby_live WHERE id = 1")
         .execute(db)

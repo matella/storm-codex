@@ -1,6 +1,6 @@
-# CI de qualité : format + migrations figées, clippy strict + tests Rust (avec Postgres de service
-# → les tests d'intégration DB-gated tournent réellement), audit des dépendances, tests & build
-# front. L'image ghcr.io n'est publiée (job `publish`) qu'après le succès de tous ces jobs.
+# Quality CI: format + frozen migrations, strict clippy + Rust tests (with a service Postgres
+# → the DB-gated integration tests really run), dependency audit, front-end tests & build.
+# The ghcr.io image is only published (`publish` job) after all these jobs succeed.
 name: ci
 on:
   push:
@@ -14,13 +14,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # le contrôle des migrations compare à la base
+          fetch-depth: 0 # the migrations check compares against the base
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
       - name: format (cargo fmt)
         run: cargo fmt --all -- --check
-      - name: migrations existantes inchangées
+      - name: existing migrations unchanged
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             sh scripts/check-migrations.sh "origin/${{ github.base_ref }}"
@@ -50,7 +50,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: clippy (strict)
         run: cargo clippy --workspace --all-targets -- -D warnings
-      - name: tests (unitaires + intégration DB)
+      - name: tests (unit + DB integration)
         run: cargo test --workspace
   audit:
     runs-on: ubuntu-latest
@@ -72,7 +72,7 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: npm ci
         working-directory: web
-      - name: audit (dépendances embarquées dans le bundle)
+      - name: audit (dependencies shipped in the bundle)
         run: npm audit --omit=dev --audit-level=high
         working-directory: web
       - name: tests (vitest)
@@ -81,15 +81,15 @@ jobs:
       - name: build (tsc + vite)
         run: npm run build
         working-directory: web
-  # Image storm-codex sur ghcr.io : seulement sur push (main ou tag v*), seulement si tout est vert.
-  # Tags : `latest` (main), `sha-<commit>` (retour arrière possible), et le nom du tag git.
+  # storm-codex image on ghcr.io: only on push (main or tag v*), only if everything is green.
+  # Tags: `latest` (main), `sha-<commit>` (rollback possible), and the git tag name.
   publish:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: [checks, rust, audit, web]
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write # push vers ghcr.io (GITHUB_TOKEN suffit)
+      packages: write # push to ghcr.io (GITHUB_TOKEN is enough)
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3

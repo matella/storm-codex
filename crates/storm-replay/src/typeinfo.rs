@@ -1,14 +1,14 @@
-//! Grammaire des protocoles : les `typeinfos` exportées de heroprotocol, pré-parsées.
-//! Les bounds (`lo`, `bits`) sont significatifs pour le décodeur bitpacked ;
-//! le décodeur versioned les ignore (l'encodage versioned est auto-décrit).
+//! Protocol grammar: the `typeinfos` exported from heroprotocol, pre-parsed.
+//! The bounds (`lo`, `bits`) matter for the bitpacked decoder;
+//! the versioned decoder ignores them (the versioned encoding is self-describing).
 
 use crate::error::{Error, Result};
 use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, Hasher};
 use std::sync::Arc;
 
-/// Hasher trivial pour clés `i64` (tags de choice, eventids) — SipHash coûte cher sur le
-/// chemin chaud (~10⁶ lookups/replay), un multiply-shift suffit pour des petits entiers.
+/// Trivial hasher for `i64` keys (choice tags, eventids) — SipHash is expensive on the
+/// hot path (~10⁶ lookups/replay), a multiply-shift is enough for small integers.
 #[derive(Default)]
 pub struct I64Hasher(u64);
 
@@ -90,7 +90,7 @@ fn bounds(args: &[serde_json::Value], i: usize) -> Result<(i64, u32)> {
 pub fn parse_typeinfos(json: &serde_json::Value) -> Result<Vec<TypeInfo>> {
     let list = json
         .as_array()
-        .ok_or_else(|| err("typeinfos : pas un tableau"))?;
+        .ok_or_else(|| err("typeinfos: not an array"))?;
     let mut out = Vec::with_capacity(list.len());
     for (i, entry) in list.iter().enumerate() {
         let pair = entry
@@ -99,7 +99,7 @@ pub fn parse_typeinfos(json: &serde_json::Value) -> Result<Vec<TypeInfo>> {
         let method = pair
             .first()
             .and_then(|v| v.as_str())
-            .ok_or_else(|| err(format!("typeinfo {i}: méthode")))?;
+            .ok_or_else(|| err(format!("typeinfo {i}: method")))?;
         let args = pair
             .get(1)
             .and_then(|v| v.as_array())
@@ -196,7 +196,7 @@ pub fn parse_typeinfos(json: &serde_json::Value) -> Result<Vec<TypeInfo>> {
                 }
                 TypeInfo::Struct { fields }
             }
-            other => return Err(err(format!("typeinfo {i}: méthode inconnue {other}"))),
+            other => return Err(err(format!("typeinfo {i}: unknown method {other}"))),
         };
         out.push(ti);
     }

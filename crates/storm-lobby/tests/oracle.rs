@@ -1,8 +1,8 @@
-//! Oracle de parité : à partir du seul blob lobby, le parser doit retrouver les joueurs que le
-//! parse complet du replay identifie — par BattleTag, seule identité que le format expose.
+//! Parity oracle: from the lobby blob alone, the parser must find the players that the
+//! full parse of the replay identifies — by BattleTag, the only identity the format exposes.
 //!
-//! Chaque `.StormReplay` porte le même blob que celui écrit en live par le jeu : chaque replay est
-//! donc à la fois un échantillon et sa propre correction.
+//! Each `.StormReplay` carries the same blob as the one written live by the game: each replay is
+//! therefore both a sample and its own answer key.
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
@@ -16,7 +16,7 @@ fn data(rel: &str) -> PathBuf {
         .join(rel)
 }
 
-/// Les replays committés dans le workspace.
+/// The replays committed in the workspace.
 fn replays() -> Vec<PathBuf> {
     [
         "crates/storm-replay/tests/data/2024-10-07 22.29.55 Industrial District.StormReplay",
@@ -29,16 +29,16 @@ fn replays() -> Vec<PathBuf> {
     .collect()
 }
 
-/// Vérité de référence : `{battletag: équipe}` d'après le parse complet du replay.
-/// Les joueurs dont le parse complet n'a pas résolu le discriminant sont écartés : l'oracle ne
-/// peut pas juger ce que sa propre référence ignore.
+/// Reference truth: `{battletag: team}` from the full parse of the replay.
+/// The players whose discriminator the full parse did not resolve are discarded: the oracle cannot
+/// judge what its own reference ignores.
 fn truth(path: &Path) -> BTreeMap<String, i64> {
     let filename = path
         .file_name()
         .and_then(|s| s.to_str())
-        .expect("nom de fichier");
+        .expect("file name");
     let out = storm_stats::process_replay(path, filename);
-    assert_eq!(out.status, 1, "{filename} : parse complet rejeté");
+    assert_eq!(out.status, 1, "{filename}: full parse rejected");
     let json = out.to_json();
     json["players"]
         .as_object()
@@ -64,7 +64,7 @@ fn parse_retrouve_les_battletags_du_replay() {
     for path in replays() {
         let label = path.file_name().and_then(|s| s.to_str()).expect("nom");
         let expected = truth(&path);
-        assert_eq!(expected.len(), 10, "{label} : référence incomplète");
+        assert_eq!(expected.len(), 10, "{label}: incomplete reference");
 
         let decoded: BTreeMap<String, Option<u8>> = lobby_of(&path)
             .players
@@ -74,13 +74,13 @@ fn parse_retrouve_les_battletags_du_replay() {
 
         let attendus: Vec<&String> = expected.keys().collect();
         let obtenus: Vec<&String> = decoded.keys().collect();
-        assert_eq!(obtenus, attendus, "{label} : BattleTags divergents");
+        assert_eq!(obtenus, attendus, "{label}: divergent BattleTags");
     }
 }
 
-/// Le format ne porte aucun champ d'équipe : elle est déduite de l'ordre (5 premiers / 5 derniers).
-/// Cette hypothèse n'a été observée que sur 2 échantillons en tâche 1 — ce test la vérifie sur le
-/// corpus committé, et le harnais de parité (tâche 5) la vérifie sur l'archive complète.
+/// The format carries no team field: it is deduced from the order (first 5 / last 5).
+/// This hypothesis was only observed on 2 samples in task 1 — this test checks it on the
+/// committed corpus, and the parity harness (task 5) checks it on the whole archive.
 #[test]
 fn les_equipes_deduites_correspondent_au_replay() {
     for path in replays() {
@@ -90,20 +90,20 @@ fn les_equipes_deduites_correspondent_au_replay() {
             let Some(team) = p.team else { continue };
             let attendu = expected
                 .get(&p.battletag())
-                .unwrap_or_else(|| panic!("{label} : BattleTag inconnu « {} »", p.battletag()));
+                .unwrap_or_else(|| panic!("{label}: unknown BattleTag \"{}\"", p.battletag()));
             assert_eq!(
                 i64::from(team),
                 *attendu,
-                "{label} : équipe divergente pour {}",
+                "{label}: divergent team for {}",
                 p.battletag()
             );
         }
     }
 }
 
-/// Le blob contient des chemins de cache Battle.net vers des fichiers `.s2ma` (les cartes),
-/// identifiés par un hash de 32 caractères hexadécimaux. Ils sont la seule piste de carte du
-/// format (rapport de format, Q5).
+/// The blob contains Battle.net cache paths to `.s2ma` files (the maps),
+/// identified by a hash of 32 hexadecimal characters. They are the only map lead of the
+/// format (format report, Q5).
 #[test]
 fn les_hashes_de_carte_sont_extraits() {
     let path = data("crates/storm-stats/tests/data/silver-city-aram.StormReplay");
@@ -112,25 +112,25 @@ fn les_hashes_de_carte_sont_extraits() {
     let hashes = storm_lobby::map_hashes(&blob);
     assert!(
         !hashes.is_empty(),
-        "aucun hash .s2ma extrait — le rapport de format en documente 9"
+        "no .s2ma hash extracted — the format report documents 9"
     );
     assert!(
         hashes
             .iter()
             .all(|h| h.len() == 32 && h.chars().all(|c| c.is_ascii_hexdigit())),
-        "hash mal formé : {hashes:?}"
+        "malformed hash: {hashes:?}"
     );
 }
 
-/// La carte déduite des hashes doit correspondre à celle du parse complet, quand elle est déduite.
-/// Une carte `None` est acceptable (hash inconnu de la table) ; une carte FAUSSE ne l'est pas.
+/// The map deduced from the hashes must match the one of the full parse, when it is deduced.
+/// A `None` map is acceptable (hash unknown to the table); a WRONG map is not.
 #[test]
 fn la_carte_deduite_ne_ment_jamais() {
     for path in replays() {
         let label = path.file_name().and_then(|s| s.to_str()).expect("nom");
         let filename = label;
         let out = storm_stats::process_replay(&path, filename);
-        assert_eq!(out.status, 1, "{label} : parse complet rejeté");
+        assert_eq!(out.status, 1, "{label}: full parse rejected");
         let json = out.to_json();
         let attendue = json["match"]["map"]
             .as_str()
@@ -138,14 +138,14 @@ fn la_carte_deduite_ne_ment_jamais() {
             .to_string();
 
         if let Some(deduite) = lobby_of(&path).map {
-            assert_eq!(deduite, attendue, "{label} : carte déduite fausse");
+            assert_eq!(deduite, attendue, "{label}: wrongly deduced map");
         }
     }
 }
 
-/// Régression. Un BattleTag cyrillique est présent dans ce replay en UTF-8 multi-octets ; `strings`
-/// ne le voit pas. Un parser qui supposerait de l'ASCII perdrait silencieusement un joueur sur dix
-/// dans les parties européennes — sans échouer, ce qui est pire. Cf. le rapport de format, Q1.
+/// Regression. A Cyrillic BattleTag is present in this replay as multi-byte UTF-8; `strings`
+/// does not see it. A parser that assumed ASCII would silently lose one player in ten
+/// in European games — without failing, which is worse. See the format report, Q1.
 #[test]
 fn battletag_non_ascii_est_decode() {
     let path =
@@ -156,7 +156,7 @@ fn battletag_non_ascii_est_decode() {
             .players
             .iter()
             .any(|p| p.name == "ЛовкийЭльф" && p.discriminant == "215346"),
-        "BattleTag cyrillique absent — décodés : {:?}",
+        "Cyrillic BattleTag missing — decoded: {:?}",
         lobby
             .players
             .iter()

@@ -1,17 +1,17 @@
 [package]
 name = "storm-stats"
 version = "0.1.0"
-description = "Stats de match Heroes of the Storm depuis un replay décodé — port de hots-parser"
+description = "Heroes of the Storm match stats from a decoded replay — port of hots-parser"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
-# version + path : path pour le dev local, version pour la publication crates.io (jalon 6 —
-# storm-stats se publie après storm-replay).
+# version + path: path for local dev, version for the crates.io publication (milestone 6 —
+# storm-stats is published after storm-replay).
 storm-replay = { version = "0.1", path = "../storm-replay" }
-# preserve_order : les objets JS sont ordonnés par insertion — le `for..in` sur clés
-# non-numériques (nukes de Warhead Junction…) doit suivre cet ordre, pas l'ordre trié.
+# preserve_order: JS objects are ordered by insertion — the `for..in` over
+# non-numeric keys (Warhead Junction nukes…) must follow that order, not the sorted order.
 serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "2"
 regex = "1"

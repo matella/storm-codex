@@ -1,6 +1,6 @@
-//! Synchro à sens unique série → draft : la série de cast est la source de vérité des équipes,
-//! pseudos, score et Bo ; le draft (overlay existant) les reçoit sans que sa progression
-//! (curseur, assignations, file de replays, fearless) soit touchée.
+//! One-way series → draft sync: the cast series is the source of truth for the teams,
+//! nicknames, score and Bo; the draft (existing overlay) receives them without its progress
+//! (cursor, assignments, replay queue, fearless) being touched.
 use super::Series;
 use crate::draft::DraftState;
 

@@ -1,48 +1,48 @@
 # storm-stats
 
-Stats de match **Heroes of the Storm** depuis un replay décodé (`storm-replay`) — port Rust
-fidèle de [hots-parser](https://github.com/ebshimizu/hots-parser).
+**Heroes of the Storm** match stats from a decoded replay (`storm-replay`) — faithful Rust
+port of [hots-parser](https://github.com/ebshimizu/hots-parser).
 
 ```rust
 let out = storm_stats::process_replay(std::path::Path::new("match.StormReplay"), "match.StormReplay");
 if out.status == 1 {
-    let json = out.to_json(); // forme { match, players } de hots-parser
+    let json = out.to_json(); // hots-parser's { match, players } shape
 }
 ```
 
 ## Conception
 
-- **Port 1:1 de `parser.js`** (3 360 lignes), bugs compris : la sortie reproduit exactement
-  `{match, players, status}` de hots-parser, y compris ses statuts d'échec. Tout écart volontaire
-  est une **tolérance documentée**, jamais silencieuse.
-- **Parité prouvée, pas déclarée** : `tools/parity-harness/` exécute hots-parser (Node) et
-  storm-stats sur le même corpus et diff **champ par champ**.
-  → **114/114 replays verts** (79 au parse complet identique, 35 rejetés identiquement).
-  Détails : `docs/research/2026-06-12-jalon2-parite.md`.
-- **Constantes embarquées** (`data/constants.json`, `data/attr.json`) : exportées de
-  hots-parser, régénérables.
+- **1:1 port of `parser.js`** (3,360 lines), bugs included: the output reproduces exactly
+  hots-parser's `{match, players, status}`, including its failure statuses. Any deliberate
+  deviation is a **documented tolerance**, never silent.
+- **Parity proven, not claimed**: `tools/parity-harness/` runs hots-parser (Node) and
+  storm-stats on the same corpus and diffs them **field by field**.
+  → **114/114 replays green** (79 with an identical full parse, 35 rejected identically).
+  Details: `docs/research/2026-06-12-jalon2-parite.md`.
+- **Embedded constants** (`data/constants.json`, `data/attr.json`): exported from
+  hots-parser, regenerable.
 
-## Périmètre (parité totale SotS)
-Identité match/joueurs · score screen (~80 stats/joueur) + awards · talents par palier · draft
-(picks/bans ordonnés, first pick) · takedowns enrichis (positions, participants, vengeances) ·
-objectifs **des 16 cartes** (immortels, dragon, araignées, tributs, autels, crânes, navires,
-punishers, Braxis avec force de vague, temples, trônes, mines, graines, gemmes, protecteur) ·
-mercs/structures · XP périodique + level advantage · team fights/uptime · taunts/BM
-(bsteps, danses, sprays, voicelines) · messages/pings · votes · globes · stats d'équipe.
+## Scope (full SotS parity)
+Match/player identity · score screen (~80 stats/player) + awards · talents per tier · draft
+(ordered picks/bans, first pick) · enriched takedowns (positions, participants, revenges) ·
+objectives **of the 16 maps** (immortals, dragon, spiders, tributes, altars, skulls, ships,
+punishers, Braxis with wave strength, temples, thrones, mines, seeds, gems, protector) ·
+mercs/structures · periodic XP + level advantage · team fights/uptime · taunts/BM
+(bsteps, dances, sprays, voicelines) · messages/pings · votes · globes · team stats.
 
-## Divergences assumées (storm-stats > hots-parser)
-- **Coordonnées de ping** `match.messages.*.point.x/y` : hots-parser utilise le port
-  heroprotocol de GaryIrick qui décode mal ce champ (overflow signé) ; storm-stats suit le port
-  Blizzard et donne la valeur correcte (`tools/parity-harness/tolerances.json`).
-- **Cartes ARAM récentes** (`EXTRA_MAPS` : Silver City, Lost Cavern, Braxis Outpost, Industrial
-  District) : absentes de la `MapType` de hots-parser 7.55.7, qui les rejette. storm-stats les
-  parse (objectif minimal, le reste via les chemins universels) — ~30 % de l'archive sinon
-  perdue. Validé par invariant structurel (`tests/extended_maps.rs`), pas de baseline Node.
+## Accepted divergences (storm-stats > hots-parser)
+- **Ping coordinates** `match.messages.*.point.x/y`: hots-parser uses GaryIrick's
+  heroprotocol port, which decodes this field wrongly (signed overflow); storm-stats follows the
+  Blizzard port and gives the correct value (`tools/parity-harness/tolerances.json`).
+- **Recent ARAM maps** (`EXTRA_MAPS`: Silver City, Lost Cavern, Braxis Outpost, Industrial
+  District): missing from the `MapType` of hots-parser 7.55.7, which rejects them. storm-stats
+  parses them (minimal objective, the rest through the universal paths) — ~30% of the archive
+  otherwise lost. Validated by a structural invariant (`tests/extended_maps.rs`), no Node baseline.
 
 ## Performance
-Parse complet (decode + stats), Ryzen 7 7800X3D mono-thread, feature `fast-alloc` :
-**133 ms médiane** sur échantillon représentatif (budget spec : < 150 ms), dominé par le
-décodage. `storm-stats-dump --bench <dir>` pour reproduire.
+Full parse (decode + stats), Ryzen 7 7800X3D single-threaded, `fast-alloc` feature:
+**133 ms median** on a representative sample (spec budget: < 150 ms), dominated by
+decoding. `storm-stats-dump --bench <dir>` to reproduce.
 
 ## Licence
-MIT. Logique dérivée de hots-parser (@ebshimizu, MIT). Non affilié à Blizzard.
+MIT. Logic derived from hots-parser (@ebshimizu, MIT). Not affiliated with Blizzard.

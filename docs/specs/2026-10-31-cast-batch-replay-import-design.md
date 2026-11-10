@@ -1,91 +1,91 @@
-# Import groupé des replays d'une série de cast — design
+# Batch import of a cast series' replays — design
 
-**Statut** : validée par l'opérateur (2026-10-31) — décisions 1 à 3 ci-dessous tranchées.
-**Date** : 2026-10-31
-**Domaine** : cast (`crates/storm-codex-server/src/cast/`, `web/src/cast/`), spec `docs/spec/05-api.md` §Replay d'une partie.
+**Status**: approved by the operator (2026-10-31) — decisions 1 to 3 below settled.
+**Date**: 2026-10-31
+**Area**: cast (`crates/storm-codex-server/src/cast/`, `web/src/cast/`), spec `docs/spec/05-api.md` §Replay of a game.
 
-## Contexte
+## Context
 
-Aujourd'hui, le replay Custom de chaque partie se dépose une fois la partie lancée et associée à sa ligne
-de série (`POST /api/cast/games/{n}/replay`, un fichier par partie). Pour une série de 3 à 5 parties, c'est
-un aller-retour par partie, après coup.
+Today, each game's Custom replay is uploaded once the game has been started and linked to its series
+row (`POST /api/cast/games/{n}/replay`, one file per game). For a series of 3 to 5 games, that is
+one round trip per game, after the fact.
 
-## Objectif
+## Goal
 
-Au moment de créer une série, proposer à l'opérateur :
+When creating a series, offer the operator:
 
-- **Manuel** (défaut) : comportement actuel, un fichier par partie.
-- **Groupé** : déposer d'un coup les `.StormReplay` de la série ; le serveur propose l'affectation
-  partie ↔ fichier ; l'opérateur confirme ou corrige avant toute écriture.
+- **Manual** (default): current behaviour, one file per game.
+- **Batch**: drop all the series' `.StormReplay` files at once; the server proposes the
+  game ↔ file assignment; the operator confirms or corrects before anything is written.
 
-## Hors périmètre
+## Out of scope
 
-- Pas de lecture de dossier côté serveur (le navigateur envoie les fichiers, comme aujourd'hui).
-- Pas d'écriture en base (`matches`, `uploads`) : seule la ligne `cast_live` change, comme la route actuelle.
-- Pas de changement de la règle d'orientation (R14/R16) ni du format de `GameSummary`.
+- No folder reading on the server side (the browser sends the files, as today).
+- No database writes (`matches`, `uploads`): only the `cast_live` row changes, like the current route.
+- No change to the orientation rule (R14/R16) or to the `GameSummary` format.
 
-## Points à vérifier avant implémentation
+## Points to check before implementation
 
-1. **Carte** : `GameSummary.map` existe (`cast/mod.rs`, champ `map`). Sert à rattacher un replay à une carte du pool.
-2. **Date / ordre** : le résumé ne porte pas, à ce jour, la date de la partie. À vérifier dans `storm-stats`
-   (`process_replay`) ; sinon, l'ordre se fait par défaut sur l'ordre de dépôt, à confirmer par l'opérateur.
-3. **Création des parties** : une partie n'existe qu'après `POST /api/cast/games/start` (carte choisie dans le pool).
-   Le groupé doit donc soit créer les parties à partir des replays (carte du replay ∈ carte choisie du pool),
-   soit ne rattacher qu'aux parties déjà lancées. **Choix proposé** : créer les parties (vue complète d'emblée).
+1. **Map**: `GameSummary.map` exists (`cast/mod.rs`, field `map`). Used to attach a replay to a pool map.
+2. **Date / order**: the summary does not carry the game date so far. To be checked in `storm-stats`
+   (`process_replay`); otherwise, the order defaults to upload order, to be confirmed by the operator.
+3. **Creating games**: a game only exists after `POST /api/cast/games/start` (map chosen in the pool).
+   Batch mode must therefore either create the games from the replays (replay map ∈ chosen pool map),
+   or only attach to games already started. **Proposed choice**: create the games (complete view right away).
 
-## Comportement proposé
+## Proposed behaviour
 
-1. `POST /api/cast/series` inchangé ; l'écran de création ajoute le choix Manuel / Groupé.
-2. Mode Groupé, après l'étape équipes :
-   - `POST /api/cast/series/replays/preview` (corps multipart ou liste d'octets + noms) : décode chaque fichier
-     (même chemin que `cast/replay.rs::decode`, fichiers temporaires supprimés), renvoie pour chacun
-     `{ filename, map, winner, orientation, proposed_game }` sans rien écrire. `proposed_game` = la carte du
-     pool (statut `picked`/`decider`) correspondante, dans l'ordre de dépôt à défaut de date.
-   - Erreurs par fichier (`not_custom`, `parse_failed`, `incomplete`) affichées sans bloquer les autres.
-3. L'opérateur corrige l'affectation dans l'écran, puis valide.
-4. `POST /api/cast/series/replays/commit` : pour chaque affectation validée, crée la partie si besoin puis applique
-   `apply_to` (même verrou, même `series_changed`/`side_mismatch`). Réponse : résultat par fichier.
-   Atomicité : si une affectation échoue, les précédentes restent (chaque partie est indépendante) ; le résultat
-   le dit explicitement.
-5. `cast.updated` diffusé comme aujourd'hui ; synchro draft inchangée.
+1. `POST /api/cast/series` unchanged; the creation screen adds the Manual / Batch choice.
+2. Batch mode, after the teams step:
+   - `POST /api/cast/series/replays/preview` (multipart body or list of bytes + names): decodes each file
+     (same path as `cast/replay.rs::decode`, temporary files deleted), returns for each one
+     `{ filename, map, winner, orientation, proposed_game }` without writing anything. `proposed_game` = the matching
+     pool map (status `picked`/`decider`), in upload order when there is no date.
+   - Per-file errors (`not_custom`, `parse_failed`, `incomplete`) shown without blocking the others.
+3. The operator corrects the assignment on screen, then confirms.
+4. `POST /api/cast/series/replays/commit`: for each confirmed assignment, creates the game if needed then applies
+   `apply_to` (same lock, same `series_changed`/`side_mismatch`). Response: result per file.
+   Atomicity: if an assignment fails, the previous ones stay (each game is independent); the result
+   says so explicitly.
+5. `cast.updated` broadcast as today; draft sync unchanged.
 
-## Contraintes reprises de la spec
+## Constraints carried over from the spec
 
-- Décodage sous `parse_sem`, fichier temporaire garanti supprimé (garde `TempFile`).
-- Budget : ~180 ms par replay en release → 5 replays < 1 s, à mesurer (règle dure 4, pas d'estimation).
-- Corps limité comme les autres routes de replay ; pas de nouvelle limite implicite.
+- Decoding under `parse_sem`, temporary file guaranteed to be deleted (`TempFile` guard).
+- Budget: ~180 ms per replay in release → 5 replays < 1 s, to be measured (hard rule 4, no estimate).
+- Body limited like the other replay routes; no new implicit limit.
 
-## Tests attendus
+## Expected tests
 
-- Preview : affectation par carte ; fichier non Custom signalé sans bloquer les autres ; rien écrit en base.
-- Commit : partie créée puis remplie ; `series_changed` si la série change entre preview et commit ;
-  `side_mismatch` remonté par fichier.
-- Front : choix Manuel/Groupé à la création ; correction manuelle de l'affectation ; Manuel inchangé (non-régression
-  des tests `SeriesWorkspace` existants).
+- Preview: assignment by map; non-Custom file reported without blocking the others; nothing written to the database.
+- Commit: game created then filled; `series_changed` if the series changes between preview and commit;
+  `side_mismatch` reported per file.
+- Front-end: Manual/Batch choice at creation; manual correction of the assignment; Manual unchanged (no regression
+  of the existing `SeriesWorkspace` tests).
 
-## Décisions (validées)
+## Decisions (approved)
 
-1. **Créer les parties depuis les replays** : chaque fichier crée sa partie (carte du pool `picked`/`decider`, non encore jouée).
-2. **Ordre** : date de partie si le replay la fournit, sinon ordre de dépôt.
-3. **Commit partiel** accepté : chaque partie réussit ou échoue seule, le résultat est renvoyé par fichier.
+1. **Create the games from the replays**: each file creates its game (pool map `picked`/`decider`, not played yet).
+2. **Order**: game date if the replay provides it, otherwise upload order.
+3. **Partial commit** accepted: each game succeeds or fails on its own, the result is returned per file.
 
-## Amendement du 2026-11-01 (validé par l'opérateur)
+## Amendment of 2026-11-01 (approved by the operator)
 
-Constats de la revue de `main` (merge #10) et décisions de l'opérateur. Ce qui suit remplace les passages
-correspondants ci-dessus.
+Findings from the review of `main` (merge #10) and the operator's decisions. What follows replaces the
+corresponding passages above.
 
-1. **Routes livrées** : au lieu d'un `preview` et d'un `commit` groupés, deux routes **par fichier** :
-   - `POST /api/cast/replays/inspect` : décode sans rien écrire, renvoie le `GameSummary` (carte, date).
-   - `POST /api/cast/replays/import?map=…&series_id=…[&swap=1]` : crée la partie de la carte puis la remplit,
-     en une mutation. Un échec n'annule que son fichier.
-2. **Format de `GameSummary`** : il gagne `map` et `played_at` (`null` si absents). Les anciens états se chargent
-   avec `null`. La phrase « pas de changement du format » ne tient plus.
-3. **Tri par date** : fait côté client (`replayImportOrder`), à partir de `played_at` ; à défaut, ordre de dépôt.
-4. **Garde de série** : l'import porte l'identité de la série lue à l'inspection (`series_id`). Si la série a
-   changé, `409 series_changed`, rien n'est créé. Le client vide le lot quand la série change.
-5. **Option « Swap sides » par replay** (décision de l'opérateur, 2026-11-01) : elle est proposée dans le lot,
-   et transmise à l'import (`?swap=1`), comme dans la route par partie.
-6. **Replay en échec** : il ne bloque plus sa carte. Changer sa carte le remet prêt à importer.
-7. **Textes d'erreur** : `series_changed`, `map_mismatch`, `MapNotChosen`, `UnknownMap`, `SeriesInactive`,
-   `not_custom`, `parse_failed`, `incomplete` ont un texte lisible (`replayErrorText`).
-8. **Date affichée** : suffixée « UTC ».
+1. **Routes delivered**: instead of a batch `preview` and `commit`, two **per-file** routes:
+   - `POST /api/cast/replays/inspect`: decodes without writing anything, returns the `GameSummary` (map, date).
+   - `POST /api/cast/replays/import?map=…&series_id=…[&swap=1]`: creates the game for the map then fills it,
+     in one mutation. A failure only cancels its own file.
+2. **`GameSummary` format**: it gains `map` and `played_at` (`null` if missing). Old states load
+   with `null`. The sentence "no change to the format" no longer holds.
+3. **Sort by date**: done client-side (`replayImportOrder`), from `played_at`; otherwise, upload order.
+4. **Series guard**: the import carries the identity of the series read at inspection (`series_id`). If the series has
+   changed, `409 series_changed`, nothing is created. The client clears the batch when the series changes.
+5. **"Swap sides" option per replay** (operator decision, 2026-11-01): it is offered in the batch,
+   and passed to the import (`?swap=1`), as in the per-game route.
+6. **Failed replay**: it no longer blocks its map. Changing its map makes it ready to import again.
+7. **Error texts**: `series_changed`, `map_mismatch`, `MapNotChosen`, `UnknownMap`, `SeriesInactive`,
+   `not_custom`, `parse_failed`, `incomplete` have readable text (`replayErrorText`).
+8. **Displayed date**: suffixed with "UTC".

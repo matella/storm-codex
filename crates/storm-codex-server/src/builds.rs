@@ -1,7 +1,7 @@
-//! Bibliothèque de builds de talents. `picks` reprend la forme du parser
-//! (`{TierNChoice: talentTreeId}`), ce qui permet d'importer un build depuis une partie jouée et de
-//! diffuser « prévu vs pris » sans conversion. L'unicité du build par défaut est tenue par un index
-//! partiel unique en base, pas par ce code.
+//! Talent build library. `picks` reuses the parser's shape
+//! (`{TierNChoice: talentTreeId}`), which allows importing a build from a played game and
+//! broadcasting "planned vs taken" without conversion. The uniqueness of the default build is held by a
+//! partial unique index in the database, not by this code.
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
@@ -19,9 +19,9 @@ fn db_err(e: sqlx::Error) -> (StatusCode, Json<J>) {
     )
 }
 
-/// Les mutations de la bibliothèque suivent la même garde que teams/collections : ouvertes si
-/// aucun `ADMIN_TOKEN` n'est configuré (mode local par défaut de la spec suite), protégées sinon.
-/// La lecture reste toujours ouverte, comme `list_teams`.
+/// Library mutations follow the same guard as teams/collections: open if
+/// no `ADMIN_TOKEN` is configured (default local mode of the follow-up spec), protected otherwise.
+/// Reading always stays open, like `list_teams`.
 fn refus_admin() -> (StatusCode, Json<J>) {
     (
         StatusCode::UNAUTHORIZED,
@@ -31,11 +31,11 @@ fn refus_admin() -> (StatusCode, Json<J>) {
 
 #[derive(Deserialize)]
 pub struct ListQuery {
-    /// Filtre optionnel sur le héros (clé `dim_heroes.id`).
+    /// Optional filter on the hero (`dim_heroes.id` key).
     pub hero: Option<String>,
 }
 
-/// `GET /api/builds` — la bibliothèque, éventuellement filtrée par héros.
+/// `GET /api/builds` — the library, optionally filtered by hero.
 pub async fn list(State(s): State<AppState>, Query(q): Query<ListQuery>) -> Resp {
     let v: J = sqlx::query_scalar(
         "SELECT COALESCE(jsonb_agg(b ORDER BY b.hero_id, b.is_default DESC, b.name), '[]'::jsonb)
@@ -60,17 +60,17 @@ pub struct BuildBody {
     pub notes: Option<String>,
     #[serde(default)]
     pub is_default: bool,
-    /// Provenance : `match_id` du match d'où le build a été importé (`from_match`). `None` pour
-    /// un build créé directement via `POST /api/builds` — absent du payload, `#[serde(default)]`
-    /// le laisse à `null`. `PUT /api/builds/{id}` (`update`, plus bas) ne liste pas cette colonne
-    /// dans son `UPDATE` : ce champ du payload est donc ignoré à la modification, et la
-    /// provenance déjà en base est conservée telle quelle, quoi que porte `source_match_id` ici.
+    /// Provenance: `match_id` of the match the build was imported from (`from_match`). `None` for
+    /// a build created directly via `POST /api/builds` — absent from the payload, `#[serde(default)]`
+    /// leaves it at `null`. `PUT /api/builds/{id}` (`update`, below) does not list this column
+    /// in its `UPDATE`: this payload field is therefore ignored on modification, and the
+    /// provenance already in the database is kept as is, whatever `source_match_id` carries here.
     #[serde(default)]
     pub source_match_id: Option<i64>,
 }
 
-/// `POST /api/builds` — créer un build. Marquer `is_default` retire d'abord le défaut existant du
-/// même héros : sans ça, l'index partiel unique rejetterait l'insertion.
+/// `POST /api/builds` — create a build. Marking `is_default` first removes the existing default of the
+/// same hero: without that, the partial unique index would reject the insertion.
 pub async fn create(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -104,7 +104,7 @@ pub async fn create(
     Ok(Json(json!({ "id": id })))
 }
 
-/// `PUT /api/builds/{id}` — remplacer un build. Même précaution sur le défaut que `create`.
+/// `PUT /api/builds/{id}` — replace a build. Same precaution on the default as `create`.
 pub async fn update(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -141,9 +141,9 @@ pub async fn update(
     .map_err(db_err)?
     .rows_affected();
     if n == 0 {
-        // Ligne inexistante : on abandonne la transaction (rollback implicite au drop de `tx`)
-        // plutôt que de committer le démarquage du défaut fait plus haut. Sans ça, un PUT sur un
-        // id inconnu répondait 404 tout en ayant persisté la perte du défaut du héros.
+        // Missing row: we abandon the transaction (implicit rollback when `tx` drops)
+        // rather than committing the default unmarking done above. Without that, a PUT on an
+        // unknown id answered 404 while having persisted the loss of the hero's default.
         return Err((
             StatusCode::NOT_FOUND,
             Json(json!({ "error": "build inconnu" })),
@@ -182,8 +182,8 @@ pub struct FromMatchBody {
     pub is_default: bool,
 }
 
-/// `POST /api/builds/from-match` — amorcer un build depuis une partie jouée. C'est ce qui évite de
-/// saisir 90 héros à la main : les talents de l'archive ont déjà la bonne forme.
+/// `POST /api/builds/from-match` — seed a build from a played game. This is what avoids
+/// entering 90 heroes by hand: the archive's talents already have the right shape.
 pub async fn from_match(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -192,9 +192,9 @@ pub async fn from_match(
     if !crate::manage::is_admin(&headers, &s) {
         return Err(refus_admin());
     }
-    // `hero` est nullable (parties IA/quittées avant pick) : décoder en `String` ferait échouer
-    // sqlx sur ces lignes-là et remonterait un 500 générique sur une action utilisateur explicite
-    // au lieu du 422 attendu.
+    // `hero` is nullable (AI games/left before pick): decoding into `String` would make
+    // sqlx fail on those rows and surface a generic 500 on an explicit user action
+    // instead of the expected 422.
     let row: Option<(Option<String>, J)> = sqlx::query_as(
         "SELECT hero, COALESCE(data -> 'talents', '{}'::jsonb)
          FROM match_players WHERE match_id = $1 AND toon_handle = $2",

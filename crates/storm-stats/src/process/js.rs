@@ -1,9 +1,9 @@
-//! Primitives de sémantique JavaScript (dates, nombres, `for…in`, accès JSON) : le port reproduit
-//! parser.js à l'identique, y compris ses conversions implicites.
+//! JavaScript semantics primitives (dates, numbers, `for…in`, JSON access): the port reproduces
+//! parser.js identically, including its implicit conversions.
 
 use super::*;
 
-/// `new Date(ms)` JS sérialisé par JSON.stringify : ISO 8601 UTC avec millisecondes.
+/// JS `new Date(ms)` serialised by JSON.stringify: ISO 8601 UTC with milliseconds.
 pub(super) fn js_date_iso(ms: f64) -> String {
     let total_ms = ms.trunc() as i64;
     let (mut days, mut rem) = (
@@ -14,7 +14,7 @@ pub(super) fn js_date_iso(ms: f64) -> String {
     let msec = rem % 1000;
     rem /= 1000;
     let (h, m, s) = (rem / 3600, (rem / 60) % 60, rem % 60);
-    // civil_from_days (Howard Hinnant) — époque 1970-01-01
+    // civil_from_days (Howard Hinnant) — epoch 1970-01-01
     let z = days + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z.rem_euclid(146_097);
@@ -32,12 +32,12 @@ pub(super) fn win_file_time_to_date(filetime: f64) -> String {
     js_date_iso(filetime / 10_000.0 - 11_644_473_600_000.0)
 }
 
-/// `Number` JS sérialisé : NaN/Infinity → null (JSON.stringify).
+/// Serialised JS `Number`: NaN/Infinity → null (JSON.stringify).
 pub(super) fn jnum(f: f64) -> J {
     serde_json::Number::from_f64(f).map_or(J::Null, J::Number)
 }
 
-/// `Math.max(a, b)` JS : NaN si un des arguments est NaN (≠ `f64::max` Rust).
+/// JS `Math.max(a, b)`: NaN if either argument is NaN (≠ Rust `f64::max`).
 pub(super) fn js_max(a: f64, b: f64) -> f64 {
     if a.is_nan() || b.is_nan() {
         f64::NAN
@@ -46,7 +46,7 @@ pub(super) fn js_max(a: f64, b: f64) -> f64 {
     }
 }
 
-/// `Math.min(a, b)` JS : NaN si un des arguments est NaN (≠ `f64::min` Rust).
+/// JS `Math.min(a, b)`: NaN if either argument is NaN (≠ Rust `f64::min`).
 pub(super) fn js_min(a: f64, b: f64) -> f64 {
     if a.is_nan() || b.is_nan() {
         f64::NAN
@@ -55,8 +55,8 @@ pub(super) fn js_min(a: f64, b: f64) -> f64 {
     }
 }
 
-/// Coercition `Number(x)` JS sur nos valeurs JSON : undefined → NaN, null → 0, bool → 0/1,
-/// chaîne → parse décimal (vide → 0). Arrays/objets : jamais atteints sur nos données.
+/// JS `Number(x)` coercion on our JSON values: undefined → NaN, null → 0, bool → 0/1,
+/// string → decimal parse (empty → 0). Arrays/objects: never reached on our data.
 pub(super) fn js_number(v: Option<&J>) -> f64 {
     match v {
         None => f64::NAN,
@@ -81,7 +81,7 @@ pub(super) fn js_number(v: Option<&J>) -> f64 {
     }
 }
 
-/// Truthiness JS (`if (x)`, `!x`) sur nos valeurs JSON.
+/// JS truthiness (`if (x)`, `!x`) on our JSON values.
 pub(super) fn js_truthy(v: Option<&J>) -> bool {
     match v {
         None | Some(J::Null) => false,
@@ -92,22 +92,22 @@ pub(super) fn js_truthy(v: Option<&J>) -> bool {
     }
 }
 
-/// `ToString(number)` JS — suffisant pour nos grandeurs (jamais de notation exponentielle) :
-/// le Display Rust est aussi la plus courte représentation qui re-parse à l'identique.
+/// JS `ToString(number)` — enough for our magnitudes (never exponential notation):
+/// Rust's Display is also the shortest representation that re-parses identically.
 pub(super) fn js_num_str(x: f64) -> String {
     if x.is_nan() {
         "NaN".into()
     } else if x.is_infinite() {
         if x > 0.0 { "Infinity" } else { "-Infinity" }.into()
     } else if x == 0.0 {
-        "0".into() // couvre -0 (JS : String(-0) === "0")
+        "0".into() // covers -0 (JS: String(-0) === "0")
     } else {
         format!("{x}")
     }
 }
 
-/// `parseInt(<nombre>)` JS (ToString puis parseInt) : pour nos grandeurs (< 1e21, jamais de
-/// notation exponentielle), équivaut à une troncature vers zéro ; NaN/Infinity → NaN.
+/// JS `parseInt(<number>)` (ToString then parseInt): for our magnitudes (< 1e21, never
+/// exponential notation), equivalent to a truncation towards zero; NaN/Infinity → NaN.
 pub(super) fn js_parse_int_num(x: f64) -> f64 {
     if x.is_finite() {
         x.trunc()
@@ -116,13 +116,13 @@ pub(super) fn js_parse_int_num(x: f64) -> f64 {
     }
 }
 
-/// `loopsToSeconds` (parser.js:3335-3338) : 16 boucles par seconde.
+/// `loopsToSeconds` (parser.js:3335-3338): 16 loops per second.
 pub(super) fn loops_to_seconds(loops: f64) -> f64 {
     loops / 16.0
 }
 
-/// Ordre d'itération `for..in` JS : indices de tableau canoniques en ordre croissant,
-/// puis les autres clés en ordre d'insertion.
+/// JS `for..in` iteration order: canonical array indices in increasing order,
+/// then the other keys in insertion order.
 pub(super) fn js_for_in_keys(o: &Map<String, J>) -> Vec<String> {
     let mut idx: Vec<(u32, String)> = Vec::new();
     let mut rest: Vec<String> = Vec::new();
@@ -136,8 +136,8 @@ pub(super) fn js_for_in_keys(o: &Map<String, J>) -> Vec<String> {
     idx.into_iter().map(|(_, k)| k).chain(rest).collect()
 }
 
-/// Comparateur de tri JS « a < b → -1, a > b → 1, sinon 0 » (NaN → Equal/Greater incohérent
-/// comme en JS ; jamais rencontré sur nos données). `sort_by` Rust est stable comme TimSort V8.
+/// JS sort comparator "a < b → -1, a > b → 1, else 0" (NaN → inconsistent Equal/Greater
+/// as in JS; never met on our data). Rust's `sort_by` is stable like V8's TimSort.
 pub(super) fn js_cmp(a: f64, b: f64) -> std::cmp::Ordering {
     if a < b {
         std::cmp::Ordering::Less
@@ -148,8 +148,8 @@ pub(super) fn js_cmp(a: f64, b: f64) -> std::cmp::Ordering {
     }
 }
 
-/// `combineIntervals` (parser.js:3084-3114) : tri par borne gauche puis fusion par
-/// chevauchement (`prev[1] >= c[0]`, faux si NaN — comme en JS).
+/// `combineIntervals` (parser.js:3084-3114): sort by left bound then merge on
+/// overlap (`prev[1] >= c[0]`, false if NaN — as in JS).
 pub(super) fn combine_intervals(mut intervals: Vec<(f64, f64)>) -> Vec<(f64, f64)> {
     if intervals.len() <= 1 {
         return intervals;
@@ -169,7 +169,7 @@ pub(super) fn combine_intervals(mut intervals: Vec<(f64, f64)>) -> Vec<(f64, f64
     result
 }
 
-/// Classe `\s` des regex JS (≠ `char::is_whitespace` Rust : pas U+0085, mais U+FEFF).
+/// The `\s` class of JS regexes (≠ Rust `char::is_whitespace`: not U+0085, but U+FEFF).
 pub(super) fn is_js_ws(c: char) -> bool {
     matches!(
         c,
@@ -184,13 +184,13 @@ pub(super) fn is_js_ws(c: char) -> bool {
     )
 }
 
-/// `key.replace(/\s+/g, '')` de parser.js:826.
+/// `key.replace(/\s+/g, '')` from parser.js:826.
 pub(super) fn js_strip_ws(s: &str) -> String {
     s.chars().filter(|c| !is_js_ws(*c)).collect()
 }
 
-/// Clé de propriété JS (`obj[v]`) pour nos cas : nombre → `ToString(number)` JS (un Number
-/// f64 entier comme `jnum(1.0)` donne "1", pas "1.0"), null → "null", undefined → "undefined".
+/// JS property key (`obj[v]`) for our cases: number → JS `ToString(number)` (an integer
+/// f64 Number like `jnum(1.0)` gives "1", not "1.0"), null → "null", undefined → "undefined".
 pub(super) fn js_prop(v: Option<&J>) -> String {
     match v {
         None => "undefined".into(),
@@ -198,12 +198,12 @@ pub(super) fn js_prop(v: Option<&J>) -> String {
         Some(J::Bool(b)) => b.to_string(),
         Some(J::Number(n)) => js_num_str(n.as_f64().unwrap_or(f64::NAN)),
         Some(J::String(s)) => s.clone(),
-        // jamais atteint sur nos données (arrays/objets : ToString JS différerait)
+        // never reached on our data (arrays/objects: JS ToString would differ)
         Some(other) => other.to_string(),
     }
 }
 
-/// `parseInt` JS : préfixe numérique (signe + chiffres), NaN → None.
+/// JS `parseInt`: numeric prefix (sign + digits), NaN → None.
 pub(super) fn js_parse_int(s: &str) -> Option<i64> {
     let s = s.trim_start();
     let (sign, rest) = match s.strip_prefix('-') {
@@ -214,7 +214,7 @@ pub(super) fn js_parse_int(s: &str) -> Option<i64> {
     digits.parse::<i64>().ok().map(|v| sign * v)
 }
 
-/// Accès générique « à la JS » : index manquant → undefined (None).
+/// Generic "JS-style" access: missing index → undefined (None).
 pub(super) fn get<'a>(v: &'a J, path: &[&str]) -> Option<&'a J> {
     let mut cur = v;
     for p in path {

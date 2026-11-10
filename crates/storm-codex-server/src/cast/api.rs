@@ -1,6 +1,6 @@
-//! Routes REST de la régie de cast. Chaque mutation prend le write-lock une seule fois (sur une
-//! copie : une erreur ne change jamais l'état), puis persiste et diffuse `cast.updated` sur le WS
-//! (les clients refetch `GET /api/cast`). Mode ouvert comme `/api/draft`, pas d'auth.
+//! REST routes of the cast control room. Each mutation takes the write-lock only once (on a
+//! copy: an error never changes the state), then persists and broadcasts `cast.updated` on the WS
+//! (the clients refetch `GET /api/cast`). Open mode like `/api/draft`, no auth.
 use super::{lineup, store, CastError, LineupMode, MapStatus, Scene, Series, Team};
 use crate::draft::{Format, Side};
 use crate::AppState;
@@ -16,19 +16,19 @@ use serde_json::{json, Value as J};
 
 type Resp = (StatusCode, Json<J>);
 
-/// Bornes de l'intervalle du diaporama (ms).
+/// Bounds of the slideshow interval (ms).
 const INTERVAL_RANGE: std::ops::RangeInclusive<u32> = 500..=3_600_000;
 
-/// Version suivante de l'état en mémoire — appelée sous le write-lock de la mutation qui le produit.
+/// Next version of the in-memory state — called under the write-lock of the mutation that produces it.
 fn next_version(s: &AppState) -> u64 {
     s.cast_version
         .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
         + 1
 }
 
-/// Écrit `snapshot` (l'état produit par la mutation de version `v`), sauf si une version plus
-/// récente est déjà en base : deux persistances concurrentes ne peuvent jamais finir sur l'ancien
-/// état (écritures sérialisées par `cast_saved`, qui retient la dernière version écrite).
+/// Writes `snapshot` (the state produced by the mutation of version `v`), unless a more
+/// recent version is already in the database: two concurrent persistences can never end on the old
+/// state (writes serialised by `cast_saved`, which holds the last written version).
 async fn save_versioned(s: &AppState, snapshot: &Series, v: u64) -> Result<(), sqlx::Error> {
     let mut last = s.cast_saved.lock().await;
     if v <= *last {
@@ -39,8 +39,8 @@ async fn save_versioned(s: &AppState, snapshot: &Series, v: u64) -> Result<(), s
     Ok(())
 }
 
-/// Persiste l'instantané de la mutation puis diffuse `cast.updated` (toujours, même si l'écriture
-/// échoue : l'état en mémoire a changé). Erreur d'écriture → `Err` (la route répond 500, R24).
+/// Persists the mutation's snapshot then broadcasts `cast.updated` (always, even if the write
+/// fails: the in-memory state has changed). Write error → `Err` (the route answers 500, R24).
 pub(super) async fn persist(s: &AppState, snapshot: &Series, v: u64) -> Result<(), sqlx::Error> {
     let res = save_versioned(s, snapshot, v).await;
     if let Err(e) = &res {
@@ -50,7 +50,7 @@ pub(super) async fn persist(s: &AppState, snapshot: &Series, v: u64) -> Result<(
     res
 }
 
-/// R24 : l'écriture en base a échoué — état appliqué en mémoire et diffusé, mais non persisté.
+/// R24: the database write failed — state applied in memory and broadcast, but not persisted.
 fn persist_failed() -> Resp {
     (
         StatusCode::INTERNAL_SERVER_ERROR,
@@ -62,19 +62,19 @@ pub(super) fn conflict(e: CastError) -> Resp {
     (StatusCode::CONFLICT, Json(json!({ "error": e.code() })))
 }
 
-/// Synchro série → draft après une mutation.
+/// Series → draft sync after a mutation.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum DraftSync {
     No,
-    /// Équipes, pseudos, score, Bo.
+    /// Teams, nicknames, score, Bo.
     Sync,
-    /// `Sync` + alignement du moteur sur le format de la série (R20, `POST /api/cast/series`).
+    /// `Sync` + alignment of the engine on the series format (R20, `POST /api/cast/series`).
     Align,
 }
 
-/// Recopie l'état de cast **courant** (relu sous read-lock pendant que le write-lock du draft est
-/// tenu) dans le draft, puis persiste le draft : une mutation concurrente plus récente ne peut pas
-/// être écrasée par l'instantané d'une plus ancienne. Jamais les deux write-locks ensemble.
+/// Copies the **current** cast state (re-read under read-lock while the draft's write-lock is
+/// held) into the draft, then persists the draft: a more recent concurrent mutation cannot
+/// be overwritten by the snapshot of an older one. Never both write-locks together.
 pub(super) async fn sync_draft(s: &AppState, align: bool) {
     {
         let mut d = s.draft.write().await;
@@ -94,8 +94,8 @@ fn series_json(s: &Series) -> Resp {
     )
 }
 
-/// Applique `f` sous un seul write-lock, sur une copie (échec → état inchangé, pas de persist).
-/// `gated` : refuse (409 `SeriesInactive`) tant que la série n'est pas active.
+/// Applies `f` under a single write-lock, on a copy (failure → state unchanged, no persist).
+/// `gated`: refuses (409 `SeriesInactive`) as long as the series is not active.
 async fn mutate<T>(
     s: &AppState,
     gated: bool,
@@ -104,10 +104,10 @@ async fn mutate<T>(
     mutate_ex(s, gated, DraftSync::No, f).await
 }
 
-/// Comme `mutate` ; `sync` : recopie ensuite l'état courant dans le draft (sens unique série →
-/// draft, `sync_draft`) et persiste/diffuse les deux états. Les write-locks cast et draft ne sont
-/// jamais tenus en même temps. Échec d'écriture de la série → `500 persist_failed` (R24 : l'état
-/// reste appliqué en mémoire et `cast.updated` est diffusé).
+/// Like `mutate`; `sync`: then copies the current state into the draft (one-way series →
+/// draft, `sync_draft`) and persists/broadcasts both states. The cast and draft write-locks are
+/// never held at the same time. Series write failure → `500 persist_failed` (R24: the state
+/// stays applied in memory and `cast.updated` is broadcast).
 pub(super) async fn mutate_ex<T>(
     s: &AppState,
     gated: bool,
@@ -133,7 +133,7 @@ pub(super) async fn mutate_ex<T>(
     Ok(out)
 }
 
-/// Mutation qui répond par la série complète.
+/// Mutation that answers with the complete series.
 async fn mutate_series(
     s: &AppState,
     gated: bool,
@@ -154,15 +154,15 @@ async fn mutate_series_ex(
     }
 }
 
-/// GET /api/cast — état courant.
+/// GET /api/cast — current state.
 pub async fn get_cast(State(s): State<AppState>) -> Json<Series> {
     Json(s.cast.read().await.clone())
 }
 
-/// Corps JSON des routes de la régie : 64 Kio suffisent (série complète ≈ quelques Ko) ; l'API est
-/// en mode ouvert, donc on borne ce qu'un client peut faire avaler au serveur.
+/// JSON body of the control room routes: 64 KiB is enough (complete series ≈ a few KB); the API is
+/// in open mode, so we bound what a client can make the server swallow.
 pub const JSON_BODY_LIMIT: usize = 64 * 1024;
-/// Bornes de saisie (caractères) : pool de cartes, noms/bilans/pseudos, ligne libre, URL de logo.
+/// Input bounds (characters): map pool, names/records/nicknames, free line, logo URL.
 const MAX_POOL: usize = 32;
 const MAX_TEXT: usize = 64;
 const MAX_TAGLINE: usize = 120;
@@ -172,7 +172,7 @@ fn bad_input(code: &'static str) -> Resp {
     (StatusCode::BAD_REQUEST, Json(json!({ "error": code })))
 }
 
-/// Une équipe respecte les bornes de saisie (nom, bilan, logo, pseudos, lignes libres, toons).
+/// A team respects the input bounds (name, record, logo, nicknames, free lines, toons).
 fn team_within_limits(t: &Team) -> bool {
     let len = |x: &str| x.chars().count();
     len(&t.name) <= MAX_TEXT
@@ -187,7 +187,7 @@ fn team_within_limits(t: &Team) -> bool {
 
 #[derive(Deserialize)]
 pub struct SeriesBody {
-    /// Équipe complète (nom, bilan, joueurs, capitaine, logo) ; `{name}` seul reste accepté.
+    /// Complete team (name, record, players, captain, logo); `{name}` alone stays accepted.
     #[serde(default)]
     blue: Team,
     #[serde(default)]
@@ -198,8 +198,8 @@ pub struct SeriesBody {
     pool: Vec<String>,
 }
 
-/// POST /api/cast/series — crée/redémarre : parties, score et diaporama remis à zéro (la scène
-/// courante est conservée), `active = true`.
+/// POST /api/cast/series — creates/restarts: games, score and slideshow reset to zero (the current
+/// scene is kept), `active = true`.
 pub async fn start_series(State(s): State<AppState>, Json(b): Json<SeriesBody>) -> Resp {
     if !matches!(b.bo, 1 | 3 | 5 | 7) {
         return (StatusCode::BAD_REQUEST, Json(json!({ "error": "bad_bo" })));
@@ -210,13 +210,13 @@ pub async fn start_series(State(s): State<AppState>, Json(b): Json<SeriesBody>) 
     if !team_within_limits(&b.blue) || !team_within_limits(&b.red) {
         return bad_input("bad_team");
     }
-    // R20 : démarrer une série remet aussi le moteur de draft sur son format/steps (partie + série
-    // neuves), dans le même passage que la synchro (`DraftSync::Align`).
+    // R20: starting a series also resets the draft engine to its format/steps (new game + new
+    // series), in the same pass as the sync (`DraftSync::Align`).
     mutate_series_ex(&s, false, DraftSync::Align, |c| {
         let mut n = Series::new();
         n.series_id = uuid::Uuid::new_v4().to_string();
         n.active = true;
-        // logo absent du corps → on garde celui en place (stocké en base)
+        // logo missing from the body → we keep the one in place (stored in the database)
         let (old_blue, old_red) = (c.blue.logo.take(), c.red.logo.take());
         n.blue = Team {
             logo: b.blue.logo.or(old_blue),
@@ -242,7 +242,7 @@ pub struct TeamsBody {
     red: Team,
 }
 
-/// PUT /api/cast/teams — remplace les deux équipes (nom, logo, bilan, joueurs, capitaine).
+/// PUT /api/cast/teams — replaces both teams (name, logo, record, players, captain).
 pub async fn put_teams(State(s): State<AppState>, Json(b): Json<TeamsBody>) -> Resp {
     if !team_within_limits(&b.blue) || !team_within_limits(&b.red) {
         return bad_input("bad_team");
@@ -310,9 +310,9 @@ pub async fn set_winner(
     .await
 }
 
-/// DELETE /api/cast/games/{n} — retire la dernière partie lancée par erreur (R21) : sans vainqueur
-/// ni résumé (sinon 409 `GameHasResult`), la dernière seulement (409 `NotLastGame`). La carte garde
-/// son statut et redevient lançable ; synchro draft comme `/winner`.
+/// DELETE /api/cast/games/{n} — removes the last game launched by mistake (R21): without a winner
+/// or summary (otherwise 409 `GameHasResult`), the last one only (409 `NotLastGame`). The map keeps
+/// its status and becomes launchable again; draft sync like `/winner`.
 pub async fn remove_game(State(s): State<AppState>, Path(n): Path<u8>) -> Resp {
     mutate_series_ex(&s, true, DraftSync::Sync, |c| c.remove_game(n)).await
 }
@@ -323,7 +323,7 @@ pub struct ScoreBody {
     red: u8,
 }
 
-/// POST /api/cast/score `{blue, red}` (override) ou `null` (retour au score calculé).
+/// POST /api/cast/score `{blue, red}` (override) or `null` (back to the computed score).
 pub async fn set_score(State(s): State<AppState>, Json(b): Json<Option<ScoreBody>>) -> Resp {
     mutate_series_ex(&s, true, DraftSync::Sync, |c| {
         c.score_override = b.map(|b| [b.blue, b.red]);
@@ -337,7 +337,7 @@ pub struct SceneBody {
     scene: Scene,
 }
 
-/// POST /api/cast/scene `{scene}` — autorisé même série inactive.
+/// POST /api/cast/scene `{scene}` — allowed even when the series is inactive.
 pub async fn set_scene(State(s): State<AppState>, Json(b): Json<SceneBody>) -> Resp {
     mutate_series(&s, false, |c| {
         c.scene = b.scene;
@@ -372,20 +372,20 @@ pub struct SlideBody {
     interval_ms: Option<u32>,
 }
 
-/// Index de slide maximal accepté (R25) ; l'overlay le prend modulo le nombre de slides.
+/// Maximum accepted slide index (R25); the overlay takes it modulo the number of slides.
 const SLIDE_INDEX_MAX: u8 = 99;
 
-/// Horloge murale du serveur (ms depuis l'epoch) : ancre de la rotation auto du diaporama.
+/// Server wall clock (ms since the epoch): anchor of the slideshow's auto rotation.
 fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
 }
 
-/// POST /api/cast/slide — mise à jour partielle du diaporama (champs absents inchangés).
-/// R25 : `index` ≤ 99 sinon `400 bad_index` ; `game` = 0 (désépingler) ou un numéro de partie
-/// existant, sinon `409 UnknownGame` (état inchangé). La garde `SeriesInactive` (409) passe avant la
-/// validation de `index` (400).
+/// POST /api/cast/slide — partial update of the slideshow (missing fields unchanged).
+/// R25: `index` ≤ 99 otherwise `400 bad_index`; `game` = 0 (unpin) or an existing game
+/// number, otherwise `409 UnknownGame` (state unchanged). The `SeriesInactive` guard (409) comes before the
+/// validation of `index` (400).
 pub async fn set_slide(State(s): State<AppState>, Json(b): Json<SlideBody>) -> Resp {
     if !s.cast.read().await.active {
         return conflict(CastError::SeriesInactive);
@@ -394,7 +394,7 @@ pub async fn set_slide(State(s): State<AppState>, Json(b): Json<SlideBody>) -> R
         return err(StatusCode::BAD_REQUEST, "bad_index");
     }
     mutate_series(&s, true, |c| {
-        // game: 0 = désépingler (« dernière partie ») ; les numéros de partie commencent à 1.
+        // game: 0 = unpin ("last game"); game numbers start at 1.
         if let Some(g) = b.game {
             if g != 0 && !c.games.iter().any(|x| x.number == g) {
                 return Err(CastError::UnknownGame);
@@ -410,22 +410,22 @@ pub async fn set_slide(State(s): State<AppState>, Json(b): Json<SlideBody>) -> R
         if let Some(ms) = b.interval_ms {
             c.slide.interval_ms = ms.clamp(*INTERVAL_RANGE.start(), *INTERVAL_RANGE.end());
         }
-        // toute modification repart de la slide montrée à cet instant (rotation auto relancée)
+        // any change restarts from the slide shown at that moment (auto rotation restarted)
         c.slide.since_ms = now_ms();
         Ok(())
     })
     .await
 }
 
-/// Taille maximale d'un logo (octets).
+/// Maximum size of a logo (bytes).
 const LOGO_MAX: usize = 512 * 1024;
-/// Limite de corps de la route d'upload : un peu au-dessus de `LOGO_MAX` pour que le handler
-/// réponde lui-même 413 proprement (au-delà, l'extracteur répond 413).
+/// Body limit of the upload route: a bit above `LOGO_MAX` so that the handler
+/// answers 413 cleanly itself (beyond it, the extractor answers 413).
 pub const LOGO_BODY_LIMIT: usize = LOGO_MAX + 1024;
 const LOGO_MIMES: [&str; 3] = ["image/png", "image/jpeg", "image/webp"];
 
-/// Les octets commencent bien par la signature du type déclaré (PNG `89 50 4E 47`, JPEG `FF D8 FF`,
-/// WebP `RIFF....WEBP`) : un `Content-Type` menteur est refusé.
+/// The bytes really start with the signature of the declared type (PNG `89 50 4E 47`, JPEG `FF D8 FF`,
+/// WebP `RIFF....WEBP`): a lying `Content-Type` is refused.
 fn magic_matches(mime: &str, b: &[u8]) -> bool {
     match mime {
         "image/png" => b.starts_with(&[0x89, b'P', b'N', b'G']),
@@ -447,8 +447,8 @@ fn err(code: StatusCode, e: &str) -> Resp {
     (code, Json(json!({ "error": e })))
 }
 
-/// POST /api/cast/logo/{side} — corps = octets de l'image, `Content-Type` png/jpeg/webp, 1..=512 Ko.
-/// Stocke en base et pose `Team.logo = /api/cast/logo/{side}?v={updated_at_ms}`. Autorisé série inactive.
+/// POST /api/cast/logo/{side} — body = image bytes, `Content-Type` png/jpeg/webp, 1..=512 KB.
+/// Stores in the database and sets `Team.logo = /api/cast/logo/{side}?v={updated_at_ms}`. Allowed when the series is inactive.
 pub async fn upload_logo(
     State(s): State<AppState>,
     Path(side): Path<String>,
@@ -511,7 +511,7 @@ pub async fn upload_logo(
     .await
 }
 
-/// GET /api/cast/logo/{side} — octets du logo (404 si aucun), `X-Content-Type-Options: nosniff`.
+/// GET /api/cast/logo/{side} — logo bytes (404 if none), `X-Content-Type-Options: nosniff`.
 pub async fn get_logo(State(s): State<AppState>, Path(side): Path<String>) -> Response {
     let Some(side) = side_str(&side) else {
         return err(StatusCode::NOT_FOUND, "bad_side").into_response();
@@ -547,11 +547,11 @@ pub struct LineupQuery {
     red: String,
 }
 
-/// Longueur maximale d'un toon reçu par la route lineup (octets).
+/// Maximum length of a toon received by the lineup route (bytes).
 const TOON_MAX: usize = 64;
 
-/// Une équipe : toons séparés par des virgules, position conservée (champ vide = joueur non lié).
-/// `None` si une entrée dépasse `TOON_MAX`.
+/// One team: comma-separated toons, position kept (empty field = unlinked player).
+/// `None` if an entry exceeds `TOON_MAX`.
 fn split_toons(s: &str) -> Option<Vec<String>> {
     if s.is_empty() {
         return Some(Vec::new());
@@ -563,7 +563,7 @@ fn split_toons(s: &str) -> Option<Vec<String>> {
 }
 
 /// GET /api/cast/lineup?blue=toon,...&red=toon,... : `{ blue: [[HeroCount]], red: [[HeroCount]] }`,
-/// une liste par joueur dans l'ordre reçu (vide si non lié ou < 5 parties). Une seule requête SQL.
+/// one list per player in the order received (empty if unlinked or < 5 games). A single SQL query.
 pub async fn get_lineup(State(s): State<AppState>, Query(q): Query<LineupQuery>) -> Resp {
     let (Some(blue), Some(red)) = (split_toons(&q.blue), split_toons(&q.red)) else {
         return err(StatusCode::BAD_REQUEST, "bad_toon");
@@ -628,8 +628,8 @@ mod tests {
             (StatusCode::BAD_REQUEST, Some("bad_pool"))
         );
         let after = call(&state, "GET", "/api/cast", None).await.1;
-        assert_eq!(before, after, "un refus ne change rien");
-        // 32 cartes de 64 caractères : à la borne, accepté
+        assert_eq!(before, after, "a refusal changes nothing");
+        // 32 maps of 64 characters: at the bound, accepted
         let mut body = start_body();
         body["pool"] = json!((0..32).map(|i| format!("{i:0>64}")).collect::<Vec<_>>());
         let (st, _) = call(&state, "POST", "/api/cast/series", Some(body)).await;
@@ -950,7 +950,7 @@ mod tests {
         assert_eq!(v["score_override"], json!([1, 0]));
         let (_, v) = call(&state, "POST", "/api/cast/score", Some(J::Null)).await;
         assert_eq!(v["score_override"], J::Null);
-        // la scène survit au redémarrage de série
+        // the scene survives the series restart
         assert_eq!(v["scene"], "lineups");
     }
 
@@ -1008,7 +1008,7 @@ mod tests {
         assert_eq!(v["slide"]["index"], 0);
         assert!(
             v["slide"]["since_ms"].as_i64().is_some_and(|t| t > 0),
-            "ancre de rotation posée"
+            "rotation anchor set"
         );
     }
 
@@ -1091,18 +1091,18 @@ mod tests {
         assert!(store::decode(json!([1, 2])).is_none());
         assert!(store::decode(json!("x")).is_none());
         assert!(store::decode(json!(null)).is_none());
-        // objet partiel : défauts
+        // partial object: defaults
         assert_eq!(store::decode(json!({})), Some(Series::new()));
         assert_eq!(store::decode(json!({"x": 1})), Some(Series::new()));
-        // tableau `players` de mauvaise longueur
+        // `players` array of the wrong length
         assert!(store::decode(json!({"blue": {"players": [{}, {}, {}]}})).is_none());
-        // valeurs d'enum inconnues
+        // unknown enum values
         assert!(store::decode(json!({"scene": "nope"})).is_none());
         assert!(store::decode(json!({"format": "nope"})).is_none());
         assert!(
             store::decode(json!({"pool": [{"name":"A","status":"banned","by":"green"}]})).is_none()
         );
-        // résumé de partie illisible (ancien `{}`) : ignoré, la série reste chargeable
+        // unreadable game summary (old `{}`): ignored, the series stays loadable
         let s =
             store::decode(json!({"games": [{"number": 1, "map": "A", "summary": {}}]})).unwrap();
         assert_eq!((s.games.len(), s.games[0].summary.is_none()), (1, true));
@@ -1180,7 +1180,7 @@ mod tests {
         }
         let (st, _) = call_raw(&state, "GET", "/api/cast/logo/red", None, vec![]).await;
         assert_eq!(st, StatusCode::NOT_FOUND);
-        // le logo survit au redémarrage de série
+        // the logo survives the series restart
         let (_, v) = call(&state, "POST", "/api/cast/series", Some(start_body())).await;
         assert_eq!(v["blue"]["logo"].as_str(), Some(url.as_str()));
         clear_logos(&state).await;
@@ -1240,7 +1240,7 @@ mod tests {
         assert_eq!(logo_rows(&state).await, 0);
     }
 
-    /// Item 5 : signature des octets ≠ type déclaré → 415 `mime_mismatch`, rien n'est stocké.
+    /// Item 5: byte signature ≠ declared type → 415 `mime_mismatch`, nothing is stored.
     #[tokio::test]
     async fn logo_magic_bytes_must_match_declared_mime() {
         let _g = DB_LOCK.lock().await;
@@ -1278,7 +1278,7 @@ mod tests {
         clear_logos(&state).await;
     }
 
-    /// Item 6 : une entrée de toon > 64 octets → 400 `bad_toon`.
+    /// Item 6: a toon entry > 64 bytes → 400 `bad_toon`.
     #[tokio::test]
     async fn lineup_rejects_overlong_toon() {
         let Some(state) = test_state(None).await else {
@@ -1312,7 +1312,7 @@ mod tests {
         );
     }
 
-    /// R25 : `game` doit exister (0 = désépingler), `index` ≤ 99 ; refus → état inchangé.
+    /// R25: `game` must exist (0 = unpin), `index` ≤ 99; refusal → state unchanged.
     #[tokio::test]
     async fn slide_on_inactive_series_is_409_even_with_bad_index() {
         let _g = DB_LOCK.lock().await;
@@ -1489,8 +1489,8 @@ mod tests {
         assert_eq!(state.draft.read().await.score, [3, 2]);
     }
 
-    /// R21 : corriger un vainqueur (score, lineup B, synchro draft suivent) et retirer la dernière
-    /// partie lancée par erreur (la carte redevient lançable) ; refus typés, état inchangé.
+    /// R21: correct a winner (score, lineup B, draft sync follow) and remove the last
+    /// game launched by mistake (the map becomes launchable again); typed refusals, state unchanged.
     #[tokio::test]
     async fn change_winner_and_remove_last_game() {
         let _g = DB_LOCK.lock().await;
@@ -1544,7 +1544,7 @@ mod tests {
             Some(json!({"map":"B"})),
         )
         .await;
-        // partie 1 : pas la dernière ; partie 2 inconnue après retrait
+        // game 1: not the last one; game 2 unknown after removal
         let (st, v) = call(&state, "DELETE", "/api/cast/games/1", None).await;
         assert_eq!(
             (st, v["error"].as_str()),
@@ -1567,7 +1567,7 @@ mod tests {
             (st, v["error"].as_str()),
             (StatusCode::CONFLICT, Some("UnknownGame"))
         );
-        // partie 1 a un vainqueur : non retirable
+        // game 1 has a winner: not removable
         let before = state.cast.read().await.clone();
         let (st, v) = call(&state, "DELETE", "/api/cast/games/1", None).await;
         assert_eq!(
@@ -1575,7 +1575,7 @@ mod tests {
             (StatusCode::CONFLICT, Some("GameHasResult"))
         );
         assert_eq!(*state.cast.read().await, before);
-        // la carte B se relance avec le même numéro
+        // map B relaunches with the same number
         let (_, g) = call(
             &state,
             "POST",
@@ -1586,7 +1586,7 @@ mod tests {
         assert_eq!(g["number"], 2);
     }
 
-    /// Item 1 : un instantané plus ancien (version inférieure) écrit après un plus récent est ignoré.
+    /// Item 1: an older snapshot (lower version) written after a more recent one is ignored.
     #[tokio::test]
     async fn older_snapshot_never_overwrites_newer_one() {
         let _g = DB_LOCK.lock().await;
@@ -1599,13 +1599,13 @@ mod tests {
         persist(&state, &new, 2).await.unwrap();
         persist(&state, &old, 1).await.unwrap();
         assert_eq!(store::load(&state.db).await, Some(new.clone()));
-        // même version rejouée : ignorée aussi
+        // same version replayed: ignored too
         persist(&state, &old, 2).await.unwrap();
         assert_eq!(store::load(&state.db).await, Some(new));
     }
 
-    /// Items 1 + 4 : deux mutations concurrentes (avec synchro draft) — la base et le draft finissent
-    /// sur l'état en mémoire le plus récent, quel que soit l'ordre des persistances.
+    /// Items 1 + 4: two concurrent mutations (with draft sync) — the database and the draft end
+    /// on the most recent in-memory state, whatever the order of the persistences.
     #[tokio::test]
     async fn interleaved_mutations_persist_and_sync_latest_state() {
         let _g = DB_LOCK.lock().await;
@@ -1645,7 +1645,7 @@ mod tests {
         }
     }
 
-    /// Item 4 : la synchro relit l'état de cast COURANT (pas l'instantané d'une mutation antérieure).
+    /// Item 4: the sync re-reads the CURRENT cast state (not the snapshot of an earlier mutation).
     #[tokio::test]
     async fn sync_draft_copies_current_cast_state() {
         let _g = DB_LOCK.lock().await;
@@ -1663,7 +1663,7 @@ mod tests {
         assert_eq!((d.score, d.blue.name.as_str()), ([3, 1], "Newer"));
     }
 
-    /// R24 : écriture en base impossible → 500 `persist_failed`, état appliqué en mémoire, diffusé.
+    /// R24: database write impossible → 500 `persist_failed`, state applied in memory, broadcast.
     #[tokio::test]
     async fn failed_save_answers_500_persist_failed_but_applies_and_broadcasts() {
         let _g = DB_LOCK.lock().await;
@@ -1687,7 +1687,7 @@ mod tests {
         assert_eq!(rx.recv().await.unwrap(), json!({"type":"cast.updated"}));
     }
 
-    /// Item 2 : codes d'erreur stables (contrat 05-api), indépendants du nom Rust.
+    /// Item 2: stable error codes (05-api contract), independent of the Rust name.
     #[test]
     fn cast_error_codes_are_stable() {
         let all = [
@@ -1710,7 +1710,7 @@ mod tests {
         }
     }
 
-    /// Item 3 : un `schema_version` plus récent est signalé mais l'état reste chargeable.
+    /// Item 3: a more recent `schema_version` is reported but the state stays loadable.
     #[test]
     fn newer_schema_is_detected_and_still_loads() {
         assert_eq!(

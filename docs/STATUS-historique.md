@@ -1,331 +1,331 @@
-# STATUS — historique (2026-06-12 → 2026-08-03)
+# STATUS — history (2026-06-12 → 2026-08-03)
 
-Sections retirées de `docs/STATUS.md` le 2026-11-07 pour le garder lisible ; contenu inchangé.
+Sections removed from `docs/STATUS.md` on 2026-11-07 to keep it readable; content unchanged (translated to English on 2026-11-09).
 
-## Où on en est (2026-06-12)
-- **Recherche terminée** : anatomie SotS + hots-parser, verdicts dépendances, comparatif moteurs,
-  écosystème (HeroesProfile vivant, HeroesMatchTracker archivé). → `docs/research/`.
-- **Spec programme validée** (opérateur + revue agent, 2 passes) : Rust core, Postgres,
-  3 étages de données, parité SotS totale en V1 (ligues incluses), remplacement du serveur Node
-  local, widget stream, scope C (auto-hébergé V1, open-source, public-ready V2), multi-tokens.
+## Where we are (2026-06-12)
+- **Research finished**: anatomy of SotS + hots-parser, dependency verdicts, engine comparison,
+  ecosystem (HeroesProfile alive, HeroesMatchTracker archived). → `docs/research/`.
+- **Programme spec approved** (operator + agent review, 2 passes): Rust core, Postgres,
+  3 data tiers, full SotS parity in V1 (leagues included), replacement of the local Node
+  server, stream widget, scope C (self-hosted V1, open-source, public-ready V2), multi-tokens.
   → `docs/specs/2026-06-12-storm-codex-design.md`.
-- **Maquettes validées** (14 écrans, couverture vue-par-vue auditée contre SotS ; widget défaite
-  enrichi sur retour opérateur). → `docs/specs/2026-06-12-storm-codex-mockup.html`.
-- **Jalon 0 : GO** (2026-06-12, exécuté sur le PC de jeu). Spike Rust `spike/storm-decode` :
-  50/50 replays décodés (header+details+tracker), médiane **12 ms** / p95 21 ms vs .NET 37 ms
-  (1 échec) et Python 161 ms ; cross-check heroprotocol 3/3 identique. Repli .NET écarté.
-  → rapport : `docs/research/2026-06-12-jalon0-bench.md` · plan exécuté :
+- **Mockups approved** (14 screens, view-by-view coverage audited against SotS; defeat widget
+  enriched after operator feedback). → `docs/specs/2026-06-12-storm-codex-mockup.html`.
+- **Milestone 0: GO** (2026-06-12, run on the gaming PC). Rust spike `spike/storm-decode`:
+  50/50 replays decoded (header+details+tracker), median **12 ms** / p95 21 ms vs .NET 37 ms
+  (1 failure) and Python 161 ms; heroprotocol cross-check 3/3 identical. .NET fallback dropped.
+  → report: `docs/research/2026-06-12-jalon0-bench.md` · executed plan:
   `docs/plans/2026-06-12-jalon0-spike-decode.md`.
 
-- **Jalon 1 : FAIT** (2026-06-12). Crate `crates/storm-replay` : 7 streams décodés (versioned +
-  bitpacked + attributes), tables protocol-gen embarquées (390 builds → 32 dédupliquées),
-  fallback builds inconnus signalé, erreurs typées. **Critères : archive réelle 2 821/2 821
-  décodés (100 %, 22 builds 2024→2026) ; bench 7 streams médiane 102 ms < 150** (p95 205 ms,
-  dont ~50–115 ms de plancher décompression bzip2 incompressible — point signalé à l'opérateur).
-  Parité **bit-exacte** prouvée vs heroprotocol (deep-compare 7 streams × 4 replays,
-  `tools/crosscheck_streams.py`). Plan : `docs/plans/2026-06-12-jalon1-storm-replay.md`.
+- **Milestone 1: DONE** (2026-06-12). Crate `crates/storm-replay`: 7 streams decoded (versioned +
+  bitpacked + attributes), embedded protocol-gen tables (390 builds → 32 deduplicated),
+  unknown-build fallback flagged, typed errors. **Criteria: real archive 2,821/2,821
+  decoded (100%, 22 builds 2024→2026); 7-stream bench median 102 ms < 150** (p95 205 ms,
+  including a ~50–115 ms incompressible bzip2 decompression floor — point raised with the operator).
+  **Bit-exact** parity proven vs heroprotocol (deep-compare 7 streams × 4 replays,
+  `tools/crosscheck_streams.py`). Plan: `docs/plans/2026-06-12-jalon1-storm-replay.md`.
 
-- **Jalon 2 : FAIT** (2026-06-12). Crate `crates/storm-stats` : port fidèle de hots-parser
-  (3 360 lignes JS) → `{match, players, status}`. **Critère : diff automatique champ par champ
-  vs hots-parser 7.55.7 (Node) — 114/114 verts** (79 parse complet identique, 35 rejets
-  identiques sur cartes absentes de la `MapType` de la référence). 1 tolérance documentée et
-  favorable (coordonnées de ping : storm-stats plus correct que la référence). Bench parse
-  complet **133 ms médiane** (échantillon représentatif, < 150 budget ; à-budget 151 ms sur le
-  pire cas, décodage-dominé). Harnais : `tools/parity-harness/` (`dump.js`, `diff.py`,
-  `tolerances.json`). Rapport : `docs/research/2026-06-12-jalon2-parite.md` · plan :
+- **Milestone 2: DONE** (2026-06-12). Crate `crates/storm-stats`: faithful port of hots-parser
+  (3,360 lines of JS) → `{match, players, status}`. **Criterion: automatic field-by-field diff
+  vs hots-parser 7.55.7 (Node) — 114/114 green** (79 identical full parses, 35 identical
+  rejections on maps missing from the reference's `MapType`). 1 documented and
+  favourable tolerance (ping coordinates: storm-stats more correct than the reference). Full parse
+  bench **133 ms median** (representative sample, < 150 budget; 151 ms, at budget, on the
+  worst case, decode-dominated). Harness: `tools/parity-harness/` (`dump.js`, `diff.py`,
+  `tolerances.json`). Report: `docs/research/2026-06-12-jalon2-parite.md` · plan:
   `docs/plans/2026-06-12-jalon2-storm-stats.md`.
 
-- **Jalon 2.5 (préalable jalon 3, décision opérateur)** : extension storm-stats aux 4 cartes
-  ARAM récentes (Silver City, Lost Cavern, Braxis Outpost, Industrial District) que hots-parser
-  7.55.7 rejette — ~30 % de l'archive. `EXTRA_MAPS`, objectif minimal, handlers gardés. Diff
-  toujours 114/114 (79 parse complet + 25 extension + 10 rejets brawls).
-- **Jalon 3 : FAIT** (2026-06-12, dev contre Postgres Docker local). `crates/storm-codex-server`
-  (axum 0.8 + sqlx 0.8) : upload (token, archive, pool de parse, sémantique ≤ 2 s/202),
-  projection Postgres idempotente, WebSocket `match.parsed`, REST (matches/match/player/heroes),
-  dump `…/raw` + cache LRU, admin (tokens/reprocess/santé). **Critères : archive 2781/2781
-  archivée+tentée ; 99,4 % parsée** (échecs classés, tous légitimes) ; **backfill 1,8 min < 5** ;
-  **fin de partie → page 1,4 s < 5** ; **API p95 52 ms < 100**. Bug de deadlock concurrent trouvé
-  par le backfill et corrigé. client-rs re-pointé (repo Hots-Overlay). Rapport :
-  `docs/research/2026-06-12-jalon3-bench.md` · plan :
+- **Milestone 2.5 (prerequisite for milestone 3, operator decision)**: storm-stats extension to the 4 recent ARAM
+  maps (Silver City, Lost Cavern, Braxis Outpost, Industrial District) that hots-parser
+  7.55.7 rejects — ~30% of the archive. `EXTRA_MAPS`, minimal objective, handlers kept. Diff
+  still 114/114 (79 full parses + 25 extension + 10 brawl rejections).
+- **Milestone 3: DONE** (2026-06-12, dev against local Docker Postgres). `crates/storm-codex-server`
+  (axum 0.8 + sqlx 0.8): upload (token, archive, parse pool, ≤ 2 s/202 semantics),
+  idempotent Postgres projection, WebSocket `match.parsed`, REST (matches/match/player/heroes),
+  `…/raw` dump + LRU cache, admin (tokens/reprocess/health). **Criteria: archive 2781/2781
+  archived+attempted; 99.4% parsed** (failures classified, all legitimate); **backfill 1.8 min < 5**;
+  **end of game → page 1.4 s < 5**; **API p95 52 ms < 100**. Concurrent deadlock bug found
+  by the backfill and fixed. client-rs re-pointed (Hots-Overlay repo). Report:
+  `docs/research/2026-06-12-jalon3-bench.md` · plan:
   `docs/plans/2026-06-12-jalon3-serveur-db-backfill.md`.
 
-- **Jalon 4 : socle livré** (2026-06-12). SPA `web/` (Vite + React + TS + TanStack Query),
-  design Nexus Codex (tokens de la maquette), servie par le binaire (`WEB_DIR` → ServeDir +
-  fallback index.html pour le routing SPA). Pages data-backed vérifiées contre la DB backfillée
-  (capture à l'appui) : **Session/dashboard, Matchs (filtrable, WS temps réel), Détail de match
-  (score 10 joueurs ×2 équipes, draft), Héros (agrégat triable), Cartes, Joueur (hero pool)**.
-  Nouvel endpoint `/api/maps`. Plan : `docs/plans/2026-06-12-jalon4-front-parite.md`.
-  **Reste à compléter pour la parité 1:1** : trends par patch, classements, équipes/ligues/
-  collections (définitions manuelles), admin/import UI, exports CSV/JSON, anneaux d'univers réels
-  (`dim_heroes` depuis HotsPatchNotes :5001), timelines uPlot du détail de match.
+- **Milestone 4: base shipped** (2026-06-12). SPA `web/` (Vite + React + TS + TanStack Query),
+  Nexus Codex design (mockup tokens), served by the binary (`WEB_DIR` → ServeDir +
+  index.html fallback for SPA routing). Data-backed pages verified against the backfilled DB
+  (with screenshot): **Session/dashboard, Matches (filterable, real-time WS), Match detail
+  (score 10 players ×2 teams, draft), Heroes (sortable aggregate), Maps, Player (hero pool)**.
+  New endpoint `/api/maps`. Plan: `docs/plans/2026-06-12-jalon4-front-parite.md`.
+  **Still to complete for 1:1 parity**: trends per patch, rankings, teams/leagues/
+  collections (manual definitions), admin/import UI, CSV/JSON exports, real universe rings
+  (`dim_heroes` from HotsPatchNotes :5001), uPlot timelines in the match detail.
 
-- **Jalon 5 : code livré** (2026-06-12). Émetteur **Jarvis** (`jarvis.rs`) :
-  `hots.match.completed` → Redis avec invariants spine (testé E2E contre Redis local Docker,
-  event bien formé). **Widget OBS** (`/widget`, fond transparent, live WS). **Push Azure**
-  (`azure.rs`, POST sortant authentifié — code prêt, non testé contre l'EBS réelle).
-  **Bascule/décommission Node** : runbook `docs/runbooks/2026-06-12-bascule-decommission-node.md`
-  (étape box/opérateur, le soir). Plan : `docs/plans/2026-06-12-jalon5-stream-jarvis.md`.
-- **Jalon 5 : intégration Jarvis LIVE + vérifiée E2E** (2026-06-13). Backfill prod fait (2007
-  matchs, 97,3 %). Le bridge Jarvis est écrit, déployé et **prouvé de bout en bout sur le box** :
-  - storm-codex raccordé au réseau `jarvis_default` ; publie sur le canal pub/sub
-    `storm-codex:match_completed` (REDIS_URL=redis://redis:6379/0). Collision d'alias `postgres`
-    (jarvis-postgres) corrigée → DATABASE_URL via le nom de conteneur `storm-codex-pg`.
-  - **Bridge Jarvis** (`jarvis/ingest/hots_matches.py`, dans le repo Jarvis) : SUBSCRIBE le canal
-    → adapte en Event spine **`hots.match_completed`** (type à 1 point ; l'émetteur storm-codex
-    produisait `hots.match.completed` à 2 points, **rejeté** par le modèle Event — corrigé au
-    boundary). Gaté par `STORM_CODEX_MATCHES_ENABLED`. Worker démarré (`jarvis run … hots_matches`),
-    abonné. + 3 tests (apostrophe préservée).
-  - **Test E2E réel** : re-upload d'un replay archivé → parse → emit storm-codex → bridge →
-    event `hots.match_completed | storm-codex | info | Silver City | winner 1` **présent dans la
-    table `events` du spine Jarvis**. ✅
-  - `reject_class` rendu exhaustif (stats_failure/-2, unverified_build/-7) → admin lisible.
-  - **Brief proactif FR : LIVE + prouvé** (2026-06-13). Worker spine `jarvis/notify/hots_brief.py`
-    (3e consumer-group, start `$`) : `hots.match_completed` → notif FR du point de vue de
-    l'opérateur (identifié par `HOTS_PLAYER_NAME=matella`, auto-déduit = présent dans 2001/2007
-    matchs). Ex. prouvé sur vrai upload : `🏆 HotS — Victoire — Tyrande sur Silver City — 6/8/3`
-    (défaite = priorité haute). Délivré via le canal notify (`send`/ntfy). **Câblage ntfy complété**
-    au passage : `NTFY_URL` était vide (oubli onboarding) → `http://ntfy:80` ; ça réactive aussi les
-    autres notifs Jarvis (reminders…). Gaté `HOTS_BRIEF_ENABLED`. + 5 tests.
-  - **Widget OBS local conforme maquette (écran 10)** (2026-06-13). Corrigé : il affichait
-    `players[0]` + « équipe X gagne » générique → désormais **perspective opérateur** via
-    `?me=<nom>` (browser source : `http://192.168.129.85:5102/widget?me=matella`). Montre
-    V/D + héros + carte + **K/A/D + KP** (KP = takedowns / morts adverses ; la somme des
-    takedowns surcomptait). Vérifié live : « VICTOIRE · Chen · Dragon Shire · 3/17/2 · KP 67% ».
-    Fond transparent OK pour OBS. `kills/deaths/takedowns` ajoutés à `/api/matches`.
-  **Décision scope (opérateur 2026-06-13)** : **on abandonne l'extension Twitch cloud / Azure**.
-  Le seul overlay sera le **widget OBS local** (`/widget`, déjà servi par storm-codex, zéro Azure).
-  `azure.rs` reste en dormance (non câblé). → plus de dépendance à des identifiants EBS.
-  **Reste (opérateur)** :
-  - **S'abonner au topic ntfy** `jarvis-62a7e8eba161` pour *recevoir* les briefs (0 abonné ;
-    publication prouvée). Option alternative/complément : injecter la phrase Jarvis dans le widget.
-  - Ajouter le widget dans OBS (browser source, URL ci-dessus) + valider sur une **vraie partie**.
-  - **Décommission du Node** (runbook, après validation partie réelle).
+- **Milestone 5: code shipped** (2026-06-12). **Jarvis** emitter (`jarvis.rs`):
+  `hots.match.completed` → Redis with spine invariants (tested E2E against local Docker Redis,
+  well-formed event). **OBS widget** (`/widget`, transparent background, live WS). **Azure push**
+  (`azure.rs`, authenticated outgoing POST — code ready, not tested against the real EBS).
+  **Node cutover/decommission**: runbook `docs/runbooks/2026-06-12-bascule-decommission-node.md`
+  (box/operator step, in the evening). Plan: `docs/plans/2026-06-12-jalon5-stream-jarvis.md`.
+- **Milestone 5: Jarvis integration LIVE + verified E2E** (2026-06-13). Prod backfill done (2007
+  matches, 97.3%). The Jarvis bridge is written, deployed and **proven end to end on the box**:
+  - storm-codex connected to the `jarvis_default` network; publishes on the pub/sub channel
+    `storm-codex:match_completed` (REDIS_URL=redis://redis:6379/0). `postgres` alias collision
+    (jarvis-postgres) fixed → DATABASE_URL via the container name `storm-codex-pg`.
+  - **Jarvis bridge** (`jarvis/ingest/hots_matches.py`, in the Jarvis repo): SUBSCRIBEs to the channel
+    → adapts into a spine Event **`hots.match_completed`** (type with 1 dot; the storm-codex emitter
+    produced `hots.match.completed` with 2 dots, **rejected** by the Event model — fixed at the
+    boundary). Gated by `STORM_CODEX_MATCHES_ENABLED`. Worker started (`jarvis run … hots_matches`),
+    subscribed. + 3 tests (apostrophe preserved).
+  - **Real E2E test**: re-upload of an archived replay → parse → storm-codex emit → bridge →
+    event `hots.match_completed | storm-codex | info | Silver City | winner 1` **present in the
+    `events` table of the Jarvis spine**. ✅
+  - `reject_class` made exhaustive (stats_failure/-2, unverified_build/-7) → readable admin.
+  - **Proactive FR brief: LIVE + proven** (2026-06-13). Spine worker `jarvis/notify/hots_brief.py`
+    (3rd consumer group, start `$`): `hots.match_completed` → FR notification from the
+    operator's point of view (identified by `HOTS_PLAYER_NAME=matella`, auto-inferred = present in 2001/2007
+    matches). Example proven on a real upload: `🏆 HotS — Victoire — Tyrande sur Silver City — 6/8/3`
+    (defeat = high priority). Delivered via the notify channel (`send`/ntfy). **ntfy wiring completed**
+    along the way: `NTFY_URL` was empty (onboarding oversight) → `http://ntfy:80`; this also reactivates the
+    other Jarvis notifications (reminders…). Gated by `HOTS_BRIEF_ENABLED`. + 5 tests.
+  - **Local OBS widget matching the mockup (screen 10)** (2026-06-13). Fixed: it showed
+    `players[0]` + a generic "team X wins" → now **operator perspective** via
+    `?me=<name>` (browser source: `http://192.168.129.85:5102/widget?me=matella`). Shows
+    W/L + hero + map + **K/A/D + KP** (KP = takedowns / enemy deaths; the sum of
+    takedowns over-counted). Verified live: "VICTOIRE · Chen · Dragon Shire · 3/17/2 · KP 67%".
+    Transparent background OK for OBS. `kills/deaths/takedowns` added to `/api/matches`.
+  **Scope decision (operator 2026-06-13)**: **we drop the Twitch cloud / Azure extension**.
+  The only overlay will be the **local OBS widget** (`/widget`, already served by storm-codex, zero Azure).
+  `azure.rs` stays dormant (not wired). → no more dependency on EBS credentials.
+  **Remaining (operator)**:
+  - **Subscribe to the ntfy topic** `jarvis-62a7e8eba161` to *receive* the briefs (0 subscribers;
+    publication proven). Alternative/complementary option: inject the Jarvis sentence into the widget.
+  - Add the widget in OBS (browser source, URL above) + validate on a **real game**.
+  - **Decommission of the Node server** (runbook, after validation on a real game).
 
-  ⚠️ **Piège déploiement** : `rsync --delete` vers `~/apps/storm-codex` **supprime le `.env` du box**
-  (gitignoré, absent côté source). TOUJOURS `--exclude .env`. Secrets récupérables depuis le
-  conteneur vivant (`docker inspect storm-codex-server --format '{{range .Config.Env}}…'`) —
-  surtout `POSTGRES_PASSWORD` (le volume est initialisé avec).
-- **Jalon 6 : prêt à publier** — voir ci-dessous.
+  ⚠️ **Deployment trap**: `rsync --delete` to `~/apps/storm-codex` **deletes the box's `.env`**
+  (gitignored, missing on the source side). ALWAYS `--exclude .env`. Secrets recoverable from the
+  live container (`docker inspect storm-codex-server --format '{{range .Config.Env}}…'`) —
+  especially `POSTGRES_PASSWORD` (the volume is initialised with it).
+- **Milestone 6: ready to publish** — see below.
 
-## D3 — ligues + export JSON (2026-06-13)
-- **Export JSON** des matchs (suit les filtres) ✅.
-- **Ligues** : regroupement au-dessus des équipes (colonne `teams.league`, migration 0004) ;
-  `GET /api/teams` renvoie la ligue, `PUT /api/teams/{id}` (ré)assigne ; page **Leagues** (nav)
-  groupe les équipes par ligue ; création + assignation dans l'Admin. ✅
-- **Reste** : `dim_talents` (réf. talents depuis HotsPatchNotes → affichage des talents par joueur
-  dans le détail de match) — prochain item.
+## D3 — leagues + JSON export (2026-06-13)
+- **JSON export** of the matches (follows the filters) ✅.
+- **Leagues**: grouping above the teams (column `teams.league`, migration 0004);
+  `GET /api/teams` returns the league, `PUT /api/teams/{id}` (re)assigns; **Leagues** page (nav)
+  groups the teams by league; creation + assignment in Admin. ✅
+- **Remaining**: `dim_talents` (talent reference data from HotsPatchNotes → display of the talents per player
+  in the match detail) — next item.
 
-## Orpheus (musique) — configuré, OAuth en attente (opérateur)
-Creds Spotify en place (`.env` box), Orpheus redémarré, `/api/auth/login` redirige bien vers
-Spotify (PKCE, redirect 127.0.0.1:3010). Reste : l'opérateur autorise via tunnel SSH
-`-L 3010:127.0.0.1:3010` → `http://127.0.0.1:3010/api/auth/login` → Agree. Puis le widget musique
-(intégré au `/queue` + page `/now-playing`) affiche la piste.
+## Orpheus (music) — configured, OAuth pending (operator)
+Spotify creds in place (box `.env`), Orpheus restarted, `/api/auth/login` redirects correctly to
+Spotify (PKCE, redirect 127.0.0.1:3010). Remaining: the operator authorises via an SSH tunnel
+`-L 3010:127.0.0.1:3010` → `http://127.0.0.1:3010/api/auth/login` → Agree. Then the music widget
+(built into `/queue` + the `/now-playing` page) shows the track.
 
-## Scène OBS « entre les games » (2026-06-13, vérifié live)
-- **`/queue`** (browser source, fond transparent, EN) : TONIGHT'S SESSION (W-L, streak, WR),
-  sparkline WR, recent games (badges mode + portraits + W/L + KDA), heroes tonight (W-L),
-  best game, phrase Jarvis. Session = parties du même jour calendaire que la dernière.
-- **`/now-playing`** (source persistante, EN) : widget musique lisant **Orpheus** via proxy
-  `/api/now-playing` (config `ORPHEUS_URL`). Affiche « Music — off » tant que Spotify dormant.
-  Trois variantes : défaut (carte étoffée), `?mini` (badge compact), `?reveal` (annonce en grand
-  à chaque démarrage de lecture — entrée 440 ms, hold 2,6 s, morph 620 ms — puis repli sur le
+## OBS scene "between games" (2026-06-13, verified live)
+- **`/queue`** (browser source, transparent background, EN): TONIGHT'S SESSION (W-L, streak, WR),
+  WR sparkline, recent games (mode badges + portraits + W/L + KDA), heroes tonight (W-L),
+  best game, Jarvis sentence. Session = games of the same calendar day as the last one.
+- **`/now-playing`** (persistent source, EN): music widget reading **Orpheus** via the proxy
+  `/api/now-playing` (config `ORPHEUS_URL`). Shows "Music — off" while Spotify is asleep.
+  Three variants: default (rich card), `?mini` (compact badge), `?reveal` (big announcement
+  at each playback start — entry 440 ms, hold 2.6 s, morph 620 ms — then folds onto the
   badge). Spec `docs/specs/2026-08-29-now-playing-reveal-design.md`, plan
-  `docs/plans/2026-08-29-now-playing-reveal.md`. Sondage passé de 5 s à 2 s.
-  **Reste à vérifier sur le box** : (a) qu'Orpheus ne relaie pas l'API Spotify sans cache — le
-  sondage à 2 s fait ~30 requêtes/min par source ouverte ; repli documenté = push WS
-  `music.changed` ; (b) que le reveal s'affiche réellement, ce qui suppose l'OAuth Spotify faite
-  (voir la section « Orpheus (musique) » plus bas). Jusque-là seule la géométrie est vérifiée,
-  en pilotant les classes d'état à la main.
-- **Widget `/widget`** passé en anglais (VICTORY/DEFEAT) — cohérent. Voix Jarvis reste FR (persona).
-- Maquette : `docs/specs/2026-06-13-scene-obs-entre-games-mockup.html` (panneau gauche, cam+jeu
-  modestes à droite, musique bas-droite persistante).
-- **Langue : tout en anglais** (décision opérateur — option B). Toutes les pages + nav + Admin +
-  match detail traduits ; la **voix de Jarvis reste FR** (persona). Vérifié live.
-- **Orpheus (musique)** : pour que `/now-playing` affiche la piste, il reste à configurer Spotify
-  côté Orpheus (Premium + app dev + `cargo`/auth) — voir le récap dans le chat / `Orpheus/SETUP.md`.
+  `docs/plans/2026-08-29-now-playing-reveal.md`. Polling changed from 5 s to 2 s.
+  **Still to check on the box**: (a) that Orpheus does not relay the Spotify API without a cache — the
+  2 s polling makes ~30 requests/min per open source; documented fallback = WS push
+  `music.changed`; (b) that the reveal actually shows, which requires the Spotify OAuth to be done
+  (see the "Orpheus (music)" section further down). Until then only the geometry is verified,
+  by driving the state classes by hand.
+- **Widget `/widget`** switched to English (VICTORY/DEFEAT) — consistent. Jarvis's voice stays FR (persona).
+- Mockup: `docs/specs/2026-06-13-scene-obs-entre-games-mockup.html` (left panel, modest cam+game
+  on the right, persistent music bottom-right).
+- **Language: everything in English** (operator decision — option B). All pages + nav + Admin +
+  match detail translated; **Jarvis's voice stays FR** (persona). Verified live.
+- **Orpheus (music)**: for `/now-playing` to show the track, Spotify still has to be configured
+  on the Orpheus side (Premium + dev app + `cargo`/auth) — see the recap in the chat / `Orpheus/SETUP.md`.
 
-## D1 — identité opérateur multi-comptes (2026-06-13, vérifié live)
-Réglage **operator_names** (liste, multi-comptes) source unique de « qui suis-je » :
-- Serveur : table `app_settings` (migration 0003), `GET /api/settings`, `PUT /api/admin/settings`.
-- Front : `useSettings` + `pickOperator`/`matchOperator` → **widget par défaut sans `?me=`**,
-  lignes Matchs (V/D + ton héros), **Session = TES stats** (win rate 53,5 % réel vs 50 % global,
-  mes parties, héros joués, main héros). UI Admin « Mon identité » pour éditer.
-- Jarvis : `HOTS_PLAYER_NAME` accepte une **liste** (le brief matche n'importe lequel de tes noms).
-- Export **JSON** des matchs ajouté (suit les filtres), à côté du CSV. ✅
-**Reste de D** : D2 phrase Jarvis dans le widget (round-trip) ; ligues (au-dessus des équipes) ;
-`dim_talents` détaillés.
+## D1 — multi-account operator identity (2026-06-13, verified live)
+The **operator_names** setting (list, multi-account) is the single source of "who am I":
+- Server: table `app_settings` (migration 0003), `GET /api/settings`, `PUT /api/admin/settings`.
+- Front: `useSettings` + `pickOperator`/`matchOperator` → **widget by default without `?me=`**,
+  Matches rows (W/L + your hero), **Session = YOUR stats** (real win rate 53.5% vs 50% global,
+  my games, heroes played, main hero). Admin UI "My identity" to edit.
+- Jarvis: `HOTS_PLAYER_NAME` accepts a **list** (the brief matches any of your names).
+- **JSON** export of the matches added (follows the filters), next to the CSV. ✅
+**Rest of D**: D2 Jarvis sentence in the widget (round trip); leagues (above the teams);
+detailed `dim_talents`.
 
-## Images : portraits héros + fonds de carte (2026-06-13, vérifié live)
-- **Vendorisation déterministe** : au démarrage, `dim::vendor_images` télécharge les portraits
-  héros (90) + images de cartes standard (15) depuis HotsPatchNotes dans `/data/images`
-  (idempotent), servis par storm-codex sur `/images`. **Auto-suffisant** : aucune dépendance
-  runtime à HotsPatchNotes (le téléchargement échoue en silence → fallback front). `IMAGES_DIR`.
-- **Avatar = portrait réel** (cerclé couleur d'univers), fallback initiales si inconnu/erreur.
-  `heroIcon()` lit `dim_heroes.icon`. ⚠️ le widget appelle `useDimHeroes()` lui-même (il est hors
-  Layout, sinon DIM vide → initiales + anneau par défaut).
-- **Fond de carte** sur les lignes Matchs + le widget : `mapImage()` (slug = nom min., sans
-  apostrophe, espaces→tirets) en `background-image` voilé (gradient → texte lisible). Cartes ARAM
-  sans image (Silver City, Industrial District, Lost Cavern, Braxis Outpost) → fond uni (fallback
-  CSS silencieux, déterministe).
+## Images: hero portraits + map backgrounds (2026-06-13, verified live)
+- **Deterministic vendoring**: at startup, `dim::vendor_images` downloads the hero
+  portraits (90) + standard map images (15) from HotsPatchNotes into `/data/images`
+  (idempotent), served by storm-codex on `/images`. **Self-sufficient**: no runtime dependency
+  on HotsPatchNotes (the download fails silently → front fallback). `IMAGES_DIR`.
+- **Avatar = real portrait** (ringed in the universe colour), initials fallback if unknown/error.
+  `heroIcon()` reads `dim_heroes.icon`. ⚠️ the widget calls `useDimHeroes()` itself (it is outside
+  Layout, otherwise DIM is empty → initials + default ring).
+- **Map background** on the Matches rows + the widget: `mapImage()` (slug = lowercase name, no
+  apostrophe, spaces→dashes) as a veiled `background-image` (gradient → readable text). ARAM maps
+  without an image (Silver City, Industrial District, Lost Cavern, Braxis Outpost) → plain background (silent,
+  deterministic CSS fallback).
 
-## Widget + front : passe du 2026-06-13 (vérifié live)
-- **Widget OBS = perspective opérateur** : `?me=<nom>` (ex. `/widget?me=matella`) → V/D depuis
-  ta team, KDA k/a/d, KP, mode, durée (avant : `players[0]` + « équipe X gagne » générique).
-  KDA ajouté à `/api/matches`. Conforme maquette écran 10.
-- **Codes de mode corrigés** (bug réel) : la table front était décalée (Storm League affichait
-  « HL », QM « — »). Vérifié sur l'archive : **50091=SL, 50101=ARAM, -1=Custom** dominent.
-  Plus de badge « — ».
-- **Filtres façon SotS** sur Matchs : pills mode + dropdowns **carte** (20) + **héros** (91),
-  tri `played_at DESC` (déjà en place). Export CSV suit les filtres.
-- **Fix cache SPA (cause racine)** : `index.html` était servi **sans `no-cache`** → après chaque
-  redeploy le navigateur restait sur un bundle périmé = **page blanche**. Corrigé (ServeDir ne
-  sert plus l'index ; handler SPA en `no-cache`). Même classe de bug que HotsPatchNotes.
-  ⚠️ Process : un échec `tsc` faisait échouer `npm run build` **silencieusement** (l'ancien
-  bundle restait) — toujours vérifier `✓ built` au déploiement.
-- **Reverse proxy + ntfy** : runbook `docs/runbooks/2026-06-13-reverse-proxy-et-ntfy.md`
-  (le box utilise **Nginx Proxy Manager**, pas nginx-fichiers ; ntfy `:8093`). Reste opérateur :
-  s'abonner au topic ntfy pour recevoir les briefs.
-- **Connu / refinements** : identité opérateur globale (Session/Matchs/Héros montrent encore
-  `players[0]`/agrégat, pas toi — le widget a `?me=`) ; phrase Jarvis dans le widget ; deltas vs
-  moyenne. + résiduels jalon 4 (ligues, export JSON, dim_talents).
+## Widget + front: pass of 2026-06-13 (verified live)
+- **OBS widget = operator perspective**: `?me=<name>` (e.g. `/widget?me=matella`) → W/L from
+  your team, KDA k/a/d, KP, mode, duration (before: `players[0]` + a generic "team X wins").
+  KDA added to `/api/matches`. Matches mockup screen 10.
+- **Mode codes fixed** (real bug): the front table was shifted (Storm League showed
+  "HL", QM "—"). Checked on the archive: **50091=SL, 50101=ARAM, -1=Custom** dominate.
+  No more "—" badge.
+- **SotS-style filters** on Matches: mode pills + **map** (20) + **hero** (91) dropdowns,
+  sort `played_at DESC` (already in place). CSV export follows the filters.
+- **SPA cache fix (root cause)**: `index.html` was served **without `no-cache`** → after each
+  redeploy the browser stayed on a stale bundle = **blank page**. Fixed (ServeDir no longer
+  serves the index; SPA handler with `no-cache`). Same bug class as HotsPatchNotes.
+  ⚠️ Process: a `tsc` failure made `npm run build` fail **silently** (the old
+  bundle stayed) — always check `✓ built` at deployment.
+- **Reverse proxy + ntfy**: runbook `docs/runbooks/2026-06-13-reverse-proxy-et-ntfy.md`
+  (the box uses **Nginx Proxy Manager**, not nginx files; ntfy `:8093`). Remaining for the operator:
+  subscribe to the ntfy topic to receive the briefs.
+- **Known / refinements**: global operator identity (Session/Matches/Heroes still show
+  `players[0]`/aggregate, not you — the widget has `?me=`); Jarvis sentence in the widget; deltas vs
+  average. + milestone 4 leftovers (leagues, JSON export, dim_talents).
 
-## Jalon 4 — compléments faits (2026-06-12, après le socle)
-`dim_heroes` répliqué depuis HotsPatchNotes au démarrage (90 héros/6 univers) → **anneaux
-d'univers réels** sur les avatars ; **timeline uPlot** d'avantage de niveau sur le détail de
-match ; **export CSV** (`/api/matches.csv` + lien UI) ; détail de match **enrichi** (draft
-ordonné + premiers objectif/fort/keep). Endpoint `/api/dim/heroes`.
+## Milestone 4 — additions done (2026-06-12, after the base)
+`dim_heroes` replicated from HotsPatchNotes at startup (90 heroes/6 universes) → **real universe
+rings** on the avatars; **uPlot timeline** of the level advantage on the match
+detail; **CSV export** (`/api/matches.csv` + UI link); **enriched** match detail (ordered
+draft + first objective/fort/keep). Endpoint `/api/dim/heroes`.
 
-## Jalon 4 — secondaire fait (2026-06-12)
-**Trends par patch** (winrate/durée par build, `/api/trends`), **équipes/collections** (CRUD
-admin-protégé, `/api/teams`+`/api/collections`), **page Admin/Import** (santé uploads, création
-de tokens, gestion équipes/collections, re-process). Toutes les pages SotS ont leur équivalent.
+## Milestone 4 — secondary items done (2026-06-12)
+**Trends per patch** (win rate/duration per build, `/api/trends`), **teams/collections** (admin-protected
+CRUD, `/api/teams`+`/api/collections`), **Admin/Import page** (upload health, token
+creation, team/collection management, re-process). Every SotS page has its equivalent.
 
-## Déploiement box — FAIT (non invasif, 2026-06-12 soir)
-Empaquetage livré : `Dockerfile` multi-stage (web Vite + serveur Rust + runtime slim, migrations
-embarquées), `docker-compose.yml` prod (Postgres dédié `storm-codex-pg` + serveur ; push opt-in
-laissé vide), `.dockerignore`, `.env.example`. **Déployé sur le box** dans `~/apps/storm-codex`
-(rsync + `docker compose up -d --build`). Port hôte **5102** (8088 pris par gluetun). Vérifié :
-les 2 conteneurs **healthy** ; `/api/health` 200 (db up) ; 11 tables migrées ; **dim_heroes = 90
-héros répliqués depuis HotsPatchNotes :5001** (via `host.docker.internal`) ; SPA `/` 200 ; widget
-`/widget` 200 ; DB vide prête ; joignable du Mac via Tailscale (`192.168.129.85:5102`).
-**Non invasif** : Node overlay, Mongo et Redis Jarvis **non touchés** (REDIS_URL/AZURE_* vides) ;
-aucune décommission. Le serveur est en place, sain, en attente d'uploads du PC de jeu.
+## Box deployment — DONE (non-invasive, 2026-06-12 evening)
+Packaging shipped: multi-stage `Dockerfile` (Vite web + Rust server + slim runtime, migrations
+embedded), prod `docker-compose.yml` (dedicated Postgres `storm-codex-pg` + server; opt-in push
+left empty), `.dockerignore`, `.env.example`. **Deployed on the box** in `~/apps/storm-codex`
+(rsync + `docker compose up -d --build`). Host port **5102** (8088 taken by gluetun). Verified:
+both containers **healthy**; `/api/health` 200 (db up); 11 tables migrated; **dim_heroes = 90
+heroes replicated from HotsPatchNotes :5001** (via `host.docker.internal`); SPA `/` 200; widget
+`/widget` 200; empty DB ready; reachable from the Mac via Tailscale (`192.168.129.85:5102`).
+**Non-invasive**: Node overlay, Mongo and Jarvis Redis **not touched** (REDIS_URL/AZURE_* empty);
+no decommissioning. The server is in place, healthy, waiting for uploads from the gaming PC.
 
-## Compat uploader client-rs — FAIT (2026-06-12)
-Le client `client-rs` (Hots-Overlay v1.1.2) poste sur **`/api/upload-raw`** (octets bruts,
-header `X-Filename`, `Bearer`). storm-codex n'exposait que `/api/upload` → **alias ajouté**
-(`/api/upload-raw` → même handler). Bout-en-bout prouvé sur le box : token créé via admin,
-upload octets → auth → archive → parse → statut classé, 401 sans token, santé admin OK. Le
-client marche donc en re-pointant juste `SERVER_URL` (pas de changement de code client).
-Token d'upload **matella-pc** créé (valeur donnée en chat ; recréable via `POST /api/admin/tokens`
-avec le champ `name` + `ADMIN_TOKEN` du `.env` box). Base + archive remises à vide.
+## client-rs uploader compatibility — DONE (2026-06-12)
+The `client-rs` client (Hots-Overlay v1.1.2) posts to **`/api/upload-raw`** (raw bytes,
+`X-Filename` header, `Bearer`). storm-codex only exposed `/api/upload` → **alias added**
+(`/api/upload-raw` → same handler). End to end proven on the box: token created via admin,
+bytes upload → auth → archive → parse → classified status, 401 without a token, admin health OK. The
+client therefore works by just re-pointing `SERVER_URL` (no client code change).
+Upload token **matella-pc** created (value given in the chat; can be recreated via `POST /api/admin/tokens`
+with the `name` field + `ADMIN_TOKEN` from the box's `.env`). Database + archive reset to empty.
 
-## Deux correctifs (2026-06-12, retours opérateur)
-- **Backfill réellement complet** (repo Hots-Overlay, `client-rs`) : le commit PC d3efb77 annonçait
-  « scan complet » mais `candidates.truncate(INITIAL_UPLOAD_LIMIT=10)` était resté → seuls les 10
-  plus récents partaient. Corrigé : `scan_and_upload` envoie **tout** le non-uploadé (oldest-first,
-  historique chronologique), idempotent (set persisté + 409 serveur). Cap supprimé.
-- **Apostrophe dans le nom de carte** (Blackheart's Bay) : le nom **parsé** en base était déjà sûr
-  (sqlx bind, jamais d'interpolation ; front via URLSearchParams + échappement React). Restait le
-  header `X-Filename` stocké percent-encodé (`Blackheart%27s Bay`) → **décodé côté serveur** + test ;
-  vérifié de bout en bout sur le box (`… Blackheart's Bay.StormReplay` stocké proprement).
+## Two fixes (2026-06-12, operator feedback)
+- **Backfill truly complete** (Hots-Overlay repo, `client-rs`): the PC commit d3efb77 announced
+  "full scan" but `candidates.truncate(INITIAL_UPLOAD_LIMIT=10)` had stayed → only the 10
+  most recent were sent. Fixed: `scan_and_upload` sends **everything** not yet uploaded (oldest-first,
+  chronological history), idempotent (persisted set + server 409). Cap removed.
+- **Apostrophe in the map name** (Blackheart's Bay): the **parsed** name in the database was already safe
+  (sqlx bind, never any interpolation; front via URLSearchParams + React escaping). What remained was the
+  `X-Filename` header stored percent-encoded (`Blackheart%27s Bay`) → **decoded on the server** + test;
+  verified end to end on the box (`… Blackheart's Bay.StormReplay` stored cleanly).
 
-## Ce qui reste (état réel au 2026-06-13)
-Le développement est essentiellement terminé (jalons 0→5 livrés + vérifiés ; backfill prod fait :
-2007 matchs ; Redis Jarvis câblé + brief E2E ; images vendorisées ; widget/filtres). Reste :
+## What remains (real state as of 2026-06-13)
+Development is essentially finished (milestones 0→5 shipped + verified; prod backfill done:
+2007 matches; Jarvis Redis wired + brief E2E; images vendored; widget/filters). Remaining:
 
-**A. Actions opérateur (pas du code)**
-- **S'abonner au topic ntfy** `jarvis-62a7e8eba161` (appli ntfy, serveur `http://192.168.129.85:8093`)
-  pour *recevoir* les briefs (publication déjà prouvée ; 0 abonné aujourd'hui).
-- **Ajouter le widget dans OBS** : browser source `http://192.168.129.85:5102/widget?me=matella`.
-- (optionnel) **Reverse proxy NPM** pour un nom propre + TLS — runbook
+**A. Operator actions (not code)**
+- **Subscribe to the ntfy topic** `jarvis-62a7e8eba161` (ntfy app, server `http://192.168.129.85:8093`)
+  to *receive* the briefs (publication already proven; 0 subscribers today).
+- **Add the widget in OBS**: browser source `http://192.168.129.85:5102/widget?me=matella`.
+- (optional) **NPM reverse proxy** for a clean name + TLS — runbook
   `docs/runbooks/2026-06-13-reverse-proxy-et-ntfy.md`.
 
-**B. Bascule finale jalon 5 (ensemble, le soir, sur une vraie partie)**
-- Jouer une partie → valider widget OBS + page < 5 s en conditions réelles (le reste est prouvé).
-- **Décommissionner le serveur Node** de l'overlay — runbook
-  `docs/runbooks/2026-06-12-bascule-decommission-node.md`. (Azure/extension Twitch **abandonné** —
-  décision opérateur : overlay local uniquement.)
+**B. Final milestone 5 cutover (together, in the evening, on a real game)**
+- Play a game → validate the OBS widget + page < 5 s in real conditions (the rest is proven).
+- **Decommission the overlay's Node server** — runbook
+  `docs/runbooks/2026-06-12-bascule-decommission-node.md`. (Azure/Twitch extension **dropped** —
+  operator decision: local overlay only.)
 
-**C. Jalon 6 — publication (action crates.io opérateur)**
-- `cargo publish` storm-replay puis storm-stats ; repos GitHub publics. `--dry-run` validé, MIT en place.
+**C. Milestone 6 — publication (crates.io operator action)**
+- `cargo publish` storm-replay then storm-stats; public GitHub repos. `--dry-run` validated, MIT in place.
 
-**D. Refinements — ✅ LIVRÉS (2026-06-13)**
-- ✅ Identité opérateur globale (réglage `operator_names` multi-comptes + `pickOperator`/`matchOperator`
-  partout : Session, Matches, widget, brief Jarvis).
-- ✅ Phrase Jarvis dans le widget OBS (répertoire déterministe FR, voix majordome).
-- ✅ Résiduels jalon 4 : **ligues** (page /leagues + assignation Admin), **export CSV/JSON**,
-  **`dim_talents`** (référentiel 1918 talents synchronisé depuis HotsPatchNotes → builds nommés
-  par joueur dans la fiche de match ; icônes non servies par HotsPatchNotes → texte en V1).
-- ✅ Portraits héros + fonds de carte vendorisés ; UI **entièrement en anglais**.
-- ✅ Scène OBS `/queue` (1920×1080, panneau session + slots cam/game encadrés + musique intégrée) ;
-  widget musique `/now-playing` (proxy Orpheus, pochette d'album, forme imbriquée gérée).
-- ✅ **Bug héros ARAM corrigé** : le shuffle ARAM (3 choix) fait que l'attribut 4002 du replay
-  capte parfois un héros *proposé*, pas joué (ex. stocké « D.Va » au lieu de Johanna). Le
-  projecteur dérive désormais le héros joué par **vote majoritaire des talents** via `dim_talents`
-  (locale-indépendant, immunisé au shuffle), avec `hero_id` aligné sur le nom canonique parser
-  (`attributeId`→`attr.json`) pour ne pas créer de faux diffs de format (Li-Ming, E.T.C.…).
-  Backfill : **5557 lignes corrigées, 0 divergence restante** ; trace dans `heroCorrectedFrom`.
+**D. Refinements — ✅ SHIPPED (2026-06-13)**
+- ✅ Global operator identity (multi-account `operator_names` setting + `pickOperator`/`matchOperator`
+  everywhere: Session, Matches, widget, Jarvis brief).
+- ✅ Jarvis sentence in the OBS widget (deterministic FR repertoire, butler voice).
+- ✅ Milestone 4 leftovers: **leagues** (/leagues page + Admin assignment), **CSV/JSON export**,
+  **`dim_talents`** (reference data of 1918 talents synced from HotsPatchNotes → builds named
+  per player in the match page; icons not served by HotsPatchNotes → text in V1).
+- ✅ Hero portraits + map backgrounds vendored; UI **entirely in English**.
+- ✅ OBS scene `/queue` (1920×1080, session panel + framed cam/game slots + built-in music);
+  music widget `/now-playing` (Orpheus proxy, album cover, nested shape handled).
+- ✅ **ARAM hero bug fixed**: the ARAM shuffle (3 choices) means the replay's attribute 4002
+  sometimes captures an *offered* hero, not the one played (e.g. stored "D.Va" instead of Johanna). The
+  projector now derives the played hero by **majority vote of the talents** via `dim_talents`
+  (locale-independent, immune to the shuffle), with `hero_id` aligned on the parser's canonical name
+  (`attributeId`→`attr.json`) so as not to create false format diffs (Li-Ming, E.T.C.…).
+  Backfill: **5557 rows fixed, 0 divergence left**; trace in `heroCorrectedFrom`.
 
-## Campagne de tests — FAIT (2026-08-03, demande opérateur)
-Couverture avant : 25 tests Rust (draft surtout), 0 test front, pas de CI de tests. Ajouté :
-- **storm-stats `tests/invariants.rs`** (4) : invariants du pipeline complet sur replay réel
-  committé — identité/cohérence match (winner/équipes/durée), **messages** (tri chronologique,
-  auteurs = joueurs, charge par type chat/ping/annonce, LoadingProgress filtré), score+talents+
-  takedowns, timeline XP monotone.
-- **Serveur** : `auth.rs` factorisé (dette admin/manage réglée) + 3 tests ; contrat Jarvis
-  (invariants spine + résumé joueurs) 2 tests ; `reject_class` exhaustif + `game_fingerprint`
-  (stabilité/ordre) 2 tests ; **intégration niveau routeur** (`api_tests` dans main.rs,
-  `api_router()` extrait, tower::oneshot) : health, auth admin ouvert/fermé 401/201, et
-  **bout-en-bout upload réel → parse → projection → détail avec messages → 409 dédup → 401
-  sans token**. DB-gated (skip sans DATABASE_URL), exécutés en CI.
-- **Front** : vitest (`web/src/api.test.ts`, 13 tests) — fmtDur/fmtClock, announceLabel,
-  modeBadge, matchesUrl, heroKey, awardLabel, classBadge, parseTrack (2 shapes Orpheus),
-  pickOperator, sideOfStep, fallbacks initials/universeColor/mapImage. `npm test`.
-- **CI `ci.yml`** : clippy strict + `cargo test` avec **service Postgres 17** (l'intégration DB
-  tourne à chaque push/PR) + vitest + build web.
-Total : **51 tests** (38 Rust + 13 vitest). Parité Node (114 replays) et E2E box restent hors
-CI (corpus/infra privés) — inchangés.
+## Test campaign — DONE (2026-08-03, operator request)
+Coverage before: 25 Rust tests (mostly draft), 0 front tests, no test CI. Added:
+- **storm-stats `tests/invariants.rs`** (4): invariants of the full pipeline on a real committed
+  replay — match identity/consistency (winner/teams/duration), **messages** (chronological order,
+  authors = players, payload per type chat/ping/announcement, LoadingProgress filtered), score+talents+
+  takedowns, monotonic XP timeline.
+- **Server**: `auth.rs` factored out (admin/manage debt settled) + 3 tests; Jarvis contract
+  (spine invariants + player summary) 2 tests; exhaustive `reject_class` + `game_fingerprint`
+  (stability/order) 2 tests; **router-level integration** (`api_tests` in main.rs,
+  `api_router()` extracted, tower::oneshot): health, admin auth open/closed 401/201, and
+  **end to end real upload → parse → projection → detail with messages → 409 dedup → 401
+  without a token**. DB-gated (skipped without DATABASE_URL), run in CI.
+- **Front**: vitest (`web/src/api.test.ts`, 13 tests) — fmtDur/fmtClock, announceLabel,
+  modeBadge, matchesUrl, heroKey, awardLabel, classBadge, parseTrack (2 Orpheus shapes),
+  pickOperator, sideOfStep, initials/universeColor/mapImage fallbacks. `npm test`.
+- **CI `ci.yml`**: strict clippy + `cargo test` with a **Postgres 17 service** (the DB integration
+  runs on every push/PR) + vitest + web build.
+Total: **51 tests** (38 Rust + 13 vitest). Node parity (114 replays) and box E2E stay outside
+CI (private corpus/infra) — unchanged.
 
-## Audit complet + nettoyage — FAIT (2026-08-03, demande opérateur)
-Passe totale (code, risques, vitesse, hygiène) :
-- **Qualité** : clippy strict 0 warning (11 `unwrap` dans les tests de `draft/mod.rs` → attribut
-  `allow` conforme à la convention) ; 25 tests Rust verts ; build front vert.
-- **Sécu deps** : `npm audit fix` → dompurify + postcss (high) corrigés. Restent react-router 6
-  (fix = v7, décision majeure) et vite/esbuild (dev-only) → « Risques connus » de `spec/09`.
-- **Risques code** : pas d'interpolation SQL (100 % bind), pas de traversée de chemin (archive
-  nommée par hash, X-Filename seulement en base), pas de secret committé, pas d'`unsafe`.
-  Acceptés/documentés : mode admin ouvert par défaut, conteneur root, panics d'init sur données
-  embarquées, auth dupliquée admin/manage.
-- **Vitesse** : bench re-mesuré sur le corpus local (114 replays) : **141 ms médiane < 150**,
-  p95 243 ms. Budgets tenus.
-- **Hygiène** : `.DS_Store` retiré du repo ; `.gitignore` complété (`.DS_Store`, `.images/`,
-  `backups/`) ; docs draft rangées (`docs/specs/` + `docs/plans/`, réfs mises à jour) ;
-  `__pycache__` local purgé. Aucun composant front orphelin, pas de junk committé.
+## Full audit + cleanup — DONE (2026-08-03, operator request)
+Complete pass (code, risks, speed, hygiene):
+- **Quality**: strict clippy 0 warnings (11 `unwrap`s in the tests of `draft/mod.rs` → `allow`
+  attribute in line with the convention); 25 Rust tests green; front build green.
+- **Dependency security**: `npm audit fix` → dompurify + postcss (high) fixed. Remaining: react-router 6
+  (fix = v7, major decision) and vite/esbuild (dev-only) → "Known risks" of `spec/09`.
+- **Code risks**: no SQL interpolation (100% bind), no path traversal (archive
+  named by hash, X-Filename only in the database), no committed secret, no `unsafe`.
+  Accepted/documented: admin mode open by default, root container, init panics on embedded
+  data, duplicated admin/manage auth.
+- **Speed**: bench re-measured on the local corpus (114 replays): **141 ms median < 150**,
+  p95 243 ms. Budgets held.
+- **Hygiene**: `.DS_Store` removed from the repo; `.gitignore` completed (`.DS_Store`, `.images/`,
+  `backups/`); draft docs tidied (`docs/specs/` + `docs/plans/`, refs updated);
+  local `__pycache__` purged. No orphan front component, no committed junk.
 
-## Spec vivante — FAIT (2026-08-03, demande opérateur)
-**`docs/spec/`** : documentation vivante de l'état courant (spec-driven) — 9 fichiers :
-architecture/invariants, storm-replay, storm-stats/parité, serveur/config, **référence API
-complète**, modèle de données (migrations 0001→0008), événements WS+Jarvis, frontend
-(routes/overlays), opérations (dev/box/backup). Règle de maintenance dans `docs/spec/README.md`
-et `CLAUDE.md` : **tout commit qui change un contrat met à jour la section correspondante**.
-Les specs datées (`docs/specs/`) restent les décisions figées ; STATUS reste le journal.
-Chat de la partie déployé sur le box au passage (bundle `index-BmQMoQ9z.js`, vérifié).
-**Complété (même jour, audit « tout est-il documenté ? »)** : `10-developpement.md` (workflow
-spec-first : checklist doc+preuve par type de changement, définition de « fini », limites IA),
-carte du repo dans le README de la spec, **CI ghcr.io documentée** (publish.yml — image publiée
-à chaque push main, c'était non documenté), et **règle n° 0 dans CLAUDE.md** : pas de diff de
-code portant un contrat sans son diff de doc dans le même commit.
+## Living spec — DONE (2026-08-03, operator request)
+**`docs/spec/`**: living documentation of the current state (spec-driven) — 9 files:
+architecture/invariants, storm-replay, storm-stats/parity, server/config, **complete API
+reference**, data model (migrations 0001→0008), WS+Jarvis events, frontend
+(routes/overlays), operations (dev/box/backup). Maintenance rule in `docs/spec/README.md`
+and `CLAUDE.md`: **every commit that changes a contract updates the matching section**.
+The dated specs (`docs/specs/`) stay the frozen decisions; STATUS stays the log.
+Game chat deployed on the box along the way (bundle `index-BmQMoQ9z.js`, verified).
+**Completed (same day, "is everything documented?" audit)**: `10-developpement.md` (spec-first
+workflow: doc+proof checklist per type of change, definition of "done", AI limits),
+repo map in the spec README, **ghcr.io CI documented** (publish.yml — image published
+at each push to main, it was undocumented), and **rule no. 0 in CLAUDE.md**: no code diff
+carrying a contract without its doc diff in the same commit.
 
-## Chat de la partie — FAIT (2026-08-03, demande opérateur)
-La fiche de match affiche le **log de chat complet** (bloc `Match chat`, composant `ChatLog` dans
-`web/src/pages/MatchDetail.tsx`) : chat par défaut, **pings** et **callouts** (ability/vitals/
-behavior) en filtres optionnels ; ordre chronologique avec temps signé (les messages de draft/
-chargement sont avant le début de partie), avatar + nom coloré par équipe, destinataire
-(all/allies/obs). **Aucun changement serveur/DB/re-process** : storm-stats décode déjà
-`replay.message.events` → `match.messages`, projeté dans `matches.data` et déjà renvoyé par
-`/api/matches/{id}` — les matchs déjà backfillés l'affichent tels quels. Au passage, la colonne
-« Pings » de la table BM comptait *tous* les messages du joueur (chats et callouts compris) →
-filtrée sur le type Ping. Vérifié sur un replay réel : 3 chats / 52 pings / 6 callouts, total
-pings de la table BM = 52.
+## Game chat — DONE (2026-08-03, operator request)
+The match page shows the **complete chat log** (`Match chat` block, `ChatLog` component in
+`web/src/pages/MatchDetail.tsx`): chat by default, **pings** and **callouts** (ability/vitals/
+behavior) as optional filters; chronological order with signed time (the draft/loading
+messages are before the start of the game), avatar + name coloured by team, recipient
+(all/allies/obs). **No server/DB/re-process change**: storm-stats already decodes
+`replay.message.events` → `match.messages`, projected into `matches.data` and already returned by
+`/api/matches/{id}` — already backfilled matches show it as is. Along the way, the
+"Pings" column of the BM table counted *all* of the player's messages (chats and callouts included) →
+filtered on the Ping type. Verified on a real replay: 3 chats / 52 pings / 6 callouts, total
+pings in the BM table = 52.
 

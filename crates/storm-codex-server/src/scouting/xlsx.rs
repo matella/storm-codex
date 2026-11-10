@@ -1,5 +1,5 @@
-//! Pack au format Excel (spec volet D) : les mêmes faits que le Markdown, un onglet par famille,
-//! pour la lecture humaine et les LLM qui lisent l'Excel. Module pur (écrit en mémoire).
+//! Pack in Excel format (spec part D): the same facts as the Markdown, one sheet per family,
+//! for human reading and the LLMs that read Excel. Pure module (written in memory).
 
 use super::facts::{ordered_index, Count, Facts, GamePick, Rate};
 use super::pack::PackMeta;

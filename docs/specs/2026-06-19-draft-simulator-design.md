@@ -1,171 +1,171 @@
-# Simulateur de draft HotS + overlays — design
+# HotS draft simulator + overlays — design
 
-> Spec storm-codex. Brainstorming validé le 2026-06-19. Process léger (décisions batchées,
-> spec courte, pas de boucle de revue subagent). Cible : `writing-plans` puis implémentation TDD.
+> storm-codex spec. Brainstorm approved on 2026-06-19. Light process (batched decisions,
+> short spec, no subagent review loop). Target: `writing-plans` then TDD implementation.
 
-## But
+## Goal
 
-Un simulateur de draft Heroes of the Storm **piloté 100 % manuellement** par l'opérateur
-(tous les choix des deux équipes), avec **trois formats** de draft et **deux overlays OBS** en
-direct (vue joueur + vue caster) reflétant l'état du draft façon écran de draft en jeu.
+A Heroes of the Storm draft simulator **driven 100 % manually** by the operator
+(all choices of both teams), with **three** draft **formats** and **two live OBS overlays**
+(player view + caster view) reflecting the draft state like the in-game draft screen.
 
-Pas de bot/IA : l'opérateur fait chaque ban et chaque pick des deux côtés.
+No bot/AI: the operator makes every ban and every pick for both sides.
 
-## Décisions actées (brainstorming)
+## Decisions made (brainstorm)
 
-1. **Sync** : état de draft **autoritatif côté serveur** + broadcast WebSocket. Une console de
-   contrôle pilote ; les overlays s'abonnent en direct (vrai second écran, résiste au refresh).
-2. **Fearless** : **suivi de série complet** (auto-accumulation des bans des parties précédentes)
-   **+** override manuel de la disponibilité de n'importe quel héros.
-3. **Vue caster** : noms d'équipe **et** score éditables (en plus de la vue joueur).
-4. **3 formats dès la V1** : Standard, Normal, Fearless.
+1. **Sync**: **server-side authoritative** draft state + WebSocket broadcast. A control
+   console drives it; the overlays subscribe live (a true second screen, survives refresh).
+2. **Fearless**: **full series tracking** (auto-accumulation of the bans of previous games)
+   **+** manual override of any hero's availability.
+3. **Caster view**: editable team names **and** score (in addition to the player view).
+4. **3 formats from V1**: Standard, Normal, Fearless.
 
-## Idée-clé : le format = une liste d'étapes (data), pas du code
+## Key idea: the format = a list of steps (data), not code
 
-Le moteur est un **marcheur générique** sur une liste ordonnée d'étapes :
+The engine is a **generic walker** over an ordered list of steps:
 
 ```
 Step = { team: Team1 | Team2, action: Ban | Pick }
 DraftFormat = { id, label, steps: Step[], prebans: bool, fearless: bool }
 ```
 
-Chaque format n'est qu'une `steps[]` différente. Corriger l'ordre exact = éditer une liste,
-jamais le moteur. Les séquences vivent dans un module de constantes éditable.
+Each format is just a different `steps[]`. Fixing the exact order = editing a list,
+never the engine. The sequences live in an editable constants module.
 
-### Séquences (Standard confirmée par l'opérateur)
+### Sequences (Standard confirmed by the operator)
 
-Étapes écrites en **rôle d'ordre** : F = équipe first-pick, S = seconde. (Découplé du côté
-blue/red — cf. plus bas.) **Standard** (HotS) :
+Steps written as **order role**: F = first-pick team, S = second. (Decoupled from the
+blue/red side — see below.) **Standard** (HotS):
 
-| # | Rôle | Action | | # | Rôle | Action |
+| # | Role | Action | | # | Role | Action |
 |---|------|--------|---|---|------|--------|
 | 1 | F | Ban | | 9 | F | Pick |
-| 2 | S | Ban | | 10 | S | **Ban** (2e phase) |
-| 3 | F | Ban | | 11 | F | **Ban** (2e phase) |
+| 2 | S | Ban | | 10 | S | **Ban** (2nd phase) |
+| 3 | F | Ban | | 11 | F | **Ban** (2nd phase) |
 | 4 | S | Ban | | 12 | S | Pick |
 | 5 | F | Pick | | 13 | S | Pick |
 | 6 | S | Pick | | 14 | F | Pick |
 | 7 | S | Pick | | 15 | F | Pick |
 | 8 | F | Pick | | 16 | S | Pick |
 
-→ soit, côté blue first-pick : ban B·R·B·R · pick B · pick R×2 · pick B×2 · ban R · ban B ·
-pick R×2 · pick B×2 · pick R. 3 bans + 5 picks par équipe (6 bans / 10 picks).
+→ i.e., with blue first-pick: ban B·R·B·R · pick B · pick R×2 · pick B×2 · ban R · ban B ·
+pick R×2 · pick B×2 · pick R. 3 bans + 5 picks per team (6 bans / 10 picks).
 
-**Normal** = Standard **sans les étapes de ban** → pur ordre de pick, aucun ban.
+**Normal** = Standard **without the ban steps** → pure pick order, no bans.
 
-**Fearless** = séquence Standard, mais l'ensemble « indisponible » est **pré-rempli** avec tous
-les héros pické aux parties **précédentes** de la série courante.
+**Fearless** = Standard sequence, but the "unavailable" set is **pre-filled** with all
+the heroes picked in the **previous** games of the current series.
 
-### First-pick ≠ side (réglages indépendants)
+### First-pick ≠ side (independent settings)
 
-Comme en lobby HotS : **qui a le first-pick** et **qui est blue/red side** sont deux réglages
-distincts. Le side fixe la couleur/position (overlay) ; `first_pick` (un côté) fixe seulement qui
-joue le rôle F. Le moteur résout rôle→côté via `first_pick` ; l'opérateur règle les deux
-séparément dans la console.
+As in the HotS lobby: **who has first pick** and **who is blue/red side** are two
+separate settings. The side sets the colour/position (overlay); `first_pick` (a side) only sets who
+plays the F role. The engine resolves role→side via `first_pick`; the operator sets both
+separately in the console.
 
-## Architecture (storm-codex : axum + sqlx + Postgres + WS `/ws` existant)
+## Architecture (storm-codex: axum + sqlx + Postgres + existing `/ws` WS)
 
-### Moteur de draft — Rust pur, TDD, zéro I/O
+### Draft engine — pure Rust, TDD, zero I/O
 
-`server/src/draft/engine.rs` (ou crate/module dédié) :
+`server/src/draft/engine.rs` (or dedicated crate/module):
 
 - `DraftState { format, map, team_names, score, first_pick, steps, cursor, bans[T1/T2],
   picks[T1/T2], unavailable: Set<HeroKey> }`
-- `apply_action(state, hero) -> Result<DraftState, DraftError>` : assigne `hero` à l'étape
-  courante (`steps[cursor]`), avance le curseur. Refuse si héros indisponible (déjà pick/ban,
-  fearless, ou override manuel) → `DraftError::Unavailable`. Refuse si draft terminé.
-- `undo(state) -> DraftState` : recule le curseur, libère le dernier héros.
-- `reset(state) -> DraftState` : repart à `cursor=0`, conserve format/map/équipes/série.
-- `toggle_unavailable(state, hero)` : override manuel (ajoute/retire de `unavailable`).
+- `apply_action(state, hero) -> Result<DraftState, DraftError>`: assigns `hero` to the current
+  step (`steps[cursor]`), advances the cursor. Refuses if the hero is unavailable (already picked/banned,
+  fearless, or manual override) → `DraftError::Unavailable`. Refuses if the draft is finished.
+- `undo(state) -> DraftState`: moves the cursor back, frees the last hero.
+- `reset(state) -> DraftState`: goes back to `cursor=0`, keeps format/map/teams/series.
+- `toggle_unavailable(state, hero)`: manual override (adds to/removes from `unavailable`).
 - `is_complete(state) -> bool`, `current_step(state) -> Option<Step>`.
-- Légalité : un héros = au plus une occurrence sur l'ensemble bans+picks+unavailable.
+- Legality: a hero = at most one occurrence across bans+picks+unavailable.
 
-**Tests** (le cœur de la TDD) : marche complète des 3 séquences ; refus de héros indisponible ;
-undo/redo de chaque type d'étape ; fearless pré-rempli cumulatif sur 2-3 parties ; override
-manuel ; cas limites (undo sur draft vide, pick sur draft terminé).
+**Tests** (the heart of the TDD): complete walk of the 3 sequences; refusal of an unavailable hero;
+undo/redo of each type of step; cumulative pre-filled fearless over 2-3 games; manual
+override; edge cases (undo on an empty draft, pick on a finished draft).
 
-### État serveur + persistance
+### Server state + persistence
 
-- **Singleton « draft courant »** en mémoire (un seul opérateur) + persisté pour survivre au
-  redémarrage. Table `draft_live` (1 ligne : JSON de l'état + `updated_at`).
-- **Série** (pour fearless) : table `draft_series { id, format, bo, games: jsonb[], score,
-  team_names, created_at }`. Une partie terminée pousse ses picks dans `games`. « Partie suivante »
-  crée un nouveau draft live pré-rempli depuis l'historique ; « nouvelle série » réinitialise.
-- Versionné : chaque état porte un `schema_version` (cohérent avec les conventions du repo).
+- **"Current draft" singleton** in memory (a single operator) + persisted to survive a
+  restart. Table `draft_live` (1 row: JSON of the state + `updated_at`).
+- **Series** (for fearless): table `draft_series { id, format, bo, games: jsonb[], score,
+  team_names, created_at }`. A finished game pushes its picks into `games`. "Next game"
+  creates a new live draft pre-filled from the history; "new series" resets.
+- Versioned: each state carries a `schema_version` (consistent with the repo's conventions).
 
-### Routes HTTP
+### HTTP routes
 
-- `GET  /api/draft` → état courant.
-- `POST /api/draft/config` → `{ format, map, first_pick, team_names, bo }` (réinitialise le draft).
-- `POST /api/draft/action` → `{ hero }` (assigne à l'étape courante).
+- `GET  /api/draft` → current state.
+- `POST /api/draft/config` → `{ format, map, first_pick, team_names, bo }` (resets the draft).
+- `POST /api/draft/action` → `{ hero }` (assigns to the current step).
 - `POST /api/draft/undo`, `POST /api/draft/reset`.
-- `POST /api/draft/unavailable` → `{ hero, value: bool }` (override manuel).
+- `POST /api/draft/unavailable` → `{ hero, value: bool }` (manual override).
 - `POST /api/draft/score` → `{ team1, team2 }`.
-- `POST /api/draft/series/next` (partie suivante, pré-remplit fearless),
-  `POST /api/draft/series/new` (nouvelle série).
+- `POST /api/draft/series/next` (next game, pre-fills fearless),
+  `POST /api/draft/series/new` (new series).
 
 ### WebSocket
 
-Étendre le broadcast `/ws` existant avec un event `{ type: "draft.updated" }`. Les pages (console
-+ overlay) réagissent en invalidant/refetchant `GET /api/draft` (même pattern que `match.parsed`).
+Extend the existing `/ws` broadcast with a `{ type: "draft.updated" }` event. The pages (console
++ overlay) react by invalidating/refetching `GET /api/draft` (same pattern as `match.parsed`).
 
 ## Frontend (React/Vite, react-router) — 2 routes
 
-Réutilise `/api/dim/heroes` (roster + `role` + `universe` + `icon`), `/images/heroes/*`,
-`/images/battlegrounds/*`, le composant `Avatar`, le thème.
+Reuses `/api/dim/heroes` (roster + `role` + `universe` + `icon`), `/images/heroes/*`,
+`/images/battlegrounds/*`, the `Avatar` component, the theme.
 
-Le visuel est **figé** dans deux mockups livrés avec la spec :
-- `draft-aesthetics.html` — l'overlay (vue **Timeline**, 4 skins swappables, vue Caster en réf.).
-- `draft-control-mockup.html` — la console de contrôle.
+The visuals are **frozen** in two mockups delivered with the spec:
+- `draft-aesthetics.html` — the overlay (**Timeline** view, 4 swappable skins, Caster view for reference).
+- `draft-control-mockup.html` — the control console.
 
-### `/draft` — console de contrôle (écran opérateur)
+### `/draft` — control console (operator screen)
 
-- **Barre de config** : **format** (Standard/Normal/Fearless), **map**, équipe **first-pick**
-  (Blue/Red), **Bo** (1/3/5/7), **score** (steppers). Actions : **Undo**, **Reset**,
-  **Partie suivante**, **Nouvelle série**.
-- **Bandeau de phase courante** : « Au tour de Blue — Pick (4ᵉ choix) » (équipe + action +
-  index) + le **timer de phase** (barre + compte à rebours).
-- **Series bans (fearless)** : ruban des héros indisponibles (déjà pické dans la série) + compteur.
-- **Colonnes Blue / Red** : **nom d'équipe éditable**, bans, 5 slots de pick chacun avec **champ
-  pseudo éditable** ; le slot/ban courant est surligné (couleur d'équipe).
-- **Picker central** : recherche texte + **onglets de rôle** (Tous, Tank, Bruiser, Assassin M./D.,
-  Soigneur, Soutien) + **grille de héros** ; indispo grisés (« indispo »), hover = surbrillance.
-  Clic → `action` (assigne à l'étape courante, avance). Clic-droit/long → toggle override manuel.
+- **Config bar**: **format** (Standard/Normal/Fearless), **map**, **first-pick** team
+  (Blue/Red), **Bo** (1/3/5/7), **score** (steppers). Actions: **Undo**, **Reset**,
+  **Next game**, **New series**.
+- **Current phase banner**: "Blue's turn — Pick (4th choice)" (team + action +
+  index) + the **phase timer** (bar + countdown).
+- **Series bans (fearless)**: ribbon of unavailable heroes (already picked in the series) + counter.
+- **Blue / Red columns**: **editable team name**, bans, 5 pick slots each with an **editable player
+  name field**; the current slot/ban is highlighted (team colour).
+- **Central picker**: text search + **role tabs** (All, Tank, Bruiser, Melee/Ranged Assassin,
+  Healer, Support) + **hero grid**; unavailable ones greyed out ("unavailable"), hover = highlight.
+  Click → `action` (assigns to the current step, advances). Right click/long press → toggle manual override.
 
-### `/draft/overlay` — overlay OBS (browser source 1920×1080, fond transparent)
+### `/draft/overlay` — OBS overlay (1920×1080 browser source, transparent background)
 
-**Vue Timeline** (unique overlay livré ; la perspective joueur = l'écran du jeu lui-même).
-Paramètre `?skin=nexus|glass|tactical|mono` (défaut **nexus**). Composition :
-- **En-tête** : titre map, **noms d'équipe** + **point clignotant sur l'équipe active**, **score**,
-  **timer de phase** (barre qui se vide).
-- **Series bans** (fearless) : ruban de mini-icônes barrées du pool indisponible.
-- **Picks dans l'ordre chronologique** : grille de colonnes (1 par étape de pick), **bleu en haut /
-  rouge en bas** d'une ligne invisible, colonnes vides = respirations ; tuiles **portrait** avec
-  **héros + pseudo** écrits dessus ; tuile active = halo or pulsant.
-- **Bans de la game** : bande centrale de petites tuiles barrées sur la ligne invisible, en chrono.
+**Timeline view** (the only overlay delivered; the player's perspective = the game's own screen).
+Parameter `?skin=nexus|glass|tactical|mono` (default **nexus**). Composition:
+- **Header**: map title, **team names** + **blinking dot on the active team**, **score**,
+  **phase timer** (draining bar).
+- **Series bans** (fearless): ribbon of struck-through mini icons of the unavailable pool.
+- **Picks in chronological order**: grid of columns (1 per pick step), **blue at the top /
+  red at the bottom** of an invisible line, empty columns = breathing room; **portrait** tiles with
+  **hero + player name** written on them; active tile = pulsing gold halo.
+- **Game bans**: central band of small struck-through tiles on the invisible line, chronologically.
 
-Les 4 skins = jeux de variables CSS (couleurs, rayon, clip-path, polices). Polices web
-(Oswald, JetBrains Mono, Cinzel) chargées en prod.
+The 4 skins = sets of CSS variables (colours, radius, clip-path, fonts). Web fonts
+(Oswald, JetBrains Mono, Cinzel) loaded in production.
 
-### Détails tranchés
+### Settled details
 
-- **Map** = cosmétique (fond + titre), n'affecte pas les règles.
-- **Timer = par phase** : une phase = un bloc d'actions consécutives d'une même équipe (1 ban,
-  1 pick, 2 picks…). Le compte à rebours court jusqu'au passage de la main à l'équipe adverse,
-  pas par pick individuel. Piloté par l'opérateur (start/reset) — pas de contrainte de temps dure.
+- **Map** = cosmetic (background + title), does not affect the rules.
+- **Timer = per phase**: a phase = a block of consecutive actions of the same team (1 ban,
+  1 pick, 2 picks…). The countdown runs until the turn passes to the opposing team,
+  not per individual pick. Driven by the operator (start/reset) — no hard time constraint.
 
-## Hors périmètre V1 (YAGNI)
+## Out of V1 scope (YAGNI)
 
-Bot/IA de pick, suggestions Jarvis (passerait par un Intent plus tard), talents, multi-opérateur
-simultané, contrainte de temps dure, partage public d'un draft, overlay « vue joueur » dédié
-(couvert par l'écran du jeu).
+Pick bot/AI, Jarvis suggestions (would go through an Intent later), talents, simultaneous
+multiple operators, hard time constraint, public sharing of a draft, dedicated "player view" overlay
+(covered by the game's screen).
 
-## Critères d'acceptation
+## Acceptance criteria
 
-1. Le moteur joue les 3 séquences de bout en bout, refuse les héros indisponibles, undo/reset OK
-   (tests verts).
-2. Depuis `/draft`, un draft Standard complet se construit au clic ; `/draft/overlay` (Timeline)
-   se met à jour **en direct** (WS) sur un 2e écran/OBS, et `?skin=` change l'esthétique.
-3. Fearless : sur la partie 2 d'une série, les héros pické en partie 1 sont automatiquement
-   indisponibles (ruban series bans) ; l'override manuel fonctionne.
-4. Noms d'équipe + pseudos + score éditables depuis la console et reflétés dans l'overlay.
+1. The engine plays the 3 sequences end to end, refuses unavailable heroes, undo/reset OK
+   (tests green).
+2. From `/draft`, a complete Standard draft is built by clicking; `/draft/overlay` (Timeline)
+   updates **live** (WS) on a 2nd screen/OBS, and `?skin=` changes the look.
+3. Fearless: in game 2 of a series, the heroes picked in game 1 are automatically
+   unavailable (series bans ribbon); the manual override works.
+4. Team names + player names + score editable from the console and reflected in the overlay.

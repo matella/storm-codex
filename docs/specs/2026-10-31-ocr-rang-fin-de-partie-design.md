@@ -1,106 +1,106 @@
-# Lecture OCR du rang en fin de partie + carte overlay « dernières parties » — design
+# OCR reading of the end-of-game rank + "recent games" overlay card — design
 
-**Statut** : validée par l'opérateur (2026-10-31). Décisions 1 à 5 retenues telles qu'écrites (lecture des chiffres par gabarits, pas OCR générique). Implémentation non commencée : les captures brutes du PC de jeu sont à fournir.
-**Date** : 2026-10-31
-**Domaines** : Aegis (`aegis/crates/aegis-uploader`, capture + OCR), storm-codex (`crates/storm-codex-server/src/rank/`, `web/src/pages/`), spec `docs/spec/05-api.md` et `docs/spec/07-evenements.md` à compléter à l'implémentation.
+**Status**: approved by the operator (2026-10-31). Decisions 1 to 5 retained as written (digits read with templates, not generic OCR). Implementation not started: the raw captures from the gaming PC are still to be provided.
+**Date**: 2026-10-31
+**Areas**: Aegis (`aegis/crates/aegis-uploader`, capture + OCR), storm-codex (`crates/storm-codex-server/src/rank/`, `web/src/pages/`), spec `docs/spec/05-api.md` and `docs/spec/07-evenements.md` to be completed at implementation.
 
-## Contexte
+## Context
 
-Le MMR n'est pas dans le replay. Le classement (rang, points de rang gagnés ou perdus, total, points requis pour la promotion) n'apparaît qu'à l'écran. Les captures d'une VOD Twitch (2026-10-31) montrent le parcours de fin de partie :
+MMR is not in the replay. The ranking (rank, rank points gained or lost, total, points required for promotion) only appears on screen. Captures from a Twitch VOD (2026-10-31) show the end-of-game flow:
 
-1. **Coffre de loot** (pas toujours présent) : aucun point de classement.
-2. **Synthèse, avant chargement** : compteur « Rank Points » à `0`, rang affiché (Diamond 1). Valeur à ne jamais lire.
-3. **Survol du rang** : infobulle « Rank Points Change » (*Match Points*, *Total Rank Points*). Le compteur est encore à `0`.
-4. **Animation** : le compteur monte (`227` observé) et l'anneau se remplit. Interruptible.
-5. **Page Play, Ranked** : rang, **total de points** (535 observé, affiché seulement au survol du rang), **points requis pour la promotion** (465 observé). 535 + 465 = 1000.
+1. **Loot chest** (not always present): no ranking points.
+2. **Summary, before loading**: "Rank Points" counter at `0`, rank shown (Diamond 1). A value never to be read.
+3. **Hovering the rank**: "Rank Points Change" tooltip (*Match Points*, *Total Rank Points*). The counter is still at `0`.
+4. **Animation**: the counter rises (`227` observed) and the ring fills. Interruptible.
+5. **Play page, Ranked**: rank, **total points** (535 observed, shown only when hovering the rank), **points required for promotion** (465 observed). 535 + 465 = 1000.
 
-En partie de placement, aucun rang n'est affiché : on ne lit rien et on ne publie rien.
+In a placement game, no rank is shown: nothing is read and nothing is published.
 
-## Objectif
+## Goal
 
-1. **Aegis** lit le rang après chaque partie classée et envoie un résultat **validé** ou **indisponible** à storm-codex.
-2. **storm-codex** garde le résultat avec la partie et l'affiche dans un overlay OBS : une carte compacte persistante, qui s'agrandit à la fin de chaque partie. Elle montre les dix dernières parties du compte, puis le KDA et les points gagnés ou perdus quand ils arrivent.
+1. **Aegis** reads the rank after each ranked game and sends a **validated** or **unavailable** result to storm-codex.
+2. **storm-codex** keeps the result with the game and displays it in an OBS overlay: a persistent compact card, which expands at the end of each game. It shows the account's last ten games, then the KDA and the points gained or lost when they arrive.
 
-## Hors périmètre
+## Out of scope
 
-- Pas de contrôle de la souris ni de clic dans le jeu. Le survol du rang pour afficher l'infobulle n'est **pas** automatisé : on ne lit que ce qui est déjà affiché.
-- Pas d'extension Twitch ni d'Azure (abandonnés, cf. `docs/STATUS.md`).
-- Pas de lecture des parties de placement (aucun rang affiché).
-- Pas de modification de l'uploader de Hots-Overlay (`client-rs`) : il est remplacé par Aegis.
+- No mouse control or clicking in the game. Hovering the rank to show the tooltip is **not** automated: we only read what is already displayed.
+- No Twitch extension or Azure (abandoned, see `docs/STATUS.md`).
+- No reading of placement games (no rank shown).
+- No change to the Hots-Overlay uploader (`client-rs`): it is replaced by Aegis.
 
 ## Architecture
 
-### Aegis : le lecteur
+### Aegis: the reader
 
-- Déclencheur : apparition de `replay.details` dans `TempWriteReplayP1` (déjà détectée par `aegis-uploader/src/live/`). À vérifier : ce fichier arrive **avant** ou **après** la synthèse à l'écran. Si c'est après, l'OCR attend la synthèse ; sinon, il attend la fenêtre de jeu.
-- Capture : fenêtre de Heroes of the Storm uniquement, via `Windows.Graphics.Capture` (l'API de capture de Windows, pas le bureau entier). Sur écran HDR, capturer l'image scRGB et la reconvertir : la capture 8 bits sort sur-saturée (constat de Heroes Profile). Fréquence : une image par seconde suffit pour l'écran de fin, qui reste affiché plusieurs secondes.
-- Lecture des chiffres : **gabarits de chiffres**, pas OCR générique. Les chiffres du total et du requis sont dans une police fixe ; on les compare à des gabarits construits à partir d'échantillons étiquetés, versionnés dans le binaire, avec un test qui les reconstruit. `Windows.Media.Ocr` reste possible pour du texte (titre VICTOIRE/DÉFAITE), pas pour les chiffres.
-- Machine d'état (pure, testable sur des images enregistrées) :
-  - `Attente` → `Synthèse` (titre « VICTOIRE » ou « DÉFAITE » lu) → `Stable` (même valeur de total lue sur **N = 3 images consécutives**, N à calibrer) → `Publié`.
-  - Sortie possible à tout moment : `Indisponible` après un délai de 60 s sans lecture stable.
-- Contrôle de cohérence avant publication : **total + requis pour la promotion = 1000** lus sur la page Play. Si la vérification échoue, on publie `indisponible` avec la raison, jamais une valeur estimée.
-- Gardé en mémoire jusqu'à la fin de la partie : les lectures (et les images d'échantillon) ne sont **pas** envoyées tant que le mode de la partie n'est pas connu. Seul le mode Storm League (ou classé) déclenche l'envoi ; les autres modes sont jetés (idée reprise de Heroes Profile).
-- Envoi : `POST /api/rank/result` avec l'en-tête `X-Session` = SHA-256 du `battlelobby` (même identifiant que le feed live), donc storm-codex rattache le résultat à la partie même si l'OCR finit avant le parse.
-- Échantillons (opt-in, désactivé par défaut) : Aegis peut envoyer quelques captures étiquetées pour calibrer les gabarits. Jamais automatique.
+- Trigger: appearance of `replay.details` in `TempWriteReplayP1` (already detected by `aegis-uploader/src/live/`). To be checked: whether this file arrives **before** or **after** the on-screen summary. If after, the OCR waits for the summary; otherwise, it waits for the game window.
+- Capture: the Heroes of the Storm window only, via `Windows.Graphics.Capture` (Windows' capture API, not the whole desktop). On an HDR screen, capture the scRGB image and convert it back: the 8-bit capture comes out over-saturated (Heroes Profile's finding). Frequency: one frame per second is enough for the end screen, which stays displayed for several seconds.
+- Reading the digits: **digit templates**, not generic OCR. The total and required digits are in a fixed font; they are compared to templates built from labelled samples, versioned in the binary, with a test that rebuilds them. `Windows.Media.Ocr` remains possible for text (VICTORY/DEFEAT title), not for digits.
+- State machine (pure, testable on recorded images):
+  - `Waiting` → `Summary` ("VICTORY" or "DEFEAT" title read) → `Stable` (same total value read on **N = 3 consecutive frames**, N to be calibrated) → `Published`.
+  - Possible exit at any time: `Unavailable` after a 60 s delay without a stable reading.
+- Consistency check before publication: **total + required for promotion = 1000** read on the Play page. If the check fails, `unavailable` is published with the reason, never an estimated value.
+- Kept in memory until the end of the game: the readings (and sample images) are **not** sent until the game mode is known. Only Storm League (or ranked) mode triggers sending; other modes are discarded (idea taken from Heroes Profile).
+- Sending: `POST /api/rank/result` with the `X-Session` header = SHA-256 of the `battlelobby` (same identifier as the live feed), so storm-codex attaches the result to the game even if the OCR finishes before the parse.
+- Samples (opt-in, disabled by default): Aegis can send a few labelled captures to calibrate the templates. Never automatic.
 
-### storm-codex : le serveur
+### storm-codex: the server
 
-- Nouvelle table `ranked_results` (migration suivante) : `session_id`, `match_id` (renseigné quand la partie est parsée), `rank_name`, `total_points`, `points_delta` (nullable), `promotion_required`, `status` (`valide` | `indisponible`, sans accent : valeur de la base), `reason`, `read_at`. Une seule lecture par session : la dernière lecture **valide** l'emporte ; une lecture `indisponible` n'écrase jamais une `valide`.
-- Routes :
-  - `POST /api/rank/result` (Aegis, token du box) ;
-  - `GET /api/rank/recent?player=<toon>&limit=10` : dix dernières parties du compte avec KDA et résultat de rang quand connu.
-- Rattachement : si la partie n'est pas encore parsée, le résultat reste en attente sur `session_id`, puis est relié au `match_id` à l'arrivée du replay. Le rattachement se fait par **empreinte de partie** (`crate::upload::game_fingerprint`, déjà utilisée pour la déduplication) plutôt que par le seul `session_id`. En attente : expiration après 6 h, comme `PendingRanks` de Heroes Profile.
-- Évènements (conformes à `docs/spec/07-evenements.md`, `schema_version`, `correlation_id`, `occurred_at` / `recorded_at`, forme `entité.verbe` au passé) :
-  - `hots.match_finished` (dès le parse : KDA, résultat, mode) → la carte s'agrandit sans attendre l'OCR ;
-  - `hots.rank_read` (validé ou indisponible) → l'anneau de la carte se remplit ou affiche « rang inconnu ».
+- New table `ranked_results` (next migration): `session_id`, `match_id` (filled in when the game is parsed), `rank_name`, `total_points`, `points_delta` (nullable), `promotion_required`, `status` (`valide` | `indisponible` — French database values meaning valid | unavailable, without accents), `reason`, `read_at`. A single reading per session: the latest **valid** reading wins; an `indisponible` reading never overwrites a `valide` one.
+- Routes:
+  - `POST /api/rank/result` (Aegis, box token);
+  - `GET /api/rank/recent?player=<toon>&limit=10`: the account's last ten games with KDA and rank result when known.
+- Attachment: if the game is not parsed yet, the result stays pending on `session_id`, then is linked to the `match_id` when the replay arrives. Attachment is done by **game fingerprint** (`crate::upload::game_fingerprint`, already used for deduplication) rather than by `session_id` alone. Pending: expires after 6 h, like Heroes Profile's `PendingRanks`.
+- Events (compliant with `docs/spec/07-evenements.md`, `schema_version`, `correlation_id`, `occurred_at` / `recorded_at`, past-tense `entity.verb` form):
+  - `hots.match_finished` (as soon as parsed: KDA, result, mode) → the card expands without waiting for the OCR;
+  - `hots.rank_read` (validated or unavailable) → the card's ring fills or shows "rank unknown".
 
-### Overlay : la carte
+### Overlay: the card
 
-- Même modèle que `/now-playing` (`?mini`, `?reveal`) : une source persistante, puis une annonce agrandie à chaque fin de partie. Fond transparent, ancrage haut-droite.
-- Route proposée : `/ranked` (source OBS), paramètre `?me=<toon>` comme `/widget`.
-- Contenu :
-  - **Mini** : dix dernières parties (pastilles victoire/défaite) et rang courant ;
-  - **Annonce** (fin de partie) : KDA et héros dès `hots.match_finished` ; points gagnés ou perdus et anneau de progression dès `hots.rank_read` ; sinon « points en attente » ou « rang inconnu », sans bloquer l'annonce.
-- L'annonce ne dépend jamais de l'OCR : elle s'affiche avec les données du serveur, et l'OCR complète quand il arrive.
+- Same model as `/now-playing` (`?mini`, `?reveal`): a persistent source, then an enlarged announcement at each end of game. Transparent background, top-right anchoring.
+- Proposed route: `/ranked` (OBS source), `?me=<toon>` parameter like `/widget`.
+- Contents:
+  - **Mini**: last ten games (win/loss pips) and current rank;
+  - **Announcement** (end of game): KDA and hero as soon as `hots.match_finished`; points gained or lost and progress ring as soon as `hots.rank_read`; otherwise "points pending" or "rank unknown", without blocking the announcement.
+- The announcement never depends on the OCR: it is displayed with the server's data, and the OCR completes it when it arrives.
 
-## Règles de validation
+## Validation rules
 
-- Une valeur lue n'est publiée qu'après **stabilité** (N images identiques) **et** contrôle 1000.
-- Un résultat indisponible est publié comme tel. Aucune valeur n'est déduite (par exemple du total précédent).
-- Les nombres sont lus sur la page Play après l'animation, ou sur la synthèse une fois le compteur stable, jamais pendant l'animation.
-- La reconnaissance doit distinguer VICTOIRE et DÉFAITE du titre de la synthèse pour contrôler le sens du gain.
+- A read value is only published after **stability** (N identical frames) **and** the 1000 check.
+- An unavailable result is published as such. No value is inferred (for example from the previous total).
+- Numbers are read on the Play page after the animation, or on the summary once the counter is stable, never during the animation.
+- Recognition must distinguish VICTORY and DEFEAT in the summary title to check the direction of the gain.
 
 ## Tests
 
-- **Machine d'état Aegis** : tests unitaires sur une séquence d'images décrites (pas d'image réelle) : stabilité, interruption, indisponible après 60 s, rejet si total + requis ≠ 1000, pas de publication en placement.
-- **OCR** : jeu de captures brutes du PC de jeu (non committées si elles contiennent des pseudos), avec la lecture attendue annotée. Critère : 100 % de lectures correctes sur les captures validées, zéro publication fausse.
-- **storm-codex** : rattachement d'un résultat arrivé avant le parse ; `GET /api/rank/recent` sans résultat rang ; évènements bien formés.
-- **Overlay** : rendu sur `?mini` et annonce ; vérifié en vrai dans OBS sur une partie réelle.
+- **Aegis state machine**: unit tests on a sequence of described frames (no real image): stability, interruption, unavailable after 60 s, rejection if total + required ≠ 1000, no publication in placement.
+- **OCR**: set of raw captures from the gaming PC (not committed if they contain player names), with the expected reading annotated. Criterion: 100 % correct readings on the validated captures, zero wrong publications.
+- **storm-codex**: attachment of a result that arrived before the parse; `GET /api/rank/recent` without a rank result; well-formed events.
+- **Overlay**: rendering of `?mini` and of the announcement; checked for real in OBS on a real game.
 
-## Référence : RankCapture de Heroes Profile
+## Reference: Heroes Profile's RankCapture
 
-Le projet [HeroesProfile.Uploader](https://github.com/Heroes-Profile/HeroesProfile.Uploader) lit déjà les rangs
-en jeu (C#, Windows/macOS/Linux). Ce qu'on en reprend, et ce qu'on n'en reprend pas :
+The [HeroesProfile.Uploader](https://github.com/Heroes-Profile/HeroesProfile.Uploader) project already reads ranks
+in game (C#, Windows/macOS/Linux). What we take from it, and what we do not:
 
-- **Repris (idées)** : capture de la seule fenêtre de jeu, gestion HDR, mode de partie connu avant envoi,
-  résultats gardés en attente le temps que le replay arrive, gabarits de glyphes plutôt qu'OCR, échantillons
-  opt-in pour calibrer.
-- **Différent** : eux lisent l'écran de **chargement** (ligue et division de chacun des dix joueurs, pas les
-  points). Les points gagnés ou perdus n'apparaissent qu'à l'écran de fin, donc notre lecture reste à la fin
-  de partie. Le chargement reste une option ultérieure (rang de départ des dix joueurs), pas une V1.
-- **Licence** : le dépôt n'affiche pas de licence reconnue (`NOASSERTION`). On ne copie aucun code : on
-  réimplémente les idées. Toute réutilisation de code demande d'abord de vérifier la licence.
+- **Taken (ideas)**: capturing the game window only, HDR handling, game mode known before sending,
+  results kept pending while the replay arrives, glyph templates rather than OCR, opt-in samples
+  for calibration.
+- **Different**: they read the **loading** screen (league and division of each of the ten players, not the
+  points). Points gained or lost only appear on the end screen, so our reading stays at the end of
+  the game. Loading remains a later option (starting rank of the ten players), not a V1.
+- **Licence**: the repository shows no recognised licence (`NOASSERTION`). We copy no code: we
+  re-implement the ideas. Any code reuse first requires checking the licence.
 
-## Données nécessaires (à fournir)
+## Data needed (to be provided)
 
-- Captures **brutes** (pas de VOD compressée) de la séquence complète, en partie classée, avec la fenêtre de jeu en plein écran et en fenêtré.
-- Une partie de placement, pour vérifier le cas « aucun rang ».
-- Une défaite et une victoire, pour vérifier le sens du gain.
+- **Raw** captures (not a compressed VOD) of the complete sequence, in a ranked game, with the game window in fullscreen and windowed.
+- A placement game, to check the "no rank" case.
+- A loss and a win, to check the direction of the gain.
 
-## Décisions à valider
+## Decisions to approve
 
-1. **Aegis** porte la capture et l'OCR (proposé), storm-codex ne fait que stocker et afficher.
-2. **Lecture des chiffres** : gabarits construits à partir d'échantillons étiquetés, pas OCR générique (proposé, voir Architecture). `Windows.Media.Ocr` seulement pour le texte.
-3. **Overlay** : nouvelle route `/ranked` sur le modèle de `/now-playing`, et non une extension de `/widget` (proposé). `/widget` reste la carte de la dernière partie.
-4. **Stabilité** : N = 3 images consécutives identiques avant publication (proposé, à calibrer sur les captures).
-5. **Parties sans lecture** : publiées comme `indisponible` après 60 s (proposé), jamais estimées.
+1. **Aegis** handles capture and OCR (proposed), storm-codex only stores and displays.
+2. **Reading digits**: templates built from labelled samples, not generic OCR (proposed, see Architecture). `Windows.Media.Ocr` only for text.
+3. **Overlay**: new `/ranked` route modelled on `/now-playing`, and not an extension of `/widget` (proposed). `/widget` stays the last-game card.
+4. **Stability**: N = 3 consecutive identical frames before publication (proposed, to be calibrated on the captures).
+5. **Games without a reading**: published as `indisponible` after 60 s (proposed), never estimated.

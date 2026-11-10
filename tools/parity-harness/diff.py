@@ -1,8 +1,8 @@
-# Jalon 2 — diff de parité storm-stats (Rust) vs hots-parser (Node, étalon).
-# Usage : python tools/parity-harness/diff.py --corpus corpus/stats [--only match.map,players.*.name]
+# Milestone 2 — parity diff of storm-stats (Rust) vs hots-parser (Node, reference).
+# Usage: python tools/parity-harness/diff.py --corpus corpus/stats [--only match.map,players.*.name]
 #         [--limit N] [--replay <nom>]
-# Les dumps de référence Node sont cachés dans <corpus>/.ref/ (hots-parser ~1-3 s/replay).
-# Tolérances (= écarts assumés, documentés) : tools/parity-harness/tolerances.json.
+# The Node reference dumps are cached in <corpus>/.ref/ (hots-parser ~1-3 s/replay).
+# Tolerances (= accepted, documented differences): tools/parity-harness/tolerances.json.
 import argparse
 import json
 import math
@@ -13,9 +13,9 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent.parent
 NODE_DUMP = Path(__file__).parent / "dump.js"
 
-# Cartes ARAM récentes supportées par storm-stats au-delà de hots-parser 7.55.7 (divergence
-# assumée, cf. EXTRA_MAPS dans crates/storm-stats/src/process/mod.rs). hots-parser les rejette ;
-# storm-stats les parse → pas de baseline Node, on valide juste l'invariant structurel.
+# Recent ARAM maps supported by storm-stats beyond hots-parser 7.55.7 (accepted
+# divergence, see EXTRA_MAPS in crates/storm-stats/src/process/mod.rs). hots-parser rejects them;
+# storm-stats parses them → no Node baseline, we only validate the structural invariant.
 EXTENDED_MAPS = {"Silver City", "Lost Cavern", "Braxis Outpost", "Industrial District"}
 RUST_DUMP = ROOT / "target" / "release" / ("storm-stats-dump.exe" if sys.platform == "win32" else "storm-stats-dump")
 TOLERANCES = Path(__file__).parent / "tolerances.json"
@@ -45,7 +45,7 @@ def ref_dump(replay: Path, ref_dir: Path) -> dict | None:
             text=True,
         )
         if r.returncode != 0:
-            # statut non-OK : on le mémorise pour comparer le statut côté Rust
+            # non-OK status: remembered to compare the status on the Rust side
             err = r.stderr.strip().splitlines()
             status = None
             for line in err:
@@ -73,7 +73,7 @@ def is_num(v):
 
 
 def matches_only(path_parts, only):
-    """Un chemin est comparé s'il est sur la trajectoire d'un préfixe --only (segments, * ok)."""
+    """A path is compared if it lies on the path of an --only prefix (segments, * ok)."""
     for o in only:
         oseg = o.split(".")
         n = min(len(oseg), len(path_parts))
@@ -83,14 +83,14 @@ def matches_only(path_parts, only):
 
 
 def diff_values(ref, act, path, out, tolerances, only):
-    """Collecte les écarts (réf = hots-parser, act = storm-stats)."""
+    """Collects the differences (ref = hots-parser, act = storm-stats)."""
     if len(out) >= 200:
         return
     if tolerated(path, tolerances):
         return
     if only and path and not matches_only(path, only):
         return
-    # null ≡ absent géré par les appels (clé manquante -> None)
+    # null ≡ absent handled by the callers (missing key -> None)
     if ref is None and act is None:
         return
     if is_num(ref) and is_num(act):
@@ -118,10 +118,10 @@ def diff_values(ref, act, path, out, tolerances, only):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--corpus", type=Path, default=ROOT / "corpus" / "stats")
-    ap.add_argument("--only", type=str, default=None, help="préfixes de chemins, séparés par ,")
+    ap.add_argument("--only", type=str, default=None, help="path prefixes, comma-separated")
     ap.add_argument("--limit", type=int, default=None)
-    ap.add_argument("--replay", type=str, default=None, help="filtre sur le nom de fichier")
-    ap.add_argument("--max-diffs", type=int, default=8, help="écarts affichés par replay")
+    ap.add_argument("--replay", type=str, default=None, help="filter on the file name")
+    ap.add_argument("--max-diffs", type=int, default=8, help="differences shown per replay")
     args = ap.parse_args()
 
     only = args.only.split(",") if args.only else None
@@ -141,7 +141,7 @@ def main():
     for f in files:
         ref = ref_dump(f, ref_dir)
         if ref is None:
-            print(f"SKIP {f.name} (référence illisible)")
+            print(f"SKIP {f.name} (unreadable reference)")
             skipped += 1
             continue
         act = rust_dump(f, tmp)
@@ -150,21 +150,21 @@ def main():
                 ok += 1
                 print(f"OK   {f.name} (rejet identique, statut {ref.get('status')})")
             elif act.get("status") == 1 and act.get("match", {}).get("map") in EXTENDED_MAPS:
-                # divergence ASSUMÉE : storm-stats supporte les cartes ARAM récentes que
-                # hots-parser 7.55.7 rejette (carte absente de sa MapType). Pas de baseline
-                # Node → pas de comparaison de champs ; on valide l'invariant structurel.
+                # ACCEPTED divergence: storm-stats supports the recent ARAM maps that
+                # hots-parser 7.55.7 rejects (map missing from its MapType). No Node
+                # baseline → no field comparison; we validate the structural invariant.
                 m = act.get("match", {})
                 pl = act.get("players", {})
                 ok_struct = len(pl) == 10 and sum(1 for p in pl.values() if p.get("win")) == 5
                 if ok_struct:
                     ok += 1
-                    print(f"OK   {f.name} (extension carte {m.get('map')}, Node rejette)")
+                    print(f"OK   {f.name} (map extension {m.get('map')}, Node rejects)")
                 else:
                     fail += 1
-                    print(f"DIFF {f.name} : extension carte mais structure invalide")
+                    print(f"DIFF {f.name}: map extension but invalid structure")
             else:
                 fail += 1
-                print(f"DIFF {f.name} : statut {ref.get('status')} vs {act.get('status')}")
+                print(f"DIFF {f.name}: status {ref.get('status')} vs {act.get('status')}")
             continue
         diffs = []
         diff_values(ref, act, [], diffs, tolerances, only)
@@ -173,7 +173,7 @@ def main():
             print(f"OK   {f.name}")
         else:
             fail += 1
-            print(f"DIFF {f.name} ({len(diffs)} écarts)")
+            print(f"DIFF {f.name} ({len(diffs)} differences)")
             for path, r, a in diffs[: args.max_diffs]:
                 rs, as_ = json.dumps(r, ensure_ascii=False), json.dumps(a, ensure_ascii=False)
                 print(f"  {path}:\n    node: {rs[:200]}\n    rust: {as_[:200]}")

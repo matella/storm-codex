@@ -1,6 +1,6 @@
-//! Pack LLM au format Markdown (spec volet D) — format principal, lisible par tous les modèles y
-//! compris locaux : prompt, joueurs, faits en tableaux (colonne `id` à citer), parties, format de
-//! réponse imposé. Module pur.
+//! LLM pack in Markdown format (spec part D) — main format, readable by all the models including
+//! local ones: prompt, players, facts in tables (`id` column to cite), games, imposed response
+//! format. Pure module.
 
 use super::facts::{ordered_index, Facts};
 
@@ -22,7 +22,7 @@ fn fmt_len(s: f64) -> String {
     format!("{}:{:02}", (s / 60.0) as u32, (s % 60.0) as u32)
 }
 
-/// Section d'un id de fait : `p3.hero.x` → joueurs, `map.x.y` → cartes, etc.
+/// Section of a fact id: `p3.hero.x` → players, `map.x.y` → maps, etc.
 fn section(id: &str) -> &'static str {
     let head = id.split('.').next().unwrap_or("");
     match head {
@@ -129,7 +129,7 @@ pub fn markdown(meta: &PackMeta, f: &Facts) -> String {
     for (id, r) in ordered_index(f) {
         let sec = section(&id);
         if sec == "Games" {
-            continue; // détaillées dans la table des parties
+            continue; // detailed in the games table
         }
         if sec != current {
             current = sec;
@@ -237,12 +237,15 @@ mod tests {
             &f,
         );
         for id in f.index.keys() {
-            assert!(md.contains(&format!("`{id}`")), "id absent du pack : {id}");
+            assert!(
+                md.contains(&format!("`{id}`")),
+                "id missing from the pack: {id}"
+            );
         }
         assert!(md.contains("report_id: **9**"));
         assert!(md.contains("\"facts_version\": 4"));
         assert!(md.contains("\"format_version\": 2"));
-        // ordre orienté draft : cartes et draft avant les joueurs
+        // draft-oriented order: maps and draft before the players
         let (maps, draft, players) = (
             md.find("### Maps").unwrap(),
             md.find("### Draft").unwrap(),
@@ -251,7 +254,7 @@ mod tests {
         assert!(maps < draft && draft < players);
         assert!(md.contains("LOW SAMPLE"));
         assert!(md.contains("```json"));
-        // l'exemple embarqué est lui-même importable
+        // the embedded example is itself importable
         let ex = example(
             &PackMeta {
                 report_id: 9,

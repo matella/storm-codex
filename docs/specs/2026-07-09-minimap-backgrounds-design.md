@@ -1,105 +1,105 @@
-# Spec — Fonds de minimap in-game pour la visionneuse 2D
+# Spec — In-game minimap backgrounds for the 2D viewer
 
-**Date :** 2026-07-09 · **Statut :** design validé (brainstorm), prêt pour plan.
-**Objectif :** remplacer le fond de la visionneuse 2D (aujourd'hui l'**art peint de loading-screen**,
-visuellement chargé) par la **vraie minimap tactique in-game** (vue top-down schématique) — pour une
-**lisibilité nettement meilleure** ET une **calibration plus précise** des positions de héros.
+**Date:** 2026-07-09 · **Status:** design approved (brainstorm), ready for a plan.
+**Goal:** replace the 2D viewer's background (today the **painted loading-screen art**,
+visually busy) with the **real in-game tactical minimap** (schematic top-down view) — for
+**much better readability** AND **more precise calibration** of hero positions.
 
 ## Motivation / double gain
-Aujourd'hui `mapImage()` sert `/images/battlegrounds/<slug>.png` = l'art peint du loading-screen
-(texture chargée, voilée d'un dégradé). Deux problèmes :
-1. **Lisibilité** : les pastilles héros se lisent mal sur l'art peint (ex. le violet chargé de Cursed
+Today `mapImage()` serves `/images/battlegrounds/<slug>.png` = the painted loading-screen art
+(busy texture, veiled by a gradient). Two problems:
+1. **Readability**: hero dots read poorly on the painted art (e.g. the busy purple of Cursed
    Hollow).
-2. **Calibration** : on normalise les positions par `MapSize` (= aire **jouable**) puis on les étire
-   sur l'art peint, dont la **bordure décorative ne correspond pas** à l'aire jouable → léger décalage.
+2. **Calibration**: positions are normalised by `MapSize` (= **playable** area) and then stretched
+   over the painted art, whose **decorative border does not match** the playable area → slight offset.
 
-La **minimap in-game correspond ~1:1 à l'aire jouable / camera bounds** → plus propre à lire **et**
-mieux calée. Deux gains d'un coup.
+The **in-game minimap matches the playable area / camera bounds ~1:1** → cleaner to read **and**
+better aligned. Two gains at once.
 
-## Constat de sourcing (spike fait, 2026-07-09)
-Les minimaps propres **ne sont PAS téléchargeables publiquement**. HeroesDataParser (écosystème
-`heroes-images`, celui de HotsPatchNotes) ne publie que `loadingscreens` et `replaypreviews` — les deux
-sont l'**art peint** (vérifié : `replayspreviewimage_cursedhollow.png` = la scène violette, pas une
-minimap). Le repo `jamiephan/HeroesOfTheStorm_Gamedata` (nommé au MVP-1 comme source potentielle) ne
-contient **que du XML/data, aucune image** — également écarté comme source d'images (mais ses
-`CameraBounds` XML restent utiles pour la calibration, voir Lot 3). Les vraies textures de minimap sont
-des `.dds`/`.tga` **dans les fichiers du jeu** (`base.stormassets/Assets/Textures/`, et/ou `Minimap.tga`
-baké dans chaque archive de carte). → **Il faut les extraire de l'installation HotS** (sur le PC de jeu).
+## Sourcing findings (spike done, 2026-07-09)
+Clean minimaps are **NOT publicly downloadable**. HeroesDataParser (the `heroes-images`
+ecosystem, the one HotsPatchNotes uses) only publishes `loadingscreens` and `replaypreviews` — both
+are **painted art** (checked: `replayspreviewimage_cursedhollow.png` = the purple scene, not a
+minimap). The `jamiephan/HeroesOfTheStorm_Gamedata` repo (named in MVP-1 as a potential source)
+contains **only XML/data, no images** — also ruled out as an image source (but its
+`CameraBounds` XML remain useful for calibration, see Batch 3). The real minimap textures are
+`.dds`/`.tga` **in the game files** (`base.stormassets/Assets/Textures/`, and/or `Minimap.tga`
+baked into each map archive). → **They must be extracted from the HotS installation** (on the gaming PC).
 
-## Décisions verrouillées
-1. **Fond = vraie minimap in-game** (full schématique, pas juste un contour ; on ne dessine pas notre
-   propre schéma).
-2. **Source = extraction depuis les fichiers du jeu** (PC), pas de scraping wiki, pas de dépendance à un
-   téléchargement public.
-3. **Distribution = assets bakés/vendorisés** (comme le référentiel : « distribuer la donnée produite,
-   l'utilisateur ne scrape jamais, fallback baké »). Fallback : art peint actuel si pas de minimap.
-4. **Cartes ciblées** : les ~20 battlegrounds standards joués (+ ARAM si minimap dispo). Priorité aux
-   cartes réellement présentes dans l'archive du box.
+## Locked decisions
+1. **Background = real in-game minimap** (full schematic, not just an outline; we do not draw our
+   own diagram).
+2. **Source = extraction from the game files** (PC), no wiki scraping, no dependency on a
+   public download.
+3. **Distribution = baked/vendored assets** (like the reference data: "distribute the produced data,
+   the user never scrapes, baked fallback"). Fallback: current painted art if there is no minimap.
+4. **Target maps**: the ~20 standard battlegrounds played (+ ARAM if a minimap is available). Priority to the
+   maps actually present in the box's archive.
 
-## Lot 1 — Extraction (PC de jeu, opérateur, guidé par l'agent)
-- **Outil** : **CascView** (zezula.net) — ouvre le CASC HotS en lecture seule, browse/extract par chemin.
-- **Cibles candidates** (à confirmer sur la 1re carte) : `Minimap.tga` baké dans l'archive de chaque
-  carte (convention SC2/HotS), **et/ou** une texture de minimap dédiée sous
+## Batch 1 — Extraction (gaming PC, operator, guided by the agent)
+- **Tool**: **CascView** (zezula.net) — opens the HotS CASC read-only, browse/extract by path.
+- **Candidate targets** (to be confirmed on the 1st map): `Minimap.tga` baked into each map's
+  archive (SC2/HotS convention), **and/or** a dedicated minimap texture under
   `base.stormassets/Assets/Textures/`.
-- **Procédé** : **confirmer sur Cursed Hollow d'abord** (extraire la texture candidate, vérifier à l'œil
-  que c'est bien le top-down propre voulu), **puis batch** sur les ~20 battlegrounds. Convertir
+- **Procedure**: **confirm on Cursed Hollow first** (extract the candidate texture, check by eye
+  that it is indeed the clean top-down wanted), **then batch** on the ~20 battlegrounds. Convert
   TGA/DDS → **PNG**.
-- **Nommage de sortie** : `<slug>.png` où `slug` = **même convention que `mapImage()`** (min., apostrophes
-  supprimées, espaces→tirets ; ex. `cursed-hollow.png`, `braxis-holdout.png`).
-- **Livraison = COMMIT au repo** (décision verrouillée, pas un dossier box ad hoc). Les minimaps
-  extraites n'ont **aucune source de re-fetch runtime** (contrairement à l'art vendorisé depuis
-  HotsPatchNotes) : les laisser dans un dossier box non committé les exposerait à une perte silencieuse
-  (rsync/rebuild — cf. incident `.env` de STATUS). → Les PNG sont **committés dans le repo** (ex.
-  `assets/minimaps/<slug>.png`) et **bakés dans l'image** (voir Lot 2). L'opérateur les transfère du PC
-  vers le repo (scp/partage) ; l'agent les commit.
-- **Repli par carte, sans bloquer le batch** : si le `Minimap.tga` d'une carte est trop plat/inutilisable,
-  cette carte retombe sur son art peint (fallback) — l'échec d'une carte **n'invalide pas le batch**. Repli
-  optionnel au cas par cas : texture dédiée ou version wiki pour cette carte précise (non systématique).
-- **Runbook détaillé** à écrire dans `docs/runbooks/` (étapes CascView exactes + conversion + slugs).
+- **Output naming**: `<slug>.png` where `slug` = **same convention as `mapImage()`** (lowercase, apostrophes
+  removed, spaces→hyphens; e.g. `cursed-hollow.png`, `braxis-holdout.png`).
+- **Delivery = COMMIT to the repo** (locked decision, not an ad hoc folder on the box). The extracted minimaps
+  have **no runtime re-fetch source** (unlike the art vendored from
+  HotsPatchNotes): leaving them in an uncommitted folder on the box would expose them to silent loss
+  (rsync/rebuild — see the `.env` incident in STATUS). → The PNGs are **committed to the repo** (e.g.
+  `assets/minimaps/<slug>.png`) and **baked into the image** (see Batch 2). The operator transfers them from the PC
+  to the repo (scp/share); the agent commits them.
+- **Per-map fallback, without blocking the batch**: if a map's `Minimap.tga` is too flat/unusable,
+  that map falls back to its painted art (fallback) — one map's failure **does not invalidate the batch**. Optional
+  case-by-case fallback: dedicated texture or wiki version for that specific map (not systematic).
+- **Detailed runbook** to be written in `docs/runbooks/` (exact CascView steps + conversion + slugs).
 
-## Lot 2 — Vendoring + service (agent, box)
-- Les minimaps committées (`assets/minimaps/<slug>.png`) sont **bakées dans l'image** (COPY au build) et
-  **copiées dans `IMAGES_DIR/minimaps` au démarrage** (idempotent, comme un fallback baké) — ainsi elles
-  survivent aux redeploys (rsync apporte le repo, l'image les contient, le startup les pose dans le volume),
-  **pas de fetch runtime** (cohérent suite-design). Servi sur `/images/minimaps/<slug>.png` (ServeDir sur
-  `IMAGES_DIR`, aucun nouveau route).
-- **Pas de changement du pipeline HotsPatchNotes** (il continue de fournir l'art peint = fallback).
+## Batch 2 — Vendoring + serving (agent, box)
+- The committed minimaps (`assets/minimaps/<slug>.png`) are **baked into the image** (COPY at build) and
+  **copied into `IMAGES_DIR/minimaps` at startup** (idempotent, like a baked fallback) — so they
+  survive redeploys (rsync brings the repo, the image contains them, startup puts them into the volume),
+  **no runtime fetch** (consistent with the suite design). Served on `/images/minimaps/<slug>.png` (ServeDir on
+  `IMAGES_DIR`, no new route).
+- **No change to the HotsPatchNotes pipeline** (it keeps providing the painted art = fallback).
 
-## Lot 3 — Front swap + calibration + vérif E2E (agent)
-- **Front** : nouveau `minimapImage(map)` → `/images/minimaps/<slug>.png` ; `Replay2D.tsx` l'utilise en
-  fond **prioritaire**, chaîne de fallback **minimap → art peint (`mapImage`) → dégradé**. NB : le fallback
-  actuel n'a qu'un booléen `mapBroken` (1 niveau) → prévoir **deux états `onError` indépendants**
-  (minimap cassée → tenter l'art peint ; art peint cassé → dégradé), pas juste un tweak d'une ligne. Voile
-  **allégé** (la minimap est déjà sombre/schématique) — juste un léger assombrissement pour que les
-  pastilles ressortent.
-- **Calibration** : la minimap ≈ camera bounds. Ré-vérifier la transform `MapSize`-normalisée **par
-  carte** ; ajouter la **table de recadrage/échelle par carte** différée au MVP-1 (petites constantes
-  `crop`/`scale` là où la minimap a une marge). Utiliser les `CameraBounds` du gamedata si ça aide. Le
-  **flip-Y est déjà correct** (validé Cursed Hollow) — on n'y touche pas.
-- **Vérif E2E** : comme au MVP-1 — serveur local + images réelles + replays imagés (Cursed Hollow +
-  1–2 autres), preview navigateur : héros bien placés sur la minimap propre, lisibilité nettement
-  meilleure, calibration serrée. Screenshots.
+## Batch 3 — Front-end swap + calibration + E2E check (agent)
+- **Front-end**: new `minimapImage(map)` → `/images/minimaps/<slug>.png`; `Replay2D.tsx` uses it as the
+  **preferred** background, fallback chain **minimap → painted art (`mapImage`) → gradient**. NB: the current
+  fallback only has a `mapBroken` boolean (1 level) → plan **two independent `onError` states**
+  (broken minimap → try the painted art; broken painted art → gradient), not just a one-line tweak. **Lighter**
+  veil (the minimap is already dark/schematic) — just a slight darkening so the
+  dots stand out.
+- **Calibration**: the minimap ≈ camera bounds. Re-check the `MapSize`-normalised transform **per
+  map**; add the **per-map crop/scale table** deferred in MVP-1 (small
+  `crop`/`scale` constants where the minimap has a margin). Use the gamedata's `CameraBounds` if it helps. The
+  **Y flip is already correct** (validated on Cursed Hollow) — leave it alone.
+- **E2E check**: as in MVP-1 — local server + real images + replays with images (Cursed Hollow +
+  1–2 others), browser preview: heroes correctly placed on the clean minimap, readability much
+  better, tight calibration. Screenshots.
 
-## Modèle de coordonnées (rappel)
-Le crate/endpoint est **inchangé** — il émet déjà des coords normalisées `[0,1]` par `MapSize`. Toute la
-calibration minimap est **côté front** (choix de l'image + éventuel `crop`/`scale` par carte au dessin).
-Aucun bump `VIEWER_VERSION`, aucun changement de payload.
+## Coordinate model (reminder)
+The crate/endpoint is **unchanged** — it already emits coordinates normalised to `[0,1]` by `MapSize`. All the
+minimap calibration is **front-end side** (choice of image + optional per-map `crop`/`scale` when drawing).
+No `VIEWER_VERSION` bump, no payload change.
 
-## Hors périmètre (YAGNI)
-- Dessiner notre propre schéma (option écartée).
-- Scraper les wikis automatiquement (repli manuel au cas par cas seulement).
-- Toucher le pipeline HotsPatchNotes / HeroesDataParser.
-- Minimaps animées / objectifs baked (on garde nos propres overlays).
-- Extraction automatisée depuis le Mac (pas d'accès au CASC du PC ; c'est une tâche PC guidée).
+## Out of scope (YAGNI)
+- Drawing our own diagram (option ruled out).
+- Scraping wikis automatically (manual case-by-case fallback only).
+- Touching the HotsPatchNotes / HeroesDataParser pipeline.
+- Animated minimaps / baked objectives (we keep our own overlays).
+- Automated extraction from the Mac (no access to the PC's CASC; it is a guided PC task).
 
-## Risques / inconnues
-- **Qualité/format de la texture extraite** : confirmé au Lot 1 sur Cursed Hollow avant le batch.
-- **Couverture** : une carte sans minimap propre retombe sur l'art peint (fallback silencieux).
-- **Marge de la minimap vs `MapSize`** : gérée par la table de recadrage par carte (Lot 3), calée à l'œil
-  sur de vrais matchs (viser « clairement mieux », pas le pixel).
-- **Conversion DDS→PNG** : CascView exporte, sinon un convertisseur (ImageMagick/texconv) — précisé au runbook.
+## Risks / unknowns
+- **Quality/format of the extracted texture**: confirmed in Batch 1 on Cursed Hollow before the batch.
+- **Coverage**: a map without a clean minimap falls back to the painted art (silent fallback).
+- **Minimap margin vs `MapSize`**: handled by the per-map crop table (Batch 3), tuned by eye
+  on real matches (aim for "clearly better", not pixel-perfect).
+- **DDS→PNG conversion**: CascView exports, otherwise a converter (ImageMagick/texconv) — specified in the runbook.
 
-## Découpage
-1. **Extraction guidée (PC/CascView)** → PNG des ~20 battlegrounds (confirm Cursed Hollow → batch).
-2. **Vendoring + service** `/images/minimaps/`.
-3. **Front swap + calibration + vérif E2E**, puis STATUS + (option) redéploiement box.
+## Breakdown
+1. **Guided extraction (PC/CascView)** → PNGs of the ~20 battlegrounds (confirm Cursed Hollow → batch).
+2. **Vendoring + serving** `/images/minimaps/`.
+3. **Front-end swap + calibration + E2E check**, then STATUS + (optional) box redeployment.

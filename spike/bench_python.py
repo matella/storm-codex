@@ -1,6 +1,6 @@
-# Jalon 0 — baseline heroprotocol (Python).
-# NB : heroprotocol 2.55.15.96477 (pip) est cassé sur Python >= 3.12 (versions/__init__.py
-# importe `imp`, supprimé) — on charge les modules protocolXXXXX.py directement via importlib.
+# Milestone 0 — heroprotocol (Python) baseline.
+# NB: heroprotocol 2.55.15.96477 (pip) is broken on Python >= 3.12 (versions/__init__.py
+# imports `imp`, removed) — we load the protocolXXXXX.py modules directly via importlib.
 import csv
 import importlib.util
 import math
@@ -30,14 +30,14 @@ LATEST = load_protocol(sorted(p.stem for p in VERSIONS.glob("protocol*.py"))[-1]
 
 
 def decode(path):
-    """Chaîne canonique de hero_cli.py : header (latest) -> protocole du build -> streams."""
+    """Canonical chain of hero_cli.py: header (latest) -> build protocol -> streams."""
     archive = mpyq.MPQArchive(str(path))
     header = LATEST.decode_replay_header(archive.header["user_data_header"]["content"])
     base_build = header["m_version"]["m_baseBuild"]
     try:
         protocol = load_protocol("protocol%05d" % base_build)
     except FileNotFoundError:
-        protocol = LATEST  # fallback « dernier protocole connu » (comportement spec)
+        protocol = LATEST  # "latest known protocol" fallback (spec behaviour)
     protocol.decode_replay_details(archive.read_file("replay.details"))
     events = sum(
         1 for _ in protocol.decode_replay_tracker_events(archive.read_file("replay.tracker.events"))
@@ -47,15 +47,15 @@ def decode(path):
 
 def main():
     files = sorted(CORPUS.glob("*.StormReplay"))
-    assert len(files) == 50, f"corpus inattendu : {len(files)} fichiers"
-    decode(files[0])  # warm-up (imports/JIT caches), mesure jetée
+    assert len(files) == 50, f"unexpected corpus: {len(files)} files"
+    decode(files[0])  # warm-up (imports/JIT caches), measurement discarded
     rows, fails = [], 0
     for f in files:
         t0 = time.perf_counter()
         try:
             base_build, events = decode(f)
             ok = 1
-        except Exception as e:  # un échec n'arrête pas le bench
+        except Exception as e:  # a failure does not stop the bench
             base_build, events, ok = 0, 0, 0
             fails += 1
             print(f"FAIL {f.name}: {type(e).__name__}: {e}")
@@ -70,9 +70,9 @@ def main():
     ms = sorted(float(r["ms"]) for r in rows if r["ok"])
     p95 = ms[math.ceil(0.95 * len(ms)) - 1]
     builds = sorted({r["base_build"] for r in rows if r["ok"]})
-    print(f"python : n={len(ms)} échecs={fails} médiane={ms[len(ms) // 2]:.0f} ms "
+    print(f"python : n={len(ms)} failures={fails} median={ms[len(ms) // 2]:.0f} ms "
           f"p95={p95:.0f} ms max={ms[-1]:.0f} ms")
-    print(f"builds du corpus : {builds}")
+    print(f"corpus builds: {builds}")
 
 
 if __name__ == "__main__":

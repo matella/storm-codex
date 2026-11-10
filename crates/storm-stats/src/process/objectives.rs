@@ -1,31 +1,31 @@
-//! Objectifs de carte : événements de stat, naissances/morts/changements de propriétaire d'unités,
-//! nettoyage final et premier objectif.
+//! Map objectives: stat events, unit births/deaths/owner changes,
+//! final cleanup and first objective.
 
 use super::*;
 
-/// Variables `var` hissées des branches objectifs par carte (parser.js:705-784). `None` ≡
-/// undefined JS (et le `null` initial de `dragon` : mêmes effets observables) — un accès de
-/// propriété dessus → Throw (catch → Failure) ; une affectation directe (`dragon = {...}`)
-/// fonctionne sur toute carte, comme en JS (les branches UnitBorn ne sont pas gardées par carte).
+/// `var` variables hoisted from the per-map objective branches (parser.js:705-784). `None` ≡
+/// JS undefined (and the initial `null` of `dragon`: same observable effects) — a property
+/// access on it → Throw (catch → Failure); a direct assignment (`dragon = {...}`)
+/// works on any map, as in JS (the UnitBorn branches are not guarded per map).
 #[derive(Default)]
 pub(super) struct ObjState {
     pub(super) moon: Option<J>,
     pub(super) sun: Option<J>,
     pub(super) dragon: Option<J>,
     pub(super) current_terror: Option<J>,
-    /// Tableau JS `[null, null]` : objet `{"0","1"}` + itération for..in numérique.
+    /// JS array `[null, null]`: object `{"0","1"}` + numeric for..in iteration.
     pub(super) golems: Option<J>,
     pub(super) immortal: Option<J>,
     pub(super) current_spiders: Option<Spiders>,
     pub(super) current_protector: Option<J>,
     pub(super) nukes: Option<J>,
     pub(super) wave_units: Option<J>,
-    /// `var waveID` : None ≡ undefined (`waveID += 1` → NaN, index → undefined).
+    /// `var waveID`: None ≡ undefined (`waveID += 1` → NaN, index → undefined).
     pub(super) wave_id: Option<f64>,
     pub(super) beacons: Option<J>,
 }
 
-/// `currentSpiders` (Crypts, parser.js:746) — jamais sérialisé : champs scalaires portés en
+/// `currentSpiders` (Crypts, parser.js:746) — never serialised: scalar fields carried in
 /// natif, `None` ≡ undefined.
 #[derive(Default)]
 pub(super) struct Spiders {
@@ -37,7 +37,7 @@ pub(super) struct Spiders {
     pub(super) max_duration: Option<f64>,
 }
 
-/// `===` JS sur nos valeurs (scalaires uniquement ; `None` ≡ undefined ≠ null).
+/// JS `===` on our values (scalars only; `None` ≡ undefined ≠ null).
 pub(super) fn js_strict_eq(a: Option<&J>, b: Option<&J>) -> bool {
     match (a, b) {
         (None, None) => true,
@@ -51,12 +51,12 @@ pub(super) fn js_strict_eq(a: Option<&J>, b: Option<&J>) -> bool {
     }
 }
 
-/// Clé de propriété JS depuis un nombre optionnel (undefined → "undefined").
+/// JS property key from an optional number (undefined → "undefined").
 pub(super) fn js_key(x: Option<f64>) -> String {
     x.map_or_else(|| "undefined".into(), js_num_str)
 }
 
-/// Index de tableau JS depuis un nombre optionnel (non entier/négatif/NaN → undefined).
+/// JS array index from an optional number (non-integer/negative/NaN → undefined).
 pub(super) fn js_idx(x: Option<f64>) -> Option<usize> {
     let x = x?;
     (x.is_finite() && x >= 0.0 && x.fract() == 0.0).then_some(x as usize)
@@ -75,8 +75,8 @@ pub(super) fn objective_mut(match_: &mut Map<String, J>) -> R<&mut Map<String, J
         .ok_or_else(|| Abort::Throw("match.objective absent".into()))
 }
 
-/// `match.objective[team]` objet — clé absente ou non-objet (tableau des Mines…) → Throw,
-/// comme `undefined.events` en JS.
+/// `match.objective[team]` object — missing key or non-object (Mines array…) → Throw,
+/// like `undefined.events` in JS.
 pub(super) fn obj_slot_mut<'a>(
     match_: &'a mut Map<String, J>,
     team: &str,
@@ -102,13 +102,13 @@ pub(super) fn obj_arr_mut<'a>(match_: &'a mut Map<String, J>, key: &str) -> R<&'
         .ok_or_else(|| Abort::Throw(format!("objective.{key} absent")))
 }
 
-/// `slot.<key> += by` (clé absente → undefined → NaN, comme en JS).
+/// `slot.<key> += by` (missing key → undefined → NaN, as in JS).
 pub(super) fn js_incr(slot: &mut Map<String, J>, key: &str, by: f64) {
     let v = js_number(slot.get(key)) + by;
     slot.insert(key.into(), jnum(v));
 }
 
-/// `match.objective.waves[waveID]` — hors bornes/NaN/undefined → Throw (`undefined.x`).
+/// `match.objective.waves[waveID]` — out of bounds/NaN/undefined → Throw (`undefined.x`).
 pub(super) fn wave_mut(
     match_: &mut Map<String, J>,
     wave_id: Option<f64>,
@@ -125,8 +125,8 @@ pub(super) fn match_build(match_: &Map<String, J>) -> f64 {
     js_number(match_.get("version").and_then(|v| get(v, &["m_build"])))
 }
 
-/// `braxisWaveStrength(units, build)` (parser.js:2594-2657). Clés et valeurs de
-/// BraxisUnitType sont identiques : l'init à 0 et l'incrément par `units[u].type` coïncident.
+/// `braxisWaveStrength(units, build)` (parser.js:2594-2657). The keys and values of
+/// BraxisUnitType are identical: the init to 0 and the increment by `units[u].type` coincide.
 pub(super) fn braxis_wave_strength(units: &Map<String, J>, build: f64) -> f64 {
     let mut types: HashMap<String, f64> = HashMap::new();
     if let Some(o) = replay_types()["BraxisUnitType"].as_object() {
@@ -135,7 +135,7 @@ pub(super) fn braxis_wave_strength(units: &Map<String, J>, build: f64) -> f64 {
         }
     }
     for u in units.values() {
-        // type hors table → undefined + 1 = NaN, comme en JS
+        // type outside the table → undefined + 1 = NaN, as in JS
         *types.entry(js_prop(get(u, &["type"]))).or_insert(f64::NAN) += 1.0;
     }
     let n = |k: &str| {
@@ -153,7 +153,7 @@ pub(super) fn braxis_wave_strength(units: &Map<String, J>, build: f64) -> f64 {
         let score = js_max(score, 0.25 * (n("ZergHydralisk") - 2.0));
         js_max(score, 0.35 * (n("ZergGuardian") - 1.0))
     } else {
-        // 2.47.0 — « only cause Ultralisks to be ignored » (build NaN tombe ici, comme en JS)
+        // 2.47.0 — "only cause Ultralisks to be ignored" (a NaN build falls here, as in JS)
         let score = 0.1 * n("ZergBaneling");
         let score = js_max(score, 0.24 * n("ZergHydralisk"));
         let score = js_max(score, 0.30 * n("ZergGuardian"));
@@ -161,7 +161,7 @@ pub(super) fn braxis_wave_strength(units: &Map<String, J>, build: f64) -> f64 {
     }
 }
 
-/// Forces des deux vagues Braxis (`waveUnits[0]`, `waveUnits[1]`) — waveUnits indéfini → Throw.
+/// Strengths of the two Braxis waves (`waveUnits[0]`, `waveUnits[1]`) — undefined waveUnits → Throw.
 pub(super) fn braxis_strengths(st: &ObjState, build: f64) -> R<(f64, f64)> {
     let wu = st
         .wave_units
@@ -179,7 +179,7 @@ pub(super) fn braxis_strengths(st: &ObjState, build: f64) -> R<(f64, f64)> {
     ))
 }
 
-/// Stat events « objectifs par carte » (parser.js:974-1189, 1214-1238).
+/// "Per-map objective" stat events (parser.js:974-1189, 1214-1238).
 pub(super) fn obj_stat_event(
     name: &str,
     event: &J,
@@ -188,13 +188,13 @@ pub(super) fn obj_stat_event(
     loop_game_start: f64,
 ) -> R<()> {
     if objective_less_map(match_) {
-        return Ok(()); // cartes ARAM étendues : pas d'objectif (cf. EXTRA_MAPS)
+        return Ok(()); // extended ARAM maps: no objective (see EXTRA_MAPS)
     }
     let s = |k: &str| rt_str("StatEventType", k);
     let gameloop_j = get(event, &["_gameloop"]).cloned().unwrap_or(J::Null);
     let gameloop = js_number(get(event, &["_gameloop"]));
     let time = jnum(loops_to_seconds(gameloop - loop_game_start));
-    // `event.m_intData[i].m_value` : [i] absent → Throw, m_value absent → undefined
+    // `event.m_intData[i].m_value`: [i] missing → Throw, m_value missing → undefined
     let idata = |i: &str| -> R<Option<&J>> {
         let d = get(event, &["m_intData", i])
             .ok_or_else(|| Abort::Throw(format!("objectif: m_intData[{i}] absent")))?;
@@ -373,8 +373,8 @@ pub(super) fn obj_stat_event(
     Ok(())
 }
 
-/// Branches par carte de UnitBorn (parser.js:1262-1475) — testées par type d'unité, sans
-/// garde sur la carte (reproduit tel quel).
+/// Per-map branches of UnitBorn (parser.js:1262-1475) — tested by unit type, without
+/// a guard on the map (reproduced as is).
 pub(super) fn obj_unit_born(
     event: &J,
     match_: &mut Map<String, J>,
@@ -384,7 +384,7 @@ pub(super) fn obj_unit_born(
     loop_game_start: f64,
 ) -> R<()> {
     if objective_less_map(match_) {
-        return Ok(()); // cartes ARAM étendues : pas d'objectif (cf. EXTRA_MAPS)
+        return Ok(()); // extended ARAM maps: no objective (see EXTRA_MAPS)
     }
     let u = |k: &str| rt_str("UnitType", k);
     let t = get_str(event, &["m_unitTypeName"]).unwrap_or("");
@@ -455,8 +455,8 @@ pub(super) fn obj_unit_born(
         cs.units.insert(js_key(cs.unit_idx), spider);
         cs.unit_idx = Some(cs.unit_idx.unwrap_or(f64::NAN) + 1.0);
     } else if t == u("Triglav") {
-        // parser.js:1318-1341 — currentProtector est AUSSI l'objet poussé dans events :
-        // l'eventIdx posé après le push est visible dans la sortie.
+        // parser.js:1318-1341 — currentProtector is ALSO the object pushed into events:
+        // the eventIdx set after the push is visible in the output.
         let team = js_number(get(event, &["m_upkeepPlayerId"])) - 11.0;
         let mut cp = Map::new();
         cp.insert("tag".into(), tag_j);
@@ -487,7 +487,7 @@ pub(super) fn obj_unit_born(
             get(
                 players
                     .get(h)
-                    .ok_or_else(|| Abort::Throw(format!("nuke: joueur {h} inconnu")))?,
+                    .ok_or_else(|| Abort::Throw(format!("nuke: unknown player {h}")))?,
                 &["team"],
             )
             .cloned()
@@ -626,7 +626,7 @@ pub(super) fn obj_unit_born(
     Ok(())
 }
 
-/// Branches par carte de UnitDied (parser.js:1655-1896) — gardées par `match.map`.
+/// Per-map branches of UnitDied (parser.js:1655-1896) — guarded by `match.map`.
 pub(super) fn obj_unit_died(
     event: &J,
     match_: &mut Map<String, J>,
@@ -634,7 +634,7 @@ pub(super) fn obj_unit_died(
     loop_game_start: f64,
 ) -> R<()> {
     if objective_less_map(match_) {
-        return Ok(()); // cartes ARAM étendues : pas d'objectif (cf. EXTRA_MAPS)
+        return Ok(()); // extended ARAM maps: no objective (see EXTRA_MAPS)
     }
     let tag = get(event, &["m_unitTagIndex"]);
     let rtag = get(event, &["m_unitTagRecycle"]);
@@ -644,7 +644,7 @@ pub(super) fn obj_unit_died(
     let secs = loops_to_seconds(gameloop - loop_game_start);
 
     if is_map(match_, "HauntedMines") {
-        // parser.js:1656-1687 — mort d'un golem suivi
+        // parser.js:1656-1687 — death of a tracked golem
         let golems = st
             .golems
             .as_mut()
@@ -667,7 +667,7 @@ pub(super) fn obj_unit_died(
                 });
                 let team_key = js_prop(get(&golem, &["team"]));
                 golems.insert(key, J::Null);
-                // match.objective[team] est ici un TABLEAU (init Mines)
+                // match.objective[team] is an ARRAY here (Mines init)
                 objective_mut(match_)?
                     .get_mut(&team_key)
                     .and_then(J::as_array_mut)
@@ -676,7 +676,7 @@ pub(super) fn obj_unit_died(
             }
         }
     } else if is_map(match_, "HauntedWoods") {
-        // parser.js:1688-1720 — mort de la plante activée
+        // parser.js:1688-1720 — death of the activated plant
         let ct = st
             .current_terror
             .as_mut()
@@ -688,7 +688,7 @@ pub(super) fn obj_unit_died(
                 && js_strict_eq(get(&terror, &["tag"]), tag)
                 && js_strict_eq(get(&terror, &["rtag"]), rtag)
             {
-                // team = parseInt(t) → clé de propriété String(number)
+                // team = parseInt(t) → property key String(number)
                 let team_key = js_parse_int(&tkey).map_or_else(|| "NaN".into(), |v| v.to_string());
                 let slot = obj_slot_mut(match_, &team_key)?;
                 let last = slot_events_mut(slot)?
@@ -700,7 +700,7 @@ pub(super) fn obj_unit_died(
                 last.insert("duration".into(), jnum(loops_to_seconds(duration)));
                 match get(&terror, &["player"]) {
                     Some(p) => last.insert("player".into(), p.clone()),
-                    None => last.remove("player"), // = undefined → absent au stringify
+                    None => last.remove("player"), // = undefined → missing on stringify
                 };
                 ct.get_mut(&tkey)
                     .and_then(J::as_object_mut)
@@ -708,8 +708,8 @@ pub(super) fn obj_unit_died(
                     .insert("active".into(), J::from(false));
             }
         }
-        // parser.js:1722-1734 — mort d'une terreur (unités) ; itère TOUTES les clés de
-        // objective, y compris "type" (chaîne → .units undefined → boucle vide)
+        // parser.js:1722-1734 — death of a terror (units); iterates ALL the keys of
+        // objective, including "type" (string → .units undefined → empty loop)
         let obj = objective_mut(match_)?;
         for t in js_for_in_keys(obj) {
             let Some(units) = obj
@@ -731,7 +731,7 @@ pub(super) fn obj_unit_died(
                         .as_object_mut()
                         .ok_or_else(|| Abort::Throw("unit non-objet".into()))?;
                     uo.insert("end".into(), jnum(secs));
-                    // BUG parser.js:1731 reproduit : u.start n'existe pas → NaN → null
+                    // BUG parser.js:1731 reproduced: u.start does not exist → NaN → null
                     let start = js_number(uo.get("start"));
                     uo.insert("duration".into(), jnum(secs - start));
                 }
@@ -744,7 +744,7 @@ pub(super) fn obj_unit_died(
         });
         if matched {
             let d = st.dragon.clone().unwrap_or(J::Null);
-            // dragon jamais activé → team undefined → objective[undefined] → Throw, comme en JS
+            // dragon never activated → team undefined → objective[undefined] → Throw, as in JS
             let team_key = js_prop(get(&d, &["team"]));
             let slot = obj_slot_mut(match_, &team_key)?;
             let last = slot_events_mut(slot)?
@@ -860,7 +860,7 @@ pub(super) fn obj_unit_died(
                 .and_then(J::as_str)
                 == Some(rt_str("BraxisUnitType", "ZergUltralisk"));
             if is_ultra && get(event, &["m_killerPlayerId"]) == Some(&J::Null) {
-                // ultralisk mort-né : la vague adverse démarre à 100 (parser.js:1820-1828)
+                // stillborn ultralisk: the opposing wave starts at 100 (parser.js:1820-1828)
                 let build = match_build(match_);
                 let (s0, s1) = braxis_strengths(st, build)?;
                 let wave = wave_mut(match_, st.wave_id)?;
@@ -945,7 +945,7 @@ pub(super) fn obj_unit_died(
     Ok(())
 }
 
-/// UnitOwnerChange par carte (parser.js:1897-1979) — quatre `if` indépendants (non else-if).
+/// Per-map UnitOwnerChange (parser.js:1897-1979) — four independent `if`s (not else-if).
 pub(super) fn obj_unit_owner_change(
     event: &J,
     match_: &mut Map<String, J>,
@@ -954,7 +954,7 @@ pub(super) fn obj_unit_owner_change(
     loop_game_start: f64,
 ) -> R<()> {
     if objective_less_map(match_) {
-        return Ok(()); // cartes ARAM étendues : pas d'objectif (cf. EXTRA_MAPS)
+        return Ok(()); // extended ARAM maps: no objective (see EXTRA_MAPS)
     }
     let tag = get(event, &["m_unitTagIndex"]);
     let rtag = get(event, &["m_unitTagRecycle"]);
@@ -979,7 +979,7 @@ pub(super) fn obj_unit_owner_change(
             None
         };
         if let Some(which) = shrine {
-            // team !== 0 → -11 ; sinon -1 (« our blue team is already 0 »)
+            // team !== 0 → -11; otherwise -1 ("our blue team is already 0")
             let team = if control == 0.0 { -1.0 } else { control - 11.0 };
             objective_mut(match_)?
                 .get_mut("shrines")
@@ -1067,21 +1067,21 @@ pub(super) fn obj_unit_owner_change(
     Ok(())
 }
 
-/// Cleanups post-boucle des objectifs par carte (parser.js:1982-2109).
+/// Post-loop cleanups of the per-map objectives (parser.js:1982-2109).
 pub(super) fn obj_cleanup(
     match_: &mut Map<String, J>,
     st: &mut ObjState,
     loop_game_start: f64,
 ) -> R<()> {
     if objective_less_map(match_) {
-        return Ok(()); // cartes ARAM étendues : pas d'objectif (cf. EXTRA_MAPS)
+        return Ok(()); // extended ARAM maps: no objective (see EXTRA_MAPS)
     }
     let loop_length = js_number(match_.get("loopLength"));
     let loop_length_j = match_.get("loopLength").cloned().unwrap_or(J::Null);
     let end_secs = loops_to_seconds(loop_length - loop_game_start);
 
     if is_map(match_, "HauntedMines") {
-        // parser.js:1983-2011 — golems encore en vie à la fin
+        // parser.js:1983-2011 — golems still alive at the end
         let golems = st
             .golems
             .as_mut()
@@ -1109,7 +1109,7 @@ pub(super) fn obj_cleanup(
             }
         }
     } else if is_map(match_, "HauntedWoods") {
-        // parser.js:2013-2044 — terreurs encore actives
+        // parser.js:2013-2044 — terrors still active
         let ct = st
             .current_terror
             .as_mut()
@@ -1161,7 +1161,7 @@ pub(super) fn obj_cleanup(
             st.dragon = None;
         }
     } else if is_map(match_, "Crypts") {
-        // parser.js:2060-2072 — phase araignées encore active
+        // parser.js:2060-2072 — spider phase still active
         let cs = st
             .current_spiders
             .as_mut()
@@ -1171,7 +1171,7 @@ pub(super) fn obj_cleanup(
                 .first()
                 .and_then(|k| cs.units.get(k))
                 .cloned()
-                // units vide → units[undefined].loop lève, comme en JS
+                // empty units → units[undefined].loop throws, as in JS
                 .ok_or_else(|| Abort::Throw("currentSpiders.units vide".into()))?;
             let spider_loop = js_number(get(&spider, &["loop"]));
             let team_key = js_key(cs.team);
@@ -1189,7 +1189,7 @@ pub(super) fn obj_cleanup(
             ev.insert("end".into(), jnum(end_secs));
         }
     } else if is_map(match_, "Volskaya") {
-        // parser.js:2073-2079 — protecteur encore actif
+        // parser.js:2073-2079 — protector still active
         let cp = st
             .current_protector
             .as_ref()
@@ -1207,7 +1207,7 @@ pub(super) fn obj_cleanup(
                 .insert("duration".into(), jnum(duration));
         }
     } else if is_map(match_, "Warhead Junction") {
-        // parser.js:2080-2090 — tri des nukes
+        // parser.js:2080-2090 — sort of the nukes
         let nukes = st
             .nukes
             .as_ref()
@@ -1220,14 +1220,14 @@ pub(super) fn obj_cleanup(
             let slot = obj_slot_mut(match_, &team_key)?;
             slot_events_mut(slot)?.push(nuke.clone());
             js_incr(slot, "count", 1.0);
-            // succès si true OU si jamais morte (clé absente)
+            // success if true OR if it never died (missing key)
             let success_true = get(&nuke, &["success"]) == Some(&J::Bool(true));
             if success_true || get(&nuke, &["success"]).is_none() {
                 js_incr(slot, "success", 1.0);
             }
         }
     } else if is_map(match_, "BattlefieldOfEternity") {
-        // parser.js:2091-2097 — immortel encore en vie
+        // parser.js:2091-2097 — immortal still alive
         let im = st
             .immortal
             .as_ref()
@@ -1245,7 +1245,7 @@ pub(super) fn obj_cleanup(
                 );
         }
     } else if is_map(match_, "AlteracPass") {
-        // parser.js:2098-2108 — cavaleries jamais mortes
+        // parser.js:2098-2108 — cavalries that never died
         for i in ["0", "1"] {
             let slot = obj_slot_mut(match_, i)?;
             for unit in slot_events_mut(slot)?.iter_mut() {
@@ -1261,10 +1261,10 @@ pub(super) fn obj_cleanup(
     Ok(())
 }
 
-/// `getFirstObjectiveTeam(match)` (parser.js:3116-3302) — try/catch → null, ne lève jamais.
+/// `getFirstObjectiveTeam(match)` (parser.js:3116-3302) — try/catch → null, never throws.
 pub(super) fn get_first_objective_team(match_: &Map<String, J>) -> J {
     if objective_less_map(match_) {
-        return J::Null; // cartes ARAM étendues : pas d'objectif (cf. EXTRA_MAPS)
+        return J::Null; // extended ARAM maps: no objective (see EXTRA_MAPS)
     }
     first_objective_inner(match_).unwrap_or(J::Null)
 }
@@ -1284,8 +1284,8 @@ pub(super) fn first_objective_inner(match_: &Map<String, J>) -> R<J> {
         || is_map(match_, "AlteracPass")
         || is_map(match_, "BlackheartsBay")
     {
-        // parser.js:3118-3149 — NB : les events d'Alterac n'ont pas de champ time →
-        // undefined === undefined → null dès que les deux équipes ont un événement
+        // parser.js:3118-3149 — NB: the Alterac events have no time field →
+        // undefined === undefined → null as soon as both teams have an event
         let (e0, e1) = (events("0")?, events("1")?);
         if e0.is_empty() && e1.is_empty() {
             return Ok(J::Null);
@@ -1302,7 +1302,7 @@ pub(super) fn first_objective_inner(match_: &Map<String, J>) -> R<J> {
         }
         Ok(J::from(if js_number(t0) < js_number(t1) { 0 } else { 1 }))
     } else if is_map(match_, "HauntedWoods") {
-        // parser.js:3150-3168 — pas de cas « les deux vides » : units[0].loop lève → null
+        // parser.js:3150-3168 — no "both empty" case: units[0].loop throws → null
         let units = |t: &str| {
             get(obj, &[t, "units"])
                 .and_then(J::as_array)
@@ -1317,12 +1317,12 @@ pub(super) fn first_objective_inner(match_: &Map<String, J>) -> R<J> {
         }
         let l0 = get(
             u0.first()
-                .ok_or_else(|| Abort::Throw("units vides".into()))?,
+                .ok_or_else(|| Abort::Throw("empty units".into()))?,
             &["loop"],
         );
         let l1 = get(
             u1.first()
-                .ok_or_else(|| Abort::Throw("units vides".into()))?,
+                .ok_or_else(|| Abort::Throw("empty units".into()))?,
             &["loop"],
         );
         if js_strict_eq(l0, l1) {
@@ -1330,7 +1330,7 @@ pub(super) fn first_objective_inner(match_: &Map<String, J>) -> R<J> {
         }
         Ok(J::from(if js_number(l0) < js_number(l1) { 0 } else { 1 }))
     } else if is_map(match_, "ControlPoints") || is_map(match_, "TowersOfDoom") {
-        // parser.js:3169-3220 — qui domine les 90 premiers tirs / les 3 premiers autels
+        // parser.js:3169-3220 — who dominates the first 90 shots / the first 3 altars
         let take = if is_map(match_, "ControlPoints") {
             90
         } else {
@@ -1356,7 +1356,7 @@ pub(super) fn first_objective_inner(match_: &Map<String, J>) -> R<J> {
             rt_int("TeamType", "Red")
         }))
     } else if is_map(match_, "CursedHollow") {
-        // parser.js:3221-3243 — premier à 3 tributs
+        // parser.js:3221-3243 — first to 3 tributes
         let mut all: Vec<&J> = events("0")?.iter().chain(events("1")?.iter()).collect();
         all.sort_by(|a, b| js_cmp(js_number(get(a, &["loop"])), js_number(get(b, &["loop"]))));
         let (mut blue, mut red) = (0i64, 0i64);
@@ -1376,7 +1376,7 @@ pub(super) fn first_objective_inner(match_: &Map<String, J>) -> R<J> {
         }
         Ok(J::Null)
     } else if is_map(match_, "Warhead Junction") {
-        // parser.js:3244-3272 — meilleur des 4 premières nukes réussies
+        // parser.js:3244-3272 — best of the first 4 successful nukes
         let mut all: Vec<&J> = events("0")?.iter().chain(events("1")?.iter()).collect();
         all.sort_by(|a, b| js_cmp(js_number(get(a, &["loop"])), js_number(get(b, &["loop"]))));
         let (mut blue, mut red, mut total) = (0i64, 0i64, 0i64);
@@ -1419,7 +1419,7 @@ pub(super) fn first_objective_inner(match_: &Map<String, J>) -> R<J> {
             .first()
             .map_or(J::Null, |s| get(s, &["team"]).cloned().unwrap_or(J::Null)))
     } else if is_map(match_, "BraxisHoldout") {
-        // parser.js:3285-3293 — startScore absent → undefined[0] lève → null
+        // parser.js:3285-3293 — startScore missing → undefined[0] throws → null
         let waves = get(obj, &["waves"])
             .and_then(J::as_array)
             .ok_or_else(|| Abort::Throw("waves absent".into()))?;
@@ -1438,7 +1438,7 @@ pub(super) fn first_objective_inner(match_: &Map<String, J>) -> R<J> {
     }
 }
 
-/// Noms d'événements Stat « objectifs par carte » (parser.js:974-1189 + 1214-1238).
+/// Names of the "per-map objective" Stat events (parser.js:974-1189 + 1214-1238).
 pub(super) fn is_map_objective_stat_event(name: &str) -> bool {
     [
         "SkyTempleShotsFired",
@@ -1460,7 +1460,7 @@ pub(super) fn is_map_objective_stat_event(name: &str) -> bool {
     .any(|k| rt_str("StatEventType", k) == name)
 }
 
-/// Types d'unités consommés par les branches par carte de UnitBorn (parser.js:1262-1475).
+/// Unit types consumed by the per-map branches of UnitBorn (parser.js:1262-1475).
 pub(super) fn is_map_objective_unit_born(unit_type: &str) -> bool {
     [
         "MinesBoss",

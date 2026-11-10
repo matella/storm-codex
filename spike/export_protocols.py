@@ -1,6 +1,6 @@
-# Jalon 0 — exporte les typeinfos des protocoles heroprotocol en JSON pour le spike Rust.
-# Source : clone du repo GitHub Blizzard/heroprotocol (le package pip est en retard : 91756
-# vs 96477 sur GitHub). Usage : python spike/export_protocols.py <chemin du clone>
+# Milestone 0 — exports the heroprotocol protocol typeinfos as JSON for the Rust spike.
+# Source: clone of the Blizzard/heroprotocol GitHub repo (the pip package lags behind: 91756
+# vs 96477 on GitHub). Usage: python spike/export_protocols.py <path to the clone>
 import importlib.util
 import json
 import os
@@ -31,7 +31,7 @@ def main():
     versions = clone / "heroprotocol" / "versions"
     files = sorted(versions.glob("protocol*.py"))
     if not files:
-        sys.exit(f"aucun protocole dans {versions}")
+        sys.exit(f"no protocol in {versions}")
     OUT.mkdir(exist_ok=True)
     exported = 0
     for f in files:
@@ -54,7 +54,7 @@ def main():
         exported += 1
     latest = max(int(p.stem) for p in OUT.glob("*.json"))
     (OUT / "latest.txt").write_text(str(latest))
-    print(f"{exported} protocoles exportés vers {OUT} (latest = {latest})")
+    print(f"{exported} protocols exported to {OUT} (latest = {latest})")
 
 
 if __name__ == "__main__":

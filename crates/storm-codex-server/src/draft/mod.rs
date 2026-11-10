@@ -1,6 +1,6 @@
-//! Moteur de draft HotS — pur (aucune I/O). Un format = une liste ordonnée d'étapes (chaque étape =
-//! rôle d'ordre et action) ; la machine d'état « marche » dessus. Le côté visuel (blue/red) est
-//! découplé de l'ordre : `first_pick` dit quel côté joue le rôle First. Sérialisable (persistance, WS).
+//! HotS draft engine — pure (no I/O). A format = an ordered list of steps (each step =
+//! order role and action); the state machine "walks" on it. The visual side (blue/red) is
+//! decoupled from the order: `first_pick` says which side plays the First role. Serialisable (persistence, WS).
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -16,7 +16,7 @@ pub use replay::ReplayState;
 
 pub const SCHEMA_VERSION: i32 = 2;
 
-/// Côté visuel (couleur/position) — INDÉPENDANT de l'ordre de draft.
+/// Visual side (colour/position) — INDEPENDENT of the draft order.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Side {
@@ -32,7 +32,7 @@ impl Side {
     }
 }
 
-/// Rôle d'ordre — qui draft en premier. `first_pick: Side` mappe First→un côté.
+/// Order role — who drafts first. `first_pick: Side` maps First→a side.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Order {
@@ -47,7 +47,7 @@ pub enum Action {
     Pick,
 }
 
-/// Une étape est définie en rôle d'ordre (pas en couleur) : c'est ce qui décorrèle first-pick et side.
+/// A step is defined in order role (not in colour): that is what decouples first-pick and side.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct Step {
     pub order: Order,
@@ -67,7 +67,7 @@ pub enum DraftError {
     Unavailable,
     Complete,
     NothingToUndo,
-    /// Aucune partie de replay chargée/sélectionnée (ou index hors file).
+    /// No replay game loaded/selected (or index outside the queue).
     NoGame,
 }
 
@@ -81,7 +81,7 @@ pub struct TeamInfo {
 pub struct DraftState {
     pub schema_version: i32,
     pub format: Format,
-    /// Quel CÔTÉ joue le rôle First — réglage indépendant du nommage blue/red.
+    /// Which SIDE plays the First role — setting independent of the blue/red naming.
     pub first_pick: Side,
     pub map: String,
     pub blue: TeamInfo,
@@ -89,18 +89,18 @@ pub struct DraftState {
     /// [blue, red].
     pub score: [u8; 2],
     pub bo: u8,
-    /// En rôle d'ordre (First/Second), indépendant du side.
+    /// In order role (First/Second), independent of the side.
     pub steps: Vec<Step>,
     pub cursor: usize,
-    /// Parallèle à `steps` : héros assigné à l'étape i (None si pas encore joué).
+    /// Parallel to `steps`: hero assigned to step i (None if not played yet).
     pub assignments: Vec<Option<String>>,
     pub manual_unavailable: BTreeSet<String>,
-    /// Fearless : héros pické aux parties précédentes de la série (dérivé de `series_games`).
+    /// Fearless: heroes picked in the previous games of the series (derived from `series_games`).
     pub series_bans: BTreeSet<String>,
-    /// Historique de série (fearless) : picks de chaque partie terminée.
+    /// Series history (fearless): picks of each finished game.
     #[serde(default)]
     pub series_games: Vec<Vec<String>>,
-    /// Draft depuis un replay (file, lecture auto) — vide hors de ce mode. Cf. `replay.rs`.
+    /// Draft from a replay (queue, auto playback) — empty outside this mode. See `replay.rs`.
     #[serde(default)]
     pub replay: ReplayState,
 }
@@ -134,7 +134,7 @@ impl DraftState {
         }
     }
 
-    /// Résout un rôle d'ordre en côté visuel selon `first_pick` (le découplage).
+    /// Resolves an order role into a visual side according to `first_pick` (the decoupling).
     pub fn side_of(&self, order: Order) -> Side {
         if order == Order::First {
             self.first_pick
@@ -194,29 +194,29 @@ impl DraftState {
     pub fn seed_series(&mut self, heroes: &[String]) {
         self.series_bans = heroes.iter().cloned().collect();
     }
-    /// Clôt la partie courante : archive ses picks et démarre une nouvelle partie dont les series
-    /// bans (fearless) cumulent tous les picks des parties précédentes. Garde la config + le score.
+    /// Closes the current game: archives its picks and starts a new game whose series
+    /// bans (fearless) accumulate all the picks of the previous games. Keeps the config + the score.
     pub fn start_next_game(&mut self) {
         self.series_games.push(self.picked_heroes());
         let seed: BTreeSet<String> = self.series_games.iter().flatten().cloned().collect();
         self.reset();
         self.series_bans = seed;
     }
-    /// Repart sur une série vierge (vide l'historique + les series bans).
+    /// Starts over on a fresh series (clears the history + the series bans).
     pub fn new_series(&mut self) {
         self.series_games.clear();
         self.series_bans.clear();
         self.reset();
     }
-    /// Aligne le moteur sur le format d'une série de cast qui démarre : `format` + `steps` reconstruits,
-    /// partie neuve (curseur 0, assignations vides) et NOUVELLE série (historique et series bans vidés).
-    /// Garde map, first_pick, prébans manuels, équipes et la file de replays (partie courante désélectionnée, lecture auto stoppée).
+    /// Aligns the engine on the format of a starting cast series: `format` + `steps` rebuilt,
+    /// new game (cursor 0, empty assignments) and NEW series (history and series bans cleared).
+    /// Keeps map, first_pick, manual pre-bans, teams and the replay queue (current game deselected, auto playback stopped).
     pub fn align_to_series(&mut self, format: Format) {
         self.format = format;
         self.steps = steps_for(format);
         self.new_series();
-        // comme `config` : la file survit (queue, fearless, interval), mais la partie courante est désélectionnée
-        // et la lecture auto stoppée (son script ne correspond plus aux steps reconstruits)
+        // like `config`: the queue survives (queue, fearless, interval), but the current game is deselected
+        // and auto playback stopped (its script no longer matches the rebuilt steps)
         let replay = std::mem::take(&mut self.replay);
         self.replay = ReplayState {
             current: None,
@@ -225,7 +225,7 @@ impl DraftState {
             ..replay
         };
     }
-    /// Héros pické dans la partie courante (pour alimenter l'historique de série fearless).
+    /// Heroes picked in the current game (to feed the fearless series history).
     pub fn picked_heroes(&self) -> Vec<String> {
         self.steps
             .iter()
@@ -234,8 +234,8 @@ impl DraftState {
             .filter_map(|(_, a)| a.clone())
             .collect()
     }
-    /// Longueur du bloc d'étapes consécutives du même rôle d'ordre (= même côté) depuis le curseur,
-    /// pour le timer **par phase** (le compte à rebours couvre tout le bloc, pas chaque pick).
+    /// Length of the block of consecutive steps of the same order role (= same side) from the cursor,
+    /// for the **per-phase** timer (the countdown covers the whole block, not each pick).
     pub fn current_phase_len(&self) -> usize {
         let Some(step) = self.current_step() else {
             return 0;
@@ -332,7 +332,7 @@ mod tests {
 
     #[test]
     fn first_pick_is_independent_of_side() {
-        // first_pick = Red : le rôle First est joué par le CÔTÉ rouge.
+        // first_pick = Red: the First role is played by the red SIDE.
         let d = DraftState::new(Format::Standard, Side::Red, "Sky Temple".into());
         assert_eq!(d.active_side(), Some(Side::Red));
         let d2 = DraftState::new(Format::Standard, Side::Blue, "Sky Temple".into());
@@ -342,11 +342,11 @@ mod tests {
     #[test]
     fn current_phase_len_groups_consecutive_same_order() {
         let mut d = new_standard();
-        assert_eq!(d.current_phase_len(), 1); // étape 1 = ban First, isolée
+        assert_eq!(d.current_phase_len(), 1); // step 1 = First ban, isolated
         for i in 0..5 {
             d.apply(&format!("h{i}")).unwrap();
         }
-        assert_eq!(d.current_phase_len(), 2); // étapes 6-7 = 2 picks Second consécutifs
+        assert_eq!(d.current_phase_len(), 2); // steps 6-7 = 2 consecutive Second picks
     }
 
     #[test]
@@ -355,13 +355,13 @@ mod tests {
         for i in 0..16 {
             d.apply(&format!("h{i}")).unwrap();
         }
-        let picks = d.picked_heroes(); // 10 picks de la partie 1
+        let picks = d.picked_heroes(); // 10 picks of game 1
         d.start_next_game();
         assert_eq!(d.cursor, 0);
         assert_eq!(d.series_games.len(), 1);
-        // chaque héros pické en partie 1 est désormais indisponible en partie 2
+        // each hero picked in game 1 is now unavailable in game 2
         for h in &picks {
-            assert!(d.is_unavailable(h), "{h} devrait être banni (fearless)");
+            assert!(d.is_unavailable(h), "{h} should be banned (fearless)");
         }
         d.new_series();
         assert!(d.series_games.is_empty());
@@ -374,7 +374,7 @@ mod tests {
         for i in 0..5 {
             d.apply(&format!("h{i}")).unwrap();
         }
-        // 4 bans + 1 pick joués → un seul pické (h4).
+        // 4 bans + 1 pick played → a single picked one (h4).
         assert_eq!(d.picked_heroes(), vec!["h4".to_string()]);
     }
 }

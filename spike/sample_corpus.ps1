@@ -1,4 +1,4 @@
-# Jalon 0 — échantillon stratifié de 50 replays (2023→2026) vers corpus/spike50
+# Milestone 0 — stratified sample of 50 replays (2023→2026) into corpus/spike50
 $src = "$env:USERPROFILE\Documents\Heroes of the Storm\Accounts\*\*\Replays\Multiplayer"
 $dst = Join-Path $PSScriptRoot "..\corpus\spike50"
 New-Item -ItemType Directory -Force $dst | Out-Null
@@ -6,7 +6,7 @@ Get-ChildItem $dst -Filter *.StormReplay -ErrorAction SilentlyContinue | Remove-
 
 $all = Get-ChildItem "$src\*.StormReplay" | Sort-Object LastWriteTime
 $pick = [System.Collections.Generic.List[object]]::new()
-$all | Select-Object -Last 3 | ForEach-Object { $pick.Add($_) }            # 3 plus récents garantis
+$all | Select-Object -Last 3 | ForEach-Object { $pick.Add($_) }            # 3 most recent guaranteed
 $years = $all | Group-Object { $_.LastWriteTime.Year } | Sort-Object Name
 $quota = [Math]::Ceiling(50 / [Math]::Max(1, $years.Count))
 foreach ($g in $years) {
@@ -23,5 +23,5 @@ $pick | Sort-Object LastWriteTime |
   Select-Object @{n='name';e={$_.Name}}, @{n='bytes';e={$_.Length}},
                 @{n='mtime';e={$_.LastWriteTime.ToString('s')}} |
   Export-Csv (Join-Path $dst 'manifest.csv') -NoTypeInformation
-"$((Get-ChildItem $dst -Filter *.StormReplay).Count) replays copiés"
+"$((Get-ChildItem $dst -Filter *.StormReplay).Count) replays copied"
 ($pick | Group-Object { $_.LastWriteTime.Year } | Sort-Object Name | ForEach-Object { "$($_.Name): $($_.Count)" }) -join ' · '

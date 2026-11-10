@@ -1,88 +1,94 @@
 # Project Rules — Storm Codex
 
-Règles propres au projet. GADS les charge via `CLAUDE.md` (`@gads/PROJECT.md`) ; `AGENTS.md` y renvoie les autres agents. Contenu repris tel quel de l'ancien `CLAUDE.md`.
+Project-specific rules. GADS loads them via `CLAUDE.md` (`@gads/PROJECT.md`); `AGENTS.md` points other agents here. Content carried over from the former `CLAUDE.md`.
 
-## Commandes (identiques à la CI)
+## Commands (same as CI)
 
-- Rust : `cargo clippy --workspace --all-targets -- -D warnings` puis `cargo test --workspace`.
-- Web (dans `web/`) : `npm ci`, `npm test` (vitest), `npm run build` (tsc + vite).
+- Rust: `cargo clippy --workspace --all-targets -- -D warnings` then `cargo test --workspace`.
+- Web (in `web/`): `npm ci`, `npm test` (vitest), `npm run build` (tsc + vite).
 
-> Chargé à chaque session. **Le développement se pilote depuis la documentation** — dans l'ordre :
-> 1. `git fetch origin` (le clone local est souvent en retard — plusieurs machines poussent) ;
-> 2. `docs/STATUS.md` — état + prochaine étape (le mettre à jour en fin de session) ;
-> 3. `docs/spec/` — **spec vivante** : lire la section du domaine touché AVANT de modifier ;
->    `docs/spec/10-developpement.md` est le contrat de travail (cycle spec-first, checklist).
-> La spec programme (`docs/specs/2026-06-12-storm-codex-design.md`, + suites datées) est validée
-> par l'opérateur : ne pas re-trancher ses décisions sans lui.
+> Loaded at every session. **Development is driven from the documentation** — in order:
+> 1. `git fetch origin` (the local clone is often behind — several machines push);
+> 2. `docs/STATUS.md` — state + next step (update it at the end of the session);
+> 3. `docs/spec/` — **living spec**: read the section of the affected area BEFORE changing anything;
+>    `docs/spec/10-developpement.md` is the working contract (spec-first cycle, checklist).
+> The programme spec (`docs/specs/2026-06-12-storm-codex-design.md`, + dated follow-ups) is approved
+> by the operator: do not re-decide its decisions without them.
 
-## Règle n° 0 — pas de modification sans documentation
+## Rule no. 0 — no change without documentation
 
-**Interdit** de modifier un fichier qui porte un contrat (endpoint, migration, projection,
-event, page/route, env, CI, budget perf) sans mettre à jour la section `docs/spec/`
-correspondante **dans le même commit**. Mapping et preuves exigées par type de changement :
-tableau de `docs/spec/10-developpement.md`. Un diff de code sans son diff de doc est un
-changement **incomplet** — le compléter avant de committer. Seule exception : refactor/typo
-strictement sans changement de contrat, et le message de commit l'affirme explicitement.
-Toute **décision de conception** (nouvelle capacité, scope, architecture) passe d'abord par une
-spec datée `docs/specs/` validée par l'opérateur — l'IA ne l'implémente pas de sa propre
+It is **forbidden** to modify a file that carries a contract (endpoint, migration, projection,
+event, page/route, env, CI, perf budget) without updating the matching `docs/spec/` section
+**in the same commit**. Mapping and required evidence per type of change:
+table in `docs/spec/10-developpement.md`. A code diff without its doc diff is an
+**incomplete** change — complete it before committing. Only exception: refactor/typo
+strictly without contract change, and the commit message says so explicitly.
+Any **design decision** (new capability, scope, architecture) first goes through a
+dated spec in `docs/specs/` approved by the operator — the AI does not implement it on its own
 initiative.
 
-## Ce qu'est le projet
-Rénovation complète de Stats of the Storm (tracker de stats HotS) : crates Rust open-source
-(`storm-replay` décodage, `storm-stats` analyse), serveur unique `storm-codex-server` (axum +
-Postgres + WS) sur le box, SPA React au design system Nexus Codex, widget stream OBS, intégration
-Jarvis (événements Redis) et uploader `client-rs` existant (repo Hots-Overlay).
+## Language
 
-## Règles dures
-1. **Un plan par jalon** (0→6 dans la spec), dans l'ordre ; chaque jalon a un critère
-   d'acceptation mesurable — il n'est « fini » que critère vérifié.
-2. **Jalon 0 d'abord** : spike go/no-go (décoder 3 replays réels en Rust, bench 50 fichiers vs
-   .NET/Python ; accept < 500 ms/replay). Si no-go → repli .NET documenté, même architecture.
-3. **Parité stats prouvée, pas déclarée** : storm-stats est validé par diff automatique contre
-   hots-parser (Node) sur un corpus de référence. Pas de jalon 2 sans diff vert.
-4. **Budgets perf de la spec** = contrats : parse < 150 ms/replay, fin de partie → page < 5 s,
-   API p95 < 100 ms, backfill 3 ans < 5 min. Mesurer, pas estimer.
-5. **3 étages de données** : replay brut archivé (source de vérité) ; Postgres = projection
-   complète (`parser_version` partout, re-process idempotent) ; dump décodé à la volée + cache
-   LRU. Jamais de pré-décodage massif.
-6. Événements vers Jarvis : invariants du spine (schema_version, correlation_id/causation_id,
-   occurred_at/recorded_at, `entity.verb` au passé).
-7. Le référentiel héros/talents vient de l'API HotsPatchNotes (répliqué en `dim_*` au démarrage) —
-   pas de second pipeline de sync.
+Docs, code comments, log and error messages, and commit messages are written in **English**.
+The UI is in English too. Existing file names stay as they are (some are French slugs) so links keep
+working, and already-applied SQL migrations are never edited, even for comments.
 
-## Environnement
-- Box : matella@192.168.129.85 (serveur du soir ~18h→nuit) ; Postgres/Redis Jarvis dessus ;
-  HotsPatchNotes api :5001 / web :5100 ; overlay Node :8086 (à décommissionner au jalon 5,
-  l'EBS Twitch Azure reste). Déploiement : rsync + docker compose build (pas de `git pull` box).
-- PC de jeu Windows : replays dans `Documents/Heroes of the Storm/Accounts/*/*/Replays/Multiplayer`
-  (~3 000 fichiers, 2–3 GB) ; uploader = `client-rs` (repo Hots-Overlay).
-- Corpus de tests : NAS/box + script `fetch-corpus` ; mini-corpus committé pour CI publique.
+## What the project is
+A complete renovation of Stats of the Storm (HotS stats tracker): open-source Rust crates
+(`storm-replay` decoding, `storm-stats` analysis), a single `storm-codex-server` server (axum +
+Postgres + WS) on the box, a React SPA with the Nexus Codex design system, an OBS stream widget, Jarvis
+integration (Redis events) and the existing `client-rs` uploader (Hots-Overlay repo).
 
-## Repos externes — quoi cloner, où, et quand
-Ce repo est **autosuffisant pour les jalons 0→2** (spike, storm-replay, storm-stats) : aucune
-dépendance locale aux autres projets. Le jalon 0 se fait idéalement **sur le PC de jeu Windows**
-(les replays y sont ; toolchains Rust/.NET/Python s'installent là-bas).
+## Hard rules
+1. **One plan per milestone** (0→6 in the spec), in order; each milestone has a measurable
+   acceptance criterion — it is only "done" once the criterion is verified.
+2. **Milestone 0 first**: go/no-go spike (decode 3 real replays in Rust, bench 50 files vs
+   .NET/Python; accept < 500 ms/replay). If no-go → documented .NET fallback, same architecture.
+3. **Stats parity proven, not claimed**: storm-stats is validated by an automatic diff against
+   hots-parser (Node) on a reference corpus. No milestone 2 without a green diff.
+4. **The spec's perf budgets** = contracts: parse < 150 ms/replay, end of game → page < 5 s,
+   API p95 < 100 ms, 3-year backfill < 5 min. Measure, do not estimate.
+5. **3 data tiers**: archived raw replay (source of truth); Postgres = complete
+   projection (`parser_version` everywhere, idempotent re-process); dump decoded on the fly + LRU
+   cache. Never any mass pre-decoding.
+6. Events to Jarvis: spine invariants (schema_version, correlation_id/causation_id,
+   occurred_at/recorded_at, past-tense `entity.verb`).
+7. The hero/talent reference data comes from the HotsPatchNotes API (replicated into `dim_*` at startup) —
+   no second sync pipeline.
 
-| Repo | Où | Nécessaire pour |
+## Environment
+- Box: matella@192.168.129.85 (evening server ~6pm→night); Jarvis Postgres/Redis on it;
+  HotsPatchNotes api :5001 / web :5100; Node overlay :8086 (to be decommissioned at milestone 5,
+  the Twitch Azure EBS stays). Deployment: rsync + docker compose build (no `git pull` on the box).
+- Windows gaming PC: replays in `Documents/Heroes of the Storm/Accounts/*/*/Replays/Multiplayer`
+  (~3,000 files, 2–3 GB); uploader = `client-rs` (Hots-Overlay repo).
+- Test corpus: NAS/box + `fetch-corpus` script; mini-corpus committed for public CI.
+
+## External repos — what to clone, where, and when
+This repo is **self-sufficient for milestones 0→2** (spike, storm-replay, storm-stats): no
+local dependency on the other projects. Milestone 0 is ideally done **on the Windows gaming PC**
+(the replays are there; the Rust/.NET/Python toolchains are installed there).
+
+| Repo | Where | Needed for |
 |---|---|---|
-| ebshimizu/hots-parser | GitHub public (npm) | jalon 2 — harnais de diff de parité (cloner n'importe où) |
-| ebshimizu/stats-of-the-storm | GitHub public | référence fonctionnelle (déjà résumé dans docs/research) |
-| Blizzard/heroprotocol | GitHub public | génération des tables de protocole (jalons 0–1) |
-| matella Hots-Overlay | GitHub (privé) | jalon 3 — adapter `client-rs` (mode backfill, re-pointage) |
-| matella HeroesOfTheStormPatchNotes | GitHub (privé) | jalon 4 — référentiel consommé **via l'API du box** (:5001, Tailscale) ; le clone n'est utile que pour lire le code |
-| Jarvis | **pas sur GitHub** (remote box uniquement) | jalon 5 — le connecteur s'écrit depuis le Mac/box ; rien à cloner sur le PC |
+| ebshimizu/hots-parser | public GitHub (npm) | milestone 2 — parity diff harness (clone anywhere) |
+| ebshimizu/stats-of-the-storm | public GitHub | functional reference (already summarised in docs/research) |
+| Blizzard/heroprotocol | public GitHub | generation of the protocol tables (milestones 0–1) |
+| matella Hots-Overlay | GitHub (private) | milestone 3 — adapt `client-rs` (backfill mode, re-pointing) |
+| matella HeroesOfTheStormPatchNotes | GitHub (private) | milestone 4 — reference data consumed **via the box's API** (:5001, Tailscale); the clone is only useful to read the code |
+| Jarvis | **not on GitHub** (box remote only) | milestone 5 — the connector is written from the Mac/box; nothing to clone on the PC |
 
-Accès box depuis n'importe où : Tailscale (route subnet active) → 192.168.129.85 (SSH + APIs),
-le soir quand le box tourne. Les jalons 0–2 n'ont pas besoin du box du tout.
+Box access from anywhere: Tailscale (subnet route active) → 192.168.129.85 (SSH + APIs),
+in the evening when the box is running. Milestones 0–2 do not need the box at all.
 
 ## Conventions
-Rust 2021+, clippy strict, erreurs typées (`thiserror`), pas de `unwrap()` hors tests ;
-front React + Vite + TS + TanStack + uPlot, tokens Nexus Codex ; commits conventionnels ;
-secrets uniquement dans le .env du box, jamais commités.
+Rust 2021+, strict clippy, typed errors (`thiserror`), no `unwrap()` outside tests;
+React + Vite + TS + TanStack + uPlot front-end, Nexus Codex tokens; conventional commits;
+secrets only in the box's .env, never committed.
 
-**Documentation à jour obligatoire — MCP Context7.** Avant d'utiliser une API de bibliothèque ou
-de framework (axum, tokio, sqlx, serde, egui, TanStack, uPlot, React, Vite…), interroger le MCP
-**Context7** (`resolve-library-id` puis `query-docs`) pour la doc actuelle — ne pas se fier à la
-mémoire du modèle (versions/API qui bougent : axum et TanStack en particulier). Vaut pour la
-syntaxe, la config, les migrations de version et le débogage spécifique à une lib. Si Context7
-n'est pas connecté dans la session, le signaler plutôt que de coder de mémoire.
+**Up-to-date documentation is mandatory — Context7 MCP.** Before using a library or
+framework API (axum, tokio, sqlx, serde, egui, TanStack, uPlot, React, Vite…), query the
+**Context7** MCP (`resolve-library-id` then `query-docs`) for the current docs — do not rely on the
+model's memory (moving versions/APIs: axum and TanStack in particular). Applies to
+syntax, config, version migrations and library-specific debugging. If Context7
+is not connected in the session, say so rather than coding from memory.

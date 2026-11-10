@@ -1,11 +1,11 @@
-//! Auth admin partagée (`admin.rs` + `manage.rs`) : Bearer contre `ADMIN_TOKEN`.
-//! `ADMIN_TOKEN` absent/vide = **mode ouvert** (auto-hébergement local, LAN/Tailscale).
+//! Shared admin auth (`admin.rs` + `manage.rs`): Bearer against `ADMIN_TOKEN`.
+//! `ADMIN_TOKEN` missing/empty = **open mode** (local self-hosting, LAN/Tailscale).
 
 use axum::http::HeaderMap;
 use sha2::{Digest, Sha256};
 
-/// `true` si la requête est autorisée à écrire : mode ouvert (pas de token configuré)
-/// ou `Authorization: Bearer <token>` exact (espaces tolérés autour du token).
+/// `true` if the request is allowed to write: open mode (no token configured)
+/// or exact `Authorization: Bearer <token>` (spaces tolerated around the token).
 pub fn is_admin(headers: &HeaderMap, configured: Option<&str>) -> bool {
     let Some(token) = configured else { return true };
     let Some(given) = headers
@@ -16,8 +16,8 @@ pub fn is_admin(headers: &HeaderMap, configured: Option<&str>) -> bool {
     else {
         return false;
     };
-    // On compare les empreintes SHA-256 octet par octet sans sortie anticipée : la durée de la
-    // comparaison ne révèle pas la longueur du préfixe correct du token.
+    // We compare the SHA-256 digests byte by byte without early exit: the duration of the
+    // comparison does not reveal the length of the token's correct prefix.
     let (a, b) = (
         Sha256::digest(given.as_bytes()),
         Sha256::digest(token.as_bytes()),
@@ -28,16 +28,16 @@ pub fn is_admin(headers: &HeaderMap, configured: Option<&str>) -> bool {
         == 0
 }
 
-/// Préfixes des écritures de la régie (cast) et du simulateur de draft : elles changent ce qui
-/// passe à l'antenne dans OBS. Avec `ADMIN_TOKEN`, elles exigent le Bearer admin comme le reste
-/// de l'API d'écriture ; en mode ouvert, rien ne change. Les lectures (GET/HEAD) restent libres :
-/// les overlays OBS n'envoient pas de token.
+/// Prefixes of the control room (cast) and draft simulator writes: they change what
+/// goes on air in OBS. With `ADMIN_TOKEN`, they require the admin Bearer like the rest
+/// of the write API; in open mode, nothing changes. Reads (GET/HEAD) stay free:
+/// the OBS overlays do not send a token.
 const GUARDED_PREFIXES: [&str; 3] = ["/api/cast", "/api/draft", "/api/lobby"];
 
 pub fn is_guarded_write(method: &axum::http::Method, path: &str) -> bool {
     use axum::http::Method;
     let read = matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS);
-    // `POST /api/lobby` = ingestion du companion, déjà authentifiée par token d'upload.
+    // `POST /api/lobby` = companion ingestion, already authenticated by an upload token.
     let ingest = *method == Method::POST && path == "/api/lobby";
     !read
         && !ingest
@@ -46,7 +46,7 @@ pub fn is_guarded_write(method: &axum::http::Method, path: &str) -> bool {
             .any(|p| path == *p || path.starts_with(&format!("{p}/")))
 }
 
-/// Middleware : `401 {error}` sur une écriture cast/draft sans Bearer admin valide.
+/// Middleware: `401 {error}` on a cast/draft write without a valid admin Bearer.
 pub async fn guard_writes(
     axum::extract::State(state): axum::extract::State<crate::AppState>,
     request: axum::extract::Request,
@@ -98,9 +98,9 @@ mod tests {
     fn mauvais_ou_absent_refuse() {
         assert!(!is_admin(&headers(Some("Bearer faux")), Some("s3cret")));
         assert!(!is_admin(&headers(None), Some("s3cret")));
-        // schéma non-Bearer refusé
+        // non-Bearer scheme refused
         assert!(!is_admin(&headers(Some("Basic s3cret")), Some("s3cret")));
-        // le token seul, sans le préfixe Bearer, est refusé
+        // the token alone, without the Bearer prefix, is refused
         assert!(!is_admin(&headers(Some("s3cret")), Some("s3cret")));
     }
 
@@ -115,10 +115,10 @@ mod tests {
         assert!(!is_guarded_write(&Method::GET, "/api/cast"));
         assert!(!is_guarded_write(&Method::GET, "/api/cast/logo/blue"));
         assert!(!is_guarded_write(&Method::GET, "/api/draft/replay"));
-        // préfixe voisin non concerné
+        // neighbouring prefix not concerned
         assert!(!is_guarded_write(&Method::POST, "/api/castle"));
         assert!(!is_guarded_write(&Method::POST, "/api/upload"));
-        // lobby : corrections manuelles gardées, ingestion (token d'upload) non
+        // lobby: manual corrections guarded, ingestion (upload token) not
         assert!(is_guarded_write(&Method::POST, "/api/lobby/hero"));
         assert!(is_guarded_write(&Method::DELETE, "/api/lobby"));
         assert!(!is_guarded_write(&Method::POST, "/api/lobby"));

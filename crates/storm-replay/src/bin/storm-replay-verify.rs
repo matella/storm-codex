@@ -1,6 +1,6 @@
-//! Sweep de validation : décode les 7 streams de chaque `.StormReplay` d'un répertoire
-//! (récursif), classe les échecs par type d'erreur. Critère jalon 1 : 100 % décodés.
-//! Usage : storm-replay-verify <dir> [--csv <fichier>]
+//! Validation sweep: decodes the 7 streams of each `.StormReplay` of a directory
+//! (recursive), classifies the failures by error type. Milestone 1 criterion: 100% decoded.
+//! Usage: storm-replay-verify <dir> [--csv <file>]
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -50,18 +50,18 @@ fn main() {
         [dir] => (PathBuf::from(dir), None),
         [dir, flag, csv] if flag == "--csv" => (PathBuf::from(dir), Some(PathBuf::from(csv))),
         _ => {
-            eprintln!("usage : storm-replay-verify <dir> [--csv <fichier>]");
+            eprintln!("usage: storm-replay-verify <dir> [--csv <file>]");
             std::process::exit(2);
         }
     };
 
     let mut files = Vec::new();
     if let Err(e) = collect(&dir, &mut files) {
-        eprintln!("parcours de {} : {e}", dir.display());
+        eprintln!("walking {}: {e}", dir.display());
         std::process::exit(1);
     }
     files.sort();
-    println!("{} replays sous {}", files.len(), dir.display());
+    println!("{} replays under {}", files.len(), dir.display());
 
     let t0 = Instant::now();
     let mut rows = vec!["name,base_build,fallback,ok,error_class,error".to_owned()];
@@ -100,23 +100,23 @@ fn main() {
 
     if let Some(csv_path) = csv {
         if let Err(e) = std::fs::write(&csv_path, rows.join("\n") + "\n") {
-            eprintln!("écriture CSV {} : {e}", csv_path.display());
+            eprintln!("CSV write {}: {e}", csv_path.display());
         }
     }
 
     println!(
-        "\n{ok}/{} décodés ({:.1} %) en {secs:.0} s — {fallbacks} via fallback protocole",
+        "\n{ok}/{} decoded ({:.1} %) in {secs:.0} s — {fallbacks} via protocol fallback",
         files.len(),
         100.0 * ok as f64 / files.len().max(1) as f64,
     );
     println!(
-        "builds distincts : {} ({} → {})",
+        "distinct builds: {} ({} → {})",
         by_build.len(),
         by_build.keys().next().copied().unwrap_or(0),
         by_build.keys().last().copied().unwrap_or(0),
     );
     if !by_class.is_empty() {
-        println!("échecs par classe : {by_class:?}");
+        println!("failures per class: {by_class:?}");
         std::process::exit(1);
     }
 }

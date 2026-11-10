@@ -1,5 +1,5 @@
-//! Fixtures d'intégration. Ignorées sans `DATABASE_URL` (comme `api_tests`) : lancer avec le
-//! Postgres Docker du dev. Base partagée entre tests → toujours des toon/pseudos `uuid`.
+//! Integration fixtures. Skipped without `DATABASE_URL` (like `api_tests`): run with the
+//! dev Docker Postgres. Database shared between tests → always `uuid` toons/nicknames.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use chrono::{DateTime, Duration, TimeZone, Utc};
@@ -7,7 +7,7 @@ use sqlx::PgPool;
 
 pub async fn test_pool() -> Option<PgPool> {
     let Ok(url) = std::env::var("DATABASE_URL") else {
-        eprintln!("DATABASE_URL absent → test d'intégration joueurs ignoré");
+        eprintln!("DATABASE_URL missing → players integration test skipped");
         return None;
     };
     let db = sqlx::postgres::PgPoolOptions::new()
@@ -43,7 +43,7 @@ pub fn row<'a>(toon: &'a str, name: &'a str, team: i32, hero: &'a str) -> Row<'a
     }
 }
 
-/// Insère une partie et ses joueurs (+ l'UPSERT `players` comme `project.rs`). Renvoie `matches.id`.
+/// Inserts a game and its players (+ the `players` UPSERT like `project.rs`). Returns `matches.id`.
 pub async fn insert_match(db: &PgPool, played_at: Option<DateTime<Utc>>, rows: &[Row<'_>]) -> i64 {
     let fp = format!("test-{}", uid());
     let id: i64 = sqlx::query_scalar(
@@ -83,7 +83,7 @@ pub async fn insert_match(db: &PgPool, played_at: Option<DateTime<Utc>>, rows: &
     id
 }
 
-/// Crée un token d'upload fictif ; renvoie son id.
+/// Creates a fake upload token; returns its id.
 pub async fn make_token(db: &PgPool) -> i64 {
     sqlx::query_scalar("INSERT INTO upload_tokens (name, token_hash) VALUES ($1, $2) RETURNING id")
         .bind(format!("test-{}", uid()))
@@ -93,7 +93,7 @@ pub async fn make_token(db: &PgPool) -> i64 {
         .unwrap()
 }
 
-/// Enregistre qu'un token a uploadé une partie.
+/// Records that a token uploaded a game.
 pub async fn link_upload(db: &PgPool, token_id: i64, match_id: i64) {
     sqlx::query("INSERT INTO uploads (token_id, filename, fingerprint, status, match_id) VALUES ($1,'t.StormReplay',$2,'parsed',$3)")
         .bind(token_id)
@@ -104,9 +104,9 @@ pub async fn link_upload(db: &PgPool, token_id: i64, match_id: i64) {
         .unwrap();
 }
 
-/// Supprime TOUTES les données de fixtures : les parties `test-%` (CASCADE sur leurs joueurs), les
-/// joueurs qui n'apparaissent que dans ces parties, les tokens `test-%`. À lancer à la main (jamais
-/// pendant d'autres tests) ; les vrais joueurs n'apparaissent dans aucune partie `test-%`.
+/// Deletes ALL the fixture data: the `test-%` games (CASCADE on their players), the
+/// players who only appear in these games, the `test-%` tokens. To run by hand (never
+/// during other tests); the real players appear in no `test-%` game.
 /// `cargo test -p storm-codex-server purge_fixtures -- --ignored`
 pub async fn purge(db: &PgPool) -> u64 {
     let mut n = 0;
@@ -124,14 +124,14 @@ pub async fn purge(db: &PgPool) -> u64 {
 }
 
 #[tokio::test]
-#[ignore = "purge manuelle des fixtures"]
+#[ignore = "manual purge of the fixtures"]
 async fn purge_fixtures() {
     let Some(db) = test_pool().await else { return };
-    eprintln!("{} lignes de fixtures supprimées", purge(&db).await);
+    eprintln!("{} fixture rows deleted", purge(&db).await);
 }
 
-/// `n` parties où `me` (équipe 0) joue Muradin avec `mates` (équipe 0) contre 4 adversaires
-/// fixes, à partir de `start` (une partie par jour, 20 h UTC).
+/// `n` games where `me` (team 0) plays Muradin with `mates` (team 0) against 4 fixed
+/// opponents, from `start` (one game per day, 8 pm UTC).
 pub async fn games(
     db: &PgPool,
     me: &str,
@@ -162,7 +162,7 @@ pub struct World {
     pub opp: Vec<String>,
 }
 
-/// Cible et smurf : mêmes héros/talents/horaires, mêmes 3 amis, jamais dans la même partie.
+/// Target and smurf: same heroes/talents/hours, same 3 friends, never in the same game.
 pub async fn smurf_world(db: &PgPool) -> World {
     let u = uid();
     let target = format!("t-tgt{u}");
@@ -172,7 +172,7 @@ pub async fn smurf_world(db: &PgPool) -> World {
     let fr: Vec<&str> = friends.iter().map(String::as_str).collect();
     let t0 = Utc.with_ymd_and_hms(2025, 3, 1, 20, 0, 0).unwrap();
     games(db, &target, &fr, &opp, 18, t0).await;
-    // le smurf joue les jours « impairs » (décalé d'un jour entier + 1 h : pas de chevauchement)
+    // the smurf plays on the "odd" days (shifted by a whole day + 1 h: no overlap)
     games(db, &smurf, &fr, &opp, 18, t0 + Duration::hours(24 * 100)).await;
     World {
         db: db.clone(),

@@ -1,112 +1,112 @@
-# Draft depuis un replay — design
+# Draft from a replay — design
 
-> Spec storm-codex, à valider par l'opérateur avant tout code (Règle n° 0). Brainstorming du
-> 2026-10-25. S'appuie sur le simulateur de draft existant (`docs/specs/2026-06-19-draft-simulator-design.md`).
-> Les points marqués **[choix Claude]** sont des décisions prises sans l'opérateur : à relire.
+> storm-codex spec, to be approved by the operator before any code (Rule no. 0). Brainstorm of
+> 2026-10-25. Builds on the existing draft simulator (`docs/specs/2026-06-19-draft-simulator-design.md`).
+> Points marked **[Claude's choice]** are decisions taken without the operator: to be reviewed.
 
-## But
+## Goal
 
-L'opérateur caste des parties déjà jouées : il n'y a pas de draft en direct. Il charge un fichier
-`.StormReplay`, le draft de cette partie est **préparé** (carte, joueurs, séquence complète des
-bans/picks) mais **caché**, puis il le **déroule à la main** (ou en lecture auto). L'écran vu par
-le public est l'overlay OBS existant `/draft/overlay` ; la nouvelle page n'est que la télécommande.
+The operator casts games that have already been played: there is no live draft. They load a
+`.StormReplay` file, that game's draft is **prepared** (map, players, complete sequence of
+bans/picks) but **hidden**, then they **play it out by hand** (or with auto-play). The screen seen by
+the audience is the existing OBS overlay `/draft/overlay`; the new page is only the remote control.
 
-## Décisions actées (avec l'opérateur)
+## Decisions made (with the operator)
 
-1. **Page dédiée** `/draft/replay` : on y choisit/dépose un `.StormReplay` ; le draft est préparé à
-   l'étape 0 (rien de révélé), puis démarré manuellement.
-2. **Sortie = overlay OBS existant**, réutilisé (même état de draft, même WS `draft.updated`) avec les retouches minimes décrites plus bas.
-3. **Dans le périmètre V1** : lecture auto à minuterie, file de plusieurs replays (une série),
-   et fearless sur cette série (les picks des parties précédentes deviennent indisponibles).
+1. **Dedicated page** `/draft/replay`: a `.StormReplay` is chosen/dropped there; the draft is prepared at
+   step 0 (nothing revealed), then started manually.
+2. **Output = existing OBS overlay**, reused (same draft state, same `draft.updated` WS) with the minimal tweaks described below.
+3. **In V1 scope**: timed auto-play, queue of several replays (a series),
+   and fearless across that series (the picks of previous games become unavailable).
 
-## Ce que le replay fournit (déjà extrait par storm-stats, `process_draft`)
+## What the replay provides (already extracted by storm-stats, `process_draft`)
 
-`match.bans` et `match.picks` par équipe, dans l'ordre de chaque équipe ; `picks.first` (équipe
-first-pick) ; pour chaque joueur son héros et son pseudo. L'ordre global des 16 étapes est
-reconstruit par la séquence fixe du format Standard (même table que `selections` du parser).
-Les bans sont des codes attribut (`Crus`…) à résoudre via `/api/dim/hero-attributes` ; les picks
-sont déjà des noms canoniques. Clé héros du simulateur = nom canonique (inchangé).
+`match.bans` and `match.picks` per team, in each team's order; `picks.first` (first-pick
+team); for each player their hero and name. The global order of the 16 steps is
+rebuilt from the fixed sequence of the Standard format (same table as the parser's `selections`).
+Bans are attribute codes (`Crus`…) to be resolved via `/api/dim/hero-attributes`; picks
+are already canonical names. The simulator's hero key = canonical name (unchanged).
 
-Builds < 66292 : séquence de bans différente (2 bans par équipe en 1re phase, marqués « N/A ») —
-les étapes sans héros sont **sautées** (voir « étape vide »).
+Builds < 66292: different ban sequence (2 bans per team in the 1st phase, marked "N/A") —
+steps without a hero are **skipped** (see "empty step").
 
-## Conception
+## Design
 
-### Moteur (`draft/mod.rs`) — extension minimale
+### Engine (`draft/mod.rs`) — minimal extension
 
-- `DraftState` gagne `replay: Option<ReplayScript>` (`#[serde(default)]`, `schema_version` 2) :
-  `{ source: String, script: Vec<Option<String>>, players: Vec<Option<String>> , playing: bool, interval_ms: u32 /* 30000 par défaut */ }`
-  — `script[i]` = héros de l'étape i (`None` = étape vide), `players[i]` = pseudo du joueur du pick.
-- `reveal_next()` : applique `script[cursor]` (ou saute si `None`) ; réutilise `apply`/curseur. `undo`
-  et `reset` existants servent de retour arrière. `assignments` ne contient **que le déjà révélé** :
-  l'overlay n'affiche donc jamais le futur. Le script complet n'est servi qu'à la page replay.
-- **Étape vide** : ajout d'un `skip()` (curseur +1, assignation `None`), affichée « no ban » comme sur
-  la fiche de match.
-- Le format du draft préparé est **Standard** ; **Fearless** si la file est en mode fearless.
-  `first_pick` / côtés viennent du replay (équipe 0 = Blue, équipe 1 = Red **[choix Claude, à vérifier
-  sur un replay réel]**).
+- `DraftState` gains `replay: Option<ReplayScript>` (`#[serde(default)]`, `schema_version` 2):
+  `{ source: String, script: Vec<Option<String>>, players: Vec<Option<String>> , playing: bool, interval_ms: u32 /* 30000 by default */ }`
+  — `script[i]` = hero of step i (`None` = empty step), `players[i]` = name of the pick's player.
+- `reveal_next()`: applies `script[cursor]` (or skips if `None`); reuses `apply`/cursor. The existing `undo`
+  and `reset` serve to go back. `assignments` only contains **what has been revealed**:
+  the overlay therefore never shows the future. The complete script is only served to the replay page.
+- **Empty step**: a `skip()` is added (cursor +1, assignment `None`), displayed as "no ban" as on
+  the match page.
+- The prepared draft's format is **Standard**; **Fearless** if the queue is in fearless mode.
+  `first_pick` / sides come from the replay (team 0 = Blue, team 1 = Red **[Claude's choice, to be checked
+  on a real replay]**).
 
-### Décodage
+### Decoding
 
-- `POST /api/draft/replay/load` (octets bruts, comme `/api/upload-raw`) : décode **uniquement** le draft
-  (storm-replay + `process_draft`), **sans écrire la partie en base** **[choix Claude]** : charger un
-  replay pour caster ne doit pas polluer les stats. Réponse : métadonnées (map, joueurs, build, script).
-- **Seules les parties personnalisées (Custom) sont acceptées** (décision opérateur) : tout autre mode
-  (Quick Match, ARAM, Unranked/Hero League…) est refusé en 4xx avec un message clair.
-- Budget : < 500 ms pour un replay (parse < 150 ms + marge réseau local).
+- `POST /api/draft/replay/load` (raw bytes, like `/api/upload-raw`): decodes **only** the draft
+  (storm-replay + `process_draft`), **without writing the game to the database** **[Claude's choice]**: loading a
+  replay for casting must not pollute the stats. Response: metadata (map, players, build, script).
+- **Only custom games (Custom) are accepted** (operator decision): any other mode
+  (Quick Match, ARAM, Unranked/Hero League…) is refused with a 4xx and a clear message.
+- Budget: < 500 ms for a replay (parse < 150 ms + local network margin).
 
-### File de replays (série)
+### Replay queue (series)
 
-- `replay_queue: Vec<LoadedGame>` (picks/bans/joueurs de chaque partie) dans l'état, persistée comme
-  le reste (`draft_live`). Routes : ajout (`load`), retrait, réordonnancement, « jouer la partie N ».
-- Une partie terminée → « partie suivante » = `start_next_game()` existant : en mode fearless, les
-  picks cumulés des parties précédentes passent en `series_bans` (ruban déjà géré par l'overlay).
-- Le score et les noms d'équipe restent manuels (le replay n'en contient pas) **[choix Claude]** ; les
-  pseudos des 5 joueurs de chaque camp sont préremplis depuis le replay (mappés au pick de leur héros).
+- `replay_queue: Vec<LoadedGame>` (picks/bans/players of each game) in the state, persisted like
+  the rest (`draft_live`). Routes: add (`load`), remove, reorder, "play game N".
+- A finished game → "next game" = the existing `start_next_game()`: in fearless mode, the
+  accumulated picks of the previous games move into `series_bans` (ribbon already handled by the overlay).
+- The score and team names stay manual (the replay does not contain them) **[Claude's choice]**; the
+  names of the 5 players on each side are prefilled from the replay (mapped to their hero's pick).
 
-### Lecture
+### Playback
 
-- Unité de lecture = la **phase** (bloc d'étapes consécutives d'une même équipe, cf.
-  `current_phase_len`). Séquence Standard en 12 phases : ban, ban, ban, ban, 1 pick, 2 picks,
-  2 picks, ban, ban, 2 picks, 2 picks, 1 pick (confirmée par l'opérateur).
-- **Manuel** : bouton Suivant / touche Espace, Retour (undo d'une phase), Reset. Un clic = une phase
-  révélée **[choix Claude : les 2 picks d'une phase apparaissent ensemble]**.
-- **Auto** : Play/Pause, **30 s par phase** (décision opérateur ; réglable, 30 s par défaut), timer côté
-  serveur (autoritatif, comme l'état) pour résister au rafraîchissement ; s'arrête à la fin du draft.
-  Durée totale ≈ 6 min.
-- Raccourcis clavier actifs même quand la page n'a pas le focus OBS (la page replay est dans un
-  navigateur à part de la browser source) : rien à faire côté OBS.
+- Playback unit = the **phase** (block of consecutive steps of the same team, see
+  `current_phase_len`). Standard sequence in 12 phases: ban, ban, ban, ban, 1 pick, 2 picks,
+  2 picks, ban, ban, 2 picks, 2 picks, 1 pick (confirmed by the operator).
+- **Manual**: Next button / Space key, Back (undo one phase), Reset. One click = one phase
+  revealed **[Claude's choice: the 2 picks of a phase appear together]**.
+- **Auto**: Play/Pause, **30 s per phase** (operator decision; adjustable, 30 s by default), server-side
+  timer (authoritative, like the state) to survive a refresh; stops at the end of the draft.
+  Total duration ≈ 6 min.
+- Keyboard shortcuts active even when the page does not have the OBS focus (the replay page is in a
+  browser separate from the browser source): nothing to do on the OBS side.
 
-### Routes et événements
+### Routes and events
 
-`POST /api/draft/replay/load`, `/replay/next`, `/replay/back`, `/replay/play` `{playing, interval_ms}` (défaut 30000),
-`/replay/queue/*` ; `GET /api/draft/replay` (script complet, réservé à la page). Aucun nouvel event :
-`draft.updated` suffit. Mode ouvert (comme les routes draft existantes).
+`POST /api/draft/replay/load`, `/replay/next`, `/replay/back`, `/replay/play` `{playing, interval_ms}` (default 30000),
+`/replay/queue/*`; `GET /api/draft/replay` (complete script, reserved for the page). No new event:
+`draft.updated` is enough. Open mode (like the existing draft routes).
 
 ### Frontend
 
-Nouvelle route `/draft/replay` (React, tokens existants) : zone de dépôt, liste de la file (partie en
-cours en surbrillance), aperçu **non spoilant** de la séquence (étapes numérotées, héros masqués
-jusqu'à révélation), contrôles Suivant/Retour/Reset/Play, bascule fearless, bouton « partie suivante ».
-`/draft/overlay` : changements **minimes** (maquettes : `docs/draft-replay-mockup.html`) — bannière « Draft prêt — en attente » tant que le curseur est à 0 en mode replay ; cases de bans vides en pointillés ; barre de timer pilotée par l'intervalle de lecture auto (au lieu des 45 s fixes) et inactive en lecture manuelle. Les **pseudos des joueurs ne s'affichent qu'avec leur héros révélé** (l'API publique `GET /api/draft` masque le pseudo d'un pick non révélé en mode replay **[choix Claude]**) : rien n'est spoilé.
+New route `/draft/replay` (React, existing tokens): drop zone, queue list (current game
+highlighted), **non-spoiling** preview of the sequence (numbered steps, heroes hidden
+until revealed), Next/Back/Reset/Play controls, fearless toggle, "next game" button.
+`/draft/overlay`: **minimal** changes (mockups: `docs/draft-replay-mockup.html`) — "Draft ready — waiting" banner while the cursor is at 0 in replay mode; empty ban slots dotted; timer bar driven by the auto-play interval (instead of the fixed 45 s) and inactive in manual playback. **Player names are only shown with their revealed hero** (the public API `GET /api/draft` hides the name of an unrevealed pick in replay mode **[Claude's choice]**): nothing is spoiled.
 
-## Hors périmètre
+## Out of scope
 
-Import de la partie en base depuis cette page, replays non Custom, édition du script, talents,
-multi-opérateur, auto-détection des noms d'équipe, overlay dédié « replay ».
+Importing the game into the database from this page, non-Custom replays, editing the script, talents,
+multiple operators, auto-detection of team names, dedicated "replay" overlay.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-1. Un replay de draft réel (3 replays de l'opérateur) se charge en < 500 ms ; l'overlay reste **vide**
-   jusqu'au premier « Suivant », puis se remplit dans l'ordre exact du draft réel (bans et picks
-   alternés conformes à la fiche de match).
-2. Retour/Reset/lecture auto (30 s par phase) fonctionnent ; un rafraîchissement de la page ou de l'overlay ne perd rien.
-3. File de 3 replays en fearless : en partie 2, les picks de la partie 1 sont indisponibles ; les
-   pseudos de joueurs sont affichés sur les tuiles de pick.
-4. Un replay non Custom (QM, ARAM, ligue…) est refusé avec un message clair ; aucune partie n'est ajoutée en base.
-5. Tests : moteur (reveal/skip/undo/fearless), décodage sur mini-corpus, ordre global = `turn` du parser.
+1. A real draft replay (3 of the operator's replays) loads in < 500 ms; the overlay stays **empty**
+   until the first "Next", then fills in the exact order of the real draft (bans and picks
+   alternating as on the match page).
+2. Back/Reset/auto-play (30 s per phase) work; refreshing the page or the overlay loses nothing.
+3. Queue of 3 replays in fearless: in game 2, the picks of game 1 are unavailable; the
+   player names are shown on the pick tiles.
+4. A non-Custom replay (QM, ARAM, league…) is refused with a clear message; no game is added to the database.
+5. Tests: engine (reveal/skip/undo/fearless), decoding on the mini-corpus, global order = the parser's `turn`.
 
-## Docs à mettre à jour avec le code (Règle n° 0)
+## Docs to update with the code (Rule no. 0)
 
-`docs/spec/05-api.md` (routes), `04-serveur.md` (état/persistance, file), `08-frontend.md` (page
-`/draft/replay`), `07-evenements.md` (inchangé : `draft.updated` réutilisé), `docs/STATUS.md`.
+`docs/spec/05-api.md` (routes), `04-serveur.md` (state/persistence, queue), `08-frontend.md` (page
+`/draft/replay`), `07-evenements.md` (unchanged: `draft.updated` reused), `docs/STATUS.md`.

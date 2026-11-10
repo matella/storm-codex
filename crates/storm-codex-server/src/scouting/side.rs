@@ -1,12 +1,12 @@
-//! Détection de l'équipe cible (règle opérateur, spec volet B) : dans chaque partie, le côté
-//! cible compte au moins 3 joueurs du roster ; sinon le côté d'un joueur ancre ; sinon choix
-//! manuel (porté par l'appelant). Identifiant de joueur = `toon_handle`, jamais le nom affiché.
+//! Detection of the target team (operator rule, spec part B): in each game, the target
+//! side counts at least 3 roster players; otherwise the side of an anchor player; otherwise a manual
+//! choice (carried by the caller). Player identifier = `toon_handle`, never the displayed name.
 
 use super::summary::GameSummary;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Seuil de la règle opérateur : « toujours au moins 3 joueurs de l'équipe principale ».
+/// Threshold of the operator rule: "always at least 3 players of the main team".
 pub const MIN_ROSTER_ON_SIDE: usize = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -37,8 +37,8 @@ pub struct Candidate {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Detection {
     pub candidates: Vec<Candidate>,
-    /// Des candidats se sont affrontés dans une même partie : le lot ne permet pas de dire
-    /// quelle équipe est scoutée (typiquement une série contre un même adversaire). Il faut une
+    /// Candidates faced each other in the same game: the batch does not allow telling
+    /// which team is scouted (typically a series against the same opponent). An
     /// ancre.
     pub ambiguous: bool,
 }
@@ -52,12 +52,12 @@ fn anchor_side(g: &GameSummary, anchors: &BTreeSet<&str>) -> Option<usize> {
     match (hit(0), hit(1)) {
         (true, false) => Some(0),
         (false, true) => Some(1),
-        _ => None, // absente, ou des deux côtés (donnée incohérente) → ne tranche pas
+        _ => None, // missing, or on both sides (inconsistent data) → does not decide
     }
 }
 
-/// Candidats au roster : joueurs présents dans au moins 50 % des parties — ou, si des ancres
-/// sont définies, dans au moins 50 % des parties de l'ancre et **du même côté qu'elle**.
+/// Roster candidates: players present in at least 50% of the games — or, if anchors
+/// are set, in at least 50% of the anchor's games and **on the same side as it**.
 pub fn candidates(games: &[GameSummary], anchors: &[String]) -> Detection {
     let anchors: BTreeSet<&str> = anchors.iter().map(String::as_str).collect();
     let mut count: BTreeMap<&str, (u32, &str)> = BTreeMap::new();
@@ -101,8 +101,8 @@ pub fn candidates(games: &[GameSummary], anchors: &[String]) -> Detection {
     }
 }
 
-/// Roster effectif : celui fixé par l'opérateur, sinon les candidats détectés (vide si le lot est
-/// ambigu — l'UI demande alors une ancre).
+/// Effective roster: the one set by the operator, otherwise the detected candidates (empty if the batch is
+/// ambiguous — the UI then asks for an anchor).
 pub fn effective_roster(stored: &[String], detection: &Detection) -> Vec<String> {
     if !stored.is_empty() {
         return stored.to_vec();
@@ -117,8 +117,8 @@ pub fn effective_roster(stored: &[String], detection: &Detection) -> Vec<String>
         .collect()
 }
 
-/// Côté cible d'une partie par les règles automatiques (le choix manuel est géré par l'appelant,
-/// qui le conserve). `None` = aucune règle ne tranche → partie exclue des faits.
+/// Target side of a game by the automatic rules (the manual choice is handled by the caller,
+/// which keeps it). `None` = no rule decides → game excluded from the facts.
 pub fn detect(g: &GameSummary, roster: &[String], anchors: &[String]) -> Option<(u8, Source)> {
     let roster: BTreeSet<&str> = roster.iter().map(String::as_str).collect();
     let on = |s: usize| side_toons(g, s).filter(|t| roster.contains(t)).count();
@@ -148,7 +148,7 @@ pub(crate) mod tests {
         }
     }
 
-    /// Partie synthétique : `a` et `b` = toons des côtés 0 et 1 (héros = « H_<toon> »).
+    /// Synthetic game: `a` and `b` = toons of sides 0 and 1 (hero = "H_<toon>").
     pub fn game(a: &[&str], b: &[&str]) -> GameSummary {
         let side = |ts: &[&str]| ts.iter().map(|t| player(t, &format!("H_{t}"))).collect();
         GameSummary {
@@ -218,7 +218,7 @@ pub(crate) mod tests {
         let d = candidates(&games, &[]);
         assert!(!d.ambiguous);
         let toons: Vec<&str> = d.candidates.iter().map(|c| c.toon.as_str()).collect();
-        assert_eq!(toons.len(), 5, "{toons:?}"); // r1..r5, pas le remplaçant (1/3)
+        assert_eq!(toons.len(), 5, "{toons:?}"); // r1..r5, not the substitute (1/3)
         assert!(!toons.contains(&"sub"));
         assert_eq!(effective_roster(&[], &d).len(), 5);
     }
@@ -231,7 +231,7 @@ pub(crate) mod tests {
         assert!(d.ambiguous);
         assert_eq!(d.candidates.len(), 10);
         assert!(effective_roster(&[], &d).is_empty());
-        // avec l'ancre : les 5 coéquipiers de l'ancre, et plus d'ambiguïté
+        // with the anchor: the anchor's 5 teammates, and no more ambiguity
         let d = candidates(&games, &["r1".into()]);
         assert!(!d.ambiguous);
         let mut toons: Vec<&str> = d.candidates.iter().map(|c| c.toon.as_str()).collect();

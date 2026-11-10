@@ -1,21 +1,21 @@
-//! Profils de raccourcis clavier (`m_hotkeyProfile` du replay) : nom choisi à la main par le joueur,
-//! donc indice fort de « même personne » quand deux comptes le portent. Spec :
+//! Hotkey profiles (`m_hotkeyProfile` of the replay): name chosen by hand by the player,
+//! hence a strong "same person" hint when two accounts carry it. Spec:
 //! docs/specs/2026-11-08-profils-hotkeys-comptes-design.md.
 //!
-//! Un nom est **ignoré** s'il est livré par le jeu (Standard, langues, `0_default`), trop court, ou
-//! listé dans `app_settings.ignored_profile_names`. Il devient **générique** s'il est porté par
-//! `GENERIC_MIN_TOONS` comptes distincts ou plus (ex. un nom de héros) : il n'identifie plus personne.
+//! A name is **ignored** if it ships with the game (Standard, languages, `0_default`), is too short, or is
+//! listed in `app_settings.ignored_profile_names`. It becomes **generic** if it is carried by
+//! `GENERIC_MIN_TOONS` distinct accounts or more (e.g. a hero name): it no longer identifies anyone.
 
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use std::collections::{HashMap, HashSet};
 
-/// Comptes distincts à partir desquels un nom de profil est jugé générique.
+/// Distinct accounts from which a profile name is judged generic.
 pub const GENERIC_MIN_TOONS: i64 = 5;
-/// Longueur minimale (en caractères) d'un nom exploitable.
+/// Minimum length (in characters) of a usable name.
 const MIN_LEN: usize = 3;
 
-/// Noms livrés avec le jeu : profils par défaut et noms de langues (anglais et forme native).
+/// Names shipped with the game: default profiles and language names (English and native form).
 const BUILTIN_IGNORED: &[&str] = &[
     "standard",
     "standard for lefties",
@@ -50,18 +50,18 @@ const BUILTIN_IGNORED: &[&str] = &[
     "japanese",
 ];
 
-/// Forme comparable d'un nom : espaces de bord retirés, minuscules.
+/// Comparable form of a name: edge spaces removed, lowercase.
 pub fn key(name: &str) -> String {
     name.trim().to_lowercase()
 }
 
-/// `true` si ce nom n'identifie personne (livré par le jeu, trop court, ou ignoré par l'opérateur).
+/// `true` if this name identifies nobody (shipped with the game, too short, or ignored by the operator).
 pub fn is_ignored(name: &str, extra: &HashSet<String>) -> bool {
     let k = key(name);
     k.chars().count() < MIN_LEN || BUILTIN_IGNORED.contains(&k.as_str()) || extra.contains(&k)
 }
 
-/// Noms ignorés en plus des noms livrés (`app_settings.ignored_profile_names`, clés normalisées).
+/// Names ignored on top of the shipped names (`app_settings.ignored_profile_names`, normalised keys).
 pub async fn extra_ignored(db: &PgPool) -> Result<HashSet<String>, sqlx::Error> {
     let v: Vec<String> = sqlx::query_scalar(
         "SELECT jsonb_array_elements_text(value) FROM app_settings
@@ -80,8 +80,8 @@ pub struct ProfileSpan {
     pub games: i64,
 }
 
-/// Profils exploitables d'un compte, récent d'abord. Les noms ignorés sont écartés ; un nom générique
-/// reste affiché (c'est un fait du replay) mais ne crée aucun lien (voir `shared_with`).
+/// Usable profiles of an account, most recent first. Ignored names are discarded; a generic name
+/// stays shown (it is a fact of the replay) but creates no link (see `shared_with`).
 pub async fn history(db: &PgPool, toon: &str) -> Result<Vec<ProfileSpan>, sqlx::Error> {
     let extra = extra_ignored(db).await?;
     let rows: Vec<ProfileSpan> = sqlx::query_as(
@@ -101,7 +101,7 @@ pub async fn history(db: &PgPool, toon: &str) -> Result<Vec<ProfileSpan>, sqlx::
         .collect())
 }
 
-/// `autre compte → noms de profil partagés avec toon`, hors noms ignorés et génériques.
+/// `other account → profile names shared with toon`, excluding ignored and generic names.
 pub async fn shared_with(
     db: &PgPool,
     toon: &str,
@@ -159,10 +159,10 @@ mod tests {
             "aa",
             "",
         ] {
-            assert!(is_ignored(n, &none), "{n:?} doit être ignoré");
+            assert!(is_ignored(n, &none), "{n:?} must be ignored");
         }
         for n in ["Kure1", "munky", "Гиппократ", "TheRequiem"] {
-            assert!(!is_ignored(n, &none), "{n:?} doit être gardé");
+            assert!(!is_ignored(n, &none), "{n:?} must be kept");
         }
         assert!(is_ignored("Kure1", &HashSet::from(["kure1".to_owned()])));
     }
@@ -185,11 +185,15 @@ mod tests {
         insert_match(&db, None, &[row(&a, "A", 0, "Muradin")]).await;
         insert_match(&db, None, &[row(&b, "B", 0, "Diablo")]).await;
         set_profile(&db, &a, &rare).await;
-        set_profile(&db, &b, &rare.to_uppercase()).await; // casse différente : même nom
+        set_profile(&db, &b, &rare.to_uppercase()).await; // different case: same name
         let got = shared_with(&db, &a).await.unwrap();
-        assert_eq!(got.get(&b).map(Vec::len), Some(1), "profil partagé détecté");
+        assert_eq!(
+            got.get(&b).map(Vec::len),
+            Some(1),
+            "shared profile detected"
+        );
 
-        // le même nom porté par GENERIC_MIN_TOONS comptes devient générique
+        // the same name carried by GENERIC_MIN_TOONS accounts becomes generic
         let toons: Vec<String> = (0..GENERIC_MIN_TOONS)
             .map(|i| format!("t-g{i}{u}"))
             .collect();
@@ -198,7 +202,7 @@ mod tests {
             set_profile(&db, t, &common).await;
         }
         let got = shared_with(&db, &toons[0]).await.unwrap();
-        assert!(got.is_empty(), "nom générique : aucun lien");
+        assert!(got.is_empty(), "generic name: no link");
         assert!(history(&db, &a)
             .await
             .unwrap()

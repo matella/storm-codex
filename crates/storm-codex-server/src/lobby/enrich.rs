@@ -1,12 +1,12 @@
-//! Enrichissement du lobby contre l'archive. Le blob ne porte que `nom#discriminant` : le
-//! `toon_handle` se retrouve dans `match_players` (nom + `data->>'tag'`), c'est-à-dire dans les
-//! parties déjà jouées. Un joueur jamais croisé reste non résolu (`toon_handle: None`) — sans
-//! conséquence, puisqu'il n'a de toute façon aucun historique à afficher (`history: None`, jamais
-//! un historique vide déguisé en vrai zéro).
+//! Enrichment of the lobby against the archive. The blob only carries `name#discriminator`: the
+//! `toon_handle` is found in `match_players` (name + `data->>'tag'`), that is in the
+//! games already played. A player never met stays unresolved (`toon_handle: None`) — without
+//! consequence, since they have no history to show anyway (`history: None`, never
+//! an empty history disguised as a real zero).
 //!
-//! Le contrat p95 < 100 ms de `/api/lobby` (spec) interdit un aller-retour SQL par joueur : les
-//! deux étapes qui dépendent du nombre de joueurs (résolution d'identité, historique) sont donc
-//! chacune UNE requête batchée sur tout le lobby plutôt qu'une boucle de dix.
+//! The p95 < 100 ms contract of `/api/lobby` (spec) forbids one SQL round trip per player: the
+//! two steps that depend on the number of players (identity resolution, history) are therefore
+//! each ONE batched query over the whole lobby rather than a loop of ten.
 use std::collections::HashMap;
 
 use serde_json::Value as J;
@@ -14,9 +14,9 @@ use sqlx::PgPool;
 
 use crate::lobby::LobbyState;
 
-/// `nom#tag` → `toon_handle` pour tous les joueurs du lobby en une requête (LATERAL join sur un
-/// `UNNEST` des deux colonnes) : un seul aller-retour quel que soit le nombre de joueurs. L'ordre
-/// du résultat suit celui des tableaux d'entrée (`WITH ORDINALITY`).
+/// `name#tag` → `toon_handle` for all the players of the lobby in one query (LATERAL join on an
+/// `UNNEST` of the two columns): a single round trip whatever the number of players. The order
+/// of the result follows that of the input arrays (`WITH ORDINALITY`).
 async fn resoudre_tout(
     db: &PgPool,
     names: &[String],
@@ -43,20 +43,20 @@ async fn resoudre_tout(
     {
         Ok(rows) if rows.len() == attendu => rows,
         Ok(_) => {
-            tracing::warn!("résolution d'identité du lobby : nombre de lignes inattendu");
+            tracing::warn!("lobby identity resolution: unexpected number of rows");
             vec![None; attendu]
         }
         Err(e) => {
-            tracing::warn!("résolution d'identité du lobby échouée : {e}");
+            tracing::warn!("lobby identity resolution failed: {e}");
             vec![None; attendu]
         }
     }
 }
 
-/// Historique de plusieurs `toon_handle` à la fois — parties ensemble, parties contre, winrates,
-/// héros favoris, du point de vue de l'opérateur. Chaque `toon_handle` demandé reçoit une entrée,
-/// même à zéro : un joueur connu mais jamais recoupé avec l'opérateur a un vrai zéro, ce qui
-/// diffère d'un joueur inconnu (jamais dans la map, donc `history: None` côté appelant).
+/// History of several `toon_handle`s at once — games together, games against, win rates,
+/// favourite heroes, from the operator's point of view. Each requested `toon_handle` gets an entry,
+/// even at zero: a known player never crossed with the operator has a real zero, which
+/// differs from an unknown player (never in the map, so `history: None` on the caller's side).
 async fn historiques(db: &PgPool, toons: &[String]) -> HashMap<String, J> {
     if toons.is_empty() {
         return HashMap::new();
@@ -67,14 +67,14 @@ async fn historiques(db: &PgPool, toons: &[String]) -> HashMap<String, J> {
             FROM app_settings WHERE key = 'operator_names'
          ),
          mes_parties AS (
-            -- Au plus une ligne par match. `operator_names` est un filtre, pas une clé : si deux
-            -- lignes de `match_players` d'un même match le satisfont (deux comptes de l'opérateur
-            -- dans la même partie, ou un homonyme dans l'archive — le discriminant n'entre pas
-            -- dans le critère), une jointure sur toutes les lignes ferait compter chaque
-            -- adversaire deux fois, et si ces deux lignes sont dans des camps opposés, la même
-            -- partie serait comptée à la fois « ensemble » et « contre ». `DISTINCT ON` fige un
-            -- choix arbitraire mais unique par match — suffisant : la question posée est « ai-je
-            -- croisé ce joueur dans ce match, dans quel camp », pas « laquelle de mes lignes ».
+            -- At most one row per match. `operator_names` is a filter, not a key: if two
+            -- `match_players` rows of the same match satisfy it (two accounts of the operator
+            -- in the same game, or a namesake in the archive — the discriminator is not part
+            -- of the criterion), a join over all the rows would count each
+            -- opponent twice, and if those two rows are on opposite sides, the same
+            -- game would be counted both together and against. `DISTINCT ON` freezes an
+            -- arbitrary but unique choice per match — enough: the question asked is: did I
+            -- cross this player in this match, on which side; not: which of my rows.
             SELECT DISTINCT ON (mp.match_id) mp.match_id, mp.team
             FROM match_players mp
             WHERE lower(mp.name) IN (SELECT name FROM moi)
@@ -127,15 +127,15 @@ async fn historiques(db: &PgPool, toons: &[String]) -> HashMap<String, J> {
     {
         Ok(rows) => rows,
         Err(e) => {
-            tracing::warn!("historique du lobby échoué : {e}");
+            tracing::warn!("lobby history failed: {e}");
             Vec::new()
         }
     };
     rows.into_iter().collect()
 }
 
-/// Stats de l'opérateur sur ce héros, cette carte, et le couple. `hero` peut être `None` tant que
-/// l'opérateur ne l'a pas saisi : les stats de carte restent alors calculables.
+/// Operator stats on this hero, this map, and the pair. `hero` can be `None` as long as
+/// the operator has not entered it: the map stats then stay computable.
 async fn stats_operateur(db: &PgPool, hero: Option<&str>, map: Option<&str>) -> Option<J> {
     match sqlx::query_scalar(
         "WITH moi AS (
@@ -162,14 +162,14 @@ async fn stats_operateur(db: &PgPool, hero: Option<&str>, map: Option<&str>) -> 
     {
         Ok(v) => v,
         Err(e) => {
-            tracing::warn!("stats opérateur du lobby échouées : {e}");
+            tracing::warn!("lobby operator stats failed: {e}");
             None
         }
     }
 }
 
-/// Build par défaut du héros + alternatives. `None` si aucun build enregistré : le front propose
-/// alors l'import depuis la meilleure partie sur ce héros.
+/// Default build of the hero + alternatives. `None` if no build is stored: the front then offers
+/// the import from the best game on this hero.
 async fn build_du_heros(db: &PgPool, hero: &str) -> Option<J> {
     match sqlx::query_scalar(
         "SELECT jsonb_build_object(
@@ -186,15 +186,15 @@ async fn build_du_heros(db: &PgPool, hero: &str) -> Option<J> {
     {
         Ok(v) => v,
         Err(e) => {
-            tracing::warn!("build du héros du lobby échoué : {e}");
+            tracing::warn!("lobby hero build failed: {e}");
             None
         }
     }
 }
 
-/// Remplit l'état avec tout ce que l'archive sait. Best-effort : une requête qui échoue laisse le
-/// champ à `None` (avec une trace `warn`) plutôt que de faire échouer l'ingestion — un lobby à
-/// moitié enrichi vaut mieux qu'une page vide.
+/// Fills the state with everything the archive knows. Best-effort: a failing query leaves the
+/// field at `None` (with a `warn` trace) rather than failing the ingestion — a half
+/// enriched lobby is better than an empty page.
 pub async fn enrich(db: &PgPool, state: &mut LobbyState) {
     let noms_operateur: Vec<String> = sqlx::query_scalar(
         "SELECT lower(jsonb_array_elements_text(value)) FROM app_settings WHERE key = 'operator_names'",
@@ -202,11 +202,11 @@ pub async fn enrich(db: &PgPool, state: &mut LobbyState) {
     .fetch_all(db)
     .await
     .unwrap_or_else(|e| {
-        tracing::warn!("lecture operator_names échouée : {e}");
+        tracing::warn!("reading operator_names failed: {e}");
         Vec::new()
     });
 
-    // Résolution d'identité : une requête pour tout le lobby (pas une par joueur).
+    // Identity resolution: one query for the whole lobby (not one per player).
     let names: Vec<String> = state.players.iter().map(|p| p.name.clone()).collect();
     let discriminants: Vec<String> = state
         .players
@@ -218,19 +218,19 @@ pub async fn enrich(db: &PgPool, state: &mut LobbyState) {
         p.toon_handle = toon;
     }
 
-    // L'opérateur : le premier joueur du lobby dont le nom figure dans `operator_names` (le plan
-    // disait « le dernier » ; le premier est retenu, sans conséquence : un lobby légitime ne
-    // contient jamais deux comptes de l'opérateur, donc `position()` ne trouve au plus qu'une
-    // seule correspondance de toute façon).
+    // The operator: the first player of the lobby whose name is in `operator_names` (the plan
+    // said "the last one"; the first one is kept, without consequence: a legitimate lobby never
+    // contains two accounts of the operator, so `position()` finds at most a single
+    // match anyway).
     state.me = state
         .players
         .iter()
         .position(|p| noms_operateur.iter().any(|n| n == &p.name.to_lowercase()));
 
-    // Historique : une requête pour tous les toon_handle résolus (pas une par joueur), à
-    // l'exclusion de l'opérateur lui-même — sinon la formule « ensemble » compte ses propres
-    // parties comme jouées avec lui-même. Sa tuile n'en a de toute façon pas besoin : ses stats
-    // vivent dans `state.me_stats`. `state.me` est déjà déterminé ci-dessus.
+    // History: one query for all the resolved toon_handles (not one per player),
+    // excluding the operator themself — otherwise the "together" formula counts their own
+    // games as played with themself. Their tile does not need it anyway: their stats
+    // live in `state.me_stats`. `state.me` is already determined above.
     let toons_connus: Vec<String> = state
         .players
         .iter()
@@ -238,10 +238,10 @@ pub async fn enrich(db: &PgPool, state: &mut LobbyState) {
         .filter(|(i, _)| Some(*i) != state.me)
         .filter_map(|(_, p)| p.toon_handle.clone())
         .collect();
-    // `operator_names` non configuré : `state.me` est toujours `None` ci-dessus, donc « avec/contre
-    // moi » n'a aucun sens. N'appelle pas `historiques` dans ce cas — un `games_with: 0` renvoyé
-    // pour tout le monde serait un faux zéro indiscernable d'un vrai zéro, exactement ce que
-    // l'en-tête de ce module promet d'éviter.
+    // `operator_names` not configured: `state.me` is always `None` above, so "with/against
+    // me" makes no sense. Does not call `historiques` in that case — a `games_with: 0` returned
+    // for everyone would be a false zero indistinguishable from a real zero, exactly what
+    // the header of this module promises to avoid.
     let historiques_par_toon = if noms_operateur.is_empty() {
         HashMap::new()
     } else {

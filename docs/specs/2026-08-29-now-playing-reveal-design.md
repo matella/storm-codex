@@ -1,142 +1,142 @@
-# Now Playing — reveal animé (grande carte → badge mini) — design
+# Now Playing — animated reveal (large card → mini badge) — design
 
-> Spec storm-codex. Brainstorming validé par l'opérateur le 2026-08-29.
-> Maquette animée de référence : `docs/specs/2026-08-29-now-playing-reveal-mockup.html`
-> (antérieure à la décision « titre sur deux lignes » : sur ce point, la spec fait foi).
-> Cible : `writing-plans` puis implémentation TDD.
+> storm-codex spec. Brainstorm approved by the operator on 2026-08-29.
+> Reference animated mockup: `docs/specs/2026-08-29-now-playing-reveal-mockup.html`
+> (predates the "title on two lines" decision: on that point, the spec is authoritative).
+> Target: `writing-plans` then TDD implementation.
 
-## But
+## Goal
 
-Quand un morceau démarre, l'overlay musique s'affiche **en grand** (grande pochette, titre et
-artiste dessous), tient ~2,6 s, puis **se replie en douceur** sur le badge compact déjà en place
-en haut à droite. Le badge reste ensuite affiché jusqu'au morceau suivant.
+When a track starts, the music overlay shows **large** (big cover art, title and
+artist below), holds for ~2.6 s, then **smoothly collapses** into the compact badge already in place
+at the top right. The badge then stays displayed until the next track.
 
-Aujourd'hui `/now-playing?mini` affiche directement le badge compact : la piste change sans que
-rien ne l'annonce. Le reveal donne au titre un moment de lisibilité à l'antenne, sans occuper le
-coin plus longtemps qu'aujourd'hui le reste du temps.
+Today `/now-playing?mini` shows the compact badge directly: the track changes without anything
+announcing it. The reveal gives the title a moment of readability on air, without occupying the
+corner any longer than today the rest of the time.
 
-## Périmètre
+## Scope
 
-**Troisième variante de la route existante** : `/now-playing?reveal`. La variante par défaut
-(carte étoffée) et `?mini` ne bougent pas — la source OBS actuelle continue de fonctionner à
-l'identique, on bascule en éditant l'URL de la browser source. Si la variante s'impose à l'usage,
-on pourra la promouvoir en défaut de `?mini` plus tard ; ce n'est pas décidé ici.
+**Third variant of the existing route**: `/now-playing?reveal`. The default variant
+(fuller card) and `?mini` do not change — the current OBS source keeps working
+identically; switching is done by editing the browser source's URL. If the variant proves itself in use,
+it could be promoted to the default of `?mini` later; that is not decided here.
 
-## Décisions actées (brainstorming)
+## Decisions made (brainstorm)
 
-1. **Morph choisi : « Dissolve »** (option A de la maquette). La boîte s'anime en taille ; les deux
-   contenus (grand / mini) se fondent l'un dans l'autre. Retenu parce qu'il conserve le style
-   existant et réemploie le balisage du badge mini tel quel. Les options écartées : « Morph »
-   (pochette et texte voyageant réellement — impose un texte aligné à gauche dans les deux états,
-   sinon l'alignement saute en vol) et « Swap » (deux cartes distinctes, coupe franche).
-2. **Déclencheur : tout démarrage de lecture.** Changement de piste, reprise après pause, et
-   premier montage de la page avec quelque chose en cours. Motivation opérateur : cohérence, et
-   il ne change pas de scène. **Conséquence assumée** : un rechargement de la browser source
-   (démarrage du stream, redémarrage d'OBS, refresh) réannonce le morceau déjà en cours.
-3. **Fréquence de sondage : 2 s** (au lieu de 5 s). Sous la règle 2, une reprise après pause
-   déclenche un reveal ; à 5 s le reveal arrive visiblement en retard sur la musique.
-4. **Skip rapide : retargeting sur place.** Une nouvelle piste pendant que la grande carte est
-   affichée remplace le contenu et **relance le hold**, sans repasser par le badge mini. Évite le
-   yoyo de taille quand on enchaîne les skips.
-5. **Timings** : entrée 440 ms, hold 2,6 s, morph 620 ms, easing `cubic-bezier(.22,.9,.24,1)`.
-   Réglés à la main sur la maquette et validés en l'état.
-6. **Contenu de la grande carte** : pochette, kicker `NOW PLAYING` + égaliseur, titre, artiste.
-   **Pas d'album ni de barre de progression** — c'est une carte de 2,6 s, pas un lecteur.
+1. **Chosen morph: "Dissolve"** (option A of the mockup). The box animates in size; the two
+   contents (large / mini) cross-fade. Chosen because it keeps the existing
+   style and reuses the mini badge's markup as is. Options ruled out: "Morph"
+   (cover art and text actually travelling — requires left-aligned text in both states,
+   otherwise the alignment jumps mid-flight) and "Swap" (two separate cards, hard cut).
+2. **Trigger: every playback start.** Track change, resume after pause, and
+   first mount of the page with something playing. Operator's motivation: consistency, and
+   they do not change scenes. **Accepted consequence**: reloading the browser source
+   (stream start, OBS restart, refresh) re-announces the track already playing.
+3. **Polling frequency: 2 s** (instead of 5 s). Under rule 2, resuming after a pause
+   triggers a reveal; at 5 s the reveal visibly lags behind the music.
+4. **Quick skip: retarget in place.** A new track while the large card is
+   displayed replaces the content and **restarts the hold**, without going back through the mini badge. Avoids
+   size yo-yo when skipping repeatedly.
+5. **Timings**: entry 440 ms, hold 2.6 s, morph 620 ms, easing `cubic-bezier(.22,.9,.24,1)`.
+   Tuned by hand on the mockup and approved as is.
+6. **Contents of the large card**: cover art, `NOW PLAYING` kicker + equaliser, title, artist.
+   **No album or progress bar** — it is a 2.6 s card, not a player.
 
-## Comportement
+## Behaviour
 
-Machine à trois états : `hidden` → `big` → `mini`.
+Three-state machine: `hidden` → `big` → `mini`.
 
-| Événement | État courant | Transition |
+| Event | Current state | Transition |
 |---|---|---|
-| `playing` passe faux → vrai | `hidden` | → `big`, hold armé |
-| Identité de piste change | `big` | reste `big`, contenu remplacé, **hold relancé** |
-| Identité de piste change | `mini` | → `big`, hold armé |
-| Hold expiré | `big` | → `mini` |
-| `playing` passe vrai → faux | tout | → `hidden` |
-| Sondage identique | tout | aucun effet |
+| `playing` goes false → true | `hidden` | → `big`, hold armed |
+| Track identity changes | `big` | stays `big`, content replaced, **hold restarted** |
+| Track identity changes | `mini` | → `big`, hold armed |
+| Hold expired | `big` | → `mini` |
+| `playing` goes true → false | any | → `hidden` |
+| Identical poll | any | no effect |
 
-Le badge mini persiste indéfiniment tant que la lecture continue — comportement actuel inchangé.
-Pause et arrêt masquent la carte, comme aujourd'hui.
+The mini badge persists indefinitely as long as playback continues — current behaviour unchanged.
+Pause and stop hide the card, as today.
 
-### Identité de piste
+### Track identity
 
-`parseTrack` (`web/src/api.ts`) n'extrait aucun identifiant : deux morceaux de même titre ne
-seraient pas distingués. On ajoute au `Track` la clé `id` (champ `id` ou `uri` Spotify quand
-présent), avec repli sur `titre|artiste`. C'est cette clé, pas le titre, qui déclenche le reveal.
+`parseTrack` (`web/src/api.ts`) extracts no identifier: two tracks with the same title would
+not be told apart. The `id` key is added to `Track` (Spotify `id` or `uri` field when
+present), falling back to `title|artist`. It is this key, not the title, that triggers the reveal.
 
-## Découpage
+## Breakdown
 
-`NowPlaying.tsx` porte déjà ~110 lignes et deux mises en page en ligne ; y ajouter une troisième
-plus une machine à états le surcharge. Découpage sur la couture déjà utilisée par le repo
-(`usePlayback.ts` + fonction pure `advance` testée en environnement node — pas de RTL ici) :
+`NowPlaying.tsx` already holds ~110 lines and two inline layouts; adding a third
+plus a state machine overloads it. Split along the seam already used by the repo
+(`usePlayback.ts` + pure `advance` function tested in a node environment — no RTL here):
 
-- **`revealState.ts`** — `nextRevealState(prev, incoming)`, réducteur **pur** rendant l'état
-  (`hidden|big|mini`) et s'il faut réarmer le hold. Toute la politique de déclenchement et de
-  retargeting vit là. Ni React ni DOM : testable unitairement.
-- **`useTrackReveal.ts`** — hook mince autour du réducteur : minuterie de hold, nettoyage au
-  démontage.
-- **`RevealCard.tsx`** — présentation pure. Reçoit `{ track, state }`, rend la boîte qui se morphe.
-- **`NowPlaying.tsx`** — aiguillage entre les trois variantes, inchangé par ailleurs.
+- **`revealState.ts`** — `nextRevealState(prev, incoming)`, a **pure** reducer returning the state
+  (`hidden|big|mini`) and whether to re-arm the hold. All the triggering and
+  retargeting policy lives there. No React or DOM: unit-testable.
+- **`useTrackReveal.ts`** — thin hook around the reducer: hold timer, cleanup on
+  unmount.
+- **`RevealCard.tsx`** — pure presentation. Receives `{ track, state }`, renders the morphing box.
+- **`NowPlaying.tsx`** — switch between the three variants, otherwise unchanged.
 
 ## Animation
 
-Une seule boîte `.card` transitionnant `width` / `height` / `border-radius` sur 620 ms en
-`cubic-bezier(.22,.9,.24,1)`. Deux couches de contenu en position absolue se fondent sur ~340 ms
-avec un délai, de sorte que la couche entrante arrive quand la boîte a déjà fait l'essentiel de son
-changement de taille.
+A single `.card` box transitioning `width` / `height` / `border-radius` over 620 ms with
+`cubic-bezier(.22,.9,.24,1)`. Two absolutely positioned content layers cross-fade over ~340 ms
+with a delay, so that the incoming layer arrives when the box has already done most of its
+size change.
 
-- **Grand** : 300×408, padding 18, pochette 264×264 (rayon 12), kicker + égaliseur en haut à
-  gauche, titre 20 px et artiste 14 px centrés sous la pochette. La hauteur intègre le bloc de
-  titre fixe de 52 px (deux lignes, cf. « Cas limites ») : la maquette, antérieure à cette
-  décision, montre 382 sur une seule ligne. Ces cotes sont celles de la **boîte extérieure**
-  (`box-sizing: border-box` global dans `theme.css`, bordure 1 px) : l'intérieur disponible est
-  donc 298×406 et le contenu consomme 1 px de marge sur chaque bord. Écart assumé par l'opérateur
-  le 2026-08-29 — c'est le rendu validé sur la maquette, qui portait la même bordure ; rien ne
-  déborde de la carte.
-- **Mini** : 290×68, padding 10, pochette 48×48 (rayon 8), titre 14 px, artiste 12 px — identique
-  à l'existant.
-- **Ancrage** : `OverlayFrame anchor="top-right" pad={36}`, inchangé.
+- **Large**: 300×408, padding 18, cover art 264×264 (radius 12), kicker + equaliser at the top
+  left, 20 px title and 14 px artist centred under the cover art. The height includes the fixed
+  52 px title block (two lines, see "Edge cases"): the mockup, which predates this
+  decision, shows 382 on a single line. These dimensions are those of the **outer box**
+  (global `box-sizing: border-box` in `theme.css`, 1 px border): the available interior is
+  therefore 298×406 and the content uses 1 px of margin on each edge. Discrepancy accepted by the operator
+  on 2026-08-29 — it is the rendering approved on the mockup, which had the same border; nothing
+  overflows the card.
+- **Mini**: 290×68, padding 10, cover art 48×48 (radius 8), 14 px title, 12 px artist — identical
+  to the existing one.
+- **Anchoring**: `OverlayFrame anchor="top-right" pad={36}`, unchanged.
 
-## Cas limites
+## Edge cases
 
-- **Titres longs.** 264 px à 20 px tronquent vers 22 caractères — inacceptable pour une carte dont
-  le seul rôle est d'annoncer le titre. La zone de titre de la grande carte est un bloc de hauteur
-  **fixe 52 px** autorisant **deux lignes**, ellipse au-delà : la hauteur reste fixe, donc la boîte
-  reste animable. Le mini reste sur une ligne.
-- **`prefers-reduced-motion`** : bascule sèche entre états, pas de morph.
-- **Pochette absente** : le placeholder `♫` existant, dimensionné selon l'état.
-- **Orpheus absent ou non authentifié** : `{authenticated:false}` → `playing:false` → `hidden`.
-  Inchangé.
-- **Démontage pendant un reveal** : minuteries annulées.
+- **Long titles.** 264 px at 20 px truncates around 22 characters — unacceptable for a card whose
+  only role is to announce the title. The large card's title area is a block of **fixed
+  52 px** height allowing **two lines**, with an ellipsis beyond: the height stays fixed, so the box
+  stays animatable. The mini stays on one line.
+- **`prefers-reduced-motion`**: hard switch between states, no morph.
+- **Missing cover art**: the existing `♫` placeholder, sized according to the state.
+- **Orpheus missing or not authenticated**: `{authenticated:false}` → `playing:false` → `hidden`.
+  Unchanged.
+- **Unmount during a reveal**: timers cancelled.
 
-## Hypothèse à vérifier (non bloquante)
+## Assumption to check (non-blocking)
 
-Le passage à 2 s suppose qu'Orpheus ne relaie pas l'API Spotify à chaque appel sans cache. ~30
-requêtes/min par source ouverte devrait rester confortable, mais **ce n'est pas vérifié** :
-Orpheus n'est pas dans ce repo et le box ne tourne que le soir. À confirmer sur le box avant de
-considérer le budget tenu ; si Orpheus n'a pas de cache, le repli est le push WS (voir Hors scope).
+The move to 2 s assumes Orpheus does not relay the Spotify API on every call without a cache. ~30
+requests/min per open source should stay comfortable, but **it is not verified**:
+Orpheus is not in this repo and the box only runs in the evening. To be confirmed on the box before
+considering the budget met; if Orpheus has no cache, the fallback is WS push (see Out of scope).
 
 ## Tests
 
-Tests unitaires du réducteur (vitest, environnement node), sur le modèle de `usePlayback.test.ts` :
+Unit tests of the reducer (vitest, node environment), modelled on `usePlayback.test.ts`:
 
-- premier sondage avec lecture en cours → `big`, hold armé ;
-- reprise après pause → `big` ;
-- changement de piste en état `big` → reste `big`, hold relancé ;
-- changement de piste en état `mini` → `big` ;
-- hold expiré → `mini` ;
-- arrêt de lecture → `hidden` ;
-- sondage identique répété → aucun changement d'état ni réarmement.
+- first poll with playback in progress → `big`, hold armed;
+- resume after pause → `big`;
+- track change in `big` state → stays `big`, hold restarted;
+- track change in `mini` state → `big`;
+- hold expired → `mini`;
+- playback stopped → `hidden`;
+- repeated identical poll → no state change and no re-arm.
 
-Vérification visuelle : maquette animée + contrôle en direct dans le navigateur contre le serveur
-de dev.
+Visual check: animated mockup + live check in the browser against the dev
+server.
 
-## Hors scope
+## Out of scope
 
-- **Push WS** (`music.changed` diffusé par le serveur, à la manière de `lobby.detected`) : correct
-  architecturalement et sous la seconde, mais c'est du travail serveur pour une fioriture visuelle.
-  À rouvrir seulement si le sondage à 2 s se révèle insuffisant ou si Orpheus n'encaisse pas.
-- Album et barre de progression dans la grande carte.
-- Son.
-- Toute modification des variantes par défaut et `?mini`.
+- **WS push** (`music.changed` broadcast by the server, like `lobby.detected`): architecturally
+  correct and sub-second, but it is server work for a visual flourish.
+  To be reopened only if 2 s polling proves insufficient or if Orpheus cannot cope.
+- Album and progress bar in the large card.
+- Sound.
+- Any change to the default and `?mini` variants.

@@ -1,5 +1,5 @@
-//! Port de `processReplay` (hots-parser/parser.js) — phase par phase, sémantique identique
-//! (bugs compris : tout écart volontaire est une tolérance documentée du harnais).
+//! Port of `processReplay` (hots-parser/parser.js) — phase by phase, identical semantics
+//! (bugs included: any deliberate deviation is a documented tolerance of the harness).
 
 use crate::constants::{hero_attribute, replay_types, rt_int, rt_str, status};
 use crate::convert::jval;
@@ -21,16 +21,16 @@ use messages::*;
 use objectives::*;
 use teams::*;
 
-/// Résultat de processReplay : `{match, players, status}` (ou `{status}` si rejet).
+/// Result of processReplay: `{match, players, status}` (or `{status}` on rejection).
 pub struct Output {
     pub status: i64,
     pub match_: Option<Map<String, J>>,
     pub players: Option<Map<String, J>>,
-    /// `toon_handle → m_hotkeyProfile` (SUserOptionsEvent). Hors `to_json` : extension storm-codex,
-    /// non comparée au harnais de parité Node.
+    /// `toon_handle → m_hotkeyProfile` (SUserOptionsEvent). Outside `to_json`: storm-codex extension,
+    /// not compared by the Node parity harness.
     pub hotkey_profiles: HashMap<String, String>,
-    /// `toon_handle → nombre de `SCmdEvent`` (commandes) émis pendant la partie (hors chargement) ;
-    /// base de l'APM. Hors `to_json`, comme `hotkey_profiles`.
+    /// `toon_handle → number of `SCmdEvent`s` (commands) issued during the game (loading excluded);
+    /// basis of the APM. Outside `to_json`, like `hotkey_profiles`.
     pub actions: HashMap<String, i64>,
 }
 
@@ -58,12 +58,12 @@ impl Output {
     }
 }
 
-/// Équivalent du `try/catch` de processReplay : toute « exception » du port → status Failure.
+/// Equivalent of processReplay's `try/catch`: any "exception" of the port → Failure status.
 enum Abort {
-    /// `return { status: X }` explicite de parser.js.
+    /// Explicit `return { status: X }` of parser.js.
     Status(i64),
-    /// Exception JS (accès indéfini, etc.) → catch → Failure. Le message ne sert qu'au
-    /// débogage local (hots-parser ne le sort pas non plus).
+    /// JS exception (undefined access, etc.) → catch → Failure. The message is only used for
+    /// local debugging (hots-parser does not output it either).
     Throw(#[allow(dead_code)] String),
 }
 
@@ -75,12 +75,12 @@ impl From<storm_replay::Error> for Abort {
 
 type R<T> = Result<T, Abort>;
 
-/// Extension storm-stats au-delà de hots-parser 7.55.7 : les cartes ARAM (voie unique) récentes,
-/// absentes de la `MapType` de la référence (qui les rejette). Décision opérateur 2026-06-12
-/// (cf. docs/research/2026-06-12-jalon2-parite.md) : on les supporte pour couvrir ~30 % de
-/// l'archive. Ces cartes n'ont PAS d'objectifs PvE → `match.objective = {type}` et les handlers
-/// d'objectifs no-op (gardés par `objective_less_map`). Identité/score/draft/takedowns/talents/
-/// BM/équipes utilisent les chemins universels déjà prouvés en parité sur les cartes classiques.
+/// storm-stats extension beyond hots-parser 7.55.7: the recent (single-lane) ARAM maps,
+/// missing from the reference's `MapType` (which rejects them). Operator decision 2026-06-12
+/// (see docs/research/2026-06-12-jalon2-parite.md): we support them to cover ~30% of
+/// the archive. These maps have NO PvE objectives → `match.objective = {type}` and the objective
+/// handlers are no-ops (guarded by `objective_less_map`). Identity/score/draft/takedowns/talents/
+/// BM/teams use the universal paths already proven at parity on the classic maps.
 const EXTRA_MAPS: [(&str, &str); 4] = [
     ("SilverCity", "Silver City"),
     ("LostCavern", "Lost Cavern"),
@@ -95,7 +95,7 @@ fn extra_map_pretty(internal: &str) -> Option<&'static str> {
         .map(|(_, p)| *p)
 }
 
-/// `match.map` est une carte ARAM étendue (sans objectifs) → les handlers d'objectifs no-op.
+/// `match.map` is an extended ARAM map (without objectives) → the objective handlers are no-ops.
 fn objective_less_map(match_: &Map<String, J>) -> bool {
     match_
         .get("map")
@@ -103,9 +103,9 @@ fn objective_less_map(match_: &Map<String, J>) -> bool {
         .is_some_and(|m| EXTRA_MAPS.iter().any(|(_, p)| *p == m))
 }
 
-/// `getBattletags(buffer, playerList)` — regex sur le battlelobby brut.
+/// `getBattletags(buffer, playerList)` — regex over the raw battlelobby.
 fn get_battletags(buffer: &[u8], player_list: &[J]) -> Vec<J> {
-    // XRegExp('(\\p{L}|\\d){3,24}#\\d{4,10}[zØ]?', 'g') sur buffer.toString()
+    // XRegExp('(\\p{L}|\\d){3,24}#\\d{4,10}[zØ]?', 'g') over buffer.toString()
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let re = RE.get_or_init(|| {
         regex::Regex::new(r"[\p{L}\d]{3,24}#\d{4,10}[zØ]?").unwrap_or_else(|e| panic!("{e}"))
@@ -139,7 +139,7 @@ fn get_battletags(buffer: &[u8], player_list: &[J]) -> Vec<J> {
     tag_map
 }
 
-/// Données décodées une fois (équivalent de `parse(file, AllReplayData)`).
+/// Data decoded once (equivalent of `parse(file, AllReplayData)`).
 pub(crate) struct Ctx {
     pub header: J,
     pub details: J,
@@ -147,7 +147,7 @@ pub(crate) struct Ctx {
     pub attributes: J,
     pub tracker: Vec<J>,
     pub tags: Vec<J>,
-    // game/message events décodés à la demande (gros streams) — consommés à partir du T6
+    // game/message events decoded on demand (large streams) — consumed from T6 onwards
     #[allow(dead_code)]
     pub replay: Replay,
 }
@@ -220,14 +220,14 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
     let mut match_ = Map::new();
     let mut players = Map::new();
 
-    // ===== Phase identité (parser.js:256-465) =====
+    // ===== Identity phase (parser.js:256-465) =====
     match_.insert(
         "version".into(),
         get(&data.header, &["m_version"])
             .cloned()
             .unwrap_or(J::Null),
     );
-    // (pas de check MAX_SUPPORTED_BUILD : on est toujours en overrideVerifiedBuild)
+    // (no MAX_SUPPORTED_BUILD check: we are always in overrideVerifiedBuild)
     match_.insert(
         "type".into(),
         get(&data.header, &["m_type"]).cloned().unwrap_or(J::Null),
@@ -259,7 +259,7 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
     }
     match_.insert("mode".into(), mode);
 
-    // carte interne via EndOfGameTalentChoices
+    // internal map via EndOfGameTalentChoices
     let stat_eventid = rt_int("TrackerEvent", "Stat");
     let eog_talent_choices = rt_str("StatEventType", "EndOfGameTalentChoices");
     for event in &data.tracker {
@@ -271,13 +271,13 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
                 Some(pretty) => {
                     match_.insert("map".into(), pretty.clone());
                 }
-                // Extension storm-stats : cartes ARAM récentes (hors MapType de hots-parser).
+                // storm-stats extension: recent ARAM maps (outside hots-parser's MapType).
                 None => match extra_map_pretty(internal) {
                     Some(pretty) => {
                         match_.insert("map".into(), J::from(pretty));
                     }
-                    // BUG parser.js:312 reproduit : `ReplayStats` (indéfini) → throw → Failure
-                    None => return Err(Abort::Throw(format!("carte interne inconnue {internal}"))),
+                    // BUG parser.js:312 reproduced: `ReplayStats` (undefined) → throw → Failure
+                    None => return Err(Abort::Throw(format!("unknown internal map {internal}"))),
                 },
             }
             break;
@@ -295,7 +295,7 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
             .unwrap_or(J::Null),
     );
 
-    // joueurs préliminaires
+    // preliminary players
     let empty = Vec::new();
     let player_details = get(&data.details, &["m_playerList"])
         .and_then(J::as_array)
@@ -344,7 +344,7 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
         );
         pdoc.insert("ToonHandle".into(), J::from(toon.clone()));
 
-        // tag : recherche en avant dans data.tags à partir de l'index i
+        // tag: forward search in data.tags from index i
         for tag in data.tags.iter().skip(i) {
             if get_str(tag, &["ToonHandle"]) == Some(toon.as_str()) {
                 if let Some(t) = get_str(tag, &["tag"]).and_then(js_parse_int) {
@@ -396,8 +396,8 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
     match_.insert("heroes".into(), json!([]));
     match_.insert("levelTimes".into(), json!({"0": {}, "1": {}}));
 
-    // playerIDMap (PlayerInit) + GatesOpen + héros/heroLevel par attributs
-    // + détection des cores (parser.js:424-479) : leur mort donne la vraie fin de partie (T4)
+    // playerIDMap (PlayerInit) + GatesOpen + hero/heroLevel from attributes
+    // + core detection (parser.js:424-479): their death gives the real end of game (T4)
     let mut player_id_map: Map<String, J> = Map::new();
     let mut cores: HashSet<String> = HashSet::new();
     match_.insert("loopGameStart".into(), J::from(0));
@@ -426,9 +426,9 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
             }
             let tracker_id = get(event, &["m_intData", "0", "m_value"])
                 .and_then(J::as_i64)
-                .ok_or_else(|| Abort::Throw("PlayerInit sans id".into()))?;
+                .ok_or_else(|| Abort::Throw("PlayerInit without id".into()))?;
             let handle = get_str(event, &["m_stringData", "1", "m_value"])
-                .ok_or_else(|| Abort::Throw("PlayerInit sans handle".into()))?
+                .ok_or_else(|| Abort::Throw("PlayerInit without handle".into()))?
                 .to_owned();
             player_id_map.insert(tracker_id.to_string(), J::from(handle.clone()));
 
@@ -449,7 +449,7 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
             let pdoc = players
                 .get_mut(&handle)
                 .and_then(J::as_object_mut)
-                .ok_or_else(|| Abort::Throw(format!("joueur {handle} inconnu")))?;
+                .ok_or_else(|| Abort::Throw(format!("unknown player {handle}")))?;
             pdoc.insert("heroLevel".into(), J::from(hero_level));
             let hero = hero_attribute().get(&attr_name).cloned().unwrap_or(J::Null);
             pdoc.insert("hero".into(), hero.clone());
@@ -463,9 +463,9 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
             );
         }
     }
-    // ===== Longueur + cosmétiques lobby (parser.js:482-536) =====
-    // match.length sera réassigné à la mort du core (parser.js:1604-1605, T4) ; la valeur
-    // posée ici (header) est celle copiée dans players.*.length (parser.js:507).
+    // ===== Length + lobby cosmetics (parser.js:482-536) =====
+    // match.length will be reassigned on the core's death (parser.js:1604-1605, T4); the value
+    // set here (header) is the one copied into players.*.length (parser.js:507).
     let length_secs = {
         let ll = match_
             .get("loopLength")
@@ -486,7 +486,7 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
     .and_then(J::as_array)
     .ok_or_else(|| Abort::Throw("m_slots absent".into()))?
     .clone();
-    // playerLobbyID : m_userId (clé de propriété JS) → ToonHandle
+    // playerLobbyID: m_userId (JS property key) → ToonHandle
     let mut player_lobby_id: HashMap<String, String> = HashMap::new();
     for p in &slots {
         let Some(id) = get_str(p, &["m_toonHandle"]).map(str::to_owned) else {
@@ -498,8 +498,8 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
         let pdoc = players
             .get_mut(&id)
             .and_then(J::as_object_mut)
-            .ok_or_else(|| Abort::Throw("joueur non-objet".into()))?;
-        // assignation JS d'un champ absent → undefined → null au stringify ≡ clé absente
+            .ok_or_else(|| Abort::Throw("non-object player".into()))?;
+        // JS assignment of a missing field → undefined → null on stringify ≡ missing key
         for (src, dst) in [
             ("m_skin", "skin"),
             ("m_announcerPack", "announcer"),
@@ -517,7 +517,7 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
         player_lobby_id.insert(js_prop(get(p, &["m_userId"])), id);
     }
 
-    // playerWorkingSlotID (parser.js:510-534) — NB : 'Hero' codé en dur (pas m_programId)
+    // playerWorkingSlotID (parser.js:510-534) — NB: 'Hero' hard-coded (not m_programId)
     let mut slot_to_toon: HashMap<String, String> = HashMap::new();
     for pl in &player_details {
         let toon_obj = get(pl, &["m_toon"]).ok_or_else(|| Abort::Throw("m_toon absent".into()))?;
@@ -530,7 +530,7 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
         slot_to_toon.insert(js_prop(get(pl, &["m_workingSetSlotId"])), toon);
     }
     if slot_to_toon.contains_key("null") {
-        // fallback : reconstruit depuis m_slots via playerLobbyID
+        // fallback: rebuilt from m_slots via playerLobbyID
         slot_to_toon.clear();
         for slot in &slots {
             if let Some(toon) = player_lobby_id.get(&js_prop(get(slot, &["m_userId"]))) {
@@ -539,10 +539,10 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
         }
     }
 
-    // ===== Draft : bans + picks + turn (parser.js:538-691) =====
+    // ===== Draft: bans + picks + turn (parser.js:538-691) =====
     process_draft(&data, &mut match_, &mut players, &slot_to_toon)?;
 
-    // ===== Conteneurs du pipeline unités (parser.js:693-700) =====
+    // ===== Containers of the unit pipeline (parser.js:693-700) =====
     match_.insert("XPBreakdown".into(), json!([]));
     match_.insert("takedowns".into(), json!([]));
     match_.insert("mercs".into(), json!({"captures": [], "units": {}}));
@@ -550,8 +550,8 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
     match_.insert("team1Takedowns".into(), J::from(0));
     match_.insert("structures".into(), json!({}));
 
-    // ===== match.objective + état hissé par carte (parser.js:702-784) =====
-    // Carte absente → TooOld (parser.js:777) ; carte hors liste → UnsupportedMap (parser.js:783).
+    // ===== match.objective + hoisted per-map state (parser.js:702-784) =====
+    // Missing map → TooOld (parser.js:777); map outside the list → UnsupportedMap (parser.js:783).
     let mut ost = ObjState::default();
     {
         let m = |k: &str| match_.get("map").and_then(J::as_str) == Some(rt_str("MapType", k));
@@ -572,7 +572,7 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
         } else if m("DragonShire") {
             ost.moon = Some(json!({}));
             ost.sun = Some(json!({}));
-            // `var dragon = null` : null ≡ undefined dans notre port (mêmes effets)
+            // `var dragon = null`: null ≡ undefined in our port (same effects)
             obj.insert("shrines".into(), json!({"moon": [], "sun": []}));
             obj.insert("0".into(), json!({"count": 0, "events": []}));
             obj.insert("1".into(), json!({"count": 0, "events": []}));
@@ -617,12 +617,12 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
             obj.insert("0".into(), json!({"count": 0, "events": []}));
             obj.insert("1".into(), json!({"count": 0, "events": []}));
         } else if m("Hanamura") {
-            // match.objective réassigné en entier : pas de champ `type` (parser.js:776)
+            // match.objective reassigned whole: no `type` field (parser.js:776)
             obj = Map::new();
             obj.insert("events".into(), json!([]));
         } else if objective_less_map(&match_) {
-            // Extension : cartes ARAM sans objectif PvE → objectif minimal `{type}` (obj garde
-            // son champ `type` déjà inséré ; aucun handler d'objectif ne s'exécutera).
+            // Extension: ARAM maps without a PvE objective → minimal objective `{type}` (obj keeps
+            // its already inserted `type` field; no objective handler will run).
         } else if match_.get("map").is_none() {
             return Err(Abort::Status(status::TOO_OLD));
         } else {
@@ -631,8 +631,8 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
         match_.insert("objective".into(), J::Object(obj));
     }
 
-    // ===== Boucle tracker, parties T3 + T4 : score screen + talents + votes + globes
-    // (parser.js:794-830, 1201-1213, 2421-2458) + pipeline unités (parser.js:831-1979) =====
+    // ===== Tracker loop, parts T3 + T4: score screen + talents + votes + globes
+    // (parser.js:794-830, 1201-1213, 2421-2458) + unit pipeline (parser.js:831-1979) =====
     let score_eventid = rt_int("TrackerEvent", "Score");
     let upvote = rt_str("StatEventType", "Upvote");
     let regen_globe = rt_str("StatEventType", "RegenGlobePickedUp");
@@ -684,8 +684,8 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
                     loop_game_start,
                 )?;
             } else if name == loot_spray || name == loot_voice_line {
-                // T6 (BM) : players.*.sprays / players.*.voiceLines (parser.js:942-973).
-                // Structures identiques ; seul le tableau cible diffère.
+                // T6 (BM): players.*.sprays / players.*.voiceLines (parser.js:942-973).
+                // Identical structures; only the target array differs.
                 let id = get_str(event, &["m_stringData", "1", "m_value"])
                     .ok_or_else(|| Abort::Throw("loot: m_stringData[1] absent".into()))?
                     .to_owned();
@@ -714,10 +714,10 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
                     .and_then(J::as_object_mut)
                     .and_then(|p| p.get_mut(field))
                     .and_then(J::as_array_mut)
-                    .ok_or_else(|| Abort::Throw(format!("loot: joueur {id} inconnu")))?
+                    .ok_or_else(|| Abort::Throw(format!("loot: unknown player {id}")))?
                     .push(obj);
             } else if is_map_objective_stat_event(name) {
-                // objectifs par carte (parser.js:974-1189, 1214-1238)
+                // per-map objectives (parser.js:974-1189, 1214-1238)
                 obj_stat_event(name, event, &mut match_, &mut ost, loop_game_start)?;
             } else if name == camp_capture {
                 process_camp_capture(event, &mut match_, loop_game_start)?;
@@ -730,20 +730,20 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
                     loop_game_start,
                 )?;
             } else if name == upvote {
-                // parser.js:1201-1203 — affectation directe : le dernier événement gagne
+                // parser.js:1201-1203 — direct assignment: the last event wins
                 let key = js_prop(get(event, &["m_intData", "0", "m_value"]));
                 let handle = player_id_map
                     .get(&key)
                     .and_then(J::as_str)
-                    .ok_or_else(|| Abort::Throw(format!("votes: tracker id {key} non mappé")))?
+                    .ok_or_else(|| Abort::Throw(format!("votes: tracker id {key} not mapped")))?
                     .to_owned();
-                // m_intData[2] absent → undefined.m_value lève (catch JS)
+                // m_intData[2] missing → undefined.m_value throws (JS catch)
                 let d2 = get(event, &["m_intData", "2"])
                     .ok_or_else(|| Abort::Throw("votes: m_intData[2] absent".into()))?;
                 let pdoc = players
                     .get_mut(&handle)
                     .and_then(J::as_object_mut)
-                    .ok_or_else(|| Abort::Throw(format!("votes: joueur {handle} inconnu")))?;
+                    .ok_or_else(|| Abort::Throw(format!("votes: unknown player {handle}")))?;
                 pdoc.insert(
                     "votes".into(),
                     get(d2, &["m_value"]).cloned().unwrap_or(J::Null),
@@ -761,14 +761,14 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
                 let handle = player_id_map
                     .get(&key)
                     .and_then(J::as_str)
-                    .ok_or_else(|| Abort::Throw(format!("globes: tracker id {key} non mappé")))?
+                    .ok_or_else(|| Abort::Throw(format!("globes: tracker id {key} not mapped")))?
                     .to_owned();
                 let globes = players
                     .get_mut(&handle)
                     .and_then(J::as_object_mut)
                     .and_then(|p| p.get_mut("globes"))
                     .and_then(J::as_object_mut)
-                    .ok_or_else(|| Abort::Throw(format!("globes: joueur {handle} inconnu")))?;
+                    .ok_or_else(|| Abort::Throw(format!("globes: unknown player {handle}")))?;
                 let count = globes.get("count").and_then(J::as_i64).unwrap_or(0) + 1;
                 globes.insert("count".into(), J::from(count));
                 globes
@@ -806,7 +806,7 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
                 &cores,
                 loop_game_start,
             )?;
-            // branches par carte de UnitDied (parser.js:1655-1896)
+            // per-map branches of UnitDied (parser.js:1655-1896)
             obj_unit_died(event, &mut match_, &mut ost, loop_game_start)?;
         } else if eid == Some(unit_owner_change_eventid) {
             // shrines/terreurs/beacons/payload (parser.js:1897-1979)
@@ -820,10 +820,10 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
         }
     }
 
-    // ===== Cleanup objectifs par carte post-boucle (parser.js:1982-2109) =====
+    // ===== Post-loop cleanup of the per-map objectives (parser.js:1982-2109) =====
     obj_cleanup(&mut match_, &mut ost, loop_game_start)?;
 
-    // ===== Cleanup des vies de héros (parser.js:2111-2124) =====
+    // ===== Cleanup of the hero lives (parser.js:2111-2124) =====
     let final_loop_len_secs =
         loops_to_seconds(js_number(match_.get("loopLength")) - loop_game_start);
     for pid in js_for_in_keys(&player_id_map) {
@@ -856,7 +856,7 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
         }
     }
 
-    // ===== XP de fin de partie (parser.js:2126-2129) : undefined → null au stringify =====
+    // ===== End-of-game XP (parser.js:2126-2129): undefined → null on stringify =====
     {
         let xpb = match_
             .get_mut("XPBreakdown")
@@ -867,8 +867,8 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
     }
 
     // ===== Passe finale (parser.js:2140-2210) =====
-    // match.length/team0Takedowns/team1Takedowns sont désormais finaux (mort du core +
-    // PlayerDeath, T4) ; match.teams (ids/names/heroes/tags/level) reste T7.
+    // match.length/team0Takedowns/team1Takedowns are now final (core death +
+    // PlayerDeath, T4); match.teams (ids/names/heroes/tags/level) remains T7.
     let final_length = js_number(match_.get("length"));
     let team_takedowns = [
         js_number(match_.get("team0Takedowns")),
@@ -885,7 +885,7 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
         let pdoc = players
             .get_mut(handle)
             .and_then(J::as_object_mut)
-            .ok_or_else(|| Abort::Throw("joueur absent".into()))?;
+            .ok_or_else(|| Abort::Throw("missing player".into()))?;
         let team = pdoc.get("team").and_then(J::as_i64);
         let win = matches!(pdoc.get("win"), Some(J::Bool(true)));
         let gs = pdoc
@@ -935,7 +935,7 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
             }
         }
     }
-    // match sans vainqueur = incomplet (parser.js:2205-2208)
+    // match without a winner = incomplete (parser.js:2205-2208)
     let Some(w) = winner else {
         return Err(Abort::Status(status::INCOMPLETE));
     };
@@ -943,7 +943,7 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
     match_.insert("winningPlayers".into(), J::Array(team_ids[w].clone()));
 
     // ===== messages + BM (taunts/dances/bsteps) — parser.js:2214-2346 =====
-    // (with/against dépendent de match.teams complet → T7)
+    // (with/against depend on the complete match.teams → T7)
     let mut hotkey_profiles: HashMap<String, String> = HashMap::new();
     let mut actions: HashMap<String, i64> = HashMap::new();
     process_messages_and_bm(
@@ -956,10 +956,10 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
         &mut actions,
     )?;
 
-    // ===== collectTeamStats, partie structures (parser.js:2659+, 2704-2729) =====
-    // Interne, consommé par getFirstFortTeam/getFirstKeepTeam : par équipe, nom de structure →
-    // `first` (instant de la première destruction chez l'adversaire, init match.length).
-    // Le reste (mercUptime, KDA équipe, PPK, totals…) va dans match.teams[].stats : T7.
+    // ===== collectTeamStats, structures part (parser.js:2659+, 2704-2729) =====
+    // Internal, consumed by getFirstFortTeam/getFirstKeepTeam: per team, structure name →
+    // `first` (time of the first destruction on the opponent's side, init match.length).
+    // The rest (mercUptime, team KDA, PPK, totals…) goes into match.teams[].stats: T7.
     let team_structures: [HashMap<String, f64>; 2] = {
         let empty = Map::new();
         let structs = match_
@@ -972,7 +972,7 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
             for s in structs.values() {
                 let name = js_prop(get(s, &["name"]));
                 let entry = slot.entry(name).or_insert(final_length);
-                // `'destroyed' in structure` — présence de la clé, même null
+                // `'destroyed' in structure` — presence of the key, even null
                 if get(s, &["destroyed"]).is_some() && js_number(get(s, &["team"])) == other as f64
                 {
                     *entry = js_min(*entry, js_number(get(s, &["destroyed"])));
@@ -983,8 +983,8 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
     };
 
     // ===== computeLevelDiff (parser.js:2973-3045) =====
-    // NB : mute match.levelTimes — chaque entrée reçoit team = "0"/"1" (chaîne, clé for..in),
-    // visible dans la sortie sérialisée.
+    // NB: mutates match.levelTimes — each entry gets team = "0"/"1" (string, for..in key),
+    // visible in the serialised output.
     let mut adv: Vec<(String, f64, f64)> = Vec::new(); // (team, time, level)
     {
         let lt = match_
@@ -995,13 +995,13 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
             let bucket = lt
                 .get_mut(&t)
                 .and_then(J::as_object_mut)
-                .ok_or_else(|| Abort::Throw("levelTimes: équipe non-objet".into()))?;
+                .ok_or_else(|| Abort::Throw("levelTimes: non-object team".into()))?;
             let keys = js_for_in_keys(bucket);
             for k in &keys {
                 let lobj = bucket
                     .get_mut(k)
                     .and_then(J::as_object_mut)
-                    .ok_or_else(|| Abort::Throw("levelTimes: entrée non-objet".into()))?;
+                    .ok_or_else(|| Abort::Throw("levelTimes: non-object entry".into()))?;
                 lobj.insert("team".into(), J::from(t.as_str()));
                 adv.push((
                     t.clone(),
@@ -1009,11 +1009,11 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
                     js_number(lobj.get("level")),
                 ));
             }
-            // niveau final au temps match.length ; équipe sans LevelUp →
-            // levelTimes[t][undefined].level lève (catch JS)
+            // final level at time match.length; team without LevelUp →
+            // levelTimes[t][undefined].level throws (JS catch)
             let last = keys
                 .last()
-                .ok_or_else(|| Abort::Throw("levelTimes: équipe vide".into()))?;
+                .ok_or_else(|| Abort::Throw("levelTimes: empty team".into()))?;
             let level = js_number(bucket.get(last).and_then(|l| get(l, &["level"])));
             adv.push((t.clone(), final_length, level));
         }
@@ -1030,7 +1030,7 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
             red_level = *level;
         }
         let new_diff = blue_level - red_level;
-        // `!==` JS : NaN ≠ NaN aussi — `!=` f64 a la même table de vérité
+        // JS `!==`: NaN ≠ NaN too — f64 `!=` has the same truth table
         if new_diff != current_diff {
             timeline.push((start, *time, current_diff));
             start = *time;
@@ -1051,8 +1051,8 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
         ),
     );
 
-    // ===== analyzeLevelAdv (parser.js:3047-3080) — partie copiée dans gameStats =====
-    // (maxLevelAdv/avgLevelAdv ne vont que dans match.teams[].stats : T7)
+    // ===== analyzeLevelAdv (parser.js:3047-3080) — part copied into gameStats =====
+    // (maxLevelAdv/avgLevelAdv only go into match.teams[].stats: T7)
     let mut level_adv_time = [0.0f64, 0.0];
     for (s, e, d) in &timeline {
         if *d > 0.0 {
@@ -1066,13 +1066,13 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
         level_adv_time[1] / final_length,
     ];
 
-    // ===== analyzeUptime, partie lifespan (parser.js:2793-2795 + 2831-2847) =====
-    // (uptime/wipes/aces d'équipe : T7)
+    // ===== analyzeUptime, lifespan part (parser.js:2793-2795 + 2831-2847) =====
+    // (team uptime/wipes/aces: T7)
     for handle in &order {
         let pdoc = players
             .get_mut(handle)
             .and_then(J::as_object_mut)
-            .ok_or_else(|| Abort::Throw("lifespan: joueur absent".into()))?;
+            .ok_or_else(|| Abort::Throw("lifespan: missing player".into()))?;
         let length = js_number(pdoc.get("length"));
         let mut intervals: Vec<(f64, f64)> = Vec::new();
         if let Some(units) = pdoc.get("units").and_then(J::as_object) {
@@ -1101,7 +1101,7 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
         );
     }
 
-    // ===== XP passive (parser.js:2355-2375) : lève si un EndOfGameXPBreakdown manque =====
+    // ===== Passive XP (parser.js:2355-2375): throws if an EndOfGameXPBreakdown is missing =====
     let trickle = [
         js_number(get(
             team_xp_end[0]
@@ -1121,19 +1121,19 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
     let passive_diff = [trickle[0] / baseline_passive, trickle[1] / baseline_passive];
     let passive_gain = [trickle[0] - baseline_passive, trickle[1] - baseline_passive];
 
-    // ===== Copies stats d'équipe → gameStats (parser.js:2379-2391), partie T4 =====
-    // passiveXP* et levelAdv* (calculés directement) ; aces/wipes/timeWithHeroAdv/
-    // pctWithHeroAdv sont recopiés depuis match.teams[].stats par build_teams (T7).
+    // ===== Team stats copies → gameStats (parser.js:2379-2391), T4 part =====
+    // passiveXP* and levelAdv* (computed directly); aces/wipes/timeWithHeroAdv/
+    // pctWithHeroAdv are copied from match.teams[].stats by build_teams (T7).
     for handle in &order {
         let pdoc = players
             .get_mut(handle)
             .and_then(J::as_object_mut)
-            .ok_or_else(|| Abort::Throw("teamStats: joueur absent".into()))?;
+            .ok_or_else(|| Abort::Throw("teamStats: missing player".into()))?;
         let t = match pdoc.get("team").and_then(J::as_i64) {
             Some(0) => 0usize,
             Some(1) => 1usize,
-            // match.teams[team] indéfini → .stats lève (catch JS)
-            _ => return Err(Abort::Throw("teamStats: équipe invalide".into())),
+            // match.teams[team] undefined → .stats throws (JS catch)
+            _ => return Err(Abort::Throw("teamStats: invalid team".into())),
         };
         let gs = pdoc
             .get_mut("gameStats")
@@ -1147,8 +1147,8 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
     }
 
     // ===== match.teams + collectTeamStats + analyzeLevelAdv + analyzeUptime (T7) =====
-    // (parser.js:2132-2191, 2348-2391, 2659-2926) — peuple match.teams[].stats puis recopie
-    // aces/wipes/timeWithHeroAdv/pctWithHeroAdv dans gameStats.
+    // (parser.js:2132-2191, 2348-2391, 2659-2926) — populates match.teams[].stats then copies
+    // aces/wipes/timeWithHeroAdv/pctWithHeroAdv into gameStats.
     build_teams(
         &mut match_,
         &mut players,
@@ -1159,12 +1159,12 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
         &passive_gain,
     )?;
 
-    // ===== with/against (parser.js:2194-2203) — match.teams complet : référence à l'équipe =====
+    // ===== with/against (parser.js:2194-2203) — complete match.teams: reference to the team =====
     for handle in &order {
         let team = players
             .get(handle)
             .and_then(|p| get(p, &["team"]).and_then(J::as_i64))
-            .ok_or_else(|| Abort::Throw("with/against: équipe absente".into()))?;
+            .ok_or_else(|| Abort::Throw("with/against: missing team".into()))?;
         let with = match_
             .get("teams")
             .and_then(|t| get(t, &[team.to_string().as_str()]))
@@ -1178,13 +1178,13 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
         let pdoc = players
             .get_mut(handle)
             .and_then(J::as_object_mut)
-            .ok_or_else(|| Abort::Throw("with/against: joueur absent".into()))?;
+            .ok_or_else(|| Abort::Throw("with/against: missing player".into()))?;
         pdoc.insert("with".into(), with);
-        // against assigné seulement pour team 0/1 (parser.js:2198-2202) — toujours le cas ici
+        // against assigned only for team 0/1 (parser.js:2198-2202) — always the case here
         pdoc.insert("against".into(), against);
     }
 
-    // firstPickWin (parser.js:2397-2403) : picks.first === winner ; pas de draft (QM) → false.
+    // firstPickWin (parser.js:2397-2403): picks.first === winner; no draft (QM) → false.
     let first_pick_win = match match_.get("picks") {
         Some(p) => get(p, &["first"]).and_then(J::as_i64) == Some(w as i64),
         None => false,
@@ -1199,24 +1199,24 @@ fn process_inner(path: &Path, filename: &str) -> R<Output> {
 
     // ===== firstFort / firstKeep (parser.js:2407-2410 + 3304-3328) =====
     let first_fort: i64 = {
-        // pas de Fort → undefined.first lève (catch JS)
+        // no Fort → undefined.first throws (JS catch)
         let t0 = team_structures[0]
             .get("Fort")
             .copied()
-            .ok_or_else(|| Abort::Throw("structures.Fort absent (équipe 0)".into()))?;
+            .ok_or_else(|| Abort::Throw("structures.Fort missing (team 0)".into()))?;
         let t1 = team_structures[1]
             .get("Fort")
             .copied()
-            .ok_or_else(|| Abort::Throw("structures.Fort absent (équipe 1)".into()))?;
+            .ok_or_else(|| Abort::Throw("structures.Fort missing (team 1)".into()))?;
         if t0 > t1 {
             1
         } else if t0 < t1 {
             0
         } else {
-            -1 // même instant (ou NaN)
+            -1 // same time (or NaN)
         }
     };
-    // « towers of doom has keeps but they upgrade from forts » : absent → -2
+    // "towers of doom has keeps but they upgrade from forts": missing → -2
     let first_keep: i64 = match (
         team_structures[0].get("Keep"),
         team_structures[1].get("Keep"),

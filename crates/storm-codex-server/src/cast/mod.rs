@@ -1,6 +1,6 @@
-//! Régie de cast — état de série pur (aucune I/O) : équipes, pool de cartes, parties, score,
-//! scène courante. Sérialisable (persistance, WS). Les types `Side`/`Format` viennent de `draft`
-//! (JSON : `"blue"`/`"red"`, `"standard"`/`"normal"`/`"fearless"`).
+//! Cast control room — pure series state (no I/O): teams, map pool, games, score,
+//! current scene. Serialisable (persistence, WS). The `Side`/`Format` types come from `draft`
+//! (JSON: `"blue"`/`"red"`, `"standard"`/`"normal"`/`"fearless"`).
 use crate::draft::{Format, Side};
 use serde::{Deserialize, Serialize};
 
@@ -15,7 +15,7 @@ pub mod sync;
 
 pub const SCHEMA_VERSION: i32 = 1;
 
-/// Les tests d'intégration partagent la ligne `cast_live` : on les sérialise (api.rs, replay.rs).
+/// The integration tests share the `cast_live` row: we serialise them (api.rs, replay.rs).
 #[cfg(test)]
 pub(crate) static TEST_DB_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
@@ -52,8 +52,8 @@ pub struct PoolMap {
     pub status: MapStatus,
 }
 
-/// Forme tolérante en lecture : un `status` absent donne `Available`, mais un `status`/`by`
-/// invalide est une erreur (jamais dégradé silencieusement en `Available`).
+/// Lenient shape on read: a missing `status` gives `Available`, but an invalid `status`/`by`
+/// is an error (never silently degraded to `Available`).
 #[derive(Deserialize)]
 struct PoolMapRaw {
     #[serde(default)]
@@ -94,15 +94,15 @@ pub struct Team {
     pub captain: Option<u8>,
 }
 
-/// Ligne joueur du résumé (valeurs `players[toon].gameStats` de storm-stats, cf. `summary.rs`).
+/// Player row of the summary (`players[toon].gameStats` values of storm-stats, see `summary.rs`).
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct PlayerSummary {
     pub side: Side,
-    /// ToonHandle storm-stats (clé de `players`) : rattachement aux joueurs de la série (R14).
+    /// storm-stats ToonHandle (key of `players`): link to the series' players (R14).
     pub toon: String,
     pub name: String,
     pub hero: String,
-    /// `SoloKill` (colonne K de la fiche de match).
+    /// `SoloKill` (column K of the match sheet).
     pub kills: u32,
     pub takedowns: u32,
     pub deaths: u32,
@@ -112,15 +112,15 @@ pub struct PlayerSummary {
     pub healing: u64,
 }
 
-/// Résumé compact d'une partie, extrait d'un replay Custom (`POST /api/cast/games/{n}/replay`).
-/// Tableaux `[blue, red]` (équipe 0 du replay = Blue). `None` / vide = valeur absente de la sortie
-/// storm-stats : l'écran retire la ligne, rien n'est inventé (mapping : docs/spec/03-storm-stats.md).
+/// Compact summary of a game, extracted from a Custom replay (`POST /api/cast/games/{n}/replay`).
+/// `[blue, red]` arrays (replay team 0 = Blue). `None` / empty = value missing from the storm-stats
+/// output: the screen removes the row, nothing is invented (mapping: docs/spec/03-storm-stats.md).
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct GameSummary {
-    /// Carte du replay (nom storm-stats, ex. « Tomb of the Spider Queen »). Sert à l'import groupé.
+    /// Map of the replay (storm-stats name, e.g. "Tomb of the Spider Queen"). Used by the bulk import.
     #[serde(default)]
     pub map: Option<String>,
-    /// Date de la partie (ISO 8601 UTC, storm-stats `date`) : ordre de l'import groupé.
+    /// Date of the game (ISO 8601 UTC, storm-stats `date`): order of the bulk import.
     #[serde(default)]
     pub played_at: Option<String>,
     pub duration_secs: u32,
@@ -128,25 +128,25 @@ pub struct GameSummary {
     pub takedowns: [u32; 2],
     #[serde(default)]
     pub team_level: Option<[u32; 2]>,
-    /// Forts + keeps détruits par l'équipe.
+    /// Forts + keeps destroyed by the team.
     #[serde(default)]
     pub structures: Option<[u32; 2]>,
     #[serde(default)]
     pub merc_camps: Option<[u32; 2]>,
     #[serde(default)]
     pub objectives: Option<[u32; 2]>,
-    /// Noms canoniques des héros bannis.
+    /// Canonical names of the banned heroes.
     #[serde(default)]
     pub bans: [Vec<String>; 2],
-    /// Joueurs Blue puis Red, ordre de pick.
+    /// Blue then Red players, pick order.
     #[serde(default)]
     pub players: Vec<PlayerSummary>,
-    /// (secondes, avance d'XP de Blue) — négatif = Red devant.
+    /// (seconds, Blue's XP lead) — negative = Red ahead.
     #[serde(default)]
     pub xp_lead: Vec<(u32, i32)>,
 }
 
-/// Lecture tolérante d'un résumé persisté : illisible → `None` (la série reste chargeable).
+/// Lenient read of a persisted summary: unreadable → `None` (the series stays loadable).
 fn lenient_summary<'de, D: serde::Deserializer<'de>>(
     d: D,
 ) -> Result<Option<GameSummary>, D::Error> {
@@ -183,8 +183,8 @@ pub struct SlideState {
     pub index: u8,
     pub auto: bool,
     pub interval_ms: u32,
-    /// Instant (ms depuis l'epoch, horloge serveur) où la slide `index` a été posée : la rotation
-    /// auto de l'overlay et de l'aperçu se calcule à partir de cette ancre (même horloge → même slide).
+    /// Time (ms since the epoch, server clock) at which slide `index` was set: the auto
+    /// rotation of the overlay and of the preview is computed from this anchor (same clock → same slide).
     pub since_ms: i64,
 }
 impl Default for SlideState {
@@ -203,15 +203,15 @@ impl Default for SlideState {
 #[serde(default)]
 pub struct Series {
     pub schema_version: i32,
-    /// Identité de la série (uuid, posée par `POST /api/cast/series` ; vide avant la première) :
-    /// une opération longue (dépôt de replay) vérifie qu'elle s'applique encore à la même série.
+    /// Series identity (uuid, set by `POST /api/cast/series`; empty before the first one):
+    /// a long operation (replay drop) checks that it still applies to the same series.
     pub series_id: String,
     pub active: bool,
     pub blue: Team,
     pub red: Team,
     pub bo: u8,
     pub format: Format,
-    /// [blue, red] — remplace le score calculé quand présent.
+    /// [blue, red] — replaces the computed score when present.
     pub score_override: Option<[u8; 2]>,
     pub pool: Vec<PoolMap>,
     pub games: Vec<GameRecord>,
@@ -257,30 +257,30 @@ pub enum CastError {
     MapNotChosen,
     #[error("unknown game")]
     UnknownGame,
-    /// Le vainqueur vient du résumé du replay (qui porte sa propre orientation) : non modifiable à la main.
+    /// The winner comes from the replay's summary (which carries its own orientation): not editable by hand.
     #[error("winner already set by the game's replay")]
     WinnerAlreadySet,
-    /// Seule la dernière partie peut être retirée (R21).
+    /// Only the last game can be removed (R21).
     #[error("only the last game can be removed")]
     NotLastGame,
-    /// Partie avec vainqueur ou résumé : non retirable (R21).
+    /// Game with a winner or a summary: not removable (R21).
     #[error("game already has a result")]
     GameHasResult,
     #[error("map already played")]
     MapAlreadyPlayed,
     #[error("series inactive")]
     SeriesInactive,
-    /// Replay sans preuve d'orientation dont le vainqueur contredit le vainqueur saisi (R16).
+    /// Replay without proof of orientation whose winner contradicts the entered winner (R16).
     #[error("replay sides do not match the recorded winner")]
     SideMismatch,
-    /// La série a été remplacée pendant une opération longue (décodage d'un replay).
+    /// The series was replaced during a long operation (decoding of a replay).
     #[error("the series changed while the replay was decoded")]
     SeriesChanged,
 }
 
 impl CastError {
-    /// Code stable renvoyé par les routes (`409 {"error": code}`) — contrat de l'API (docs/spec/05-api.md),
-    /// indépendant du nom Rust de la variante.
+    /// Stable code returned by the routes (`409 {"error": code}`) — API contract (docs/spec/05-api.md),
+    /// independent of the Rust name of the variant.
     pub fn code(&self) -> &'static str {
         match self {
             Self::UnknownMap => "UnknownMap",

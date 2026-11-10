@@ -1,23 +1,23 @@
-//! Parité du parser autonome contre le parse complet, sur un dossier de replays.
+//! Parity of the standalone parser against the full parse, on a folder of replays.
 //!
-//! Usage : cargo run --release -p storm-lobby --example parity -- <dossier> [max]
+//! Usage: cargo run --release -p storm-lobby --example parity -- <folder> [max]
 //!
-//! Deux mesures indépendantes, à ne pas confondre :
-//!   - `battletags exacts` : le parser retrouve exactement les 10 BattleTags de la partie.
-//!   - `équipes exactes`   : parmi ceux-là, la déduction par l'ordre (5+5) correspond à la vérité.
+//! Two independent measurements, not to be confused:
+//!   - `exact battletags`: the parser finds exactly the 10 BattleTags of the game.
+//!   - `exact teams`     : among those, the deduction from the order (5+5) matches the truth.
 //!
-//!   La première décide du go/no-go ; la seconde décide si le companion affiche deux équipes.
+//!   The first one decides the go/no-go; the second decides whether the companion shows two teams.
 //!
-//! Ce harnais produit lui-même toutes les preuves du rapport de parité
-//! (`docs/research/2026-08-27-lobby-parity.md`) : ventilation par mode de jeu, distinction
-//! sur-capture / sous-capture (comptée sur l'archive entière, pas sur un échantillon), et le détail
-//! nommé des premières divergences. Rien dans le rapport ne doit venir d'un script non committé.
+//! This harness itself produces all the evidence of the parity report
+//! (`docs/research/2026-08-27-lobby-parity.md`): breakdown per game mode, distinction
+//! over-capture / under-capture (counted on the whole archive, not on a sample), and the named
+//! detail of the first divergences. Nothing in the report may come from an uncommitted script.
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
-/// Sentinelle pour un mode absent du JSON de vérité — distincte de `-1` (Personnalisée), qui est un
-/// mode réel.
+/// Sentinel for a mode missing from the truth JSON — distinct from `-1` (Custom), which is a
+/// real mode.
 const MODE_INCONNU: i64 = i64::MIN;
 
 #[derive(Default)]
@@ -38,35 +38,35 @@ struct Divergence {
 #[derive(Default)]
 struct Tally {
     total: usize,
-    /// Replays qui sortent avant même que la vérité soit calculable : `Replay::open` échoue, ou
-    /// `battlelobby_raw` est absent. Doivent être retranchés de la base, comme `stats_rejete` —
-    /// sinon la base est gonflée et le taux publié sous-estime le parser.
+    /// Replays that drop out before the truth can even be computed: `Replay::open` fails, or
+    /// `battlelobby_raw` is missing. Must be subtracted from the base, like `stats_rejete` —
+    /// otherwise the base is inflated and the published rate underestimates the parser.
     non_evaluables: usize,
-    /// Rejetés par `storm-stats`, ou vérité incomplète (≠ 10 joueurs résolus).
+    /// Rejected by `storm-stats`, or incomplete truth (≠ 10 resolved players).
     stats_rejete: usize,
     lobby_err: usize,
     battletags_exacts: usize,
     equipes_exactes: usize,
     equipes_evaluables: usize,
-    /// Équipes fausses mais les deux camps simplement PERMUTÉS : l'ordre porte bien
-    /// l'information d'équipe, il manque seulement de savoir quel côté est lequel. Réparable
-    /// d'un clic côté produit.
+    /// Wrong teams but the two sides simply SWAPPED: the order does carry the
+    /// team information, only which side is which is missing. Fixable
+    /// in one click on the product side.
     equipes_inversion: usize,
-    /// Équipes fausses sans être une permutation : l'ordre du lobby ne porte aucune
-    /// information d'équipe. Rien à réparer — l'information est absente.
+    /// Wrong teams without being a swap: the lobby order carries no
+    /// team information. Nothing to fix — the information is absent.
     equipes_disperse: usize,
-    /// Plus de 10 décodés, mais les 10 vrais joueurs tous présents : des occupants en plus
-    /// (observateurs), jamais un joueur manquant.
+    /// More than 10 decoded, but the 10 real players all present: extra occupants
+    /// (observers), never a missing player.
     sur_capture: usize,
-    /// Tout le reste : un vrai joueur manque, ou le décodage est faux d'une autre façon.
+    /// Everything else: a real player is missing, or the decoding is wrong in another way.
     sous_capture_ou_faux: usize,
-    par_build: BTreeMap<u32, (usize, usize)>, // build → (évalués, battletags exacts)
+    par_build: BTreeMap<u32, (usize, usize)>, // build → (evaluated, exact battletags)
     par_mode: BTreeMap<i64, ModeTally>,
     divergents: Vec<Divergence>,
 }
 
-/// `{battletag: équipe}` d'après le parse complet, et le mode de la partie, ou `None` si le replay
-/// est rejeté par `storm-stats`.
+/// `{battletag: team}` from the full parse, and the game mode, or `None` if the replay
+/// is rejected by `storm-stats`.
 fn verite(path: &Path) -> Option<(i64, BTreeMap<String, i64>)> {
     let filename = path.file_name()?.to_str()?;
     let out = storm_stats::process_replay(path, filename);
@@ -88,20 +88,20 @@ fn verite(path: &Path) -> Option<(i64, BTreeMap<String, i64>)> {
     Some((mode, players))
 }
 
-/// Nom lisible du mode, pour l'affichage du tableau.
+/// Readable mode name, for the table display.
 fn nom_mode(mode: i64) -> String {
     match mode {
         50091 => "50091 — Storm League".into(),
         50101 => "50101 — ARAM".into(),
         50001 => "50001 — Quick Match".into(),
-        -1 => "-1 — Personnalisée".into(),
-        MODE_INCONNU => "mode inconnu (absent du JSON)".into(),
-        other => format!("{other} — inconnu"),
+        -1 => "-1 — Custom".into(),
+        MODE_INCONNU => "unknown mode (missing from the JSON)".into(),
+        other => format!("{other} — unknown"),
     }
 }
 
-/// Classe une divergence de BattleTags : sur-capture (les 10 vrais sont tous là, plus des occupants
-/// en trop) ou sous-capture/décodage faux (tout le reste — un vrai joueur manque).
+/// Classifies a BattleTag divergence: over-capture (the 10 real ones are all there, plus extra
+/// occupants) or under-capture/wrong decoding (everything else — a real player is missing).
 fn classer(
     decoded: &[storm_lobby::LobbyPlayer],
     attendu: &BTreeMap<String, i64>,
@@ -131,13 +131,13 @@ fn main() -> anyhow::Result<()> {
         .next()
         .ok_or_else(|| anyhow::anyhow!("usage: parity <dossier> [max]"))?
         .into();
-    // Un `max` mal tapé doit faire échouer l'outil, pas retomber silencieusement sur "tout parcourir"
-    // — sur un harnais de mesure, une valeur illisible avalée en silence fausserait la base sans
-    // qu'on s'en aperçoive.
+    // A mistyped `max` must make the tool fail, not silently fall back to "walk everything"
+    // — on a measurement harness, an unreadable value silently swallowed would skew the base without
+    // anyone noticing.
     let max: usize = match args.next() {
         Some(s) => s
             .parse()
-            .map_err(|e| anyhow::anyhow!("max invalide « {s} » : {e}"))?,
+            .map_err(|e| anyhow::anyhow!("invalid max \"{s}\": {e}"))?,
         None => usize::MAX,
     };
 
@@ -206,7 +206,7 @@ fn main() -> anyhow::Result<()> {
                     }
                     t.divergents.push(Divergence {
                         label,
-                        reason: format!("{} battletags décodés", lobby.players.len()),
+                        reason: format!("{} battletags decoded", lobby.players.len()),
                         en_trop,
                         manquants,
                     });
@@ -227,9 +227,9 @@ fn main() -> anyhow::Result<()> {
                         t.equipes_exactes += 1;
                         mode_tally.equipes_exactes += 1;
                     } else {
-                        // Permutation complète : chaque joueur est dans l'équipe opposée à celle
-                        // qu'on lui a assignée. C'est la seule forme d'erreur d'équipe qu'un
-                        // produit puisse réparer d'un clic — d'où le comptage séparé.
+                        // Full swap: each player is in the team opposite to the one
+                        // we assigned. It is the only form of team error that a
+                        // product can fix in one click — hence the separate count.
                         let inversion = lobby.players.iter().all(|p| match p.team {
                             None => true,
                             Some(team) => attendu.get(&p.battletag()) == Some(&i64::from(1 - team)),
@@ -241,7 +241,7 @@ fn main() -> anyhow::Result<()> {
                         }
                         t.divergents.push(Divergence {
                             label,
-                            reason: "équipes divergentes".into(),
+                            reason: "divergent teams".into(),
                             en_trop: Vec::new(),
                             manquants: Vec::new(),
                         });
@@ -251,13 +251,13 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
-    // La base doit être dérivée de ce qui a réellement été évalué : ni les non-évaluables (échec
-    // d'ouverture / blob absent), ni les rejetés par storm-stats, ne doivent y rester silencieusement.
+    // The base must be derived from what was really evaluated: neither the non-evaluable ones (open
+    // failure / missing blob) nor those rejected by storm-stats may silently stay in it.
     let base = t.total - t.non_evaluables - t.stats_rejete;
     let somme_modes: usize = t.par_mode.values().map(|m| m.evalues).sum();
     assert_eq!(
         base, somme_modes,
-        "incohérence interne : la base ({base}) ne correspond pas à la somme des évalués par mode ({somme_modes})"
+        "internal inconsistency: the base ({base}) does not match the sum evaluated per mode ({somme_modes})"
     );
 
     let pct = |n: usize, d: usize| {
@@ -268,53 +268,50 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
-    println!("replays vus          : {}", t.total);
+    println!("replays seen         : {}", t.total);
+    println!("not evaluable        : {} (open/blob)", t.non_evaluables);
+    println!("rejected (stats)     : {}", t.stats_rejete);
+    println!("comparison base      : {base}");
     println!(
-        "non-évaluables       : {} (ouverture/blob)",
-        t.non_evaluables
-    );
-    println!("écartés (stats)      : {}", t.stats_rejete);
-    println!("base de comparaison  : {base}");
-    println!(
-        "battletags exacts    : {} ({:.2} %)",
+        "exact battletags     : {} ({:.2} %)",
         t.battletags_exacts,
         pct(t.battletags_exacts, base)
     );
-    println!("erreurs de parse     : {}", t.lobby_err);
+    println!("parse errors         : {}", t.lobby_err);
     println!(
-        "équipes exactes      : {} / {} évaluables ({:.2} %)",
+        "exact teams          : {} / {} evaluable ({:.2} %)",
         t.equipes_exactes,
         t.equipes_evaluables,
         pct(t.equipes_exactes, t.equipes_evaluables)
     );
     let fausses = t.equipes_inversion + t.equipes_disperse;
     println!(
-        "  dont inversion franche (camps permutés)   : {} ({:.2} % des fausses)",
+        "  of which clean swap (sides swapped)       : {} ({:.2} % of wrong ones)",
         t.equipes_inversion,
         pct(t.equipes_inversion, fausses)
     );
     println!(
-        "  dont ordre sans information d'équipe      : {} ({:.2} % des fausses)",
+        "  of which order without team information  : {} ({:.2} % of wrong ones)",
         t.equipes_disperse,
         pct(t.equipes_disperse, fausses)
     );
 
-    println!("\nmode d'échec (sur la base entière, {base} replays)");
+    println!("\nfailure mode (over the whole base, {base} replays)");
     println!(
-        "  sur-capture (10 vrais + occupants en trop) : {} ({:.2} %)",
+        "  over-capture (10 real + extra occupants)   : {} ({:.2} %)",
         t.sur_capture,
         pct(t.sur_capture, base)
     );
     println!(
-        "  sous-capture ou décodage faux               : {} ({:.2} %)",
+        "  under-capture or wrong decoding            : {} ({:.2} %)",
         t.sous_capture_ou_faux,
         pct(t.sous_capture_ou_faux, base)
     );
 
-    println!("\npar mode de jeu");
+    println!("\nper game mode");
     println!(
         "  {:<32} {:>8} {:>22} {:>22}",
-        "mode", "évalués", "battletags exacts", "équipes exactes"
+        "mode", "evaluated", "exact battletags", "exact teams"
     );
     for (mode, m) in &t.par_mode {
         println!(
@@ -328,19 +325,19 @@ fn main() -> anyhow::Result<()> {
         );
     }
 
-    println!("\npar build (build: battletags exacts/évalués)");
+    println!("\nper build (build: exact battletags/evaluated)");
     for (build, (evalues, exacts)) in &t.par_build {
         println!("  {build}: {exacts}/{evalues}");
     }
 
-    println!("\n20 premières divergences (battletags en trop / manquants nommés)");
+    println!("\nfirst 20 divergences (extra / missing battletags named)");
     for d in t.divergents.iter().take(20) {
         println!("  {} — {}", d.label, d.reason);
         for bt in &d.en_trop {
-            println!("      EN TROP    -> {bt}");
+            println!("      EXTRA      -> {bt}");
         }
         for bt in &d.manquants {
-            println!("      MANQUANT   -> {bt}");
+            println!("      MISSING    -> {bt}");
         }
     }
 

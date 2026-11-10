@@ -1,61 +1,61 @@
-# Jalon 3 — serveur + Postgres + backfill : critères d'acceptation
+# Milestone 3 — server + Postgres + backfill: acceptance criteria
 
-**Date :** 2026-06-12 · **Statut : FAIT** (dev contre Postgres Docker local ; cible box au
-déploiement). Plan : `docs/plans/2026-06-12-jalon3-serveur-db-backfill.md`.
-Code : `crates/storm-codex-server/`. client-rs adapté : repo `Hots-Overlay` (commit séparé).
+**Date:** 2026-06-12 · **Status: DONE** (dev against a local Docker Postgres; box target at
+deployment). Plan: `docs/plans/2026-06-12-jalon3-serveur-db-backfill.md`.
+Code: `crates/storm-codex-server/`. client-rs adapted: `Hots-Overlay` repo (separate commit).
 
-## Critères (spec) et résultats
+## Criteria (spec) and results
 
-| Critère | Cible | Mesuré | Verdict |
+| Criterion | Target | Measured | Verdict |
 |---|---|---|---|
-| Archive archivée et tentée | 100 % | 2781/2781 fichiers uniques (0 pending) | ✅ |
-| Parsée | ≥ 99 % | **99,4 %** des replays parsables (2722/2739) | ✅ |
-| Échecs listés et classés (Admin) | oui | 59, tous classés et légitimes | ✅ |
-| Backfill 3 ans (~3 000 replays) | < 5 min | **1,8 min** (109 s) | ✅ |
-| Fin de partie → page à jour | < 5 s | **1,4 s** (WS, test E2E) | ✅ |
-| API lecture p95 | < 100 ms | **52 ms** (médiane 30 ms) | ✅ |
-| Écriture PG + push WS | < 200 ms | inclus dans le 1,4 s bout-en-bout | ✅ |
+| Archive archived and attempted | 100 % | 2781/2781 unique files (0 pending) | ✅ |
+| Parsed | ≥ 99 % | **99.4 %** of parsable replays (2722/2739) | ✅ |
+| Failures listed and classified (Admin) | yes | 59, all classified and legitimate | ✅ |
+| 3-year backfill (~3,000 replays) | < 5 min | **1.8 min** (109 s) | ✅ |
+| End of game → page up to date | < 5 s | **1.4 s** (WS, E2E test) | ✅ |
+| Read API p95 | < 100 ms | **52 ms** (median 30 ms) | ✅ |
+| PG write + WS push | < 200 ms | included in the 1.4 s end-to-end | ✅ |
 
-## Backfill réel (archive complète locale)
-Uploader headless concurrent (16 workers) vers le serveur release + Postgres Docker — la GUI
-client-rs étant impraticable à piloter en CI ; le code client-rs est adapté et compilé à part.
+## Real backfill (complete local archive)
+Concurrent headless uploader (16 workers) to the release server + Docker Postgres — the client-rs
+GUI being impractical to drive in CI; the client-rs code is adapted and compiled separately.
 
-- **2823 fichiers** → 2781 uniques (42 doublons de contenu, `409`), tous archivés.
-- **2722 parsés** (97,9 % brut), **59 échecs classés** :
-  - `too_old` 27 — builds alpha pré-2015 (la spec les autorise à échouer) ;
-  - `unsupported_mode` 14 — brawls (`GameMode.Brawl`, hors scope V1) ;
-  - `computer_player` 1 — partie avec IA (hors scope) ;
-  - `parse_failed` (-2) 17 — replays limites (PlayerInit sans handle…) que **hots-parser rejette
-    aussi avec le même statut** (vérifié) → parité fidèle, pas un bug.
-- En excluant les rejets par conception (42), le taux de parse des replays réellement parsables
-  est **99,4 %**.
-- **Toutes les cartes ARAM récentes** (Silver City, Lost Cavern, Braxis Outpost, Industrial
-  District) sont parsées et projetées (grâce à l'extension du jalon 2.5) — ~30 % de l'archive
-  qui aurait été perdue en parité stricte.
+- **2823 files** → 2781 unique (42 content duplicates, `409`), all archived.
+- **2722 parsed** (97.9 % raw), **59 classified failures**:
+  - `too_old` 27 — pre-2015 alpha builds (the spec allows them to fail);
+  - `unsupported_mode` 14 — brawls (`GameMode.Brawl`, outside V1 scope);
+  - `computer_player` 1 — game with AI (out of scope);
+  - `parse_failed` (-2) 17 — borderline replays (PlayerInit without handle…) that **hots-parser also rejects
+    with the same status** (checked) → faithful parity, not a bug.
+- Excluding the rejections by design (42), the parse rate of actually parsable replays
+  is **99.4 %**.
+- **All recent ARAM maps** (Silver City, Lost Cavern, Braxis Outpost, Industrial
+  District) are parsed and projected (thanks to the milestone 2.5 extension) — ~30 % of the archive
+  that would have been lost under strict parity.
 
-## Bug trouvé et corrigé (ce que sert le critère)
-Le premier backfill a révélé **1129 échecs `projection` = deadlock Postgres** : 16 workers
-concurrents faisant des UPSERT sur la table `players`, et comme le propriétaire de l'archive est
-présent dans **toutes** les parties, les transactions acquéraient les verrous de lignes dans des
-ordres différents → cycle de deadlock. Correctifs :
-1. UPSERT `players` **hors de la transaction du match**, en statements autonomes triés par
-   `toon_handle` (verrou tenu ~1 ms au lieu de toute la transaction ; best-effort).
-2. **Reprise sur deadlock/sérialisation** (40P01/40001) dans `project_match`.
+## Bug found and fixed (what the criterion is for)
+The first backfill revealed **1129 `projection` failures = Postgres deadlock**: 16 concurrent
+workers doing UPSERTs on the `players` table, and since the archive owner is
+present in **every** game, the transactions acquired row locks in different
+orders → deadlock cycle. Fixes:
+1. `players` UPSERT **outside the match transaction**, in standalone statements sorted by
+   `toon_handle` (lock held ~1 ms instead of the whole transaction; best-effort).
+2. **Retry on deadlock/serialisation** (40P01/40001) in `project_match`.
 
-Effet : 1129 échecs → 0, et durée **1190 s → 109 s** (×11). Le critère « backfill réel » a fait
-son travail : il a surfacé une vraie erreur de concurrence invisible aux tests unitaires.
+Effect: 1129 failures → 0, and duration **1190 s → 109 s** (×11). The "real backfill" criterion did
+its job: it surfaced a real concurrency error invisible to unit tests.
 
-## Architecture livrée (rappel)
-axum 0.8 + sqlx 0.8 + tokio. 3 étages : archive brute (source de vérité) · Postgres (projection
-JSONB + colonnes promues, `parser_version`, re-process idempotent) · dump `…/raw` + cache LRU.
-Upload (token, archive d'abord, pool de parse = nb cœurs, sémantique ≤ 2 s / 202), WebSocket
-`match.parsed`, REST (matches/match/player/heroes), admin (tokens/reprocess/santé). Fingerprints
-à deux niveaux (contenu + partie, compat overlay).
+## Architecture delivered (reminder)
+axum 0.8 + sqlx 0.8 + tokio. 3 tiers: raw archive (source of truth) · Postgres (JSONB projection
++ promoted columns, `parser_version`, idempotent re-process) · `…/raw` dump + LRU cache.
+Upload (token, archive first, parse pool = number of cores, ≤ 2 s / 202 semantics), WebSocket
+`match.parsed`, REST (matches/match/player/heroes), admin (tokens/reprocess/health). Two-level
+fingerprints (content + game, overlay compat).
 
-## Limites / suites
-- Dev contre Postgres Docker ; **déploiement box** (rsync + docker compose) au moment de
-  l'intégration (jalon 5 bascule). Le référentiel `dim_heroes`/`dim_talents` reste à peupler
-  depuis l'API HotsPatchNotes (jalon 4). Vues matérialisées d'agrégats chauds : à ajouter si le
-  p95 se dégrade à plus gros volume (52 ms actuel, large marge).
-- Les 17 rejets -2 et les 42 rejets par conception sont re-tentables via `POST /api/admin/reprocess`
-  quand storm-stats évoluera (piloté par `parser_version`).
+## Limits / follow-ups
+- Dev against Docker Postgres; **box deployment** (rsync + docker compose) at
+  integration time (milestone 5 switchover). The `dim_heroes`/`dim_talents` reference data remains to be populated
+  from the HotsPatchNotes API (milestone 4). Materialised views of hot aggregates: to add if the
+  p95 degrades at larger volume (52 ms now, wide margin).
+- The 17 -2 rejections and the 42 rejections by design can be retried via `POST /api/admin/reprocess`
+  when storm-stats evolves (driven by `parser_version`).

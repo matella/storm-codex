@@ -1,6 +1,6 @@
-//! POST /api/cast/games/{n}/replay — dépose le replay Custom d'une partie de la série : décodé à la
-//! volée (même chemin que `draft::replay_api::load`), résumé (`summary.rs`) conservé dans l'état de
-//! la série. **Rien n'est écrit en base** hors de la ligne `cast_live`.
+//! POST /api/cast/games/{n}/replay — drops the Custom replay of a game of the series: decoded on the
+//! fly (same path as `draft::replay_api::load`), summary (`summary.rs`) kept in the series
+//! state. **Nothing is written to the database** outside the `cast_live` row.
 use super::api::{conflict, mutate_ex, DraftSync};
 use super::summary::{summary_from_output, SummaryError};
 use super::{CastError, GameSummary, Orientation};
@@ -26,7 +26,7 @@ fn unprocessable(code: &str, message: String) -> Resp {
     )
 }
 
-/// Fichier temporaire supprimé à la destruction (succès, erreur ou panique du décodeur).
+/// Temporary file deleted on drop (success, error or decoder panic).
 struct TempFile(PathBuf);
 impl Drop for TempFile {
     fn drop(&mut self) {
@@ -34,14 +34,14 @@ impl Drop for TempFile {
     }
 }
 
-/// Décode les octets d'un `.StormReplay` en résumé, sous `parse_sem` comme les autres routes de parsing.
+/// Decodes the bytes of a `.StormReplay` into a summary, under `parse_sem` like the other parsing routes.
 pub(super) async fn decode(s: &AppState, bytes: Bytes) -> Result<GameSummary, Resp> {
     decode_in(s.parse_sem.clone(), std::env::temp_dir(), bytes).await
 }
 
-/// Écriture du fichier temporaire, décodage et suppression se font **dans** le `spawn_blocking`
-/// (rien de bloquant sur l'exécuteur) ; le permis du sémaphore y est déplacé, et la suppression est
-/// garantie par `TempFile` même si le client se déconnecte (la tâche bloquante va à son terme).
+/// Writing the temporary file, decoding and deleting all happen **inside** the `spawn_blocking`
+/// (nothing blocking on the executor); the semaphore permit is moved there, and deletion is
+/// guaranteed by `TempFile` even if the client disconnects (the blocking task runs to completion).
 async fn decode_in(sem: Arc<Semaphore>, dir: PathBuf, bytes: Bytes) -> Result<GameSummary, Resp> {
     let Ok(permit) = sem.acquire_owned().await else {
         return Err((
@@ -79,14 +79,14 @@ async fn decode_in(sem: Arc<Semaphore>, dir: PathBuf, bytes: Bytes) -> Result<Ga
     })
 }
 
-/// Oriente le résumé sur la série (R16, `Series::fill_from_replay`, sous le write-lock donc sur la
-/// série courante) puis remplit la partie `n` (vainqueur, takedowns, durée, résumé) ; persiste,
-/// synchronise le draft, diffuse `cast.updated`. `409 side_mismatch` : rien ne change.
-/// Réponse : le résumé orienté + `orientation` (`evidence` | `assumed` | `forced`) et, si l'échange
-/// forcé contredit une preuve d'orientation directe, `forced_against_evidence: true`.
-/// `series_id` et `map` : identité de la série et carte de la partie `n` relevées AVANT le décodage — si une
-/// autre série a été démarrée, ou si la partie `n` a été retirée (R21) puis relancée sur une autre carte
-/// entre-temps, `409 series_changed` et rien ne change (TOCTOU).
+/// Orients the summary on the series (R16, `Series::fill_from_replay`, under the write-lock so on the
+/// current series) then fills game `n` (winner, takedowns, duration, summary); persists,
+/// syncs the draft, broadcasts `cast.updated`. `409 side_mismatch`: nothing changes.
+/// Response: the oriented summary + `orientation` (`evidence` | `assumed` | `forced`) and, if the forced
+/// swap contradicts direct orientation evidence, `forced_against_evidence: true`.
+/// `series_id` and `map`: identity of the series and map of game `n` taken BEFORE decoding — if another
+/// series was started, or if game `n` was removed (R21) then relaunched on another map
+/// in the meantime, `409 series_changed` and nothing changes (TOCTOU).
 pub(super) async fn apply_to(
     s: &AppState,
     series_id: &str,
@@ -123,14 +123,14 @@ pub(super) async fn apply_to(
 
 #[derive(Deserialize, Default)]
 pub struct ReplayQuery {
-    /// `?swap=1` : l'opérateur force l'échange des côtés (équipe 0 du replay = Red).
+    /// `?swap=1`: the operator forces the side swap (replay team 0 = Red).
     #[serde(default)]
     swap: Option<String>,
 }
 
-/// POST /api/cast/games/{n}/replay — corps = octets bruts du replay. 201 `GameSummary` ;
-/// 400 `empty_body` ; 409 `SeriesInactive` / `UnknownGame` / `side_mismatch` / `series_changed` ; 422 `not_custom` /
-/// `parse_failed` / `incomplete`. `?swap=1` force l'échange des côtés.
+/// POST /api/cast/games/{n}/replay — body = raw bytes of the replay. 201 `GameSummary`;
+/// 400 `empty_body`; 409 `SeriesInactive` / `UnknownGame` / `side_mismatch` / `series_changed`; 422 `not_custom` /
+/// `parse_failed` / `incomplete`. `?swap=1` forces the side swap.
 pub async fn load_game_replay(
     State(s): State<AppState>,
     Path(n): Path<u8>,
@@ -160,9 +160,9 @@ pub async fn load_game_replay(
     }
 }
 
-/// POST /api/cast/replays/inspect — corps = octets bruts d'un `.StormReplay`. Décode sans rien écrire
-/// ni toucher à la série : 200 `GameSummary` (carte et date pour l'import groupé). 400 `empty_body` ;
-/// 422 comme la route de partie.
+/// POST /api/cast/replays/inspect — body = raw bytes of a `.StormReplay`. Decodes without writing anything
+/// or touching the series: 200 `GameSummary` (map and date for the bulk import). 400 `empty_body`;
+/// 422 like the game route.
 pub async fn inspect(State(s): State<AppState>, bytes: Bytes) -> Resp {
     if bytes.is_empty() {
         return (
@@ -181,17 +181,17 @@ pub async fn inspect(State(s): State<AppState>, bytes: Bytes) -> Resp {
 
 #[derive(Deserialize)]
 pub struct ImportQuery {
-    /// Identité de la série au moment de l'inspection : si la série a changé, `409 series_changed`.
+    /// Identity of the series at inspection time: if the series has changed, `409 series_changed`.
     series_id: String,
-    /// Carte du pool à créer comme partie (`picked`/`decider`, pas encore jouée).
+    /// Pool map to create as a game (`picked`/`decider`, not played yet).
     map: String,
-    /// `?swap=1` : même sens que `ReplayQuery`.
+    /// `?swap=1`: same meaning as `ReplayQuery`.
     #[serde(default)]
     swap: Option<String>,
 }
 
-/// Crée la partie `map` puis la remplit depuis `summary`, en une seule mutation : si le replay est
-/// refusé, aucune partie n'est créée. La carte du replay doit être `map` (sinon `409 map_mismatch`).
+/// Creates game `map` then fills it from `summary`, in a single mutation: if the replay is
+/// refused, no game is created. The replay's map must be `map` (otherwise `409 map_mismatch`).
 pub(super) async fn import_to(
     s: &AppState,
     series_id: &str,
@@ -240,10 +240,10 @@ fn conflict_code(code: &str) -> Resp {
     (StatusCode::CONFLICT, Json(json!({ "error": code })))
 }
 
-/// POST /api/cast/replays/import?map=…&swap=… — corps = octets bruts. Crée la partie de la carte
-/// `map` (numéro suivant) et la remplit depuis le replay. 201 = la partie (`GameRecord`) +
-/// `orientation`, `forced_against_evidence`, `summary` ; 409 `map_mismatch` / `SeriesInactive` /
-/// `MapNotChosen` / `UnknownMap` / `side_mismatch`… ; 400 `empty_body` ; 422 comme la route de partie.
+/// POST /api/cast/replays/import?map=…&swap=… — body = raw bytes. Creates the game of map
+/// `map` (next number) and fills it from the replay. 201 = the game (`GameRecord`) +
+/// `orientation`, `forced_against_evidence`, `summary`; 409 `map_mismatch` / `SeriesInactive` /
+/// `MapNotChosen` / `UnknownMap` / `side_mismatch`…; 400 `empty_body`; 422 like the game route.
 pub async fn import_replay(
     State(s): State<AppState>,
     Query(q): Query<ImportQuery>,
@@ -280,13 +280,13 @@ mod tests {
         .unwrap()
     }
 
-    /// Replay Custom réel facultatif (non committé : pseudos réels) — `STORM_CAST_CUSTOM_REPLAY`.
+    /// Optional real Custom replay (not committed: real nicknames) — `STORM_CAST_CUSTOM_REPLAY`.
     fn real_custom() -> Option<Vec<u8>> {
         let p = std::env::var_os("STORM_CAST_CUSTOM_REPLAY")?;
         std::fs::read(p).ok()
     }
 
-    /// Dépôt sur la série courante (identité relue maintenant).
+    /// Drop on the current series (identity re-read now).
     async fn apply(state: &AppState, n: u8, summary: GameSummary, force_swap: bool) -> Resp {
         let (id, map) = {
             let c = state.cast.read().await;
@@ -302,7 +302,7 @@ mod tests {
         apply_to(state, &id, &map, n, summary, force_swap).await
     }
 
-    /// Item 10 : une autre série démarrée pendant le décodage → 409 `series_changed`, rien ne change.
+    /// Item 10: another series started during decoding → 409 `series_changed`, nothing changes.
     #[tokio::test]
     async fn replay_for_a_replaced_series_is_409_series_changed() {
         let _g = DB_LOCK.lock().await;
@@ -312,7 +312,7 @@ mod tests {
         with_game(&state).await;
         let old_id = state.cast.read().await.series_id.clone();
         assert!(!old_id.is_empty());
-        with_game(&state).await; // nouvelle série (même carte, partie 1)
+        with_game(&state).await; // new series (same map, game 1)
         let before = state.cast.read().await.clone();
         assert_ne!(before.series_id, old_id);
         let (st, v) = apply_to(&state, &old_id, MAP, 1, fixture_summary(), false).await;
@@ -327,8 +327,8 @@ mod tests {
         );
     }
 
-    /// Réutilisation du numéro après R21 : partie 1 retirée puis relancée sur une autre carte pendant le
-    /// décodage → 409 `series_changed`, état inchangé ; la carte relevée au pré-contrôle reste applicable.
+    /// Reuse of the number after R21: game 1 removed then relaunched on another map during
+    /// decoding → 409 `series_changed`, state unchanged; the map taken at the pre-check stays applicable.
     #[tokio::test]
     async fn replay_for_a_removed_and_restarted_game_is_409_series_changed() {
         let _g = DB_LOCK.lock().await;
@@ -383,7 +383,7 @@ mod tests {
         summary_from_output(&out).unwrap()
     }
 
-    /// Série active + partie 1 lancée sur `MAP`.
+    /// Active series + game 1 launched on `MAP`.
     async fn with_game(state: &AppState) {
         let body = json!({"blue":{"name":"Blue Co"},"red":{"name":"Red Co"},"bo":3,"format":"fearless","pool":[MAP, "Sky Temple"]});
         assert_eq!(
@@ -442,8 +442,8 @@ mod tests {
         crate::upload::game_fingerprint(&out).unwrap()
     }
 
-    /// M2 : le fichier temporaire disparaît après un décodage réussi (ARAM → `not_custom`) comme
-    /// après un échec (octets illisibles → `parse_failed`) ; le permis est rendu.
+    /// M2: the temporary file disappears after a successful decoding (ARAM → `not_custom`) as
+    /// after a failure (unreadable bytes → `parse_failed`); the permit is returned.
     #[tokio::test]
     async fn decode_removes_temp_file_on_success_and_failure() {
         let dir = std::env::temp_dir().join(format!("cast-decode-test-{}", uuid::Uuid::new_v4()));
@@ -458,7 +458,7 @@ mod tests {
             assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0, "{code}");
             assert_eq!(sem.available_permits(), 1);
         }
-        // dossier absent : erreur io, pas de panique
+        // missing folder: io error, no panic
         let missing = dir.join("nope");
         let r = decode_in(sem.clone(), missing, Bytes::from_static(b"x")).await;
         assert_eq!(
@@ -472,7 +472,7 @@ mod tests {
         state.cast.read().await.series_id.clone()
     }
 
-    /// Une série démarrée entre l'inspection et l'import : 409 `series_changed`, rien ne change.
+    /// A series started between the inspection and the import: 409 `series_changed`, nothing changes.
     #[tokio::test]
     async fn import_for_a_replaced_series_is_409_series_changed() {
         let _g = DB_LOCK.lock().await;
@@ -481,7 +481,7 @@ mod tests {
         };
         with_pool(&state).await;
         let old = series_of(&state).await;
-        with_pool(&state).await; // nouvelle série (même carte)
+        with_pool(&state).await; // new series (same map)
         let before = state.cast.read().await.clone();
         let (st, v) = import_to(&state, &old, MAP, fixture_summary(), false).await;
         assert_eq!(
@@ -491,7 +491,7 @@ mod tests {
         assert_eq!(*state.cast.read().await, before);
     }
 
-    /// Série active, pool `[MAP, Sky Temple]`, MAP choisie, aucune partie lancée.
+    /// Active series, pool `[MAP, Sky Temple]`, MAP chosen, no game launched.
     async fn with_pool(state: &AppState) {
         let body = json!({"blue":{"name":"Blue Co"},"red":{"name":"Red Co"},"bo":3,"format":"fearless","pool":[MAP, "Sky Temple"]});
         assert_eq!(
@@ -507,8 +507,8 @@ mod tests {
         .await;
     }
 
-    /// Import groupé : la partie est créée (numéro suivant) et remplie d'un coup ; sans preuve
-    /// d'orientation, équipe 0 = Blue.
+    /// Bulk import: the game is created (next number) and filled in one go; without orientation
+    /// evidence, team 0 = Blue.
     #[tokio::test]
     async fn import_creates_and_fills_the_game() {
         let _g = DB_LOCK.lock().await;
@@ -539,7 +539,7 @@ mod tests {
         assert_eq!(crate::cast::store::load(&state.db).await, Some(c));
     }
 
-    /// Carte du replay ≠ carte demandée → 409 `map_mismatch`, rien ne change.
+    /// Replay map ≠ requested map → 409 `map_mismatch`, nothing changes.
     #[tokio::test]
     async fn import_refuses_a_replay_of_another_map() {
         let _g = DB_LOCK.lock().await;
@@ -563,7 +563,7 @@ mod tests {
         assert_eq!(*state.cast.read().await, before);
     }
 
-    /// Carte déjà jouée : refus, et aucune seconde partie n'est créée.
+    /// Map already played: refused, and no second game is created.
     #[tokio::test]
     async fn import_of_an_already_played_map_creates_nothing() {
         let _g = DB_LOCK.lock().await;
@@ -713,7 +713,7 @@ mod tests {
         }
     }
 
-    /// Équipes de la série = pseudos du fixture (Player1-5 jouent en équipe 0 du replay).
+    /// Series teams = fixture nicknames (Player1-5 play in replay team 0).
     async fn name_teams(state: &AppState, blue_first: bool) {
         let five = |o: usize| {
             json!((1..=5)
@@ -732,9 +732,9 @@ mod tests {
         );
     }
 
-    /// Chemin de remplissage (toujours exécuté) : résumé du fixture réel orienté par les pseudos →
-    /// `GameRecord`, score, synchro draft, diffusion. Avec `STORM_CAST_CUSTOM_REPLAY`, le même
-    /// contrôle passe aussi par la route HTTP avec les octets réels (dont `?swap=1`).
+    /// Fill path (always run): summary of the real fixture oriented by the nicknames →
+    /// `GameRecord`, score, draft sync, broadcast. With `STORM_CAST_CUSTOM_REPLAY`, the same
+    /// check also goes through the HTTP route with the real bytes (including `?swap=1`).
     #[tokio::test]
     async fn replay_route_fills_game_record() {
         let _g = DB_LOCK.lock().await;
@@ -742,7 +742,7 @@ mod tests {
             return;
         };
         with_game(&state).await;
-        // la Blue de la série a joué en équipe 1 du replay : preuve par les pseudos → échange
+        // the series' Blue played in replay team 1: evidence by the nicknames → swap
         name_teams(&state, false).await;
         let mut rx = state.events.subscribe();
         let (st, v) = apply(&state, 1, fixture_summary(), false).await;
@@ -770,7 +770,7 @@ mod tests {
             seen.push(e["type"].as_str().unwrap_or("").to_string());
         }
         assert!(seen.contains(&"cast.updated".to_string()), "{seen:?}");
-        // partie inconnue : 409, rien ne change
+        // unknown game: 409, nothing changes
         let before = state.cast.read().await.clone();
         assert_eq!(
             apply(&state, 7, fixture_summary(), false).await.0,
@@ -779,8 +779,8 @@ mod tests {
         assert_eq!(*state.cast.read().await, before);
     }
 
-    /// R16 : sans preuve d'orientation, un vainqueur saisi qui contredit le replay → 409
-    /// `side_mismatch`, état intact ; `swap` (choix opérateur) inverse vainqueur, côtés et XP.
+    /// R16: without orientation evidence, an entered winner that contradicts the replay → 409
+    /// `side_mismatch`, state intact; `swap` (operator choice) inverts winner, sides and XP.
     #[tokio::test]
     async fn replay_route_side_mismatch_and_forced_swap() {
         let _g = DB_LOCK.lock().await;
@@ -818,7 +818,7 @@ mod tests {
             (Some("forced"), None)
         );
 
-        // ?swap=1 contre une preuve d'orientation directe : accepté mais signalé
+        // ?swap=1 against direct orientation evidence: accepted but flagged
         with_game(&state).await;
         name_teams(&state, true).await;
         let (st, v) = apply(&state, 1, fixture_summary(), true).await;
@@ -833,7 +833,7 @@ mod tests {
         assert_eq!(v.0["winner"], "red");
 
         if let Some(bytes) = real_custom() {
-            // HTTP, octets réels : même refus sans preuve, puis ?swap=1
+            // HTTP, real bytes: same refusal without evidence, then ?swap=1
             with_game(&state).await;
             call(
                 &state,
@@ -865,7 +865,7 @@ mod tests {
             let g = state.cast.read().await.games[0].clone();
             let s = g.summary.unwrap();
             assert_eq!(g.winner, Some(s.winner));
-            assert_eq!(v["winner"], "red"); // Tomb 2026-09-27 : équipe 0 gagne → échangé = red
+            assert_eq!(v["winner"], "red"); // Tomb 2026-09-27: team 0 wins → swapped = red
             assert_eq!(s.players.len(), 10);
             assert!(s.xp_lead.last().unwrap().1 < 0);
         }

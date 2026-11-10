@@ -1,7 +1,7 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
-// Build → web/dist (servi par storm-codex-server). En dev, proxy API/WS vers le serveur :8088.
+// Build → web/dist (served by storm-codex-server). In dev, API/WS proxy to the server :8088.
 export default defineConfig({
   plugins: [react()],
   server: {
@@ -11,7 +11,7 @@ export default defineConfig({
     },
   },
   build: { outDir: "dist", emptyOutDir: true },
-  // `css.include` : les feuilles de web/src/cast/ sont traitées en test, pour que leurs imports `?raw`
-  // (tests de règles CSS) reçoivent le vrai texte — les autres CSS restent vides en test
+  // `css.include`: the web/src/cast/ stylesheets are processed in tests, so that their `?raw` imports
+  // (CSS rule tests) get the real text — other CSS stays empty in tests
   test: { environment: "node", css: { include: [/[\/]cast[\/][\w-]+\.css/] } },
 });

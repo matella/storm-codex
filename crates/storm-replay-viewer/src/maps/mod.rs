@@ -1,13 +1,13 @@
-// US-24 : logique par carte ISOLÉE ici — `extract::build` ne doit connaître aucun nom de carte.
-// Chaque sous-module implémente une carte (V1 : Braxis seulement) ; les autres cartes connues
-// pour manquer de couverture ("gap maps", US-7/22/23) renvoient un warning explicite plutôt qu'un
-// silence trompeur ; le reste (générique) renvoie simplement rien en V1.
+// US-24: per-map logic ISOLATED here — `extract::build` must not know any map name.
+// Each submodule implements one map (V1: Braxis only); the other maps known
+// to lack coverage ("gap maps", US-7/22/23) return an explicit warning rather than a
+// misleading silence; the rest (generic) simply returns nothing in V1.
 use crate::model::Objective;
 use storm_replay::Value;
 
 mod braxis;
 
-/// Objectifs + warnings par carte (US-24). Routage par nom de carte (insensible à la casse).
+/// Objectives + warnings per map (US-24). Routing by map name (case-insensitive).
 pub(crate) fn objectives(map_name: &str, tracker: &[Value]) -> (Vec<Objective>, Vec<String>) {
     let m = map_name.to_lowercase();
     if m.contains("braxis") {
@@ -19,7 +19,7 @@ pub(crate) fn objectives(map_name: &str, tracker: &[Value]) -> (Vec<Objective>, 
             vec![format!("objective data unavailable: {map_name}")],
         );
     }
-    (Vec::new(), Vec::new()) // générique : rien en V1
+    (Vec::new(), Vec::new()) // generic: nothing in V1
 }
 
 #[cfg(test)]

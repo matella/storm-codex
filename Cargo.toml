@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["crates/storm-replay", "crates/storm-stats", "crates/storm-codex-server", "crates/storm-replay-viewer", "crates/storm-lobby"]
-# Le spike du jalon 0 est figé (lockfile à lui) — il ne fait pas partie du workspace.
+# The milestone 0 spike is frozen (its own lockfile) — it is not part of the workspace.
 exclude = ["spike/storm-decode"]
 
 [workspace.package]
@@ -13,7 +13,7 @@ repository = "https://github.com/matella/storm-codex"
 unwrap_used = "deny"
 expect_used = "warn"
 
-# Budgets perf = contrats (CLAUDE.md) : le décodage est le chemin chaud du serveur.
+# Perf budgets = contracts (CLAUDE.md): decoding is the server's hot path.
 [profile.release]
 lto = "thin"
 codegen-units = 1

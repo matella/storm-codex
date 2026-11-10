@@ -1,5 +1,5 @@
-//! Définitions manuelles (équipes, collections) — recréées dans l'UI (parité SotS). CRUD
-//! protégé en écriture par `ADMIN_TOKEN`. Lecture publique (LAN/Tailscale).
+//! Manual definitions (teams, collections) — recreated in the UI (SotS parity). CRUD
+//! write-protected by `ADMIN_TOKEN`. Public read (LAN/Tailscale).
 
 use crate::AppState;
 use axum::{
@@ -20,15 +20,15 @@ fn forbidden() -> (StatusCode, Json<J>) {
     )
 }
 fn db_err(e: sqlx::Error) -> (StatusCode, Json<J>) {
-    tracing::error!("manage : {e}");
+    tracing::error!("manage: {e}");
     (
         StatusCode::INTERNAL_SERVER_ERROR,
         Json(serde_json::json!({"error": "db"})),
     )
 }
 
-// ── Réglages (operator_names…) ───────────────────────────────────────────────
-/// GET /api/settings — réglages publics (lecture). Aujourd'hui : `operator_names`.
+// ── Settings (operator_names…) ──────────────────────────────────────────────
+/// GET /api/settings — public settings (read). Today: `operator_names`.
 pub async fn get_settings(State(s): State<AppState>) -> Result<Json<J>, (StatusCode, Json<J>)> {
     let mut v: J = sqlx::query_scalar(
         "SELECT COALESCE(jsonb_object_agg(key, value), '{}'::jsonb) FROM app_settings",
@@ -36,8 +36,8 @@ pub async fn get_settings(State(s): State<AppState>) -> Result<Json<J>, (StatusC
     .fetch_one(&s.db)
     .await
     .map_err(db_err)?;
-    // `admin_open` : true = aucune auth admin requise (ADMIN_TOKEN absent) → le front masque le
-    // champ token et envoie ses écritures sans Bearer.
+    // `admin_open`: true = no admin auth required (ADMIN_TOKEN missing) → the front hides the
+    // token field and sends its writes without a Bearer.
     if let Some(obj) = v.as_object_mut() {
         obj.insert("admin_open".into(), J::Bool(s.cfg.admin_token.is_none()));
     }
@@ -49,7 +49,7 @@ pub struct SettingsPatch {
     operator_names: Vec<String>,
 }
 
-/// PUT /api/admin/settings (admin) — met à jour la liste des noms opérateur.
+/// PUT /api/admin/settings (admin) — updates the list of operator names.
 pub async fn put_settings(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -58,7 +58,7 @@ pub async fn put_settings(
     if !is_admin(&headers, &s) {
         return forbidden();
     }
-    // normalise : trim, non vides, dédup en préservant l'ordre
+    // normalise: trim, non-empty, dedup preserving the order
     let mut names: Vec<String> = Vec::new();
     for n in b.operator_names {
         let n = n.trim().to_string();
@@ -86,9 +86,9 @@ pub async fn put_settings(
     }
 }
 
-/// PUT /api/admin/minimap-anchors (admin) — persiste les ancres de calibration minimap par carte
-/// (`{ "<slug>": { "blue": [x,y], "red": [x,y] } }`) dans `app_settings.minimap_anchors`. Consommé
-/// par la visionneuse 2D (surcharge les défauts bakés). Corps = l'objet complet (remplacement).
+/// PUT /api/admin/minimap-anchors (admin) — persists the minimap calibration anchors per map
+/// (`{ "<slug>": { "blue": [x,y], "red": [x,y] } }`) in `app_settings.minimap_anchors`. Consumed
+/// by the 2D viewer (overrides the baked defaults). Body = the complete object (replacement).
 pub async fn put_minimap_anchors(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -125,7 +125,7 @@ pub struct NewTeam {
     league: Option<String>,
 }
 
-/// GET /api/teams — inclut la ligue (regroupement).
+/// GET /api/teams — includes the league (grouping).
 pub async fn list_teams(State(s): State<AppState>) -> Result<Json<J>, (StatusCode, Json<J>)> {
     let v: J = sqlx::query_scalar(
         "SELECT COALESCE(jsonb_agg(jsonb_build_object('id',id,'name',name,'roster',roster,
@@ -167,7 +167,7 @@ pub struct TeamPatch {
     league: Option<String>,
 }
 
-/// PUT /api/teams/{id} (admin) — (ré)assigne la ligue d'une équipe.
+/// PUT /api/teams/{id} (admin) — (re)assigns a team's league.
 pub async fn update_team(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -260,10 +260,10 @@ pub async fn delete_collection(
     write_reply(r, "delete_collection", serde_json::json!({"deleted": id}))
 }
 
-/// GET /api/trends — winrate & parties agrégés par build (proxy de patch), récents d'abord.
+/// GET /api/trends — win rate & games aggregated per build (patch proxy), most recent first.
 pub async fn trends(State(s): State<AppState>) -> Result<Json<J>, (StatusCode, Json<J>)> {
-    // Par build HotS (= patch) : période jouée (first/last_seen), total parties, durée moyenne,
-    // et la perspective opérateur (mes parties + mes victoires) via app_settings.operator_names.
+    // Per HotS build (= patch): played period (first/last_seen), total games, average duration,
+    // and the operator perspective (my games + my wins) via app_settings.operator_names.
     let v: J = sqlx::query_scalar(
         "WITH ops AS (
             SELECT lower(jsonb_array_elements_text(value)) AS name
@@ -295,8 +295,8 @@ pub async fn trends(State(s): State<AppState>) -> Result<Json<J>, (StatusCode, J
     Ok(Json(v))
 }
 
-/// Réponse d'une écriture simple : `200 ok` si la base a répondu (supprimer une ligne absente reste
-/// idempotent), `500 {error: db}` sinon — jamais un succès quand l'écriture a échoué.
+/// Response of a simple write: `200 ok` if the database answered (deleting a missing row stays
+/// idempotent), `500 {error: db}` otherwise — never a success when the write failed.
 fn write_reply(
     r: Result<sqlx::postgres::PgQueryResult, sqlx::Error>,
     what: &str,
@@ -305,7 +305,7 @@ fn write_reply(
     match r {
         Ok(_) => (StatusCode::OK, Json(ok)),
         Err(e) => {
-            tracing::error!("{what} : {e}");
+            tracing::error!("{what}: {e}");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"error": "db"})),

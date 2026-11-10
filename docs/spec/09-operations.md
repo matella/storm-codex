@@ -1,113 +1,115 @@
-# Opérations — dev, déploiement, sauvegardes
+# Operations — dev, deployment, backups
 
-## Dev local (PC de jeu Windows)
+## Local dev (Windows gaming PC)
 
 ```bash
 docker compose -f docker-compose.dev.yml up -d   # Postgres 17 :5433 + Redis :6380
 cp .env.example .env                             # DATABASE_URL etc.
-cargo run -p storm-codex-server                  # migrations auto, :8088
-npm run dev --prefix web                         # ou build : npm run build --prefix web + WEB_DIR
+cargo run -p storm-codex-server                  # automatic migrations, :8088
+npm run dev --prefix web                         # or build: npm run build --prefix web + WEB_DIR
 ```
 
-Tests : `cargo test` (le test de projection s'ignore sans `DATABASE_URL`) ; parité :
-`tools/parity-harness/` ; benchs : `storm-stats-dump --bench`, `backfill_bench.py`.
+Tests: `cargo test` (the projection test is skipped without `DATABASE_URL`); parity:
+`tools/parity-harness/`; benches: `storm-stats-dump --bench`, `backfill_bench.py`.
 
-⚠️ **Le clone local peut être en retard** : du dev se fait aussi depuis le Mac/box.
-`git fetch origin` **avant** de lire le code ou planifier ; après un pull,
-`npm install --prefix web` si de nouvelles deps.
+⚠️ **The local clone may be behind**: development also happens from the Mac/box.
+`git fetch origin` **before** reading the code or planning; after a pull,
+`npm install --prefix web` if there are new deps.
 
-## Prod (box 192.168.129.85, `~/apps/storm-codex`)
+## Production (box 192.168.129.85, `~/apps/storm-codex`)
 
-- **Stack** : `docker-compose.yml` — Postgres dédié `storm-codex-pg` (volume `storm-codex-pgdata`)
-  + `storm-codex-server` (build multi-stage : SPA Vite → Rust release → Debian slim ; volume
-  `/data` = archive + caches + images). Port hôte **5102** (8088 pris par gluetun).
-  Healthcheck sur `/api/health`.
-- **Réseaux** : `default` + `jarvis_default` (externe) pour publier sur jarvis-redis.
-  `DATABASE_URL` pointe le **nom de conteneur** `storm-codex-pg` (l'alias `postgres` collisionne
-  avec jarvis-postgres sur le réseau partagé).
-- **Secrets** : uniquement dans le `.env` du box (jamais commité). `POSTGRES_PASSWORD` a
-  initialisé le volume — récupérable depuis le conteneur vivant (`docker inspect`).
-- **Déployer** : rsync du repo → `docker compose up -d --build`. Ou, pour un changement
-  front/serveur isolé : récupérer les fichiers depuis GitHub (repo public) puis rebuild — le
-  cache Docker ne reconstruit que l'étage touché.
-  ⚠️ **JAMAIS `rsync --delete` sans `--exclude .env`** (il supprimerait le `.env` du box).
-- **Vérifier après déploiement** : conteneurs healthy, `/api/health` 200, hash du bundle
-  (`index-*.js` dans `/`) changé.
-- **Accès distant** : Tailscale → 192.168.129.85 (SSH + :5102), le soir quand le box tourne.
-  Les clés SSH existent sur le Mac (pas sur le PC de jeu).
+- **Stack**: `docker-compose.yml` — dedicated Postgres `storm-codex-pg` (volume `storm-codex-pgdata`)
+  + `storm-codex-server` (multi-stage build: Vite SPA → Rust release → Debian slim; volume
+  `/data` = archive + caches + images). Host port **5102** (8088 is taken by gluetun).
+  Healthcheck on `/api/health`.
+- **Networks**: `default` + `jarvis_default` (external) to publish on jarvis-redis.
+  `DATABASE_URL` points to the **container name** `storm-codex-pg` (the `postgres` alias collides
+  with jarvis-postgres on the shared network).
+- **Secrets**: only in the box's `.env` (never committed). `POSTGRES_PASSWORD` initialised
+  the volume — recoverable from the running container (`docker inspect`).
+- **Deploy**: rsync the repo → `docker compose up -d --build`. Or, for an isolated
+  front-end/server change: fetch the files from GitHub (public repo) then rebuild — the
+  Docker cache only rebuilds the affected stage.
+  ⚠️ **NEVER `rsync --delete` without `--exclude .env`** (it would delete the box's `.env`).
+- **Verify after deployment**: containers healthy, `/api/health` 200, bundle hash
+  (`index-*.js` in `/`) changed.
+- **Remote access**: Tailscale → 192.168.129.85 (SSH + :5102), in the evening when the box is running.
+  The SSH keys exist on the Mac (not on the gaming PC).
 
-## Uploader (PC de jeu)
+## Uploader (gaming PC)
 
-`client-rs` (repo **Hots-Overlay**) : `.env` racine avec `SERVER_URL=http://192.168.129.85:5102`
-+ `AUTH_TOKEN=<token nominatif>`. Au lancement : backfill **complet** du non-uploadé
-(oldest-first, idempotent — set persisté + 409 serveur), puis watch du dossier replays.
+`client-rs` (**Hots-Overlay** repo): root `.env` with `SERVER_URL=http://192.168.129.85:5102`
++ `AUTH_TOKEN=<personal token>`. At launch: **complete** backfill of what has not been uploaded
+(oldest-first, idempotent — persisted set + server 409), then watches the replays folder.
 
-## CI — un seul workflow (`ci.yml`) : contrôles, tests, audit, puis publication d'image
+## CI — a single workflow (`ci.yml`): checks, tests, audit, then image publication
 
-**Jobs** (push `main`, tags `v*`, PR, lancement manuel) :
-- `checks` : `cargo fmt --all -- --check` ; **migrations figées** (`scripts/check-migrations.sh`) :
-  refuse toute modification, suppression ou renommage d'une migration déjà présente dans la base
-  de comparaison (la branche cible pour une PR, le commit d'avant pour un push). sqlx vérifie la
-  somme de contrôle de chaque migration appliquée : en réécrire une fait échouer le démarrage
-  (`VersionMismatch`) de toute base qui l'a déjà appliquée. Un changement de schéma = une
-  **nouvelle** migration. Modifier une migration ajoutée dans la même PR reste permis.
-- `rust` : clippy strict (`-D warnings`) + `cargo test --workspace` contre un **service
-  Postgres 17** (les tests d'intégration DB-gated tournent réellement).
-- `audit` : `cargo audit` (base RustSec) sur `Cargo.lock`.
-- `web` : `npm ci`, `npm audit --omit=dev --audit-level=high` (dépendances embarquées dans le
-  bundle), `npm test` (vitest), `npm run build`. Version de Node : `.nvmrc` (22).
-- `publish` : **seulement sur push** (ou lancement manuel) **et seulement si les quatre jobs
-  précédents sont verts** (`needs`). Pousse l'image sur `ghcr.io/matella/storm-codex` avec les
-  tags `sha-<12 premiers caractères du commit>` (toujours — permet un retour arrière),
-  `latest` (push sur `main`) et le nom du tag git (tag `v*`). Cache de build Docker : GitHub
+**Jobs** (push to `main`, `v*` tags, PRs, manual run):
+- `checks`: `cargo fmt --all -- --check`; **frozen migrations** (`scripts/check-migrations.sh`):
+  rejects any change, deletion or rename of a migration already present in the comparison base
+  (the target branch for a PR, the previous commit for a push). sqlx checks the
+  checksum of every applied migration: rewriting one makes startup fail
+  (`VersionMismatch`) for every database that already applied it. A schema change = a
+  **new** migration. Modifying a migration added in the same PR is still allowed.
+- `rust`: strict clippy (`-D warnings`) + `cargo test --workspace` against a **Postgres 17
+  service** (DB-gated integration tests actually run).
+- `audit`: `cargo audit` (RustSec database) on `Cargo.lock`. Ignored advisories are listed in
+  `.cargo/audit.toml`, each with its reason; only crates that are in the lockfile but compiled for
+  no target qualify.
+- `web`: `npm ci`, `npm audit --omit=dev --audit-level=high` (dependencies shipped in the
+  bundle), `npm test` (vitest), `npm run build`. Node version: `.nvmrc` (22).
+- `publish`: **only on push** (or manual run) **and only if the four previous jobs
+  are green** (`needs`). Pushes the image to `ghcr.io/matella/storm-codex` with the
+  tags `sha-<first 12 characters of the commit>` (always — allows rollback),
+  `latest` (push to `main`) and the git tag name (`v*` tag). Docker build cache: GitHub
   Actions (`type=gha`).
 
-Le box peut se mettre à jour par `docker pull ghcr.io/matella/storm-codex:latest` (ou revenir à
-une version précise par `:sha-…`) au lieu d'un build local — le compose actuel du box fait `build: .`.
+The box can update itself with `docker pull ghcr.io/matella/storm-codex:latest` (or go back to
+a specific version with `:sha-…`) instead of a local build — the box's current compose uses `build: .`.
 
-## Image Docker (`Dockerfile`)
+## Docker image (`Dockerfile`)
 
-- **Cache des dépendances Rust : cargo-chef.** L'étage `planner` calcule une recette des
-  dépendances du workspace ; l'étage `server` les compile (`cargo chef cook`) dans une couche qui
-  ne se reconstruit que si `Cargo.toml`/`Cargo.lock` changent. Mesuré le 2026-11-07 : après un
-  changement de code seul, rebuild complet en **91 s**, couche `cargo chef cook` en cache.
-- **Utilisateur non root** (`storm`, uid **10001**). `/data` lui appartient dans l'image. Un
-  volume créé par une image plus ancienne (root) est remis à cet uid par le service
-  `storm-codex-init` du `docker-compose.yml` (busybox, `chown -R 10001:10001 /data`, une fois par
-  démarrage, avant le serveur). Vérifié : volume possédé par root → serveur non root qui écrit
-  dans `/data/archive`, `raw-cache`, `images`.
-- `stop_grace_period: 20s` dans le compose : `docker stop` laisse le serveur finir les requêtes
-  en cours (arrêt propre, voir 04-serveur.md).
+- **Rust dependency cache: cargo-chef.** The `planner` stage computes a recipe of the
+  workspace's dependencies; the `server` stage compiles them (`cargo chef cook`) in a layer that
+  is only rebuilt if `Cargo.toml`/`Cargo.lock` change. Measured on 2026-11-07: after a
+  code-only change, full rebuild in **91 s**, `cargo chef cook` layer cached.
+- **Non-root user** (`storm`, uid **10001**). `/data` belongs to it in the image. A
+  volume created by an older (root) image is handed back to that uid by the
+  `storm-codex-init` service in `docker-compose.yml` (busybox, `chown -R 10001:10001 /data`, once per
+  startup, before the server). Verified: root-owned volume → non-root server that writes
+  to `/data/archive`, `raw-cache`, `images`.
+- `stop_grace_period: 20s` in the compose file: `docker stop` lets the server finish in-flight
+  requests (graceful shutdown, see 04-serveur.md).
 
-## Sauvegardes
+## Backups
 
-`scripts/backup.sh [dest]` : `pg_dump` → `.sql.gz` horodaté, rétention 14. La base est de toute
-façon **reconstruisible depuis l'archive brute** (re-upload / reprocess) — le backup évite juste
-un re-backfill. L'archive brute (`/data/archive` du volume) est la seule donnée irremplaçable.
+`scripts/backup.sh [dest]`: `pg_dump` → timestamped `.sql.gz`, retention 14. The database is in any
+case **rebuildable from the raw archive** (re-upload / reprocess) — the backup just avoids
+a re-backfill. The raw archive (the volume's `/data/archive`) is the only irreplaceable data.
 
-## Dépendances externes (toutes best-effort)
+## External dependencies (all best-effort)
 
-| Service | Où | Si absent |
+| Service | Where | If missing |
 |---|---|---|
-| HotsPatchNotes | box :5001 (`host.docker.internal`) | pas de refresh dim_* / images (données déjà répliquées conservées) |
-| Redis Jarvis | réseau `jarvis_default` | pas d'émission d'events (parse intact) |
-| Orpheus | box :3010 | `/api/now-playing` vide (widget musique inerte) |
+| HotsPatchNotes | box :5001 (`host.docker.internal`) | no dim_* / image refresh (already replicated data kept) |
+| Jarvis Redis | `jarvis_default` network | no event emission (parse unaffected) |
+| Orpheus | box :3010 | `/api/now-playing` empty (music widget idle) |
 
-## Risques connus & dette (audit 2026-08-03 — à re-passer périodiquement)
+## Known risks & debt (audit 2026-08-03 — to redo periodically)
 
-Acceptés en l'état (contexte : auto-hébergé, LAN/Tailscale, un opérateur) :
-- **`ADMIN_TOKEN` vide = mode ouvert** — voulu en local ; à définir si exposé (reverse proxy).
-- **Panics d'init** dans storm-stats (`constants.rs`, regex de `src/process/`) — sur données
-  **embarquées** à la compilation : un échec = build invalide, crash au démarrage acceptable.
-- Auth admin : factorisée dans `auth.rs` (comparaison par empreinte, sans sortie anticipée) ;
-  les écritures cast/draft sont gardées quand `ADMIN_TOKEN` est défini (2026-11-07).
+Accepted as is (context: self-hosted, LAN/Tailscale, one operator):
+- **Empty `ADMIN_TOKEN` = open mode** — intended locally; set it if exposed (reverse proxy).
+- **Init panics** in storm-stats (`constants.rs`, regexes in `src/process/`) — on data
+  **embedded** at compile time: a failure = invalid build, a crash at startup is acceptable.
+- Admin auth: factored into `auth.rs` (digest comparison, no early exit);
+  cast/draft writes are guarded when `ADMIN_TOKEN` is set (2026-11-07).
 
-Dépendances (décision opérateur du 2026-11-07 : « corrige le tout ») :
-- **react-router-dom 7** (paquet conservé, ré-export de `react-router`), **vite 8**,
-  **@vitejs/plugin-react 6**, **vitest 5**, **dompurify 3.4.17** : `npm audit` → 0 vulnérabilité.
-- `cargo audit` tourne en CI (job `audit`).
+Dependencies (operator decision of 2026-11-07: "fix all of it"):
+- **react-router-dom 7** (package kept, re-export of `react-router`), **vite 8**,
+  **@vitejs/plugin-react 6**, **vitest 5**, **dompurify 3.4.17**: `npm audit` → 0 vulnerabilities.
+- `cargo audit` runs in CI (`audit` job).
 
-## Runbooks (procédures opérateur détaillées)
+## Runbooks (detailed operator procedures)
 
-`docs/runbooks/` : bascule/décommission du Node overlay · reverse proxy + ntfy · publication
-crates.io (`2026-06-13-publication-crates.md`).
+`docs/runbooks/`: switchover/decommissioning of the Node overlay · reverse proxy + ntfy · crates.io
+publication (`2026-06-13-publication-crates.md`).

@@ -1,7 +1,7 @@
 [package]
 name = "storm-replay"
 version = "0.1.0"
-description = "Décodeur de replays Heroes of the Storm (.StormReplay) — MPQ + protocoles Blizzard"
+description = "Heroes of the Storm replay decoder (.StormReplay) — MPQ + Blizzard protocols"
 keywords = ["heroes-of-the-storm", "replay", "parser", "blizzard"]
 categories = ["parser-implementations", "games"]
 edition.workspace = true
@@ -15,9 +15,9 @@ thiserror = "2"
 mimalloc = { version = "0.1", optional = true }
 
 [features]
-# Allocateur mimalloc pour les binaires (décodage = rafales de petites allocations ;
-# le heap Windows par défaut coûte ~10-15 % du temps de décodage). Le serveur (jalon 3)
-# l'activera aussi.
+# mimalloc allocator for the binaries (decoding = bursts of small allocations;
+# the default Windows heap costs ~10-15% of the decoding time). The server (milestone 3)
+# will enable it too.
 fast-alloc = ["dep:mimalloc"]
 
 [dev-dependencies]

@@ -1,11 +1,11 @@
-//! Dérive la table `hash .s2ma → nom de carte` depuis un dossier de replays archivés.
+//! Derives the `.s2ma hash → map name` table from a folder of archived replays.
 //!
-//! Principe : chaque replay donne (carte connue via le parse complet, hashes du blob). Un hash est
-//! retenu s'il n'apparaît dans AUCUN replay d'une autre carte. Les hashes communs à plusieurs
-//! cartes (assets partagés) sont donc écartés, mais une carte peut avoir plusieurs hashes — c'est
-//! le cas normal, ses fichiers étant republiés à chaque patch.
+//! Principle: each replay gives (map known through the full parse, hashes of the blob). A hash is
+//! kept if it appears in NO replay of another map. Hashes common to several
+//! maps (shared assets) are therefore discarded, but a map can have several hashes — that is
+//! the normal case, its files being republished at each patch.
 //!
-//! Usage : cargo run --release -p storm-lobby --example derive_maps -- <dossier> > src/maps.rs
+//! Usage: cargo run --release -p storm-lobby --example derive_maps -- <folder> > src/maps.rs
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -16,7 +16,7 @@ fn main() -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("usage: derive_maps <dossier>"))?
         .into();
 
-    // carte → nombre de replays (pour le rapport de couverture), et hash → cartes où il apparaît
+    // map → number of replays (for the coverage report), and hash → maps where it appears
     let mut replays_par_carte: BTreeMap<String, usize> = BTreeMap::new();
     let mut cartes_par_hash: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
 
@@ -50,13 +50,13 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
-    // Critère de rétention : un hash n'est retenu que s'il n'a JAMAIS été observé sur une autre
-    // carte. On n'exige PAS qu'il couvre tous les replays de sa carte — Blizzard republie les
-    // fichiers `.s2ma` à chaque patch, donc une carte porte plusieurs hashes selon le build, et
-    // exiger une couverture totale éliminerait précisément les cartes les plus jouées. Mesuré une
-    // fois, lors de la mise au point de ce critère : la couverture totale ne validait que 9 cartes
-    // sur 19, contre 19 sur 19 avec le critère retenu ici — ce critère de couverture totale
-    // n'existe plus dans ce code, le chiffre n'est donc pas rejouable.
+    // Retention criterion: a hash is kept only if it was NEVER observed on another
+    // map. We do NOT require it to cover all the replays of its map — Blizzard republishes the
+    // `.s2ma` files at each patch, so a map carries several hashes depending on the build, and
+    // requiring full coverage would eliminate precisely the most played maps. Measured
+    // once, while tuning this criterion: full coverage only validated 9 maps
+    // out of 19, against 19 out of 19 with the criterion kept here — that full-coverage criterion
+    // no longer exists in this code, so the figure cannot be replayed.
     let mut table: Vec<(String, String)> = Vec::new();
     for (hash, cartes) in &cartes_par_hash {
         if cartes.len() != 1 {
@@ -69,21 +69,25 @@ fn main() -> anyhow::Result<()> {
     }
     table.sort();
 
-    println!("//! Table `hash .s2ma → nom de carte`, GÉNÉRÉE — ne pas éditer à la main.");
+    println!("//! `.s2ma hash → map name` table, GENERATED — do not edit by hand.");
     println!("//!");
     println!(
-        "//! Produite par `cargo run --release -p storm-lobby --example derive_maps -- <dossier>`"
+        "//! Produced by `cargo run --release -p storm-lobby --example derive_maps -- <folder>`"
     );
-    println!("//! sur l'archive du box. Un hash n'est retenu que s'il n'a JAMAIS été observé sur une autre");
-    println!("//! carte. Une même carte a plusieurs hashes : Blizzard republie ses fichiers `.s2ma` à chaque");
-    println!("//! patch, donc exiger qu'un seul hash couvre tous les replays d'une carte éliminerait les cartes");
-    println!("//! les plus jouées. Mesuré une fois, lors de la mise au point de ce critère : la");
-    println!("//! couverture totale ne validait que 9 cartes sur 19 ; le critère retenu ici (jamais observé");
-    println!("//! ailleurs) validait les 19. Ce critère de couverture totale n'existe plus dans le code — le");
-    println!("//! chiffre n'est donc pas rejouable, seulement attesté par cette run de dérivation initiale.");
+    println!("//! on the box's archive. A hash is kept only if it was NEVER observed on another");
+    println!(
+        "//! map. The same map has several hashes: Blizzard republishes its `.s2ma` files at each"
+    );
+    println!("//! patch, so requiring a single hash to cover all the replays of a map would eliminate the most");
+    println!("//! played maps. Measured once, while tuning this criterion: full");
+    println!(
+        "//! coverage only validated 9 maps out of 19; the criterion kept here (never observed"
+    );
+    println!("//! elsewhere) validated all 19. That full-coverage criterion no longer exists in the code — so");
+    println!("//! the figure cannot be replayed, only attested by this initial derivation run.");
     println!();
     println!(
-        "/// `(hash, nom de carte)`, trié par hash — les noms sont ceux que `matches.map` stocke."
+        "/// `(hash, map name)`, sorted by hash — the names are the ones `matches.map` stores."
     );
     println!("pub(crate) const MAP_BY_HASH: &[(&str, &str)] = &[");
     for (h, c) in &table {
@@ -92,10 +96,10 @@ fn main() -> anyhow::Result<()> {
     println!("];");
 
     eprintln!(
-        "cartes couvertes : {}",
+        "maps covered : {}",
         table.iter().map(|(_, c)| c).collect::<BTreeSet<_>>().len()
     );
-    eprintln!("hashes retenus   : {}", table.len());
-    eprintln!("cartes vues      : {}", replays_par_carte.len());
+    eprintln!("hashes kept  : {}", table.len());
+    eprintln!("maps seen    : {}", replays_par_carte.len());
     Ok(())
 }

@@ -1,79 +1,79 @@
-# Signaux supplémentaires tirés des replays — design
+# Additional signals from replays — design
 
-> Statut : **validée par l'opérateur le 2026-11-08** (ordre chat → déserteurs → cosmétiques → niveau →
-> clavier). Plan du chat : `docs/plans/2026-11-08-chat-habitudes.md`. Les autres lots auront leur plan
-> avant d'être codés. Fait suite à `2026-11-08-profils-hotkeys-comptes-design.md`.
+> Status: **approved by the operator on 2026-11-08** (order chat → leavers → cosmetics → level →
+> keyboard). Chat plan: `docs/plans/2026-11-08-chat-habitudes.md`. The other batches will get their plan
+> before being coded. Follows `2026-11-08-profils-hotkeys-comptes-design.md`.
 
-## Intention
+## Intent
 
-Six idées ont été proposées après le profil de raccourcis. Une sonde sur de vrais replays (40 replays
-tirés au hasard de `Documents/Heroes of the Storm`, plus le corpus de la box : 34 600 lignes
-`match_players`, 3 452 parties avec messages) dit lesquelles tiennent. L'opérateur les veut toutes ;
-le chat se limite à du **volume et des habitudes**, sans jugement de toxicité, affiché sur la fiche
-joueur et dans le brief de scouting.
+Six ideas were proposed after the hotkey profile. A probe on real replays (40 replays
+picked at random from `Documents/Heroes of the Storm`, plus the box's corpus: 34,600
+`match_players` rows, 3,452 games with messages) tells which ones hold up. The operator wants all of them;
+chat is limited to **volume and habits**, with no toxicity judgement, shown on the player
+page and in the scouting brief.
 
-## Verdict de la sonde
+## Probe verdict
 
-| # | Idée | Faisable ? | Constat chiffré |
+| # | Idea | Feasible? | Figures |
 |---|---|---|---|
-| 1 | Cosmétiques équipés | **Oui** | skin/mount/announcer déjà dans `match_players.data` : 1 628 skins, 555 montures, 70 annonceurs distincts. Banner, spray, voiceLine, clanTag : vides dans les replays récents ou souvent vides |
-| 2 | Groupes (premade) | **Non** | `m_tandemLeaderUserId` = `null` sur 636 slots, `m_teamsTogether` = `false` sur 40/40. La contrainte « pas d'info de groupe » de la spec joueurs reste vraie |
-| 3 | Empreinte clavier | **Oui** | `STriggerKeyPressedEvent` : ~695 000 événements sur 40 replays (~17 000/replay) ; `SCmdEvent` ~12 000–17 000/replay |
-| 4 | Déserteurs | **Oui** | `SGameUserLeaveEvent.m_leaveReason` : `0` (fin normale, 155) et `11` (départ en cours de partie, 8, tous avant les 30 dernières secondes) |
-| 5 | Niveau | **Réduit** | `m_highestLeague` = 0 partout (inutilisable). Restent `m_heroMasteryTiers` (tier 1–4 par héros) et `m_hasActiveBoost` |
-| 6 | Habitudes de chat | **Oui, sans extraction** | le chat est déjà dans `matches.data.messages` (type 0 = chat : 44 191 messages ; autres types = pings, annonces) |
+| 1 | Equipped cosmetics | **Yes** | skin/mount/announcer already in `match_players.data`: 1,628 skins, 555 mounts, 70 distinct announcers. Banner, spray, voiceLine, clanTag: empty in recent replays or often empty |
+| 2 | Groups (premade) | **No** | `m_tandemLeaderUserId` = `null` on 636 slots, `m_teamsTogether` = `false` on 40/40. The players spec's "no group info" constraint remains true |
+| 3 | Keyboard footprint | **Yes** | `STriggerKeyPressedEvent`: ~695,000 events over 40 replays (~17,000/replay); `SCmdEvent` ~12,000–17,000/replay |
+| 4 | Leavers | **Yes** | `SGameUserLeaveEvent.m_leaveReason`: `0` (normal end, 155) and `11` (left mid-game, 8, all before the last 30 seconds) |
+| 5 | Level | **Reduced** | `m_highestLeague` = 0 everywhere (unusable). What remains: `m_heroMasteryTiers` (tier 1–4 per hero) and `m_hasActiveBoost` |
+| 6 | Chat habits | **Yes, no extraction** | chat is already in `matches.data.messages` (type 0 = chat: 44,191 messages; other types = pings, announcements) |
 
-**L'idée 2 est abandonnée** : les champs existent mais ne sont jamais renseignés.
+**Idea 2 is dropped**: the fields exist but are never filled in.
 
-## Décisions
+## Decisions
 
-### A. Cosmétiques comme signal de comptes liés (idée 1)
-- Signal « cosmétiques » dans `similarity.rs` : recouvrement des skins/montures/annonceurs **portés en
-  partie** par les deux comptes, pondéré par la rareté de l'objet (un cosmétique porté par beaucoup de
-  comptes ne prouve rien, même logique que le nom de profil générique).
-- Force : **moyenne**, jamais HAUT seul. **[mon choix]** Poids et seuils réglés sur une sonde du corpus.
-- Aucune migration : donnée déjà en `data`. Requêtes agrégées à mesurer avant d'ajouter un index.
+### A. Cosmetics as a linked-accounts signal (idea 1)
+- "Cosmetics" signal in `similarity.rs`: overlap of skins/mounts/announcers **worn in
+  game** by both accounts, weighted by the item's rarity (a cosmetic worn by many
+  accounts proves nothing, same logic as the generic profile name).
+- Strength: **medium**, never HIGH on its own. **[my choice]** Weights and thresholds tuned on a probe of the corpus.
+- No migration: the data is already in `data`. Aggregate queries to be measured before adding an index.
 
-### B. Déserteurs (idée 4)
-- Par compte : nombre de parties, départs en cours de partie (`m_leaveReason` = 11 et avant la fin), taux.
-- Stockage : colonne `match_players.left_early BOOLEAN` (migration, `PARSER_VERSION` 4).
-- Affichage : taux sur la fiche joueur, mention dans le brief de scouting au-dessus d'un seuil
-  **[mon choix]** ≥ 3 départs et ≥ 5 % des parties. Le départ d'un joueur coupé par le jeu (déconnexion)
-  n'est pas distinguable d'un abandon volontaire : l'écran le dit.
+### B. Leavers (idea 4)
+- Per account: number of games, mid-game departures (`m_leaveReason` = 11 and before the end), rate.
+- Storage: column `match_players.left_early BOOLEAN` (migration, `PARSER_VERSION` 4).
+- Display: rate on the player page, mention in the scouting brief above a threshold
+  **[my choice]** ≥ 3 departures and ≥ 5 % of games. A player cut off by the game (disconnection)
+  cannot be told apart from a voluntary leave: the screen says so.
 
-### C. Habitudes de chat (idée 6)
-- **Mesures uniquement** : messages par partie, part équipe / tous (`recipient`), moment typique
-  (début, milieu, fin), mots récurrents (liste filtrée des mots vides). **Aucun score de toxicité,
-  aucun classement.**
-- Calcul à la lecture depuis `matches.data.messages` pour un seul compte (pas de pré-calcul massif) ;
-  cache si la mesure dépasse le budget API (p95 < 100 ms).
-- Affichage : section « Chat » sur la fiche joueur ; une ligne dans le brief de scouting de l'adversaire.
-  Les textes ne sont pas exposés, seulement les mesures et les mots récurrents.
+### C. Chat habits (idea 6)
+- **Measurements only**: messages per game, team / all share (`recipient`), typical moment
+  (early, mid, late), recurring words (list filtered of stop words). **No toxicity score,
+  no ranking.**
+- Computed at read time from `matches.data.messages` for a single account (no mass pre-computation);
+  cache if the measurement exceeds the API budget (p95 < 100 ms).
+- Display: "Chat" section on the player page; one line in the opponent's scouting brief.
+  The texts are not exposed, only the measurements and the recurring words.
 
-### D. Empreinte clavier (idée 3)
-- Par compte : touches les plus utilisées et répartition (sans contenu de chat), cadence d'actions
-  (commandes par minute) par héros.
-- Signal faible de comptes liés ; **[mon choix]** affiché mais pas dans le score tant qu'une sonde n'a
-  pas montré qu'il discrimine (comparer des comptes confirmés liés à des comptes sans lien).
-- Stockage : agrégat par `(match, toon)` calculé à l'ingestion dans une colonne JSONB dédiée, pas
-  l'événement brut (17 000 événements/replay).
+### D. Keyboard footprint (idea 3)
+- Per account: most-used keys and their distribution (no chat content), action cadence
+  (commands per minute) per hero.
+- Weak linked-accounts signal; **[my choice]** displayed but not in the score until a probe has
+  shown that it discriminates (compare confirmed linked accounts with unlinked accounts).
+- Storage: aggregate per `(match, toon)` computed at ingestion in a dedicated JSONB column, not
+  the raw event (17,000 events/replay).
 
-### E. Niveau et progression (idée 5, réduite)
-- `m_heroMasteryTiers` : tier de maîtrise du héros joué, par partie ; `m_hasActiveBoost` : booléen.
-- Affichage : tier du héros sur la fiche joueur. **[mon choix]** pas de signal de comptes liés (un tier
-  dépend du temps de jeu, pas de la personne).
+### E. Level and progression (idea 5, reduced)
+- `m_heroMasteryTiers`: mastery tier of the hero played, per game; `m_hasActiveBoost`: boolean.
+- Display: hero tier on the player page. **[my choice]** no linked-accounts signal (a tier
+  depends on play time, not on the person).
 
-## Ordre proposé
-1. C (chat) : aucune extraction, valeur immédiate. 2. B (déserteurs). 3. A (cosmétiques). 4. E.
-5. D (clavier, à mesurer d'abord). Chaque lot a son plan, sa PR, sa mise à jour de doc.
+## Proposed order
+1. C (chat): no extraction, immediate value. 2. B (leavers). 3. A (cosmetics). 4. E.
+5. D (keyboard, to be measured first). Each batch has its plan, its PR, its doc update.
 
-## Hors périmètre
-- Toxicité, insultes, classification IA du chat (écartés par l'opérateur).
-- Groupes/premade (idée 2) : données absentes.
-- Exposer le texte des messages.
+## Out of scope
+- Toxicity, insults, AI classification of chat (ruled out by the operator).
+- Groups/premade (idea 2): data missing.
+- Exposing the text of messages.
 
-## Questions ouvertes pour l'opérateur
-1. Ordre C → B → A → E → D acceptable, ou une idée à passer en premier ?
-2. Seuil de mention des déserteurs dans le scouting : ≥ 3 départs et ≥ 5 % ?
-3. Cosmétiques : signal moyen, jamais HAUT seul ?
-4. Clavier : affiché mais hors score tant qu'une sonde ne le justifie pas ?
+## Open questions for the operator
+1. Is the order C → B → A → E → D acceptable, or should an idea go first?
+2. Threshold for mentioning leavers in scouting: ≥ 3 departures and ≥ 5 %?
+3. Cosmetics: medium signal, never HIGH on its own?
+4. Keyboard: displayed but outside the score until a probe justifies it?

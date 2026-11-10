@@ -1,6 +1,6 @@
-# Jalon 1 — parité stream par stream : storm-replay (Rust) vs heroprotocol (Python).
-# Deep-compare des 7 streams sur les 3 replays les plus récents du corpus spike50 + le replay
-# 2024 du mini-corpus. Usage : python tools/crosscheck_streams.py
+# Milestone 1 — stream-by-stream parity: storm-replay (Rust) vs heroprotocol (Python).
+# Deep-compare of the 7 streams on the 3 most recent replays of the spike50 corpus + the 2024
+# replay of the mini-corpus. Usage: python tools/crosscheck_streams.py
 import importlib.util
 import json
 import os
@@ -30,7 +30,7 @@ LATEST = load_protocol(sorted(p.stem for p in VERSIONS.glob("protocol*.py"))[-1]
 
 
 def normalize(v):
-    """Python heroprotocol -> forme canonique comparable au dump Rust."""
+    """Python heroprotocol -> canonical form comparable to the Rust dump."""
     if isinstance(v, bytes):
         return v.decode("latin-1")
     if isinstance(v, tuple):
@@ -74,20 +74,20 @@ def rust_stream(path, stream):
         text=True,
         encoding="utf-8",
     )
-    # pas splitlines() : il coupe aussi sur \x85/\x1c... présents dans les blobs latin-1
+    # not splitlines(): it also splits on \x85/\x1c... present in the latin-1 blobs
     return [json.loads(line) for line in out.stdout.split("\n") if line.strip()]
 
 
 def first_diff(a, b, path="$"):
-    """Renvoie une description du premier écart, ou None."""
+    """Returns a description of the first difference, or None."""
     if type(a) is not type(b) and not (isinstance(a, (int, float)) and isinstance(b, (int, float))):
         return f"{path}: types {type(a).__name__} vs {type(b).__name__} ({a!r} vs {b!r})"
     if isinstance(a, dict):
         for k in sorted(set(a) | set(b)):
             if k not in a:
-                return f"{path}.{k}: absent côté python"
+                return f"{path}.{k}: missing on python side"
             if k not in b:
-                return f"{path}.{k}: absent côté rust"
+                return f"{path}.{k}: missing on rust side"
             d = first_diff(a[k], b[k], f"{path}.{k}")
             if d:
                 return d
@@ -109,7 +109,7 @@ def main():
     spike = sorted((ROOT / "corpus" / "spike50").glob("*.StormReplay"))[-3:]
     mini2024 = sorted((ROOT / "crates/storm-replay/tests/data").glob("2024*.StormReplay"))
     files = spike + mini2024
-    assert len(files) == 4, f"{len(files)} fichiers"
+    assert len(files) == 4, f"{len(files)} files"
     failures = 0
     for f in files:
         py = py_streams(f)
@@ -121,7 +121,7 @@ def main():
                 print(f"OK   {f.name} [{stream}] ({len(expected)} elements)")
             else:
                 failures += 1
-                print(f"DIFF {f.name} [{stream}] : {diff}")
+                print(f"DIFF {f.name} [{stream}]: {diff}")
     print("PARITE OK (7 streams x 4 replays)" if failures == 0 else f"{failures} ECARTS")
     sys.exit(1 if failures else 0)
 

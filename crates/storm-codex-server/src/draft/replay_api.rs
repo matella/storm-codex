@@ -1,6 +1,6 @@
-//! Routes REST du draft depuis un replay + minuterie de lecture auto. Chaque mutation prend le
-//! write-lock une seule fois (donc un « Suivant » manuel et un tick ne se télescopent jamais),
-//! persiste, puis diffuse `draft.updated`. Mode ouvert comme le reste de `/api/draft`.
+//! REST routes of the draft from a replay + auto playback timer. Each mutation takes the
+//! write-lock only once (so a manual "Next" and a tick never collide),
+//! persists, then broadcasts `draft.updated`. Open mode like the rest of `/api/draft`.
 use super::api::{persist, series_format};
 use super::replay_extract::{loaded_game_from_output, ReplayError};
 use super::{DraftError, ReplayState};
@@ -20,7 +20,7 @@ use tokio::sync::Semaphore;
 
 type Resp = (StatusCode, Json<J>);
 
-/// Bornes de l'intervalle de lecture auto (ms) : au moins 10 ms (tests), au plus 1 h.
+/// Bounds of the auto playback interval (ms): at least 10 ms (tests), at most 1 h.
 const INTERVAL_RANGE: std::ops::RangeInclusive<u32> = 10..=3_600_000;
 
 fn now_ms() -> i64 {
@@ -43,14 +43,14 @@ fn ok_state(r: &ReplayState) -> Resp {
     )
 }
 
-/// Arrête la minuterie de lecture auto (si elle tourne).
+/// Stops the auto playback timer (if it runs).
 fn cancel_timer(s: &AppState) {
     if let Some(h) = s.replay_timer.lock().ok().and_then(|mut g| g.take()) {
         h.abort();
     }
 }
 
-/// (Re)lance la minuterie : un tick révèle une phase toutes les `interval_ms`, jusqu'à la fin.
+/// (Re)starts the timer: a tick reveals a phase every `interval_ms`, until the end.
 fn start_timer(s: &AppState) {
     cancel_timer(s);
     let st = s.clone();
@@ -80,12 +80,12 @@ fn start_timer(s: &AppState) {
     }
 }
 
-/// GET /api/draft/replay — file complète **avec scripts** (réservé à la page télécommande).
+/// GET /api/draft/replay — complete queue **with scripts** (reserved for the remote control page).
 pub async fn get_replay(State(s): State<AppState>) -> Json<ReplayState> {
     Json(s.draft.read().await.replay.clone())
 }
 
-/// Fichier temporaire supprimé à la destruction (succès, erreur ou panique du décodeur).
+/// Temporary file deleted on drop (success, error or decoder panic).
 struct TempFile(PathBuf);
 impl Drop for TempFile {
     fn drop(&mut self) {
@@ -93,10 +93,10 @@ impl Drop for TempFile {
     }
 }
 
-/// Décode les octets d'un `.StormReplay` sous `parse_sem`. Écriture du fichier temporaire, décodage
-/// et suppression se font **dans** le `spawn_blocking` (rien de bloquant sur l'exécuteur) ; le permis
-/// y est déplacé et `TempFile` garantit la suppression, même si le client se déconnecte (la tâche
-/// bloquante va à son terme). Même chemin que `cast::replay::decode_in`.
+/// Decodes the bytes of a `.StormReplay` under `parse_sem`. Writing the temporary file, decoding
+/// and deleting all happen **inside** the `spawn_blocking` (nothing blocking on the executor); the permit
+/// is moved there and `TempFile` guarantees deletion, even if the client disconnects (the blocking
+/// task runs to completion). Same path as `cast::replay::decode_in`.
 async fn decode_in(
     sem: Arc<Semaphore>,
     dir: PathBuf,
@@ -131,8 +131,8 @@ async fn decode_in(
     }
 }
 
-/// POST /api/draft/replay/load — corps = octets d'un `.StormReplay` (en-tête `X-Filename` optionnel).
-/// Décode uniquement le draft : rien n'est écrit en base. Custom uniquement.
+/// POST /api/draft/replay/load — body = bytes of a `.StormReplay` (optional `X-Filename` header).
+/// Decodes only the draft: nothing is written to the database. Custom only.
 pub async fn load(State(s): State<AppState>, headers: HeaderMap, bytes: Bytes) -> Resp {
     if bytes.is_empty() {
         return (
@@ -173,7 +173,7 @@ pub async fn load(State(s): State<AppState>, headers: HeaderMap, bytes: Bytes) -
     }
 }
 
-/// Applique une mutation sous un seul write-lock, persiste, répond avec la file publique.
+/// Applies a mutation under a single write-lock, persists, answers with the public queue.
 async fn mutate(
     s: &AppState,
     f: impl FnOnce(&mut super::DraftState) -> Result<(), DraftError>,
@@ -191,7 +191,7 @@ async fn mutate(
     }
 }
 
-/// Après un geste manuel pendant la lecture auto, le prochain tick repart d'un intervalle plein.
+/// After a manual action during auto playback, the next tick restarts from a full interval.
 async fn rearm_if_playing(s: &AppState) {
     let playing = {
         let mut d = s.draft.write().await;
@@ -206,7 +206,7 @@ async fn rearm_if_playing(s: &AppState) {
     }
 }
 
-/// POST /api/draft/replay/next — révèle la phase suivante.
+/// POST /api/draft/replay/next — reveals the next phase.
 pub async fn next(State(s): State<AppState>) -> Resp {
     let r = mutate(&s, |d| {
         d.reveal_phase()?;
@@ -223,7 +223,7 @@ pub async fn next(State(s): State<AppState>) -> Resp {
     r
 }
 
-/// POST /api/draft/replay/back — annule la dernière phase révélée.
+/// POST /api/draft/replay/back — undoes the last revealed phase.
 pub async fn back(State(s): State<AppState>) -> Resp {
     let r = mutate(&s, |d| d.back_phase()).await;
     if r.0 == StatusCode::OK {
@@ -232,7 +232,7 @@ pub async fn back(State(s): State<AppState>) -> Resp {
     r
 }
 
-/// POST /api/draft/replay/reset — repart à l'étape 0 de la partie courante (pause).
+/// POST /api/draft/replay/reset — goes back to step 0 of the current game (paused).
 pub async fn reset(State(s): State<AppState>) -> Resp {
     cancel_timer(&s);
     mutate(&s, |d| {
@@ -250,8 +250,8 @@ pub struct IndexBody {
     index: usize,
 }
 
-/// POST /api/draft/replay/select — prépare la partie `index` de la file ; une série de cast active
-/// impose son format (M5, `select_game_with`).
+/// POST /api/draft/replay/select — prepares game `index` of the queue; an active cast series
+/// imposes its format (M5, `select_game_with`).
 pub async fn select(State(s): State<AppState>, Json(b): Json<IndexBody>) -> Resp {
     cancel_timer(&s);
     let over = series_format(&s).await;
@@ -280,7 +280,7 @@ pub struct FearlessBody {
     value: bool,
 }
 
-/// POST /api/draft/replay/fearless — re-prépare la partie courante (ses series bans changent).
+/// POST /api/draft/replay/fearless — re-prepares the current game (its series bans change).
 pub async fn fearless(State(s): State<AppState>, Json(b): Json<FearlessBody>) -> Resp {
     cancel_timer(&s);
     let over = series_format(&s).await;
@@ -298,7 +298,7 @@ pub struct PlayBody {
     interval_ms: Option<u32>,
 }
 
-/// POST /api/draft/replay/play — lecture auto on/off, intervalle optionnel (défaut 30 s).
+/// POST /api/draft/replay/play — auto playback on/off, optional interval (default 30 s).
 pub async fn play(State(s): State<AppState>, Json(b): Json<PlayBody>) -> Resp {
     if b.interval_ms
         .is_some_and(|ms| !INTERVAL_RANGE.contains(&ms))
@@ -357,8 +357,8 @@ mod tests {
         }
     }
 
-    /// Item 26 : le fichier temporaire disparaît après un décodage réussi comme après un échec ;
-    /// le permis de `parse_sem` est rendu ; dossier absent → 500 `io`, pas de panique.
+    /// Item 26: the temporary file disappears after a successful decoding as after a failure;
+    /// the `parse_sem` permit is returned; missing folder → 500 `io`, no panic.
     #[tokio::test]
     async fn decode_removes_temp_file_on_success_and_failure() {
         let dir = std::env::temp_dir().join(format!("draft-decode-test-{}", uuid::Uuid::new_v4()));
@@ -373,7 +373,7 @@ mod tests {
             let r = decode_in(sem.clone(), dir.clone(), Bytes::from(bytes)).await;
             assert!(
                 r.is_ok(),
-                "le décodeur répond (statut storm-stats), pas d'erreur d'E/S"
+                "the decoder answers (storm-stats status), no I/O error"
             );
             assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
             assert_eq!(sem.available_permits(), 1);
@@ -387,8 +387,8 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// M5 : pendant une série de cast active, `select` et `fearless` suivent le format de la série,
-    /// pas `replay.fearless` (dans les deux sens).
+    /// M5: during an active cast series, `select` and `fearless` follow the series format,
+    /// not `replay.fearless` (in both directions).
     #[tokio::test]
     async fn replay_select_follows_active_series_format() {
         let Some(state) = test_state(None).await else {

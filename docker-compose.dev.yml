@@ -1,5 +1,5 @@
-# Postgres de développement pour storm-codex-server (jalon 3).
-# Port 5433 (5432 peut déjà être pris). `docker compose -f docker-compose.dev.yml up -d`.
+# Development Postgres for storm-codex-server (milestone 3).
+# Port 5433 (5432 may already be taken). `docker compose -f docker-compose.dev.yml up -d`.
 services:
   postgres:
     image: postgres:17

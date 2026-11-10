@@ -1,143 +1,143 @@
-# Régie de cast — ergonomie d'utilisation (URL overlay, parcours, mise à l'antenne)
+# Cast control room — usability (overlay URL, flow, putting on air)
 
-> Spec storm-codex, **validée par l'opérateur le 2026-10-31 (choix recommandés : C = bouton explicite, D = horloge serveur)**. Langue : anglais confirmé par l'opérateur le 2026-10-31 (point F). Règle n° 0.
-> Suite de `2026-10-25-cast-control-room-design.md` (régie livrée, PR #5 mergée sur `main`).
-> Les points marqués **[choix Claude]** sont des propositions à relire ; ceux marqués **[à trancher]**
-> remettent en cause une décision déjà actée et exigent une réponse explicite de l'opérateur.
+> storm-codex spec, **approved by the operator on 2026-10-31 (recommended choices: C = explicit button, D = server clock)**. Language: English confirmed by the operator on 2026-10-31 (point F). Rule no. 0.
+> Follows `2026-10-25-cast-control-room-design.md` (control room delivered, PR #5 merged into `main`).
+> Points marked **[Claude's choice]** are proposals to review; those marked **[to decide]**
+> question a decision already made and require an explicit answer from the operator.
 
-## But
+## Goal
 
-Un streamer qui découvre la régie doit pouvoir **sans rien chercher** : récupérer l'URL de la source
-OBS, savoir dans quel ordre agir, voir ce qui est réellement à l'antenne, et comprendre un message
-d'erreur. Aujourd'hui l'URL de l'overlay n'apparaît que sur l'onglet Draft (dans la couverture de la
-console Draft) ; les onglets Series, Lineups et In-game ne la montrent pas.
+A streamer discovering the control room must be able, **without searching for anything**, to: get the OBS source
+URL, know in which order to act, see what is actually on air, and understand an error
+message. Today the overlay URL only appears on the Draft tab (in the cover of the
+Draft console); the Series, Lineups and In-game tabs do not show it.
 
-## Constats (relecture du 2026-10-31, code de `main`)
+## Findings (review of 2026-10-31, `main` code)
 
-1. **URL de l'overlay cachée** : `web/src/cast/DraftWorkspace.tsx` (l.74 et l.89) est le seul endroit
-   qui affiche `/cast/overlay?skin=nexus`. `/cast` (lien « Cast » du `Layout`) ne l'affiche nulle part.
-   L'étape 3 de l'assistant de 1er lancement (`components/Onboarding.tsx`) liste d'anciennes sources
-   (`/queue`, `/ticker`, `/widget`, `/now-playing`) et **pas** `/cast/overlay`.
-2. **Aperçu ≠ sortie OBS** : `cast/SeriesWorkspace.tsx` et `castState.ts` (l.242–249) l'avouent :
-   en rotation automatique, l'aperçu et la source OBS ont chacun leur minuterie. Le critère 2 de la
-   spec d'origine (« l'aperçu de la régie = ce que voit OBS ») n'est donc pas tenu en mode auto.
-3. **Mise à l'antenne au clic** : un clic sur un onglet de scène envoie la scène à l'antenne
-   (`POST /api/cast/scene`, R26). Pas de confirmation, et l'onglet de travail local peut différer de
-   la scène à l'antenne sans que ce soit évident.
-4. **Erreurs brutes** : `Server refused: <code>` affiche `NotInPool`, `SeriesInactive`,
+1. **Hidden overlay URL**: `web/src/cast/DraftWorkspace.tsx` (l.74 and l.89) is the only place
+   that shows `/cast/overlay?skin=nexus`. `/cast` (the `Layout`'s "Cast" link) shows it nowhere.
+   Step 3 of the first-launch wizard (`components/Onboarding.tsx`) lists old sources
+   (`/queue`, `/ticker`, `/widget`, `/now-playing`) and **not** `/cast/overlay`.
+2. **Preview ≠ OBS output**: `cast/SeriesWorkspace.tsx` and `castState.ts` (l.242–249) admit it:
+   in automatic rotation, the preview and the OBS source each have their own timer. Criterion 2 of the
+   original spec ("the control room preview = what OBS sees") is therefore not met in auto mode.
+3. **On air on click**: a click on a scene tab sends the scene on air
+   (`POST /api/cast/scene`, R26). No confirmation, and the local working tab may differ from
+   the scene on air without it being obvious.
+4. **Raw errors**: `Server refused: <code>` shows `NotInPool`, `SeriesInactive`,
    `MapAlreadyPlayed`, `side_mismatch: the replay's winner contradicts…`.
-5. **Pas de parcours** : rien n'indique l'ordre (créer la série → équipes → pool → parties → scènes).
-   « New series » est désactivé tant que le pool est vide, sans dire pourquoi ; « Save teams » est
-   distinct de « New series », qui envoie quand même les équipes non sauvées.
-6. **Jargon** : « BO 5 · GAME 2 · FEARLESS · score from game winners », modes Lineup « Auto / A / B »,
-   « linked / unlinked », « awaiting game data », « Swap sides » (explication seulement en infobulle),
-   « Custom replay » requis pour le post-game (seulement dans une consigne courte).
-7. **Console Draft en doublon** : la couverture « Draft simulator · operator console » (grand titre)
-   s'affiche dans la régie, avec un style qui ne ressemble pas au reste de `/cast`.
+5. **No flow**: nothing indicates the order (create the series → teams → pool → games → scenes).
+   "New series" is disabled while the pool is empty, without saying why; "Save teams" is
+   separate from "New series", which still sends the unsaved teams.
+6. **Jargon**: "BO 5 · GAME 2 · FEARLESS · score from game winners", Lineup modes "Auto / A / B",
+   "linked / unlinked", "awaiting game data", "Swap sides" (explanation only in a tooltip),
+   "Custom replay" required for the post-game (only in a short instruction).
+7. **Duplicate Draft console**: the "Draft simulator · operator console" cover (large title)
+   shows inside the control room, with a style that does not look like the rest of `/cast`.
 
-## Décisions proposées
+## Proposed decisions
 
-### A. Bloc « Source OBS » permanent (constat 1, 7)
+### A. Permanent "OBS source" block (findings 1, 7)
 
-- Dans l'**en-tête** de `/cast`, toujours visible quelle que soit la scène : l'URL complète
-  (`{origine}/cast/overlay?skin=…`), un bouton **Copier**, un sélecteur de skin
-  (`nexus · glass · tactical · mono`, défaut `nexus`), et la consigne « Source navigateur · 1920×1080 ·
-  fond transparent ». **[choix Claude]**
-- L'URL se met à jour avec le skin choisi ; le skin est mémorisé côté navigateur uniquement
-  (préférence d'affichage, pas d'état partagé). **[choix Claude]**
-- Retirer la couverture « operator console » de l'onglet Draft ; garder dans l'onglet Draft seulement
-  le lien « Draft depuis un replay ». **[choix Claude]**
-- Étape 3 de l'assistant de 1er lancement : ajouter `/cast/overlay` à la liste, et la présenter comme
-  la source principale de la régie (les autres restent optionnelles). **[choix Claude]**
+- In the **header** of `/cast`, always visible whatever the scene: the full URL
+  (`{origin}/cast/overlay?skin=…`), a **Copy** button, a skin selector
+  (`nexus · glass · tactical · mono`, default `nexus`), and the instruction "Browser source · 1920×1080 ·
+  transparent background". **[Claude's choice]**
+- The URL updates with the chosen skin; the skin is remembered in the browser only
+  (display preference, not shared state). **[Claude's choice]**
+- Remove the "operator console" cover from the Draft tab; keep only the
+  "Draft from a replay" link in the Draft tab. **[Claude's choice]**
+- Step 3 of the first-launch wizard: add `/cast/overlay` to the list, and present it as
+  the control room's main source (the others remain optional). **[Claude's choice]**
 
-### B. Parcours guidé (constat 5)
+### B. Guided flow (finding 5)
 
-- Une **barre d'étapes** en tête de rail : *1 Série* (Bo, format, pool) → *2 Équipes & joueurs* →
-  *3 Parties* → *4 En direct*. Chaque étape affiche son état (faite / à faire) à partir de l'état
-  serveur, sans case à cocher à maintenir à la main. **[choix Claude]**
-- Quand aucune série n'est active : le rail s'ouvre sur un court texte d'accueil (« Créez une série
-  pour commencer ») et sur la seule action possible. **[choix Claude]**
-- « New series » indique la raison d'être désactivé (« Cochez au moins une carte du pool »). **[choix Claude]**
-- Une équipe modifiée non sauvée est signalée dans « New series » (« les équipes non sauvées seront
-  envoyées » ou « Sauver les équipes d'abord ») ; aucune sauvegarde implicite silencieuse. **[choix Claude]**
+- A **step bar** at the top of the rail: *1 Series* (Bo, format, pool) → *2 Teams & players* →
+  *3 Games* → *4 Live*. Each step shows its state (done / to do) from the server
+  state, with no checkbox to maintain by hand. **[Claude's choice]**
+- When no series is active: the rail opens on a short welcome text ("Create a series
+  to get started") and on the only possible action. **[Claude's choice]**
+- "New series" states why it is disabled ("Tick at least one map in the pool"). **[Claude's choice]**
+- A modified, unsaved team is flagged in "New series" ("unsaved teams will be
+  sent" or "Save the teams first"); no silent implicit save. **[Claude's choice]**
 
-### C. Mise à l'antenne explicite (constat 3) — **[à trancher]**
+### C. Explicit putting on air (finding 3) — **[to decide]**
 
-Le R26 a choisi « clic = à l'antenne ». Cette spec propose de le reconsidérer :
+R26 chose "click = on air". This spec proposes to reconsider it:
 
-- **Option 1 (recommandée par Claude)** : un clic sur un onglet ouvre la scène **dans l'espace de
-  travail seulement** ; un bouton **« Mettre à l'antenne »** bien visible (et « Entrée ») la diffuse.
-  L'onglet à l'antenne reste marqué *ON AIR*, et l'onglet de travail non diffusé est signalé.
-- **Option 2** : garder le clic direct, mais demander une confirmation quand la scène quittée est
-  *In-game* avec une partie en cours.
+- **Option 1 (recommended by Claude)**: a click on a tab opens the scene **in the
+  workspace only**; a clearly visible **"Put on air"** button (and "Enter") broadcasts it.
+  The tab on air stays marked *ON AIR*, and the working tab that is not broadcast is flagged.
+- **Option 2**: keep the direct click, but ask for confirmation when the scene being left is
+  *In-game* with a game in progress.
 
-Choix de l'opérateur requis : option 1 ou option 2 ? (Le clavier et les rôles ARIA restent ceux
-décrits par la spec R26 dans les deux cas.)
+Operator's choice required: option 1 or option 2? (The keyboard and ARIA roles remain those
+described by the R26 spec in both cases.)
 
-### D. L'aperçu montre ce qu'OBS montre (constat 2) — **[choix Claude]**
+### D. The preview shows what OBS shows (finding 2) — **[Claude's choice]**
 
-- Recommandé : la **rotation automatique est pilotée par le serveur** (le serveur porte l'index de la
-  slide et l'horodatage de son dernier changement ; l'overlay et l'aperçu calculent l'instant courant
-  à partir de ces deux valeurs). Aperçu et OBS montrent alors la même slide, sans dépendre de deux
-  minuteries locales.
-- Alternative moins invasive : en mode auto, l'aperçu affiche **la slide reçue du serveur** et la
-  régie n'affiche plus « rotating n slides ». Moins fidèle, mais sans changement serveur.
-- Le choix impacte `sync`/`cast.updated` ; il doit être tranché avant le plan.
+- Recommended: **automatic rotation is driven by the server** (the server carries the slide
+  index and the timestamp of its last change; the overlay and the preview compute the current moment
+  from these two values). Preview and OBS then show the same slide, without depending on two
+  local timers.
+- Less invasive alternative: in auto mode, the preview shows **the slide received from the server** and the
+  control room no longer shows "rotating n slides". Less faithful, but no server change.
+- The choice affects `sync`/`cast.updated`; it must be decided before the plan.
 
-### E. Erreurs compréhensibles (constat 4) — **[choix Claude]**
+### E. Understandable errors (finding 4) — **[Claude's choice]**
 
-- Une table `code → message en clair` (ex. `NotInPool` → « Cette carte n'est pas dans le pool de la
-  série. », `SeriesInactive` → « Aucune série en cours. », `MapAlreadyPlayed` → « Cette carte a déjà été
-  jouée. ») dans `castState.ts`, à côté de `replayErrorText` qui existe déjà.
-- Code technique conservé en repli (infobulle ou ligne discrète), pour le support. Le bandeau reste
-  « jamais avalé » comme aujourd'hui.
+- A `code → plain message` table (e.g. `NotInPool` → "This map is not in the series'
+  pool.", `SeriesInactive` → "No series in progress.", `MapAlreadyPlayed` → "This map has already been
+  played.") in `castState.ts`, next to `replayErrorText` which already exists.
+- Technical code kept as a fallback (tooltip or discreet line), for support. The banner stays
+  "never swallowed" as today.
 
-### F. Libellés et langue (constat 6)
+### F. Labels and language (finding 6)
 
-- Libellés remplacés par des formulations courtes : « Lineup mode » → « Cartes d'équipe : avant la
-  série / entre les parties / automatique ». Pastille : « BO5 · Partie 2 · Fearless » sans « score from
-  game winners » (déplacé dans une infobulle).
-- « Swap sides » : libellé « Inverser les côtés » avec consigne visible sous la case quand un replay
-  est refusé avec `side_mismatch`.
-- « Custom replay » : mention visible dans l'onglet Series quand aucune partie n'a de replay.
-- **[à trancher]** Langue de l'interface : la spec d'origine a choisi des libellés en anglais
-  (« convention de l'app »). Un streamer francophone gagnerait à une interface en français. Décision
-  de l'opérateur requise ; ce document ne la prend pas.
+- Labels replaced by short wordings: "Lineup mode" → "Team cards: before the
+  series / between games / automatic". Badge: "BO5 · Game 2 · Fearless" without "score from
+  game winners" (moved to a tooltip).
+- "Swap sides": label "Swap sides" with a visible instruction under the checkbox when a replay
+  is refused with `side_mismatch`.
+- "Custom replay": visible mention in the Series tab when no game has a replay.
+- **[to decide]** Interface language: the original spec chose English labels
+  ("app convention"). A French-speaking streamer would benefit from a French interface. Operator
+  decision required; this document does not take it.
 
-## Hors périmètre
+## Out of scope
 
-- Nouvelle fonctionnalité d'overlay, nouveau skin, nouvelle scène.
-- Pilotage d'OBS (WebSocket OBS) — toujours exclu par la spec d'origine.
-- Refonte visuelle complète de la régie (seuls le bloc OBS, le parcours et les libellés changent).
-- Changement de contrat de données autre que celui décrit en D (si D est retenu).
+- New overlay feature, new skin, new scene.
+- Driving OBS (OBS WebSocket) — still excluded by the original spec.
+- Complete visual redesign of the control room (only the OBS block, the flow and the labels change).
+- Data contract change other than the one described in D (if D is retained).
 
-## Critères d'acceptation
+## Acceptance criteria
 
-1. Depuis `/cast`, sans navigation, l'URL de la source OBS est visible et copiable en un clic, dans
-   **tous** les onglets de scène, avec le skin choisi.
-2. Depuis l'assistant de 1er lancement, `/cast/overlay` est listé et mène à la régie.
-3. Un utilisateur qui n'a jamais utilisé la régie peut, en suivant seulement la barre d'étapes et les
-   messages affichés, créer une série, la saisir et la mettre à l'antenne (test de parcours manuel
-   consigné dans `docs/STATUS.md`).
-4. Selon l'option choisie en C : aucune scène n'est diffusée sans action explicite (option 1), ou une
-   confirmation est demandée quand une partie est en cours (option 2).
-5. Selon D : en mode auto, l'aperçu et la source OBS affichent la même slide au même instant (mesuré
-   sur deux onglets, écart ≤ 1 s), ou la régie n'affiche plus de promesse d'alignement (alternative).
-6. Chaque code d'erreur listé en E affiche le message en clair ; un code inconnu affiche le code brut.
-7. Aucune régression : les tests existants (`web` et serveur) restent verts ; `replayErrorText` et les
-   garanties R19–R26 sont inchangés, sauf décision écrite contraire.
+1. From `/cast`, without navigating, the OBS source URL is visible and copyable in one click, in
+   **all** scene tabs, with the chosen skin.
+2. From the first-launch wizard, `/cast/overlay` is listed and leads to the control room.
+3. A user who has never used the control room can, by following only the step bar and the
+   displayed messages, create a series, fill it in and put it on air (manual flow test
+   recorded in `docs/STATUS.md`).
+4. Depending on the option chosen in C: no scene is broadcast without an explicit action (option 1), or a
+   confirmation is asked when a game is in progress (option 2).
+5. Depending on D: in auto mode, the preview and the OBS source show the same slide at the same moment (measured
+   on two tabs, gap ≤ 1 s), or the control room no longer shows a promise of alignment (alternative).
+6. Each error code listed in E shows the plain message; an unknown code shows the raw code.
+7. No regression: the existing tests (`web` and server) stay green; `replayErrorText` and the
+   R19–R26 guarantees are unchanged, unless decided otherwise in writing.
 
-## Docs à mettre à jour avec le code (Règle n° 0)
+## Docs to update with the code (Rule no. 0)
 
-- `docs/spec/08-frontend.md` : `/cast` (en-tête OBS, barre d'étapes, mise à l'antenne), `/cast/overlay`
-  (si D change le fonctionnement), libellés.
-- `docs/spec/05-api.md` et `07-evenements.md` seulement si D est retenu (horloge serveur de slide).
-- `docs/STATUS.md` : mettre à jour l'état de la régie (la section « non mergée » est obsolète depuis PR #5)
-  et le résultat du test de parcours (critère 3).
+- `docs/spec/08-frontend.md`: `/cast` (OBS header, step bar, putting on air), `/cast/overlay`
+  (if D changes how it works), labels.
+- `docs/spec/05-api.md` and `07-evenements.md` only if D is retained (server slide clock).
+- `docs/STATUS.md`: update the control room's status (the "not merged" section is obsolete since PR #5)
+  and the result of the flow test (criterion 3).
 
-## Questions à trancher par l'opérateur
+## Questions for the operator to decide
 
-1. Mise à l'antenne : option 1 (bouton explicite, recommandé) ou option 2 (confirmation) — **[C]**.
-2. Rotation auto : horloge serveur (recommandé) ou aperçu qui suit le serveur sans horloge partagée — **[D]**.
-3. Langue de l'interface : français ou anglais — **[F]**.
-4. Le bloc OBS doit-il être aussi visible sur mobile/petit écran, ou seulement en poste de régie ?
+1. Putting on air: option 1 (explicit button, recommended) or option 2 (confirmation) — **[C]**.
+2. Auto rotation: server clock (recommended) or a preview that follows the server without a shared clock — **[D]**.
+3. Interface language: French or English — **[F]**.
+4. Should the OBS block also be visible on mobile/small screens, or only at the control room station?

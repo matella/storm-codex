@@ -1,36 +1,36 @@
-# Jalon 5 — stream + Jarvis + bascule
+# Milestone 5 — stream + Jarvis + switchover
 
 > **For Claude:** REQUIRED SUB-SKILL: superpowers:executing-plans.
 
-**Goal :** widget OBS post-game, événement `hots.match.completed` → Redis (invariants spine
-Jarvis), push post-game box→Azure (extension Twitch), décommission du serveur Node local.
+**Goal:** post-game OBS widget, `hots.match.completed` event → Redis (Jarvis spine
+invariants), post-game push box→Azure (Twitch extension), decommissioning of the local Node server.
 
-**Accept (spec) :** partie jouée → widget OBS + brief Jarvis + extension Twitch à jour ; serveur
-Node local arrêté sans perte de fonction.
+**Accept (spec):** game played → OBS widget + Jarvis brief + Twitch extension up to date; local Node
+server stopped without loss of function.
 
-**Buildable ici (sans box)** : widget OBS, émetteur Redis (testable contre Redis local Docker),
-code du push Azure (config, untested contre la vraie EBS). **Box/opérateur** : Redis Jarvis réel,
-consommateur Jarvis, EBS Azure, arrêt du Node local.
+**Buildable here (without the box)**: OBS widget, Redis emitter (testable against a local Docker Redis),
+Azure push code (config, untested against the real EBS). **Box/operator**: real Jarvis Redis,
+Jarvis consumer, Azure EBS, stopping the local Node.
 
 ---
 
-### Task 1 : émetteur Jarvis (Redis) + invariants spine
-- `redis` au compose (dev) + crate `redis`. Config `REDIS_URL` (option ; absent = pas d'émission).
-- `jarvis.rs` : à chaque `match.parsed`, publie `hots.match.completed` sur Redis avec les
-  invariants : `schema_version`, `correlation_id`/`causation_id`, `occurred_at`/`recorded_at`,
-  type `entity.verb` au passé. Payload : résultat, héros, KDA, carte, durée, awards, écarts.
-- Test : publie contre Redis local, un abonné reçoit l'event bien formé. Commit.
+### Task 1: Jarvis emitter (Redis) + spine invariants
+- `redis` in the compose (dev) + `redis` crate. `REDIS_URL` config (optional; absent = no emission).
+- `jarvis.rs`: on each `match.parsed`, publishes `hots.match.completed` to Redis with the
+  invariants: `schema_version`, `correlation_id`/`causation_id`, `occurred_at`/`recorded_at`,
+  past-tense `entity.verb` type. Payload: result, hero, KDA, map, duration, awards, gaps.
+- Test: publishes against local Redis, a subscriber receives the well-formed event. Commit.
 
-### Task 2 : widget OBS (page autonome)
-- `/widget` : page (servie par le binaire) résumé dernière partie / session, fond transparent,
-  mise à jour live via WS `match.parsed`. Lookup dernière partie via `/api/matches?limit=1`.
-- Vérif rendu. Commit.
+### Task 2: OBS widget (standalone page)
+- `/widget`: page (served by the binary) summarising the last game / session, transparent background,
+  live update via WS `match.parsed`. Last game looked up via `/api/matches?limit=1`.
+- Check rendering. Commit.
 
-### Task 3 : push post-game box→Azure (code + config)
-- `azure.rs` : POST sortant authentifié (même mécanisme que le patch-digest HotsPatchNotes) du
-  résumé post-game vers l'EBS Azure (`AZURE_PUSH_URL`/token, optionnels). Untested contre la
-  vraie EBS — flaggé. Commit.
+### Task 3: post-game push box→Azure (code + config)
+- `azure.rs`: authenticated outgoing POST (same mechanism as the HotsPatchNotes patch-digest) of the
+  post-game summary to the Azure EBS (`AZURE_PUSH_URL`/token, optional). Untested against the
+  real EBS — flagged. Commit.
 
-### Task 4 : décommission Node + STATUS + push
-- Documenter l'arrêt du serveur Node local (inspection Mongo, arrêt, suppression) — étape box,
-  scriptée mais à exécuter par l'opérateur le soir. STATUS, commit, push.
+### Task 4: Node decommissioning + STATUS + push
+- Document stopping the local Node server (Mongo inspection, stop, deletion) — box step,
+  scripted but to be run by the operator in the evening. STATUS, commit, push.

@@ -1,8 +1,8 @@
-//! Comptes liés : indices de similarité d'un joueur cible avec des candidats **présélectionnés**
-//! (jamais de comparaison de tous les joueurs deux à deux), puis scoring pur (`similarity`).
+//! Linked accounts: similarity indices of a target player with **preselected** candidates
+//! (never a pairwise comparison of all the players), then pure scoring (`similarity`).
 //!
-//! Exclusions : l'opérateur (`app_settings.operator_names`) et les propriétaires de token d'upload
-//! sont dans toutes les parties uploadées ; sans exclusion, tout le monde serait « lié » via eux.
+//! Exclusions: the operator (`app_settings.operator_names`) and the upload token owners
+//! are in all the uploaded games; without exclusion, everyone would be "linked" through them.
 
 use super::features::{cosine, intervals_overlap, talent_agreement};
 use super::similarity::{score, PairFeatures, Suggestion};
@@ -10,15 +10,15 @@ use serde_json::Value as J;
 use sqlx::PgPool;
 use std::collections::{HashMap, HashSet};
 
-/// Parties minimales d'un compte pour être candidat sur son pool de héros.
+/// Minimum games of an account to be a candidate on its hero pool.
 pub const MIN_CAND_GAMES: i64 = 10;
-/// Candidats détaillés au maximum (budget : pas de comparaison deux à deux).
+/// Maximum number of detailed candidates (budget: no pairwise comparison).
 pub const MAX_CANDIDATES: usize = 30;
-/// Un token n'a un « propriétaire » qu'à partir de ce nombre de parties uploadées.
+/// A token only has an "owner" from this number of uploaded games.
 pub const TOKEN_MIN_MATCHES: usize = 50;
-/// Parties minimales ensemble pour qu'un co-équipier compte comme « récurrent ».
+/// Minimum games together for a teammate to count as "recurring".
 const MIN_PAIR_GAMES: u32 = 2;
-/// Co-équipiers de la cible utilisés pour chercher des candidats « du même cercle ».
+/// Teammates of the target used to look for candidates "of the same circle".
 const TOP_TEAMMATES: usize = 15;
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -29,14 +29,14 @@ pub struct Candidate {
     pub suggestion: Suggestion,
 }
 
-/// Propriétaires d'un token d'upload, à partir des parties de chaque compte dans les parties du
-/// token (`total` = parties uploadées). Le **compte principal** est présent dans ≥ 50 % d'entre
-/// elles ; un **autre compte de la même personne** est présent dans ≥ 10 % sans jamais partager
-/// une partie avec un propriétaire déjà retenu (une personne ne joue pas deux comptes dans la même
-/// partie). Les amis fréquents jouent *avec* le principal ou avec l'autre compte : pas propriétaires.
+/// Owners of an upload token, from the games of each account among the token's games
+/// (`total` = uploaded games). The **main account** is present in ≥ 50% of
+/// them; **another account of the same person** is present in ≥ 10% without ever sharing
+/// a game with an already kept owner (a person does not play two accounts in the same
+/// game). Frequent friends play *with* the main account or with the other account: not owners.
 pub fn owners_from(per_toon: &HashMap<String, HashSet<i64>>, total: usize) -> HashSet<String> {
     let share = |n: usize| n as f64 / total.max(1) as f64;
-    // égalité de parties → pseudo de toon le plus petit (déterministe)
+    // tie on games → smallest toon name (deterministic)
     let Some((main, main_matches)) = per_toon
         .iter()
         .filter(|(_, m)| share(m.len()) >= 0.5)
@@ -44,9 +44,9 @@ pub fn owners_from(per_toon: &HashMap<String, HashSet<i64>>, total: usize) -> Ha
     else {
         return HashSet::new();
     };
-    // Autres comptes de la même personne : ≥ 10 % des parties, jamais dans une partie avec un
-    // propriétaire déjà retenu. On traite du plus gros au plus petit : un ami qui ne fait duo qu'avec
-    // l'autre compte (≥ 10 %, disjoint du principal) joue AVEC lui, donc n'est pas retenu.
+    // Other accounts of the same person: ≥ 10% of the games, never in a game with an
+    // already kept owner. We go from the biggest to the smallest: a friend who only duos with
+    // the other account (≥ 10%, disjoint from the main one) plays WITH it, so is not kept.
     let mut owners = HashSet::from([main.clone()]);
     let mut taken: Vec<&HashSet<i64>> = vec![main_matches];
     let mut rest: Vec<(&String, &HashSet<i64>)> = per_toon
@@ -63,10 +63,10 @@ pub fn owners_from(per_toon: &HashMap<String, HashSet<i64>>, total: usize) -> Ha
     owners
 }
 
-/// Parties d'un token : toutes, et par compte.
+/// Games of a token: all of them, and per account.
 type TokenMatches = (HashSet<i64>, HashMap<String, HashSet<i64>>);
 
-/// `token_id → comptes propriétaires` pour les tokens ayant au moins `min_matches` parties.
+/// `token_id → owner accounts` for the tokens with at least `min_matches` games.
 pub async fn token_owners_with(
     db: &PgPool,
     min_matches: usize,
@@ -101,7 +101,7 @@ pub async fn token_owners(db: &PgPool) -> Result<HashMap<i64, HashSet<String>>, 
     token_owners_with(db, TOKEN_MIN_MATCHES).await
 }
 
-/// Comptes dont un pseudo correspond à `app_settings.operator_names`.
+/// Accounts one of whose nicknames matches `app_settings.operator_names`.
 pub async fn operator_toons(db: &PgPool) -> Result<HashSet<String>, sqlx::Error> {
     let toons: Vec<String> = sqlx::query_scalar(
         "SELECT p.toon_handle FROM players p
@@ -114,7 +114,7 @@ pub async fn operator_toons(db: &PgPool) -> Result<HashSet<String>, sqlx::Error>
     Ok(toons.into_iter().collect())
 }
 
-/// Opérateur ∪ tous les propriétaires de token.
+/// Operator ∪ all the token owners.
 pub async fn excluded_toons(
     db: &PgPool,
     owners: &HashMap<i64, HashSet<String>>,
@@ -130,8 +130,8 @@ pub async fn suggest(db: &PgPool, target: &str) -> Result<Vec<Candidate>, sqlx::
     suggest_with(db, target, &excluded, &owners).await
 }
 
-/// ≤ `MAX_CANDIDATES` candidats avec suggestion, triés par score décroissant. Exclut la cible, les
-/// `excluded` (sauf les co-propriétaires de token de la cible) et les paires déjà décidées.
+/// ≤ `MAX_CANDIDATES` candidates with a suggestion, sorted by decreasing score. Excludes the target, the
+/// `excluded` ones (except the target's token co-owners) and the already decided pairs.
 pub async fn suggest_with(
     db: &PgPool,
     target: &str,
@@ -147,10 +147,10 @@ pub async fn suggest_with(
     let mates_t = teammates(db, target, excluded).await?;
     let profiles = super::profiles::shared_with(db, target).await?;
 
-    // Présélection (ordre de priorité) : co-propriétaires de token, « cercle » (comptes qui
-    // partagent ≥ 2 co-équipiers récurrents avec la cible), pool de héros proche. Jamais la cible,
-    // jamais un compte déjà croisé dans une partie (même personne ≠ deux comptes dans une partie),
-    // jamais une paire déjà décidée.
+    // Preselection (priority order): token co-owners, "circle" (accounts that
+    // share ≥ 2 recurring teammates with the target), close hero pool. Never the target,
+    // never an account already met in a game (same person ≠ two accounts in a game),
+    // never an already decided pair.
     let mut top_mates: Vec<(&String, &u32)> = mates_t
         .iter()
         .filter(|(_, g)| **g >= MIN_PAIR_GAMES)
@@ -162,14 +162,14 @@ pub async fn suggest_with(
         .map(|(t, _)| t.clone())
         .collect();
 
-    // Comptes jamais candidats : la cible, les comptes déjà croisés dans une partie, les paires déjà
-    // décidées, l'opérateur et les propriétaires de token.
+    // Never-candidate accounts: the target, the accounts already met in a game, the already
+    // decided pairs, the operator and the token owners.
     let mut skip: HashSet<String> = excluded.clone();
     skip.extend(co.iter().cloned());
     skip.extend(decided.keys().cloned());
     skip.insert(target.to_owned());
 
-    // Co-propriétaires de token : candidats même s'ils sont exclus par ailleurs (hors déjà croisés/décidés).
+    // Token co-owners: candidates even if they are excluded otherwise (except already met/decided).
     let mut co_owners: Vec<String> = owners
         .values()
         .filter(|o| o.contains(target))
@@ -179,8 +179,8 @@ pub async fn suggest_with(
         .collect();
     co_owners.sort();
     co_owners.dedup();
-    // Comptes au même nom de profil : candidats même s'ils sont exclus par ailleurs (opérateur,
-    // propriétaires de token), hors déjà croisés/décidés ; en tête, c'est le signal le plus fort.
+    // Accounts with the same profile name: candidates even if they are excluded otherwise (operator,
+    // token owners), except already met/decided; first, it is the strongest signal.
     let mut prof_cands: Vec<String> = profiles
         .keys()
         .filter(|t| !co.contains(*t) && !decided.contains_key(*t))
@@ -260,8 +260,8 @@ pub async fn suggest_with(
     Ok(out)
 }
 
-/// Fusionne les chemins de présélection (déjà filtrés) en au plus `cap` comptes : co-propriétaires de
-/// token d'abord, puis alternance cercle / pool de héros pour qu'aucun chemin n'affame l'autre.
+/// Merges the (already filtered) preselection paths into at most `cap` accounts: token
+/// co-owners first, then alternating circle / hero pool so that no path starves the other.
 fn merge_paths(
     owners: Vec<String>,
     circle: Vec<String>,
@@ -309,7 +309,7 @@ async fn hero_vector(db: &PgPool, toon: &str) -> Result<HashMap<String, u32>, sq
     Ok(rows.into_iter().map(|(h, n)| (h, to_u32(n))).collect())
 }
 
-/// Vecteurs héros de tous les comptes ayant au moins `MIN_CAND_GAMES` parties, en une requête.
+/// Hero vectors of all the accounts with at least `MIN_CAND_GAMES` games, in one query.
 async fn all_hero_vectors(
     db: &PgPool,
 ) -> Result<HashMap<String, HashMap<String, u32>>, sqlx::Error> {
@@ -329,7 +329,7 @@ async fn all_hero_vectors(
     Ok(out)
 }
 
-/// Tous les comptes croisés au moins une fois dans une partie avec `toon` (équipe ou adversaire).
+/// All the accounts met at least once in a game with `toon` (team or opponent).
 async fn co_occurring(db: &PgPool, toon: &str) -> Result<HashSet<String>, sqlx::Error> {
     let v: Vec<String> = sqlx::query_scalar(
         "SELECT DISTINCT o.toon_handle FROM match_players t
@@ -342,7 +342,7 @@ async fn co_occurring(db: &PgPool, toon: &str) -> Result<HashSet<String>, sqlx::
     Ok(v.into_iter().collect())
 }
 
-/// Co-équipiers (même équipe) de `toon` et nombre de parties ensemble, hors `excluded`.
+/// Teammates (same team) of `toon` and number of games together, excluding `excluded`.
 async fn teammates(
     db: &PgPool,
     toon: &str,
@@ -363,8 +363,8 @@ async fn teammates(
         .collect())
 }
 
-/// Comptes partageant au moins 2 des co-équipiers récurrents donnés, hors `skip` (filtré **avant** la
-/// limite : sinon des comptes à écarter occuperaient les places et masqueraient de vrais candidats).
+/// Accounts sharing at least 2 of the given recurring teammates, excluding `skip` (filtered **before** the
+/// limit: otherwise accounts to discard would take the places and hide real candidates).
 async fn circle_candidates(
     db: &PgPool,
     mates: &[String],
@@ -390,7 +390,7 @@ async fn circle_candidates(
     .await
 }
 
-/// Fenêtres `(début, fin)` en secondes epoch de chaque partie datée du compte.
+/// `(start, end)` windows in epoch seconds of each dated game of the account.
 async fn match_windows(db: &PgPool, toon: &str) -> Result<Vec<(i64, i64)>, sqlx::Error> {
     sqlx::query_as(
         "SELECT extract(epoch FROM m.played_at)::bigint,
@@ -403,7 +403,7 @@ async fn match_windows(db: &PgPool, toon: &str) -> Result<Vec<(i64, i64)>, sqlx:
     .await
 }
 
-/// Parties par heure UTC (0..23).
+/// Games per UTC hour (0..23).
 async fn hour_histogram(db: &PgPool, toon: &str) -> Result<HashMap<i32, u32>, sqlx::Error> {
     let rows: Vec<(i32, i64)> = sqlx::query_as(
         "SELECT extract(hour FROM m.played_at AT TIME ZONE 'UTC')::int, count(*)
@@ -426,7 +426,7 @@ async fn talent_rows(db: &PgPool, toon: &str) -> Result<Vec<(String, J)>, sqlx::
     .await
 }
 
-/// `autre compte → statut` des paires déjà décidées avec `toon`.
+/// `other account → status` of the pairs already decided with `toon`.
 async fn decided_links(db: &PgPool, toon: &str) -> Result<HashMap<String, String>, sqlx::Error> {
     let rows: Vec<(String, String)> = sqlx::query_as(
         "SELECT CASE WHEN toon_a = $1 THEN toon_b ELSE toon_a END, status
@@ -452,8 +452,8 @@ mod tests {
 
     #[test]
     fn proprietaires_principal_et_autre_compte_jamais_avec_lui_mais_pas_les_amis() {
-        // 20 parties uploadées. M (principal) dans 1..=14 ; S (autre compte) dans 15..=20, jamais
-        // avec M ; F (ami) dans 1..=6, avec M ; R (rare) dans 15 seulement.
+        // 20 uploaded games. M (main) in 1..=14; S (other account) in 15..=20, never
+        // with M; F (friend) in 1..=6, with M; R (rare) in 15 only.
         let mut per: HashMap<String, HashSet<i64>> = HashMap::new();
         per.insert("M".into(), set(&(1..=14).collect::<Vec<_>>()));
         per.insert("S".into(), set(&(15..=20).collect::<Vec<_>>()));
@@ -463,14 +463,14 @@ mod tests {
         assert!(o.contains("M") && o.contains("S"));
         assert!(
             !o.contains("F"),
-            "un ami qui joue avec le principal n'est pas propriétaire"
+            "a friend who plays with the main account is not an owner"
         );
-        assert!(!o.contains("R"), "sous 10 % des parties");
+        assert!(!o.contains("R"), "below 10% of the games");
     }
 
     #[test]
     fn pas_de_principal_pas_de_proprietaire() {
-        // Personne ne dépasse 50 % → token partagé / sans propriétaire clair.
+        // Nobody exceeds 50% → shared token / without a clear owner.
         let mut per: HashMap<String, HashSet<i64>> = HashMap::new();
         per.insert("A".into(), set(&[1, 2, 3]));
         per.insert("B".into(), set(&[4, 5, 6]));
@@ -479,8 +479,8 @@ mod tests {
 
     #[test]
     fn lami_qui_duo_avec_lautre_compte_nest_pas_proprietaire() {
-        // M (principal) dans 1..=14 ; S (autre compte) dans 15..=20 ; F (ami qui ne duo qu'avec S)
-        // dans 15..=18 : disjoint de M, ≥ 10 % — mais il joue AVEC S, donc pas la même personne que M.
+        // M (main) in 1..=14; S (other account) in 15..=20; F (friend who only duos with S)
+        // in 15..=18: disjoint from M, ≥ 10% — but he plays WITH S, so not the same person as M.
         let mut per: HashMap<String, HashSet<i64>> = HashMap::new();
         per.insert("M".into(), set(&(1..=14).collect::<Vec<_>>()));
         per.insert("S".into(), set(&(15..=20).collect::<Vec<_>>()));
@@ -495,21 +495,18 @@ mod tests {
         let hero: Vec<String> = (0..5).map(|i| format!("h{i}")).collect();
         let m = merge_paths(vec!["o1".into()], circle, hero, 30);
         assert_eq!(m.len(), 30);
-        assert_eq!(
-            m[0], "o1",
-            "les co-propriétaires de token passent en premier"
-        );
+        assert_eq!(m[0], "o1", "the token co-owners come first");
         assert_eq!(
             m.iter().filter(|t| t.starts_with('h')).count(),
             5,
-            "le pool de héros n'est pas affamé par le cercle"
+            "the hero pool is not starved by the circle"
         );
         assert_eq!(
             m.iter().collect::<HashSet<_>>().len(),
             m.len(),
-            "pas de doublon"
+            "no duplicate"
         );
-        // un chemin vide laisse toute la place à l'autre
+        // an empty path leaves all the room to the other one
         let only: Vec<String> = (0..40).map(|i| format!("c{i}")).collect();
         assert_eq!(merge_paths(vec![], only, vec![], 30).len(), 30);
     }
@@ -521,19 +518,19 @@ mod tests {
         let (d1, d2) = (format!("t-d1{}", uid()), format!("t-d2{}", uid()));
         let t0 = Utc.with_ymd_and_hms(2025, 6, 1, 20, 0, 0).unwrap();
         let fr: Vec<&str> = w.friends.iter().map(String::as_str).collect();
-        // deux leurres qui jouent avec les amis, plus souvent que le smurf
+        // two decoys who play with the friends, more often than the smurf
         games(&db, &d1, &fr, &w.opp, 25, t0).await;
         games(&db, &d2, &fr, &w.opp, 24, t0).await;
         let mates: Vec<String> = w.friends.iter().take(2).cloned().collect();
         let skip = HashSet::from([d1.clone(), d2.clone()]);
-        // limite 1 : sans filtrage en SQL, le leurre mieux classé occuperait l'unique place
+        // limit 1: without filtering in SQL, the better-ranked decoy would take the only place
         let got = circle_candidates(&db, &mates, "toon-absent", &skip, 1)
             .await
             .unwrap();
         assert_eq!(got.len(), 1);
         assert!(
             !skip.contains(&got[0]),
-            "un compte à écarter a pris la place : filtrage après la limite"
+            "an account to discard took the place: filtering after the limit"
         );
     }
 
@@ -558,11 +555,11 @@ mod tests {
         );
         assert!(
             !token_owners_with(&db, 11).await.unwrap().contains_key(&tok),
-            "sous le seuil de parties"
+            "below the games threshold"
         );
     }
 
-    // ── scénarios de présélection ───────────────────────────────────────────
+    // ── preselection scenarios ─────────────────────────────────────────────
 
     fn find<'a>(c: &'a [Candidate], toon: &str) -> Option<&'a Candidate> {
         c.iter().find(|c| c.toon == toon)
@@ -575,14 +572,14 @@ mod tests {
         let c = suggest_with(&w.db, &w.target, &HashSet::new(), &HashMap::new())
             .await
             .unwrap();
-        let s = find(&c, &w.smurf).expect("le smurf évident doit être suggéré");
+        let s = find(&c, &w.smurf).expect("the obvious smurf must be suggested");
         assert_eq!(s.suggestion.level, Level::High);
-        assert!(find(&c, &w.target).is_none(), "jamais la cible elle-même");
+        assert!(find(&c, &w.target).is_none(), "never the target itself");
         assert!(c.len() <= MAX_CANDIDATES);
         assert!(
             c.windows(2)
                 .all(|p| p[0].suggestion.score >= p[1].suggestion.score),
-            "tri par score décroissant"
+            "sorted by decreasing score"
         );
     }
 
@@ -590,7 +587,7 @@ mod tests {
     async fn comptes_dans_la_meme_partie_sont_exclus() {
         let Some(db) = test_pool().await else { return };
         let w = smurf_world(&db).await;
-        // une partie où les deux comptes sont présents (équipes opposées)
+        // a game where both accounts are present (opposite teams)
         insert_match(
             &w.db,
             None,
@@ -610,7 +607,7 @@ mod tests {
     async fn parties_qui_se_chevauchent_dans_le_temps_sont_exclues() {
         let Some(db) = test_pool().await else { return };
         let w = smurf_world(&db).await;
-        // le smurf joue une partie (autres joueurs) pendant une partie de la cible (même heure)
+        // the smurf plays a game (other players) during a game of the target (same hour)
         let t0 = Utc.with_ymd_and_hms(2025, 3, 1, 20, 0, 0).unwrap();
         insert_match(&w.db, Some(t0), &[row(&w.smurf, "N", 0, "Muradin")]).await;
         let c = suggest_with(&w.db, &w.target, &HashSet::new(), &HashMap::new())
@@ -647,7 +644,7 @@ mod tests {
         let (a, b, op) = (format!("t-a{u}"), format!("t-b{u}"), format!("t-op{u}"));
         let opp: Vec<String> = (0..4).map(|i| format!("t-o{i}{u}")).collect();
         let t0 = Utc.with_ymd_and_hms(2025, 4, 1, 20, 0, 0).unwrap();
-        // A et B jouent chacun 16 parties avec l'opérateur ; pools de héros/horaires disjoints.
+        // A and B each play 16 games with the operator; disjoint hero pools/hours.
         games(&db, &a, &[&op], &opp, 16, t0).await;
         for i in 0..16 {
             let when = t0 + Duration::days(200 + i) + Duration::hours(-14); // 06 h UTC
@@ -660,15 +657,15 @@ mod tests {
             .unwrap();
         assert!(
             find(&c, &b).is_none(),
-            "ne partager que l'opérateur ne crée aucun lien"
+            "sharing only the operator creates no link"
         );
-        assert!(find(&c, &op).is_none(), "l'opérateur n'est jamais candidat");
+        assert!(find(&c, &op).is_none(), "the operator is never a candidate");
     }
 
     #[tokio::test]
     async fn exclusion_de_loperateur_change_le_resultat() {
-        // Même monde, mais l'« opérateur » est 3 co-équipiers récurrents partagés : exclus → aucun
-        // signal de co-équipiers ; non exclus → signal présent (raison `teammates`).
+        // Same world, but the "operator" is 3 shared recurring teammates: excluded → no
+        // teammates signal; not excluded → signal present (reason `teammates`).
         let Some(db) = test_pool().await else { return };
         let w = smurf_world(&db).await;
         let ex: HashSet<String> = w.friends.iter().cloned().collect();
@@ -696,23 +693,22 @@ mod tests {
         let c = suggest_with(&w.db, &w.target, &excluded, &owners)
             .await
             .unwrap();
-        let s = find(&c, &w.smurf)
-            .expect("co-propriétaire de token = candidat même s'il est exclu par ailleurs");
+        let s = find(&c, &w.smurf).expect("token co-owner = candidate even if excluded otherwise");
         assert!(s.suggestion.reasons.iter().any(|r| r.kind == "token"));
     }
 
-    /// Sonde sur le corpus réel (base pointée par `DATABASE_URL`) : durée et suggestions pour les
-    /// plus gros joueurs et quelques comptes multi-pseudos. À lire par un humain (réglage des seuils).
+    /// Probe on the real corpus (database pointed to by `DATABASE_URL`): duration and suggestions for the
+    /// biggest players and a few multi-nickname accounts. To be read by a human (threshold tuning).
     /// `cargo test -p storm-codex-server sonde_identite -- --ignored --nocapture`
     #[tokio::test]
-    #[ignore = "sonde sur corpus réel"]
+    #[ignore = "probe on the real corpus"]
     async fn sonde_identite_corpus_reel() {
         let Some(db) = test_pool().await else { return };
         let t0 = std::time::Instant::now();
         let owners = token_owners(&db).await.unwrap();
         let excluded = excluded_toons(&db, &owners).await.unwrap();
         eprintln!(
-            "owners/exclus : {:?} en {:?}",
+            "owners/excluded: {:?} in {:?}",
             (owners.len(), excluded.len()),
             t0.elapsed()
         );
@@ -731,7 +727,7 @@ mod tests {
                 .await
                 .unwrap();
             eprintln!(
-                "{toon} ({name:?}) → {} suggestions en {:?}",
+                "{toon} ({name:?}) → {} suggestions in {:?}",
                 c.len(),
                 t.elapsed()
             );

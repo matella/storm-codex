@@ -1,97 +1,97 @@
-# Jalon 2 — crate `storm-stats` : port de hots-parser + harnais de parité
+# Milestone 2 — `storm-stats` crate: hots-parser port + parity harness
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal :** un crate `crates/storm-stats` qui transforme un `storm_replay::Replay` en
-`MatchStats` (= la sortie `{match, players}` de hots-parser), avec **diff automatique champ par
-champ contre hots-parser 7.55.7 (Node)** sur un corpus couvrant les 16+ cartes.
-**Accept (spec) : diff vert sur le corpus, tolérances documentées.**
+**Goal:** a `crates/storm-stats` crate that turns a `storm_replay::Replay` into
+`MatchStats` (= hots-parser's `{match, players}` output), with an **automatic field-by-field
+diff against hots-parser 7.55.7 (Node)** on a corpus covering the 16+ maps.
+**Accept (spec): green diff on the corpus, documented tolerances.**
 
-**Architecture :** parser.js (3 360 lignes) est la **spec fonctionnelle** — on porte sa
-sémantique phase par phase, bugs compris (un écart volontaire = tolérance documentée, jamais
-silencieuse). La sortie Rust sérialise (serde) exactement la forme JSON de hots-parser pour
-rendre le diff trivial ; la projection Postgres du jalon 3 se fera depuis le type Rust, pas
-depuis ce JSON. Le harnais (`tools/parity-harness/`) : `dump.js` (réf. Node, **fait**, écrit
-dans un fichier car pino pollue stdout) + `storm-stats-dump` (Rust) + `diff.py` (deep-compare,
-liste d'exclusions = LES tolérances, cache des dumps de référence — Node met ~1-3 s/replay).
+**Architecture:** parser.js (3,360 lines) is the **functional spec** — we port its
+semantics phase by phase, bugs included (a deliberate gap = documented tolerance, never
+silent). The Rust output serialises (serde) exactly hots-parser's JSON shape to
+make the diff trivial; milestone 3's Postgres projection will be done from the Rust type, not
+from this JSON. The harness (`tools/parity-harness/`): `dump.js` (Node ref., **done**, writes
+to a file because pino pollutes stdout) + `storm-stats-dump` (Rust) + `diff.py` (deep-compare,
+exclusion list = THE tolerances, cache of the reference dumps — Node takes ~1-3 s/replay).
 
-**Réfs :** `%TEMP%\hots-parser\parser.js` (lire la phase AVANT de la porter),
-`constants.js` (446 lignes : unités par carte, awards, talents…, à transposer en
-`constants.rs` généré ou écrit), `docs/research/hots-replay-data-reference.md` (bible du
-format), sortie réelle : 33 clés `match`, ~40 clés `player` (relevées en session).
+**Refs:** `%TEMP%\hots-parser\parser.js` (read the phase BEFORE porting it),
+`constants.js` (446 lines: units per map, awards, talents…, to transpose into a generated or
+hand-written `constants.rs`), `docs/research/hots-replay-data-reference.md` (the format's
+bible), real output: 33 `match` keys, ~40 `player` keys (noted during the session).
 
 ---
 
-### Task 1 : corpus stats par carte + squelette crate + harnais diff
+### Task 1: stats corpus per map + crate skeleton + diff harness
 
-- `spike/sample_stats_corpus.ps1` : depuis l'archive locale, ≥ 3 replays par carte distincte
-  (nom de carte = fin du nom de fichier) + le corpus spike50 → `corpus/stats/` (~100 fichiers).
-- `crates/storm-stats` (workspace) : deps `storm-replay` (path), `serde`/`serde_json`,
-  `thiserror` ; bin `storm-stats-dump <replay> <out.json>`.
-- `tools/parity-harness/diff.py` : `--corpus <dir>` → pour chaque replay, dump Node (caché dans
-  `corpus/stats/.ref/`) + dump Rust, deep-compare avec : tolérance floats 1e-6, `null` ≡ absent,
-  exclusions lues dans `tools/parity-harness/tolerances.json` (chemins JSON + raison) ;
-  `--only <préfixes>` pour le diff progressif pendant le port.
+- `spike/sample_stats_corpus.ps1`: from the local archive, ≥ 3 replays per distinct map
+  (map name = end of the file name) + the spike50 corpus → `corpus/stats/` (~100 files).
+- `crates/storm-stats` (workspace): deps `storm-replay` (path), `serde`/`serde_json`,
+  `thiserror`; bin `storm-stats-dump <replay> <out.json>`.
+- `tools/parity-harness/diff.py`: `--corpus <dir>` → for each replay, Node dump (cached in
+  `corpus/stats/.ref/`) + Rust dump, deep-compare with: float tolerance 1e-6, `null` ≡ absent,
+  exclusions read from `tools/parity-harness/tolerances.json` (JSON paths + reason);
+  `--only <prefixes>` for the progressive diff during the port.
 - Commit.
 
-### Task 2 : identité du match + des joueurs (phase 1 de processReplay)
+### Task 2: match + player identity (phase 1 of processReplay)
 
-Porter : header/details/initdata/attributes → `match.{version,type,loopLength,filename,mode,
+Port: header/details/initdata/attributes → `match.{version,type,loopLength,filename,mode,
 map,date,rawDate,region,playerIDs,heroes,loopGameStart,length}` + `players.{hero,name,uuid,
 region,realm,ToonHandle,tag,team,build,mode,version,map,date,rawDate,length,win,
 internalHeroName,heroLevel,skin,announcer,mount,silenced,voiceSilenced}`.
-Attention : `attr.js` (mapping attributs → mode), date = winFileTimeToDate (offset -610 s,
-cf. bible), tag depuis battletags (getBattletags lit l'initdata). Diff `--only` vert. Commit.
+Careful: `attr.js` (attributes → mode mapping), date = winFileTimeToDate (offset -610 s,
+see the bible), tag from battletags (getBattletags reads the initdata). `--only` diff green. Commit.
 
-### Task 3 : score screen + talents + draft
+### Task 3: score screen + talents + draft
 
-- `processScoreArray` (SScoreResultEvent → `gameStats` ~80 stats + awards), talents par palier
-  (game events SHeroTalentTreeSelectionEvent + noms via tracker), `globes`, `votes`.
-- Draft : `match.bans` (SHeroBannedEvent), `match.picks` (SHeroPickedEvent ordonnés),
-  `firstPickWin`, `turn`. Diff vert. Commit.
+- `processScoreArray` (SScoreResultEvent → `gameStats` ~80 stats + awards), talents per tier
+  (game events SHeroTalentTreeSelectionEvent + names via tracker), `globes`, `votes`.
+- Draft: `match.bans` (SHeroBannedEvent), `match.picks` (ordered SHeroPickedEvent),
+  `firstPickWin`, `turn`. Diff green. Commit.
 
-### Task 4 : pipeline d'unités tracker (le gros morceau)
+### Task 4: tracker unit pipeline (the big piece)
 
-Boucle UnitBorn/UnitDied/UnitOwnerChange… : takedowns enrichis (positions, participants,
-chain kills, vengeances), `deaths`, `lifespan`, `mercs` (camps), `structures`,
+UnitBorn/UnitDied/UnitOwnerChange… loop: enriched takedowns (positions, participants,
+chain kills, revenges), `deaths`, `lifespan`, `mercs` (camps), `structures`,
 `levelTimes`, `XPBreakdown` (PeriodicXPBreakdown), `computeLevelDiff`/`analyzeLevelAdv` →
-`levelAdvTimeline`, `firstFort/firstKeep(+Win)`, `team0/1Takedowns`. Diff vert. Commit.
+`levelAdvTimeline`, `firstFort/firstKeep(+Win)`, `team0/1Takedowns`. Diff green. Commit.
 
-### Task 5 : objectifs par carte (16 branches)
+### Task 5: per-map objectives (16 branches)
 
-Le switch par carte de processReplay → `match.objective` normalisé (immortels+durée, dragon,
-araignées, tributs, autels, crânes, navires, punishers, **braxisWaveStrength**, temples,
-trônes, mines, graines, gemmes, protecteur) + `getFirstObjectiveTeam` → `firstObjective(Win)`.
-Chaque carte validée par diff sur ses replays du corpus. Commit (possiblement plusieurs).
+processReplay's switch per map → normalised `match.objective` (immortals+duration, dragon,
+spiders, tributes, altars, skulls, ships, punishers, **braxisWaveStrength**, temples,
+thrones, mines, seeds, gems, protector) + `getFirstObjectiveTeam` → `firstObjective(Win)`.
+Each map validated by diff on its corpus replays. Commit (possibly several).
 
-### Task 6 : game events — taunts/BM, messages, with/against
+### Task 6: game events — taunts/BM, messages, with/against
 
-`processTauntData` : bsteps (séquences de frames, BSTEP_FRAME_THRESHOLD=8), danses, sprays,
-voicelines, taunts + contexte (près d'ennemi, kill proche) ; `match.messages` (chat/pings) ;
-`with`/`against` ; `units`. Diff vert. Commit.
+`processTauntData`: bsteps (frame sequences, BSTEP_FRAME_THRESHOLD=8), dances, sprays,
+voicelines, taunts + context (near an enemy, kill nearby); `match.messages` (chat/pings);
+`with`/`against`; `units`. Diff green. Commit.
 
-### Task 7 : stats d'équipe + uptime
+### Task 7: team stats + uptime
 
 `collectTeamStats` → `match.teams`, `analyzeUptime`/`analyzeTeamPlayerUptime`/
-`timeWithHeroAdv`. Diff vert. Commit.
+`timeWithHeroAdv`. Diff green. Commit.
 
-### Task 8 : diff intégral + bench + finitions
+### Task 8: full diff + bench + finishing touches
 
-- `diff.py --corpus corpus/stats` **sans `--only`** : vert (exclusions = tolérances
-  documentées dans tolerances.json avec raison ; les recopier dans le README du crate).
-- Bench : decode + stats sur corpus/spike50, mono-thread — **budget spec < 150 ms/replay
-  médiane** (decode seul = 102 ms ; stats doivent tenir dans ~45 ms).
-- README crate, STATUS.md (jalon 2 fait), commit + **push**.
+- `diff.py --corpus corpus/stats` **without `--only`**: green (exclusions = tolerances
+  documented in tolerances.json with a reason; copy them into the crate's README).
+- Bench: decode + stats on corpus/spike50, single-threaded — **spec budget < 150 ms/replay
+  median** (decode alone = 102 ms; stats must fit in ~45 ms).
+- Crate README, STATUS.md (milestone 2 done), commit + **push**.
 
 ---
 
-## Pièges connus
+## Known pitfalls
 
-- hots-parser fige `version: 7` (PARSER_VERSION) et des champs legacy — reproduire tel quel.
-- `undefined` JS → sérialisé `null` par dump.js : le diff traite null ≡ absent.
-- Ordres d'itération JS (objets = insertion) : les tableaux doivent matcher exactement,
-  les objets se comparent par clés.
-- Floats : positions /4096 (fixedData), pourcentages — tolérance 1e-6, pas plus.
-- ARAM/brawl : certaines cartes n'ont pas de logique objective dans hots-parser — la sortie
-  doit être identiquement vide, pas absente.
-- Node : toujours `dump.js` vers fichier (pino écrit sur stdout).
+- hots-parser freezes `version: 7` (PARSER_VERSION) and legacy fields — reproduce as is.
+- JS `undefined` → serialised as `null` by dump.js: the diff treats null ≡ absent.
+- JS iteration orders (objects = insertion): arrays must match exactly,
+  objects are compared by keys.
+- Floats: positions /4096 (fixedData), percentages — tolerance 1e-6, no more.
+- ARAM/brawl: some maps have no objective logic in hots-parser — the output
+  must be identically empty, not absent.
+- Node: always `dump.js` to a file (pino writes to stdout).

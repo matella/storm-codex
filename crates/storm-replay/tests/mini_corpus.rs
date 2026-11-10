@@ -1,5 +1,5 @@
-//! Tests d'intégration sur le mini-corpus committé (3 replays, `tests/data/`).
-//! Chaque replay doit livrer ses 7 streams avec des invariants de partie 5v5.
+//! Integration tests on the committed mini-corpus (3 replays, `tests/data/`).
+//! Each replay must deliver its 7 streams with 5v5 game invariants.
 
 #![allow(clippy::unwrap_used)]
 
@@ -30,14 +30,17 @@ fn seven_streams_decode_with_invariants() {
             "{name}: build {}",
             replay.header.base_build
         );
-        assert!(replay.header.elapsed_game_loops > 0, "{name}: durée nulle");
+        assert!(
+            replay.header.elapsed_game_loops > 0,
+            "{name}: zero duration"
+        );
 
-        // details (vue typée)
+        // details (typed view)
         let details = replay
             .details()
             .unwrap_or_else(|e| panic!("{name}: details: {e}"));
-        assert!(!details.title.is_empty(), "{name}: carte vide");
-        assert_eq!(details.players.len(), 10, "{name}: joueurs");
+        assert!(!details.title.is_empty(), "{name}: empty map");
+        assert_eq!(details.players.len(), 10, "{name}: players");
         assert_eq!(
             details.players.iter().filter(|p| p.result == 1).count(),
             5,
@@ -46,7 +49,7 @@ fn seven_streams_decode_with_invariants() {
         for p in &details.players {
             assert!(
                 !p.name.is_empty() && !p.hero.is_empty(),
-                "{name}: joueur incomplet"
+                "{name}: incomplete player"
             );
             assert!(
                 p.toon_handle.contains("-Hero-"),
@@ -61,14 +64,14 @@ fn seven_streams_decode_with_invariants() {
             .unwrap_or_else(|e| panic!("{name}: initdata: {e}"));
         assert!(
             initdata.field("m_syncLobbyState").is_some(),
-            "{name}: initdata sans m_syncLobbyState"
+            "{name}: initdata without m_syncLobbyState"
         );
 
         // attributes
         let attrs = replay
             .attributes()
             .unwrap_or_else(|e| panic!("{name}: attributes: {e}"));
-        assert!(!attrs.scopes.is_empty(), "{name}: attributes vides");
+        assert!(!attrs.scopes.is_empty(), "{name}: empty attributes");
 
         // tracker events
         let tracker = replay
@@ -86,16 +89,10 @@ fn seven_streams_decode_with_invariants() {
                     .is_some_and(|n| n.ends_with(suffix))
             })
         };
-        assert!(
-            has(&tracker, "SScoreResultEvent"),
-            "{name}: pas de score final"
-        );
-        assert!(
-            has(&tracker, "SStatGameEvent"),
-            "{name}: pas de stat events"
-        );
+        assert!(has(&tracker, "SScoreResultEvent"), "{name}: no final score");
+        assert!(has(&tracker, "SStatGameEvent"), "{name}: no stat events");
 
-        // game events (le plus gros stream)
+        // game events (the largest stream)
         let game = replay
             .game_events()
             .unwrap_or_else(|e| panic!("{name}: game events: {e}"));
@@ -105,15 +102,18 @@ fn seven_streams_decode_with_invariants() {
             game.len()
         );
 
-        // message events (peut être vide si personne n'a parlé/ping — décodage sans erreur suffit)
+        // message events (may be empty if nobody talked/pinged — decoding without error is enough)
         let _messages = replay
             .message_events()
             .unwrap_or_else(|e| panic!("{name}: messages: {e}"));
 
-        // mini-corpus ⊂ builds connus du moment de génération… sauf si plus récent que les
-        // tables : le fallback doit alors être signalé, jamais silencieux.
+        // mini-corpus ⊂ builds known at generation time… unless newer than the
+        // tables: the fallback must then be flagged, never silent.
         if let Some((asked, used)) = replay.protocol_fallback() {
-            assert!(asked > used, "{name}: fallback incohérent {asked}->{used}");
+            assert!(
+                asked > used,
+                "{name}: inconsistent fallback {asked}->{used}"
+            );
         }
     }
 }

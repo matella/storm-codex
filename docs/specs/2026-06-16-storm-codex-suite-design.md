@@ -1,104 +1,104 @@
 # Spec — Storm Codex Suite (all-in-one HotS)
 
-**Date :** 2026-06-16 · **Statut :** design validé (brainstorm), prêt pour plan d'implémentation.
-**Objectif :** regrouper la suite HotS (stats + overlays + patch notes + uploader) en **un produit
-unifié, auto-hébergeable, que n'importe qui lance avec `docker compose up`**.
+**Date:** 2026-06-16 · **Status:** design approved (brainstorm), ready for an implementation plan.
+**Goal:** bring the HotS suite (stats + overlays + patch notes + uploader) together into **a unified,
+self-hostable product that anyone can launch with `docker compose up`**.
 
 ## Vision
-Aujourd'hui la suite est éclatée : storm-codex (Rust, stats/overlays), HotsPatchNotes (.NET, patch
-notes + référentiel héros/talents), uploader client-rs (Rust, PC de jeu), Orpheus (Node, musique).
-But : **un seul site web**, **une seule base**, **un seul `docker compose up`**, **pré-seedé**, que
-quiconque peut prendre et faire tourner **en local** sans scraper ni configurer une stack complexe.
+Today the suite is scattered: storm-codex (Rust, stats/overlays), HotsPatchNotes (.NET, patch
+notes + hero/talent reference data), the client-rs uploader (Rust, gaming PC), Orpheus (Node, music).
+Goal: **a single website**, **a single database**, **a single `docker compose up`**, **pre-seeded**, that
+anyone can take and run **locally** without scraping or configuring a complex stack.
 
-## Décisions verrouillées (avec rationale)
-1. **Pas « une image » monolithique → un `docker compose` unique.** Mélanger Rust/.NET/Node dans une
-   image est un anti-pattern. Pour l'utilisateur, `docker compose up` est tout aussi simple.
-2. **Produit utilisateur = 100% Rust** : storm-codex (stats + overlays + **patch notes intégrés**) +
-   uploader. **HotsPatchNotes (.NET) sort du bundle** et devient un **outil mainteneur d'ingestion**
-   (scrape BlueTracker + fetch `heroes-talents`). Rationale : le scraping est un job de mainteneur,
-   pas d'utilisateur ; le produit reste mono-stack, sans réécrire le scraper (qui marche).
-3. **Un seul Postgres** partagé dans le compose (base `storm_codex` ; le référentiel patches/héros/
-   talents vit aussi dedans, voir §Référentiel). Pas de SQLite/Mongo côté produit.
-4. **Orpheus exclu** du bundle public (dépend d'une auth Spotify perso). Le widget musique dégrade en
-   « Music — off ».
-5. **Distribution : images pré-build publiées sur ghcr.io.** L'utilisateur ne build rien.
-6. **Usage purement local → sécurité simple.** Mode ouvert par défaut (ADMIN_TOKEN optionnel, déjà
-   en place), backups locaux basiques. Pas de sécu/auth avancée (reverse-proxy/TLS documenté si
-   exposition, hors scope produit).
+## Locked decisions (with rationale)
+1. **Not a monolithic "single image" → a single `docker compose`.** Mixing Rust/.NET/Node in one
+   image is an anti-pattern. For the user, `docker compose up` is just as simple.
+2. **User product = 100% Rust**: storm-codex (stats + overlays + **built-in patch notes**) +
+   uploader. **HotsPatchNotes (.NET) leaves the bundle** and becomes a **maintainer ingestion tool**
+   (scrapes BlueTracker + fetches `heroes-talents`). Rationale: scraping is a maintainer's job,
+   not a user's; the product stays single-stack, without rewriting the scraper (which works).
+3. **A single shared Postgres** in the compose (database `storm_codex`; the patches/heroes/
+   talents reference data lives in it too, see §Reference data). No SQLite/Mongo on the product side.
+4. **Orpheus excluded** from the public bundle (depends on a personal Spotify auth). The music widget degrades to
+   "Music — off".
+5. **Distribution: pre-built images published on ghcr.io.** The user builds nothing.
+6. **Purely local use → simple security.** Open mode by default (ADMIN_TOKEN optional, already
+   in place), basic local backups. No advanced security/auth (reverse proxy/TLS documented in case of
+   exposure, out of product scope).
 
 ## Architecture
-- **Repo `storm-codex-suite`** (nouveau, parapluie) : `docker-compose.yml` (référence les images
-  ghcr.io) + `.env.example` + README. Aucun code applicatif.
-- **Services du compose** : `postgres` (partagé) · `storm-codex-server` (Rust, sert l'API + le React
-  + les overlays + les patch notes) · `uploader-headless` (option Docker, voir §Uploader).
-- **storm-codex = LE site** : son React est l'unique front. On abandonne `HotsPatchNotes.Web`.
+- **`storm-codex-suite` repo** (new, umbrella): `docker-compose.yml` (references the ghcr.io
+  images) + `.env.example` + README. No application code.
+- **Compose services**: `postgres` (shared) · `storm-codex-server` (Rust, serves the API + the React
+  + the overlays + the patch notes) · `uploader-headless` (Docker option, see §Uploader).
+- **storm-codex = THE site**: its React is the only front-end. `HotsPatchNotes.Web` is dropped.
 
-## Référentiel par snapshot (héros / talents / patches / images)
-**Problème :** le produit ne doit pas dépendre d'un HotsPatchNotes vivant ni faire scraper l'utilisateur.
-**Solution :** distribuer la **donnée déjà produite**, pas le scraper.
-- **Production (mainteneur)** : HotsPatchNotes (.NET) exporte un **snapshot versionné** =
-  `referential-<version>.tar.gz` (`heroes.json`, `talents.json`, `patches.json` + images portraits/
-  cartes). Publié comme **GitHub Release** du repo suite.
-- **Consommation (storm-codex)** : nouveau `REFERENTIAL_URL` (défaut = dernière release). Au démarrage
-  + check périodique (~24 h) + bouton Admin : si version plus récente → télécharge, ingère dans
-  Postgres (**pattern `dim_heroes`/`dim_talents` existant, étendu à `dim_patches`**), décompresse les
-  images dans `images_dir`. Idempotent. **Fallback** : snapshot baké dans l'image si offline.
-- **Conséquence** : l'utilisateur **ne scrape jamais, ne lance jamais .NET, n'a jamais de base vide**.
+## Reference data by snapshot (heroes / talents / patches / images)
+**Problem:** the product must not depend on a live HotsPatchNotes or make the user scrape.
+**Solution:** distribute the **data already produced**, not the scraper.
+- **Production (maintainer)**: HotsPatchNotes (.NET) exports a **versioned snapshot** =
+  `referential-<version>.tar.gz` (`heroes.json`, `talents.json`, `patches.json` + portrait/map
+  images). Published as a **GitHub Release** of the suite repo.
+- **Consumption (storm-codex)**: new `REFERENTIAL_URL` (default = latest release). At startup
+  + periodic check (~24 h) + Admin button: if a newer version exists → download, ingest into
+  Postgres (**existing `dim_heroes`/`dim_talents` pattern, extended to `dim_patches`**), unpack the
+  images into `images_dir`. Idempotent. **Fallback**: snapshot baked into the image if offline.
+- **Consequence**: the user **never scrapes, never runs .NET, never has an empty database**.
 
-## Fraîcheur des patch notes
-- Patch Blizzard → **GitHub Action en cron** (côté mainteneur) lance l'ingestion → produit le snapshot
-  → publie une nouvelle Release.
-- Utilisateurs : auto-frais au boot / périodiquement / via bouton, sous ≤24 h.
+## Patch notes freshness
+- Blizzard patch → **cron GitHub Action** (maintainer side) runs the ingestion → produces the snapshot
+  → publishes a new Release.
+- Users: automatically fresh at boot / periodically / via a button, within ≤24 h.
 
-## Notifications « nouveau patch »
-La détection d'une version de snapshot plus récente déclenche :
-- **In-app** : broadcast WS `patch.new` → toast + pastille sur l'onglet « Patch Notes » (réutilise le
-  système toast/WS existant des nouveaux replays).
-- **Webhook sortant optionnel** : `PATCH_WEBHOOK_URL` configurable → POST `{patchName, type, date,
-  link}`, compatible Discord / ntfy / endpoint générique (spine Jarvis chez le mainteneur). Off par
-  défaut.
+## "New patch" notifications
+Detection of a newer snapshot version triggers:
+- **In-app**: WS broadcast `patch.new` → toast + badge on the "Patch Notes" tab (reuses the
+  existing toast/WS system of new replays).
+- **Optional outgoing webhook**: configurable `PATCH_WEBHOOK_URL` → POST `{patchName, type, date,
+  link}`, compatible with Discord / ntfy / generic endpoint (Jarvis spine at the maintainer's). Off by
+  default.
 
-## Patch notes dans storm-codex (intégration complète)
-- storm-codex-server **proxifie/sert** les patches depuis sa propre base (`dim_patches`), comme
-  dim/now-playing aujourd'hui → une seule origine, pas de CORS.
-- **Vues React (design Nexus Codex)** : onglet « Patch Notes » → liste (nom, type, date, nb héros/
-  cartes) + détail d'un patch (changements héros/talents/cartes). Réutilise portraits/talents.
+## Patch notes in storm-codex (full integration)
+- storm-codex-server **proxies/serves** the patches from its own database (`dim_patches`), like
+  dim/now-playing today → a single origin, no CORS.
+- **React views (Nexus Codex design)**: "Patch Notes" tab → list (name, type, date, number of heroes/
+  maps) + detail of a patch (hero/talent/map changes). Reuses portraits/talents.
 
-## Uploader headless (option Docker)
-- Nouvelle image `uploader-headless` : client-rs **sans GUI**, config par env (URL serveur + token +
-  chemin replays), **bind-mount** du dossier HotS, **re-scan périodique** (code déjà en place).
-- Le `.exe` natif Windows reste l'option principale (file-watching fiable). L'image headless cible les
-  utilisateurs tout-Docker (Docker Desktop + bind-mount).
+## Headless uploader (Docker option)
+- New `uploader-headless` image: client-rs **without GUI**, configured by env (server URL + token +
+  replays path), **bind-mount** of the HotS folder, **periodic re-scan** (code already in place).
+- The native Windows `.exe` stays the main option (reliable file watching). The headless image targets
+  all-Docker users (Docker Desktop + bind-mount).
 
-## Onboarding & nouveautés (in-app)
-- **Assistant 1er lancement** : au boot initial, parcours guidé → pseudo opérateur, **génération d'un
-  token d'upload**, **URLs OBS** à copier, lien/commande pour brancher l'uploader. Re-déclenchable via
-  un bouton « ? ». Page Admin « Connect the uploader ».
-- **« What's new »** : à chaque montée de version de l'app, panneau des nouveautés depuis la dernière
-  visite (version vue en localStorage → modale, dismiss = vu). Distinct des patch notes HotS.
+## Onboarding & what's new (in-app)
+- **First-launch wizard**: at the first boot, guided path → operator name, **generation of an
+  upload token**, **OBS URLs** to copy, link/command to connect the uploader. Can be re-triggered via
+  a "?" button. Admin page "Connect the uploader".
+- **"What's new"**: at each app version upgrade, panel of what is new since the last
+  visit (version seen in localStorage → modal, dismiss = seen). Distinct from HotS patch notes.
 
-## Sauvegardes (simple, local)
-- Volume Postgres nommé + `pg_dump` planifié (script/cron léger) + **restore documenté**. Pas de
-  chiffrement/offsite (usage local). Filet de sécurité pour l'historique de matchs.
+## Backups (simple, local)
+- Named Postgres volume + scheduled `pg_dump` (light script/cron) + **documented restore**. No
+  encryption/offsite (local use). Safety net for the match history.
 
-## CI / publication d'images
-- Chaque repo (storm-codex, HotsPatchNotes-api, uploader) gagne un **GitHub Actions** : build + push
-  vers `ghcr.io/matella/*`. Le repo suite référence ces tags + une Action cron pour le snapshot.
+## CI / image publication
+- Each repo (storm-codex, HotsPatchNotes-api, uploader) gets a **GitHub Actions** workflow: build + push
+  to `ghcr.io/matella/*`. The suite repo references those tags + a cron Action for the snapshot.
 
-## Hors scope (YAGNI)
-i18n FR/EN · comptes multi-utilisateurs / auth avancée · thème clair · données de démo · réécriture de
-HotsPatchNotes en Rust (seul l'ingester pourrait l'être un jour, optionnel).
+## Out of scope (YAGNI)
+FR/EN i18n · multi-user accounts / advanced auth · light theme · demo data · rewriting
+HotsPatchNotes in Rust (only the ingester might be one day, optional).
 
-## Découpage en lots (ordre de build)
-1. **Postgres partagé** — HotsPatchNotes-api → Postgres (au lieu de SQLite) ; un seul service DB.
-2. **Snapshot référentiel + `dim_patches`** — export .NET + ingestion Rust (boot/périodique/fallback).
-3. **Vues patch notes** — onglet + liste + détail dans le React storm-codex.
-4. **Notifs nouveau patch** — WS `patch.new` + toast/pastille + webhook optionnel.
-5. **Image uploader headless** — Dockerfile sans GUI + config env + bind-mount.
-6. **CI publication d'images** — Actions par repo → ghcr.io.
-7. **Repo suite + compose + docs** — `docker compose up` de bout en bout.
-8. **Onboarding + assistant 1er lancement** (+ page « connect uploader »).
-9. **« What's new » / changelog in-app.**
-10. **Sauvegardes/restore** (simple, local).
+## Breakdown into batches (build order)
+1. **Shared Postgres** — HotsPatchNotes-api → Postgres (instead of SQLite); a single DB service.
+2. **Reference snapshot + `dim_patches`** — .NET export + Rust ingestion (boot/periodic/fallback).
+3. **Patch notes views** — tab + list + detail in the storm-codex React.
+4. **New patch notifications** — WS `patch.new` + toast/badge + optional webhook.
+5. **Headless uploader image** — Dockerfile without GUI + env config + bind-mount.
+6. **Image publication CI** — Actions per repo → ghcr.io.
+7. **Suite repo + compose + docs** — end-to-end `docker compose up`.
+8. **Onboarding + first-launch wizard** (+ "connect uploader" page).
+9. **In-app "What's new" / changelog.**
+10. **Backups/restore** (simple, local).
 
-Chaque lot est livrable indépendamment ; de nouveaux lots peuvent s'ajouter sans rouvrir l'architecture.
+Each batch can be delivered independently; new batches can be added without reopening the architecture.

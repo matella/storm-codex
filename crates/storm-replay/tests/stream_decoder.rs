@@ -1,6 +1,6 @@
-//! `StreamDecoder` : décoder un stream par morceaux doit rendre exactement les mêmes événements que
-//! le décodage du replay entier, quelle que soit la découpe — c'est ce que le feed live reçoit
-//! (blocs de 4 Ko écrits par le jeu, cf. docs/research/2026-10-24-tempwritereplay-live.md).
+//! `StreamDecoder`: decoding a stream in chunks must return exactly the same events as
+//! decoding the whole replay, whatever the split — that is what the live feed receives
+//! (4 KB blocks written by the game, see docs/research/2026-10-24-tempwritereplay-live.md).
 
 #![allow(clippy::unwrap_used)]
 
@@ -19,7 +19,7 @@ fn mini_corpus() -> Vec<PathBuf> {
     files
 }
 
-/// Découpe déterministe pseudo-aléatoire (LCG) : tailles de 1 à 9 000 octets.
+/// Deterministic pseudo-random split (LCG): sizes from 1 to 9,000 bytes.
 fn random_sizes(seed: u64) -> impl FnMut() -> usize {
     let mut x = seed;
     move || {
@@ -68,7 +68,7 @@ fn chunked_decoding_equals_whole_replay() {
         for (kind, raw, whole) in &cases {
             for (label, sizes) in [
                 ("4 Ko", Box::new(|| 4096_usize) as Box<dyn FnMut() -> usize>),
-                ("aléatoire", Box::new(random_sizes(raw.len() as u64))),
+                ("random", Box::new(random_sizes(raw.len() as u64))),
             ] {
                 let (events, dec) = feed_all(*kind, build, raw, sizes);
                 assert_eq!(events.len(), whole.len(), "{name} {kind:?} {label}: nombre");
@@ -82,7 +82,7 @@ fn chunked_decoding_equals_whole_replay() {
 
 #[test]
 fn byte_by_byte_on_a_prefix() {
-    // 1 octet à la fois coûte un redécodage par octet : on se limite aux 20 premiers Ko.
+    // 1 byte at a time costs one re-decode per byte: we stop at the first 20 KB.
     let replay = Replay::open(&mini_corpus()[0]).unwrap();
     let build = replay.header.base_build;
     for kind in [StreamKind::Tracker, StreamKind::Game] {
@@ -107,7 +107,7 @@ fn random_bytes_never_panic() {
         for round in 0..200 {
             let junk: Vec<u8> = (0..(next() % 512)).map(|_| next() as u8).collect();
             let mut dec = StreamDecoder::new(kind, None).unwrap();
-            // Erreur ou événements : les deux sont acceptables, une panique ne l'est pas.
+            // Error or events: both are acceptable, a panic is not.
             let _ = dec.feed(&junk);
             let _ = dec.feed(&junk);
             assert!(dec.consumed() <= 2 * junk.len() as u64, "{kind:?} #{round}");

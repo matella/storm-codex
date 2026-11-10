@@ -1,4 +1,4 @@
-//! Configuration par variables d'environnement (V2-ready : serveur stateless, tout par env).
+//! Configuration through environment variables (V2-ready: stateless server, everything through env).
 
 use std::path::PathBuf;
 
@@ -9,32 +9,32 @@ pub struct Config {
     pub archive_dir: PathBuf,
     pub raw_cache_dir: PathBuf,
     pub raw_cache_max_bytes: u64,
-    /// Token admin (Bearer) protégeant les écritures. `None` (ADMIN_TOKEN absent/vide) = **mode
-    /// ouvert** : aucune auth admin requise — destiné à l'auto-hébergement local (LAN/Tailscale,
-    /// un seul opérateur). Le définir réactive l'auth (recommandé si exposé via reverse proxy).
+    /// Admin token (Bearer) protecting the writes. `None` (ADMIN_TOKEN missing/empty) = **open
+    /// mode**: no admin auth required — meant for local self-hosting (LAN/Tailscale,
+    /// a single operator). Setting it re-enables auth (recommended if exposed through a reverse proxy).
     pub admin_token: Option<String>,
-    /// Dossier du front buildé (web/dist) servi sur `/` ; vide = ne sert que l'API.
+    /// Folder of the built front (web/dist) served on `/`; empty = serves only the API.
     pub web_dir: Option<PathBuf>,
-    /// Redis Jarvis (option) ; absent = pas d'émission d'événements.
+    /// Jarvis Redis (optional); missing = no event emission.
     pub redis_url: Option<String>,
     pub jarvis_channel: String,
-    /// Push post-game vers l'EBS Twitch Azure (option).
+    /// Post-game push to the Twitch Azure EBS (optional).
     pub azure_push_url: Option<String>,
     pub azure_push_token: Option<String>,
-    /// API HotsPatchNotes (référentiel héros/talents) — répliquée dans `dim_*` au démarrage.
+    /// HotsPatchNotes API (hero/talent reference data) — replicated into `dim_*` at startup.
     pub hotspatchnotes_url: Option<String>,
-    /// Snapshot référentiel publié (`referential.tar.gz`) — mode bundle autonome, sans HotsPatchNotes
-    /// live. Prioritaire sur `hotspatchnotes_url` quand défini. Voir `dim::ingest_snapshot`.
+    /// Published reference-data snapshot (`referential.tar.gz`) — standalone bundle mode, without live
+    /// HotsPatchNotes. Takes precedence over `hotspatchnotes_url` when set. See `dim::ingest_snapshot`.
     pub referential_url: Option<String>,
-    /// Portraits héros + images de cartes vendorisés ici au démarrage (auto-suffisant,
-    /// déterministe — pas de dépendance runtime à HotsPatchNotes), servis sur `/images`.
+    /// Hero portraits + map images vendored here at startup (self-sufficient,
+    /// deterministic — no runtime dependency on HotsPatchNotes), served on `/images`.
     pub images_dir: PathBuf,
-    /// Minimaps in-game bakées/committées (`assets/minimaps`), copiées dans `images_dir/minimaps`
-    /// au démarrage (idempotent) → servies sur `/images/minimaps`. Pas de fetch runtime.
+    /// Baked/committed in-game minimaps (`assets/minimaps`), copied into `images_dir/minimaps`
+    /// at startup (idempotent) → served on `/images/minimaps`. No runtime fetch.
     pub minimaps_bundle_dir: PathBuf,
-    /// API Orpheus (musique) — proxifiée par `/api/now-playing` pour le widget musique OBS.
+    /// Orpheus API (music) — proxied by `/api/now-playing` for the OBS music widget.
     pub orpheus_url: Option<String>,
-    /// Webhook sortant (Discord/ntfy/générique) notifié à chaque nouveau patch. Absent = pas de notif.
+    /// Outgoing webhook (Discord/ntfy/generic) notified at each new patch. Missing = no notification.
     pub patch_webhook_url: Option<String>,
 }
 

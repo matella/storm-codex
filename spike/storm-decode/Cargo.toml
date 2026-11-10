@@ -2,7 +2,7 @@
 name = "storm-decode"
 version = "0.1.0"
 edition = "2021"
-description = "Jalon 0 — spike de décodage .StormReplay (MPQ + format versioned Blizzard)"
+description = "Milestone 0 — .StormReplay decoding spike (MPQ + Blizzard versioned format)"
 
 [dependencies]
 nom-mpq = "2"

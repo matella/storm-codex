@@ -1,76 +1,76 @@
-# Profil de raccourcis dans les replays → regroupement des comptes d'une même personne — design
+# Hotkey profile in replays → grouping the accounts of the same person — design
 
-> Statut : **validée par l'opérateur le 2026-11-08** (source = replay, pas l'uploader ; `0_default` et
-> noms ≤ 2 caractères ignorés, profil partagé = HAUT seul, seuil générique 5 comptes). Seuil 5 à
-> régler sur une sonde du corpus réel. Complète `2026-10-25-recherche-joueurs-design.md` (comptes liés).
+> Status: **approved by the operator on 2026-11-08** (source = replay, not the uploader; `0_default` and
+> names ≤ 2 characters ignored, shared profile = HIGH on its own, generic threshold 5 accounts). Threshold 5 to
+> be tuned on a probe of the real corpus. Complements `2026-10-25-recherche-joueurs-design.md` (linked accounts).
 
-## Intention
+## Intent
 
-Les replays ne relient jamais deux comptes directement, mais chaque client écrit **le nom du profil de
-raccourcis clavier du joueur** dans le replay. Ce nom est choisi à la main (`Kure1`, `munky`…) : le
-retrouver sur deux comptes est un indice très fort de « même personne », et il désigne la personne.
+Replays never link two accounts directly, but each client writes **the name of the player's
+keyboard hotkey profile** into the replay. That name is chosen by hand (`Kure1`, `munky`…): finding
+it on two accounts is a very strong hint of "same person", and it names the person.
 
-## Constat (vérifié le 2026-11-08 sur un vrai replay)
+## Findings (checked on 2026-11-08 on a real replay)
 
-- Le flux d'événements de jeu (`--stream game`) contient, à `_gameloop` 0, un événement
-  `NNet.Game.SUserOptionsEvent` **par joueur** avec `m_hotkeyProfile`. Valeurs vues dans un seul
-  replay : `PrizraK`, `samuro`, `0_default`, un nom cyrillique. C'est donc le **profil actif de chaque
-  joueur de la partie**, et non seulement celui de l'opérateur.
-- Rattachement à un compte : `_userid.m_userId` → `toon_handle` par le mapping `playerLobbyID` que
-  `storm-stats` construit déjà (`process/mod.rs`, autour de la ligne 481).
-- Rien n'est extrait aujourd'hui : aucune occurrence de `hotkeyProfile` dans `crates/` ni `web/`.
-- Conséquence : **pas besoin de l'uploader ni d'un accès au PC**. Tout le corpus déjà archivé (re-process
-  idempotent via `parser_version`) donne le signal, pour tous les joueurs rencontrés.
-- Côté PC de l'opérateur, `Variables.txt` (`hotkeyprofile=`) vaut `English` partout : inutile ici, on
-  ne s'en sert pas.
+- The game event stream (`--stream game`) contains, at `_gameloop` 0, one
+  `NNet.Game.SUserOptionsEvent` event **per player** with `m_hotkeyProfile`. Values seen in a single
+  replay: `PrizraK`, `samuro`, `0_default`, a Cyrillic name. So it is the **active profile of every
+  player in the game**, not only the operator's.
+- Attachment to an account: `_userid.m_userId` → `toon_handle` through the `playerLobbyID` mapping that
+  `storm-stats` already builds (`process/mod.rs`, around line 481).
+- Nothing is extracted today: no occurrence of `hotkeyProfile` in `crates/` or `web/`.
+- Consequence: **no need for the uploader or for access to the PC**. The whole already-archived corpus (idempotent
+  re-process via `parser_version`) yields the signal, for all players met.
+- On the operator's PC, `Variables.txt` (`hotkeyprofile=`) is `English` everywhere: useless here, we
+  do not use it.
 
-## Décisions
+## Decisions
 
-1. **Extraction** : lors du traitement d'un replay, lire `SUserOptionsEvent.m_hotkeyProfile` pour chaque
-   joueur (hors observateurs) et le stocker par `(match, toon)`. Pas de nouvelle source de données.
-2. **Noms ignorés par défaut** : `Standard`, `Standard for Lefties`, les noms de langues (anglais et
-   forme native : English, Français, Deutsch, Español, Русский, 한국어, 中文…), et `0_default` (valeur
-   réelle vue dans les replays). Comparaison insensible à la casse, aux espaces de bord. Liste
-   surchargeable via `app_settings` (`ignored_profile_names`). **[mon choix]** les noms ≤ 2 caractères
-   sont ignorés aussi.
-3. **Nom générique automatique** : un nom porté par trop de comptes distincts n'identifie plus
-   personne (ex. `samuro`, nom de héros). **[mon choix]** seuil initial : ≥ 5 comptes distincts, **à
-   régler sur une sonde du corpus réel** avant de figer (même démarche que `sonde_identite_corpus_reel`).
-4. **Signal « profil partagé »** : deux comptes ayant porté, dans au moins une partie chacun, un même
-   nom non ignoré. Force : **forte**. **[mon choix]** il suffit seul à atteindre le niveau HAUT, tout en
-   restant soumis à l'exclusion temporelle (deux comptes dans la même partie ≠ même personne).
-5. **Historique de profils par compte** : on garde les noms de profil par compte avec dates
-   (première/dernière partie), comme l'historique des pseudos. Un changement de profil sans nouveau
-   pseudo reste lisible.
-6. **Affichage** : dans l'onglet Identité, une raison « Profil partagé `munky` » dans les suggestions et
-   une ligne « Profils utilisés » dans la fiche. Un lien reste une simple note (pas de fusion de stats).
+1. **Extraction**: when processing a replay, read `SUserOptionsEvent.m_hotkeyProfile` for each
+   player (excluding observers) and store it per `(match, toon)`. No new data source.
+2. **Names ignored by default**: `Standard`, `Standard for Lefties`, language names (English and
+   native form: English, Français, Deutsch, Español, Русский, 한국어, 中文…), and `0_default` (actual
+   value seen in replays). Comparison ignores case and surrounding spaces. The list
+   can be overridden via `app_settings` (`ignored_profile_names`). **[my choice]** names ≤ 2 characters
+   are ignored too.
+3. **Automatic generic name**: a name carried by too many distinct accounts no longer identifies
+   anyone (e.g. `samuro`, a hero name). **[my choice]** initial threshold: ≥ 5 distinct accounts, **to be
+   tuned on a probe of the real corpus** before freezing it (same approach as `sonde_identite_corpus_reel`).
+4. **"Shared profile" signal**: two accounts that have each carried, in at least one game, the same
+   non-ignored name. Strength: **strong**. **[my choice]** it is enough on its own to reach the HIGH level, while
+   remaining subject to the time exclusion (two accounts in the same game ≠ same person).
+5. **Profile history per account**: profile names are kept per account with dates
+   (first/last game), like the name history. A profile change without a new
+   name stays readable.
+6. **Display**: in the Identity tab, a "Shared profile `munky`" reason in the suggestions and
+   a "Profiles used" line on the page. A link remains a simple note (no stats merge).
 
-## Historique des pseudos d'un compte (demande liée)
+## Name history of an account (related request)
 
-Le `toon_handle` est stable, le pseudo change. **Déjà en place** : `players::names::name_history`
-(pseudos datés, récent d'abord) exposé par `GET /api/players/{toon}/identity` et affiché dans
-l'onglet Identité (`PlayerIdentity.tsx`, « show all N »). Rien de nouveau à construire côté données ;
-si l'opérateur veut le voir ailleurs (en-tête de profil, résultats de recherche), c'est un ajout
-d'affichage à préciser séparément.
+The `toon_handle` is stable, the name changes. **Already in place**: `players::names::name_history`
+(dated names, most recent first) exposed by `GET /api/players/{toon}/identity` and shown in
+the Identity tab (`PlayerIdentity.tsx`, "show all N"). Nothing new to build on the data side;
+if the operator wants to see it elsewhere (profile header, search results), that is a display
+addition to specify separately.
 
-## Données et API (à détailler au plan)
+## Data and API (to be detailed in the plan)
 
-- Stockage du profil par `(match_id, toon_handle)` : colonne dédiée sur `match_players` ou champ de
-  `data` ; **choix laissé au plan** après mesure du coût de la requête de groupement.
-- `parser_version` incrémentée pour déclencher le re-process du corpus.
-- `similarity.rs` : signal `profile` ; `identity.rs` : présélection ajoute les comptes partageant un nom
-  rare (chemin prioritaire avec les co-propriétaires de token).
-- Docs à mettre à jour dans le même commit : `docs/spec/05-api.md`, la spec schéma/projection,
+- Storage of the profile per `(match_id, toon_handle)`: dedicated column on `match_players` or a field of
+  `data`; **choice left to the plan** after measuring the cost of the grouping query.
+- `parser_version` incremented to trigger the re-process of the corpus.
+- `similarity.rs`: `profile` signal; `identity.rs`: preselection adds accounts sharing a rare
+  name (priority path along with token co-owners).
+- Docs to update in the same commit: `docs/spec/05-api.md`, the schema/projection spec,
   `08-frontend.md`.
 
-## Hors périmètre
+## Out of scope
 
-- Contenu des raccourcis (non présent dans le replay, et inutile).
-- Toute identité civile : le nom de profil est un pseudo choisi par le joueur.
-- Modification de `client-rs` (devenue inutile).
+- Content of the hotkeys (not present in the replay, and useless).
+- Any real-world identity: the profile name is a nickname chosen by the player.
+- Changing `client-rs` (now unnecessary).
 
-## Questions ouvertes pour l'opérateur
+## Open questions for the operator
 
-1. Noms ignorés supplémentaires : `0_default` (vu dans les replays) et noms ≤ 2 caractères ?
-2. Un profil partagé seul donne-t-il HAUT, ou faut-il un second signal ?
-3. Seuil de nom générique : 5 comptes à confirmer par une sonde sur le corpus.
+1. Additional ignored names: `0_default` (seen in replays) and names ≤ 2 characters?
+2. Does a shared profile alone give HIGH, or is a second signal needed?
+3. Generic name threshold: 5 accounts, to be confirmed by a probe on the corpus.

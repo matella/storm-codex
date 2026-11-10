@@ -1,80 +1,80 @@
-# Jalon 0 — bench go/no-go : décodage `.StormReplay` Rust vs .NET vs Python
+# Milestone 0 — go/no-go bench: `.StormReplay` decoding Rust vs .NET vs Python
 
-**Date :** 2026-06-12 · **Verdict : GO** (critère spec : décodage complet < 500 ms/replay et
-champs nécessaires présents — les deux sont très largement tenus).
-**Plan exécuté :** `docs/plans/2026-06-12-jalon0-spike-decode.md` · code : `spike/`.
+**Date:** 2026-06-12 · **Verdict: GO** (spec criterion: complete decoding < 500 ms/replay and
+required fields present — both are met by a wide margin).
+**Plan executed:** `docs/plans/2026-06-12-jalon0-spike-decode.md` · code: `spike/`.
 
 ## Machine & toolchains
 
-PC de jeu Windows 11 — AMD Ryzen 7 7800X3D. Rust 1.94.0 · .NET SDK 10.0.301 ·
-Python 3.13.5. Mesures mono-thread, in-process, warm-up exclu, builds optimisés
+Windows 11 gaming PC — AMD Ryzen 7 7800X3D. Rust 1.94.0 · .NET SDK 10.0.301 ·
+Python 3.13.5. Single-threaded, in-process measurements, warm-up excluded, optimised builds
 (`--release` / `-c Release`).
 
 ## Corpus
 
-50 replays réels tirés de l'archive locale (2 652 fichiers), stratifiés 17/17/16 sur
-2024/2025/2026 (l'archive ne contient rien d'antérieur à 2024 — la spec disait « 2023→2026 »,
-ajusté à la réalité). 13 base builds distincts : 92665 → 97039.
-Script : `spike/sample_corpus.ps1` → `corpus/spike50/` (non commité) + `manifest.csv`.
+50 real replays drawn from the local archive (2,652 files), stratified 17/17/16 over
+2024/2025/2026 (the archive contains nothing before 2024 — the spec said "2023→2026",
+adjusted to reality). 13 distinct base builds: 92665 → 97039.
+Script: `spike/sample_corpus.ps1` → `corpus/spike50/` (not committed) + `manifest.csv`.
 
-## Périmètre mesuré (identique pour les 3 moteurs)
+## Measured scope (identical for the 3 engines)
 
-Lecture fichier + ouverture MPQ + décodage **header + replay.details + replay.tracker.events**
-(pas de game/message events — non requis pour storm-stats côté chemin chaud).
+File read + MPQ opening + decoding of **header + replay.details + replay.tracker.events**
+(no game/message events — not required for storm-stats on the hot path).
 
-| Moteur | n | échecs | médiane | p95 | max |
+| Engine | n | failures | median | p95 | max |
 |---|---|---|---|---|---|
 | **Rust `storm-decode` (spike)** | 50 | **0** | **12 ms** | **21 ms** | **24 ms** |
 | .NET Heroes.StormReplayParser 2.2.1 | 50 | 1 | 37 ms | 60 ms | 72 ms |
 | Python heroprotocol 2.55 (+mpyq) | 50 | 0 | 161 ms | 244 ms | 318 ms |
 
-CSV bruts : `spike/bench-results/{rust,dotnet,python}.csv` (non commités, reproductibles).
+Raw CSVs: `spike/bench-results/{rust,dotnet,python}.csv` (not committed, reproducible).
 
-- Le seuil go/no-go (500 ms) est battu d'un facteur ~40 en médiane ; le **budget jalon 1**
-  (« < 150 ms hors stats ») est déjà tenu d'un facteur ~7, et même le budget *parse complet
-  decode + stats* de la spec (150 ms) a ~138 ms de marge pour storm-stats.
-- Extrapolation backfill (3 000 replays, 8 cœurs, ~21 ms p95) : **< 10 s de décodage** —
-  le budget « backfill 3 ans < 5 min » sera dominé par l'upload/Postgres, pas le parse.
-- .NET échoue sur 1 replay (`2025-11-03 19.58.34 Lost Cavern.StormReplay`, status=Exception)
-  que Rust et Python décodent sans erreur — le repli .NET aurait donc aussi un coût de
-  complétude, pas seulement de perf.
+- The go/no-go threshold (500 ms) is beaten by a factor of ~40 at the median; the **milestone 1 budget**
+  ("< 150 ms excluding stats") is already met by a factor of ~7, and even the spec's *full parse
+  decode + stats* budget (150 ms) has ~138 ms of margin for storm-stats.
+- Backfill extrapolation (3,000 replays, 8 cores, ~21 ms p95): **< 10 s of decoding** —
+  the "3-year backfill < 5 min" budget will be dominated by upload/Postgres, not the parse.
+- .NET fails on 1 replay (`2025-11-03 19.58.34 Lost Cavern.StormReplay`, status=Exception)
+  that Rust and Python decode without error — the .NET fallback would therefore also have a
+  completeness cost, not only a perf one.
 
-## Exactitude des champs (critère « champs nécessaires présents »)
+## Field accuracy ("required fields present" criterion)
 
-`spike/crosscheck.py` : sortie Rust comparée champ par champ à heroprotocol sur les 3 replays
-les plus récents (2026-06-09, build 97039) — **3/3 identiques** : base_build,
-elapsed_game_loops, carte, 10 joueurs (nom/héros/résultat), nombre exact de tracker events.
-Smoke tests `cargo test` : header (signature + build), details (10 joueurs, 5 vainqueurs),
-tracker (> 1 000 événements, SStatGameEvent + SScoreResultEvent présents).
+`spike/crosscheck.py`: Rust output compared field by field with heroprotocol on the 3 most
+recent replays (2026-06-09, build 97039) — **3/3 identical**: base_build,
+elapsed_game_loops, map, 10 players (name/hero/result), exact number of tracker events.
+`cargo test` smoke tests: header (signature + build), details (10 players, 5 winners),
+tracker (> 1,000 events, SStatGameEvent + SScoreResultEvent present).
 
-## Architecture du spike (ce qui a marché)
+## Spike architecture (what worked)
 
-- **MPQ :** crate `nom-mpq` 2.0.8 (celui de s2protocol-rs) — RAS, gère secteurs/compression.
-- **Décodeur versioned :** port direct de `VersionedDecoder`/`decoders.py` (heroprotocol, MIT).
-  Le format est 100 % aligné octet → un curseur d'octets suffit (pas de lecteur de bits).
-- **Tables de protocole :** exportées en JSON depuis un clone GitHub de Blizzard/heroprotocol
-  (`spike/export_protocols.py`, 390 builds) et **interprétées à l'exécution** — déjà assez
-  rapide ; la génération de code Rust (protocol-gen, jalon 1) est une optimisation, pas un
-  prérequis.
-- **Fallback « dernier protocole connu » validé en vrai :** le build corpus 97039 n'a pas de
-  protocole publié (latest = 96477) et décode parfaitement avec ; idem pour les 50 fichiers
-  côté Python (le pip s'arrête à 91756 → tout le corpus est passé par le fallback, 0 échec).
+- **MPQ:** `nom-mpq` 2.0.8 crate (the one from s2protocol-rs) — nothing to report, handles sectors/compression.
+- **Versioned decoder:** direct port of `VersionedDecoder`/`decoders.py` (heroprotocol, MIT).
+  The format is 100 % byte-aligned → a byte cursor is enough (no bit reader).
+- **Protocol tables:** exported as JSON from a GitHub clone of Blizzard/heroprotocol
+  (`spike/export_protocols.py`, 390 builds) and **interpreted at runtime** — already fast
+  enough; Rust code generation (protocol-gen, milestone 1) is an optimisation, not a
+  prerequisite.
+- **"Latest known protocol" fallback validated for real:** corpus build 97039 has no
+  published protocol (latest = 96477) and decodes perfectly with it; same for the 50 files
+  on the Python side (pip stops at 91756 → the whole corpus went through the fallback, 0 failures).
 
-## Trouvailles à retenir pour la suite
+## Findings to keep for later
 
-1. **PyPI heroprotocol est mort-vivant** : version pip 2.55.4.91756 (cassée sur Python ≥ 3.12,
-   `import imp`) vs GitHub 2.55.15.96477. → protocol-gen du jalon 1 doit générer depuis le
-   **clone GitHub**, jamais depuis pip. (Contournement importlib dans `spike/bench_python.py`.)
-2. Les replays 2024+ de l'archive locale couvrent 13 builds ; le corpus de référence
-   multi-builds du jalon 1 devra élargir (NAS/box + replays libres pour le mini-corpus CI).
-3. Le .NET par défaut parse game events (~5× plus lent : 202 ms vs 37 ms médiane) — toute
-   comparaison future doit fixer le périmètre via `ParseOptions`.
-4. L'échec .NET sur Lost Cavern (carte ARAM) est non investigué — sans objet pour la suite
-   (moteur écarté), mais à garder si on re-bench.
+1. **PyPI heroprotocol is undead**: pip version 2.55.4.91756 (broken on Python ≥ 3.12,
+   `import imp`) vs GitHub 2.55.15.96477. → milestone 1's protocol-gen must generate from the
+   **GitHub clone**, never from pip. (importlib workaround in `spike/bench_python.py`.)
+2. The local archive's 2024+ replays cover 13 builds; milestone 1's multi-build reference
+   corpus will have to widen (NAS/box + free replays for the CI mini-corpus).
+3. .NET parses game events by default (~5× slower: 202 ms vs 37 ms median) — any
+   future comparison must fix the scope via `ParseOptions`.
+4. The .NET failure on Lost Cavern (ARAM map) is not investigated — irrelevant going forward
+   (engine ruled out), but to keep in mind if we re-bench.
 
-## Décision
+## Decision
 
-**GO jalon 1 (storm-replay en Rust).** Le repli .NET est définitivement écarté : Rust est
-~3× plus rapide que .NET sur ce périmètre, décode 50/50 fichiers, et la sortie est
-identique à la référence Blizzard. Prochaine étape : plan du jalon 1 (crate `storm-replay`
-publiable : 7 streams, protocol-gen depuis le clone GitHub, corpus multi-builds, < 150 ms).
+**GO milestone 1 (storm-replay in Rust).** The .NET fallback is definitively ruled out: Rust is
+~3× faster than .NET on this scope, decodes 50/50 files, and the output is
+identical to the Blizzard reference. Next step: milestone 1 plan (publishable `storm-replay`
+crate: 7 streams, protocol-gen from the GitHub clone, multi-build corpus, < 150 ms).

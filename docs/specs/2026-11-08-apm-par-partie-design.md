@@ -1,28 +1,28 @@
-# APM par partie et par joueur — design
+# APM per game and per player — design
 
-> Statut : **demandé par l'opérateur le 2026-11-08** (« ajouter des APM pour chaque game pour chaque
-> joueur, et une moyenne par joueur comme stat »). Réduit le lot D « empreinte clavier » de
-> `2026-11-08-signaux-replay-supplementaires-design.md` à ce qui a été demandé : l'APM. Les choix
-> marqués **[mon choix]** restent à confirmer.
+> Status: **requested by the operator on 2026-11-08** ("add APM for each game for each
+> player, and an average per player as a stat"). Narrows batch D "keyboard footprint" of
+> `2026-11-08-signaux-replay-supplementaires-design.md` down to what was asked: APM. The choices
+> marked **[my choice]** remain to be confirmed.
 
-## Constat (vérifié le 2026-11-08 sur un vrai replay, 21,6 min, 10 joueurs)
-Le flux `game` contient `SCmdEvent` (~26 000, avec `_userid`) : déplacements (clic droit,
-`m_abil` nul), attaques, aptitudes. Par joueur : 1 300 à 4 400 `SCmdEvent`, soit 60 à 200 par minute.
-`STriggerKeyPressedEvent` (touches) répète les touches maintenues, `SCmdUpdateTargetPointEvent` suit la
-souris pendant un ordre : ni l'un ni l'autre ne mesure des actions.
+## Findings (checked on 2026-11-08 on a real replay, 21.6 min, 10 players)
+The `game` stream contains `SCmdEvent` (~26,000, with `_userid`): moves (right click,
+null `m_abil`), attacks, abilities. Per player: 1,300 to 4,400 `SCmdEvent`, i.e. 60 to 200 per minute.
+`STriggerKeyPressedEvent` (keys) repeats held keys, `SCmdUpdateTargetPointEvent` follows the
+mouse during an order: neither of them measures actions.
 
-## Décisions
-1. **Définition [mon choix]** : APM = nombre de `SCmdEvent` du joueur à partir du début de la partie
-   (`loop_game_start`) ÷ durée de la partie en minutes (`matches.length`). Un joueur parti avant la fin
-   est donc sous-évalué ; l'écran ne le corrige pas. Heroes of the Storm n'a pas d'APM officiel : la valeur
-   n'est comparable qu'entre parties de ce système.
-2. **Stockage** : `match_players.apm` (réel), calculé à l'ingestion (`PARSER_VERSION` 4). NULL = non
-   re-traité ou durée inconnue.
-3. **Moyenne par joueur** : moyenne des `apm` non NULL du compte, arrondie à l'entier ; `apm_games` dit sur
-   combien de parties elle repose. Aucune pondération par héros ni filtre de durée **[mon choix]**.
-4. **Affichage** : tuile « Avg APM » sur la fiche joueur, pastille APM sur chaque partie récente, colonne
-   « APM » dans le tableau de score du match.
-5. **Hors score de comptes liés** : un APM dépend du héros et de la partie ; pas de signal d'identité.
+## Decisions
+1. **Definition [my choice]**: APM = number of the player's `SCmdEvent` from the start of the game
+   (`loop_game_start`) ÷ game duration in minutes (`matches.length`). A player who left before the end
+   is therefore under-estimated; the screen does not correct it. Heroes of the Storm has no official APM: the value
+   is only comparable between games of this system.
+2. **Storage**: `match_players.apm` (real), computed at ingestion (`PARSER_VERSION` 4). NULL = not
+   re-processed or unknown duration.
+3. **Average per player**: mean of the account's non-NULL `apm`, rounded to an integer; `apm_games` says
+   how many games it rests on. No weighting by hero and no duration filter **[my choice]**.
+4. **Display**: "Avg APM" tile on the player page, APM pip on each recent game, "APM" column
+   in the match scoreboard.
+5. **Outside the linked-accounts score**: an APM depends on the hero and the game; not an identity signal.
 
-## Hors périmètre
-Touches les plus utilisées, cadence par héros, empreinte clavier (reste du lot D).
+## Out of scope
+Most-used keys, cadence per hero, keyboard footprint (the rest of batch D).

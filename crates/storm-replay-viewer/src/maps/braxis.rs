@@ -1,22 +1,22 @@
-// US-21 : Braxis Holdout — inférence best-effort des vagues de zergs à partir des morts d'unités
-// Zerg (SUnitDiedEvent). On ne dispose PAS d'un event "wave started/ended" explicite dans le
-// tracker ; le clustering temporel des morts est une approximation raisonnable (validé
-// manuellement sur un replay réel — voir le rapport de chunk, pas un test committé).
+// US-21: Braxis Holdout — best-effort inference of the zerg waves from the deaths of Zerg
+// units (SUnitDiedEvent). We do NOT have an explicit "wave started/ended" event in the
+// tracker; time clustering of the deaths is a reasonable approximation (validated
+// manually on a real replay — see the chunk report, not a committed test).
 use crate::extract::{event_name, field_int, loop_to_sec};
 use crate::model::Objective;
 use std::collections::HashMap;
 use storm_replay::Value;
 
-// Écart (secondes) entre deux morts consécutives au-delà duquel on considère qu'une NOUVELLE
-// vague commence. Choisi empiriquement : les zergs d'une même vague meurent en rafale (quelques
-// secondes), tandis que l'écart entre deux vagues est de l'ordre de la minute.
+// Gap (seconds) between two consecutive deaths beyond which we consider that a NEW
+// wave starts. Chosen empirically: the zergs of the same wave die in a burst (a few
+// seconds), while the gap between two waves is in the order of a minute.
 const WAVE_GAP_SEC: f64 = 20.0;
 
 pub(crate) fn waves(tracker: &[Value]) -> (Vec<Objective>, Vec<String>) {
-    // SUnitDiedEvent ne porte PAS m_unitTypeName (seulement tagIndex/tagRecycle) — il faut
-    // résoudre le type via l'événement SUnitBornEvent correspondant. Clé (idx, recycle), PAS
-    // idx seul : les unités zerg sont créées/détruites en masse, un index peut être recyclé
-    // pendant qu'une unité sœur est encore vivante (même prudence que pour les structures).
+    // SUnitDiedEvent does NOT carry m_unitTypeName (only tagIndex/tagRecycle) — the type must
+    // be resolved through the matching SUnitBornEvent. Key (idx, recycle), NOT
+    // idx alone: zerg units are created/destroyed in bulk, an index can be recycled
+    // while a sibling unit is still alive (same caution as for the structures).
     let mut tag_to_zerg: HashMap<(i64, i64), bool> = HashMap::new();
     for e in tracker {
         if event_name(e) != "SUnitBornEvent" {
@@ -74,5 +74,5 @@ pub(crate) fn waves(tracker: &[Value]) -> (Vec<Objective>, Vec<String>) {
         });
     }
 
-    (objectives, Vec::new()) // Braxis IS covered → pas de warning
+    (objectives, Vec::new()) // Braxis IS covered → no warning
 }

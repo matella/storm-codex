@@ -1,4 +1,4 @@
-//! Extension storm-codex : `Output::hotkey_profiles` (SUserOptionsEvent.m_hotkeyProfile par toon).
+//! storm-codex extension: `Output::hotkey_profiles` (SUserOptionsEvent.m_hotkeyProfile per toon).
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::path::PathBuf;
@@ -17,11 +17,11 @@ fn profils_de_raccourcis_extraits_par_toon() {
     let Some(players) = out.players.as_ref() else {
         return;
     };
-    assert!(!out.hotkey_profiles.is_empty(), "au moins un profil lu");
+    assert!(!out.hotkey_profiles.is_empty(), "at least one profile read");
     for toon in out.hotkey_profiles.keys() {
         assert!(
             players.contains_key(toon),
-            "profil rattaché à un joueur connu"
+            "profile attached to a known player"
         );
     }
 }

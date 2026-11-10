@@ -1,7 +1,7 @@
-//! Visionneuse 2D (`GET /api/matches/{id}/replay2d`) : décode le replay archivé à la volée
-//! (storm-replay-viewer) avec le même cache disque LRU borné que `raw.rs` (RAW_CACHE_MAX_BYTES),
-//! puis fusionne les métadonnées joueurs (name/hero/team/win) depuis Postgres par toon_handle.
-//! Jamais de pré-décodage massif — 3e étage de données de la spec.
+//! 2D viewer (`GET /api/matches/{id}/replay2d`): decodes the archived replay on the fly
+//! (storm-replay-viewer) with the same bounded LRU disk cache as `raw.rs` (RAW_CACHE_MAX_BYTES),
+//! then merges the player metadata (name/hero/team/win) from Postgres by toon_handle.
+//! Never any mass pre-decoding — the spec's 3rd data tier.
 
 use crate::raw::{enforce_lru, filetime_now, json_response};
 use crate::AppState;
@@ -15,9 +15,9 @@ use std::path::PathBuf;
 use storm_replay::Replay;
 use storm_replay_viewer::{build_model, player_toons, ViewerModel, VIEWER_VERSION};
 
-/// Métadonnées `match_players` jointes par toon_handle : `(name, hero, team, win)`.
+/// `match_players` metadata joined by toon_handle: `(name, hero, team, win)`.
 type PlayerMeta = (Option<String>, Option<String>, Option<i32>, Option<bool>);
-/// Ligne brute `match_players` (toon_handle + métadonnées).
+/// Raw `match_players` row (toon_handle + metadata).
 type PlayerMetaRow = (
     String,
     Option<String>,
@@ -27,7 +27,7 @@ type PlayerMetaRow = (
 );
 
 pub async fn get_replay2d(State(s): State<AppState>, Path(id): Path<i64>) -> Response {
-    // fichier archivé d'un upload ayant produit ce match (même requête que raw.rs)
+    // archived file of an upload that produced this match (same query as raw.rs)
     let archived: Option<String> = sqlx::query_scalar(
         "SELECT archived_path FROM uploads WHERE match_id = $1 AND status = 'parsed'
          AND archived_path IS NOT NULL LIMIT 1",
@@ -45,24 +45,24 @@ pub async fn get_replay2d(State(s): State<AppState>, Path(id): Path<i64>) -> Res
             .into_response();
     };
 
-    // Clé de cache = match_id + VIEWER_VERSION seulement. Le payload embarque pourtant des
-    // métadonnées match_players mutables (name/hero/team/win) sans y être clé — sûr UNIQUEMENT
-    // parce que reprocesser un replay alloue un match_id neuf (project.rs : DELETE par fingerprint,
-    // cascade → match_players, puis INSERT … RETURNING id), jamais un UPDATE in-place des joueurs
-    // d'un match_id existant. Si une édition in-place des métadonnées joueurs d'un match_id existant
-    // est un jour ajoutée, invalider/évincer cette entrée de cache à cet endroit-là.
+    // Cache key = match_id + VIEWER_VERSION only. Yet the payload embeds mutable
+    // match_players metadata (name/hero/team/win) without it being part of the key — safe ONLY
+    // because re-processing a replay allocates a new match_id (project.rs: DELETE by fingerprint,
+    // cascade → match_players, then INSERT … RETURNING id), never an in-place UPDATE of the players
+    // of an existing match_id. If an in-place edit of the player metadata of an existing match_id
+    // is ever added, invalidate/evict this cache entry at that place.
     let cache = s
         .cfg
         .raw_cache_dir
         .join(format!("{id}-replay2d-v{VIEWER_VERSION}.json"));
-    // hit : on touche le fichier (LRU par mtime d'accès) et on sert
+    // hit: we touch the file (LRU by access mtime) and serve it
     if let Ok(bytes) = tokio::fs::read(&cache).await {
         let _ = filetime_now(&cache);
         return json_response(bytes);
     }
 
-    // miss : décodage à la volée (CPU) hors thread runtime — un seul décodage pour la géométrie
-    // ET le mapping playerId→toon (le Replay est consommé dans la closure).
+    // miss: decoding on the fly (CPU) off the runtime thread — a single decoding for the geometry
+    // AND the playerId→toon mapping (the Replay is consumed in the closure).
     let decoded = tokio::task::spawn_blocking(move || -> Result<_, storm_replay_viewer::Error> {
         let r = Replay::open(PathBuf::from(archived))?;
         let model = build_model(&r)?;
@@ -78,7 +78,7 @@ pub async fn get_replay2d(State(s): State<AppState>, Path(id): Path<i64>) -> Res
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "panic décodage").into_response(),
     };
 
-    // métadonnées joueurs (async, hors blocking) : toon_handle → (name, hero, team, win)
+    // player metadata (async, outside blocking): toon_handle → (name, hero, team, win)
     let meta_by_toon: HashMap<String, PlayerMeta> = sqlx::query_as::<_, PlayerMetaRow>(
         "SELECT toon_handle, name, hero, team, win FROM match_players WHERE match_id = $1",
     )
@@ -114,7 +114,7 @@ pub async fn get_replay2d(State(s): State<AppState>, Path(id): Path<i64>) -> Res
     json_response(bytes)
 }
 
-/// Insère `players` dans le modèle sérialisé : `{meta, heroes, deaths, warnings}` → `{meta,
+/// Inserts `players` into the serialised model: `{meta, heroes, deaths, warnings}` → `{meta,
 /// players, heroes, deaths, warnings}`.
 fn merge(model: &ViewerModel, players: serde_json::Value) -> serde_json::Value {
     let mut v = serde_json::to_value(model).unwrap_or_default();

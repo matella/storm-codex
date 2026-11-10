@@ -1,30 +1,30 @@
-//! Scoring pur d'une paire de comptes (aucune DB, aucun axum) : « ces deux comptes sont-ils
-//! probablement la même personne ? ». Toujours une **estimation** : chaque suggestion porte ses
-//! raisons lisibles. Poids et seuils sont des constantes en tête de fichier, à régler sur des cas
-//! réels (plan, tâche 8) — les tests ci-dessous épinglent les comportements, pas les valeurs.
+//! Pure scoring of a pair of accounts (no DB, no axum): "are these two accounts
+//! probably the same person?". Always an **estimate**: each suggestion carries its
+//! readable reasons. Weights and thresholds are constants at the top of the file, to be tuned on real
+//! cases (plan, task 8) — the tests below pin the behaviours, not the values.
 
-/// Parties minimales (des deux comptes) pour qu'une suggestion puisse être HAUTE.
+/// Minimum games (of both accounts) for a suggestion to be HIGH.
 pub const MIN_GAMES_FOR_HIGH: u32 = 15;
-/// Score minimal pour afficher une suggestion (BAS).
+/// Minimum score to show a suggestion (LOW).
 pub const LOW_MIN_SCORE: u8 = 25;
-/// Score minimal pour HAUT (en plus des conditions : 2 signaux dont un fort/moyen, assez de parties).
+/// Minimum score for HIGH (on top of the conditions: 2 signals including a strong/medium one, enough games).
 pub const HIGH_MIN_SCORE: u8 = 50;
 
-/// Points : même nom de profil de raccourcis non générique (signal fort, suffit seul pour HAUT).
+/// Points: same non-generic hotkey profile name (strong signal, enough alone for HIGH).
 const PROFILE_POINTS: f32 = 60.0;
-/// Points : propriétaire du même token (signal fort).
+/// Points: owner of the same token (strong signal).
 const TOKEN_POINTS: f32 = 50.0;
-/// Points max : co-équipiers récurrents communs (signal moyen).
+/// Max points: common recurring teammates (medium signal).
 const TEAMMATES_MAX: f32 = 40.0;
-/// Co-équipiers communs minimum pour que le signal compte.
+/// Minimum common teammates for the signal to count.
 const TEAMMATES_MIN: u32 = 2;
-/// Points max : mêmes choix de talents sur les mêmes héros (signal moyen) ; seuil d'activation.
+/// Max points: same talent choices on the same heroes (medium signal); activation threshold.
 const TALENTS_MAX: f32 = 25.0;
 const TALENTS_MIN: f32 = 0.7;
-/// Points max : pool de héros proche (signal faible) ; seuil d'activation du cosinus.
+/// Max points: close hero pool (weak signal); cosine activation threshold.
 const HEROES_MAX: f32 = 20.0;
 const HEROES_MIN: f32 = 0.6;
-/// Points max : plages horaires proches (signal faible) ; seuil d'activation du cosinus.
+/// Max points: close time slots (weak signal); cosine activation threshold.
 const HOURS_MAX: f32 = 12.0;
 const HOURS_MIN: f32 = 0.7;
 
@@ -32,21 +32,21 @@ const HOURS_MIN: f32 = 0.7;
 pub struct PairFeatures {
     pub games_a: u32,
     pub games_b: u32,
-    /// Cosinus des parts de parties par héros, 0..1.
+    /// Cosine of the shares of games per hero, 0..1.
     pub hero_cosine: f32,
-    /// Co-équipiers communs hors opérateur et propriétaires de token.
+    /// Common teammates excluding the operator and the token owners.
     pub shared_teammates: u32,
-    /// Parties cumulées avec ces co-équipiers communs (borne la force du signal).
+    /// Cumulative games with these common teammates (bounds the signal strength).
     pub shared_teammate_games: u32,
-    /// Accord des talents sur les héros joués ≥ 3 fois par les deux, 0..1 ; `None` si aucun.
+    /// Talent agreement on the heroes played ≥ 3 times by both, 0..1; `None` if none.
     pub talent_agreement: Option<f32>,
-    /// Cosinus des histogrammes horaires (24 h UTC), 0..1.
+    /// Cosine of the hourly histograms (24 h UTC), 0..1.
     pub hour_cosine: f32,
-    /// Les deux comptes dans la même partie (ou parties chevauchantes) : exclusion temporelle.
+    /// Both accounts in the same game (or overlapping games): time exclusion.
     pub overlapping_games: bool,
-    /// Les deux comptes sont propriétaires du même token d'upload.
+    /// Both accounts are owners of the same upload token.
     pub same_token_owner: bool,
-    /// Noms de profil de raccourcis partagés (non ignorés, non génériques).
+    /// Shared hotkey profile names (not ignored, not generic).
     pub shared_profiles: Vec<String>,
 }
 
@@ -71,7 +71,7 @@ pub struct Suggestion {
     pub reasons: Vec<Reason>,
 }
 
-/// `None` = pas de suggestion (score trop bas, ou exclusion temporelle).
+/// `None` = no suggestion (score too low, or time exclusion).
 pub fn score(f: &PairFeatures) -> Option<Suggestion> {
     if f.overlapping_games {
         return None;
@@ -145,13 +145,13 @@ pub fn score(f: &PairFeatures) -> Option<Suggestion> {
     if raw < LOW_MIN_SCORE {
         return None;
     }
-    // Un nom de profil choisi à la main et partagé suffit seul (décision opérateur 2026-11-08).
+    // A profile name chosen by hand and shared is enough on its own (operator decision 2026-11-08).
     let high = raw >= HIGH_MIN_SCORE
         && (!f.shared_profiles.is_empty()
             || (reasons.len() >= 2
                 && strong_or_moderate
                 && f.games_a.min(f.games_b) >= MIN_GAMES_FOR_HIGH));
-    // Un score affiché sous le seuil HAUT ne peut pas être étiqueté HAUT, et réciproquement.
+    // A displayed score below the HIGH threshold cannot be labelled HIGH, and vice versa.
     let (level, score) = if high {
         (Level::High, raw)
     } else {
@@ -202,7 +202,7 @@ mod tests {
             score(&overlapping).is_none(),
             "exclusion temporelle prioritaire"
         );
-        assert!(level(&base()).is_none(), "sans signal : rien");
+        assert!(level(&base()).is_none(), "no signal: nothing");
     }
 
     #[test]
@@ -227,7 +227,7 @@ mod tests {
             ..base()
         };
         assert_ne!(level(&f), Some(Level::High));
-        // héros + heures (deux signaux faibles) : jamais HAUT non plus, il manque un signal moyen/fort
+        // heroes + hours (two weak signals): never HIGH either, a medium/strong signal is missing
         let f = PairFeatures {
             hero_cosine: 1.0,
             hour_cosine: 1.0,
@@ -250,7 +250,7 @@ mod tests {
         assert_eq!(s.level, Level::Low);
         assert!(
             s.score < HIGH_MIN_SCORE,
-            "le score affiché ne doit pas dépasser le seuil HAUT"
+            "the displayed score must not exceed the HIGH threshold"
         );
     }
 
@@ -294,8 +294,8 @@ mod tests {
 
     #[test]
     fn deux_comptes_ne_partageant_que_loperateur_aucun_lien() {
-        // L'opérateur est exclu en amont : 0 co-équipier commun, pas de token commun ; seul un
-        // pool de héros moyen subsiste.
+        // The operator is excluded upstream: 0 common teammates, no common token; only a
+        // medium hero pool remains.
         let f = PairFeatures {
             hero_cosine: 0.5,
             hour_cosine: 0.5,
@@ -350,7 +350,7 @@ mod tests {
                 let s = sc(p);
                 assert!(
                     s >= prev[i],
-                    "signal {i} : le score baisse ({} → {s}) à x={x}",
+                    "signal {i}: the score drops ({} → {s}) at x={x}",
                     prev[i]
                 );
                 prev[i] = s;

@@ -1,11 +1,11 @@
-// Jalon 0 — baseline Heroes.StormReplayParser (.NET). Mêmes règles que bench_python.py :
-// mono-thread, in-process, warm-up exclu, un échec n'arrête pas le bench.
+// Milestone 0 — Heroes.StormReplayParser (.NET) baseline. Same rules as bench_python.py:
+// single-threaded, in-process, warm-up excluded, a failure does not stop the bench.
 using System.Diagnostics;
 using System.Globalization;
 using Heroes.StormReplayParser;
 
 var root = AppContext.BaseDirectory;
-// remonte jusqu'à la racine du repo (présence de corpus/spike50)
+// walk up to the repo root (presence of corpus/spike50)
 var dir = new DirectoryInfo(root);
 while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, "corpus", "spike50")))
     dir = dir.Parent;
@@ -16,10 +16,10 @@ var outDir = Path.Combine(dir.FullName, "spike", "bench-results");
 Directory.CreateDirectory(outDir);
 
 var files = Directory.GetFiles(corpus, "*.StormReplay").OrderBy(f => f).ToArray();
-if (files.Length != 50) { Console.Error.WriteLine($"corpus inattendu : {files.Length} fichiers"); return 1; }
+if (files.Length != 50) { Console.Error.WriteLine($"unexpected corpus: {files.Length} files"); return 1; }
 
-// périmètre aligné sur le bench Python : header + details + tracker events
-// (pas de game/message events — le spike ne les mesure pour aucun moteur)
+// scope aligned with the Python bench: header + details + tracker events
+// (no game/message events — the spike measures them for no engine)
 var options = new ParseOptions
 {
     ShouldParseTrackerEvents = true,
@@ -27,7 +27,7 @@ var options = new ParseOptions
     ShouldParseMessageEvents = false,
 };
 
-StormReplay.Parse(files[0], options); // warm-up (JIT), mesure jetée
+StormReplay.Parse(files[0], options); // warm-up (JIT), measurement discarded
 
 var rows = new List<string> { "name,ms,build,ok" };
 var times = new List<double>();
@@ -60,5 +60,5 @@ times.Sort();
 double median = times[times.Count / 2];
 double p95 = times[(int)Math.Ceiling(0.95 * times.Count) - 1];
 Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
-    $"dotnet : n={times.Count} échecs={fails} médiane={median:F0} ms p95={p95:F0} ms max={times[^1]:F0} ms"));
+    $"dotnet : n={times.Count} failures={fails} median={median:F0} ms p95={p95:F0} ms max={times[^1]:F0} ms"));
 return 0;

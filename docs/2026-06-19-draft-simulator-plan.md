@@ -1,54 +1,54 @@
-# Simulateur de draft HotS — Plan d'implémentation
+# HotS draft simulator — Implementation plan
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Un simulateur de draft HotS piloté manuellement (3 formats), avec un overlay OBS « Timeline » live, dans storm-codex.
+**Goal:** A manually driven HotS draft simulator (3 formats), with a live OBS "Timeline" overlay, in storm-codex.
 
-**Architecture:** Moteur de draft en **Rust pur, TDD** (format = liste d'étapes data) ; état autoritatif côté serveur (`Arc<RwLock>` + persistance Postgres) muté par des routes REST et diffusé via le broadcast WS existant ; deux pages React (console `/draft` + overlay `/draft/overlay`).
+**Architecture:** Draft engine in **pure Rust, TDD** (format = data list of steps); authoritative state on the server side (`Arc<RwLock>` + Postgres persistence) mutated by REST routes and broadcast via the existing WS broadcast; two React pages (console `/draft` + overlay `/draft/overlay`).
 
 **Tech Stack:** Rust (axum, sqlx, tokio, serde), Postgres, React/Vite/TS, react-router, @tanstack/react-query.
 
-Spec : `docs/2026-06-19-draft-simulator-design.md`. Mockups : `docs/draft-aesthetics.html`, `docs/draft-control-mockup.html`.
+Spec: `docs/2026-06-19-draft-simulator-design.md`. Mockups: `docs/draft-aesthetics.html`, `docs/draft-control-mockup.html`.
 
-**Conventions repo (vérifiées) :**
-- Crate binaire `crates/storm-codex-server` (pas de lib) → tests unitaires **inline** `#[cfg(test)]`, lancés par `cargo test -p storm-codex-server`.
-- Routes ajoutées dans le `Router` de `crates/storm-codex-server/src/main.rs`, handlers en `async fn(State(AppState), …)`.
-- WS : `state.events.send(serde_json::json!({ "type": "…" }))` (cf. `patch.new` dans main.rs ; `src/ws.rs` relaie tel quel).
-- Migrations : `crates/storm-codex-server/migrations/NNNN_nom.sql` (prochaine = `0008`).
-- Référentiel héros déjà servi : `GET /api/dim/heroes` → `Record<nom, { universe, role, icon }>` (cf. `web/src/api.ts` `useDimHeroes`).
-- Overlays OBS = routes React **hors `<Layout>`** (cf. `web/src/App.tsx`, ex. `now-playing`).
+**Repo conventions (checked):**
+- Binary crate `crates/storm-codex-server` (no lib) → **inline** unit tests `#[cfg(test)]`, run by `cargo test -p storm-codex-server`.
+- Routes added in the `Router` of `crates/storm-codex-server/src/main.rs`, handlers as `async fn(State(AppState), …)`.
+- WS: `state.events.send(serde_json::json!({ "type": "…" }))` (see `patch.new` in main.rs; `src/ws.rs` relays as is).
+- Migrations: `crates/storm-codex-server/migrations/NNNN_name.sql` (next = `0008`).
+- Hero reference data already served: `GET /api/dim/heroes` → `Record<name, { universe, role, icon }>` (see `web/src/api.ts` `useDimHeroes`).
+- OBS overlays = React routes **outside `<Layout>`** (see `web/src/App.tsx`, e.g. `now-playing`).
 
 ---
 
-## Chunk 1 : Moteur de draft (Rust pur, TDD)
+## Chunk 1: Draft engine (pure Rust, TDD)
 
-**Responsabilité :** types + machine d'état, sans aucune I/O. Tout le risque métier vit ici et est couvert par des tests.
+**Responsibility:** types + state machine, without any I/O. All the business risk lives here and is covered by tests.
 
-### Task 1 : Types + module
+### Task 1: Types + module
 
 **Files:**
 - Create: `crates/storm-codex-server/src/draft/mod.rs`
-- Modify: `crates/storm-codex-server/src/main.rs` (ajouter `mod draft;` après `mod dim;`)
+- Modify: `crates/storm-codex-server/src/main.rs` (add `mod draft;` after `mod dim;`)
 
-- [ ] **Step 1 : Déclarer le module.** Dans `main.rs`, ajouter `mod draft;` dans la liste des `mod`.
+- [ ] **Step 1: Declare the module.** In `main.rs`, add `mod draft;` to the list of `mod`s.
 
-- [ ] **Step 2 : Écrire les types** dans `src/draft/mod.rs` :
+- [ ] **Step 2: Write the types** in `src/draft/mod.rs`:
 
 ```rust
-//! Moteur de draft HotS — pur (aucune I/O). Un format = une liste ordonnée d'étapes ;
-//! la machine d'état « marche » dessus. Sérialisable pour persistance + WS.
+//! HotS draft engine — pure (no I/O). A format = an ordered list of steps;
+//! the state machine "walks" over it. Serialisable for persistence + WS.
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 pub const SCHEMA_VERSION: i32 = 1;
 
-// Côté visuel (couleur/position) — INDÉPENDANT de l'ordre de draft.
+// Visual side (colour/position) — INDEPENDENT of the draft order.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Side { Blue, Red }
 impl Side { pub fn other(self) -> Side { match self { Side::Blue => Side::Red, Side::Red => Side::Blue } } }
 
-// Rôle d'ordre — qui draft en premier. Le réglage `first_pick: Side` mappe First→un côté.
+// Order role — who drafts first. The `first_pick: Side` setting maps First→a side.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Order { First, Second }
@@ -57,7 +57,7 @@ pub enum Order { First, Second }
 #[serde(rename_all = "lowercase")]
 pub enum Action { Ban, Pick }
 
-// Une étape est définie en rôle d'ordre (pas en couleur) : c'est ce qui décorrèle first-pick et side.
+// A step is defined by order role (not by colour): this is what decouples first-pick and side.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct Step { pub order: Order, pub action: Action }
 
@@ -69,21 +69,21 @@ pub enum Format { Standard, Normal, Fearless }
 pub enum DraftError { Unavailable, Complete, NothingToUndo }
 ```
 
-- [ ] **Step 3 : Compile check.** Run: `cargo build -p storm-codex-server`. Expected: PASS (warnings « unused » tolérés).
+- [ ] **Step 3: Compile check.** Run: `cargo build -p storm-codex-server`. Expected: PASS ("unused" warnings tolerated).
 
-- [ ] **Step 4 : Commit.** `git add -A && git commit -m "feat(draft): types du moteur de draft"`
+- [ ] **Step 4: Commit.** `git add -A && git commit -m "feat(draft): draft engine types"`
 
-### Task 2 : Séquences de formats (data)
+### Task 2: Format sequences (data)
 
 **Files:**
 - Create: `crates/storm-codex-server/src/draft/formats.rs`
 - Modify: `crates/storm-codex-server/src/draft/mod.rs` (`mod formats; pub use formats::steps_for;`)
 
-> Séquence Standard **confirmée par l'opérateur** (HotS, first-pick = First). Elle est en data : la
-> corriger = éditer cette liste. Écrite en **rôle d'ordre** (First/Second), donc indépendante du
-> côté : `first_pick: Side` mappe First→un côté au moment du rendu (cf. Task 3).
+> Standard sequence **confirmed by the operator** (HotS, first-pick = First). It is data: fixing
+> it = editing this list. Written by **order role** (First/Second), so independent of the
+> side: `first_pick: Side` maps First→a side at render time (see Task 3).
 
-- [ ] **Step 1 : Test de la séquence** (inline dans `formats.rs`) :
+- [ ] **Step 1: Test of the sequence** (inline in `formats.rs`):
 
 ```rust
 #[cfg(test)]
@@ -133,16 +133,16 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2 : Run, vérifier l'échec.** Run: `cargo test -p storm-codex-server formats`. Expected: FAIL (`steps_for` introuvable).
+- [ ] **Step 2: Run, check the failure.** Run: `cargo test -p storm-codex-server formats`. Expected: FAIL (`steps_for` not found).
 
-- [ ] **Step 3 : Implémenter** `formats.rs` :
+- [ ] **Step 3: Implement** `formats.rs`:
 
 ```rust
 use crate::draft::{Action, Format, Order, Step};
 use Action::{Ban, Pick};
 use Order::{First, Second};
 
-// Séquence Standard HotS (confirmée). En rôle d'ordre ; First = équipe first-pick.
+// HotS Standard sequence (confirmed). By order role; First = first-pick team.
 // 1 ban F · 1 ban S · 1 ban F · 1 ban S · 1 pick F · 2 pick S · 2 pick F ·
 // 1 ban S · 1 ban F · 2 pick S · 2 pick F · 1 pick S.
 const STANDARD: [(Order, Action); 16] = [
@@ -160,16 +160,16 @@ pub fn steps_for(format: Format) -> Vec<Step> {
 }
 ```
 
-- [ ] **Step 4 : Run, vérifier le succès.** Run: `cargo test -p storm-codex-server formats`. Expected: PASS.
+- [ ] **Step 4: Run, check the success.** Run: `cargo test -p storm-codex-server formats`. Expected: PASS.
 
-- [ ] **Step 5 : Commit.** `git add -A && git commit -m "feat(draft): séquences de formats (standard/normal/fearless)"`
+- [ ] **Step 5: Commit.** `git add -A && git commit -m "feat(draft): format sequences (standard/normal/fearless)"`
 
-### Task 3 : Machine d'état (apply / undo / reset / légalité)
+### Task 3: State machine (apply / undo / reset / legality)
 
 **Files:**
 - Modify: `crates/storm-codex-server/src/draft/mod.rs`
 
-- [ ] **Step 1 : Écrire les tests** (inline dans `mod.rs`) couvrant : marche complète du Standard ; refus d'un héros déjà pris (`Unavailable`) ; refus quand terminé (`Complete`) ; undo libère le dernier ; reset remet à zéro en gardant la config ; fearless seed rend indispo ; override manuel ; `current_step`/`active_team`/`current_phase`. Exemple représentatif :
+- [ ] **Step 1: Write the tests** (inline in `mod.rs`) covering: complete walk of the Standard; refusal of an already taken hero (`Unavailable`); refusal when finished (`Complete`); undo frees the last one; reset sets back to zero keeping the config; fearless seed makes unavailable; manual override; `current_step`/`active_team`/`current_phase`. Representative example:
 
 ```rust
 #[cfg(test)]
@@ -201,7 +201,7 @@ mod tests {
         d.apply("Muradin").unwrap();
         d.undo().unwrap();
         assert_eq!(d.cursor, 0);
-        d.apply("Muradin").unwrap(); // de nouveau dispo
+        d.apply("Muradin").unwrap(); // available again
     }
 
     #[test]
@@ -222,7 +222,7 @@ mod tests {
 
     #[test]
     fn first_pick_is_independent_of_side() {
-        // first_pick = Red : le rôle First est joué par le CÔTÉ rouge (la 1re étape est « côté rouge »).
+        // first_pick = Red: the First role is played by the red SIDE (the 1st step is "red side").
         let d = DraftState::new(Format::Standard, Side::Red, "Sky Temple".into());
         assert_eq!(d.active_side(), Some(Side::Red));
         let d2 = DraftState::new(Format::Standard, Side::Blue, "Sky Temple".into());
@@ -232,16 +232,16 @@ mod tests {
     #[test]
     fn current_phase_len_groups_consecutive_same_order() {
         let mut d = new_standard();
-        assert_eq!(d.current_phase_len(), 1); // étape 1 = ban First, isolée
+        assert_eq!(d.current_phase_len(), 1); // step 1 = First ban, isolated
         for i in 0..5 { d.apply(&format!("h{i}")).unwrap(); } // curseur = 5
-        assert_eq!(d.current_phase_len(), 2); // étapes 6-7 = 2 picks Second consécutifs
+        assert_eq!(d.current_phase_len(), 2); // steps 6-7 = 2 consecutive Second picks
     }
 }
 ```
 
-- [ ] **Step 2 : Run, vérifier l'échec.** Run: `cargo test -p storm-codex-server draft`. Expected: FAIL (`DraftState` introuvable).
+- [ ] **Step 2: Run, check the failure.** Run: `cargo test -p storm-codex-server draft`. Expected: FAIL (`DraftState` not found).
 
-- [ ] **Step 3 : Implémenter** `DraftState` dans `mod.rs` :
+- [ ] **Step 3: Implement** `DraftState` in `mod.rs`:
 
 ```rust
 mod formats;
@@ -254,17 +254,17 @@ pub struct TeamInfo { pub name: String, pub players: [String; 5] }
 pub struct DraftState {
     pub schema_version: i32,
     pub format: Format,
-    pub first_pick: Side,                 // quel CÔTÉ joue le rôle First — réglage INDÉPENDANT du nommage
+    pub first_pick: Side,                 // which SIDE plays the First role — setting INDEPENDENT of the naming
     pub map: String,
-    pub blue: TeamInfo,                    // équipe côté bleu (couleur/position fixes)
-    pub red: TeamInfo,                     // équipe côté rouge
+    pub blue: TeamInfo,                    // blue-side team (fixed colour/position)
+    pub red: TeamInfo,                     // red-side team
     pub score: [u8; 2],                   // [blue, red]
     pub bo: u8,
-    pub steps: Vec<Step>,                 // en rôle d'ordre (First/Second), indépendant du side
+    pub steps: Vec<Step>,                 // by order role (First/Second), independent of the side
     pub cursor: usize,
-    pub assignments: Vec<Option<String>>, // parallèle à steps : héros assigné à l'étape i
+    pub assignments: Vec<Option<String>>, // parallel to steps: hero assigned to step i
     pub manual_unavailable: BTreeSet<String>,
-    pub series_bans: BTreeSet<String>,    // fearless : héros pické aux parties précédentes
+    pub series_bans: BTreeSet<String>,    // fearless: heroes picked in previous games
 }
 
 impl DraftState {
@@ -282,7 +282,7 @@ impl DraftState {
         }
     }
 
-    /// Résout un rôle d'ordre en côté visuel selon le réglage `first_pick` (le découplage).
+    /// Resolves an order role to a visual side according to the `first_pick` setting (the decoupling).
     pub fn side_of(&self, order: Order) -> Side {
         if order == Order::First { self.first_pick } else { self.first_pick.other() }
     }
@@ -321,8 +321,8 @@ impl DraftState {
     pub fn seed_series(&mut self, heroes: &[String]) {
         self.series_bans = heroes.iter().cloned().collect();
     }
-    /// Longueur du bloc d'étapes consécutives du même rôle d'ordre (= même côté) à partir du curseur,
-    /// pour le timer **par phase** (le compte à rebours couvre tout le bloc, pas chaque pick).
+    /// Length of the block of consecutive steps of the same order role (= same side) from the cursor,
+    /// for the **per-phase** timer (the countdown covers the whole block, not each pick).
     pub fn current_phase_len(&self) -> usize {
         let Some(step) = self.current_step() else { return 0 };
         self.steps[self.cursor..].iter().take_while(|s| s.order == step.order).count()
@@ -330,27 +330,27 @@ impl DraftState {
 }
 ```
 
-- [ ] **Step 4 : Run, vérifier le succès.** Run: `cargo test -p storm-codex-server draft`. Expected: PASS. Compléter les tests manquants (phase, reset garde la config) jusqu'au vert.
+- [ ] **Step 4: Run, check the success.** Run: `cargo test -p storm-codex-server draft`. Expected: PASS. Complete the missing tests (phase, reset keeps the config) until green.
 
-- [ ] **Step 5 : Clippy.** Run: `cargo clippy -p storm-codex-server -- -D warnings`. Expected: PASS.
+- [ ] **Step 5: Clippy.** Run: `cargo clippy -p storm-codex-server -- -D warnings`. Expected: PASS.
 
-- [ ] **Step 6 : Commit.** `git add -A && git commit -m "feat(draft): machine d'état (apply/undo/reset/légalité/fearless)"`
+- [ ] **Step 6: Commit.** `git add -A && git commit -m "feat(draft): state machine (apply/undo/reset/legality/fearless)"`
 
 ---
 
-## Chunk 2 : État serveur, persistance & API
+## Chunk 2: Server state, persistence & API
 
-**Responsabilité :** exposer le moteur via REST + WS, avec un état partagé persistant.
+**Responsibility:** expose the engine via REST + WS, with a persistent shared state.
 
-### Task 4 : Migration (persistance draft + série)
+### Task 4: Migration (draft + series persistence)
 
 **Files:**
 - Create: `crates/storm-codex-server/migrations/0008_draft.sql`
 
-- [ ] **Step 1 : Écrire la migration :**
+- [ ] **Step 1: Write the migration:**
 
 ```sql
--- État de draft « live » (singleton : une seule ligne id=1) + historique de série (fearless).
+-- "Live" draft state (singleton: a single row id=1) + series history (fearless).
 CREATE TABLE draft_live (
     id          INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
     state       JSONB NOT NULL,
@@ -362,112 +362,112 @@ CREATE TABLE draft_series (
     bo          INT  NOT NULL,
     team_names  JSONB NOT NULL,
     score       JSONB NOT NULL,
-    games       JSONB NOT NULL DEFAULT '[]',  -- [[hero,…] par partie terminée]
+    games       JSONB NOT NULL DEFAULT '[]',  -- [[hero,…] per finished game]
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ```
 
-- [ ] **Step 2 : Vérifier l'application** au démarrage (migrations auto, cf. `main.rs`). Run: `cargo build -p storm-codex-server` puis lancer le serveur en local (ou `sqlx migrate run`). Expected: migration `0008` appliquée sans erreur.
+- [ ] **Step 2: Check it applies** at startup (automatic migrations, see `main.rs`). Run: `cargo build -p storm-codex-server` then start the server locally (or `sqlx migrate run`). Expected: migration `0008` applied without error.
 
-- [ ] **Step 3 : Commit.** `git add -A && git commit -m "feat(draft): migration draft_live + draft_series"`
+- [ ] **Step 3: Commit.** `git add -A && git commit -m "feat(draft): draft_live + draft_series migration"`
 
-### Task 5 : État partagé dans AppState + chargement
-
-**Files:**
-- Modify: `crates/storm-codex-server/src/main.rs` (champ `draft` dans `AppState`, init dans `run`)
-- Create: `crates/storm-codex-server/src/draft/store.rs` (`load`/`save` Postgres ; `mod store;` dans `draft/mod.rs`)
-
-- [ ] **Step 1 :** Ajouter à `AppState` : `pub draft: std::sync::Arc<tokio::sync::RwLock<crate::draft::DraftState>>`.
-- [ ] **Step 2 :** Dans `run()`, après les migrations : charger depuis `draft_live` (sinon `DraftState::new(Format::Standard, Team::Blue, "Sky Temple")`) et construire l'`Arc<RwLock<…>>`.
-- [ ] **Step 3 :** `store.rs` : `async fn load(db) -> Option<DraftState>` (SELECT state FROM draft_live WHERE id=1) et `async fn save(db, &DraftState)` (INSERT … ON CONFLICT (id) DO UPDATE). Sérialisation via `serde_json`.
-- [ ] **Step 4 : Build.** Run: `cargo build -p storm-codex-server`. Expected: PASS.
-- [ ] **Step 5 : Commit.** `git add -A && git commit -m "feat(draft): état partagé + persistance (load/save)"`
-
-### Task 6 : Routes REST + broadcast WS
+### Task 5: Shared state in AppState + loading
 
 **Files:**
-- Create: `crates/storm-codex-server/src/draft/api.rs` (handlers ; `mod api;` dans `draft/mod.rs`)
-- Modify: `crates/storm-codex-server/src/main.rs` (enregistrer les routes)
+- Modify: `crates/storm-codex-server/src/main.rs` (`draft` field in `AppState`, init in `run`)
+- Create: `crates/storm-codex-server/src/draft/store.rs` (Postgres `load`/`save`; `mod store;` in `draft/mod.rs`)
 
-Routes (toutes muent l'état sous write-lock, persistent via `store::save`, puis `state.events.send(json!({"type":"draft.updated"}))`) :
-- `GET  /api/draft` → l'état courant (JSON).
-- `POST /api/draft/config` `{format, map, first_pick (side "blue"|"red"), blue:{name,players[5]}, red:{name,players[5]}, bo}` → recrée l'état. `first_pick` est **indépendant** du nommage blue/red.
-- `POST /api/draft/action` `{hero}` → `apply` ; 409 si `Unavailable`/`Complete`.
+- [ ] **Step 1:** Add to `AppState`: `pub draft: std::sync::Arc<tokio::sync::RwLock<crate::draft::DraftState>>`.
+- [ ] **Step 2:** In `run()`, after the migrations: load from `draft_live` (otherwise `DraftState::new(Format::Standard, Team::Blue, "Sky Temple")`) and build the `Arc<RwLock<…>>`.
+- [ ] **Step 3:** `store.rs`: `async fn load(db) -> Option<DraftState>` (SELECT state FROM draft_live WHERE id=1) and `async fn save(db, &DraftState)` (INSERT … ON CONFLICT (id) DO UPDATE). Serialisation via `serde_json`.
+- [ ] **Step 4: Build.** Run: `cargo build -p storm-codex-server`. Expected: PASS.
+- [ ] **Step 5: Commit.** `git add -A && git commit -m "feat(draft): shared state + persistence (load/save)"`
+
+### Task 6: REST routes + WS broadcast
+
+**Files:**
+- Create: `crates/storm-codex-server/src/draft/api.rs` (handlers; `mod api;` in `draft/mod.rs`)
+- Modify: `crates/storm-codex-server/src/main.rs` (register the routes)
+
+Routes (all mutate the state under a write lock, persist via `store::save`, then `state.events.send(json!({"type":"draft.updated"}))`):
+- `GET  /api/draft` → the current state (JSON).
+- `POST /api/draft/config` `{format, map, first_pick (side "blue"|"red"), blue:{name,players[5]}, red:{name,players[5]}, bo}` → recreates the state. `first_pick` is **independent** of the blue/red naming.
+- `POST /api/draft/action` `{hero}` → `apply`; 409 if `Unavailable`/`Complete`.
 - `POST /api/draft/undo`, `POST /api/draft/reset`.
 - `POST /api/draft/unavailable` `{hero, value}` → `set_unavailable`.
 - `POST /api/draft/score` `{blue, red}`.
-- `POST /api/draft/series/next` → push picks de la partie courante dans `draft_series.games`, recrée un draft pré-rempli (`seed_series` = union des games) ; `POST /api/draft/series/new` → vide la série.
+- `POST /api/draft/series/next` → pushes the current game's picks into `draft_series.games`, recreates a pre-filled draft (`seed_series` = union of the games); `POST /api/draft/series/new` → empties the series.
 
-- [ ] **Step 1 :** Implémenter `api.rs` (un handler par route ; helper `broadcast_and_save(state)`).
-- [ ] **Step 2 :** Enregistrer les routes dans le `Router` de `main.rs` (bloc `.route("/api/draft", …)` etc.).
-- [ ] **Step 3 : Build + clippy.** Run: `cargo build -p storm-codex-server && cargo clippy -p storm-codex-server -- -D warnings`. Expected: PASS.
-- [ ] **Step 4 : Test manuel** (serveur local) : `curl -s localhost:PORT/api/draft | jq` puis `curl -XPOST …/api/draft/action -d '{"hero":"Muradin"}'` → l'état avance ; un 2e onglet `/ws` reçoit `draft.updated`.
-- [ ] **Step 5 : Commit.** `git add -A && git commit -m "feat(draft): routes REST + broadcast WS draft.updated"`
+- [ ] **Step 1:** Implement `api.rs` (one handler per route; helper `broadcast_and_save(state)`).
+- [ ] **Step 2:** Register the routes in the `Router` of `main.rs` (`.route("/api/draft", …)` block etc.).
+- [ ] **Step 3: Build + clippy.** Run: `cargo build -p storm-codex-server && cargo clippy -p storm-codex-server -- -D warnings`. Expected: PASS.
+- [ ] **Step 4: Manual test** (local server): `curl -s localhost:PORT/api/draft | jq` then `curl -XPOST …/api/draft/action -d '{"hero":"Muradin"}'` → the state advances; a 2nd `/ws` tab receives `draft.updated`.
+- [ ] **Step 5: Commit.** `git add -A && git commit -m "feat(draft): REST routes + WS broadcast draft.updated"`
 
 ---
 
-## Chunk 3 : Web — couche API + console `/draft`
+## Chunk 3: Web — API layer + `/draft` console
 
-### Task 7 : Couche API typée
+### Task 7: Typed API layer
 
 **Files:**
-- Modify: `web/src/api.ts` (types `DraftState`, helpers `fetchDraft`, `draftAction`, etc. ; hook `useDraft` qui refetch sur `draft.updated` via le WS existant `useLiveEvents`/équivalent)
+- Modify: `web/src/api.ts` (types `DraftState`, helpers `fetchDraft`, `draftAction`, etc.; hook `useDraft` that refetches on `draft.updated` via the existing WS `useLiveEvents`/equivalent)
 
-- [ ] **Step 1 :** Types miroir du JSON serveur (`Team`, `Action`, `Step`, `DraftState`).
-- [ ] **Step 2 :** `useDraft()` : `useQuery(["draft"], fetchDraft)` + invalidation sur event WS `draft.updated` (étendre le handler WS de `api.ts` qui gère déjà `match.parsed`/`patch.new`).
+- [ ] **Step 1:** Types mirroring the server JSON (`Team`, `Action`, `Step`, `DraftState`).
+- [ ] **Step 2:** `useDraft()`: `useQuery(["draft"], fetchDraft)` + invalidation on the WS event `draft.updated` (extend the WS handler of `api.ts` that already handles `match.parsed`/`patch.new`).
 - [ ] **Step 3 :** POST helpers (`draftAction(hero)`, `draftUndo()`, `draftConfig(...)`, …).
-- [ ] **Step 4 : Build web.** Run: `cd web && npm run build`. Expected: PASS (tsc strict).
-- [ ] **Step 5 : Commit.** `git add -A && git commit -m "feat(draft): couche API web + hook useDraft (live WS)"`
+- [ ] **Step 4: Web build.** Run: `cd web && npm run build`. Expected: PASS (strict tsc).
+- [ ] **Step 5: Commit.** `git add -A && git commit -m "feat(draft): web API layer + useDraft hook (live WS)"`
 
-### Task 8 : Page console `/draft`
+### Task 8: `/draft` console page
 
 **Files:**
 - Create: `web/src/pages/Draft.tsx`
-- Modify: `web/src/App.tsx` (route `<Route path="draft" element={<Draft/>} />` **dans** `<Layout>`)
+- Modify: `web/src/App.tsx` (route `<Route path="draft" element={<Draft/>} />` **inside** `<Layout>`)
 
-Suivre fidèlement `docs/draft-control-mockup.html` : barre de config (format/map/first-pick/Bo/score + Undo/Reset/Partie suivante/Nouvelle série), bandeau de phase courante + timer, ruban series bans (fearless), colonnes Blue/Red (nom équipe + 5 pseudos éditables + bans + slot courant surligné), picker central (recherche + onglets rôle depuis `dim_heroes.role` + grille ; indispo grisés ; clic = `draftAction`). Réutiliser `Avatar`, `useDimHeroes`.
+Follow `docs/draft-control-mockup.html` faithfully: config bar (format/map/first-pick/Bo/score + Undo/Reset/Next game/New series), current phase banner + timer, series bans ribbon (fearless), Blue/Red columns (team name + 5 editable nicknames + bans + highlighted current slot), central picker (search + role tabs from `dim_heroes.role` + grid; unavailable greyed out; click = `draftAction`). Reuse `Avatar`, `useDimHeroes`.
 
-- [ ] **Step 1 :** Implémenter la page (lecture `useDraft`, écritures via helpers Task 7).
-- [ ] **Step 2 :** Enregistrer la route.
-- [ ] **Step 3 : Build web.** Run: `cd web && npm run build`. Expected: PASS.
-- [ ] **Step 4 : Vérif preview** : lancer le serveur + front, ouvrir `/draft`, drafter un Standard complet au clic ; vérifier surbrillance d'étape + indispo + undo. (Workflow preview, pas de demande manuelle à l'utilisateur.)
-- [ ] **Step 5 : Commit.** `git add -A && git commit -m "feat(draft): console de contrôle /draft"`
+- [ ] **Step 1:** Implement the page (read via `useDraft`, writes via the Task 7 helpers).
+- [ ] **Step 2:** Register the route.
+- [ ] **Step 3: Web build.** Run: `cd web && npm run build`. Expected: PASS.
+- [ ] **Step 4: Preview check**: start the server + front-end, open `/draft`, draft a complete Standard by clicking; check step highlight + unavailable + undo. (Preview workflow, no manual request to the user.)
+- [ ] **Step 5: Commit.** `git add -A && git commit -m "feat(draft): /draft control console"`
 
 ---
 
-## Chunk 4 : Web — overlay Timeline `/draft/overlay`
+## Chunk 4: Web — `/draft/overlay` Timeline overlay
 
-### Task 9 : Skins (variables CSS)
+### Task 9: Skins (CSS variables)
 
 **Files:**
-- Create: `web/src/pages/draft-overlay.css` (les 4 skins = blocs `[data-skin=…]` ; copier les tokens de `docs/draft-aesthetics.html`)
+- Create: `web/src/pages/draft-overlay.css` (the 4 skins = `[data-skin=…]` blocks; copy the tokens from `docs/draft-aesthetics.html`)
 
-- [ ] **Step 1 :** Porter les variables des 4 skins (nexus/glass/tactical/mono) + charger les polices web (Oswald, JetBrains Mono, Cinzel) via `@import`/`<link>`.
-- [ ] **Step 2 : Commit.** `git add -A && git commit -m "feat(draft): skins overlay (4 thèmes CSS)"`
+- [ ] **Step 1:** Port the variables of the 4 skins (nexus/glass/tactical/mono) + load the web fonts (Oswald, JetBrains Mono, Cinzel) via `@import`/`<link>`.
+- [ ] **Step 2: Commit.** `git add -A && git commit -m "feat(draft): overlay skins (4 CSS themes)"`
 
-### Task 10 : Overlay Timeline
+### Task 10: Timeline overlay
 
 **Files:**
 - Create: `web/src/pages/DraftOverlay.tsx`
-- Modify: `web/src/App.tsx` (route `<Route path="draft/overlay" element={<DraftOverlay/>} />` **hors** `<Layout>`, comme `now-playing`)
+- Modify: `web/src/App.tsx` (route `<Route path="draft/overlay" element={<DraftOverlay/>} />` **outside** `<Layout>`, like `now-playing`)
 
-Porter la vue **Timeline** de `docs/draft-aesthetics.html` : en-tête (map, noms + point clignotant sur `active_team`, score, timer de phase), ruban series bans (si fearless), picks en grille chronologique (colonnes = étapes de pick dans l'ordre, bleu haut / rouge bas, portrait + héros + pseudo, tuile active = halo or), bande de bans centrale. Données via `useDraft` (live WS). Skin via `?skin=` (défaut `nexus`). Le timer se réinitialise quand `active_team` change (timer par phase).
+Port the **Timeline** view of `docs/draft-aesthetics.html`: header (map, names + blinking dot on `active_team`, score, phase timer), series bans ribbon (if fearless), picks in a chronological grid (columns = pick steps in order, blue top / red bottom, portrait + hero + nickname, active tile = gold glow), central ban strip. Data via `useDraft` (live WS). Skin via `?skin=` (default `nexus`). The timer resets when `active_team` changes (per-phase timer).
 
-- [ ] **Step 1 :** Implémenter l'overlay (présentation pure depuis `DraftState`).
-- [ ] **Step 2 :** Enregistrer la route (hors Layout).
-- [ ] **Step 3 : Build web.** Run: `cd web && npm run build`. Expected: PASS.
-- [ ] **Step 4 : Vérif preview** (1920×1080) : drafter depuis `/draft` dans un onglet ; `/draft/overlay` se met à jour **en direct** ; tester `?skin=glass|tactical|mono`. Screenshot de preuve.
-- [ ] **Step 5 : Commit.** `git add -A && git commit -m "feat(draft): overlay Timeline live (4 skins)"`
+- [ ] **Step 1:** Implement the overlay (pure presentation from `DraftState`).
+- [ ] **Step 2:** Register the route (outside Layout).
+- [ ] **Step 3: Web build.** Run: `cd web && npm run build`. Expected: PASS.
+- [ ] **Step 4: Preview check** (1920×1080): draft from `/draft` in one tab; `/draft/overlay` updates **live**; test `?skin=glass|tactical|mono`. Screenshot as evidence.
+- [ ] **Step 5: Commit.** `git add -A && git commit -m "feat(draft): live Timeline overlay (4 skins)"`
 
 ---
 
-## Critères d'acceptation (rappel spec)
+## Acceptance criteria (spec reminder)
 
-1. Moteur : 3 séquences de bout en bout, refus indispo, undo/reset — tests verts (`cargo test -p storm-codex-server`).
-2. `/draft` construit un Standard au clic ; `/draft/overlay` live via WS ; `?skin=` change l'esthétique.
-3. Fearless : partie 2 → héros de la partie 1 indisponibles (ruban) ; override manuel OK.
-4. Noms d'équipe + pseudos + score éditables et reflétés dans l'overlay.
+1. Engine: 3 sequences end to end, unavailable refusal, undo/reset — tests green (`cargo test -p storm-codex-server`).
+2. `/draft` builds a Standard by clicking; `/draft/overlay` live via WS; `?skin=` changes the aesthetics.
+3. Fearless: game 2 → heroes from game 1 unavailable (ribbon); manual override OK.
+4. Team names + nicknames + score editable and reflected in the overlay.
 
-## Hors périmètre (YAGNI)
+## Out of scope (YAGNI)
 
-Bot/IA, suggestions Jarvis, talents, multi-opérateur, contrainte de temps dure, overlay « vue joueur » dédié.
+Bot/AI, Jarvis suggestions, talents, multi-operator, hard time constraint, dedicated "player view" overlay.

@@ -1,6 +1,6 @@
-//! Décodeur « versioned » — port fidèle de `VersionedDecoder` (heroprotocol/decoders.py, MIT).
-//! Le format est intégralement aligné sur l'octet → un curseur d'octets suffit.
-//! Tags : 0 array, 1 bitblob, 2 blob, 3 choice, 4 optional, 5 struct, 6 u8, 7 u32, 8 u64, 9 vint.
+//! "Versioned" decoder — faithful port of `VersionedDecoder` (heroprotocol/decoders.py, MIT).
+//! The format is entirely byte-aligned → a byte cursor is enough.
+//! Tags: 0 array, 1 bitblob, 2 blob, 3 choice, 4 optional, 5 struct, 6 u8, 7 u32, 8 u64, 9 vint.
 
 use crate::error::{Error, Result};
 use crate::typeinfo::TypeInfo;
@@ -33,7 +33,7 @@ impl<'a> VersionedDecoder<'a> {
         let b = *self
             .data
             .get(self.pos)
-            .ok_or_else(|| Error::Truncated(format!("octet {} (versioned)", self.pos)))?;
+            .ok_or_else(|| Error::Truncated(format!("byte {} (versioned)", self.pos)))?;
         self.pos += 1;
         Ok(b)
     }
@@ -43,7 +43,7 @@ impl<'a> VersionedDecoder<'a> {
             .pos
             .checked_add(n)
             .filter(|&end| end <= self.data.len())
-            .ok_or_else(|| Error::Truncated(format!("{n} octets à {} (versioned)", self.pos)))?;
+            .ok_or_else(|| Error::Truncated(format!("{n} bytes at {} (versioned)", self.pos)))?;
         let s = &self.data[self.pos..end];
         self.pos = end;
         Ok(s)
@@ -53,14 +53,14 @@ impl<'a> VersionedDecoder<'a> {
         let got = self.read_u8()?;
         if got != expected {
             return Err(Error::Corrupted(format!(
-                "tag {got} ≠ {expected} à l'octet {} (versioned)",
+                "tag {got} ≠ {expected} at byte {} (versioned)",
                 self.pos - 1
             )));
         }
         Ok(())
     }
 
-    /// Varint de la référence : bit 0 du 1er octet = signe, puis 7 bits/octet (bit 7 = suite).
+    /// The reference's varint: bit 0 of the 1st byte = sign, then 7 bits/byte (bit 7 = continuation).
     fn vint(&mut self) -> Result<i64> {
         let b = i64::from(self.read_u8()?);
         let negative = b & 1 != 0;
@@ -79,11 +79,11 @@ impl<'a> VersionedDecoder<'a> {
     fn typeinfo(&self, typeid: usize) -> Result<&'a TypeInfo> {
         self.typeinfos
             .get(typeid)
-            .ok_or_else(|| Error::Protocol(format!("typeid {typeid} hors table")))
+            .ok_or_else(|| Error::Protocol(format!("typeid {typeid} outside the table")))
     }
 
-    /// Delta de gameloop (`NNet.SVarUint32` = choice de `_int`) sans matérialiser de `Value`
-    /// — chemin chaud : un appel par événement de chaque stream.
+    /// Gameloop delta (`NNet.SVarUint32` = choice of `_int`) without materialising a `Value`
+    /// — hot path: one call per event of each stream.
     pub fn svaruint32_value(&mut self, typeid: usize) -> Result<i64> {
         if let TypeInfo::Choice { fields, .. } = self.typeinfo(typeid)? {
             self.expect_skip(3)?;
@@ -99,7 +99,7 @@ impl<'a> VersionedDecoder<'a> {
                     .ok_or_else(|| Error::Corrupted("svaruint32 non entier".into()));
             }
             self.skip_instance()?;
-            return Err(Error::Corrupted(format!("svaruint32 : tag inconnu {tag}")));
+            return Err(Error::Corrupted(format!("svaruint32: unknown tag {tag}")));
         }
         self.instance(typeid)?
             .first_field_int()
@@ -115,7 +115,7 @@ impl<'a> VersionedDecoder<'a> {
             TypeInfo::Blob { .. } => {
                 self.expect_skip(2)?;
                 let len = usize::try_from(self.vint()?)
-                    .map_err(|_| Error::Corrupted("longueur de blob négative".into()))?;
+                    .map_err(|_| Error::Corrupted("negative blob length".into()))?;
                 Value::Blob(self.read_bytes(len)?.to_vec())
             }
             TypeInfo::Bool => {
@@ -144,7 +144,7 @@ impl<'a> VersionedDecoder<'a> {
             TypeInfo::Array { typeid, .. } => {
                 self.expect_skip(0)?;
                 let len = usize::try_from(self.vint()?)
-                    .map_err(|_| Error::Corrupted("longueur de tableau négative".into()))?;
+                    .map_err(|_| Error::Corrupted("negative array length".into()))?;
                 let typeid = *typeid;
                 let mut items = Vec::with_capacity(len.min(4096));
                 for _ in 0..len {
@@ -155,7 +155,7 @@ impl<'a> VersionedDecoder<'a> {
             TypeInfo::BitArray { .. } => {
                 self.expect_skip(1)?;
                 let bits = u64::try_from(self.vint()?)
-                    .map_err(|_| Error::Corrupted("longueur de bitarray négative".into()))?;
+                    .map_err(|_| Error::Corrupted("negative bitarray length".into()))?;
                 let data = self.read_bytes(bits.div_ceil(8) as usize)?.to_vec();
                 Value::BitArrayBytes { bits, data }
             }
@@ -178,7 +178,7 @@ impl<'a> VersionedDecoder<'a> {
                         Value::Struct(vec![(name, v)])
                     }
                     None => {
-                        // référence : tag inconnu → skip + struct vide (compat builds)
+                        // reference: unknown tag → skip + empty struct (build compatibility)
                         self.skip_instance()?;
                         Value::Struct(Vec::new())
                     }
@@ -187,7 +187,7 @@ impl<'a> VersionedDecoder<'a> {
             TypeInfo::Struct { fields } => {
                 self.expect_skip(5)?;
                 let count = usize::try_from(self.vint()?)
-                    .map_err(|_| Error::Corrupted("taille de struct négative".into()))?;
+                    .map_err(|_| Error::Corrupted("negative struct size".into()))?;
                 let mut result: Vec<(std::sync::Arc<str>, Value)> = Vec::with_capacity(count);
                 for _ in 0..count {
                     let tag = self.vint()?;
@@ -205,7 +205,7 @@ impl<'a> VersionedDecoder<'a> {
                                 result.push((name, v));
                             }
                         }
-                        None => self.skip_instance()?, // champ inconnu (compat builds)
+                        None => self.skip_instance()?, // unknown field (build compatibility)
                     }
                 }
                 Value::Struct(result)
@@ -262,7 +262,7 @@ impl<'a> VersionedDecoder<'a> {
             }
             other => {
                 return Err(Error::Corrupted(format!(
-                    "skip : tag inconnu {other} à l'octet {} (versioned)",
+                    "skip: unknown tag {other} at byte {} (versioned)",
                     self.pos - 1
                 )))
             }
@@ -276,8 +276,8 @@ impl<'a> VersionedDecoder<'a> {
 mod tests {
     use super::*;
 
-    /// vint de référence : encodages calculés depuis decoders.py (_vint) à la main.
-    /// 0 → [0x00] ; 1 → [0x02] ; -1 → [0x03] ; 63 → [0x7E] ; 64 → [0x80, 0x02].
+    /// Reference vint: encodings computed by hand from decoders.py (_vint).
+    /// 0 → [0x00]; 1 → [0x02]; -1 → [0x03]; 63 → [0x7E]; 64 → [0x80, 0x02].
     #[test]
     fn vint_reference() {
         let cases: &[(&[u8], i64)] = &[
@@ -290,7 +290,7 @@ mod tests {
         ];
         for (bytes, expected) in cases {
             let mut d = VersionedDecoder::new(bytes, &[]);
-            assert_eq!(d.vint().unwrap(), *expected, "octets {bytes:?}");
+            assert_eq!(d.vint().unwrap(), *expected, "bytes {bytes:?}");
         }
     }
 }
