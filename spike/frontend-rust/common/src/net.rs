@@ -24,6 +24,47 @@ pub async fn get_json<T: serde::de::DeserializeOwned>(path: &str) -> Result<T, S
     r.json::<T>().await.map_err(|e| e.to_string())
 }
 
+/// Write request with a JSON body. A non-OK answer rejects with the server's `{"error": "<code>"}` code, or
+/// `http_<status>` (same contract as `send()` in castApi.ts).
+pub async fn send_json<B: serde::Serialize, T: serde::de::DeserializeOwned>(method: &str, path: &str, body: &B) -> Result<T, String> {
+    let req = match method {
+        "PUT" => Request::put(path),
+        _ => Request::post(path),
+    };
+    let r = req.json(body).map_err(|e| e.to_string())?.send().await.map_err(|e| e.to_string())?;
+    if !r.ok() {
+        let status = r.status();
+        #[derive(Deserialize)]
+        struct E {
+            error: String,
+        }
+        return Err(r.json::<E>().await.map(|e| e.error).unwrap_or_else(|_| format!("http_{status}")));
+    }
+    r.json::<T>().await.map_err(|e| e.to_string())
+}
+
+/// Calls `on_width` with the element's width now and every time it changes (`ResizeObserver`), when it is > 0.
+pub fn observe_width(id: &str, on_width: impl Fn(f64) + 'static) {
+    use wasm_bindgen::{closure::Closure, JsCast};
+    let Some(el) = web_sys::window().and_then(|w| w.document()).and_then(|d| d.get_element_by_id(id)) else { return };
+    let measure = {
+        let el = el.clone();
+        move || {
+            let w = el.client_width() as f64;
+            if w > 0.0 {
+                on_width(w);
+            }
+        }
+    };
+    measure();
+    let cb = Closure::<dyn FnMut()>::new(measure);
+    if let Ok(ro) = web_sys::ResizeObserver::new(cb.as_ref().unchecked_ref()) {
+        ro.observe(&el);
+        std::mem::forget(ro);
+    }
+    cb.forget();
+}
+
 /// `fmtTime`: `dd/mm hh:mm` in the viewer's local time, French format.
 pub fn fmt_time(iso: Option<&str>) -> String {
     let Some(iso) = iso else { return "—".into() };

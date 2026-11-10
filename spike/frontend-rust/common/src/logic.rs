@@ -236,8 +236,8 @@ mod tests {
     fn series(scene: Scene, active: bool) -> CastSeries {
         CastSeries {
             active,
-            blue: Team { name: "Blue team".into() },
-            red: Team { name: " ".into() },
+            blue: Team::named("Blue team"),
+            red: Team::named(" "),
             bo: 3,
             format: "ban".into(),
             score_override: None,

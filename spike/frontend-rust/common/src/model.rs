@@ -1,7 +1,7 @@
 //! Wire types of `GET /api/cast` (mirror of `crates/storm-codex-server/src/cast/mod.rs`).
 //! Unknown fields are ignored, so a server that grows a field never breaks the overlay.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -38,9 +38,32 @@ pub struct PoolMap {
     pub by: Option<Side>,
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+pub struct CastPlayer {
+    pub name: String,
+    pub tagline: String,
+    pub toon: Option<String>,
+}
+
+/// A team as the server stores it, and as `PUT /api/cast/teams` takes it back.
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 pub struct Team {
     pub name: String,
+    #[serde(default)]
+    pub logo: Option<String>,
+    #[serde(default)]
+    pub record: String,
+    /// Always 5 entries on the server side.
+    #[serde(default)]
+    pub players: Vec<CastPlayer>,
+    #[serde(default)]
+    pub captain: Option<usize>,
+}
+
+impl Team {
+    pub fn named(name: &str) -> Team {
+        Team { name: name.into(), ..Team::default() }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]

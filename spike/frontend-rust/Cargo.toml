@@ -2,7 +2,7 @@
 # Throwaway code, its own workspace and lockfile, excluded from the root workspace.
 [workspace]
 resolver = "2"
-members = ["common", "leptos-overlay", "dioxus-overlay", "checks", "leptos-profile", "dioxus-profile"]
+members = ["common", "leptos-overlay", "dioxus-overlay", "checks", "leptos-profile", "dioxus-profile", "leptos-cast", "dioxus-cast"]
 
 [profile.release]
 opt-level = "z"

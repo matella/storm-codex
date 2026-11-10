@@ -16,7 +16,7 @@ To run: build with `trunk build --release` (Leptos, in the app folder) or
 | Cast overlay: `ingame` + `series` (map strip) | done | done |
 | Cast overlay: post-game slides, `lineups`, `draft` | not ported (slide > 0 shows a placeholder) | not ported |
 | Player profile `/player/:toon` (Stats + Identity tabs, `?tab=`) | done, no Chat section | done, no Chat section |
-| Cast control room, reduced (`/cast`) | not started | not started |
+| Cast control room, reduced (`/cast`: scene tabs + keyboard, `?scene=`, Put on air, scaled iframe preview, Blue team editor + Save teams, error banner, WS refresh) | done | done |
 | Canvas + `MediaRecorder` check | pass (framework-free, `checks/`) | same crate |
 | Sanitising check | pass (`ammonia`, `checks/`) | same crate |
 | Real OBS browser source | operator | operator |
@@ -74,6 +74,8 @@ for a real player (2,128 games, 90 heroes, 20 recent games):
 | Overlay, React (today) | — | ≈ 112 kB of JS (transferred) | ≈ 32 kB (transferred) | ≈ 143 kB |
 | Profile, Leptos (+ router) | 468 kB / 194 kB | 46 kB / 8 kB | 13 kB | ≈ 215 kB |
 | Profile, Dioxus (+ router) | 662 kB / 271 kB | 46 kB / 11 kB | 11 kB | ≈ 294 kB |
+| Control room, Leptos | 115 kB gzip | 7.5 kB | ≈ 15 kB | ≈ 137 kB |
+| Control room, Dioxus | 563 kB / 234 kB | 51 kB / 12.5 kB | ≈ 13 kB | ≈ 260 kB |
 
 Proposed limit for the overlay: ≤ 300 kB gzip. Both fit; Leptos with a wide margin, Dioxus with
 about 25 %, and the overlay still has three scenes to add. A single Dioxus bundle holding the profile
@@ -102,6 +104,7 @@ route splitting inside one bundle.
 | Shared Rust crate: model 83, overlay logic 230, profile logic 265, net ≈ 90 (+ about 280 test lines) | ≈ 670 |
 | Overlay view layer: Leptos 165, Dioxus 182 | |
 | Profile view layer: Leptos 222, Dioxus 213 | |
+| Control room view layer (reduced): Leptos 200, Dioxus 234; shared `control.rs` 146 (of which ≈ 55 test lines) | |
 | React: overlay files 196 + about 370 of `castState.ts` / types / `useLiveUpdates` it relies on; `Player.tsx` 110 + the ds components it uses | |
 
 Comparable in size to React once the shared logic is counted (the React `Player.tsx` is 110 lines
@@ -128,14 +131,20 @@ wasm-bindgen and bundling. Cold release builds: Leptos about 1 min, Dioxus 50–
 - Dioxus `asset!` copies and hashes CSS (and cannot reach outside the crate): `cast-overlay.css`,
   `theme.css` and `ds.css` are copied into the Dioxus crates; Leptos links the shared files with trunk.
 - Dioxus sets the page title to "dioxus | ⛺" unless `Dioxus.toml` gives one.
+- Dioxus applies `style` as individual properties and does not reset one that disappears from the
+  string: the preview box kept `aspect-ratio` and the iframe kept `visibility:hidden` after the scale was
+  measured (preview invisible). Fixed by writing the reset values explicitly; Leptos replaces the
+  attribute and did not need it. Worth a test in the port.
+- Dioxus: a closure that calls another `move` closure capturing signals needs `let mut`; event
+  handlers receive `e.key()` as a `Key` (use `.to_string()` to compare with the shared helper).
 - The server's SPA fallback (`WEB_DIR`) serves both builds unchanged. It reads `index.html` once at
   startup, so the server must be restarted after each rebuild (`serve.ps1` does it, and refuses to
   stop any process that is not `storm-codex-server`).
 
 ## Not yet answered
 
-- The cast control room (`/cast`: scene tabs with keyboard behaviour, series rail, "Put on air",
-  scaled `<iframe>` preview, WebSocket refresh).
+- The rest of the control room (OBS source block, series settings, pool panel, workspaces, player
+  picker, logo upload, Red team editor).
 - How each Vitest test translates for render-to-string tests (only pure logic was ported, as native
   `cargo test`; Leptos has SSR rendering and Dioxus has `dioxus-ssr`, neither tried).
 - Remaining overlay scenes; real OBS (CEF) behaviour: wasm, fonts, performance; cold time-to-first-scene.
@@ -146,4 +155,7 @@ Both frameworks reproduce the overlay and the profile page with the same DOM as 
 shared Rust core, and no raw JavaScript. Leptos is the smaller (overlay ≈ 130 kB, profile ≈ 215 kB
 gzip) and Dioxus about 70–80 kB larger on each, with the overlay at roughly three quarters of the
 proposed limit before its remaining scenes. The sanitiser must not live in the shared bundle.
-This is not a go: the control room, the other overlay scenes and the OBS check are still open.
+The reduced control room behaves the same in both (working tab local, arrows only move focus, `?scene=`
+does not change the scene on air, Put on air updates the server, resync keeps an edited team and replaces
+an untouched one, a down server shows an error banner with dismiss): Leptos ≈ 137 kB gzip, Dioxus ≈ 260 kB.
+This is not a go: the other overlay scenes and the OBS check are still open.
