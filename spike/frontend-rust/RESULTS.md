@@ -9,6 +9,9 @@ To run: build with `trunk build --release` (Leptos, in the app folder) or
 `dx build --release --platform web` (Dioxus), then `./serve.ps1 -Port 8095 -Dist <dist folder>`
 (starts the real server on top of the build; needs the dev Postgres and a debug server build).
 
+**Real-OBS check (operator): run `./obs-check.ps1`** (builds and serves the Leptos overlay on :8097, prints the
+OBS browser-source URL and the checklist), then note the outcome below.
+
 ## Status
 
 | Item | Leptos 0.8.23 | Dioxus 0.7.10 |
