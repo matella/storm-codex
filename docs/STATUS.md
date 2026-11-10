@@ -1,5 +1,11 @@
 # STATUS — read first, update last
 
+## Rust front-end migration — Leptos chosen (2026-11-11)
+The operator picked **Leptos** after the step-0 spike (overlay with all scenes ≈ 219 kB transferred vs
+≈ 287 kB for Dioxus, 300 kB limit). Decision recorded in §6 of the spec. **Still open before the go**: real-OBS
+check of the Leptos overlay (operator), cold time-to-first-scene measured on it. Next (after go): port order §8,
+step 1 foundation. The Dioxus spike apps stay in `spike/` as reference only.
+
 ## Rust front-end migration — step 0 spike: overlay, profile, control room, canvas, sanitising done (2026-11-10)
 `spike/frontend-rust/` (own workspace, excluded from the root one; results in its `RESULTS.md`).
 The cast overlay (`ingame` + `series` map strip) and the player profile (Stats / Identity tabs) run in
