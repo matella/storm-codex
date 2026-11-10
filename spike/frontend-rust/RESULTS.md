@@ -112,8 +112,14 @@ route splitting inside one bundle.
 - Cold origin (`localhost`, first visit, loopback): the last overlay asset byte arrived at about 396 ms
   (Leptos), 473 ms (Dioxus) and 443 ms (React chunks). Warm: the data request starts about 20 ms
   after navigation for the Rust apps (React: 334 ms, JS chunks load in sequence).
-- **Time to first scene on a cold load was not measured end to end** (Browser pane hidden, paint
-  timings empty), nor in OBS. The profile page timing was not measured either.
+- **Leptos overlay, all scenes, cold origin (`localhost:8097`, 2026-11-11, Chrome in the visible Browser pane, loopback):**
+  the wasm (204 kB transferred) finished at 470 ms, `/api/cast` answered at 476 ms and the scene DOM was
+  present (`.sr-head`) at the first check, so the first scene is built about 0.5 s after navigation (the map
+  images start loading at 486 ms). Paint and LCP timings stayed empty in the pane, so the pixel-on-screen time
+  is not measured: the figure is "scene in the DOM", which is within a few frames of it. Over a LAN the extra
+  cost is the transfer of about 220 kB (about 20 ms at 100 Mbit/s). Within the proposed ≤ 1 s. **Still not
+  measured in a real OBS browser source (operator), nor for Dioxus on the all-scenes build.** The profile page
+  timing was not measured either.
 
 ## Size of the code
 
