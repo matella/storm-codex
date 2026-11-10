@@ -1,0 +1,11 @@
+[package]
+name = "dioxus-overlay"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+dioxus = { version = "0.7.10", features = ["web"] }
+gloo-timers = { version = "0.3", features = ["futures"] }
+spike-common = { path = "../common" }
+wasm-bindgen-futures = "0.4"

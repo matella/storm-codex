@@ -1,6 +1,16 @@
 # STATUS — read first, update last
 
-## Rust front-end migration — spec validated, step 0 next (2026-11-10)
+## Rust front-end migration — step 0 spike started: cast overlay done in both frameworks (2026-11-10)
+`spike/frontend-rust/` (own workspace, excluded from the root one; results in its `RESULTS.md`).
+The cast overlay (`ingame` + `series` map strip) runs in Leptos 0.8 and Dioxus 0.7 against the real
+server with a shared Rust core: DOM identical to React's, transparent body, 300 ms fade, WS live
+update and reconnection verified; overlay ≈ 128 kB (Leptos) / ≈ 220 kB (Dioxus) transferred vs ≈ 143 kB
+for React. **Not done**: other overlay scenes, player profile, reduced control room, canvas +
+`MediaRecorder`, sanitising, real-OBS check (operator), cold time-to-first-scene. No go decision yet.
+Tools installed on the PC: `trunk` 0.22.0-beta.1 (0.22.1 needs rustc 1.96), `dioxus-cli` 0.7.10,
+`wasm-bindgen-cli` 0.2.130.
+
+## Rust front-end migration — spec validated (2026-11-10)
 Spec `docs/specs/2026-11-09-rust-frontend-migration-design.md`: port `web/` to Rust/WASM served by the
 same Axum server, page by page under `/v2/`, React kept until the operator approves the switch.
 Step 0 = throwaway go/no-go spike in `spike/frontend-rust/` (Leptos vs Dioxus on the player profile,
