@@ -103,8 +103,18 @@ struct Event {
 
 /// Calls `refresh` on every `cast.updated`, after each (re)connection, and every 10 s.
 pub fn start_live(refresh: impl Fn() + Clone + 'static) {
-    let poll = refresh.clone();
-    Interval::new(10_000, move || poll()).forget();
+    start_live_events(move |ev| {
+        if ev != "draft.updated" {
+            refresh()
+        }
+    });
+}
+
+/// Same channel for several consumers: `on` gets `"poll"` every 10 s, `"open"` after each (re)connection and
+/// the `type` of every event received (`cast.updated`, `draft.updated`, ...).
+pub fn start_live_events(on: impl Fn(&str) + Clone + 'static) {
+    let poll = on.clone();
+    Interval::new(10_000, move || poll("poll")).forget();
     wasm_bindgen_futures::spawn_local(async move {
         let loc = web_sys::window().map(|w| w.location());
         let host = loc.as_ref().and_then(|l| l.host().ok()).unwrap_or_default();
@@ -112,12 +122,12 @@ pub fn start_live(refresh: impl Fn() + Clone + 'static) {
         let url = format!("{}://{host}/ws", if wss { "wss" } else { "ws" });
         loop {
             if let Ok(mut ws) = WebSocket::open(&url) {
-                refresh(); // reconnected: re-read what may have been missed
+                on("open"); // reconnected: re-read what may have been missed
                 while let Some(m) = ws.next().await {
                     match m {
                         Ok(Message::Text(t)) => {
-                            if serde_json::from_str::<Event>(&t).is_ok_and(|e| e.kind == "cast.updated") {
-                                refresh();
+                            if let Ok(e) = serde_json::from_str::<Event>(&t) {
+                                on(&e.kind);
                             }
                         }
                         Ok(_) => {}
@@ -128,4 +138,13 @@ pub fn start_live(refresh: impl Fn() + Clone + 'static) {
             TimeoutFuture::new(2_000).await;
         }
     });
+}
+
+pub async fn fetch_draft() -> Result<crate::model::DraftState, String> {
+    get_json("/api/draft").await
+}
+
+/// Recent heroes of the linked players (`None` query = nobody linked, nothing to fetch).
+pub async fn fetch_lineup(query: &str) -> Result<crate::model::CastLineup, String> {
+    get_json(&format!("/api/cast/lineup?{query}")).await
 }

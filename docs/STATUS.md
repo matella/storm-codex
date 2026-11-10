@@ -5,11 +5,12 @@
 The cast overlay (`ingame` + `series` map strip) and the player profile (Stats / Identity tabs) run in
 Leptos 0.8 and Dioxus 0.7 against the real server with a shared Rust core: DOM identical to React's,
 overlay behaviour (fade, live update, reconnection) and profile behaviour (`?tab=`, show all) verified.
-Overlay ≈ 128 kB (Leptos) / ≈ 220 kB (Dioxus) transferred vs ≈ 143 kB for React; profile ≈ 215 / 294 kB
-gzip. Canvas + `MediaRecorder` and sanitising pass, but the Rust sanitiser alone costs ≈ 296 kB gzip, so
+All five overlay scenes (lineups, post-game slides, draft included) are DOM-identical to React in Dioxus and
+identical in Leptos but for two `<g>` wrappers in an SVG: ≈ 219 kB (Leptos) / ≈ 287 kB (Dioxus) transferred, the
+latter only 4 % under the 300 kB limit (React ≈ 143 kB for one scene); profile ≈ 215 / 294 kB gzip. Canvas + `MediaRecorder` and sanitising pass, but the Rust sanitiser alone costs ≈ 296 kB gzip, so
 it cannot live in the bundle the overlays load. The reduced control room (`/cast`: scene tabs, Put on air,
 scaled preview, Blue team editor, error banner) behaves the same in both: ≈ 137 kB (Leptos) / ≈ 260 kB
-(Dioxus) gzip. **Not done**: other overlay scenes, rest of the control room,
+(Dioxus) gzip. **Not done**: rest of the control room,
 real-OBS check (operator), cold time-to-first-scene, a real patch page. No go decision yet.
 Tools installed on the PC: `trunk` 0.22.0-beta.1 (0.22.1 needs rustc 1.96), `dioxus-cli` 0.7.10,
 `wasm-bindgen-cli` 0.2.130.

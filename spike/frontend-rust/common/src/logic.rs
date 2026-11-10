@@ -137,7 +137,7 @@ pub fn shown_game(s: &CastSeries) -> Option<&Game> {
 pub const BREAKDOWN_TABS: usize = 4;
 
 pub fn slide_count(s: &CastSeries) -> usize {
-    if shown_game(s).is_some_and(|g| g.summary) {
+    if shown_game(s).is_some_and(|g| g.summary.is_some()) {
         1 + BREAKDOWN_TABS
     } else {
         1
@@ -229,8 +229,9 @@ pub fn tab_box(side: Side) -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+    use crate::model::{GameSummary, LineupMode};
     use crate::model::{Slide, Team};
 
     fn series(scene: Scene, active: bool) -> CastSeries {
@@ -245,11 +246,27 @@ mod tests {
             games: vec![],
             scene,
             slide: Slide { game: None, index: 0, auto: false, interval_ms: 10_000, since_ms: 0 },
+            lineup_mode: LineupMode::Auto,
+        }
+    }
+
+    pub(crate) fn summary() -> GameSummary {
+        GameSummary {
+            duration_secs: 600.0,
+            winner: Side::Blue,
+            takedowns: (3, 1),
+            team_level: None,
+            structures: None,
+            merc_camps: None,
+            objectives: None,
+            bans: (vec![], vec![]),
+            players: vec![],
+            xp_lead: vec![],
         }
     }
 
     fn game(number: u32, map: &str, winner: Option<Side>) -> Game {
-        Game { number, map: map.into(), winner, summary: false }
+        Game { number, map: map.into(), winner, takedowns: (0, 0), summary: None }
     }
 
     #[test]
@@ -309,7 +326,7 @@ mod tests {
     #[test]
     fn slideshow_advances_from_the_server_anchor() {
         let mut s = series(Scene::Series, true);
-        s.games = vec![Game { summary: true, ..game(1, "A", Some(Side::Blue)) }];
+        s.games = vec![Game { summary: Some(summary()), ..game(1, "A", Some(Side::Blue)) }];
         s.slide = Slide { game: None, index: 1, auto: true, interval_ms: 1000, since_ms: 5_000 };
         assert_eq!(slide_tick(&s, 4_000), 0);
         assert_eq!(slide_tick(&s, 8_500), 3);
@@ -353,11 +370,11 @@ mod tests {
         let j = r#"{"schema_version":1,"active":true,"blue":{"name":"A","logo":null,"players":[]},"red":{"name":"B"},
             "bo":3,"format":"ban","score_override":null,
             "pool":[{"name":"Sky Temple","status":"picked","by":"red"},{"name":"X","status":"available"}],
-            "games":[{"number":1,"map":"Sky Temple","winner":null,"summary":null},{"number":2,"map":"X","winner":"blue","summary":{"a":1}}],
+            "games":[{"number":1,"map":"Sky Temple","winner":null,"summary":null},{"number":2,"map":"X","winner":"blue","summary":{"duration_secs":600,"winner":"blue","takedowns":[3,1]}}],
             "scene":"series","slide":{"game":null,"index":0,"auto":true,"interval_ms":8000,"since_ms":1}}"#;
         let s: CastSeries = serde_json::from_str(j).unwrap();
         assert_eq!(s.pool[0].by, Some(Side::Red));
         assert_eq!(s.pool[1].by, None);
-        assert_eq!(s.games.iter().map(|g| g.summary).collect::<Vec<_>>(), [false, true]);
+        assert_eq!(s.games.iter().map(|g| g.summary.is_some()).collect::<Vec<_>>(), [false, true]);
     }
 }

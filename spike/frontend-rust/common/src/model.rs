@@ -71,14 +71,138 @@ pub struct Game {
     pub number: u32,
     pub map: String,
     pub winner: Option<Side>,
-    /// Only whether a replay summary exists matters to the slideshow.
-    #[serde(default, deserialize_with = "present")]
-    pub summary: bool,
+    #[serde(default)]
+    pub takedowns: (u32, u32),
+    /// Replay summary. Read leniently: a malformed one counts as absent instead of breaking the whole
+    /// series (React's check is "not null"; the two only differ on a malformed summary).
+    #[serde(default, deserialize_with = "lenient")]
+    pub summary: Option<GameSummary>,
 }
 
-/// `Some(anything)` -> true, `null` / absent -> false.
-fn present<'de, D: serde::Deserializer<'de>>(d: D) -> Result<bool, D::Error> {
-    Ok(Option::<serde::de::IgnoredAny>::deserialize(d)?.is_some())
+fn lenient<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<GameSummary>, D::Error> {
+    Ok(Option::<serde_json::Value>::deserialize(d)?.and_then(|v| serde_json::from_value(v).ok()))
+}
+
+/// One player line of the replay summary (`PlayerSummary` in cast/mod.rs).
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[serde(default)]
+pub struct PlayerSummary {
+    pub side: Option<Side>,
+    pub toon: String,
+    pub name: String,
+    pub hero: String,
+    pub kills: u32,
+    pub takedowns: u32,
+    pub deaths: u32,
+    pub assists: u32,
+    pub hero_damage: f64,
+    pub siege_damage: f64,
+    pub healing: f64,
+}
+
+/// Replay summary of one game. Pairs are `(blue, red)`; `None` / empty = value absent -> row removed.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct GameSummary {
+    pub duration_secs: f64,
+    pub winner: Side,
+    pub takedowns: (u32, u32),
+    #[serde(default)]
+    pub team_level: Option<(u32, u32)>,
+    #[serde(default)]
+    pub structures: Option<(u32, u32)>,
+    #[serde(default)]
+    pub merc_camps: Option<(u32, u32)>,
+    #[serde(default)]
+    pub objectives: Option<(u32, u32)>,
+    #[serde(default)]
+    pub bans: (Vec<String>, Vec<String>),
+    #[serde(default)]
+    pub players: Vec<PlayerSummary>,
+    /// `(seconds, Blue's XP lead)`; negative = Red ahead.
+    #[serde(default)]
+    pub xp_lead: Vec<(f64, f64)>,
+}
+
+/// `GET /api/cast/lineup`: recent heroes per player (<= 3, empty = hidden).
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+pub struct HeroCount {
+    pub hero: String,
+    pub games: u32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+pub struct CastLineup {
+    #[serde(default)]
+    pub blue: Vec<Vec<HeroCount>>,
+    #[serde(default)]
+    pub red: Vec<Vec<HeroCount>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LineupMode {
+    #[default]
+    Auto,
+    A,
+    B,
+}
+
+/// `GET /api/draft` (mirror of `DraftState` in api.ts, only what the overlay reads).
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct DraftState {
+    pub format: String,
+    pub first_pick: Side,
+    pub map: String,
+    pub blue: DraftTeam,
+    pub red: DraftTeam,
+    pub score: (u32, u32),
+    pub bo: u32,
+    pub steps: Vec<DraftStep>,
+    pub cursor: usize,
+    pub assignments: Vec<Option<String>>,
+    #[serde(default)]
+    pub series_bans: Vec<String>,
+    #[serde(default)]
+    pub replay: Option<DraftReplay>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+pub struct DraftTeam {
+    pub name: String,
+    #[serde(default)]
+    pub players: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DraftOrder {
+    First,
+    Second,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DraftAction {
+    Ban,
+    Pick,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+pub struct DraftStep {
+    pub order: DraftOrder,
+    pub action: DraftAction,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct DraftReplay {
+    #[serde(default)]
+    pub current: Option<usize>,
+    #[serde(default)]
+    pub playing: bool,
+    #[serde(default)]
+    pub next_at_ms: Option<f64>,
+    #[serde(default)]
+    pub interval_ms: f64,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -103,4 +227,6 @@ pub struct CastSeries {
     pub games: Vec<Game>,
     pub scene: Scene,
     pub slide: Slide,
+    #[serde(default)]
+    pub lineup_mode: LineupMode,
 }
