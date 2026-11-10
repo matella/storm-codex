@@ -1,6 +1,6 @@
 # storm-codex-server — pipeline & configuration
 
-Crate: `crates/storm-codex-server` (axum 0.8 + sqlx 0.8 + tokio). A single binary: API + front-end
+Crate: `crates/storm-codex-server` (axum 0.8 + sqlx 0.9 + tokio). A single binary: API + front-end
 + overlays. `PARSER_VERSION` (in `main.rs`) drives re-processing — **bump it on every
 projection change**.
 

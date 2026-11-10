@@ -1,6 +1,6 @@
 # Frontend — SPA & OBS overlays
 
-`web/`: Vite + React 18 + TS + TanStack Query + react-router + uPlot. **Nexus Codex ·
+`web/`: Vite + React 19 + TS 7 + TanStack Query + react-router. **Nexus Codex ·
 Dossier** design (spec `docs/specs/2026-09-27-design-dossier-app-design.md`): tokens (colours, fonts)
 in `theme.css`, global `ds-` classes in `src/ds.css`, shared components
 `src/components/ds/` (toned Portrait, Pips, Meter, SecHead, Chips, Lane/CallCard, EvLine…).

@@ -169,7 +169,8 @@ pub async fn recompute(db: &sqlx::PgPool, report_id: i64) -> Result<(), sqlx::Er
 
 /// GET /api/scouting — list, from the most recent to the oldest (without facts or analysis).
 pub async fn list(State(s): State<AppState>) -> Resp {
-    let v: J = sqlx::query_scalar(&format!(
+    // SAFETY (audited): only the `STATUS_SQL` constant is interpolated, never user input.
+    let v: J = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT COALESCE(jsonb_agg(x ORDER BY x->>'created_at' DESC), '[]'::jsonb) FROM (
            SELECT jsonb_build_object(
              'id', r.id, 'title', r.title, 'target_name', r.target_name,
@@ -182,7 +183,7 @@ pub async fn list(State(s): State<AppState>) -> Resp {
              'analysis_imported_at', r.analysis_imported_at,
              'status', {STATUS_SQL}) x
            FROM scouting_reports r) t"
-    ))
+    )))
     .fetch_one(&s.db)
     .await
     .map_err(db_err)?;
@@ -231,7 +232,8 @@ fn index_of(snapshot: &J) -> BTreeMap<String, FactRef> {
 /// GET /api/scouting/{id} — complete report: facts (snapshot), games, roster detection,
 /// analysis with evidence resolved against the CURRENT facts, derived status.
 pub async fn get(State(s): State<AppState>, Path(id): Path<i64>) -> Resp {
-    let v: Option<J> = sqlx::query_scalar(&format!(
+    // SAFETY (audited): only the `STATUS_SQL` constant is interpolated, never user input.
+    let v: Option<J> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT jsonb_build_object(
            'id', r.id, 'title', r.title, 'target_name', r.target_name,
            'roster', r.roster, 'anchors', r.anchors,
@@ -251,7 +253,7 @@ pub async fn get(State(s): State<AppState>, Path(id): Path<i64>) -> Resp {
                       FROM jsonb_array_elements(g.summary->'teams'->1) p)))
              ORDER BY g.played_at, g.id) FROM scouting_games g WHERE g.report_id = r.id), '[]'::jsonb))
          FROM scouting_reports r WHERE r.id = $1"
-    ))
+    )))
     .bind(id)
     .fetch_optional(&s.db)
     .await

@@ -272,12 +272,13 @@ mod tests {
             .execute(&mut *conn)
             .await
             .unwrap();
-        let plan: Vec<(String,)> = sqlx::query_as(&format!("EXPLAIN {LINEUP_SQL}"))
-            .bind(&toons)
-            .bind(WINDOW)
-            .fetch_all(&mut *conn)
-            .await
-            .unwrap();
+        let plan: Vec<(String,)> =
+            sqlx::query_as(sqlx::AssertSqlSafe(format!("EXPLAIN {LINEUP_SQL}")))
+                .bind(&toons)
+                .bind(WINDOW)
+                .fetch_all(&mut *conn)
+                .await
+                .unwrap();
         sqlx::query("RESET enable_seqscan")
             .execute(&mut *conn)
             .await
