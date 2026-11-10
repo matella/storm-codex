@@ -1,0 +1,5 @@
+[application]
+name = "dioxus-overlay"
+
+[web.app]
+title = "Cast overlay (Dioxus spike)"

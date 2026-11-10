@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Spike checks</title>
+    <link data-trunk rel="rust" data-wasm-opt="z"
+          data-wasm-opt-params="--enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext --enable-mutable-globals --enable-reference-types --enable-multivalue" />
+  </head>
+  <body>
+    <canvas id="map" width="640" height="640"></canvas>
+    <pre id="result"></pre>
+    <div id="patch"></div>
+  </body>
+</html>

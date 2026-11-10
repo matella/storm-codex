@@ -80,7 +80,7 @@ Measured on `main` at `ee4bd53`:
 |---|---|
 | Where it runs | In the browser, as WebAssembly, served by Axum. No native-only UI toolkit (Slint, egui): OBS needs a real web page. |
 | Rendering mode | Client-side rendering only (static files, like today). No server-side rendering in Axum. |
-| Candidates | Leptos and Dioxus (web target). The step-0 spike decides between them (§7). |
+| Framework | **Leptos 0.8 (client-side rendering)**, chosen by the operator on 2026-11-11 after the step-0 spike (`spike/frontend-rust/RESULTS.md`). Reason: with all five overlay scenes Leptos is ≈ 219 kB transferred against the 300 kB limit (≈ 27 % margin) and Dioxus ≈ 287 kB (≈ 4 %), and an overlay over the limit ends the port. Dioxus 0.7 was the alternative. **This is a framework choice, not yet the go decision**: the real-OBS check (operator) and the cold time-to-first-scene on the chosen framework are still required (§7). |
 | Server/API | Unchanged. The Rust front-end calls the same JSON endpoints. |
 | Shared types | The front-end may depend on server-side Rust types only if they are moved into a small, WASM-compatible crate; it must never pull `sqlx`, `tokio` or `axum` into the WASM build. Whether to share types or keep hand-written ones is the spike's call. |
 | Charts | Hand-written SVG components, as today. |

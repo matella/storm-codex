@@ -1,0 +1,12 @@
+# Step 0 spike of the Rust front-end migration (docs/specs/2026-11-09-rust-frontend-migration-design.md §7).
+# Throwaway code, its own workspace and lockfile, excluded from the root workspace.
+[workspace]
+resolver = "2"
+members = ["common", "leptos-overlay", "dioxus-overlay", "checks", "leptos-profile", "dioxus-profile", "leptos-cast", "dioxus-cast"]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

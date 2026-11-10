@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Cast overlay (Leptos spike)</title>
+    <link data-trunk rel="css" href="../common/cast-overlay.css" />
+    <link data-trunk rel="css" href="../common/postgame.css" />
+    <link data-trunk rel="css" href="../common/draft-overlay.css" />
+    <!-- wasm-opt 123 (bundled with trunk) rejects what rustc 1.94 emits unless these features are enabled -->
+    <link data-trunk rel="rust" data-wasm-opt="z"
+          data-wasm-opt-params="--enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext --enable-mutable-globals --enable-reference-types --enable-multivalue" />
+  </head>
+  <body></body>
+</html>

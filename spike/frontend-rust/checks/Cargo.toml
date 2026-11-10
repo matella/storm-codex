@@ -1,0 +1,13 @@
+[package]
+name = "checks"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+ammonia = "4"
+gloo-timers = { version = "0.3", features = ["futures"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "CanvasRenderingContext2d", "MediaRecorder", "MediaRecorderOptions", "MediaStream", "Blob", "BlobEvent", "Event"] }

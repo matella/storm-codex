@@ -1,0 +1,5 @@
+[application]
+name = "dioxus-cast"
+
+[web.app]
+title = "Cast control room (Dioxus spike)"

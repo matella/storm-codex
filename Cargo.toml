@@ -1,8 +1,8 @@
 [workspace]
 resolver = "2"
 members = ["crates/storm-replay", "crates/storm-stats", "crates/storm-codex-server", "crates/storm-replay-viewer", "crates/storm-lobby"]
-# The milestone 0 spike is frozen (its own lockfile) — it is not part of the workspace.
-exclude = ["spike/storm-decode"]
+# The spikes (milestone 0, Rust front-end step 0) have their own lockfiles — they are not part of the workspace.
+exclude = ["spike/storm-decode", "spike/frontend-rust"]
 
 [workspace.package]
 edition = "2021"

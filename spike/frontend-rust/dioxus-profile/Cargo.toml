@@ -1,0 +1,13 @@
+[package]
+name = "dioxus-profile"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+dioxus = { version = "0.7.10", features = ["web", "router"] }
+spike-common = { path = "../common" }
+dioxus-router = { version = "0.7", optional = true }
+
+[features]
+split = ["dioxus/wasm-split", "dep:dioxus-router", "dioxus-router/wasm-split"]

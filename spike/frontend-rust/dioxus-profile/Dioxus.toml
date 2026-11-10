@@ -1,0 +1,5 @@
+[application]
+name = "dioxus-profile"
+
+[web.app]
+title = "Player (Dioxus spike)"
