@@ -52,6 +52,7 @@ pub enum Tone {
     Pick,
     Plain,
     Loss,
+    Red,
 }
 
 impl Tone {
@@ -60,6 +61,7 @@ impl Tone {
             Tone::Ban => "ban",
             Tone::Pick => "pick",
             Tone::Loss => "loss",
+            Tone::Red => "red",
             Tone::Plain => "plain",
         }
     }
@@ -100,6 +102,7 @@ pub fn Portrait(
     #[prop(into)] hero: String,
     #[prop(default = 40)] size: u32,
     #[prop(default = Tone::Plain)] tone: Tone,
+    #[prop(optional)] class: &'static str,
 ) -> impl IntoView {
     let dim = use_dim();
     let broken = RwSignal::new(false);
@@ -111,7 +114,7 @@ pub fn Portrait(
     let ini = initials(&hero);
     let (title, alt) = (hero.clone(), hero);
     view! {
-        <span class=format!("ds-pt ds-pt-{}", tone.class()) style=style title=title>
+        <span class=format!("ds-pt ds-pt-{}{}{class}", tone.class(), if class.is_empty() { "" } else { " " }) style=style title=title>
             {move || match icon() {
                 Some(src) if !broken.get() => view! {
                     <img src=src alt=alt.clone() loading="lazy" on:error=move |_| broken.set(true) />
@@ -123,18 +126,24 @@ pub fn Portrait(
     }
 }
 
-/// Section heading with its two-digit number.
+/// Section heading with its two-digit number. `sub` is plain text; `children`, when given, replace it with rich
+/// content (a pill that toggles a list).
 #[component]
 pub fn SecHead(
     num: u32,
     #[prop(into)] title: String,
     #[prop(optional, into)] sub: Option<String>,
+    #[prop(optional)] children: Option<ChildrenFn>,
 ) -> impl IntoView {
     view! {
         <div class="ds-sec-hd">
             <span class="num">{format!("{num:02}")}</span>
             <h2>{title}</h2>
-            {sub.map(|s| view! { <small>{s}</small> })}
+            {match (children, sub) {
+                (Some(c), _) => Some(view! { <small>{c()}</small> }.into_any()),
+                (None, Some(s)) => Some(view! { <small>{s}</small> }.into_any()),
+                (None, None) => None,
+            }}
         </div>
     }
 }

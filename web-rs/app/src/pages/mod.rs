@@ -5,7 +5,10 @@ pub mod leagues;
 pub mod maps;
 pub mod matches;
 pub mod patches;
+pub mod player;
+pub mod players;
 pub mod session;
+pub mod synergies;
 
 use leptos::prelude::*;
 

@@ -16,7 +16,7 @@ use storm_web_core::route::LEGACY_REDIRECTS;
 use layout::Layout;
 use pages::{
     heroes::Heroes, leagues::Leagues, maps::Maps, matches::Matches, patches::Patches,
-    session::Session, Pending,
+    player::Player, players::Players, session::Session, synergies::Synergies, Pending,
 };
 
 /// Redirect of an old page (`legacyRoutes.ts`), kept for bookmarks.
@@ -35,11 +35,11 @@ fn App() -> impl IntoView {
                     <Route path=path!("live") view=|| view! { <Pending name="Live" /> } />
                     <Route path=path!("matches") view=Matches />
                     <Route path=path!("match/:id") view=|| view! { <Pending name="Match" /> } />
-                    <Route path=path!("players") view=|| view! { <Pending name="Players" /> } />
-                    <Route path=path!("player/:toon") view=|| view! { <Pending name="Player" /> } />
+                    <Route path=path!("players") view=Players />
+                    <Route path=path!("player/:toon") view=Player />
                     <Route path=path!("heroes") view=Heroes />
                     <Route path=path!("hero/:name") view=|| view! { <Pending name="Hero" /> } />
-                    <Route path=path!("synergies") view=|| view! { <Pending name="Synergies" /> } />
+                    <Route path=path!("synergies") view=Synergies />
                     <Route path=path!("patches") view=Patches />
                     <Route path=path!("hero-changes") view=|| view! { <Pending name="Hero changes" /> } />
                     <Route path=path!("patch/:id") view=|| view! { <Pending name="Patch" /> } />

@@ -1,6 +1,12 @@
 # STATUS — read first, update last
 
-## Rust front-end migration — step 3 in progress: Session and Matches added (2026-11-11)
+## Rust front-end migration — step 3 in progress: Players, Player, Synergies added (2026-11-11)
+Third batch (PR #27): **Players** (debounced search, `?q=`), **Player** (cover, hero pool, recent games, chat habits; the Identity tab is a
+placeholder until step 4 because it writes with the admin token) and **Synergies**, all DOM-identical to React on real data. Logic in
+`core/players.rs` (62 native tests). **App size: 428 kB gzip with 9 pages** (361 kB with 6): the size pass the operator postponed is now
+overdue before the remaining pages. Remaining in step 3: Hero, Trends, Hero changes, Patch, Live, Match detail.
+
+### Earlier: Session and Matches added
 Second batch (PR #27): pages **Session** and **Matches** (DOM identical to React on real data; Matches filters live in the URL and were
 exercised: mode, result, MVP, map search, reset, CSV/JSON links, row click and back). Logic in `core/dashboard.rs` (last session with the
 3 h gap, tallies, filter and URL parameters), 58 native tests. **App size is now 361 kB gzip with 6 pages** (was 274 kB with 4): each page
