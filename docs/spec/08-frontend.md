@@ -97,9 +97,8 @@ rule); the requests of `gloo-net` carry a trailing `&` after an existing query s
 Status: the six OBS sources are built and checked in the browser against React on real and synthetic data (normalised
 DOM identical for ticker, widget with and without MVP, queue with mixed modes / awards / two operator accounts / a streak and
 the music card, now playing default / `?mini` / `?reveal`, draft overlay with a skin, cast overlay; the reveal hold of about 2.6 s
-observed). **Real-OBS check pending for each source (operator).** Known difference: the JetBrains Mono font of `.mono` is loaded
-from Google Fonts (React self-hosts it; to self-host before the switch). The app bundle is below.
-Contract: **each bundle stays <= 300 kB gzip** (`scripts/check-web-rs-size.sh`, enforced in CI; `overlay` 229 kB and `sources`
+observed). **Real-OBS check pending for each source (operator).** JetBrains Mono (400/600 in `sources`, 700 in `overlay`, latin subset, `fonts/` next to each bundle) is self-hosted, so no OBS source needs Google Fonts for it; the overlay still loads Cinzel and Oswald from Google Fonts, exactly like the React overlay. The app bundle is below.
+Contract: **OBS bundles stay <= 300 kB gzip; the app bundle stays <= 1 MB brotli** (911 kB on 2026-11-11; the server negotiates brotli; `SIZE_CODEC=br` in the script) (`scripts/check-web-rs-size.sh`, enforced in CI; `overlay` 229 kB and `sources`
 191 kB on 2026-11-11). Putting the session and music sources in the overlay bundle gave 314 kB (the view machinery is linked once per
 bundle), hence two bundles: an OBS source only loads the bundle of its family. One bundle per page family: the sanitiser
 (`ammonia`, about 300 kB) must never be linked into an OBS bundle.
