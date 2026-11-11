@@ -1,5 +1,14 @@
 # STATUS — read first, update last
 
+## Rust front-end migration — step 1 foundation started: `web-rs/` + `/v2` (2026-11-11)
+Started **before** the real-OBS go (operator's call: "continue"): React stays at `/`, everything lives under `/v2/`, so it is
+discardable if the OBS check fails. Done: `web-rs/` workspace (`core`, `overlay`), the cast overlay (five scenes) served at
+`/v2/cast/overlay` by the server (`WEB_V2_DIR`, test `v2_serves_app_and_overlay_pages`), CI job `web-rs` with the 300 kB size budget
+(227 kB), docs (04, 08, 09, 10). GADS 1.3.0 pulled (`gads/standard/CODING_PRINCIPLES.md`: surgical changes, no speculative code):
+only what the overlay uses was carried over from the spike. **Blockers**: (1) real-OBS check of `/v2/cast/overlay` (operator) before the
+go is final; (2) checkpoint after step 2 (OBS sources): the operator decides whether to continue; (3) the switch needs approval.
+**Next**: `/v2/draft/overlay`, `/ticker`, `/now-playing`, `/widget`, `/queue` (each needs its own real-OBS check), then the checkpoint.
+
 ## Rust front-end migration — Leptos chosen (2026-11-11)
 The operator picked **Leptos** after the step-0 spike (overlay with all scenes ≈ 219 kB transferred vs
 ≈ 287 kB for Dioxus, 300 kB limit). Decision recorded in §6 of the spec. **Still open before the go**: real-OBS

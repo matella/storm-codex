@@ -81,6 +81,35 @@ jobs:
       - name: build (tsc + vite)
         run: npm run build
         working-directory: web
+  # Rust front-end (web-rs, Leptos → wasm), built under /v2 while it is ported. Not yet in the image or in `publish`.
+  web-rs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: web-rs
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: trunk
+      - name: clippy (native: core)
+        run: cargo clippy --all-targets -- -D warnings
+        working-directory: web-rs
+      - name: clippy (wasm32: every crate)
+        run: cargo clippy --target wasm32-unknown-unknown --workspace -- -D warnings
+        working-directory: web-rs
+      - name: tests (core)
+        run: cargo test
+        working-directory: web-rs
+      - name: build the overlay bundle (trunk)
+        run: trunk build --release
+        working-directory: web-rs/overlay
+      - name: size budget (overlay <= 300 kB gzip)
+        run: sh scripts/check-web-rs-size.sh web-rs/dist/overlay 300000
   # storm-codex image on ghcr.io: only on push (main or tag v*), only if everything is green.
   # Tags: `latest` (main), `sha-<commit>` (rollback possible), and the git tag name.
   publish:

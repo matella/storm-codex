@@ -15,6 +15,9 @@ pub struct Config {
     pub admin_token: Option<String>,
     /// Folder of the built front (web/dist) served on `/`; empty = serves only the API.
     pub web_dir: Option<PathBuf>,
+    /// Folder of the built Rust front-end (`web-rs`, Leptos) served under `/v2/` while it is ported;
+    /// empty = no `/v2`. Holds `overlay/` (OBS sources) and `app/`, one Trunk output each.
+    pub web_v2_dir: Option<PathBuf>,
     /// Jarvis Redis (optional); missing = no event emission.
     pub redis_url: Option<String>,
     pub jarvis_channel: String,
@@ -56,6 +59,10 @@ impl Config {
                 .unwrap_or(5 * 1024 * 1024 * 1024),
             admin_token: std::env::var("ADMIN_TOKEN").ok().filter(|s| !s.is_empty()),
             web_dir: std::env::var("WEB_DIR")
+                .ok()
+                .map(PathBuf::from)
+                .filter(|p| p.is_dir()),
+            web_v2_dir: std::env::var("WEB_V2_DIR")
                 .ok()
                 .map(PathBuf::from)
                 .filter(|p| p.is_dir()),

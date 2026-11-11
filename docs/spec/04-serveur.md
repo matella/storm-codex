@@ -167,6 +167,7 @@ Design: `docs/specs/2026-10-24-feed-live-en-partie-design.md`.
 | `RAW_CACHE_DIR` / `RAW_CACHE_MAX_BYTES` | `./.raw-cache` / 5 GiB | LRU cache of dumps |
 | `ADMIN_TOKEN` | empty = **open mode** | empty: no admin auth (LAN/Tailscale self-hosting); set: Bearer required on admin writes |
 | `WEB_DIR` | empty = API only | built front-end served on `/` (SPA fallback, index as `no-cache`) |
+| `WEB_V2_DIR` | empty = no `/v2` | Rust front-end (`web-rs/dist`) served under `/v2/`: `overlay/` (OBS sources) and `app/`, one Trunk output each. Fingerprinted files are cached for a year, a missing file-like path answers 404, any other path returns the bundle's `index.html` (`no-cache`, read at each request): the OBS routes (`/v2/cast/overlay`, `/v2/draft/overlay`, `/v2/ticker`, `/v2/now-playing`, `/v2/widget`, `/v2/queue`) get `overlay/index.html`, everything else `app/index.html` |
 | `IMAGES_DIR` | `./.images` | vendored images, served on `/images` |
 | `REDIS_URL` / `JARVIS_CHANNEL` | empty = no emission / `jarvis:events` (box production: `storm-codex:match_completed`) | Jarvis events |
 | `HOTSPATCHNOTES_URL` / `REFERENTIAL_URL` | empty | reference data (see above) |

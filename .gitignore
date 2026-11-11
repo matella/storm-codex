@@ -19,3 +19,7 @@ tools/parity-harness/node_modules/
 # OS / divers
 .DS_Store
 backups/
+
+# Rust front-end (web-rs)
+/web-rs/target/
+/web-rs/dist/
