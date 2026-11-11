@@ -209,6 +209,7 @@ async fn run() -> Result<(), String> {
     }
     let bind = state.cfg.bind_addr.clone();
     let app = api_router(&state);
+    let app = serve_v2(app, state.cfg.web_v2_dir.as_deref());
     let app = serve_spa(app, state.cfg.web_dir.as_deref())
         .with_state(state)
         // Request body limit: the axum default (2 MB) rejected with 413 — BEFORE the handler, so
@@ -542,6 +543,62 @@ fn serve_spa<S: Clone + Send + Sync + 'static>(
     }
 }
 
+/// Page of the Rust front-end for a path under `/v2` (without the prefix): the OBS sources are served by the
+/// small overlay bundle (`overlay/`, kept under the overlay size limit), everything else by the app (`app/`).
+fn v2_page(path: &str) -> &'static str {
+    const OVERLAYS: [&str; 6] = [
+        "/ticker",
+        "/now-playing",
+        "/widget",
+        "/queue",
+        "/draft/overlay",
+        "/cast/overlay",
+    ];
+    if OVERLAYS.contains(&path.trim_end_matches('/')) {
+        "overlay/index.html"
+    } else {
+        "app/index.html"
+    }
+}
+
+/// Rust front-end under `/v2/` (one Trunk output per bundle: `overlay/` at `/v2/overlay/`, `app/` at `/v2/app/`): files are fingerprinted (cacheable for a
+/// year); a path that looks like a file and does not exist answers 404 (never an HTML page instead of a
+/// `.wasm`); any other path returns the page of `v2_page` (status 200, `no-cache`, read at each request so a
+/// rebuild is picked up without restarting the server). React keeps `/`.
+fn serve_v2<S: Clone + Send + Sync + 'static>(
+    app: Router<S>,
+    dir: Option<&std::path::Path>,
+) -> Router<S> {
+    let Some(dir) = dir else { return app };
+    let root = dir.to_path_buf();
+    let page = axum::routing::get(move |uri: axum::http::Uri| {
+        let root = root.clone();
+        async move {
+            use axum::response::IntoResponse;
+            let path = uri.path().strip_prefix("/v2").unwrap_or(uri.path());
+            if path.rsplit('/').next().is_some_and(|s| s.contains('.')) {
+                return StatusCode::NOT_FOUND.into_response();
+            }
+            match tokio::fs::read_to_string(root.join(v2_page(path))).await {
+                Ok(html) => (
+                    [(axum::http::header::CACHE_CONTROL, "no-cache")],
+                    axum::response::Html(html),
+                )
+                    .into_response(),
+                Err(_) => StatusCode::NOT_FOUND.into_response(),
+            }
+        }
+    });
+    let files = tower_http::set_header::SetResponseHeader::if_not_present(
+        tower_http::services::ServeDir::new(dir)
+            .append_index_html_on_directories(false)
+            .fallback(page),
+        axum::http::header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("public, max-age=31536000, immutable"),
+    );
+    app.nest_service("/v2", files)
+}
+
 async fn health(State(state): State<AppState>) -> (StatusCode, Json<serde_json::Value>) {
     let db_up = sqlx::query("SELECT 1").execute(&state.db).await.is_ok();
     let code = if db_up {
@@ -615,6 +672,59 @@ mod spa_tests {
         }
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    /// `/v2`: fingerprinted files cacheable, overlay routes on `overlay/index.html`, other routes on `app/index.html`,
+    /// a missing file 404, never an HTML page instead of a `.wasm`.
+    #[tokio::test]
+    async fn v2_serves_app_and_overlay_pages() {
+        let dir = std::env::temp_dir().join(format!("storm-codex-v2-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(dir.join("app")).unwrap();
+        std::fs::create_dir_all(dir.join("overlay")).unwrap();
+        std::fs::write(dir.join("app/index.html"), "<html>app</html>").unwrap();
+        std::fs::write(dir.join("overlay/index.html"), "<html>overlay</html>").unwrap();
+        std::fs::write(dir.join("overlay/a-123.wasm"), "wasm").unwrap();
+        let app = super::serve_v2(axum::Router::<()>::new(), Some(&dir));
+        let get = |path: &'static str| {
+            let app = app.clone();
+            async move {
+                let r = app
+                    .oneshot(Request::get(path).body(Body::empty()).unwrap())
+                    .await
+                    .unwrap();
+                let status = r.status();
+                let cache = r
+                    .headers()
+                    .get(header::CACHE_CONTROL)
+                    .map(|v| v.to_str().unwrap().to_string());
+                let body = axum::body::to_bytes(r.into_body(), 1 << 20).await.unwrap();
+                (status, cache, String::from_utf8_lossy(&body).to_string())
+            }
+        };
+        let (st, cache, _) = get("/v2/overlay/a-123.wasm").await;
+        assert_eq!(
+            (st, cache.as_deref()),
+            (StatusCode::OK, Some("public, max-age=31536000, immutable"))
+        );
+        assert_eq!(
+            get("/v2/overlay/absent.wasm").await.0,
+            StatusCode::NOT_FOUND
+        );
+        for (path, page) in [
+            ("/v2", "app"),
+            ("/v2/", "app"),
+            ("/v2/matches/12", "app"),
+            ("/v2/cast/overlay", "overlay"),
+            ("/v2/draft/overlay", "overlay"),
+            ("/v2/ticker/", "overlay"),
+        ] {
+            let (st, cache, body) = get(path).await;
+            assert_eq!(st, StatusCode::OK, "{path}");
+            assert_eq!(cache.as_deref(), Some("no-cache"), "{path}");
+            assert!(body.contains(page), "{path}: {body}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 #[cfg(test)]
@@ -648,6 +758,7 @@ pub(crate) mod api_tests {
             raw_cache_max_bytes: 64 * 1024 * 1024,
             admin_token: admin_token.map(str::to_owned),
             web_dir: None,
+            web_v2_dir: None,
             redis_url: None,
             jarvis_channel: "test".into(),
             azure_push_url: None,

@@ -9,6 +9,9 @@ cargo run -p storm-codex-server                  # automatic migrations, :8088
 npm run dev --prefix web                         # or build: npm run build --prefix web + WEB_DIR
 ```
 
+Rust front-end (`web-rs/`, needs `rustup target add wasm32-unknown-unknown` and `trunk`): `cd web-rs/overlay && trunk build --release`,
+then run the server with `WEB_V2_DIR=web-rs/dist` and open `/v2/cast/overlay`. Not part of the Docker image yet.
+
 Tests: `cargo test` (the projection test is skipped without `DATABASE_URL`); parity:
 `tools/parity-harness/`; benches: `storm-stats-dump --bench`, `backfill_bench.py`.
 
@@ -58,6 +61,8 @@ Tests: `cargo test` (the projection test is skipped without `DATABASE_URL`); par
   no target qualify.
 - `web`: `npm ci`, `npm audit --omit=dev --audit-level=high` (dependencies shipped in the
   bundle), `npm test` (vitest), `npm run build`. Node version: `.nvmrc` (22).
+- `web-rs`: the Rust front-end (`web-rs/`): clippy native (`core`) and wasm32 (every crate), `cargo test` (core), `trunk build --release`
+  of the overlay bundle and its size budget (<= 300 kB gzip, `scripts/check-web-rs-size.sh`). Not a `publish` gate until the Dockerfile builds it.
 - `publish`: **only on push** (or manual run) **and only if the four previous jobs
   are green** (`needs`). Pushes the image to `ghcr.io/matella/storm-codex` with the
   tags `sha-<first 12 characters of the commit>` (always — allows rollback),

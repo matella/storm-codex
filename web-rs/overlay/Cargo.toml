@@ -1,0 +1,13 @@
+[package]
+name = "storm-web-overlay"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "OBS sources of the Rust front-end (cast overlay first): one small bundle, kept apart from the app."
+
+[lints]
+workspace = true
+
+[dependencies]
+leptos = { version = "0.8.23", features = ["csr"] }
+storm-web-core = { path = "../core" }

@@ -1,0 +1,21 @@
+# Rust front-end (Leptos, client-side rendering), ported page by page from `web/` — see
+# docs/specs/2026-11-09-rust-frontend-migration-design.md. Its own workspace and lockfile: it builds for
+# wasm32-unknown-unknown (Trunk) and is excluded from the server's workspace. Served under `/v2/` until the switch.
+[workspace]
+resolver = "2"
+members = ["core", "overlay"]
+# `overlay` and the other front-end crates are wasm-only: native commands (test, clippy) cover `core`, the rest is
+# checked with `--target wasm32-unknown-unknown` (see docs/spec/10-developpement.md).
+default-members = ["core"]
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "warn"
+
+# Small bundles are a contract (OBS sources: <= 300 kB transferred, see docs/spec/08-frontend.md).
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

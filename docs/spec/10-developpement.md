@@ -45,6 +45,7 @@ working. Already-applied SQL migrations are never edited, so their French commen
 | Stats logic (`storm-stats/src/process/`) | `03-storm-stats.md` (any divergence → tolerances.json) | **parity diff green again** (`tools/parity-harness/`) |
 | Decoding (`storm-replay`) | `02-storm-replay.md` | heroprotocol crosscheck + mini-corpus |
 | Front-end page/route/overlay | `08-frontend.md` | `npm test` + `npm run build` green + browser check on real data |
+| Rust front-end (`web-rs/`) page/crate | `08-frontend.md` (Rust section) | `cargo clippy` native + `--target wasm32-unknown-unknown`, `cargo test` in `web-rs/`, `trunk build`, size budget, browser check on real data side by side with React (+ real OBS for OBS sources) |
 | Pure helper in `web/src/api.ts` | — (if the UI contract does not change) | vitest test in `api.test.ts` |
 | Env variable, compose, Dockerfile, CI | `04-serveur.md` / `09-operations.md` | build/deployment tested |
 | WS or Jarvis event | `07-evenements.md` | event observed (WS or Redis) |

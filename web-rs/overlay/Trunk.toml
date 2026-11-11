@@ -1,0 +1,3 @@
+[build]
+dist = "../dist/overlay"
+public_url = "/v2/overlay/"
