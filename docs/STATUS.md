@@ -1,5 +1,14 @@
 # STATUS — read first, update last
 
+## Rust front-end migration — step 3 started: app bundle, layout, 4 pages (2026-11-11)
+After the operator's go ("continue to pages"): new bundle `web-rs/app` (`/v2/app/`, router base `/v2`), with the top bar, the live
+channel (toast, "online", new-patch dot), the onboarding and what's new modals, the `/draft` redirects, and the pages **Heroes, Maps,
+Patch Notes, Leagues** (normalised DOM identical to React on real data). Fonts are now self-hosted (`web-rs/app/fonts`). The other
+pages show a placeholder. **Size**: the app bundle is 274 kB gzip with these 4 pages, so it will pass 300 kB with the other pages and
+the sanitiser; the 300 kB contract is for the OBS bundles, the operator has to set the app budget (CI records the size without a limit
+for now). **Checklist of what remains in step 3**: Session (dashboard), Live, Matches, Match (without Replay 2D), Players, Player, Hero,
+Synergies, Trends, Hero changes, Patch. **Next**: Session and Matches, then the player and hero pages.
+
 ## Rust front-end migration — step 2 done: the six OBS sources are ported (2026-11-11)
 All OBS sources now exist under `/v2/`: `/cast/overlay`, `/draft/overlay` (bundle `overlay`, 229 kB gzip) and `/ticker`, `/widget`,
 `/queue`, `/now-playing` (+ `?mini`, `?reveal`) (bundle `sources`, 191 kB gzip). Each checked in the browser against React: normalised DOM

@@ -131,10 +131,15 @@ pub fn set_body_transparent() {
     }
 }
 
-#[derive(Deserialize)]
-struct Event {
-    #[serde(rename = "type")]
-    kind: String,
+/// An event of the `/ws` channel with the few fields the toasts show (`map` of a parsed match, `name` of a patch).
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct LiveEvent {
+    #[serde(rename = "type", default)]
+    pub kind: String,
+    #[serde(default)]
+    pub map: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 /// Calls `refresh` on every `cast.updated`, after each (re)connection, and every 10 s.
@@ -149,8 +154,17 @@ pub fn start_live(refresh: impl Fn() + Clone + 'static) {
 /// Same channel for several consumers: `on` gets `"poll"` every 10 s, `"open"` after each (re)connection and
 /// the `type` of every event received (`cast.updated`, `draft.updated`, ...).
 pub fn start_live_events(on: impl Fn(&str) + Clone + 'static) {
+    start_live_full(move |e| on(&e.kind));
+}
+
+/// Same as `start_live_events`, with the whole event (the synthetic `poll` and `open` events have only a `kind`).
+pub fn start_live_full(on: impl Fn(&LiveEvent) + Clone + 'static) {
+    let kind = |k: &str| LiveEvent {
+        kind: k.into(),
+        ..LiveEvent::default()
+    };
     let poll = on.clone();
-    Interval::new(10_000, move || poll("poll")).forget();
+    Interval::new(10_000, move || poll(&kind("poll"))).forget();
     wasm_bindgen_futures::spawn_local(async move {
         let loc = web_sys::window().map(|w| w.location());
         let host = loc.as_ref().and_then(|l| l.host().ok()).unwrap_or_default();
@@ -160,12 +174,12 @@ pub fn start_live_events(on: impl Fn(&str) + Clone + 'static) {
         let url = format!("{}://{host}/ws", if wss { "wss" } else { "ws" });
         loop {
             if let Ok(mut ws) = WebSocket::open(&url) {
-                on("open"); // reconnected: re-read what may have been missed
+                on(&kind("open")); // reconnected: re-read what may have been missed
                 while let Some(m) = ws.next().await {
                     match m {
                         Ok(Message::Text(t)) => {
-                            if let Ok(e) = serde_json::from_str::<Event>(&t) {
-                                on(&e.kind);
+                            if let Ok(e) = serde_json::from_str::<LiveEvent>(&t) {
+                                on(&e);
                             }
                         }
                         Ok(_) => {}
@@ -247,4 +261,63 @@ pub fn fmt_day(key: &str) -> String {
         .to_locale_date_string("en-GB", &opts)
         .as_string()
         .unwrap_or_default()
+}
+
+/// `localStorage.getItem`; `None` when absent or when storage is blocked.
+pub fn storage_get(key: &str) -> Option<String> {
+    web_sys::window()?
+        .local_storage()
+        .ok()??
+        .get_item(key)
+        .ok()?
+}
+
+/// `localStorage.setItem`; a blocked storage is ignored (the page works without it).
+pub fn storage_set(key: &str, value: &str) {
+    if let Some(Some(s)) = web_sys::window().map(|w| w.local_storage().ok().flatten()) {
+        let _ = s.set_item(key, value);
+    }
+}
+
+/// `location.origin` (shown in the onboarding as the OBS source URLs).
+pub fn origin() -> String {
+    web_sys::window()
+        .and_then(|w| w.location().origin().ok())
+        .unwrap_or_default()
+}
+
+/// Runs `f` once after `ms` milliseconds (`setTimeout`).
+pub fn after_ms(ms: u32, f: impl FnOnce() + 'static) {
+    gloo_timers::callback::Timeout::new(ms, f).forget();
+}
+
+/// Query string of an aggregate request: the dates are local midnights converted to ISO, `to` made inclusive
+/// (`aggParams`).
+pub fn agg_params(f: &crate::aggregates::AggFilter) -> String {
+    let iso = |d: &str, plus_days: f64| -> Option<String> {
+        let date = js_sys::Date::new(&format!("{d}T00:00:00").into());
+        if date.get_time().is_nan() {
+            return None;
+        }
+        date.set_date(date.get_date() + plus_days as u32);
+        Some(date.to_iso_string().into())
+    };
+    let from = f.from.as_deref().and_then(|d| iso(d, 0.0));
+    let to = f.to.as_deref().and_then(|d| iso(d, 1.0));
+    crate::aggregates::agg_query(f, from.as_deref(), to.as_deref())
+}
+
+/// `DateBlock` of the patch list: the local day of month (two digits) and `Mon YYYY` (en-GB).
+pub fn date_block(iso: &str) -> (String, String) {
+    let d = js_sys::Date::new(&iso.into());
+    let opts = js_sys::Object::new();
+    let _ = js_sys::Reflect::set(&opts, &"month".into(), &"short".into());
+    let month: String = d
+        .to_locale_date_string("en-GB", &opts)
+        .as_string()
+        .unwrap_or_default();
+    (
+        format!("{:02}", d.get_date()),
+        format!("{month} {}", d.get_full_year()),
+    )
 }

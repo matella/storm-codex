@@ -129,6 +129,89 @@ pub fn frame_position(anchor: Anchor, pad: f64, o: Offsets) -> String {
         .join(";")
 }
 
+/// Prefix of the app under the server (`/v2` until the switch, then the router base is empty).
+pub const APP_BASE: &str = "/v2";
+
+/// Real `href` of an app path (`/matches` -> `/v2/matches`): the router only takes over clicks on links inside its
+/// base, and middle-click / copy-link need the full URL.
+pub fn app_href(to: &str) -> String {
+    format!("{APP_BASE}{to}")
+}
+
+/// App path of a location pathname (`/v2/matches` -> `/matches`, `/v2` -> `/`).
+pub fn app_path(pathname: &str) -> &str {
+    match pathname.strip_prefix(APP_BASE) {
+        Some("") => "/",
+        Some(rest) if rest.starts_with('/') => rest,
+        _ => pathname,
+    }
+}
+
+/// `encodeURIComponent`: everything but `A-Za-z0-9 - _ . ! ~ * ' ( )` is percent-encoded (UTF-8).
+pub fn uri_component(s: &str) -> String {
+    let mut out = String::new();
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z'
+            | b'a'..=b'z'
+            | b'0'..=b'9'
+            | b'-'
+            | b'_'
+            | b'.'
+            | b'!'
+            | b'~'
+            | b'*'
+            | b'\''
+            | b'('
+            | b')' => out.push(b as char),
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
+/// Top-bar tabs of the app: (path, label). Same order as `Layout.tsx`.
+pub const TABS: [(&str, &str); 13] = [
+    ("/", "Session"),
+    ("/live", "Live"),
+    ("/matches", "Matches"),
+    ("/players", "Players"),
+    ("/heroes", "Heroes"),
+    ("/maps", "Maps"),
+    ("/synergies", "Synergies"),
+    ("/patches", "Patch Notes"),
+    ("/trends", "Trends"),
+    ("/leagues", "Leagues"),
+    ("/cast", "Cast"),
+    ("/scouting", "Scouting"),
+    ("/admin", "Admin"),
+];
+
+/// `NavLink` active rule: the home tab only on `/`, every other tab on its path and below (`/matches`,
+/// `/matches/...`, not `/matchesx`). `pathname` is the app path, without the `/v2` prefix.
+pub fn tab_active(pathname: &str, to: &str) -> bool {
+    let p = pathname.trim_end_matches('/');
+    if to == "/" {
+        return p.is_empty();
+    }
+    p == to || p.strip_prefix(to).is_some_and(|r| r.starts_with('/'))
+}
+
+/// Old pages absorbed by the cast control room (`legacyRoutes.ts`): path -> destination.
+pub const LEGACY_REDIRECTS: [(&str, &str); 2] = [
+    ("/draft", "/cast?scene=draft"),
+    ("/draft/replay", "/cast?scene=draft"),
+];
+
+/// Where an old path redirects to, if it is one.
+pub fn legacy_redirect(pathname: &str) -> Option<&'static str> {
+    let p = pathname.trim_end_matches('/');
+    LEGACY_REDIRECTS
+        .iter()
+        .find(|(f, _)| *f == p)
+        .map(|(_, t)| *t)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -203,5 +286,42 @@ mod tests {
             frame_position(Anchor::TopRight, 28.0, left),
             "top:28px;left:5.5px"
         );
+    }
+
+    #[test]
+    fn tabs_are_active_on_their_path_and_below() {
+        assert!(tab_active("/", "/"));
+        assert!(!tab_active("/matches", "/"));
+        assert!(tab_active("/matches", "/matches"));
+        assert!(tab_active("/matches/", "/matches"));
+        assert!(!tab_active("/match/12", "/matches"));
+        assert!(tab_active("/scouting/7", "/scouting"));
+        assert!(!tab_active("/scoutingx", "/scouting"));
+    }
+
+    #[test]
+    fn legacy_paths_redirect_to_the_cast_room() {
+        assert_eq!(legacy_redirect("/draft"), Some("/cast?scene=draft"));
+        assert_eq!(legacy_redirect("/draft/replay/"), Some("/cast?scene=draft"));
+        assert_eq!(legacy_redirect("/cast"), None);
+    }
+
+    #[test]
+    fn links_and_locations_convert_with_the_base() {
+        assert_eq!(app_href("/matches"), "/v2/matches");
+        assert_eq!(app_href("/cast?scene=draft"), "/v2/cast?scene=draft");
+        assert_eq!(app_path("/v2/matches"), "/matches");
+        assert_eq!(app_path("/v2"), "/");
+        assert_eq!(app_path("/v2/"), "/");
+        assert_eq!(app_path("/v2x/a"), "/v2x/a");
+    }
+
+    #[test]
+    fn uri_components_are_encoded_like_the_browser_does() {
+        assert_eq!(uri_component("Li-Ming"), "Li-Ming");
+        assert_eq!(uri_component("E.T.C."), "E.T.C.");
+        assert_eq!(uri_component("The Lost Vikings"), "The%20Lost%20Vikings");
+        assert_eq!(uri_component("Blackheart's Bay"), "Blackheart's%20Bay");
+        assert_eq!(uri_component("Lúcio#1/2"), "L%C3%BAcio%231%2F2");
     }
 }

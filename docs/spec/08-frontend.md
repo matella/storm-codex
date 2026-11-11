@@ -65,14 +65,32 @@ Port of this front-end to Rust (Leptos 0.8, client-side rendering, WebAssembly),
 | `core` (`storm-web-core`) | framework-free: wire models (`model.rs`), pure logic ported from `castState.ts` (`logic.rs`, `scenes.rs`), the match-list helpers of the session sources (`session.rs`: mode badge, awards, operator lookup, streak, session totals, Jarvis line, `toFixed`), the music track parser and the reveal state machine (`music.rs`), URL routing and query parameters (`route.rs`), hero reference data (`heroes.rs`), browser I/O (`net.rs`, wasm only: fetch, `/ws` with reconnection, 10 s poll). Native unit tests |
 | `overlay` (`storm-web-overlay`) | cast and draft overlays, output `web-rs/dist/overlay` served at `/v2/overlay/`. The cast overlay with its five scenes (`ingame`, `series` + post-game slides, `lineups`, `draft`, `hide`) and the stand-alone draft overlay (Timeline view, `?skin=`); the three stylesheets are copied unchanged from `web/src/cast/` |
 | `sources` (`storm-web-sources`) | session and music sources, output `web-rs/dist/sources` served at `/v2/sources/`: `/ticker`, `/widget` (`?me=`), `/queue`, `/now-playing` (default card, `?mini`, `?reveal`). Shared tokens in `base.css` (subset of `theme.css`), the reveal stylesheet copied from `web/src/pages/now-playing-reveal.css` |
+| `app` (`storm-web-app`) | the app, output `web-rs/dist/app` served at `/v2/app/`: `leptos_router` with base `/v2` (`main.rs`), top bar + live channel + toast + onboarding / what's new modals (`layout.rs`), shared pieces (`ui.rs`: reference data and operator names loaded once, `Portrait`, `SecHead`, `Link`, `AggFilterBar`, `fetch`), one module per page (`pages/`). CSS copied unchanged from `web/src` (`theme.css`, `ds.css`); the fonts are self-hosted (`fonts/`, `fonts.css`: latin and latin-ext woff2 of the Fontsource files React uses) |
 
-Each bundle picks its page from the URL path (`route.rs`); the server routes each path to its bundle (`04-serveur.md`).
+Each OBS bundle picks its page from the URL path (`route.rs`); the server routes each path to its bundle (`04-serveur.md`).
+
+**App (step 3, in progress).** Links are plain `<a>` with the real `/v2/...` href (`ui::Link`, `route::app_href`): the router takes
+over the click, and middle-click / copy link keep working. Data of a page is read with `ui::fetch` (a `LocalResource`): it reads the
+signals of the page's filter and of `layout::LiveBus` (one counter per kind of live event: matches, patches, draft, cast, live), so
+it is read again when they change, as `invalidateQueries` did. The pure rules (tabs, redirects, live-event effects, aggregates,
+changelog) are in `core` with native tests (`route.rs`, `live.rs`, `aggregates.rs`, `whatsnew.rs`).
+
+| Page | Status (checked in the browser against React, normalised DOM, real data) |
+|---|---|
+| layout, top bar, `/draft` redirects | ported; the active tab, client-side navigation and the redirect were checked |
+| Heroes, Maps, Patch Notes, Leagues | ported, DOM identical to React (Leagues only on the empty list: there are no teams in the dev database) |
+| Session (dashboard), Live, Matches, Match, Players, Player, Hero, Synergies, Trends, Hero changes, Patch | not ported (placeholder page) |
+| Replay 2D, Scouting, Scouting report, Admin, Cast control room | not ported (step 4) |
+
+Known differences from React, all intended: the "online" pill and the toasts are as in React except that a draft update no longer
+flashes "new replay" (it was a mistake in `Layout.tsx`); the "What's new" and onboarding texts are in English (the UI is English by
+rule); the requests of `gloo-net` carry a trailing `&` after an existing query string (ignored by the server).
 
 Status: the six OBS sources are built and checked in the browser against React on real and synthetic data (normalised
 DOM identical for ticker, widget with and without MVP, queue with mixed modes / awards / two operator accounts / a streak and
 the music card, now playing default / `?mini` / `?reveal`, draft overlay with a skin, cast overlay; the reveal hold of about 2.6 s
 observed). **Real-OBS check pending for each source (operator).** Known difference: the JetBrains Mono font of `.mono` is loaded
-from Google Fonts (React self-hosts it; to self-host before the switch). Not ported yet: the app bundle (`app/`), every page.
+from Google Fonts (React self-hosts it; to self-host before the switch). The app bundle is below.
 Contract: **each bundle stays <= 300 kB gzip** (`scripts/check-web-rs-size.sh`, enforced in CI; `overlay` 229 kB and `sources`
 191 kB on 2026-11-11). Putting the session and music sources in the overlay bundle gave 314 kB (the view machinery is linked once per
 bundle), hence two bundles: an OBS source only loads the bundle of its family. One bundle per page family: the sanitiser

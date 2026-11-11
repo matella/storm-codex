@@ -9,8 +9,8 @@ cargo run -p storm-codex-server                  # automatic migrations, :8088
 npm run dev --prefix web                         # or build: npm run build --prefix web + WEB_DIR
 ```
 
-Rust front-end (`web-rs/`, needs `rustup target add wasm32-unknown-unknown` and `trunk`): `trunk build --release` in `web-rs/overlay`
-and in `web-rs/sources`, then run the server with `WEB_V2_DIR=web-rs/dist` and open `/v2/cast/overlay`, `/v2/ticker`... Not part of the Docker image yet.
+Rust front-end (`web-rs/`, needs `rustup target add wasm32-unknown-unknown` and `trunk`): `trunk build --release` in `web-rs/overlay`,
+`web-rs/sources` and `web-rs/app`, then run the server with `WEB_V2_DIR=web-rs/dist` and open `/v2/cast/overlay`, `/v2/ticker`... Not part of the Docker image yet.
 
 Tests: `cargo test` (the projection test is skipped without `DATABASE_URL`); parity:
 `tools/parity-harness/`; benches: `storm-stats-dump --bench`, `backfill_bench.py`.

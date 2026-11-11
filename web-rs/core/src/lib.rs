@@ -1,6 +1,8 @@
 //! Framework-neutral core of the Rust front-end: wire models, pure logic, browser I/O (wasm only).
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+pub mod aggregates;
 pub mod heroes;
+pub mod live;
 pub mod logic;
 pub mod model;
 pub mod music;
@@ -9,3 +11,4 @@ pub mod net;
 pub mod route;
 pub mod scenes;
 pub mod session;
+pub mod whatsnew;

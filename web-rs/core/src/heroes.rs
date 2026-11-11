@@ -7,6 +7,8 @@ use serde::Deserialize;
 pub struct DimHero {
     pub icon: Option<String>,
     pub universe: Option<String>,
+    #[serde(default)]
+    pub role: Option<String>,
 }
 
 /// Tolerant join key between parser hero names and reference names (`Li-Ming` / `LiMing`, `The Lost Vikings`
@@ -86,6 +88,13 @@ impl Dim {
         }
     }
 
+    /// Role of a hero (`Tank`, `Bruiser`... or several joined by a comma); `None` when unknown.
+    pub fn role(&self, hero: &str) -> Option<&str> {
+        self.get(hero)
+            .and_then(|d| d.role.as_deref())
+            .filter(|r| !r.is_empty())
+    }
+
     pub fn icon(&self, hero: &str) -> Option<&str> {
         self.get(hero)
             .and_then(|d| d.icon.as_deref())
@@ -105,6 +114,7 @@ mod tests {
             DimHero {
                 icon: Some("/i/liming.png".into()),
                 universe: Some("Warcraft".into()),
+                role: Some("Ranged Assassin".into()),
             },
         );
         m.insert(
@@ -112,6 +122,7 @@ mod tests {
             DimHero {
                 icon: Some("".into()),
                 universe: Some("Nexus".into()),
+                role: None,
             },
         );
         let d = Dim::new(m);
@@ -124,5 +135,7 @@ mod tests {
         assert_eq!(d.ring(None), "#afa9ec");
         assert_eq!(d.ring_var(Some("Li-Ming")), "var(--u-warcraft)");
         assert_eq!(d.ring_var(Some("Unknown")), "var(--u-nexus)");
+        assert_eq!(d.role("Li-Ming"), Some("Ranged Assassin"));
+        assert_eq!(d.role("The Lost Vikings"), None);
     }
 }

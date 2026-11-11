@@ -1,0 +1,3 @@
+[build]
+dist = "../dist/app"
+public_url = "/v2/app/"
