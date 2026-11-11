@@ -3,20 +3,22 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Side {
+    #[default]
     Blue,
     Red,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Scene {
     Lineups,
     Series,
     Draft,
     Ingame,
+    #[default]
     Hide,
 }
 
@@ -106,6 +108,12 @@ pub struct PlayerSummary {
 /// Replay summary of one game. Pairs are `(blue, red)`; `None` / empty = value absent -> row removed.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 pub struct GameSummary {
+    /// Map of the replay (storm-stats name); absent in an old summary.
+    #[serde(default)]
+    pub map: Option<String>,
+    /// Game date (ISO 8601 UTC).
+    #[serde(default)]
+    pub played_at: Option<String>,
     pub duration_secs: f64,
     pub winner: Side,
     pub takedowns: (u32, u32),
@@ -151,7 +159,7 @@ pub enum LineupMode {
 }
 
 /// `GET /api/draft` (mirror of `DraftState` in api.ts, only what the overlay reads).
-#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
 pub struct DraftState {
     pub format: String,
     pub first_pick: Side,
@@ -163,6 +171,8 @@ pub struct DraftState {
     pub steps: Vec<DraftStep>,
     pub cursor: usize,
     pub assignments: Vec<Option<String>>,
+    #[serde(default)]
+    pub manual_unavailable: Vec<String>,
     #[serde(default)]
     pub series_bans: Vec<String>,
     #[serde(default)]
@@ -208,7 +218,7 @@ pub struct DraftReplay {
     pub interval_ms: f64,
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
 pub struct Slide {
     pub game: Option<u32>,
     pub index: usize,
@@ -218,8 +228,11 @@ pub struct Slide {
     pub since_ms: u64,
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
 pub struct CastSeries {
+    /// Identity of the series (uuid set by "New series"; empty before the first one).
+    #[serde(default)]
+    pub series_id: String,
     pub active: bool,
     pub blue: Team,
     pub red: Team,

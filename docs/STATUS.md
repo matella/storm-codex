@@ -4,8 +4,7 @@
 Step 3 is complete. Step 4 (PR #27): **Scouting** (list and creation) and **Admin** (identity, upload health, tokens, teams, collections)
 are ported and DOM identical to React on real data; Admin writes were exercised on the dev database. New `net::write` (authenticated
 writes with the stored admin token) and `core/scouting.rs`. **Scouting report** is also ported (DOM identical to React on real data; rename, roster, upload, import tested). **Export HTML is not ported yet**
-(the button says so): it needs the `reportHtml.ts` generator in Rust before step 5. The **Player Identity tab** is ported too. Remaining in step 4: Cast control room (with the
-Draft workspace), Export HTML.
+(the button says so): it needs the `reportHtml.ts` generator in Rust before step 5. The **Player Identity tab** is ported too. The **Cast control room** is ported too (rail, scenes, pool, Draft Live and Replay; `core/castctl.rs`; DOM identical to React on every workspace; the destructive actions — New series, winners, replay uploads — were not run against the dev data). Remaining in step 4: **Export HTML** only.
 
 ### Earlier: step 3 complete
 Fifth batch (PR #27): **Match detail** (DOM identical to React on match 2746, SVG attributes included) and **Live** (identical for the idle

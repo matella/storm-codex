@@ -498,6 +498,7 @@ mod tests {
             ],
             cursor: 4,
             assignments: vec![None; 6],
+            manual_unavailable: vec![],
             series_bans: vec![],
             replay: None,
         }

@@ -278,6 +278,7 @@ pub(crate) mod tests {
 
     fn series(scene: Scene, active: bool) -> CastSeries {
         CastSeries {
+            series_id: String::new(),
             active,
             blue: Team::named("Blue team"),
             red: Team::named(" "),
@@ -300,6 +301,8 @@ pub(crate) mod tests {
 
     pub(crate) fn summary() -> GameSummary {
         GameSummary {
+            map: None,
+            played_at: None,
             duration_secs: 600.0,
             winner: Side::Blue,
             takedowns: (3, 1),
