@@ -96,10 +96,10 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: trunk
-      - name: clippy (native: core)
+      - name: "clippy (native, core)"
         run: cargo clippy --all-targets -- -D warnings
         working-directory: web-rs
-      - name: clippy (wasm32: every crate)
+      - name: "clippy (wasm32, every crate)"
         run: cargo clippy --target wasm32-unknown-unknown --workspace -- -D warnings
         working-directory: web-rs
       - name: tests (core)
