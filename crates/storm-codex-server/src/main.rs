@@ -543,25 +543,19 @@ fn serve_spa<S: Clone + Send + Sync + 'static>(
     }
 }
 
-/// Page of the Rust front-end for a path under `/v2` (without the prefix): the OBS sources are served by the
-/// small overlay bundle (`overlay/`, kept under the overlay size limit), everything else by the app (`app/`).
+/// Page of the Rust front-end for a path under `/v2` (without the prefix). The OBS sources are served by two small
+/// bundles, each kept under the 300 kB size limit: `overlay/` (cast and draft overlays) and `sources/` (session
+/// and music sources); everything else by the app (`app/`).
 fn v2_page(path: &str) -> &'static str {
-    const OVERLAYS: [&str; 6] = [
-        "/ticker",
-        "/now-playing",
-        "/widget",
-        "/queue",
-        "/draft/overlay",
-        "/cast/overlay",
-    ];
-    if OVERLAYS.contains(&path.trim_end_matches('/')) {
-        "overlay/index.html"
-    } else {
-        "app/index.html"
+    match path.trim_end_matches('/') {
+        "/cast/overlay" | "/draft/overlay" => "overlay/index.html",
+        "/ticker" | "/now-playing" | "/widget" | "/queue" => "sources/index.html",
+        _ => "app/index.html",
     }
 }
 
-/// Rust front-end under `/v2/` (one Trunk output per bundle: `overlay/` at `/v2/overlay/`, `app/` at `/v2/app/`): files are fingerprinted (cacheable for a
+/// Rust front-end under `/v2/` (one Trunk output per bundle: `overlay/` at `/v2/overlay/`, `sources/` at
+/// `/v2/sources/`, `app/` at `/v2/app/`): files are fingerprinted (cacheable for a
 /// year); a path that looks like a file and does not exist answers 404 (never an HTML page instead of a
 /// `.wasm`); any other path returns the page of `v2_page` (status 200, `no-cache`, read at each request so a
 /// rebuild is picked up without restarting the server). React keeps `/`.
@@ -673,7 +667,8 @@ mod spa_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// `/v2`: fingerprinted files cacheable, overlay routes on `overlay/index.html`, other routes on `app/index.html`,
+    /// `/v2`: fingerprinted files cacheable, cast/draft overlay routes on `overlay/index.html`, session/music sources on
+    /// `sources/index.html`, other routes on `app/index.html`,
     /// a missing file 404, never an HTML page instead of a `.wasm`.
     #[tokio::test]
     async fn v2_serves_app_and_overlay_pages() {
@@ -681,8 +676,10 @@ mod spa_tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::create_dir_all(dir.join("app")).unwrap();
         std::fs::create_dir_all(dir.join("overlay")).unwrap();
+        std::fs::create_dir_all(dir.join("sources")).unwrap();
         std::fs::write(dir.join("app/index.html"), "<html>app</html>").unwrap();
         std::fs::write(dir.join("overlay/index.html"), "<html>overlay</html>").unwrap();
+        std::fs::write(dir.join("sources/index.html"), "<html>sources</html>").unwrap();
         std::fs::write(dir.join("overlay/a-123.wasm"), "wasm").unwrap();
         let app = super::serve_v2(axum::Router::<()>::new(), Some(&dir));
         let get = |path: &'static str| {
@@ -716,7 +713,10 @@ mod spa_tests {
             ("/v2/matches/12", "app"),
             ("/v2/cast/overlay", "overlay"),
             ("/v2/draft/overlay", "overlay"),
-            ("/v2/ticker/", "overlay"),
+            ("/v2/ticker/", "sources"),
+            ("/v2/now-playing", "sources"),
+            ("/v2/widget", "sources"),
+            ("/v2/queue", "sources"),
         ] {
             let (st, cache, body) = get(path).await;
             assert_eq!(st, StatusCode::OK, "{path}");

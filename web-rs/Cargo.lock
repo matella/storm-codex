@@ -1347,6 +1347,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "storm-web-sources"
+version = "0.0.0"
+dependencies = [
+ "leptos",
+ "serde_json",
+ "storm-web-core",
+]
+
+[[package]]
 name = "syn"
 version = "2.0.119"
 source = "registry+https://github.com/rust-lang/crates.io-index"

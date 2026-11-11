@@ -127,6 +127,7 @@ pub fn set_body_transparent() {
         .and_then(|d| d.body())
     {
         let _ = b.style().set_property("background", "transparent");
+        let _ = b.style().set_property("margin", "0");
     }
 }
 
@@ -184,4 +185,66 @@ pub async fn fetch_draft() -> Result<crate::model::DraftState, String> {
 /// Recent heroes of the linked players (`None` query = nobody linked, nothing to fetch).
 pub async fn fetch_lineup(query: &str) -> Result<crate::model::CastLineup, String> {
     get_json(&format!("/api/cast/lineup?{query}")).await
+}
+
+pub fn pathname() -> String {
+    web_sys::window()
+        .and_then(|w| w.location().pathname().ok())
+        .unwrap_or_default()
+}
+
+/// Local calendar day `YYYY-MM-DD` of an ISO date, in the viewer's time zone (not UTC: a game played in the
+/// evening stays on the right local day).
+pub fn local_day(iso: &str) -> String {
+    day_of(&js_sys::Date::new(&iso.into()))
+}
+
+pub fn today_local() -> String {
+    day_of(&js_sys::Date::new_0())
+}
+
+fn day_of(d: &js_sys::Date) -> String {
+    format!(
+        "{}-{:02}-{:02}",
+        d.get_full_year(),
+        d.get_month() + 1,
+        d.get_date()
+    )
+}
+
+/// `GET /api/matches?limit=n`, most recent first.
+pub async fn fetch_matches(limit: u32) -> Result<Vec<crate::session::MatchSummary>, String> {
+    get_json(&format!("/api/matches?limit={limit}")).await
+}
+
+pub async fn fetch_settings() -> Result<crate::session::Settings, String> {
+    get_json("/api/settings").await
+}
+
+/// `GET /api/now-playing`, as the proxy answers it (parsed by `music::parse_track`). Like the React source,
+/// any body that is JSON is read, whatever the status.
+pub async fn fetch_now_playing() -> Result<serde_json::Value, String> {
+    let r = Request::get("/api/now-playing")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    r.json::<serde_json::Value>()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// `fmtDay` of the queue panel: a `YYYY-MM-DD` key as `Mon 09 Nov` (en-GB).
+pub fn fmt_day(key: &str) -> String {
+    let mut it = key.split('-').filter_map(|p| p.parse::<f64>().ok());
+    let (Some(y), Some(m), Some(d)) = (it.next(), it.next(), it.next()) else {
+        return key.to_string();
+    };
+    let opts = js_sys::Object::new();
+    let _ = js_sys::Reflect::set(&opts, &"weekday".into(), &"short".into());
+    let _ = js_sys::Reflect::set(&opts, &"day".into(), &"2-digit".into());
+    let _ = js_sys::Reflect::set(&opts, &"month".into(), &"short".into());
+    js_sys::Date::new_with_year_month_day(y as u32, m as i32 - 1, d as i32)
+        .to_locale_date_string("en-GB", &opts)
+        .as_string()
+        .unwrap_or_default()
 }

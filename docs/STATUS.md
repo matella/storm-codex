@@ -1,5 +1,17 @@
 # STATUS — read first, update last
 
+## Rust front-end migration — step 2 done: the six OBS sources are ported (2026-11-11)
+All OBS sources now exist under `/v2/`: `/cast/overlay`, `/draft/overlay` (bundle `overlay`, 229 kB gzip) and `/ticker`, `/widget`,
+`/queue`, `/now-playing` (+ `?mini`, `?reveal`) (bundle `sources`, 191 kB gzip). Each checked in the browser against React: normalised DOM
+identical on real data and on a synthetic multi-game session (mixed modes, awards, two operator accounts, streak, music card); reveal
+phases observed (big, then mini after about 2.6 s). Logic lives in `web-rs/core` (`session.rs`, `music.rs`, `route.rs`) with native tests
+(35). One bundle for everything came to 314 kB (over the 300 kB contract), so the session and music sources are a second bundle; the server
+routes each path to its bundle (test `v2_serves_app_and_overlay_pages`); CI builds and size-checks both. **Blockers**: (1) real-OBS check
+of each source (operator; `/v2/cast/overlay` was already pending); (2) **checkpoint (spec section 8): the operator decides whether to
+continue with the app pages** (step 3 read-only pages, step 4 interactive pages, step 5 switch); (3) the switch needs approval. **To
+fix before the switch**: self-host JetBrains Mono (loaded from Google Fonts in `base.css` and the cast CSS); the Dockerfile does not
+build `web-rs` yet. **Next** (after the go): app bundle `web-rs/app` and the read-only pages.
+
 ## Rust front-end migration — step 1 foundation started: `web-rs/` + `/v2` (2026-11-11)
 Started **before** the real-OBS go (operator's call: "continue"): React stays at `/`, everything lives under `/v2/`, so it is
 discardable if the OBS check fails. Done: `web-rs/` workspace (`core`, `overlay`), the cast overlay (five scenes) served at

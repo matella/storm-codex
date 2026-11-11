@@ -1,0 +1,3 @@
+[build]
+dist = "../dist/sources"
+public_url = "/v2/sources/"
