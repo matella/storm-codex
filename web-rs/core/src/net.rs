@@ -421,27 +421,89 @@ pub async fn write(
     body: Option<String>,
     token: Option<&str>,
 ) -> Result<(u16, String), String> {
-    let builder = match method {
+    let (content_type, body) = match body {
+        Some(b) => (
+            Some("application/json"),
+            Some(wasm_bindgen::JsValue::from_str(&b)),
+        ),
+        None => (None, None),
+    };
+    write_raw(method, url, content_type, &[], body, token).await
+}
+
+/// Same as [`write`] with any body (`text/plain`, raw bytes) and extra headers.
+pub async fn write_raw(
+    method: &str,
+    url: &str,
+    content_type: Option<&str>,
+    headers: &[(&str, &str)],
+    body: Option<wasm_bindgen::JsValue>,
+    token: Option<&str>,
+) -> Result<(u16, String), String> {
+    let mut builder = match method {
         "PUT" => Request::put(url),
+        "PATCH" => Request::patch(url),
         "DELETE" => Request::delete(url),
         "GET" => Request::get(url),
         _ => Request::post(url),
     };
     let stored = admin_token();
     let token = token.unwrap_or(&stored);
-    let builder = if token.is_empty() {
-        builder
-    } else {
-        builder.header("Authorization", &format!("Bearer {token}"))
-    };
+    if !token.is_empty() {
+        builder = builder.header("Authorization", &format!("Bearer {token}"));
+    }
+    if let Some(ct) = content_type {
+        builder = builder.header("Content-Type", ct);
+    }
+    for (k, v) in headers {
+        builder = builder.header(k, v);
+    }
     let req = match body {
-        Some(b) => builder
-            .header("Content-Type", "application/json")
-            .body(b)
-            .map_err(|e| e.to_string())?,
+        Some(b) => builder.body(b).map_err(|e| e.to_string())?,
         None => builder.build().map_err(|e| e.to_string())?,
     };
     let r = req.send().await.map_err(|e| e.to_string())?;
     let status = r.status();
     Ok((status, r.text().await.unwrap_or_default()))
+}
+
+/// `navigator.clipboard.writeText` (called through `js_sys` because the typed API is unstable in web-sys).
+pub async fn copy_text(text: &str) -> Result<(), String> {
+    let nav = web_sys::window().ok_or("no window")?.navigator();
+    let clipboard = js_sys::Reflect::get(&nav, &"clipboard".into()).map_err(|_| "no clipboard")?;
+    if clipboard.is_undefined() || clipboard.is_null() {
+        return Err("no clipboard".into());
+    }
+    let f: js_sys::Function = js_sys::Reflect::get(&clipboard, &"writeText".into())
+        .map_err(|_| "no writeText")?
+        .into();
+    let p = f
+        .call1(&clipboard, &text.into())
+        .map_err(|_| "copy refused")?;
+    wasm_bindgen_futures::JsFuture::from(js_sys::Promise::from(p))
+        .await
+        .map(|_| ())
+        .map_err(|_| "copy refused".to_string())
+}
+
+/// `window.confirm`; `false` when there is no window.
+pub fn confirm(message: &str) -> bool {
+    web_sys::window().is_some_and(|w| w.confirm_with_message(message).unwrap_or(false))
+}
+
+/// Bytes of a chosen file, as a `Uint8Array` ready to be a request body.
+pub async fn read_file_bytes(file: &web_sys::File) -> Result<wasm_bindgen::JsValue, String> {
+    let buf = wasm_bindgen_futures::JsFuture::from(file.array_buffer())
+        .await
+        .map_err(|_| "could not read the file".to_string())?;
+    Ok(js_sys::Uint8Array::new(&buf).into())
+}
+
+/// Text of a chosen file.
+pub async fn read_file_text(file: &web_sys::File) -> Result<String, String> {
+    wasm_bindgen_futures::JsFuture::from(file.text())
+        .await
+        .ok()
+        .and_then(|v| v.as_string())
+        .ok_or_else(|| "could not read the file".to_string())
 }

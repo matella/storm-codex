@@ -14,6 +14,7 @@ pub mod patches;
 pub mod player;
 pub mod players;
 pub mod scouting;
+pub mod scouting_report;
 pub mod session;
 pub mod synergies;
 pub mod trends;

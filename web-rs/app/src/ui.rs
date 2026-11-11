@@ -103,6 +103,7 @@ pub fn use_operator() -> RwSignal<Vec<String>> {
 pub enum Tone {
     Ban,
     Pick,
+    Them,
     Plain,
     Loss,
     Red,
@@ -114,6 +115,7 @@ impl Tone {
         match self {
             Tone::Ban => "ban",
             Tone::Pick => "pick",
+            Tone::Them => "them",
             Tone::Loss => "loss",
             Tone::Red => "red",
             Tone::Blue => "blue",

@@ -14,4 +14,4 @@ leptos_router = "0.8.12"
 storm-web-core = { path = "../core" }
 serde = "1"
 serde_json = "1"
-web-sys = { version = "0.3", features = ["Document", "DocumentFragment", "Element", "HtmlDetailsElement", "HtmlTemplateElement", "Node", "Window"] }
+web-sys = { version = "0.3", features = ["Document", "DocumentFragment", "Element", "HtmlDetailsElement", "HtmlTemplateElement", "Node", "Window", "HtmlInputElement", "FileList", "File", "Blob", "DragEvent", "DataTransfer"] }
