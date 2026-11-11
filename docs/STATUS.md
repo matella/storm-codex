@@ -1,6 +1,14 @@
 # STATUS — read first, update last
 
-## Rust front-end migration — step 3 started: app bundle, layout, 4 pages (2026-11-11)
+## Rust front-end migration — step 3 in progress: Session and Matches added (2026-11-11)
+Second batch (PR #27): pages **Session** and **Matches** (DOM identical to React on real data; Matches filters live in the URL and were
+exercised: mode, result, MVP, map search, reset, CSV/JSON links, row click and back). Logic in `core/dashboard.rs` (last session with the
+3 h gap, tallies, filter and URL parameters), 58 native tests. **App size is now 361 kB gzip with 6 pages** (was 274 kB with 4): each page
+costs about 40 kB, so the full app would be around 1 MB gzip; the operator must set the budget, and a size pass (view generics, `opt-level`,
+wasm-opt level) is worth doing before the later pages. **Match detail** (dynamic JSON, timeline, chat, bans, XP curve) is next, then
+Players, Player, Hero, Synergies, Trends, Hero changes, Patch, Live.
+
+### Earlier in step 3: app bundle, layout, 4 pages
 After the operator's go ("continue to pages"): new bundle `web-rs/app` (`/v2/app/`, router base `/v2`), with the top bar, the live
 channel (toast, "online", new-patch dot), the onboarding and what's new modals, the `/draft` redirects, and the pages **Heroes, Maps,
 Patch Notes, Leagues** (normalised DOM identical to React on real data). Fonts are now self-hosted (`web-rs/app/fonts`). The other

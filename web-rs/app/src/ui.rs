@@ -49,13 +49,17 @@ pub fn use_operator() -> RwSignal<Vec<String>> {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Tone {
     Ban,
+    Pick,
     Plain,
+    Loss,
 }
 
 impl Tone {
     fn class(self) -> &'static str {
         match self {
             Tone::Ban => "ban",
+            Tone::Pick => "pick",
+            Tone::Loss => "loss",
             Tone::Plain => "plain",
         }
     }

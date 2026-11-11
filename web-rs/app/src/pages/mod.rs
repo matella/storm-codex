@@ -3,7 +3,9 @@
 pub mod heroes;
 pub mod leagues;
 pub mod maps;
+pub mod matches;
 pub mod patches;
+pub mod session;
 
 use leptos::prelude::*;
 

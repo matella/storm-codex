@@ -291,20 +291,66 @@ pub fn after_ms(ms: u32, f: impl FnOnce() + 'static) {
     gloo_timers::callback::Timeout::new(ms, f).forget();
 }
 
+/// Local midnight of a `YYYY-MM-DD` day (plus `plus_days`) as an ISO string; `None` for a date the browser cannot read.
+pub fn local_midnight_iso(day: &str, plus_days: u32) -> Option<String> {
+    let date = js_sys::Date::new(&format!("{day}T00:00:00").into());
+    if date.get_time().is_nan() {
+        return None;
+    }
+    date.set_date(date.get_date() + plus_days);
+    Some(date.to_iso_string().into())
+}
+
 /// Query string of an aggregate request: the dates are local midnights converted to ISO, `to` made inclusive
 /// (`aggParams`).
 pub fn agg_params(f: &crate::aggregates::AggFilter) -> String {
-    let iso = |d: &str, plus_days: f64| -> Option<String> {
-        let date = js_sys::Date::new(&format!("{d}T00:00:00").into());
-        if date.get_time().is_nan() {
-            return None;
-        }
-        date.set_date(date.get_date() + plus_days as u32);
-        Some(date.to_iso_string().into())
-    };
-    let from = f.from.as_deref().and_then(|d| iso(d, 0.0));
-    let to = f.to.as_deref().and_then(|d| iso(d, 1.0));
+    let from = f.from.as_deref().and_then(|d| local_midnight_iso(d, 0));
+    let to = f.to.as_deref().and_then(|d| local_midnight_iso(d, 1));
     crate::aggregates::agg_query(f, from.as_deref(), to.as_deref())
+}
+
+/// Epoch milliseconds of an ISO date (`new Date(iso).getTime()`).
+pub fn ts(iso: &str) -> f64 {
+    js_sys::Date::new(&iso.into()).get_time()
+}
+
+fn locale(iso: &str, locale: &str, keys: &[(&str, &str)], date_only: bool) -> String {
+    let opts = js_sys::Object::new();
+    for (k, v) in keys {
+        let _ = js_sys::Reflect::set(&opts, &(*k).into(), &(*v).into());
+    }
+    let d = js_sys::Date::new(&iso.into());
+    let s = if date_only {
+        d.to_locale_date_string(locale, &opts)
+    } else {
+        d.to_locale_string(locale, &opts)
+    };
+    s.as_string().unwrap_or_default()
+}
+
+/// `21:05` of an ISO date in local time (fr-FR, two digits).
+pub fn hhmm(iso: &str) -> String {
+    locale(
+        iso,
+        "fr-FR",
+        &[("hour", "2-digit"), ("minute", "2-digit")],
+        false,
+    )
+}
+
+/// `Mon, 9 November 2026` (en-GB) of an ISO date.
+pub fn long_date(iso: &str) -> String {
+    locale(
+        iso,
+        "en-GB",
+        &[
+            ("weekday", "short"),
+            ("day", "numeric"),
+            ("month", "long"),
+            ("year", "numeric"),
+        ],
+        true,
+    )
 }
 
 /// `DateBlock` of the patch list: the local day of month (two digits) and `Mon YYYY` (en-GB).

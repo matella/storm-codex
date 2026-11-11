@@ -58,6 +58,19 @@ pub fn query_value(search: &str, key: &str) -> Option<String> {
     })
 }
 
+/// Decoded `(key, value)` pairs of a query string, in order (`URLSearchParams` entries).
+pub fn query_pairs(search: &str) -> Vec<(String, String)> {
+    search
+        .trim_start_matches('?')
+        .split('&')
+        .filter(|kv| !kv.is_empty())
+        .map(|kv| {
+            let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
+            (decode(k), decode(v))
+        })
+        .collect()
+}
+
 /// `URLSearchParams.has`.
 pub fn query_has(search: &str, key: &str) -> bool {
     search

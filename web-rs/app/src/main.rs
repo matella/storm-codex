@@ -2,6 +2,7 @@
 //! router, the top-bar layout, and the pages (ported in the order of docs/specs/2026-11-09-rust-frontend-migration-design.md §8).
 
 mod layout;
+mod matchui;
 mod pages;
 mod ui;
 
@@ -13,7 +14,10 @@ use leptos_router::{
 use storm_web_core::route::LEGACY_REDIRECTS;
 
 use layout::Layout;
-use pages::{heroes::Heroes, leagues::Leagues, maps::Maps, patches::Patches, Pending};
+use pages::{
+    heroes::Heroes, leagues::Leagues, maps::Maps, matches::Matches, patches::Patches,
+    session::Session, Pending,
+};
 
 /// Redirect of an old page (`legacyRoutes.ts`), kept for bookmarks.
 #[component]
@@ -27,9 +31,9 @@ fn App() -> impl IntoView {
         <Router base="/v2">
             <Routes fallback=|| view! { <div class="empty">"Not found."</div> }>
                 <ParentRoute path=path!("") view=Layout>
-                    <Route path=path!("") view=|| view! { <Pending name="Session" /> } />
+                    <Route path=path!("") view=Session />
                     <Route path=path!("live") view=|| view! { <Pending name="Live" /> } />
-                    <Route path=path!("matches") view=|| view! { <Pending name="Matches" /> } />
+                    <Route path=path!("matches") view=Matches />
                     <Route path=path!("match/:id") view=|| view! { <Pending name="Match" /> } />
                     <Route path=path!("players") view=|| view! { <Pending name="Players" /> } />
                     <Route path=path!("player/:toon") view=|| view! { <Pending name="Player" /> } />

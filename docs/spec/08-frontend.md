@@ -73,13 +73,14 @@ Each OBS bundle picks its page from the URL path (`route.rs`); the server routes
 over the click, and middle-click / copy link keep working. Data of a page is read with `ui::fetch` (a `LocalResource`): it reads the
 signals of the page's filter and of `layout::LiveBus` (one counter per kind of live event: matches, patches, draft, cast, live), so
 it is read again when they change, as `invalidateQueries` did. The pure rules (tabs, redirects, live-event effects, aggregates,
-changelog) are in `core` with native tests (`route.rs`, `live.rs`, `aggregates.rs`, `whatsnew.rs`).
+changelog) are in `core` with native tests (`route.rs`, `live.rs`, `aggregates.rs`, `dashboard.rs`, `whatsnew.rs`).
 
 | Page | Status (checked in the browser against React, normalised DOM, real data) |
 |---|---|
 | layout, top bar, `/draft` redirects | ported; the active tab, client-side navigation and the redirect were checked |
 | Heroes, Maps, Patch Notes, Leagues | ported, DOM identical to React (Leagues only on the empty list: there are no teams in the dev database) |
-| Session (dashboard), Live, Matches, Match, Players, Player, Hero, Synergies, Trends, Hero changes, Patch | not ported (placeholder page) |
+| Session (dashboard), Matches | ported, DOM identical to React on real data; the Matches URL filters, reset, CSV/JSON links and row navigation were exercised. Logic in `core/dashboard.rs`, game pieces in `app/src/matchui.rs` |
+| Live, Match, Players, Player, Hero, Synergies, Trends, Hero changes, Patch | not ported (placeholder page) |
 | Replay 2D, Scouting, Scouting report, Admin, Cast control room | not ported (step 4) |
 
 Known differences from React, all intended: the "online" pill and the toasts are as in React except that a draft update no longer
