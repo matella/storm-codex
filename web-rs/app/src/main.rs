@@ -4,6 +4,8 @@
 mod layout;
 mod matchui;
 mod pages;
+mod patchui;
+mod safehtml;
 mod ui;
 
 use leptos::{mount::mount_to, prelude::*, wasm_bindgen::JsCast, web_sys};
@@ -15,8 +17,9 @@ use storm_web_core::route::LEGACY_REDIRECTS;
 
 use layout::Layout;
 use pages::{
-    heroes::Heroes, leagues::Leagues, maps::Maps, matches::Matches, patches::Patches,
-    player::Player, players::Players, session::Session, synergies::Synergies, Pending,
+    hero::Hero, hero_changes::HeroChanges, heroes::Heroes, leagues::Leagues, maps::Maps,
+    matches::Matches, patch::Patch, patches::Patches, player::Player, players::Players,
+    session::Session, synergies::Synergies, trends::Trends, Pending,
 };
 
 /// Redirect of an old page (`legacyRoutes.ts`), kept for bookmarks.
@@ -38,13 +41,13 @@ fn App() -> impl IntoView {
                     <Route path=path!("players") view=Players />
                     <Route path=path!("player/:toon") view=Player />
                     <Route path=path!("heroes") view=Heroes />
-                    <Route path=path!("hero/:name") view=|| view! { <Pending name="Hero" /> } />
+                    <Route path=path!("hero/:name") view=Hero />
                     <Route path=path!("synergies") view=Synergies />
                     <Route path=path!("patches") view=Patches />
-                    <Route path=path!("hero-changes") view=|| view! { <Pending name="Hero changes" /> } />
-                    <Route path=path!("patch/:id") view=|| view! { <Pending name="Patch" /> } />
+                    <Route path=path!("hero-changes") view=HeroChanges />
+                    <Route path=path!("patch/:id") view=Patch />
                     <Route path=path!("maps") view=Maps />
-                    <Route path=path!("trends") view=|| view! { <Pending name="Trends" /> } />
+                    <Route path=path!("trends") view=Trends />
                     <Route path=path!("leagues") view=Leagues />
                     <Route path=path!("cast") view=|| view! { <Pending name="Cast" /> } />
                     <Route path=path!("scouting") view=|| view! { <Pending name="Scouting" /> } />

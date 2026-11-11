@@ -1367,6 +1367,7 @@ dependencies = [
  "serde",
  "serde_json",
  "storm-web-core",
+ "web-sys",
 ]
 
 [[package]]

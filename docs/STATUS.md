@@ -1,6 +1,17 @@
 # STATUS — read first, update last
 
-## Rust front-end migration — step 3 in progress: Players, Player, Synergies added (2026-11-11)
+## Rust front-end migration — step 3 in progress: Hero, Trends, Hero changes, Patch added (2026-11-11)
+Fourth batch (PR #27): **Hero** (URL-driven filter, maps, winning builds with talent names, patch history), **Trends**, **Hero changes**
+(By hero / Timeline, filters, unfolded history) and **Patch**. DOM identical to React on real data for Hero, Trends and Hero changes
+(including interactions). **Patch detail** could only be checked on its "not found" path (the dev database returns `null` for every patch);
+the content goes through the same `SafeHtml` as the patch history. New: the HTML sanitiser, **without `ammonia`** (about 300 kB): an
+allowlist walk over an inert `<template>` (`core/sanitize.rs`, `app/src/safehtml.rs`), stricter than DOMPurify; the operator should
+confirm this replaces the spike's `ammonia` option. Lists of unfoldable entries are keyed (Leptos reuses rows by position, which moved the
+open state of a `<details>` onto another hero). Logic in `core/herodetail.rs`, `trends.rs`, `patchnotes.rs`, `sanitize.rs` (75 native
+tests). **App size: 533 kB gzip with 13 pages** (428 kB with 9): +105 kB for four pages, the size pass is now needed. Remaining in
+step 3: Live, Match detail.
+
+### Earlier: Players, Player, Synergies added
 Third batch (PR #27): **Players** (debounced search, `?q=`), **Player** (cover, hero pool, recent games, chat habits; the Identity tab is a
 placeholder until step 4 because it writes with the admin token) and **Synergies**, all DOM-identical to React on real data. Logic in
 `core/players.rs` (62 native tests). **App size: 428 kB gzip with 9 pages** (361 kB with 6): the size pass the operator postponed is now

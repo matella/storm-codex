@@ -353,6 +353,19 @@ pub fn long_date(iso: &str) -> String {
     )
 }
 
+/// `05 Oct 26` (en-GB, two digits) of an ISO date, a dash without one (`fmtDate` of Trends).
+pub fn fmt_date_short(iso: Option<&str>) -> String {
+    match iso {
+        Some(i) if !i.is_empty() => locale(
+            i,
+            "en-GB",
+            &[("day", "2-digit"), ("month", "short"), ("year", "2-digit")],
+            true,
+        ),
+        _ => "—".into(),
+    }
+}
+
 /// `DateBlock` of the patch list: the local day of month (two digits) and `Mon YYYY` (en-GB).
 pub fn date_block(iso: &str) -> (String, String) {
     let d = js_sys::Date::new(&iso.into());

@@ -95,6 +95,13 @@ impl Dim {
             .filter(|r| !r.is_empty())
     }
 
+    /// Every hero name of the reference data, sorted.
+    pub fn names(&self) -> Vec<String> {
+        let mut n: Vec<String> = self.exact.keys().cloned().collect();
+        n.sort();
+        n
+    }
+
     pub fn icon(&self, hero: &str) -> Option<&str> {
         self.get(hero)
             .and_then(|d| d.icon.as_deref())

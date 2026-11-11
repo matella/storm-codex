@@ -1,14 +1,18 @@
 //! The pages of the app, one module each.
 
+pub mod hero;
+pub mod hero_changes;
 pub mod heroes;
 pub mod leagues;
 pub mod maps;
 pub mod matches;
+pub mod patch;
 pub mod patches;
 pub mod player;
 pub mod players;
 pub mod session;
 pub mod synergies;
+pub mod trends;
 
 use leptos::prelude::*;
 
