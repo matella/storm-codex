@@ -108,8 +108,13 @@ jobs:
       - name: build the overlay bundle (trunk)
         run: trunk build --release
         working-directory: web-rs/overlay
+      - name: build the sources bundle (trunk)
+        run: trunk build --release
+        working-directory: web-rs/sources
       - name: size budget (overlay <= 300 kB gzip)
         run: sh scripts/check-web-rs-size.sh web-rs/dist/overlay 300000
+      - name: size budget (sources <= 300 kB gzip)
+        run: sh scripts/check-web-rs-size.sh web-rs/dist/sources 300000
   # storm-codex image on ghcr.io: only on push (main or tag v*), only if everything is green.
   # Tags: `latest` (main), `sha-<commit>` (rollback possible), and the git tag name.
   publish:

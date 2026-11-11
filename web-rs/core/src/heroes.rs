@@ -72,6 +72,20 @@ impl Dim {
         }
     }
 
+    /// Same colour as a CSS variable of the Nexus Codex theme (`var(--u-warcraft)`), for the session sources.
+    pub fn ring_var(&self, hero: Option<&str>) -> &'static str {
+        match hero
+            .and_then(|h| self.get(h))
+            .and_then(|d| d.universe.as_deref())
+        {
+            Some("Warcraft") => "var(--u-warcraft)",
+            Some("StarCraft") => "var(--u-starcraft)",
+            Some("Diablo") => "var(--u-diablo)",
+            Some("Overwatch") => "var(--u-overwatch)",
+            _ => "var(--u-nexus)",
+        }
+    }
+
     pub fn icon(&self, hero: &str) -> Option<&str> {
         self.get(hero)
             .and_then(|d| d.icon.as_deref())
@@ -108,5 +122,7 @@ mod tests {
         assert_eq!(d.icon("The Lost Vikings"), None); // empty icon -> initials
         assert_eq!(d.ring(Some("Unknown")), "#afa9ec");
         assert_eq!(d.ring(None), "#afa9ec");
+        assert_eq!(d.ring_var(Some("Li-Ming")), "var(--u-warcraft)");
+        assert_eq!(d.ring_var(Some("Unknown")), "var(--u-nexus)");
     }
 }

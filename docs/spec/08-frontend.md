@@ -62,14 +62,21 @@ Port of this front-end to Rust (Leptos 0.8, client-side rendering, WebAssembly),
 
 | Crate | Role |
 |---|---|
-| `core` (`storm-web-core`) | framework-free: wire models (`model.rs`), pure logic ported from `castState.ts` (`logic.rs`, `scenes.rs`), hero reference data (`heroes.rs`), browser I/O (`net.rs`, wasm only: fetch, `/ws` with reconnection, 10 s poll). Native unit tests |
-| `overlay` (`storm-web-overlay`) | OBS sources bundle, output `web-rs/dist/overlay` served at `/v2/overlay/`. Holds the cast overlay with its five scenes (`ingame`, `series` + post-game slides, `lineups`, `draft`, `hide`) and the three overlay stylesheets (copied unchanged from `web/src/cast/`) |
+| `core` (`storm-web-core`) | framework-free: wire models (`model.rs`), pure logic ported from `castState.ts` (`logic.rs`, `scenes.rs`), the match-list helpers of the session sources (`session.rs`: mode badge, awards, operator lookup, streak, session totals, Jarvis line, `toFixed`), the music track parser and the reveal state machine (`music.rs`), URL routing and query parameters (`route.rs`), hero reference data (`heroes.rs`), browser I/O (`net.rs`, wasm only: fetch, `/ws` with reconnection, 10 s poll). Native unit tests |
+| `overlay` (`storm-web-overlay`) | cast and draft overlays, output `web-rs/dist/overlay` served at `/v2/overlay/`. The cast overlay with its five scenes (`ingame`, `series` + post-game slides, `lineups`, `draft`, `hide`) and the stand-alone draft overlay (Timeline view, `?skin=`); the three stylesheets are copied unchanged from `web/src/cast/` |
+| `sources` (`storm-web-sources`) | session and music sources, output `web-rs/dist/sources` served at `/v2/sources/`: `/ticker`, `/widget` (`?me=`), `/queue`, `/now-playing` (default card, `?mini`, `?reveal`). Shared tokens in `base.css` (subset of `theme.css`), the reveal stylesheet copied from `web/src/pages/now-playing-reveal.css` |
 
-Status: `/v2/cast/overlay` built and checked in the browser (same DOM as React, see
-`spike/frontend-rust/RESULTS.md`); **real-OBS check pending (operator)**. Not ported yet: `/v2/draft/overlay`,
-`/ticker`, `/now-playing`, `/widget`, `/queue`, the app bundle (`app/`), every page.
-Contract: the overlay bundle stays **<= 300 kB gzip** (`scripts/check-web-rs-size.sh`, enforced in CI; 227 kB on
-2026-11-11). One bundle per page family: the sanitiser (`ammonia`, about 300 kB) must never be linked into the overlay bundle.
+Each bundle picks its page from the URL path (`route.rs`); the server routes each path to its bundle (`04-serveur.md`).
+
+Status: the six OBS sources are built and checked in the browser against React on real and synthetic data (normalised
+DOM identical for ticker, widget with and without MVP, queue with mixed modes / awards / two operator accounts / a streak and
+the music card, now playing default / `?mini` / `?reveal`, draft overlay with a skin, cast overlay; the reveal hold of about 2.6 s
+observed). **Real-OBS check pending for each source (operator).** Known difference: the JetBrains Mono font of `.mono` is loaded
+from Google Fonts (React self-hosts it; to self-host before the switch). Not ported yet: the app bundle (`app/`), every page.
+Contract: **each bundle stays <= 300 kB gzip** (`scripts/check-web-rs-size.sh`, enforced in CI; `overlay` 229 kB and `sources`
+191 kB on 2026-11-11). Putting the session and music sources in the overlay bundle gave 314 kB (the view machinery is linked once per
+bundle), hence two bundles: an OBS source only loads the bundle of its family. One bundle per page family: the sanitiser
+(`ammonia`, about 300 kB) must never be linked into an OBS bundle.
 
 ## Loading (code splitting)
 

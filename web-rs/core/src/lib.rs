@@ -3,6 +3,9 @@
 pub mod heroes;
 pub mod logic;
 pub mod model;
+pub mod music;
 #[cfg(target_arch = "wasm32")]
 pub mod net;
+pub mod route;
 pub mod scenes;
+pub mod session;
