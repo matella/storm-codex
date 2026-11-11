@@ -20,7 +20,8 @@ Find the defects that matter before merge.
 2. Check correctness, edge cases, error handling, and compatibility.
 3. Check security: input handling, secrets, permissions, and injection paths.
 4. Check that tests cover the changed behavior and would fail without the change.
-5. Run the relevant tests when practical.
+5. Check the diff against `gads/standard/CODING_PRINCIPLES.md`: speculative code, needless abstraction, and changed lines that do not trace to the task.
+6. Run the relevant tests when practical.
 
 ## Output
 

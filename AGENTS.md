@@ -1,6 +1,6 @@
 # GADS — Agent Operating Instructions
 
-This file is the portable entry point for AI development agents. Read `gads/standard/OPERATING_STANDARD.md`, `gads/standard/SECURITY_AND_AUTONOMY.md`, and `gads/standard/WORKFLOW_AND_GATES.md` before making material changes.
+This file is the portable entry point for AI development agents. Read `gads/standard/OPERATING_STANDARD.md`, `gads/standard/SECURITY_AND_AUTONOMY.md`, `gads/standard/WORKFLOW_AND_GATES.md`, and `gads/standard/CODING_PRINCIPLES.md` before making material changes.
 
 ## Authority and precedence
 
