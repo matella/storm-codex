@@ -1,6 +1,12 @@
 # STATUS — read first, update last
 
-## Rust front-end migration — step 3 complete: Live and Match detail added (2026-11-11)
+## Rust front-end migration — step 4 started: Scouting and Admin (2026-11-11)
+Step 3 is complete. Step 4 (PR #27): **Scouting** (list and creation) and **Admin** (identity, upload health, tokens, teams, collections)
+are ported and DOM identical to React on real data; Admin writes were exercised on the dev database. New `net::write` (authenticated
+writes with the stored admin token) and `core/scouting.rs`. Remaining in step 4: Scouting report, Replay 2D, Cast control room (with the
+Draft workspace), Player Identity tab.
+
+### Earlier: step 3 complete
 Fifth batch (PR #27): **Match detail** (DOM identical to React on match 2746, SVG attributes included) and **Live** (identical for the idle
 state and for a synthetic game through a mock `/api/live`). The Match **Replay 2D** tab is a placeholder until step 4. Logic in
 `core/matchdetail.rs` and `core/livegame.rs` (90 native tests); talents are loaded once and shared. **App size: about 640 kB gzip for the

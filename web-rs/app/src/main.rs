@@ -17,10 +17,10 @@ use storm_web_core::route::LEGACY_REDIRECTS;
 
 use layout::Layout;
 use pages::{
-    hero::Hero, hero_changes::HeroChanges, heroes::Heroes, leagues::Leagues, live::Live,
-    maps::Maps, match_detail::MatchDetail, matches::Matches, patch::Patch, patches::Patches,
-    player::Player, players::Players, session::Session, synergies::Synergies, trends::Trends,
-    Pending,
+    admin::Admin, hero::Hero, hero_changes::HeroChanges, heroes::Heroes, leagues::Leagues,
+    live::Live, maps::Maps, match_detail::MatchDetail, matches::Matches, patch::Patch,
+    patches::Patches, player::Player, players::Players, scouting::Scouting, session::Session,
+    synergies::Synergies, trends::Trends, Pending,
 };
 
 /// Redirect of an old page (`legacyRoutes.ts`), kept for bookmarks.
@@ -51,9 +51,9 @@ fn App() -> impl IntoView {
                     <Route path=path!("trends") view=Trends />
                     <Route path=path!("leagues") view=Leagues />
                     <Route path=path!("cast") view=|| view! { <Pending name="Cast" /> } />
-                    <Route path=path!("scouting") view=|| view! { <Pending name="Scouting" /> } />
+                    <Route path=path!("scouting") view=Scouting />
                     <Route path=path!("scouting/:id") view=|| view! { <Pending name="Scouting report" /> } />
-                    <Route path=path!("admin") view=|| view! { <Pending name="Admin" /> } />
+                    <Route path=path!("admin") view=Admin />
                     <Route path=path!("draft") view=|| view! { <Legacy to=LEGACY_REDIRECTS[0].1 /> } />
                     <Route path=path!("draft/replay") view=|| view! { <Legacy to=LEGACY_REDIRECTS[1].1 /> } />
                 </ParentRoute>

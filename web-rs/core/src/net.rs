@@ -407,3 +407,41 @@ pub fn date_block(iso: &str) -> (String, String) {
         format!("{month} {}", d.get_full_year()),
     )
 }
+
+/// The admin token typed in Admin (kept in `localStorage`), empty when none (`authHeaders` in api.ts).
+pub fn admin_token() -> String {
+    storage_get("admin_token").unwrap_or_default()
+}
+
+/// Authenticated write (`scoutingWrite` / `adminFetch`): `Authorization: Bearer <token>` when a token is stored, a JSON
+/// body when given. Returns the HTTP status and the body text; only a network failure is an `Err`.
+pub async fn write(
+    method: &str,
+    url: &str,
+    body: Option<String>,
+    token: Option<&str>,
+) -> Result<(u16, String), String> {
+    let builder = match method {
+        "PUT" => Request::put(url),
+        "DELETE" => Request::delete(url),
+        "GET" => Request::get(url),
+        _ => Request::post(url),
+    };
+    let stored = admin_token();
+    let token = token.unwrap_or(&stored);
+    let builder = if token.is_empty() {
+        builder
+    } else {
+        builder.header("Authorization", &format!("Bearer {token}"))
+    };
+    let req = match body {
+        Some(b) => builder
+            .header("Content-Type", "application/json")
+            .body(b)
+            .map_err(|e| e.to_string())?,
+        None => builder.build().map_err(|e| e.to_string())?,
+    };
+    let r = req.send().await.map_err(|e| e.to_string())?;
+    let status = r.status();
+    Ok((status, r.text().await.unwrap_or_default()))
+}

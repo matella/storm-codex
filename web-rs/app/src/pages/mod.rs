@@ -1,5 +1,6 @@
 //! The pages of the app, one module each.
 
+pub mod admin;
 pub mod hero;
 pub mod hero_changes;
 pub mod heroes;
@@ -12,6 +13,7 @@ pub mod patch;
 pub mod patches;
 pub mod player;
 pub mod players;
+pub mod scouting;
 pub mod session;
 pub mod synergies;
 pub mod trends;

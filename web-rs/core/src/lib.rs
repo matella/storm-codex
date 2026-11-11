@@ -17,6 +17,7 @@ pub mod players;
 pub mod route;
 pub mod sanitize;
 pub mod scenes;
+pub mod scouting;
 pub mod session;
 pub mod trends;
 pub mod whatsnew;
