@@ -105,6 +105,12 @@ pub fn url_safe(url: &str, is_image_src: bool) -> bool {
     }
 }
 
+/// An external link shown as a button (`officialLink`): an absolute `http(s)` URL that passes `url_safe`.
+pub fn is_web_link(url: &str) -> bool {
+    let u = url.trim_start().to_ascii_lowercase();
+    (u.starts_with("https://") || u.starts_with("http://")) && url_safe(url, false)
+}
+
 /// A style that cannot load anything or run code (no `url(`, `expression`, `@import`, `javascript:`, backslash
 /// escapes or comments, which hide the others).
 pub fn style_safe(style: &str) -> bool {
@@ -187,6 +193,22 @@ mod tests {
         assert!(url_safe("data:image/png;base64,AAAA", true));
         assert!(!url_safe("data:image/png;base64,AAAA", false));
         assert!(!url_safe("data:image/svg+xml,<svg/>", true));
+    }
+
+    #[test]
+    fn the_official_link_must_be_an_http_url() {
+        assert!(is_web_link("https://heroesofthestorm.blizzard.com/x"));
+        assert!(is_web_link("HTTP://a.b"));
+        for u in [
+            "javascript:alert(1)",
+            "/relative",
+            "",
+            "mailto:a@b.c",
+            "data:text/html,x",
+            " java\tscript:x",
+        ] {
+            assert!(!is_web_link(u), "{u}");
+        }
     }
 
     #[test]

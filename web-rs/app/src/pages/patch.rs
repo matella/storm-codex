@@ -7,6 +7,7 @@ use storm_web_core::{
     net,
     patchnotes::{hero_classes, patch_headings, ptag_class, toc, PatchDetail},
     route::uri_component,
+    sanitize::is_web_link,
 };
 
 use crate::{
@@ -60,7 +61,7 @@ pub fn Patch() -> impl IntoView {
                         <div class="ds-cover-foot">
                             <Link to="/patches" class="ds-btn">"‹ All patches"</Link>
                             <Link to="/hero-changes" class="ds-btn">"Changes by hero"</Link>
-                            {d.official_link.clone().filter(|l| !l.is_empty()).map(|l| view! {
+                            {d.official_link.clone().filter(|l| is_web_link(l)).map(|l| view! {
                                 <a href=l target="_blank" rel="noreferrer" class="ds-btn primary">"Official notes ↗"</a>
                             })}
                         </div>
