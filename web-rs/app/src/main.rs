@@ -1,10 +1,12 @@
 //! The Storm Codex app of the Rust front-end (Leptos 0.8 CSR), served under `/v2/`. Port of `web/src/App.tsx`: one
 //! router, the top-bar layout, and the pages (ported in the order of docs/specs/2026-11-09-rust-frontend-migration-design.md §8).
 
+mod clip;
 mod layout;
 mod matchui;
 mod pages;
 mod patchui;
+mod replay;
 mod safehtml;
 mod ui;
 

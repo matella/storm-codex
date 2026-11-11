@@ -514,7 +514,7 @@ fn header_and_tabs(
             </div>
 
             {move || if replay.get() {
-                view! { <div style="margin-top: 16px"><div class="ds-empty">"Replay 2D: not ported to the Rust front-end yet."</div></div> }.into_any()
+                view! { <div style="margin-top: 16px"><crate::replay::Replay2D id=ctx.id.to_string() /></div> }.into_any()
             } else {
                 score_tab(tab_ctx.clone(), adv, talents, attrs).into_any()
             }}

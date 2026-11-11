@@ -4,12 +4,12 @@
 Step 3 is complete. Step 4 (PR #27): **Scouting** (list and creation) and **Admin** (identity, upload health, tokens, teams, collections)
 are ported and DOM identical to React on real data; Admin writes were exercised on the dev database. New `net::write` (authenticated
 writes with the stored admin token) and `core/scouting.rs`. **Scouting report** is also ported (DOM identical to React on real data; rename, roster, upload, import tested). **Export HTML is not ported yet**
-(the button says so): it needs the `reportHtml.ts` generator in Rust before step 5. The **Player Identity tab** is ported too. Remaining in step 4: Replay 2D, Cast control room (with the
+(the button says so): it needs the `reportHtml.ts` generator in Rust before step 5. The **Player Identity tab** is ported too. Remaining in step 4: Cast control room (with the
 Draft workspace), Export HTML.
 
 ### Earlier: step 3 complete
 Fifth batch (PR #27): **Match detail** (DOM identical to React on match 2746, SVG attributes included) and **Live** (identical for the idle
-state and for a synthetic game through a mock `/api/live`). The Match **Replay 2D** tab is a placeholder until step 4. Logic in
+state and for a synthetic game through a mock `/api/live`). The Match **Replay 2D** tab is ported (canvas pixel identical to React at the same time). Logic in
 `core/matchdetail.rs` and `core/livegame.rs` (90 native tests); talents are loaded once and shared. **App size: about 640 kB gzip for the
 wasm (13 pages → 15 pages)**: the size pass is overdue and the operator must set the app budget. Step 3 is done; next is step 4 (Replay 2D,
 Scouting, Scouting report, Admin, Cast, Player Identity tab), then the step 5 switch (needs approval).
