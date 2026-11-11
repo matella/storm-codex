@@ -10,7 +10,7 @@ workspace = true
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
 gloo-net = { version = "0.6", default-features = false, features = ["http", "websocket", "json"] }
 gloo-timers = { version = "0.3", features = ["futures"] }
 futures-util = { version = "0.3", default-features = false, features = ["sink"] }

@@ -5,6 +5,7 @@ use leptos::{prelude::*, task::spawn_local};
 use serde::de::DeserializeOwned;
 use storm_web_core::{
     aggregates::{AggFilter, MODES},
+    herodetail::DimTalent,
     heroes::{Dim, DimHero},
     net,
     route::app_href,
@@ -25,6 +26,58 @@ pub fn provide_dim() {
 
 pub fn use_dim() -> RwSignal<Dim> {
     expect_context::<RwSignal<Dim>>()
+}
+
+/// Talent reference data (`GET /api/dim/talents`, about 240 kB): loaded the first time a page asks for it, then kept
+/// (`useDimTalents` with an infinite stale time).
+#[derive(Clone, Copy)]
+struct Talents {
+    map: RwSignal<std::collections::HashMap<String, DimTalent>>,
+    started: RwSignal<bool>,
+}
+
+pub fn provide_talents() {
+    provide_context(Talents {
+        map: RwSignal::new(Default::default()),
+        started: RwSignal::new(false),
+    });
+}
+
+/// Talents by tree id; empty until loaded (names fall back to the decamelised id meanwhile).
+pub fn use_talents() -> RwSignal<std::collections::HashMap<String, DimTalent>> {
+    let t = expect_context::<Talents>();
+    if !t.started.get_untracked() {
+        t.started.set(true);
+        spawn_local(async move {
+            if let Ok(m) =
+                net::get_json::<std::collections::HashMap<String, DimTalent>>("/api/dim/talents")
+                    .await
+            {
+                t.map.set(m);
+            }
+        });
+    }
+    t.map
+}
+
+/// Runs `f` every `ms` milliseconds until the calling component is disposed (`setInterval` with its cleanup).
+pub fn use_interval(ms: u32, f: impl Fn() + Clone + 'static) {
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
+    fn tick(ms: u32, alive: Arc<AtomicBool>, f: impl Fn() + Clone + 'static) {
+        net::after_ms(ms, move || {
+            if alive.load(Ordering::Relaxed) {
+                f();
+                tick(ms, alive, f);
+            }
+        });
+    }
+    let alive = Arc::new(AtomicBool::new(true));
+    let flag = alive.clone();
+    on_cleanup(move || flag.store(false, Ordering::Relaxed));
+    tick(ms, alive, f);
 }
 
 /// Operator names (`app_settings.operator_names`), shared by every page; empty until loaded.
@@ -53,6 +106,7 @@ pub enum Tone {
     Plain,
     Loss,
     Red,
+    Blue,
 }
 
 impl Tone {
@@ -62,6 +116,7 @@ impl Tone {
             Tone::Pick => "pick",
             Tone::Loss => "loss",
             Tone::Red => "red",
+            Tone::Blue => "blue",
             Tone::Plain => "plain",
         }
     }
@@ -123,6 +178,34 @@ pub fn Portrait(
             }}
             {(tone == Tone::Ban).then(|| view! { <i class="ds-slash"></i> })}
         </span>
+    }
+}
+
+/// Round hero portrait with the colour of its universe (`Avatar`); initials when there is no icon or it fails.
+#[component]
+pub fn Avatar(hero: Option<String>, #[prop(default = 24)] size: u32) -> impl IntoView {
+    let dim = use_dim();
+    let broken = RwSignal::new(false);
+    let h = hero.clone();
+    let ring = Signal::derive(move || dim.with(|d| d.ring_var(h.as_deref())));
+    let border =
+        Signal::derive(move || format!("{}px solid {}", (size as f64 / 16.0).max(1.5), ring.get()));
+    let h = hero.clone();
+    let icon = move || dim.with(|d| h.as_deref().and_then(|x| d.icon(x)).map(str::to_string));
+    let title = hero.clone().unwrap_or_default();
+    let ini = initials(hero.as_deref().unwrap_or(""));
+    let alt = title.clone();
+    view! {
+        {move || match icon() {
+            Some(src) if !broken.get() => view! {
+                <img src=src alt=alt.clone() title=hero.clone() loading="lazy" on:error=move |_| broken.set(true)
+                    style=move || format!("width: {size}px; height: {size}px; border-radius: 50%; object-fit: cover; border: {}; background: #181a22; flex-shrink: 0", border.get()) />
+            }.into_any(),
+            _ => view! {
+                <span class="av" title=title.clone()
+                    style=move || format!("width: {size}px; height: {size}px; border: {}; color: {}; background: #181a22; font-size: {}px", border.get(), ring.get(), size as f64 * 0.34)>{ini.clone()}</span>
+            }.into_any(),
+        }}
     }
 }
 

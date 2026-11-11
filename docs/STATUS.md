@@ -1,6 +1,13 @@
 # STATUS — read first, update last
 
-## Rust front-end migration — step 3 in progress: Hero, Trends, Hero changes, Patch added (2026-11-11)
+## Rust front-end migration — step 3 complete: Live and Match detail added (2026-11-11)
+Fifth batch (PR #27): **Match detail** (DOM identical to React on match 2746, SVG attributes included) and **Live** (identical for the idle
+state and for a synthetic game through a mock `/api/live`). The Match **Replay 2D** tab is a placeholder until step 4. Logic in
+`core/matchdetail.rs` and `core/livegame.rs` (90 native tests); talents are loaded once and shared. **App size: about 640 kB gzip for the
+wasm (13 pages → 15 pages)**: the size pass is overdue and the operator must set the app budget. Step 3 is done; next is step 4 (Replay 2D,
+Scouting, Scouting report, Admin, Cast, Player Identity tab), then the step 5 switch (needs approval).
+
+### Earlier: Hero, Trends, Hero changes, Patch added
 Fourth batch (PR #27): **Hero** (URL-driven filter, maps, winning builds with talent names, patch history), **Trends**, **Hero changes**
 (By hero / Timeline, filters, unfolded history) and **Patch**. DOM identical to React on real data for Hero, Trends and Hero changes
 (including interactions). **Patch detail** could only be checked on its "not found" path (the dev database returns `null` for every patch);

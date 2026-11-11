@@ -19,21 +19,21 @@ use storm_web_core::{
 
 use crate::{
     patchui::PatchEntries,
-    ui::{fetch, map_art, use_dim, AggFilterBar, Link, Portrait, SecHead},
+    ui::{fetch, map_art, use_dim, use_talents, AggFilterBar, Link, Portrait, SecHead},
 };
 
 /// Talent build (`TierNChoice` → tree id) as steps in level order. Names come from the reference data once loaded.
 #[component]
 fn BuildSteps(
     talents: std::collections::BTreeMap<String, String>,
-    dim: LocalResource<Result<HashMap<String, DimTalent>, String>>,
+    dim: RwSignal<HashMap<String, DimTalent>>,
 ) -> impl IntoView {
     view! {
         <div class="ds-bsteps">
             {build_picks(&talents).into_iter().map(|tid| {
                 let lookup = {
                     let tid = tid.clone();
-                    move || dim.get().and_then(Result::ok).and_then(|m| m.get(&tid).cloned())
+                    move || dim.with(|m| m.get(&tid).cloned())
                 };
                 let lookup2 = lookup.clone();
                 let fallback = decamelize(&tid);
@@ -77,7 +77,7 @@ pub fn Hero() -> impl IntoView {
     let loc = use_location();
     let nav = StoredValue::new_local(use_navigate());
     let dim = use_dim();
-    let talents = fetch::<HashMap<String, DimTalent>>(|| "/api/dim/talents".to_string());
+    let talents = use_talents();
 
     // the filter lives in the URL (carried from the lists), both ways
     let filter = RwSignal::new(search_to_agg(&loc.search.get_untracked()));

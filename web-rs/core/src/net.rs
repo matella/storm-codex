@@ -30,6 +30,26 @@ pub async fn get_json<T: serde::de::DeserializeOwned>(path: &str) -> Result<T, S
     r.json::<T>().await.map_err(|e| e.to_string())
 }
 
+/// `GET path` where `204 No Content` means "nothing" (`None`), as `fetchLive` does.
+pub async fn get_json_opt<T: serde::de::DeserializeOwned>(path: &str) -> Result<Option<T>, String> {
+    let r = Request::get(path).send().await.map_err(|e| e.to_string())?;
+    if r.status() == 204 {
+        return Ok(None);
+    }
+    if !r.ok() {
+        return Err(format!("{path} → {}", r.status()));
+    }
+    r.json::<T>().await.map(Some).map_err(|e| e.to_string())
+}
+
+/// `n.toLocaleString("fr-FR")`.
+pub fn fmt_n(n: f64) -> String {
+    js_sys::Number::from(n)
+        .to_locale_string("fr-FR")
+        .as_string()
+        .unwrap_or_default()
+}
+
 /// Write request with a JSON body. A non-OK answer rejects with the server's `{"error": "<code>"}` code, or
 /// `http_<status>` (same contract as `send()` in castApi.ts).
 pub async fn send_json<B: serde::Serialize, T: serde::de::DeserializeOwned>(
@@ -276,6 +296,13 @@ pub fn storage_get(key: &str) -> Option<String> {
 pub fn storage_set(key: &str, value: &str) {
     if let Some(Some(s)) = web_sys::window().map(|w| w.local_storage().ok().flatten()) {
         let _ = s.set_item(key, value);
+    }
+}
+
+/// `localStorage.removeItem`.
+pub fn storage_remove(key: &str) {
+    if let Some(Some(s)) = web_sys::window().map(|w| w.local_storage().ok().flatten()) {
+        let _ = s.remove_item(key);
     }
 }
 

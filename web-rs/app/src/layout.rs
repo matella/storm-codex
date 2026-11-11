@@ -10,7 +10,7 @@ use storm_web_core::{
     whatsnew::{entries_since, APP_VERSION},
 };
 
-use crate::ui::{provide_dim, provide_operator, Link};
+use crate::ui::{provide_dim, provide_operator, provide_talents, Link};
 
 const ONBOARDING_KEY: &str = "onboarding_done";
 const WHATSNEW_KEY: &str = "whatsnew_seen";
@@ -32,6 +32,7 @@ fn bump(s: RwSignal<u32>) {
 
 #[component]
 pub fn Layout() -> impl IntoView {
+    provide_talents();
     provide_dim(); // reference data (universe rings)
     provide_operator(); // operator names (operator perspective everywhere)
 

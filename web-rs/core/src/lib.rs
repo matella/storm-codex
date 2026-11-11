@@ -5,7 +5,9 @@ pub mod dashboard;
 pub mod herodetail;
 pub mod heroes;
 pub mod live;
+pub mod livegame;
 pub mod logic;
+pub mod matchdetail;
 pub mod model;
 pub mod music;
 #[cfg(target_arch = "wasm32")]
