@@ -1,5 +1,7 @@
 # STATUS — read first, update last
 
+**Size pass (2026-11-11, measured, nothing changed in the build):** the complete app is **1,242 kB gzip / 911 kB brotli** (wasm 3.2 MB raw; React's whole JS+CSS is 246 kB gzip). The server already negotiates brotli, so the transferred size is the brotli one. Code size by crate: `tachys` view machinery 35 % (incl. `IntoAny`), `core` 13 %, `storm_web_app` 10 %, `reactive_graph` 9 %, per-type serde 5.5 %, `fetch` futures (`ScopedFuture`) 4.6 %. `opt-level="s"` is worse (1,406 kB gzip) than `"z"`; `wasm-opt z` is already on. Remaining levers, each small: a non-generic core for `ui::fetch` (about 4 %), fewer distinct `view!` shapes. The operator still has to set the app budget (CI: `check-web-rs-size.sh web-rs/dist/app` has no limit).
+
 ## Rust front-end migration — step 4 started: Scouting and Admin (2026-11-11)
 Step 3 is complete. Step 4 (PR #27): **Scouting** (list and creation) and **Admin** (identity, upload health, tokens, teams, collections)
 are ported and DOM identical to React on real data; Admin writes were exercised on the dev database. New `net::write` (authenticated
