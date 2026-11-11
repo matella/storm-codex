@@ -2,6 +2,7 @@
 //! router, the top-bar layout, and the pages (ported in the order of docs/specs/2026-11-09-rust-frontend-migration-design.md §8).
 
 mod clip;
+mod export;
 mod layout;
 mod matchui;
 mod pages;

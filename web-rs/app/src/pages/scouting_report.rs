@@ -18,7 +18,7 @@ use storm_web_core::{
     session::to_fixed1,
 };
 
-use crate::ui::{fetch, map_art, Link, Portrait, SecHead, Tone};
+use crate::ui::{fetch, map_art, use_dim, Link, Portrait, SecHead, Tone};
 
 type Names = Arc<HashMap<String, String>>;
 
@@ -1243,11 +1243,38 @@ pub fn ScoutingReport() -> impl IntoView {
     let games_num = Signal::derive(move || base() + 1);
     let roster_num = Signal::derive(move || base() + 2);
     let facts_version = Memo::new(move |_| r.get().facts_version);
+    let exporting = RwSignal::new(false);
+    let dim = use_dim();
     let export_html = move || {
-        flash.run(
-            "✗ Export HTML is not available in the Rust front-end yet — use the React app"
-                .to_string(),
-        )
+        if exporting.get_untracked() {
+            return;
+        }
+        exporting.set(true);
+        let rep = r.get_untracked();
+        let info: Vec<crate::export::HeroInfo> = dim.with_untracked(|d| {
+            storm_web_core::reportexport::heroes_of(&rep)
+                .into_iter()
+                .map(|name| crate::export::HeroInfo {
+                    icon: d.icon(&name).map(str::to_string),
+                    ring: d.ring(Some(&name)),
+                    name,
+                })
+                .collect()
+        });
+        spawn_local(async move {
+            match crate::export::export_report(&rep, &info).await {
+                Ok(s) => flash.run(format!(
+                    "✓ {} saved ({} KB, {}/{} portraits, {} maps) — send it to your team",
+                    s.file_name,
+                    (s.bytes as f64 / 1024.0).round(),
+                    s.portraits,
+                    s.heroes,
+                    s.maps
+                )),
+                Err(_) => flash.run("✗ export failed".to_string()),
+            }
+            exporting.set(false);
+        });
     };
 
     view! {

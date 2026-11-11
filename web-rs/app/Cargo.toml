@@ -16,4 +16,4 @@ serde = "1"
 serde_json = "1"
 js-sys = "0.3"
 wasm-bindgen-futures = "0.4"
-web-sys = { version = "0.3", features = ["Document", "DocumentFragment", "Element", "HtmlDetailsElement", "HtmlTemplateElement", "Node", "Window", "HtmlInputElement", "FileList", "File", "Blob", "DragEvent", "DataTransfer", "HtmlCanvasElement", "CanvasRenderingContext2d", "HtmlImageElement", "PointerEvent", "DomRect", "MediaRecorder", "MediaRecorderOptions", "MediaStream", "BlobEvent", "BlobPropertyBag", "Url", "HtmlAnchorElement", "CssStyleDeclaration", "Performance"] }
+web-sys = { version = "0.3", features = ["Document", "DocumentFragment", "Element", "HtmlDetailsElement", "HtmlTemplateElement", "Node", "Window", "HtmlInputElement", "FileList", "File", "Blob", "DragEvent", "DataTransfer", "HtmlCanvasElement", "CanvasRenderingContext2d", "HtmlImageElement", "PointerEvent", "DomRect", "MediaRecorder", "MediaRecorderOptions", "MediaStream", "BlobEvent", "BlobPropertyBag", "Url", "HtmlAnchorElement", "CssStyleDeclaration", "Performance", "Response", "Headers"] }

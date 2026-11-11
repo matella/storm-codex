@@ -172,8 +172,10 @@ pub struct GamePick {
 #[serde(default)]
 pub struct GameRow {
     pub gid: i64,
+    pub date: Option<String>,
     pub map: String,
     pub won: bool,
+    pub length_s: f64,
     pub first_pick: Option<bool>,
     pub picks: Vec<GamePick>,
     pub opp_picks: Vec<GamePick>,
