@@ -20,6 +20,7 @@ use storm_web_core::{
 
 use crate::{
     matchui::ModeTag,
+    pages::player_identity::PlayerIdentity,
     ui::{fetch, map_art, use_dim, Link, Portrait, SecHead, Tone},
 };
 
@@ -124,7 +125,7 @@ pub fn Player() -> impl IntoView {
                             <a class=move || if identity_tab() { Some("map") } else { None } href="?tab=identity" on:click=move |e| { e.prevent_default(); go(ip.clone(), false) }>"Identity"</a>
                         </nav>
                         {move || if identity_tab() {
-                            view! { <div class="ds-empty" style="margin-top: 24px">"Identity: not ported to the Rust front-end yet."</div> }.into_any()
+                            view! { <PlayerIdentity toon=toon data=identity /> }.into_any()
                         } else {
                             let heroes = d.heroes.clone();
                             let n_heroes = heroes.len();

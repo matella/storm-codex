@@ -12,6 +12,7 @@ pub mod matches;
 pub mod patch;
 pub mod patches;
 pub mod player;
+pub mod player_identity;
 pub mod players;
 pub mod scouting;
 pub mod scouting_report;

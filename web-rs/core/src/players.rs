@@ -163,18 +163,74 @@ pub struct LinkedName {
 
 #[derive(Clone, Debug, Default, PartialEq, Deserialize)]
 #[serde(default)]
+pub struct Reason {
+    pub kind: String,
+    pub text: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[serde(default)]
 pub struct Suggestion {
     pub toon: String,
     pub name: Option<String>,
     pub level: String,
+    pub score: f64,
+    pub reasons: Vec<Reason>,
 }
 
-/// What the player header needs of `GET /api/players/:toon/identity`.
+/// A name (or hotkey profile) seen over a period.
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[serde(default)]
+pub struct NameSpan {
+    pub name: String,
+    pub first_seen: Option<String>,
+    pub last_seen: Option<String>,
+    pub games: i64,
+}
+
+/// What the player page needs of `GET /api/players/:toon/identity`.
 #[derive(Clone, Debug, Default, PartialEq, Deserialize)]
 #[serde(default)]
 pub struct Identity {
+    pub names: Vec<NameSpan>,
+    pub profiles: Vec<NameSpan>,
     pub confirmed: Vec<LinkedName>,
     pub suggestions: Vec<Suggestion>,
+}
+
+/// `recentNames`: the `n` most recent names and how many are left out.
+pub fn recent_names(h: &[NameSpan], n: usize) -> (Vec<NameSpan>, usize) {
+    (
+        h.iter().take(n).cloned().collect(),
+        h.len().saturating_sub(n),
+    )
+}
+
+const MONTHS: [&str; 12] = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+fn year_month(iso: &str) -> Option<(i32, usize)> {
+    let y = iso.get(0..4)?.parse::<i32>().ok()?;
+    let m = iso.get(5..7)?.parse::<usize>().ok()?;
+    (1..=12).contains(&m).then_some((y, m - 1))
+}
+
+/// `seenRange`: `Jan 2025`, `Jan–Aug 2025`, `Nov 2024–Aug 2025` or `date unknown` (months in UTC).
+pub fn seen_range(s: &NameSpan) -> String {
+    let (Some(first), Some(last)) = (s.first_seen.as_deref(), s.last_seen.as_deref()) else {
+        return "date unknown".to_string();
+    };
+    let (Some((ya, ma)), Some((yb, mb))) = (year_month(first), year_month(last)) else {
+        return "date unknown".to_string();
+    };
+    if ya == yb && ma == mb {
+        format!("{} {ya}", MONTHS[ma])
+    } else if ya == yb {
+        format!("{}–{} {ya}", MONTHS[ma], MONTHS[mb])
+    } else {
+        format!("{} {ya}–{} {yb}", MONTHS[ma], MONTHS[mb])
+    }
 }
 
 /// `likelyAlias`: a confirmed link first, else the first high-confidence suggestion; never a low one.
@@ -334,10 +390,11 @@ mod tests {
             toon: t.into(),
             name: Some(t.into()),
             level: l.into(),
+            ..Default::default()
         };
         let mut i = Identity {
-            confirmed: vec![],
             suggestions: vec![sug("low", "low")],
+            ..Default::default()
         };
         assert_eq!(likely_alias(&i), None);
         i.suggestions.push(sug("high", "high"));
@@ -347,6 +404,42 @@ mod tests {
             name: None,
         });
         assert_eq!(likely_alias(&i).map(|a| a.toon), Some("conf".into()));
+    }
+
+    #[test]
+    fn seen_ranges_collapse_to_the_shortest_form() {
+        let span = |a: Option<&str>, b: Option<&str>| NameSpan {
+            first_seen: a.map(str::to_string),
+            last_seen: b.map(str::to_string),
+            ..Default::default()
+        };
+        let d = |a, b| seen_range(&span(Some(a), Some(b)));
+        assert_eq!(
+            d("2025-01-03T10:00:00Z", "2025-01-28T10:00:00Z"),
+            "Jan 2025"
+        );
+        assert_eq!(
+            d("2025-01-03T10:00:00Z", "2025-08-01T10:00:00Z"),
+            "Jan–Aug 2025"
+        );
+        assert_eq!(
+            d("2024-11-03T10:00:00Z", "2025-08-01T10:00:00Z"),
+            "Nov 2024–Aug 2025"
+        );
+        assert_eq!(seen_range(&span(None, Some("2025-01-01"))), "date unknown");
+    }
+
+    #[test]
+    fn recent_names_keep_the_first_n_and_count_the_rest() {
+        let names: Vec<NameSpan> = (0..5)
+            .map(|i| NameSpan {
+                name: i.to_string(),
+                ..Default::default()
+            })
+            .collect();
+        let (shown, hidden) = recent_names(&names, 3);
+        assert_eq!((shown.len(), hidden), (3, 2));
+        assert_eq!(recent_names(&names[..2], 3).1, 0);
     }
 
     #[test]
