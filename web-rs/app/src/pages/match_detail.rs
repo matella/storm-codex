@@ -1,5 +1,6 @@
 //! Match detail: header and verdict, draft, scoreboard, level advantage, team XP, timeline, chat, taunts and pings,
-//! full data. The data is the rich storm-stats JSON, read as `serde_json::Value`. Replay 2D is not ported yet (step 4).
+//! full data. The data is the rich storm-stats JSON, read as `serde_json::Value`.
+//! The Replay 2D tab is `replay.rs`.
 //! Port of `web/src/pages/MatchDetail.tsx`.
 
 use std::{collections::HashMap, sync::Arc};

@@ -1,6 +1,7 @@
 //! "Replay 2D" tab of a match: loads the viewer model (positions normalised to [0, 1]) once, then scrubs entirely on the
 //! client (`sample_at(t)` is pure). Port of `web/src/components/Replay2D.tsx` and `TalentStrip2D.tsx`.
-//! The `window.__cal` dev hook of the React viewer is not ported (calibration is done with the Calibrate map mode).
+//! `window.__cal(slug, [bx, by], [rx, ry])` (dev hook of the React viewer) sets the core anchors of a map and redraws,
+//! to calibrate by eye without a rebuild; the Calibrate map mode is the way to persist one.
 
 use std::{
     cell::{Cell, RefCell},
@@ -16,7 +17,7 @@ use leptos::{
     ev, html,
     prelude::*,
     task::spawn_local,
-    wasm_bindgen::{closure::Closure, JsCast},
+    wasm_bindgen::{closure::Closure, JsCast, JsValue},
     web_sys,
 };
 use serde_json::Value;
@@ -448,6 +449,36 @@ fn Viewer(
                 .and_then(|v| serde_json::from_value(v).ok())
         }
     };
+    // `window.__cal` override: (slug, anchors); below the saved calibration, above the baked defaults
+    let live_cal = RwSignal::new(None::<(String, Anchor)>);
+    {
+        let hook = StoredValue::new_local(Closure::<dyn FnMut(String, JsValue, JsValue)>::new(
+            move |slug: String, blue: JsValue, red: JsValue| {
+                let pair = |v: &JsValue| -> Option<[f64; 2]> {
+                    let a = js_sys::Array::from(v);
+                    Some([a.get(0).as_f64()?, a.get(1).as_f64()?])
+                };
+                if let (Some(blue), Some(red)) = (pair(&blue), pair(&red)) {
+                    live_cal.set(Some((
+                        slug,
+                        Anchor {
+                            blue,
+                            red,
+                            vscale: None,
+                        },
+                    )));
+                }
+            },
+        ));
+        let win = js_sys::global();
+        hook.with_value(|c| {
+            let _ = js_sys::Reflect::set(&win, &"__cal".into(), c.as_ref());
+        });
+        on_cleanup(move || {
+            let _ = js_sys::Reflect::delete_property(&js_sys::global(), &"__cal".into());
+            let _ = hook;
+        });
+    }
     let calibrating = RwSignal::new(false);
     let edit_anchors = RwSignal::new(None::<Anchor>);
     let dragging = RwSignal::new(None::<&'static str>);
@@ -775,6 +806,7 @@ fn Viewer(
             let (_, _) = (redraw.get(), show_minions.get());
             let (cal_on, edit) = (calibrating.get(), edit_anchors.get());
             let saved_a = saved();
+            let live = live_cal.get();
             dim.track();
             let Some(canvas) = canvas_ref.get() else {
                 return;
@@ -794,7 +826,10 @@ fn Viewer(
                     if cal_on && edit.is_some() {
                         edit.clone()
                     } else {
-                        saved_a.clone().or_else(|| baked_anchor(&b.slug))
+                        saved_a
+                            .clone()
+                            .or_else(|| live.clone().filter(|(s, _)| *s == b.slug).map(|(_, a)| a))
+                            .or_else(|| baked_anchor(&b.slug))
                     }
                 });
                 let _ = &slug;
