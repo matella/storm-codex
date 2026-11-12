@@ -17,15 +17,15 @@ pub use orchestrator::spawn;
 
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use serde::Serialize;
 use storm_codex_supervisor::{required_free_bytes, DiskError};
 use storm_codex_watcher::backfill::Progress;
-use storm_codex_watcher::detector::{find_replay_dirs_under, is_storm_replay};
+use storm_codex_watcher::detector::find_replay_dirs_under;
 use storm_codex_watcher::upload::UploadResult;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
-use tokio::sync::Notify;
+use tokio::sync::{watch, Notify};
 
 /// `app_settings` key of the extra replay folders chosen by the user (JSON array of paths).
 pub const EXTRA_FOLDERS_KEY: &str = "standalone_extra_folders";
@@ -115,8 +115,14 @@ pub struct StandaloneState {
     /// Taken once by the orchestrator.
     command_rx: Mutex<Option<UnboundedReceiver<Command>>>,
     shutdown: Notify,
+    /// `true` once the import task must stop (server shutting down).
+    stop: watch::Sender<bool>,
+    /// Port the server is bound to (checked against the `Host` header).
+    port: OnceLock<u16>,
     free_space: FreeSpace,
     detector: Detector,
+    /// `upload_tokens.name` of the watcher's token ([`token::TOKEN_NAME`]).
+    token_name: String,
 }
 
 impl StandaloneState {
@@ -135,8 +141,11 @@ impl StandaloneState {
             commands,
             command_rx: Mutex::new(Some(command_rx)),
             shutdown: Notify::new(),
+            stop: watch::Sender::new(false),
+            port: OnceLock::new(),
             free_space: Arc::new(storm_codex_supervisor::free_space),
             detector: Arc::new(storm_codex_watcher::detector::detect_replay_dirs),
+            token_name: token::TOKEN_NAME.to_string(),
         }
     }
 
@@ -155,6 +164,18 @@ impl StandaloneState {
     pub fn with_detector(mut self, f: impl Fn() -> Vec<PathBuf> + Send + Sync + 'static) -> Self {
         self.detector = Arc::new(f);
         self
+    }
+
+    /// Test seam: a token name of its own, so concurrent tests sharing a database do not
+    /// rotate each other's token (one server per database in production).
+    #[cfg(test)]
+    pub fn with_token_name(mut self, name: String) -> Self {
+        self.token_name = name;
+        self
+    }
+
+    pub(crate) fn token_name(&self) -> &str {
+        &self.token_name
     }
 
     pub fn status(&self) -> Status {
@@ -258,6 +279,27 @@ impl StandaloneState {
     pub async fn shutdown_requested(&self) {
         self.shutdown.notified().await;
     }
+
+    /// Tells the import task to stop: in-flight uploads are abandoned, the ledger is flushed.
+    pub fn stop_import(&self) {
+        self.stop.send_replace(true);
+    }
+
+    /// Completes once [`StandaloneState::stop_import`] was called (immediately if it already was).
+    pub async fn stopping(&self) {
+        let mut rx = self.stop.subscribe();
+        // `wait_for` only fails when the sender is dropped, which `self` prevents.
+        let _ = rx.wait_for(|stop| *stop).await;
+    }
+
+    /// Records the port the server is bound to (first call wins).
+    pub fn set_port(&self, port: u16) {
+        let _ = self.port.set(port);
+    }
+
+    pub fn port(&self) -> Option<u16> {
+        self.port.get().copied()
+    }
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -287,24 +329,13 @@ pub(crate) fn resolve_folders(detected: Vec<PathBuf>, extras: &[PathBuf]) -> Vec
     out
 }
 
-/// Total size of the replays directly in `dirs` (what the backfill reads). Blocking.
-pub(crate) fn replay_bytes(dirs: &[PathBuf]) -> u64 {
-    let mut total = 0u64;
-    for dir in dirs {
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            if is_storm_replay(&entry.path()) {
-                if let Ok(meta) = entry.metadata() {
-                    if meta.is_file() {
-                        total = total.saturating_add(meta.len());
-                    }
-                }
-            }
-        }
-    }
-    total
+/// Total size of `files` (the replays the backfill will send). A file that vanished since it
+/// was listed counts for nothing. Blocking.
+pub(crate) fn replay_bytes(files: &[PathBuf]) -> u64 {
+    files
+        .iter()
+        .filter_map(|f| std::fs::metadata(f).ok())
+        .fold(0u64, |total, meta| total.saturating_add(meta.len()))
 }
 
 /// Extra folders saved by `PUT /api/standalone/folders` (empty when unset or unreadable).

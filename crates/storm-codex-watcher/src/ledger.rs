@@ -5,9 +5,14 @@
 //! the next start retries them. Rejected files are kept with their reason so the UI can list
 //! them once instead of re-sending them forever.
 //!
-//! Writes are atomic: compact JSON goes to `<path>.tmp`, is synced to disk, then renamed over
-//! `<path>`. A crash leaves either the old or the new file, plus at worst a stale `.tmp` that
-//! the next write overwrites. [`Ledger::record`] writes through; bulk callers (the backfill)
+//! Writes are atomic: compact JSON goes to a temp file unique to that write
+//! (`<path>.<pid>.<seq>.tmp`), is synced to disk, then renamed over `<path>`. A crash leaves
+//! either the old or the new file, plus at worst a stale temp file, removed by the next
+//! [`Ledger::open`]. Two writes may overlap (an async flush still running on the blocking pool
+//! when the backfill is cancelled and flushes again on drop): each has its own temp file, so
+//! both are complete JSON, and every snapshot carries a sequence number taken when it is
+//! serialised; the rename happens under a mutex and is skipped when a newer snapshot is already
+//! published, so an older snapshot never replaces a newer one. [`Ledger::record`] writes through; bulk callers (the backfill)
 //! use [`Ledger::record_deferred`] and [`Ledger::flush`] periodically, so a crash only loses
 //! the last unflushed records, which is harmless: they are re-sent and the server answers 409.
 
@@ -15,6 +20,7 @@ use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -49,12 +55,17 @@ pub struct Ledger {
     entries: BTreeMap<String, Outcome>,
     /// In-memory entries not yet written to disk.
     dirty: bool,
+    /// Sequence number of the next serialised snapshot.
+    next_seq: u64,
+    /// Sequence number of the snapshot currently on disk (shared with in-flight writes).
+    published: Arc<Mutex<u64>>,
 }
 
 impl Ledger {
-    /// Loads the ledger at `path`; a missing file is an empty ledger. A stale `<path>.tmp`
-    /// left by a crash is ignored. A corrupt ledger file is an `InvalidData` error.
+    /// Loads the ledger at `path`; a missing file is an empty ledger. Stale temp files left by
+    /// a crash are removed. A corrupt ledger file is an `InvalidData` error.
     pub fn open(path: &Path) -> io::Result<Ledger> {
+        remove_stale_temps(path);
         let entries = match fs::read(path) {
             Ok(bytes) => {
                 let file: LedgerFile = serde_json::from_slice(&bytes)
@@ -68,6 +79,8 @@ impl Ledger {
             path: path.to_path_buf(),
             entries,
             dirty: false,
+            next_seq: 1,
+            published: Arc::new(Mutex::new(0)),
         })
     }
 
@@ -108,7 +121,8 @@ impl Ledger {
         if !self.dirty {
             return Ok(());
         }
-        write_atomic(&self.path, &self.serialize()?)?;
+        let (json, seq) = self.serialize()?;
+        write_atomic(&self.path, &json, seq, &self.published)?;
         self.dirty = false;
         Ok(())
     }
@@ -119,9 +133,10 @@ impl Ledger {
         if !self.dirty {
             return Ok(());
         }
-        let json = self.serialize()?;
+        let (json, seq) = self.serialize()?;
         let path = self.path.clone();
-        tokio::task::spawn_blocking(move || write_atomic(&path, &json))
+        let published = self.published.clone();
+        tokio::task::spawn_blocking(move || write_atomic(&path, &json, seq, &published))
             .await
             .map_err(io::Error::other)??;
         self.dirty = false;
@@ -139,35 +154,77 @@ impl Ledger {
             .collect()
     }
 
-    fn serialize(&self) -> io::Result<Vec<u8>> {
-        serde_json::to_vec(&LedgerFileRef {
+    /// The current entries as JSON, with the snapshot's sequence number.
+    fn serialize(&mut self) -> io::Result<(Vec<u8>, u64)> {
+        let json = serde_json::to_vec(&LedgerFileRef {
             version: FORMAT_VERSION,
             entries: &self.entries,
         })
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let seq = self.next_seq;
+        self.next_seq += 1;
+        Ok((json, seq))
     }
 }
 
-fn write_atomic(path: &Path, json: &[u8]) -> io::Result<()> {
+/// Writes snapshot `seq` to its own temp file, then publishes it unless a newer snapshot is
+/// already on disk. Sequential publication is enforced by `published` (held across the rename).
+fn write_atomic(path: &Path, json: &[u8], seq: u64, published: &Mutex<u64>) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
             fs::create_dir_all(parent)?;
         }
     }
-    let tmp = tmp_path(path);
-    {
-        // `create` truncates a stale temp file left by a crash.
+    let tmp = tmp_path(path, seq);
+    let written = (|| {
         let mut f = File::create(&tmp)?;
         f.write_all(json)?;
-        f.sync_all()?;
+        f.sync_all()
+    })();
+    let result = written.and_then(|()| {
+        // A panic while holding the lock cannot corrupt a plain sequence number.
+        let mut last = published.lock().unwrap_or_else(|p| p.into_inner());
+        if seq <= *last {
+            return Ok(()); // a newer snapshot is already published: drop this one
+        }
+        rename_with_retry(&tmp, path)?;
+        *last = seq;
+        Ok(())
+    });
+    if tmp.exists() {
+        let _ = fs::remove_file(&tmp);
     }
-    rename_with_retry(&tmp, path)
+    result
 }
 
-fn tmp_path(path: &Path) -> PathBuf {
+/// `<path>.<pid>.<seq>.tmp`: unique per write, even across two processes.
+fn tmp_path(path: &Path, seq: u64) -> PathBuf {
     let mut name = path.as_os_str().to_owned();
-    name.push(".tmp");
+    name.push(format!(".{}.{seq}.tmp", std::process::id()));
     PathBuf::from(name)
+}
+
+/// Removes the temp files a crash may have left next to `path` (`<name>.tmp`, `<name>.*.tmp`).
+fn remove_stale_temps(path: &Path) {
+    let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
+        return;
+    };
+    let dir = if dir.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        dir
+    };
+    let prefix = format!("{}.", name.to_string_lossy());
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let file = entry.file_name();
+        let file = file.to_string_lossy();
+        if file.starts_with(&prefix) && file.ends_with(".tmp") {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
 }
 
 /// `fs::rename` replaces the destination on Windows and Unix. On Windows it can fail
@@ -184,5 +241,27 @@ fn rename_with_retry(from: &Path, to: &Path) -> io::Result<()> {
             }
             Err(e) => return Err(e),
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_older_snapshot_never_replaces_a_newer_one() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("uploaded.json");
+        let published = Mutex::new(0);
+        write_atomic(&path, b"{\"seq\":2}", 2, &published).expect("write 2");
+        // the older snapshot finishes last: it must be dropped, and its temp file removed
+        write_atomic(&path, b"{\"seq\":1}", 1, &published).expect("write 1");
+        assert_eq!(fs::read(&path).expect("read"), b"{\"seq\":2}");
+        assert_eq!(*published.lock().unwrap(), 2);
+        let leftovers = fs::read_dir(dir.path()).expect("list").count();
+        assert_eq!(leftovers, 1, "no temp file left behind");
+        write_atomic(&path, b"{\"seq\":3}", 3, &published).expect("write 3");
+        assert_eq!(fs::read(&path).expect("read"), b"{\"seq\":3}");
     }
 }

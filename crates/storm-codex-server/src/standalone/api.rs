@@ -1,8 +1,12 @@
 //! `/api/standalone/*` routes, registered only in standalone mode (loopback-only server).
 //!
-//! Unauthenticated, like the rest of a single-user local install, but every write must come
-//! from the app itself: a request carrying a non-loopback `Origin` (a web page on another site
-//! posting to the local server) is refused with 403.
+//! Unauthenticated, like the rest of a single-user local install, but every request must come
+//! from the app itself (403 otherwise):
+//! - the `Host` must name the loopback server exactly (`127.0.0.1`, `localhost` or `[::1]`,
+//!   with no port or the bound port): a DNS-rebound page (`evil.example` resolving to
+//!   127.0.0.1) cannot read the status (folders and data path carry the user name);
+//! - a write carrying a non-loopback `Origin` (a web page on another site posting to the
+//!   local server) is refused.
 
 use std::path::PathBuf;
 
@@ -17,13 +21,16 @@ use serde::Deserialize;
 use super::{resolve_folders, save_extra_folders, Command, Phase};
 use crate::AppState;
 
-pub fn router() -> Router<AppState> {
+pub fn router(state: &AppState) -> Router<AppState> {
     Router::new()
         .route("/api/standalone/status", get(status))
         .route("/api/standalone/folders", put(put_folders))
         .route("/api/standalone/rescan", post(rescan))
         .route("/api/standalone/shutdown", post(shutdown))
-        .route_layer(axum::middleware::from_fn(same_origin_writes))
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            local_requests_only,
+        ))
 }
 
 fn error(code: StatusCode, message: String) -> Response {
@@ -43,7 +50,43 @@ fn is_loopback_origin(origin: &str) -> bool {
     matches!(uri.host(), Some("127.0.0.1" | "localhost" | "[::1]"))
 }
 
-async fn same_origin_writes(request: Request, next: Next) -> Response {
+/// True for a `Host` (or HTTP/2 authority) naming the loopback server: exactly `127.0.0.1`,
+/// `localhost` or `[::1]` (case-sensitive, no suffix), with no port or exactly `bound`.
+fn is_local_host(host: &str, bound: Option<u16>) -> bool {
+    let (name, port) = if let Some(rest) = host.strip_prefix('[') {
+        let Some((inner, after)) = rest.split_once(']') else {
+            return false;
+        };
+        (&host[..inner.len() + 2], after)
+    } else {
+        host.split_at(host.find(':').unwrap_or(host.len()))
+    };
+    if !matches!(name, "127.0.0.1" | "localhost" | "[::1]") {
+        return false;
+    }
+    match port.strip_prefix(':') {
+        None => port.is_empty(),
+        Some(digits) => {
+            !digits.is_empty()
+                && digits.bytes().all(|b| b.is_ascii_digit())
+                && digits.parse::<u16>().ok().is_some_and(|p| Some(p) == bound)
+        }
+    }
+}
+
+async fn local_requests_only(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let bound = state.standalone.as_ref().and_then(|st| st.port());
+    let host = match request.headers().get(header::HOST) {
+        Some(value) => value.to_str().ok().map(str::to_owned),
+        None => request.uri().authority().map(|a| a.as_str().to_owned()),
+    };
+    if !host.is_some_and(|h| is_local_host(&h, bound)) {
+        return error(StatusCode::FORBIDDEN, "unexpected Host header".into());
+    }
     let read = matches!(*request.method(), Method::GET | Method::HEAD);
     let foreign = request
         .headers()
@@ -155,7 +198,45 @@ async fn shutdown(State(state): State<AppState>) -> Response {
 
 #[cfg(test)]
 mod tests {
-    use super::is_loopback_origin;
+    use super::{is_local_host, is_loopback_origin};
+
+    #[test]
+    fn local_hosts() {
+        let bound = Some(8088);
+        for ok in [
+            "127.0.0.1",
+            "localhost",
+            "[::1]",
+            "127.0.0.1:8088",
+            "localhost:8088",
+            "[::1]:8088",
+        ] {
+            assert!(is_local_host(ok, bound), "{ok}");
+        }
+        for bad in [
+            "evil.com",
+            "evil.com:8088",
+            "127.0.0.1.evil.com",
+            "localhost.evil.com",
+            "localhost.evil.com:8088",
+            "LOCALHOST:8088",
+            "LocalHost",
+            "127.0.0.1:9999",
+            "localhost:",
+            "localhost:+8088",
+            "localhost:8088:1",
+            "[::1]:9999",
+            "[::1]x",
+            "[::2]:8088",
+            "[::1",
+            "",
+        ] {
+            assert!(!is_local_host(bad, bound), "{bad}");
+        }
+        // port unknown (not bound yet): only a port-less Host passes
+        assert!(is_local_host("127.0.0.1", None));
+        assert!(!is_local_host("127.0.0.1:8088", None));
+    }
 
     #[test]
     fn loopback_origins() {

@@ -1,12 +1,15 @@
 //! The single task that owns the upload ledger in standalone mode.
 //!
 //! Sequence: seed the reference data → detect the folders (HotS folders + saved extras) →
-//! disk gate → backfill → loop on live watcher events and HTTP commands. The watcher starts
-//! right before the backfill; the replays it reports meanwhile wait in its channel and are
-//! handled once the backfill is over (the ledger check skips those the backfill already sent).
-//! A command received during the backfill cancels it (the ledger is flushed on drop) and the
-//! import restarts with the new folders. Every upload goes through the server's own
-//! `POST /api/upload` at the actually bound address.
+//! open the ledger → disk gate (sized on the replays the ledger does not have yet) → upload
+//! token → live watcher → backfill → loop on live watcher events and HTTP commands. The watcher
+//! starts right before the backfill; the replays it reports meanwhile wait in its channel and
+//! are handled once the backfill is over (the ledger check skips those the backfill already
+//! sent). When the disk gate blocks the backfill, the watcher still runs: new games keep being
+//! imported. A command received during the backfill cancels it (the ledger is flushed on drop)
+//! and the import restarts with the new folders. A stop request ([`StandaloneState::stop_import`],
+//! sent on shutdown) abandons the in-flight uploads, flushes the ledger once and ends the task.
+//! Every upload goes through the server's own `POST /api/upload` at the actually bound address.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -68,24 +71,56 @@ struct Orchestrator {
     commands: UnboundedReceiver<Command>,
 }
 
+/// What the task does after an import attempt.
+enum Flow {
+    /// Wait for live events and commands.
+    Continue,
+    /// Stop requested (or the state is gone): flush and end.
+    Stop,
+}
+
 impl Orchestrator {
     async fn run(mut self) {
+        self.main().await;
+        // Single exit path: stop watching and persist what was recorded.
+        self.watch = None;
+        if let Some(ledger) = self.ledger.as_mut() {
+            if let Err(e) = ledger.flush_async().await {
+                tracing::warn!(error = %e, "could not persist the upload ledger");
+            }
+        }
+        tracing::info!("standalone import task stopped");
+    }
+
+    async fn main(&mut self) {
+        let st = self.st.clone();
         self.st.set_phase(Phase::Seeding);
-        seed_reference_data(&self.app).await;
+        tokio::select! {
+            () = seed_reference_data(&self.app) => {},
+            () = st.stopping() => return,
+        }
 
         let extras = load_extra_folders(&self.app.db).await;
-        let st = self.st.clone();
-        self.folders = tokio::task::spawn_blocking(move || resolve_folders(st.detect(), &extras))
-            .await
-            .unwrap_or_default();
+        let resolver = self.st.clone();
+        self.folders =
+            match tokio::task::spawn_blocking(move || resolve_folders(resolver.detect(), &extras))
+                .await
+            {
+                Ok(folders) => folders,
+                Err(e) => {
+                    tracing::error!(error = %e, "replay folder detection failed");
+                    Vec::new()
+                }
+            };
 
         loop {
-            if !self.import().await {
+            if let Flow::Stop = self.import().await {
                 return;
             }
             // Live phase (or a blocked one): new replays and commands until the next import.
             loop {
                 tokio::select! {
+                    () = st.stopping() => return,
                     command = self.commands.recv() => match command {
                         Some(command) => {
                             self.apply(command);
@@ -106,59 +141,63 @@ impl Orchestrator {
         }
     }
 
-    /// One import attempt: gate checks, watcher (re)start, backfill. Returns `false` when the
-    /// command channel is closed (the state is gone: stop).
-    async fn import(&mut self) -> bool {
+    /// One import attempt: ledger, disk gate, token, watcher (re)start, backfill.
+    async fn import(&mut self) -> Flow {
+        let st = self.st.clone();
         loop {
             self.st.set_folders(&self.folders);
             if self.folders.is_empty() {
                 self.watch = None;
                 self.st.set_phase(Phase::NoFolders);
-                return true;
+                return Flow::Continue;
             }
-
-            let dirs = self.folders.clone();
-            let bytes = tokio::task::spawn_blocking(move || replay_bytes(&dirs))
-                .await
-                .unwrap_or(0);
-            match self.st.disk_gate(&self.app.cfg.archive_dir, bytes) {
-                Ok(()) => {}
+            if let Err(e) = self.open_ledger().await {
+                return self.fail(&e);
+            }
+            let bytes = match self.pending_bytes().await {
+                Ok(bytes) => bytes,
+                Err(e) => return self.fail(&e),
+            };
+            let blocked = match self.st.disk_gate(&self.app.cfg.archive_dir, bytes) {
+                Ok(()) => false,
                 Err(DiskError::Insufficient { free, needed }) => {
-                    tracing::warn!(free, needed, "not enough free disk space: import blocked");
-                    self.watch = None;
-                    self.st.set_phase(Phase::DiskFull);
-                    return true;
+                    tracing::warn!(free, needed, "not enough free disk space: backfill blocked");
+                    true
                 }
-                // Unmeasurable (unusual filesystem): do not block the import on it.
-                Err(e) => tracing::warn!(error = %e, "free disk space unknown"),
-            }
-
-            if let Err(e) = self.prepare().await {
-                tracing::error!(error = %e, "standalone import cannot start");
-                self.watch = None;
-                self.st.set_phase(Phase::Error);
-                return true;
+                // Unmeasurable (unusual filesystem): documented, the import is not blocked.
+                Err(e) => {
+                    tracing::warn!(error = %e, "free disk space unknown, import not blocked");
+                    false
+                }
+            };
+            if let Err(e) = self.provision_uploader().await {
+                return self.fail(&e);
             }
             self.restart_watch();
+            if blocked {
+                // New games stay small: the live watcher keeps importing them.
+                self.st.set_phase(Phase::DiskFull);
+                return Flow::Continue;
+            }
 
             let progress = Arc::new(Progress::default());
             self.st.start_run(progress.clone());
             self.st.set_phase(Phase::Importing);
             let (Some(uploader), Some(ledger)) = (self.uploader.as_ref(), self.ledger.as_mut())
             else {
-                self.st.set_phase(Phase::Error);
-                return true;
+                return self.fail("import state missing");
             };
             let interrupted = tokio::select! {
                 () = backfill::run(&self.folders, uploader, ledger, &progress) => None,
                 command = self.commands.recv() => Some(command),
+                () = st.stopping() => Some(None),
             };
             match interrupted {
                 None => {
                     self.st.set_phase(Phase::Ready);
-                    return true;
+                    return Flow::Continue;
                 }
-                Some(None) => return false,
+                Some(None) => return Flow::Stop,
                 Some(Some(command)) => {
                     tracing::info!("import restarted on request");
                     self.apply(command);
@@ -167,22 +206,51 @@ impl Orchestrator {
         }
     }
 
-    /// Provisions the upload token and opens the ledger, once (retried at the next import
-    /// when it failed).
-    async fn prepare(&mut self) -> Result<(), String> {
+    fn fail(&mut self, error: &str) -> Flow {
+        tracing::error!(%error, "standalone import cannot run");
+        self.watch = None;
+        self.st.set_phase(Phase::Error);
+        Flow::Continue
+    }
+
+    /// Opens the ledger once (retried at the next import when it failed).
+    async fn open_ledger(&mut self) -> Result<(), String> {
+        if self.ledger.is_some() {
+            return Ok(());
+        }
+        let path = self.ledger_path.clone();
+        let ledger = tokio::task::spawn_blocking(move || open_ledger(&path))
+            .await
+            .map_err(|e| format!("upload ledger: {e}"))?
+            .map_err(|e| format!("upload ledger {}: {e}", self.ledger_path.display()))?;
+        self.ledger = Some(ledger);
+        Ok(())
+    }
+
+    /// Size of the replays the backfill would send (those the ledger does not have yet).
+    async fn pending_bytes(&mut self) -> Result<u64, String> {
+        let Some(ledger) = self.ledger.take() else {
+            return Err("upload ledger not open".into());
+        };
+        let dirs = self.folders.clone();
+        let (ledger, bytes) = tokio::task::spawn_blocking(move || {
+            let bytes = replay_bytes(&backfill::pending_files(&dirs, &ledger));
+            (ledger, bytes)
+        })
+        .await
+        // The ledger is lost with the panicked task: reopened from disk at the next import.
+        .map_err(|e| format!("sizing the replay folders failed: {e}"))?;
+        self.ledger = Some(ledger);
+        Ok(bytes)
+    }
+
+    /// Provisions the upload token once (retried at the next import when it failed).
+    async fn provision_uploader(&mut self) -> Result<(), String> {
         if self.uploader.is_none() {
-            let token = token::provision(&self.app.db, token::TOKEN_NAME)
+            let token = token::provision(&self.app.db, self.st.token_name())
                 .await
                 .map_err(|e| format!("upload token provisioning: {e}"))?;
             self.uploader = Some(Uploader::new(self.base_url.clone()).with_token(token));
-        }
-        if self.ledger.is_none() {
-            let path = self.ledger_path.clone();
-            let ledger = tokio::task::spawn_blocking(move || open_ledger(&path))
-                .await
-                .map_err(|e| format!("upload ledger: {e}"))?
-                .map_err(|e| format!("upload ledger {}: {e}", self.ledger_path.display()))?;
-            self.ledger = Some(ledger);
         }
         Ok(())
     }
@@ -202,7 +270,8 @@ impl Orchestrator {
         }
     }
 
-    /// Uploads a replay reported by the watcher unless the ledger already has it.
+    /// Uploads a replay reported by the watcher unless the ledger already has it. Abandoned
+    /// (not recorded, retried at the next start) when a stop is requested meanwhile.
     async fn handle_live(&mut self, path: &Path) {
         let name = path
             .file_name()
@@ -214,7 +283,10 @@ impl Orchestrator {
         if name.is_empty() || ledger.contains(&name) {
             return;
         }
-        let result = uploader.upload(path).await;
+        let result = tokio::select! {
+            result = uploader.upload(path) => result,
+            () = self.st.stopping() => return,
+        };
         self.st.record_live(&name, &result);
         let outcome = match result {
             UploadResult::Uploaded => Outcome::Uploaded,

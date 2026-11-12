@@ -5,7 +5,7 @@
 use super::*;
 use crate::{api_router, config::Config, AppState};
 use axum::body::Body;
-use axum::http::{header, Request, StatusCode};
+use axum::http::{header, Method, Request, StatusCode};
 use axum::Router;
 use http_body_util::BodyExt;
 use std::path::{Path, PathBuf};
@@ -59,7 +59,12 @@ fn app(state: &AppState) -> Router {
     api_router(state).with_state(state.clone())
 }
 
-async fn send(app: &Router, req: Request<Body>) -> (StatusCode, serde_json::Value) {
+/// Sends `req` (with `Host: 127.0.0.1` unless the test set one).
+async fn send(app: &Router, mut req: Request<Body>) -> (StatusCode, serde_json::Value) {
+    if !req.headers().contains_key(header::HOST) {
+        req.headers_mut()
+            .insert(header::HOST, "127.0.0.1".parse().unwrap());
+    }
     let resp = app.clone().oneshot(req).await.unwrap();
     let status = resp.status();
     let bytes = resp.into_body().collect().await.unwrap().to_bytes();
@@ -162,35 +167,6 @@ async fn status_reports_no_folders_phase_when_none_found() {
     ] {
         assert!(v.get(key).is_some(), "missing {key}: {v}");
     }
-}
-
-#[tokio::test]
-async fn disk_full_phase_blocks_backfill() {
-    let tmp = tempfile::tempdir().unwrap();
-    let replays = tmp.path().join("replays");
-    std::fs::create_dir_all(&replays).unwrap();
-    old_replay(&replays, "a.StormReplay", &[7u8; 1000]);
-    let cfg = test_config(tmp.path());
-    let dirs = vec![replays.clone()];
-    let st = StandaloneState::new(&cfg)
-        .with_detector(move || dirs.clone())
-        .with_free_space(|_| Ok(10));
-    let state = lazy_state(tmp.path(), Some(st));
-    let app = app(&state);
-    let _task = spawn(state.clone(), "http://127.0.0.1:1".into());
-    let v = wait_status(&app, 10, |v| v["phase"] == "disk-full").await;
-    assert_eq!(v["freeBytes"], 10);
-    assert_eq!(
-        v["neededBytes"],
-        storm_codex_supervisor::required_free_bytes(1000)
-    );
-    assert_eq!(v["total"], 0);
-    assert_eq!(v["done"], 0);
-    // still blocked a moment later: the backfill never started
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    let v = get_status(&app).await;
-    assert_eq!(v["phase"], "disk-full");
-    assert_eq!(v["total"], 0);
 }
 
 /// Stub `/api/upload`: `a*` uploaded, `b*` duplicate, `c*` rejected (400 "corrupt").
@@ -323,6 +299,65 @@ async fn shutdown_triggers_the_graceful_stop() {
 }
 
 #[tokio::test]
+async fn foreign_host_headers_are_refused_on_every_route() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = test_config(tmp.path());
+    let state = lazy_state(tmp.path(), Some(StandaloneState::new(&cfg)));
+    let st = state.standalone.clone().unwrap();
+    st.set_port(8088);
+    let app = app(&state);
+    let routes = || {
+        [
+            (Method::GET, "/api/standalone/status"),
+            (Method::HEAD, "/api/standalone/status"),
+            (Method::PUT, "/api/standalone/folders"),
+            (Method::POST, "/api/standalone/rescan"),
+            (Method::POST, "/api/standalone/shutdown"),
+        ]
+    };
+    for host in [
+        "evil.com",
+        "127.0.0.1.evil.com",
+        "localhost.evil.com:8088",
+        "LOCALHOST:8088",
+        "127.0.0.1:9999",
+    ] {
+        for (method, path) in routes() {
+            let req = Request::builder()
+                .method(method.clone())
+                .uri(path)
+                .header(header::HOST, host)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"folders":[]}"#))
+                .unwrap();
+            assert_eq!(
+                send(&app, req).await.0,
+                StatusCode::FORBIDDEN,
+                "{method} {path} Host {host}"
+            );
+        }
+    }
+    // no request reached a handler
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), st.shutdown_requested())
+            .await
+            .is_err()
+    );
+    for host in [
+        "127.0.0.1:8088",
+        "localhost:8088",
+        "[::1]:8088",
+        "127.0.0.1",
+    ] {
+        let req = Request::get("/api/standalone/status")
+            .header(header::HOST, host)
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(send(&app, req).await.0, StatusCode::OK, "Host {host}");
+    }
+}
+
+#[tokio::test]
 async fn cross_origin_writes_are_refused() {
     let tmp = tempfile::tempdir().unwrap();
     let cfg = test_config(tmp.path());
@@ -358,15 +393,24 @@ async fn cross_origin_writes_are_refused() {
 
 // ── DB-backed (skipped without DATABASE_URL) ─────────────────────────────────
 
-async fn db_state(dir: &Path, st: impl FnOnce(&Config) -> StandaloneState) -> Option<AppState> {
+/// Serialises the DB-backed standalone tests: `app_settings.standalone_extra_folders` is a
+/// single global row, read by every import task and written by the folders test.
+static SETTINGS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+async fn db_state(
+    dir: &Path,
+    st: impl FnOnce(&Config) -> StandaloneState,
+) -> Option<(AppState, tokio::sync::MutexGuard<'static, ()>)> {
     let mut state = crate::api_tests::test_state(None).await?;
+    let guard = SETTINGS.lock().await;
     let mut cfg = (*state.cfg).clone();
     cfg.standalone = true;
     cfg.archive_dir = dir.join("archive");
     std::fs::create_dir_all(&cfg.archive_dir).unwrap();
-    state.standalone = Some(Arc::new(st(&cfg)));
+    let name = format!("test-standalone-{}", uuid::Uuid::new_v4());
+    state.standalone = Some(Arc::new(st(&cfg).with_token_name(name)));
     state.cfg = Arc::new(cfg);
-    Some(state)
+    Some((state, guard))
 }
 
 #[tokio::test]
@@ -375,7 +419,7 @@ async fn put_folders_persists_and_returns_status() {
     let extra = tmp.path().join("backup");
     std::fs::create_dir_all(extra.join("old")).unwrap();
     old_replay(&extra.join("old"), "x.StormReplay", b"x");
-    let Some(state) = db_state(tmp.path(), |c| {
+    let Some((state, _settings)) = db_state(tmp.path(), |c| {
         StandaloneState::new(c).with_detector(Vec::new)
     })
     .await
@@ -462,7 +506,7 @@ async fn end_to_end_import_then_live_watch() {
     let content = format!("not a replay {}", uuid::Uuid::new_v4());
     old_replay(&replays, "first.StormReplay", content.as_bytes());
     let dirs = vec![replays.clone()];
-    let Some(state) = db_state(tmp.path(), move |c| {
+    let Some((state, _settings)) = db_state(tmp.path(), move |c| {
         StandaloneState::new(c)
             .with_detector(move || dirs.clone())
             .with_free_space(|_| Ok(u64::MAX))
@@ -471,14 +515,8 @@ async fn end_to_end_import_then_live_watch() {
     else {
         return;
     };
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let router = app(&state);
-    tokio::spawn(async move {
-        let _ = axum::serve(listener, router).await;
-    });
     let app = app(&state);
-    let _task = spawn(state.clone(), format!("http://{addr}"));
+    let _server = start_server(&state).await;
 
     let v = wait_status(&app, 30, |v| v["phase"] == "ready").await;
     assert_eq!(v["total"], 1, "{v}");
@@ -491,4 +529,164 @@ async fn end_to_end_import_then_live_watch() {
     let v = wait_status(&app, 30, |v| v["done"] == 2).await;
     assert_eq!(v["phase"], "ready");
     assert_eq!(v["failed"], serde_json::json!([]), "{v}");
+}
+
+/// Serves the app (standalone import task included) on an ephemeral port until shutdown.
+async fn start_server(state: &AppState) -> tokio::task::JoinHandle<Result<(), String>> {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let router = app(state);
+    let state = state.clone();
+    tokio::spawn(
+        async move { crate::serve(listener, router, &state, std::future::pending()).await },
+    )
+}
+
+/// Entries of the ledger file on disk (panics if it is not valid JSON).
+fn ledger_entries(path: &Path) -> usize {
+    let text = std::fs::read_to_string(path).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&text).expect("ledger is valid JSON");
+    v["entries"].as_object().unwrap().len()
+}
+
+/// `n` fake replays with unique content (never a duplicate of another test's upload).
+fn fake_replays(dir: &Path, n: usize) {
+    std::fs::create_dir_all(dir).unwrap();
+    let run = uuid::Uuid::new_v4();
+    for i in 0..n {
+        old_replay(
+            dir,
+            &format!("f{i:03}.StormReplay"),
+            format!("{run}-{i}").as_bytes(),
+        );
+    }
+}
+
+#[tokio::test]
+async fn disk_full_blocks_the_backfill_but_keeps_the_live_watcher() {
+    let tmp = tempfile::tempdir().unwrap();
+    let replays = tmp.path().join("replays");
+    std::fs::create_dir_all(&replays).unwrap();
+    old_replay(&replays, "a.StormReplay", &[7u8; 1000]);
+    let dirs = vec![replays.clone()];
+    let Some((state, _settings)) = db_state(tmp.path(), move |c| {
+        StandaloneState::new(c)
+            .with_detector(move || dirs.clone())
+            .with_free_space(|_| Ok(10))
+    })
+    .await
+    else {
+        return;
+    };
+    let app = app(&state);
+    let _server = start_server(&state).await;
+    let v = wait_status(&app, 20, |v| v["phase"] == "disk-full").await;
+    assert_eq!(v["freeBytes"], 10);
+    assert_eq!(
+        v["neededBytes"],
+        storm_codex_supervisor::required_free_bytes(1000)
+    );
+    assert_eq!(v["total"], 0, "the backfill never started: {v}");
+    // a new game is still imported by the live watcher
+    let content = format!("live game {}", uuid::Uuid::new_v4());
+    std::fs::write(replays.join("live.StormReplay"), content).unwrap();
+    let v = wait_status(&app, 30, |v| v["done"] == 1).await;
+    assert_eq!(v["phase"], "disk-full");
+    assert_eq!(v["failed"], serde_json::json!([]), "{v}");
+}
+
+#[tokio::test]
+async fn disk_gate_sizes_only_the_replays_not_in_the_ledger() {
+    let tmp = tempfile::tempdir().unwrap();
+    let replays = tmp.path().join("replays");
+    std::fs::create_dir_all(&replays).unwrap();
+    for name in ["a.StormReplay", "b.StormReplay"] {
+        old_replay(&replays, name, &[1u8; 5000]);
+    }
+    let dirs = vec![replays.clone()];
+    let one_gib = storm_codex_supervisor::required_free_bytes(0);
+    let Some((state, _settings)) = db_state(tmp.path(), move |c| {
+        StandaloneState::new(c)
+            .with_detector(move || dirs.clone())
+            // exactly enough when nothing is pending, not enough for the two files
+            .with_free_space(move |_| Ok(one_gib))
+    })
+    .await
+    else {
+        return;
+    };
+    let mut ledger = Ledger::open(&state.cfg.ledger_path()).unwrap();
+    for name in ["a.StormReplay", "b.StormReplay"] {
+        ledger
+            .record(name, storm_codex_watcher::ledger::Outcome::Uploaded)
+            .unwrap();
+    }
+    drop(ledger);
+    let app = app(&state);
+    let _server = start_server(&state).await;
+    let v = wait_status(&app, 20, |v| v["phase"] == "ready").await;
+    assert_eq!(v["neededBytes"], one_gib, "{v}");
+    assert_eq!(v["total"], 0, "{v}");
+}
+
+#[tokio::test]
+async fn rescan_during_a_backfill_leaves_a_valid_ledger() {
+    let tmp = tempfile::tempdir().unwrap();
+    let replays = tmp.path().join("replays");
+    fake_replays(&replays, 120);
+    let dirs = vec![replays.clone()];
+    let Some((state, _settings)) = db_state(tmp.path(), move |c| {
+        StandaloneState::new(c)
+            .with_detector(move || dirs.clone())
+            .with_free_space(|_| Ok(u64::MAX))
+    })
+    .await
+    else {
+        return;
+    };
+    let app = app(&state);
+    let _server = start_server(&state).await;
+    let v = wait_status(&app, 30, |v| v["done"].as_u64().unwrap_or(0) >= 1).await;
+    let rescan = Request::post("/api/standalone/rescan")
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(send(&app, rescan).await.0, StatusCode::ACCEPTED);
+    eprintln!("rescan sent at {}/{}", v["done"], v["total"]);
+    let v = wait_status(&app, 60, |v| v["phase"] == "ready").await;
+    assert_eq!(v["failed"], serde_json::json!([]), "{v}");
+    assert_eq!(ledger_entries(&state.cfg.ledger_path()), 120);
+}
+
+#[tokio::test]
+async fn shutdown_flushes_the_ledger_and_serve_returns() {
+    let tmp = tempfile::tempdir().unwrap();
+    let replays = tmp.path().join("replays");
+    fake_replays(&replays, 120);
+    let dirs = vec![replays.clone()];
+    let Some((state, _settings)) = db_state(tmp.path(), move |c| {
+        StandaloneState::new(c)
+            .with_detector(move || dirs.clone())
+            .with_free_space(|_| Ok(u64::MAX))
+    })
+    .await
+    else {
+        return;
+    };
+    let st = state.standalone.clone().unwrap();
+    let app = app(&state);
+    let server = start_server(&state).await;
+    wait_status(&app, 30, |v| v["done"].as_u64().unwrap_or(0) >= 5).await;
+    st.request_shutdown();
+    let served = tokio::time::timeout(Duration::from_secs(20), server)
+        .await
+        .expect("serve returns after the shutdown request")
+        .unwrap();
+    assert!(served.is_ok(), "{served:?}");
+    let status = st.status();
+    eprintln!("stopped at {}/{}", status.done, status.total);
+    assert!(status.done >= 5);
+    assert_eq!(
+        ledger_entries(&state.cfg.ledger_path()),
+        status.done - status.failed.len(),
+        "every outcome recorded before the stop is on disk"
+    );
 }

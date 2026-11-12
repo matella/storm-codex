@@ -58,16 +58,23 @@ once the listener is bound (`/api/health` answers 200 during the whole sequence)
    (known-folder API, OneDrive-relocated Documents included) plus the extra folders saved in
    `app_settings.standalone_extra_folders`; each extra folder is expanded to the folders under it
    that hold replays (itself when none does yet). None → phase `no-folders`;
-3. **disk gate** on `ARCHIVE_DIR`: free space must be ≥ `2 × size of the folders' replays + 1 GiB`
-   (`storm_codex_supervisor::required_free_bytes`); otherwise phase `disk-full`, no backfill and
-   no watcher until a rescan passes;
-4. **upload token**: a fresh random token is generated at each start and its SHA-256 written to
+3. **ledger** (`LEDGER_FILE`) opened; a corrupt file is moved to `<file>.corrupt` and an empty
+   ledger started (the server dedups re-sent files). Writes are atomic (unique temp file per
+   write, synced, renamed); overlapping writes publish in order (sequence number checked under
+   a lock: an older snapshot never replaces a newer one); stale temp files are removed on open;
+4. **disk gate** on `ARCHIVE_DIR`, sized on the replays **not yet in the ledger** (what the
+   backfill will send): free space must be ≥ `2 × their size + 1 GiB`
+   (`storm_codex_supervisor::required_free_bytes`); otherwise phase `disk-full`: no backfill
+   until a rescan passes, but the live watcher still runs (new games keep being imported). When
+   the free space cannot be measured (unusual filesystem), a warning is logged and the import is
+   **not** blocked;
+5. **upload token**: a fresh random token is generated at each start and its SHA-256 written to
    the single `upload_tokens` row named `standalone-watcher` (inserted once, then updated in
    place with `revoked_at` cleared, under a transaction advisory lock: no duplicate row, never
    stuck revoked, the previous session's token stops working). The clear token lives only in
-   memory (never logged, never on disk). `/api/upload` keeps its auth contract for everyone;
-5. **ledger** (`LEDGER_FILE`) opened; a corrupt file is moved to `<file>.corrupt` and an empty
-   ledger started (the server dedups re-sent files). Steps 4–5 failing → phase `error`;
+   memory (never logged, never on disk). `/api/upload` keeps its auth contract for everyone.
+   One server per database: a second server on the same database would rotate the token.
+   Steps 3 or 5 failing → phase `error`;
 6. **live watcher** started on the folders, then the **backfill** (phase `importing`): oldest
    first, 4 at a time, through `POST http://<bound address>/api/upload` (the address actually
    bound, so `BIND_ADDR` may use port 0). Replays reported by the watcher meanwhile wait and
@@ -79,6 +86,11 @@ the import restarts. Counts describe the current import run (backfill + live upl
 started) and reset at each rescan; `failed` lists the files that exhausted their retries
 (retried at the next start), `rejected` the files refused as bad content during the run.
 
+**Shutdown** (Ctrl-C, SIGTERM or `POST /api/standalone/shutdown`): the import task is told to
+stop first, while the server still answers: in-flight uploads are abandoned (not recorded, the
+server dedups them at the next start), the ledger is flushed once and the task ends; it is
+awaited for at most 10 s (then aborted) before the HTTP server drains and `run()` returns.
+
 | Route | Answer |
 |---|---|
 | `GET /api/standalone/status` | `{phase, folders, total, done, duplicates, rejected: [{file, reason}], failed: [file], freeBytes, neededBytes, dataDir, version}` — `phase` ∈ `seeding`, `importing`, `ready`, `no-folders`, `disk-full`, `error`; `folders` = effective folders; `freeBytes`/`neededBytes` `null` before the first disk gate; `dataDir` = parent of `ARCHIVE_DIR`; `version` = server crate version |
@@ -86,9 +98,15 @@ started) and reset at each rescan; `failed` lists the files that exhausted their
 | `POST /api/standalone/rescan` | **202**; re-runs the disk gate and the backfill |
 | `POST /api/standalone/shutdown` | **202**; same graceful shutdown as Ctrl-C (used by the desktop shell before it stops Postgres) |
 
-The routes are unauthenticated (loopback-only server, single user), but a write carrying a
-non-loopback `Origin` header (a foreign web page posting to the local server) is refused with
-**403**.
+The routes are unauthenticated (loopback-only server, single user), but every request must
+come from the app itself, otherwise **403**:
+- **Host** (all four routes, reads included): the `Host` header (or the HTTP/2 authority) must
+  be exactly `127.0.0.1`, `localhost` or `[::1]` (case-sensitive, no suffix), with no port or
+  the port actually bound; a missing `Host` is refused. This blocks DNS rebinding (a foreign
+  name resolving to 127.0.0.1 cannot read the status, whose folders and data path carry the
+  Windows user name). The desktop shell loads `http://127.0.0.1:<port>/`, which passes;
+- **Origin** (writes): a write carrying a non-loopback `Origin` header (a foreign web page
+  posting to the local server) is refused.
 
 ## Played-hero correction (`project.rs`)
 

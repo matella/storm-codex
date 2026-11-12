@@ -240,24 +240,49 @@ async fn run() -> Result<(), String> {
     let listener = tokio::net::TcpListener::bind(&bind)
         .await
         .map_err(|e| format!("bind {bind}: {e}"))?;
-    let local = listener
-        .local_addr()
-        .map_err(|e| format!("bind {bind}: {e}"))?;
+    serve(listener, app, &standalone_state, shutdown_signal()).await
+}
+
+/// How long the shutdown waits for the standalone import task to flush and stop.
+const IMPORT_STOP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Serves `app` until `signal` (or, in standalone mode, `POST /api/standalone/shutdown`), then
+/// shuts down gracefully. Standalone: the import task is started first and uploads to this very
+/// server at the address actually bound (`BIND_ADDR` may ask for port 0; `/api/health` answers
+/// during the whole import). On shutdown it is told to stop and awaited (bounded) while the
+/// server still answers its in-flight uploads, so the ledger is flushed before this returns.
+async fn serve(
+    listener: tokio::net::TcpListener,
+    app: Router,
+    state: &AppState,
+    signal: impl std::future::Future<Output = ()> + Send + 'static,
+) -> Result<(), String> {
+    let local = listener.local_addr().map_err(|e| format!("bind: {e}"))?;
     tracing::info!("storm-codex-server listening on {local}");
-    // Standalone: the import task uploads to this very server, at the address actually bound
-    // (BIND_ADDR may ask for port 0). `/api/health` answers during the whole import.
-    if standalone_state.standalone.is_some() {
-        standalone::spawn(standalone_state.clone(), format!("http://{local}"));
-    }
-    let http_shutdown = standalone_state.standalone.clone();
+    let standalone = state.standalone.clone();
+    let import = standalone.as_ref().map(|st| {
+        st.set_port(local.port());
+        standalone::spawn(state.clone(), format!("http://{local}"))
+    });
     axum::serve(listener, app)
         .with_graceful_shutdown(async move {
-            match http_shutdown {
-                Some(st) => tokio::select! {
-                    () = shutdown_signal() => {},
-                    () = st.shutdown_requested() => {},
-                },
-                None => shutdown_signal().await,
+            let Some(st) = standalone else {
+                return signal.await;
+            };
+            tokio::select! {
+                () = signal => {},
+                () = st.shutdown_requested() => {},
+            }
+            tracing::info!("shutdown requested: stopping the import task");
+            st.stop_import();
+            if let Some(mut import) = import {
+                if tokio::time::timeout(IMPORT_STOP_TIMEOUT, &mut import)
+                    .await
+                    .is_err()
+                {
+                    tracing::warn!("import task did not stop in time, aborted");
+                    import.abort();
+                }
             }
         })
         .await
@@ -300,7 +325,7 @@ async fn shutdown_signal() {
 fn api_router(state: &AppState) -> Router<AppState> {
     let router = base_router(state);
     if state.standalone.is_some() {
-        router.merge(standalone::api::router())
+        router.merge(standalone::api::router(state))
     } else {
         router
     }

@@ -91,7 +91,7 @@ enum FileOutcome {
 
 /// Uploads every replay of `dirs` (non-recursive) missing from `ledger`, updating `progress`.
 pub async fn run(dirs: &[PathBuf], uploader: &Uploader, ledger: &mut Ledger, progress: &Progress) {
-    let candidates = collect_candidates(dirs, ledger);
+    let candidates = pending_files(dirs, ledger);
     progress.total.store(candidates.len(), Ordering::Relaxed);
     tracing::info!(files = candidates.len(), "backfill started");
 
@@ -194,8 +194,9 @@ impl Drop for FlushOnDrop<'_> {
     }
 }
 
-/// Replays of `dirs` not in the ledger, oldest first, one per file name.
-fn collect_candidates(dirs: &[PathBuf], ledger: &Ledger) -> Vec<PathBuf> {
+/// Replays of `dirs` (non-recursive) not in the ledger, oldest first, one per file name: what
+/// [`run`] would send. Lets a caller size the work (disk gate) before starting it.
+pub fn pending_files(dirs: &[PathBuf], ledger: &Ledger) -> Vec<PathBuf> {
     let mut seen = HashSet::new();
     let mut candidates: Vec<(SystemTime, PathBuf)> = Vec::new();
     for dir in dirs {

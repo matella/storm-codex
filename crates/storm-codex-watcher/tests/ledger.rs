@@ -1,7 +1,7 @@
 #![allow(clippy::expect_used)]
 
 use std::fs;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use storm_codex_watcher::ledger::{Ledger, Outcome};
 
@@ -131,4 +131,53 @@ fn ledger_write_is_atomic_on_crash_simulation() {
     // The committed file is always complete JSON.
     let text = fs::read_to_string(&path).expect("read ledger");
     serde_json::from_str::<serde_json::Value>(&text).expect("ledger is valid JSON");
+}
+
+#[test]
+fn stale_temp_files_are_removed_on_open() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("uploaded.json");
+    for stale in ["uploaded.json.tmp", "uploaded.json.4242.7.tmp"] {
+        fs::write(dir.path().join(stale), b"{\"entries\": {\"half").expect("stale");
+    }
+    fs::write(dir.path().join("other.json.1.1.tmp"), b"x").expect("unrelated");
+    Ledger::open(&path).expect("open");
+    assert!(!dir.path().join("uploaded.json.tmp").exists());
+    assert!(!dir.path().join("uploaded.json.4242.7.tmp").exists());
+    assert!(
+        dir.path().join("other.json.1.1.tmp").exists(),
+        "only this ledger's temps are removed"
+    );
+}
+
+/// An async flush cancelled mid-write keeps running on the blocking pool while a synchronous
+/// flush (the backfill's drop guard) writes a newer snapshot: the file on disk must always be
+/// valid JSON and end up with every record.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cancelled_async_flush_racing_a_sync_flush_never_corrupts() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("uploaded.json");
+    let mut ledger = Ledger::open(&path).expect("open");
+    let mut expected = 0usize;
+    for round in 0..200 {
+        for i in 0..20 {
+            ledger.record_deferred(&format!("r{round}-{i}.StormReplay"), Outcome::Uploaded);
+            expected += 1;
+        }
+        // poll the async flush once (its blocking write starts), then drop it
+        let _ = tokio::time::timeout(Duration::ZERO, ledger.flush_async()).await;
+        ledger.record_deferred(&format!("r{round}-last.StormReplay"), Outcome::Duplicate);
+        expected += 1;
+        ledger.flush().expect("sync flush");
+        let text = fs::read_to_string(&path).expect("read");
+        assert!(
+            serde_json::from_str::<serde_json::Value>(&text).is_ok(),
+            "round {round}: ledger on disk is not valid JSON"
+        );
+    }
+    // let the detached writes finish, then check the final state
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let text = fs::read_to_string(&path).expect("read");
+    let v: serde_json::Value = serde_json::from_str(&text).expect("valid JSON");
+    assert_eq!(v["entries"].as_object().expect("entries").len(), expected);
 }
