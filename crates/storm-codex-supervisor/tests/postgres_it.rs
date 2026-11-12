@@ -50,17 +50,25 @@ fn layout(root: &Path, bin: PathBuf) -> (DataDir, Postgres) {
     (data, pg)
 }
 
-/// Runs one SQL statement with the bundled `psql` and returns its unaligned output.
-fn psql(bin: &Path, pg: &Postgres, db: &str, sql: &str) -> String {
+/// Runs `psql -w` (never prompts) against `url`, with no inherited password.
+fn psql_url(bin: &Path, url: &str, sql: &str) -> std::process::Output {
     let exe = bin.join(format!("psql{}", std::env::consts::EXE_SUFFIX));
-    let out = Command::new(exe)
-        .args(["-X", "-q", "-t", "-A", "-v", "ON_ERROR_STOP=1"])
+    Command::new(exe)
+        .args(["-X", "-w", "-q", "-t", "-A", "-v", "ON_ERROR_STOP=1"])
+        .env_remove("PGPASSWORD")
+        .env_remove("PGPASSFILE")
+        .env("PGCONNECT_TIMEOUT", "10")
         .arg("-d")
-        .arg(pg.database_url(db))
+        .arg(url)
         .arg("-c")
         .arg(sql)
         .output()
-        .expect("run psql");
+        .expect("run psql")
+}
+
+/// Runs one SQL statement with the bundled `psql` and returns its unaligned output.
+fn psql(bin: &Path, pg: &Postgres, db: &str, sql: &str) -> String {
+    let out = psql_url(bin, &pg.database_url(db), sql);
     assert!(
         out.status.success(),
         "psql failed: {}",
@@ -69,11 +77,16 @@ fn psql(bin: &Path, pg: &Postgres, db: &str, sql: &str) -> String {
     String::from_utf8_lossy(&out.stdout).trim().to_string()
 }
 
+fn password_file(data: &DataDir) -> PathBuf {
+    data.pg().with_file_name("pg-password")
+}
+
 fn read_pid(data_dir: &Path) -> u32 {
-    let text = std::fs::read_to_string(data_dir.join("postmaster.pid")).expect("postmaster.pid");
-    text.lines()
-        .next()
-        .expect("first line")
+    // Bytes: line 2 (data directory) is in the ANSI code page on Windows, not UTF-8.
+    let bytes = std::fs::read(data_dir.join("postmaster.pid")).expect("postmaster.pid");
+    let first = bytes.split(|&b| b == b'\n').next().expect("first line");
+    std::str::from_utf8(first)
+        .expect("ascii pid")
         .trim()
         .parse()
         .expect("pid")
@@ -245,7 +258,7 @@ fn data_dir_with_spaces_and_accents_works() {
     let Some(bin) = bin_dir() else { return };
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().join("Zoë Müller").join("App Data");
-    let (_data, pg) = layout(&root, bin.clone());
+    let (data, pg) = layout(&root, bin.clone());
 
     pg.clean_stale().expect("clean_stale");
     pg.init_if_needed().expect("init");
@@ -253,6 +266,19 @@ fn data_dir_with_spaces_and_accents_works() {
     let _running = Running(&pg);
     pg.ensure_database(APP_DATABASE).expect("ensure_database");
     assert_eq!(psql(&bin, &pg, APP_DATABASE, "SELECT 40 + 2"), "42");
+    // postmaster.pid holds the accented path in the ANSI code page: the live server must
+    // still be recognised as ours (kept by clean_stale) and stopped for real.
+    pg.clean_stale().expect("clean_stale while running");
+    assert!(data.pg().join("postmaster.pid").exists());
+    let postmaster = read_pid(&data.pg());
+    pg.stop().expect("stop");
+    assert!(!data.pg().join("postmaster.pid").exists());
+    let mut sys = System::new();
+    sys.refresh_processes(ProcessesToUpdate::Some(&[Pid::from_u32(postmaster)]), true);
+    assert!(
+        sys.process(Pid::from_u32(postmaster)).is_none(),
+        "postmaster must be gone after stop"
+    );
 }
 
 #[test]
@@ -356,4 +382,125 @@ fn dump_then_restore_roundtrip() {
         psql(&bin, &pg2, APP_DATABASE, "SELECT count(*) FROM cast_row"),
         "1"
     );
+}
+
+#[test]
+fn pid_file_of_a_live_process_that_is_not_ours_is_stale() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let data_dir = tmp.path().join("pg");
+    std::fs::create_dir_all(&data_dir).expect("mkdir");
+    let pid_file = data_dir.join("postmaster.pid");
+    // The test process is alive but is not our postmaster.
+    let foreign = format!("{}\n{}\n", std::process::id(), data_dir.display());
+
+    std::fs::write(&pid_file, &foreign).expect("write");
+    let pg = Postgres::new(tmp.path().join("no-bin"), data_dir, free_port());
+    pg.clean_stale().expect("clean_stale");
+    assert!(!pid_file.exists(), "foreign PID: pid file must be removed");
+
+    // stop must not signal it either (no binaries exist, so any signal attempt would error).
+    std::fs::write(&pid_file, &foreign).expect("write");
+    pg.stop().expect("stop treats a foreign PID as stale");
+    assert!(!pid_file.exists());
+}
+
+#[test]
+fn foreign_postgres_pid_is_never_signalled() {
+    let Some(bin) = bin_dir() else { return };
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (data_a, a) = layout(&tmp.path().join("a"), bin.clone());
+    let (data_b, b) = layout(&tmp.path().join("b"), bin.clone());
+    a.init_if_needed().expect("init a");
+    b.init_if_needed().expect("init b");
+    a.start().expect("start a");
+    let _running_a = Running(&a);
+    let a_pid = read_pid(&data_a.pg());
+    let b_pid_file = data_b.pg().join("postmaster.pid");
+    // B's pid file names A's live postmaster (same binaries, other data dir).
+    let forged = format!("{a_pid}\n{}\n", data_b.pg().display());
+
+    std::fs::write(&b_pid_file, &forged).expect("forge");
+    b.clean_stale().expect("clean_stale b");
+    assert!(!b_pid_file.exists(), "A's PID is not B's postmaster");
+
+    std::fs::write(&b_pid_file, &forged).expect("forge again");
+    b.start().expect("start b over a forged pid file");
+    let _running_b = Running(&b);
+    assert_ne!(read_pid(&data_b.pg()), a_pid);
+    assert_eq!(read_pid(&data_a.pg()), a_pid, "A untouched");
+    assert_eq!(
+        psql(&bin, &a, "postgres", "SELECT 1"),
+        "1",
+        "A still serving"
+    );
+    assert_eq!(psql(&bin, &b, "postgres", "SELECT 2"), "2");
+}
+
+#[test]
+fn password_is_generated_once_and_required() {
+    let Some(bin) = bin_dir() else { return };
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (data, pg) = layout(tmp.path(), bin.clone());
+    pg.init_if_needed().expect("init");
+
+    let pw_path = password_file(&data);
+    let password = std::fs::read_to_string(&pw_path).expect("password file next to pg/");
+    let password = password.trim().to_string();
+    assert!(password.len() >= 64, "at least 32 random bytes, hex");
+    assert!(password.bytes().all(|b| b.is_ascii_hexdigit()));
+    assert!(
+        !data.pg().join("pg-password").exists(),
+        "not inside the cluster"
+    );
+
+    pg.start().expect("start");
+    let running = Running(&pg);
+    let url = pg.database_url("postgres");
+    assert!(url.contains(&password), "database_url carries the password");
+    let without = url.replace(&format!(":{password}@"), "@");
+    let out = psql_url(&bin, &without, "SELECT 1");
+    assert!(!out.status.success(), "no password must be refused");
+    assert_eq!(psql(&bin, &pg, "postgres", "SELECT 1"), "1");
+    drop(running);
+
+    pg.init_if_needed().expect("init again is a no-op");
+    pg.start().expect("restart");
+    let _running = Running(&pg);
+    assert_eq!(
+        std::fs::read_to_string(&pw_path).expect("reread").trim(),
+        password,
+        "password file is reused"
+    );
+    assert_eq!(psql(&bin, &pg, "postgres", "SELECT 1"), "1");
+}
+
+#[test]
+fn wrong_password_fails_fast_instead_of_prompting() {
+    let Some(bin) = bin_dir() else { return };
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (data, pg) = layout(tmp.path(), bin);
+    pg.init_if_needed().expect("init");
+    pg.start().expect("start");
+    let _running = Running(&pg);
+
+    let pw_path = password_file(&data);
+    let good = std::fs::read_to_string(&pw_path).expect("password");
+    std::fs::write(&pw_path, "00".repeat(32)).expect("tamper");
+    let t0 = Instant::now();
+    let result = pg.ensure_database(APP_DATABASE);
+    let elapsed = t0.elapsed();
+    std::fs::write(&pw_path, &good).expect("restore password");
+
+    match result {
+        Err(PgError::CommandFailed { stderr, .. }) => {
+            assert!(
+                !stderr.contains(good.trim()),
+                "the secret never appears in errors"
+            );
+        }
+        other => panic!("expected CommandFailed, got {other:?}"),
+    }
+    assert!(elapsed < Duration::from_secs(15), "took {elapsed:?}");
+    pg.ensure_database(APP_DATABASE)
+        .expect("works again with the right password");
 }

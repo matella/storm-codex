@@ -109,24 +109,44 @@ EDB publishes no checksum: the pin was computed on first download (trust-on-firs
 Upgrading the minor version = change both lines in the same commit; the major stays **17**.
 
 **Lifecycle (`Postgres`, `postgres.rs`).** All tools run from the bundled `bin/` through
-`std::process::Command` (no shell, no console window on Windows, inherited `PG*` variables removed).
-- Cluster in `<data root>/pg`: `initdb -U storm -A trust -E UTF8 --locale=C`, skipped when
-  `PG_VERSION` exists; a cluster of another major version is refused (`WrongMajorVersion`).
-  `postgresql.conf` gets `listen_addresses = '127.0.0.1'` and no Unix socket.
-- `clean_stale`: deletes `postmaster.pid` when its PID is not a live `postgres` process (crash,
-  power loss, PID reuse); a live one is left alone.
-- `start`: `pg_ctl start -w -t 60 -o "-p <port> -c listen_addresses=127.0.0.1"`, server log in
-  `<data root>/logs/postgres.log`, pg_ctl's own output in `logs/pg_ctl.log`. A server already
-  running on the cluster is stopped first so it comes back on the requested port.
-- `stop`: `pg_ctl stop -m fast -w -t 60`; no-op when nothing runs.
-- `ensure_database(name)`, `database_url(db)` = `postgres://storm@127.0.0.1:<port>/<db>`.
+`std::process::Command` (no shell, no console window on Windows, inherited `PG*` variables removed,
+`LC_MESSAGES=C`), each with a wall-clock limit (pg_ctl 90 s, psql/createdb 60 s, dump/restore
+30 min) after which the process is killed and `PgError::Timeout` is returned.
+- **Authentication: generated password.** On first init a random password (32 bytes from the OS
+  CSPRNG, hex) is written to `<data root>/pg-password`, next to (not inside) the cluster
+  directory, and reused afterwards. `initdb -U storm -A scram-sha-256 --pwfile=<that file>
+  -E UTF8 --locale=C`: every connection, local or TCP, needs the password, so other local
+  accounts cannot log in as superuser. The password is a secret: child tools get it through
+  `PGPASSWORD` (never on the command line), and it never appears in errors or logs.
+  `database_url` contains it, so do not log that URL.
+- Cluster in `<data root>/pg`: init skipped when `PG_VERSION` exists; a cluster of another major
+  version is refused (`WrongMajorVersion`). `postgresql.conf` gets
+  `listen_addresses = '127.0.0.1'` and no Unix socket.
+- Pid-file ownership: `postmaster.pid` is "ours" only if its PID is alive, runs
+  `<bin>/postgres.exe` and was started with `-D <our pg dir>`. Anything else (dead PID, PID
+  reused by another program or by **another Postgres**) is stale: it is deleted, never signalled.
+  Only the first line (PID) is read, as bytes: on Windows line 2 holds the data directory in the
+  ANSI code page, which is not UTF-8 for accented paths.
+- `clean_stale`: deletes a stale `postmaster.pid`; ours is left alone.
+- `start`: removes a stale pid file, stops our own running server (so it comes back on the
+  requested port), then `pg_ctl start -w -t 60 -o "-p <port> -c listen_addresses=127.0.0.1"`.
+  The server log goes to `<data root>/logs/postgres.log` and pg_ctl's own output to
+  `logs/pg_ctl.log`.
+- `stop`: `pg_ctl stop -m fast -w -t 60` for our server only; a stale pid file is removed; no-op
+  when there is none.
+- Client tools (`psql`, `createdb`, `pg_dump`, `pg_restore`) run with `-w` (never prompt: there
+  is no console), `PGCONNECT_TIMEOUT=10`; `restore` also sets `PGOPTIONS=-c lock_timeout=30s`.
+  A wrong or missing password fails at once with `CommandFailed`.
+- `ensure_database(name)`; `database_url(db)` = `postgres://storm:<password>@127.0.0.1:<port>/<db>`.
 - `dump(out)` / `restore(file)`: `pg_dump -Fc` / `pg_restore --clean --if-exists --no-owner` on
   the `storm_codex` database (created on restore if missing).
 
-**Tests.** `cargo test -p storm-codex-supervisor` always runs the binary-free tests (wrong
-major version, missing binary, stale pid cleanup, URL, name validation). The real-server tests
-(roundtrip, data path with spaces and accents, stale pid, hard-kill recovery, dump/restore) run
-only when `PG_BIN_DIR` is set:
+**Tests.** `cargo test -p storm-codex-supervisor` always runs the binary-free tests: wrong major
+version, missing binary, stale pid cleanup, foreign live PID treated as stale, non-UTF-8 pid
+file, password file, URL, name validation. The real-server tests run only when `PG_BIN_DIR` is
+set: roundtrip, data path with spaces and accents, stale pid, hard-kill recovery, foreign
+Postgres PID never signalled, password required and reused, wrong password fails fast,
+dump/restore:
 `$env:PG_BIN_DIR = "$PWD\target\postgres\bin"; cargo test -p storm-codex-supervisor --test postgres_it`.
 
 ## External dependencies (all best-effort)
