@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/storm-replay", "crates/storm-stats", "crates/storm-codex-server", "crates/storm-replay-viewer", "crates/storm-lobby", "crates/storm-codex-supervisor"]
+members = ["crates/storm-replay", "crates/storm-stats", "crates/storm-codex-server", "crates/storm-replay-viewer", "crates/storm-lobby", "crates/storm-codex-supervisor", "crates/storm-codex-watcher"]
 # The spikes (milestone 0, Rust front-end step 0) have their own lockfiles — they are not part of the workspace.
 exclude = ["spike/storm-decode", "spike/frontend-rust"]
 
