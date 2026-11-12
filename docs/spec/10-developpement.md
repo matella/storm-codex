@@ -25,13 +25,13 @@ working. Already-applied SQL migrations are never edited, so their French commen
      `docs/specs/YYYY-MM-DD-….md` + **operator approval before implementing**. Locked decisions
      (01-architecture) are not reopened without the operator.
 3. **Code** within the specified frame — conventions: Rust 2021+, strict clippy, typed errors,
-   no `unwrap()` outside tests; strict TS front-end; conventional commits; up-to-date library docs
+   no `unwrap()` outside tests; strict clippy on the Rust front-end; conventional commits; up-to-date library docs
    via the Context7 MCP (do not code axum/sqlx/TanStack… APIs from memory).
 4. **Prove** (never just claim): tests + verification suited to the type of change
    (table below). A UI feature is verified in the browser on real data.
    Commands: `cargo test --workspace` (DB integration tests are skipped without
    `DATABASE_URL` — run them against the dev Docker Postgres; CI always runs them);
-   `npm test --prefix web` (vitest, pure helpers of `api.ts`); `npm run build --prefix web`.
+   front-end (in `web-rs/`): `cargo clippy` native then `cargo clippy --target wasm32-unknown-unknown`, `cargo test`, `trunk build --release`.
 5. **Document the rest**: `docs/STATUS.md` (end of session); AI memory where relevant.
 6. **Commit + push** (the operator has authorised pushing directly to `main` after each finished step).
 
@@ -44,9 +44,7 @@ working. Already-applied SQL migrations are never edited, so their French commen
 | Shape of the projection (`project.rs`, storm-stats output) | `06-modele-donnees.md` + bump `PARSER_VERSION` + `04-serveur.md` if pipeline | reprocess verified idempotent |
 | Stats logic (`storm-stats/src/process/`) | `03-storm-stats.md` (any divergence → tolerances.json) | **parity diff green again** (`tools/parity-harness/`) |
 | Decoding (`storm-replay`) | `02-storm-replay.md` | heroprotocol crosscheck + mini-corpus |
-| Front-end page/route/overlay | `08-frontend.md` | `npm test` + `npm run build` green + browser check on real data |
-| Rust front-end (`web-rs/`) page/crate | `08-frontend.md` (Rust section) | `cargo clippy` native + `--target wasm32-unknown-unknown`, `cargo test` in `web-rs/`, `trunk build`, size budget, browser check on real data side by side with React (+ real OBS for OBS sources) |
-| Pure helper in `web/src/api.ts` | — (if the UI contract does not change) | vitest test in `api.test.ts` |
+| Front-end (`web-rs/`) page/route/overlay/crate | `08-frontend.md` | `cargo clippy` native + `--target wasm32-unknown-unknown`, `cargo test` in `web-rs/`, `trunk build`, size budget, browser check on real data (+ real OBS for OBS sources) |
 | Env variable, compose, Dockerfile, CI | `04-serveur.md` / `09-operations.md` | build/deployment tested |
 | WS or Jarvis event | `07-evenements.md` | event observed (WS or Redis) |
 | Perf affected (parse, API, backfill) | budget re-measured in `01-architecture.md` | matching bench |

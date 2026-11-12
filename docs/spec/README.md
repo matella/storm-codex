@@ -45,7 +45,7 @@ behaviour, and to **update in the same commit** as the change.
 |---|---|---|
 | `crates/storm-replay` · `storm-stats` | public libraries (decoding, stats) | active — publishable on crates.io |
 | `crates/storm-codex-server` | server (API + front-end + overlays) + migrations | active |
-| `web/` | React SPA (Vite) built into `web/dist` | active |
+| `web-rs/` | Rust front-end (Leptos → wasm, Trunk): app + OBS sources, built into `web-rs/dist` | active |
 | `tools/` | `protocol_gen.py` (protocol tables), `crosscheck_streams.py` (decoding parity), `parity-harness/` (stats parity vs hots-parser) | tooling — required for evidence |
 | `corpus/` | real test replays (`spike50` bench, `stats` parity) — **not committed** (gitignored, NAS/box) | local data |
 | `spike/` | milestone 0 (go/no-go decoding spike, .NET/Python benches) | archive — do not touch |

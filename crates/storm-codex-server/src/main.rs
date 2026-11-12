@@ -209,16 +209,10 @@ async fn run() -> Result<(), String> {
     }
     let bind = state.cfg.bind_addr.clone();
     let app = api_router(&state);
-    let app = serve_v2(app, state.cfg.web_v2_dir.as_deref());
-    // `/` answers with React, or with the Rust front-end once `WEB_ROOT=rust` (the switch; React stays for rollback)
-    let app = match state
-        .cfg
-        .web_v2_dir
-        .as_deref()
-        .filter(|_| state.cfg.web_root_rust)
-    {
-        Some(dir) => serve_v2_at_root(app, dir),
-        None => serve_spa(app, state.cfg.web_dir.as_deref()),
+    // the front-end: bundle files under `/v2/<bundle>/`, every page at `/` (API routes first)
+    let app = match state.cfg.web_dir.as_deref() {
+        Some(dir) => serve_v2_at_root(serve_v2(app, Some(dir)), dir),
+        None => app,
     }
     .with_state(state)
     // Request body limit: the axum default (2 MB) rejected with 413 — BEFORE the handler, so
@@ -512,46 +506,6 @@ fn api_router(state: &AppState) -> Router<AppState> {
         ))
 }
 
-/// Built front (SPA): ServeDir serves the assets; any unknown route returns index.html
-/// (status 200) so that React client routing works on deep links.
-fn serve_spa<S: Clone + Send + Sync + 'static>(
-    app: Router<S>,
-    web_dir: Option<&std::path::Path>,
-) -> Router<S> {
-    match web_dir {
-        Some(dir) => {
-            let index = std::fs::read_to_string(dir.join("index.html")).unwrap_or_default();
-            // index.html as `no-cache`: not fingerprinted, it must always be revalidated otherwise
-            // a redeploy (new bundle hash) leaves the browser on a 404 bundle → blank
-            // page. The (fingerprinted) assets stay cacheable by ServeDir.
-            let spa = axum::routing::get(move || {
-                let index = index.clone();
-                async move {
-                    (
-                        [(axum::http::header::CACHE_CONTROL, "no-cache")],
-                        axum::response::Html(index),
-                    )
-                }
-            });
-            // `append_index_html_on_directories(false)` → "/" falls on the SPA handler (no-cache)
-            // instead of being served by ServeDir without a cache header.
-            // `/assets/*`: names fingerprinted by Vite (content hash) → cacheable for a year without
-            // revalidation. A missing asset answers 404 (never index.html instead of a .js).
-            let assets = tower_http::set_header::SetResponseHeader::overriding(
-                tower_http::services::ServeDir::new(dir.join("assets")),
-                axum::http::header::CACHE_CONTROL,
-                axum::http::HeaderValue::from_static("public, max-age=31536000, immutable"),
-            );
-            app.nest_service("/assets", assets).fallback_service(
-                tower_http::services::ServeDir::new(dir)
-                    .append_index_html_on_directories(false)
-                    .fallback(spa),
-            )
-        }
-        None => app,
-    }
-}
-
 /// Page of the Rust front-end for a path under `/v2` (without the prefix). The OBS sources are served by two small
 /// bundles, each kept under the 300 kB size limit: `overlay/` (cast and draft overlays) and `sources/` (session
 /// and music sources); everything else by the app (`app/`).
@@ -641,57 +595,10 @@ async fn health(State(state): State<AppState>) -> (StatusCode, Json<serde_json::
 /// run in CI against a Postgres service.
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
-mod spa_tests {
+mod front_end_tests {
     use axum::body::Body;
     use axum::http::{header, Request, StatusCode};
     use tower::util::ServiceExt;
-
-    /// Fingerprinted assets: one-year cache; index.html: no-cache; missing asset: 404.
-    #[tokio::test]
-    async fn assets_immuables_index_revalide() {
-        let dir = std::env::temp_dir().join(format!("storm-codex-spa-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(dir.join("assets")).unwrap();
-        std::fs::write(dir.join("index.html"), "<html>spa</html>").unwrap();
-        std::fs::write(dir.join("assets/index-abc.js"), "console.log(1)").unwrap();
-        let app = super::serve_spa(axum::Router::<()>::new(), Some(&dir));
-
-        let r = app
-            .clone()
-            .oneshot(
-                Request::get("/assets/index-abc.js")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(r.status(), StatusCode::OK);
-        assert_eq!(
-            r.headers()[header::CACHE_CONTROL],
-            "public, max-age=31536000, immutable"
-        );
-
-        let r = app
-            .clone()
-            .oneshot(
-                Request::get("/assets/absent.js")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(r.status(), StatusCode::NOT_FOUND);
-
-        for path in ["/", "/cast/overlay"] {
-            let r = app
-                .clone()
-                .oneshot(Request::get(path).body(Body::empty()).unwrap())
-                .await
-                .unwrap();
-            assert_eq!(r.status(), StatusCode::OK, "{path}");
-            assert_eq!(r.headers()[header::CACHE_CONTROL], "no-cache", "{path}");
-        }
-        let _ = std::fs::remove_dir_all(&dir);
-    }
 
     /// `/v2`: fingerprinted files cacheable, cast/draft overlay routes on `overlay/index.html`, session/music sources on
     /// `sources/index.html`, other routes on `app/index.html`,
@@ -829,8 +736,6 @@ pub(crate) mod api_tests {
             raw_cache_max_bytes: 64 * 1024 * 1024,
             admin_token: admin_token.map(str::to_owned),
             web_dir: None,
-            web_v2_dir: None,
-            web_root_rust: false,
             redis_url: None,
             jarvis_channel: "test".into(),
             azure_push_url: None,

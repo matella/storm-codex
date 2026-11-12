@@ -1,6 +1,6 @@
-# Rust front-end (Leptos, client-side rendering), ported page by page from `web/` — see
+# Rust front-end (Leptos, client-side rendering), ported page by page from the former React front-end (`web/`, last commit `2134853`) — see
 # docs/specs/2026-11-09-rust-frontend-migration-design.md. Its own workspace and lockfile: it builds for
-# wasm32-unknown-unknown (Trunk) and is excluded from the server's workspace. Served under `/v2/` until the switch.
+# wasm32-unknown-unknown (Trunk) and is excluded from the server's workspace. Served at `/` by the server (`WEB_DIR`).
 [workspace]
 resolver = "2"
 members = ["core", "overlay", "sources", "app"]

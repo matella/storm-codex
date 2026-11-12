@@ -1,20 +1,18 @@
 # Frontend — SPA & OBS overlays
 
-`web/`: Vite + React 19 + TS 7 + TanStack Query + react-router. **Nexus Codex ·
-Dossier** design (spec `docs/specs/2026-09-27-design-dossier-app-design.md`): tokens (colours, fonts)
-in `theme.css`, global `ds-` classes in `src/ds.css`, shared components
-`src/components/ds/` (toned Portrait, Pips, Meter, SecHead, Chips, Lane/CallCard, EvLine…).
-**Self-hosted** fonts (`src/fonts.ts`, Fontsource, SIL OFL: Big Shoulders Display, Figtree,
-JetBrains Mono; ~132 KB in Latin, `unicode-range`) — no Google Fonts request. Chrome
-(`Layout`): `ds-top` bar (brand in display type, monospace uppercase tabs, help, live indicator),
-restyled `AggFilterBar` (pills), `SafeHtml` = single insertion point for external HTML (DOM fragment
-sanitised by DOMPurify, `replaceChildren`), `Portrait` subscribes to the hero reference data (re-render when it arrives), game pieces in
-`components/ds/match.tsx` (ModeTag, AwardTag, GameCard, LevelAdvantage, map art),
-`ds-app` container (Figtree font, atmospheric background) and `ds-shell` (1180 px). The `body` keeps
-its original font: OBS sources (outside Layout) do not change. Built into `web/dist`, served by the binary (`WEB_DIR`),
-SPA fallback (`index.html` as `no-cache`). UI language: **English**.
+`web-rs/`: Rust (Leptos 0.8, client-side rendering, WebAssembly), built with Trunk, served by the binary (`WEB_DIR`, see `04-serveur.md`).
+The previous React/Vite front-end (`web/`) was removed once the Rust one covered everything; its last commit is `2134853`
+(`git show 2134853:web/src/App.tsx`), and the "Port of `web/src/...`" comments in `web-rs/` refer to it. **Nexus Codex · Dossier**
+design (spec `docs/specs/2026-09-27-design-dossier-app-design.md`): tokens in `web-rs/app/theme.css`, global `ds-` classes in
+`web-rs/app/ds.css`. **Self-hosted** fonts (`app/fonts/`, Fontsource files, SIL OFL: Big Shoulders Display, Figtree, JetBrains
+Mono, `unicode-range`) — no Google Fonts request from the app. The `body` keeps its original font: OBS sources do not change.
+UI language: **English**.
 
-## Routes (source of truth: `web/src/App.tsx`)
+## Routes (source of truth: `web-rs/app/src/main.rs` and `web-rs/core/src/route.rs`)
+
+> The behaviour descriptions in this section and in the other tables were written against the React app and are reproduced by the
+> Rust one; the component and file names they cite (`*.tsx`, `castState.ts`...) are the React originals, kept in git history
+> (`2134853`). The Rust counterpart of each is named in the table "Rust front-end" below.
 
 ### Pages (under `Layout` — topbar + nav)
 
@@ -53,25 +51,23 @@ SPA fallback (`index.html` as `no-cache`). UI language: **English**.
 | `/draft/overlay` | 1920×1080 draft overlay (state via the `draft.updated` WS), rendered by `cast/DraftScene.tsx` (`DraftScene`, `?skin=` nexus/glass/tactical/mono) — **the same component** as the `draft` scene of `/cast/overlay`. Replay mode: "Draft ready — waiting" banner while nothing is revealed, timer bar driven by the next auto-play tick (`draftOverlay.ts`); unrevealed bans dotted; player names hidden by the API until the hero is revealed |
 | `/cast/overlay?skin=` | 1920×1080 cast control room overlay (`useCast()` state, `cast.updated` WS, re-read on WS reconnect + `refetchInterval` safety net of 10 s). One scene at a time (`scene`: `ingame` / `hide` / `draft` / `series` / `lineups`), fade-in ≈ 300 ms **and fade-out**: the outgoing scene stays **mounted (same React instance, no remount: each layer has a stable `id` assigned when it becomes current, used as `key`, only the `.out` class changes — its local state, e.g. the slideshow tick, is kept)** ≈ 300 ms, rendered with the state snapshot that displayed it, then is unmounted (`sceneTransition` / `shownScene` in `castState.ts`, also towards `hide` or an inactive series); `hide` = nothing; inactive series = nothing **except the Draft scene** (R19: the draft is edited without a series — `overlayVisible` in `castState.ts`, the control room preview too). **In-game**: two rectangular tabs (square corners, vertical inner edge) anchored by `web/src/cast/anchors.ts` (`INGAME_ANCHORS`: blue top inner corner x=39.2 %, red x=59.65 %, y=9.9 %, height 4.6 %, max width 26 % — reference points taken from `docs/specs/2026-10-25-cast-mockups/ingame.webp`), name truncated with an ellipsis, series score (`score_override`, otherwise winners), `BO n` / `GAME k` / format badge in uppercase (`badgeGameNumber`, **R9**: game in progress = its number, otherwise last + 1; **R22**: decided series — one side at ≥ ⌈bo/2⌉ on the displayed score, override included — = number of the **last** game, never n+1; same rule for the Series header's "GAME k"). **Series** (`cast/SeriesScene.tsx`): "BEST OF n · GAME k" header + team names + series score (`seriesScore`), strip of all the pool's maps (`mapImage` art, gradient fallback on 404; name; `mapCardView` label with team names: "banned by <name>", "picked by <name>", `decider`) — `WON` in the winning team's colours **without any number**, gold `NEXT` (first picked/decider map without a game), banned ones greyed out and struck through; strip depending on the pool size (`stripLayout`): ≤ 6 maps = one row, 7–10 = two rows of five, 11 and more = rows of five with shorter cards (three for 11–15) — everything fits in the frame; opaque Nexus background (`cast/SceneBackdrop.tsx`: radial gradient + stars, shared by the full-screen series/lineups scenes; ingame/hide stay transparent); **full-frame slideshow (R15)**: slide 0 = header + map strip; slides 1..4 = **post-game breakdown** (`cast/PostGameSlide.tsx`, styles `cast/postgame.css`, mockup `postgame-breakdown.html`) of the game shown (`slide.game`, otherwise the latest) **if it has a summary** — otherwise only slide 0 exists. Active tab = slide (1 HERO DAMAGE, 2 HEALING, 3 SIEGE, 4 TAKEDOWNS). Manual: the server's `slide.index` modulo the number of slides; auto: overlay timer (`interval_ms`), starting at `slide.index`, reset on every slideshow change; fade on every slide. Breakdown: header (logo/initials, name, WIN/LOSS, team takedowns, duration m:ss, "GAME n · MAP"), "BEST OF n · SERIES a – b · TAKEDOWNS" banner, comparison column (K/D/A = sums of the players' `kills`/`deaths`/`assists`, TEAM LEVEL, FORTS · KEEPS, MERC CAMPS, MAP OBJECTIVES, SIEGE DAMAGE, HERO DAMAGE = player sums, BANS as portraits) — **a `null`/empty value drops its row** —, per-player bar panel (portrait + value, sorted descending per team, scale = max of the 10 players), XP lead curve (`xp_lead`, blue area above / red below, hidden under 2 points). Portraits: `useDimHeroes()` called by `CastOverlay`. **Lineups** (`cast/LineupsScene.tsx`, on the opaque `SceneBackdrop`, mockup `team-cards.html`): two cards (logo or initials, name, entered record, 5 players: name + free tagline, `CAPTAIN` marker). Effective mode = `effectiveLineupMode` (auto: A as long as no game has a winner, then B). **A**: up to 3 portraits of recent heroes (`heroIcon`, initials fallback) for linked players with ≥ 5 recent games; unlinked player or no data = no row; **no percentage or "win"**. **B**: heroes actually played in the series per player, read (defensively) from `games[].summary.players` (`PlayerSummary`, R14: matching by identical linked `toon`, then identical name trimmed/case-insensitive **unless player and row each have a toon and they differ**, **never by position**; row without a match = "awaiting game data"); in Fearless, those of previous games are dimmed (`.lk`), the latest stays highlighted; without a summary: "awaiting game data". Data: `useCastLineup` (`GET /api/cast/lineup`, `staleTime` 60 s). **Draft**: `DraftSceneLive` (`cast/DraftScene.tsx`) — the draft Timeline (`useDraft()` state, `?skin=` honoured) on its own `.stage` background, so without `SceneBackdrop` |
 
-## Rust front-end (`web-rs/`, served at `/` since the switch; `/v2/` kept)
+## Rust front-end (`web-rs/`)
 
-> **Switch (2026-11-12):** with `WEB_ROOT=rust` (Docker default) the Rust app answers at `/`; `/v2/...` still works and React stays in the image for rollback (`WEB_ROOT=react`). The router base is decided at startup from the loaded URL (`route::init_base`: `/v2` or empty), so one build serves both. This section is rewritten for the Rust app when `web/` is removed (one release after the switch); until then the React route tables above remain the reference for behaviour.
-
-Port of this front-end to Rust (Leptos 0.8, client-side rendering, WebAssembly), page by page, per
-`docs/specs/2026-11-09-rust-frontend-migration-design.md`. React keeps `/`; the Rust app is served under
-`/v2/` (`WEB_V2_DIR`, see `04-serveur.md`) until the operator approves the switch. Own Cargo workspace
-(`web-rs/Cargo.toml`, own lockfile), built with Trunk for `wasm32-unknown-unknown`:
+Port of the former React front-end, page by page, per `docs/specs/2026-11-09-rust-frontend-migration-design.md`; since the switch
+(2026-11-12) it answers every page at `/` and React was removed. Bundle files stay under `/v2/<bundle>/` (Trunk `public_url`), and
+`/v2/...` pages still work: the router base is decided at startup from the loaded URL (`route::init_base`: `/v2` or empty). Own Cargo
+workspace (`web-rs/Cargo.toml`, own lockfile), built with Trunk for `wasm32-unknown-unknown`:
 
 | Crate | Role |
 |---|---|
 | `core` (`storm-web-core`) | framework-free: wire models (`model.rs`), pure logic ported from `castState.ts` (`logic.rs`, `scenes.rs`), the match-list helpers of the session sources (`session.rs`: mode badge, awards, operator lookup, streak, session totals, Jarvis line, `toFixed`), the music track parser and the reveal state machine (`music.rs`), URL routing and query parameters (`route.rs`), hero reference data (`heroes.rs`), browser I/O (`net.rs`, wasm only: fetch, `/ws` with reconnection, 10 s poll). Native unit tests |
 | `overlay` (`storm-web-overlay`) | cast and draft overlays, output `web-rs/dist/overlay` served at `/v2/overlay/`. The cast overlay with its five scenes (`ingame`, `series` + post-game slides, `lineups`, `draft`, `hide`) and the stand-alone draft overlay (Timeline view, `?skin=`); the three stylesheets are copied unchanged from `web/src/cast/` |
 | `sources` (`storm-web-sources`) | session and music sources, output `web-rs/dist/sources` served at `/v2/sources/`: `/ticker`, `/widget` (`?me=`), `/queue`, `/now-playing` (default card, `?mini`, `?reveal`). Shared tokens in `base.css` (subset of `theme.css`), the reveal stylesheet copied from `web/src/pages/now-playing-reveal.css` |
-| `app` (`storm-web-app`) | the app, output `web-rs/dist/app` served at `/v2/app/`: `leptos_router` with base `/v2` (`main.rs`), top bar + live channel + toast + onboarding / what's new modals (`layout.rs`), shared pieces (`ui.rs`: reference data and operator names loaded once, `Portrait`, `SecHead`, `Link`, `AggFilterBar`, `fetch`), one module per page (`pages/`). CSS copied unchanged from `web/src` (`theme.css`, `ds.css`); the fonts are self-hosted (`fonts/`, `fonts.css`: latin and latin-ext woff2 of the Fontsource files React uses) |
+| `app` (`storm-web-app`) | the app, output `web-rs/dist/app` served at `/v2/app/`: `leptos_router` with a base decided at startup, `/v2` or empty (`main.rs`, `route::app_base`), top bar + live channel + toast + onboarding / what's new modals (`layout.rs`), shared pieces (`ui.rs`: reference data and operator names loaded once, `Portrait`, `SecHead`, `Link`, `AggFilterBar`, `fetch`), one module per page (`pages/`). CSS copied unchanged from `web/src` (`theme.css`, `ds.css`); the fonts are self-hosted (`fonts/`, `fonts.css`: latin and latin-ext woff2 of the Fontsource files React uses) |
 
 Each OBS bundle picks its page from the URL path (`route.rs`); the server routes each path to its bundle (`04-serveur.md`).
 
-**App (step 3, in progress).** Links are plain `<a>` with the real `/v2/...` href (`ui::Link`, `route::app_href`): the router takes
+**App.** Links are plain `<a>` with the real href including the base (`/v2/...` or none) (`ui::Link`, `route::app_href`): the router takes
 over the click, and middle-click / copy link keep working. Data of a page is read with `ui::fetch` (a `LocalResource`): it reads the
 signals of the page's filter and of `layout::LiveBus` (one counter per kind of live event: matches, patches, draft, cast, live), so
 it is read again when they change, as `invalidateQueries` did. The pure rules (tabs, redirects, live-event effects, aggregates,
@@ -105,38 +101,25 @@ Contract: **OBS bundles stay <= 300 kB gzip; the app bundle stays <= 1 MB brotli
 bundle), hence two bundles: an OBS source only loads the bundle of its family. One bundle per page family: the sanitiser
 (`ammonia`, about 300 kB) must never be linked into an OBS bundle.
 
-## Loading (code splitting)
+## Loading (bundles)
 
-All pages in `App.tsx` are loaded on demand (`React.lazy`, one chunk per page): the
-OBS sources (`/cast/overlay`, `/draft/overlay`, `/widget`, `/ticker`…) no longer download the whole
-app. Measured on 2026-11-07: main bundle **535 kB → 240 kB** (gzip 166 → 79 kB), cast
-overlay = 11 kB chunk. Loading fallback: nothing for overlays (transparent background),
-"loading…" for pages under `Layout`. Routing: `react-router-dom` 7 (compatibility
-package, same imports as in v6).
+One wasm bundle per page family (`overlay`, `sources`, `app`): an OBS source only loads the bundle of its family, and the app is one
+bundle for all its pages (no per-page splitting). Budgets: see "Contract" above (OBS bundles <= 300 kB gzip, app <= 1 MB brotli).
 
 ## Conventions
 
-- **Single API layer**: `web/src/api.ts` — types, fetchers, `useLiveUpdates` (WS + reconnect
-  after 2 s, TanStack invalidation; on every reopening after a drop, `cast` and `draft` are re-read —
-  `reopenInvalidations` — so that the OBS overlay catches up on missed events; no reconnect after unmount; `cast.updated` invalidates `["cast"]` and `["cast-lineup"]`), `httpError(res)` (error of a non-OK response: the server's `{"error"}` code, otherwise `http_<status>`, shared by `castApi.ts` and `draftReplayLoad`), display helpers (`modeBadge`, `fmtTime`…), caches
-  `useDimHeroes`/`useDimTalents`/`useDimHeroAttributes` (reference data, `staleTime: Infinity`);
-  `banHero(ban, attrs)` resolves a raw ban (storm-stats attribute code) into a hero name.
-- The parser's **mirrored constants** (modes 500xx, `MessageType`, `MessageTarget`…) are
-  replicated where the front-end displays them — if `constants.json` (storm-stats) changes, sync them.
-- Scouting: types + pure helpers in `web/src/scouting.ts` (tests `scouting.test.ts`), hooks
-  `useScoutingList`/`useScoutingReport` and `scoutingWrite` (admin token Bearer from
-  localStorage) in `api.ts`; HTML export: `reportHtml.ts` (pure rendering) + `reportExport.ts`;
-  pages: `components/ds/` components + `ds-` classes from `src/ds.css` (shared design system).
-- Avatars: vendored portraits `/images` + universe colour ring (`useDimHeroes`);
-  initials fallback.
-- Match detail data: **everything comes from `GET /api/matches/{id}`** (the complete storm-stats
-  `match` object) — no endpoint per sub-block; a new UI block takes what it needs from that object.
-- **Admin token**: `authHeaders()` (`api.ts`) adds `Authorization: Bearer <admin_token>`
-  (localStorage, entered in Admin); used by `post()` (draft), `send()` (control room, except GET),
-  the file uploads of `castApi.ts` and `scoutingWrite`. Without a token or without storage
-  (private browsing, OBS source): no header. Test: `authHeaders.test.ts`.
-- Search / linked accounts: `api.ts` (`searchPlayers`, `fetchIdentity`, `putLink` — write via the admin Bearer of `scoutingWrite`); pure, tested helpers in `players.ts` (`highlightSegments` literal without regex, `recentNames` = 3 most recent + count of the rest, `seenRange`, `likelyAlias` = confirmed link, otherwise the 1st HIGH suggestion, **never** a LOW suggestion). A "same person" link is a note: no profile merge.
-- Dev: `npm run dev` (port 5180 via `.claude/launch.json`), proxy `/api` + `/ws` → `:8088`
-  (`vite.config.ts`). Build: `npm run build` (strict tsc then Vite). Tests: Vitest in a `node` environment
-  (`renderToStaticMarkup` renders, no jsdom); `test.css.include` processes the stylesheets in `web/src/cast/` so
-  that tests can read their rules via `import x from "./….css?raw"` (declaration `src/raw.d.ts`).
+- **Single API layer**: `core/net.rs` (wasm only: `get_json`, `write` / `write_raw` with the admin Bearer, `/ws` with reconnection after
+  2 s and re-read of `cast` / `draft` on every reopening so that the OBS overlays catch up on missed events, polling) and `app/ui.rs`
+  (`fetch`, a `LocalResource` per page; reference data and operator names loaded once; `LiveBus` signals bumped by the live channel).
+- The parser's **mirrored constants** (modes 500xx, `MessageType`, `MessageTarget`...) are replicated where the front-end displays them — if
+  `constants.json` (storm-stats) changes, sync them.
+- Scouting: types and pure helpers in `core/scouting.rs`, HTML export in `core/reportexport.rs` (pure) + `app/export.rs` (browser).
+- Avatars: vendored portraits `/images` + universe colour ring (`core/heroes.rs`); initials fallback.
+- Match detail data: **everything comes from `GET /api/matches/{id}`** (the complete storm-stats `match` object) — no endpoint per
+  sub-block; a new UI block takes what it needs from that object.
+- **Admin token**: `net::write` adds `Authorization: Bearer <admin_token>` (localStorage, entered in Admin). Without a token or without
+  storage (private browsing, OBS source): no header.
+- Search / linked accounts: pure, tested helpers in `core/players.rs` (`seen_range`, `recent_names` = 3 most recent + count of the rest,
+  likely alias = confirmed link, otherwise the 1st HIGH suggestion, **never** a LOW suggestion). A "same person" link is a note: no profile merge.
+- Dev and tests: see `09-operations.md` / `10-developpement.md` (`trunk build`, `cargo test` and clippy in `web-rs/`, native for `core`, wasm
+  target for the rest). Pure logic lives in `core` with native unit tests; there is no JavaScript toolchain left.

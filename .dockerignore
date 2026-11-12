@@ -1,7 +1,6 @@
 # Minimal build context: no heavy artefacts and no secrets.
 target/
 **/node_modules/
-web/dist/
 .git/
 corpus/
 spike/
