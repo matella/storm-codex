@@ -1,11 +1,26 @@
 //! Framework-neutral core of the Rust front-end: wire models, pure logic, browser I/O (wasm only).
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+pub mod aggregates;
+pub mod castctl;
+pub mod dashboard;
+pub mod herodetail;
 pub mod heroes;
+pub mod live;
+pub mod livegame;
 pub mod logic;
+pub mod matchdetail;
 pub mod model;
 pub mod music;
 #[cfg(target_arch = "wasm32")]
 pub mod net;
+pub mod patchnotes;
+pub mod players;
+pub mod replay2d;
+pub mod reportexport;
 pub mod route;
+pub mod sanitize;
 pub mod scenes;
+pub mod scouting;
 pub mod session;
+pub mod trends;
+pub mod whatsnew;

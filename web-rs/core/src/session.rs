@@ -12,6 +12,7 @@ pub struct MatchPlayer {
     pub name: Option<String>,
     pub hero: Option<String>,
     pub team: Option<i64>,
+    pub win: Option<bool>,
     pub kills: Option<u32>,
     pub deaths: Option<u32>,
     pub takedowns: Option<u32>,
@@ -438,6 +439,7 @@ mod tests {
             takedowns: Some(td),
             deaths: Some(d),
             award: None,
+            win: None,
         }
     }
 

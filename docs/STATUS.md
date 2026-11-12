@@ -1,5 +1,54 @@
 # STATUS — read first, update last
 
+**Size pass (2026-11-11, measured, nothing changed in the build):** the complete app is **1,242 kB gzip / 911 kB brotli** (wasm 3.2 MB raw; React's whole JS+CSS is 246 kB gzip). The server already negotiates brotli, so the transferred size is the brotli one. Code size by crate: `tachys` view machinery 35 % (incl. `IntoAny`), `core` 13 %, `storm_web_app` 10 %, `reactive_graph` 9 %, per-type serde 5.5 %, `fetch` futures (`ScopedFuture`) 4.6 %. `opt-level="s"` is worse (1,406 kB gzip) than `"z"`; `wasm-opt z` is already on. Remaining levers, each small: a non-generic core for `ui::fetch` (about 4 %), fewer distinct `view!` shapes. Budget decided: **app <= 1 MB brotli** enforced in CI (`SIZE_CODEC=br`). JetBrains Mono is now self-hosted in the `sources` and `overlay` bundles (verified: no Google Fonts request from `/v2/ticker`; the overlay still loads Cinzel/Oswald from Google like React).
+
+## Rust front-end migration — step 4 started: Scouting and Admin (2026-11-11)
+Step 3 is complete. Step 4 (PR #27): **Scouting** (list and creation) and **Admin** (identity, upload health, tokens, teams, collections)
+are ported and DOM identical to React on real data; Admin writes were exercised on the dev database. New `net::write` (authenticated
+writes with the stored admin token) and `core/scouting.rs`. **Scouting report** is also ported (DOM identical to React on real data; rename, roster, upload, import tested). **Export HTML** is ported too
+(`core/reportexport.rs` + `app/export.rs`; output equal to React's on report 3 modulo asset-rule order and minimap encodes). The **Player Identity tab** is ported too. The **Cast control room** is ported too (rail, scenes, pool, Draft Live and Replay; `core/castctl.rs`; DOM identical to React on every workspace; the destructive actions — New series, winners, replay uploads — were not run against the dev data). Step 4 is complete. Next: size pass on the app bundle (operator sets the budget), then the step 5 switch (needs the operator's go).
+
+### Earlier: step 3 complete
+Fifth batch (PR #27): **Match detail** (DOM identical to React on match 2746, SVG attributes included) and **Live** (identical for the idle
+state and for a synthetic game through a mock `/api/live`). The Match **Replay 2D** tab is ported (canvas pixel identical to React at the same time). Logic in
+`core/matchdetail.rs` and `core/livegame.rs` (90 native tests); talents are loaded once and shared. **App size: about 640 kB gzip for the
+wasm (13 pages → 15 pages)**: the size pass is overdue and the operator must set the app budget. Step 3 is done; next is step 4 (Replay 2D,
+Scouting, Scouting report, Admin, Cast, Player Identity tab), then the step 5 switch (needs approval).
+
+### Earlier: Hero, Trends, Hero changes, Patch added
+Fourth batch (PR #27): **Hero** (URL-driven filter, maps, winning builds with talent names, patch history), **Trends**, **Hero changes**
+(By hero / Timeline, filters, unfolded history) and **Patch**. DOM identical to React on real data for Hero, Trends and Hero changes
+(including interactions). **Patch detail** could only be checked on its "not found" path (the dev database returns `null` for every patch);
+the content goes through the same `SafeHtml` as the patch history. New: the HTML sanitiser, **without `ammonia`** (about 300 kB): an
+allowlist walk over an inert `<template>` (`core/sanitize.rs`, `app/src/safehtml.rs`), stricter than DOMPurify; the operator should
+confirm this replaces the spike's `ammonia` option. Lists of unfoldable entries are keyed (Leptos reuses rows by position, which moved the
+open state of a `<details>` onto another hero). Logic in `core/herodetail.rs`, `trends.rs`, `patchnotes.rs`, `sanitize.rs` (75 native
+tests). **App size: 533 kB gzip with 13 pages** (428 kB with 9): +105 kB for four pages, the size pass is now needed. Remaining in
+step 3: Live, Match detail.
+
+### Earlier: Players, Player, Synergies added
+Third batch (PR #27): **Players** (debounced search, `?q=`), **Player** (cover, hero pool, recent games, chat habits; the Identity tab is a
+placeholder until step 4 because it writes with the admin token) and **Synergies**, all DOM-identical to React on real data. Logic in
+`core/players.rs` (62 native tests). **App size: 428 kB gzip with 9 pages** (361 kB with 6): the size pass the operator postponed is now
+overdue before the remaining pages. Remaining in step 3: Hero, Trends, Hero changes, Patch, Live, Match detail.
+
+### Earlier: Session and Matches added
+Second batch (PR #27): pages **Session** and **Matches** (DOM identical to React on real data; Matches filters live in the URL and were
+exercised: mode, result, MVP, map search, reset, CSV/JSON links, row click and back). Logic in `core/dashboard.rs` (last session with the
+3 h gap, tallies, filter and URL parameters), 58 native tests. **App size is now 361 kB gzip with 6 pages** (was 274 kB with 4): each page
+costs about 40 kB, so the full app would be around 1 MB gzip; the operator must set the budget, and a size pass (view generics, `opt-level`,
+wasm-opt level) is worth doing before the later pages. **Match detail** (dynamic JSON, timeline, chat, bans, XP curve) is next, then
+Players, Player, Hero, Synergies, Trends, Hero changes, Patch, Live.
+
+### Earlier in step 3: app bundle, layout, 4 pages
+After the operator's go ("continue to pages"): new bundle `web-rs/app` (`/v2/app/`, router base `/v2`), with the top bar, the live
+channel (toast, "online", new-patch dot), the onboarding and what's new modals, the `/draft` redirects, and the pages **Heroes, Maps,
+Patch Notes, Leagues** (normalised DOM identical to React on real data). Fonts are now self-hosted (`web-rs/app/fonts`). The other
+pages show a placeholder. **Size**: the app bundle is 274 kB gzip with these 4 pages, so it will pass 300 kB with the other pages and
+the sanitiser; the 300 kB contract is for the OBS bundles, the operator has to set the app budget (CI records the size without a limit
+for now). **Checklist of what remains in step 3**: Session (dashboard), Live, Matches, Match (without Replay 2D), Players, Player, Hero,
+Synergies, Trends, Hero changes, Patch. **Next**: Session and Matches, then the player and hero pages.
+
 ## Rust front-end migration — step 2 done: the six OBS sources are ported (2026-11-11)
 All OBS sources now exist under `/v2/`: `/cast/overlay`, `/draft/overlay` (bundle `overlay`, 229 kB gzip) and `/ticker`, `/widget`,
 `/queue`, `/now-playing` (+ `?mini`, `?reveal`) (bundle `sources`, 191 kB gzip). Each checked in the browser against React: normalised DOM

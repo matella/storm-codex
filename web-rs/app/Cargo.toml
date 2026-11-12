@@ -1,0 +1,19 @@
+[package]
+name = "storm-web-app"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "The Storm Codex app of the Rust front-end (layout, router, pages), served under /v2/."
+
+[lints]
+workspace = true
+
+[dependencies]
+leptos = { version = "0.8.23", features = ["csr"] }
+leptos_router = "0.8.12"
+storm-web-core = { path = "../core" }
+serde = "1"
+serde_json = "1"
+js-sys = "0.3"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["Document", "DocumentFragment", "Element", "HtmlDetailsElement", "HtmlTemplateElement", "Node", "Window", "HtmlInputElement", "FileList", "File", "Blob", "DragEvent", "DataTransfer", "HtmlCanvasElement", "CanvasRenderingContext2d", "HtmlImageElement", "PointerEvent", "DomRect", "MediaRecorder", "MediaRecorderOptions", "MediaStream", "BlobEvent", "BlobPropertyBag", "Url", "HtmlAnchorElement", "CssStyleDeclaration", "Performance", "Response", "Headers"] }
