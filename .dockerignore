@@ -12,3 +12,5 @@ docs/
 .env
 **/.env
 *.md
+web-rs/target/
+web-rs/dist/

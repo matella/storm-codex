@@ -142,18 +142,55 @@ pub fn frame_position(anchor: Anchor, pad: f64, o: Offsets) -> String {
         .join(";")
 }
 
-/// Prefix of the app under the server (`/v2` until the switch, then the router base is empty).
-pub const APP_BASE: &str = "/v2";
+/// Prefix of the app while it is served next to React (`/v2/...`). After the switch the server serves the app at `/`
+/// and the base is empty; the same build handles both, decided once at startup from the location (`init_base`).
+pub const V2_BASE: &str = "/v2";
 
-/// Real `href` of an app path (`/matches` -> `/v2/matches`): the router only takes over clicks on links inside its
-/// base, and middle-click / copy-link need the full URL.
+static ROOT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Base of a location pathname: `/v2` for `/v2` and `/v2/...`, empty otherwise.
+pub fn base_of(pathname: &str) -> &'static str {
+    match pathname.strip_prefix(V2_BASE) {
+        Some("") => V2_BASE,
+        Some(rest) if rest.starts_with('/') => V2_BASE,
+        _ => "",
+    }
+}
+
+/// Decides the base from the page that was loaded (call once, before mounting).
+pub fn init_base(pathname: &str) {
+    ROOT.store(
+        base_of(pathname).is_empty(),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+}
+
+/// Prefix of the app under the server: `/v2` or empty (served at the root).
+pub fn app_base() -> &'static str {
+    if ROOT.load(std::sync::atomic::Ordering::Relaxed) {
+        ""
+    } else {
+        V2_BASE
+    }
+}
+
+/// Real `href` of an app path (`/matches` -> `/v2/matches`, or unchanged at the root): the router only takes over
+/// clicks on links inside its base, and middle-click / copy-link need the full URL.
 pub fn app_href(to: &str) -> String {
-    format!("{APP_BASE}{to}")
+    format!("{}{to}", app_base())
 }
 
 /// App path of a location pathname (`/v2/matches` -> `/matches`, `/v2` -> `/`).
 pub fn app_path(pathname: &str) -> &str {
-    match pathname.strip_prefix(APP_BASE) {
+    app_path_in(app_base(), pathname)
+}
+
+/// [`app_path`] for an explicit base.
+pub fn app_path_in<'a>(base: &str, pathname: &'a str) -> &'a str {
+    if base.is_empty() {
+        return pathname;
+    }
+    match pathname.strip_prefix(base) {
         Some("") => "/",
         Some(rest) if rest.starts_with('/') => rest,
         _ => pathname,
@@ -327,6 +364,13 @@ mod tests {
         assert_eq!(app_path("/v2"), "/");
         assert_eq!(app_path("/v2/"), "/");
         assert_eq!(app_path("/v2x/a"), "/v2x/a");
+        // served at the root: nothing to strip
+        assert_eq!(app_path_in("", "/matches"), "/matches");
+        assert_eq!(app_path_in("", "/"), "/");
+        assert_eq!(base_of("/v2/cast"), "/v2");
+        assert_eq!(base_of("/v2"), "/v2");
+        assert_eq!(base_of("/v2x"), "");
+        assert_eq!(base_of("/cast"), "");
     }
 
     #[test]

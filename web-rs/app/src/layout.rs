@@ -6,7 +6,7 @@ use leptos_router::{components::Outlet, hooks::use_location};
 use storm_web_core::{
     live::{effects, reopen_effects, Effects},
     net,
-    route::{app_path, tab_active, TABS},
+    route::{app_href, app_path, tab_active, TABS},
     whatsnew::{entries_since, APP_VERSION},
 };
 
@@ -171,11 +171,11 @@ fn Onboarding(force: RwSignal<bool>) -> impl IntoView {
                         ", create a token, then run the uploader on your PC pointing here (server URL + token + your HotS replays folder). It backfills and watches new games automatically."
                     </Step>
                     <Step n=3 title="Add the OBS overlays (optional)">
-                        "Cast control room: add "<span class="mono">{move || format!("{}/v2/cast/overlay", net::origin())}</span>
+                        "Cast control room: add "<span class="mono">{move || format!("{}{}", net::origin(), app_href("/cast/overlay"))}</span>
                         " as a Browser Source (1920×1080, transparent). Its URL is always shown at the top of "<span class="mono">"/cast"</span>
                         ". Other overlays, optional:"
                         <div class="mono" style="font-size: 11px; margin-top: 6px; line-height: 1.8">
-                            {move || { let o = net::origin(); format!("{o}/v2/queue · {o}/v2/ticker · {o}/v2/widget?me=<name> · {o}/v2/now-playing") }}
+                            {move || { let o = net::origin(); format!("{o}{} · {o}{} · {o}{}?me=<name> · {o}{}", app_href("/queue"), app_href("/ticker"), app_href("/widget"), app_href("/now-playing")) }}
                         </div>
                     </Step>
                     <div style="display: flex; justify-content: flex-end; margin-top: 8px">
