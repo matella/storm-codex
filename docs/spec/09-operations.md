@@ -10,7 +10,9 @@ npm run dev --prefix web                         # or build: npm run build --pre
 ```
 
 Rust front-end (`web-rs/`, needs `rustup target add wasm32-unknown-unknown` and `trunk`): `trunk build --release` in `web-rs/overlay`,
-`web-rs/sources` and `web-rs/app`, then run the server with `WEB_V2_DIR=web-rs/dist` and open `/v2/cast/overlay`, `/v2/ticker`... Not part of the Docker image yet.
+`web-rs/sources` and `web-rs/app`, then run the server with `WEB_V2_DIR=web-rs/dist` and open `/v2/cast/overlay`, `/v2/ticker`... (React still answers at `/`); add `WEB_ROOT=rust` to see the Rust front-end at `/` exactly as in production.
+
+**Production (the switch, 2026-11-12):** the Docker image builds the three bundles (stage `web-rs`, pinned Trunk) next to the React build and sets `WEB_V2_DIR=/app/web-rs` and `WEB_ROOT=rust`, so the Rust front-end answers at `/` and the OBS URLs are the final ones (`/cast/overlay`, `/draft/overlay`, `/ticker`, `/widget`, `/queue`, `/now-playing`). **Rollback:** set `WEB_ROOT=react` in the container environment and restart (the React build is still in the image); no rebuild. React (`web/`) is deleted one release after the switch.
 
 Tests: `cargo test` (the projection test is skipped without `DATABASE_URL`); parity:
 `tools/parity-harness/`; benches: `storm-stats-dump --bench`, `backfill_bench.py`.

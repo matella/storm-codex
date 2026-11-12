@@ -35,7 +35,7 @@ fn Legacy(to: &'static str) -> impl IntoView {
 #[component]
 fn App() -> impl IntoView {
     view! {
-        <Router base="/v2">
+        <Router base=storm_web_core::route::app_base()>
             <Routes fallback=|| view! { <div class="empty">"Not found."</div> }>
                 <ParentRoute path=path!("") view=Layout>
                     <Route path=path!("") view=Session />
@@ -66,6 +66,8 @@ fn App() -> impl IntoView {
 }
 
 fn main() {
+    // served at `/v2/...` (next to React) or at the root (after the switch): decided by the page that was loaded
+    storm_web_core::route::init_base(&storm_web_core::net::pathname());
     let root = leptos::prelude::document()
         .get_element_by_id("root")
         .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok());

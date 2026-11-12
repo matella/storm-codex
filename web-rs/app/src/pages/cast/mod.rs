@@ -92,9 +92,9 @@ fn ObsSource() -> impl IntoView {
             .unwrap_or_else(|| "nexus".to_string()),
     );
     let copy = RwSignal::new("idle");
-    let origin = net::origin();
+    let origin = format!("{}{}", net::origin(), storm_web_core::route::app_base());
+    let origin2 = origin.clone();
     let url = move || obs_overlay_url(&origin, &skin.get());
-    let origin2 = net::origin();
     let do_copy = move |_| {
         let u = obs_overlay_url(&origin2, &skin.get_untracked());
         leptos::task::spawn_local(async move {
@@ -142,7 +142,7 @@ fn ScenePreview(on_air: Memo<Scene>) -> impl IntoView {
             <div class="cr-prev-k">{move || format!("Live preview · {} on air", scene_label(on_air.get()))}</div>
             <div class="cr-prev-box" id="cr-prev-box"
                 style=move || match scale.get() { None => format!("aspect-ratio: {W} / {H}"), Some(s) => format!("height: {}px", H * s) }>
-                <iframe title="Cast overlay preview" src="/cast/overlay" width=W.to_string() height=H.to_string()
+                <iframe title="Cast overlay preview" src=storm_web_core::route::app_href("/cast/overlay") width=W.to_string() height=H.to_string()
                     style=move || match scale.get() { None => "visibility: hidden".to_string(), Some(s) => format!("transform: scale({s})") }></iframe>
             </div>
         </div>

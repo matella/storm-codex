@@ -210,15 +210,24 @@ async fn run() -> Result<(), String> {
     let bind = state.cfg.bind_addr.clone();
     let app = api_router(&state);
     let app = serve_v2(app, state.cfg.web_v2_dir.as_deref());
-    let app = serve_spa(app, state.cfg.web_dir.as_deref())
-        .with_state(state)
-        // Request body limit: the axum default (2 MB) rejected with 413 — BEFORE the handler, so
-        // without a trace or an uploads row — the replays of long games (a 5v5 Braxis Holdout exceeds
-        // 2 MB), making the uploader loop. 64 MB covers it widely (replays < ~10 MB).
-        .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024))
-        // gzip/brotli according to `Accept-Encoding` (API JSON, JS/CSS bundle); the default predicate
-        // skips small responses, images and streams (WS: 101 response without a body).
-        .layer(tower_http::compression::CompressionLayer::new());
+    // `/` answers with React, or with the Rust front-end once `WEB_ROOT=rust` (the switch; React stays for rollback)
+    let app = match state
+        .cfg
+        .web_v2_dir
+        .as_deref()
+        .filter(|_| state.cfg.web_root_rust)
+    {
+        Some(dir) => serve_v2_at_root(app, dir),
+        None => serve_spa(app, state.cfg.web_dir.as_deref()),
+    }
+    .with_state(state)
+    // Request body limit: the axum default (2 MB) rejected with 413 — BEFORE the handler, so
+    // without a trace or an uploads row — the replays of long games (a 5v5 Braxis Holdout exceeds
+    // 2 MB), making the uploader loop. 64 MB covers it widely (replays < ~10 MB).
+    .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024))
+    // gzip/brotli according to `Accept-Encoding` (API JSON, JS/CSS bundle); the default predicate
+    // skips small responses, images and streams (WS: 101 response without a body).
+    .layer(tower_http::compression::CompressionLayer::new());
 
     let listener = tokio::net::TcpListener::bind(&bind)
         .await
@@ -554,18 +563,13 @@ fn v2_page(path: &str) -> &'static str {
     }
 }
 
-/// Rust front-end under `/v2/` (one Trunk output per bundle: `overlay/` at `/v2/overlay/`, `sources/` at
-/// `/v2/sources/`, `app/` at `/v2/app/`): files are fingerprinted (cacheable for a
-/// year); a path that looks like a file and does not exist answers 404 (never an HTML page instead of a
-/// `.wasm`); any other path returns the page of `v2_page` (status 200, `no-cache`, read at each request so a
-/// rebuild is picked up without restarting the server). React keeps `/`.
-fn serve_v2<S: Clone + Send + Sync + 'static>(
-    app: Router<S>,
-    dir: Option<&std::path::Path>,
-) -> Router<S> {
-    let Some(dir) = dir else { return app };
+/// Handler answering the page of `v2_page` for a path (status 200, `no-cache`, read at each request so a rebuild is
+/// picked up without restarting the server); a path that looks like a file answers 404.
+fn v2_page_handler(
+    dir: &std::path::Path,
+) -> axum::routing::MethodRouter<(), std::convert::Infallible> {
     let root = dir.to_path_buf();
-    let page = axum::routing::get(move |uri: axum::http::Uri| {
+    axum::routing::get(move |uri: axum::http::Uri| {
         let root = root.clone();
         async move {
             use axum::response::IntoResponse;
@@ -582,7 +586,29 @@ fn serve_v2<S: Clone + Send + Sync + 'static>(
                 Err(_) => StatusCode::NOT_FOUND.into_response(),
             }
         }
-    });
+    })
+}
+
+/// The switch: the Rust front-end answers every page at `/` (the API routes come first; the bundles' files stay under
+/// `/v2/`, where `serve_v2` serves them).
+fn serve_v2_at_root<S: Clone + Send + Sync + 'static>(
+    app: Router<S>,
+    dir: &std::path::Path,
+) -> Router<S> {
+    app.fallback_service(v2_page_handler(dir).with_state(()))
+}
+
+/// Rust front-end under `/v2/` (one Trunk output per bundle: `overlay/` at `/v2/overlay/`, `sources/` at
+/// `/v2/sources/`, `app/` at `/v2/app/`): files are fingerprinted (cacheable for a
+/// year); a path that looks like a file and does not exist answers 404 (never an HTML page instead of a
+/// `.wasm`); any other path returns the page of `v2_page` (status 200, `no-cache`, read at each request so a
+/// rebuild is picked up without restarting the server). React keeps `/`.
+fn serve_v2<S: Clone + Send + Sync + 'static>(
+    app: Router<S>,
+    dir: Option<&std::path::Path>,
+) -> Router<S> {
+    let Some(dir) = dir else { return app };
+    let page = v2_page_handler(dir);
     let files = tower_http::set_header::SetResponseHeader::if_not_present(
         tower_http::services::ServeDir::new(dir)
             .append_index_html_on_directories(false)
@@ -725,6 +751,51 @@ mod spa_tests {
         }
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    /// `WEB_ROOT=rust`: every page answers at `/` with the same page choice as under `/v2`, the API routes stay first,
+    /// the bundles' files stay under `/v2/`, and a file-looking path that does not exist is a 404.
+    #[tokio::test]
+    async fn the_rust_front_end_can_answer_at_the_root() {
+        let dir = std::env::temp_dir().join(format!("storm-codex-root-{}", uuid::Uuid::new_v4()));
+        for d in ["app", "overlay", "sources"] {
+            std::fs::create_dir_all(dir.join(d)).unwrap();
+            std::fs::write(dir.join(d).join("index.html"), format!("<html>{d}</html>")).unwrap();
+        }
+        std::fs::write(dir.join("app/a-1.wasm"), "wasm").unwrap();
+        let api =
+            axum::Router::<()>::new().route("/api/health", axum::routing::get(|| async { "ok" }));
+        let app = super::serve_v2_at_root(super::serve_v2(api, Some(&dir)), &dir);
+        let get = |path: &'static str| {
+            let app = app.clone();
+            async move {
+                let r = app
+                    .oneshot(Request::get(path).body(Body::empty()).unwrap())
+                    .await
+                    .unwrap();
+                let status = r.status();
+                let body = axum::body::to_bytes(r.into_body(), 1 << 20).await.unwrap();
+                (status, String::from_utf8_lossy(&body).to_string())
+            }
+        };
+        for (path, page) in [
+            ("/", "app"),
+            ("/matches/12", "app"),
+            ("/cast", "app"),
+            ("/cast/overlay", "overlay"),
+            ("/draft/overlay", "overlay"),
+            ("/ticker", "sources"),
+            ("/widget", "sources"),
+            ("/v2/matches", "app"),
+        ] {
+            let (st, body) = get(path).await;
+            assert_eq!(st, StatusCode::OK, "{path}");
+            assert!(body.contains(page), "{path}: {body}");
+        }
+        assert_eq!(get("/api/health").await, (StatusCode::OK, "ok".to_string()));
+        assert_eq!(get("/v2/app/a-1.wasm").await.0, StatusCode::OK);
+        assert_eq!(get("/nothing.js").await.0, StatusCode::NOT_FOUND);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 #[cfg(test)]
@@ -759,6 +830,7 @@ pub(crate) mod api_tests {
             admin_token: admin_token.map(str::to_owned),
             web_dir: None,
             web_v2_dir: None,
+            web_root_rust: false,
             redis_url: None,
             jarvis_channel: "test".into(),
             azure_push_url: None,
