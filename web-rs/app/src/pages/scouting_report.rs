@@ -1,5 +1,5 @@
 //! Scouting report: the "dossier" page of one report. Port of `web/src/pages/ScoutingReport.tsx` and of the `ds`
-//! components it uses. The HTML export is not ported yet (see docs/STATUS.md).
+//! components it uses. The HTML export is `crate::export` (pure generator in `core/reportexport.rs`).
 
 use std::{collections::HashMap, sync::Arc};
 
