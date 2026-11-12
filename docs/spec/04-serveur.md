@@ -35,7 +35,8 @@ POST /api/upload(-raw)  [personal Bearer token]
 
 ## Process lifecycle (`main.rs`)
 
-- **Graceful shutdown**: Ctrl-C or SIGTERM (`docker stop`) → the server stops accepting connections
+- **Graceful shutdown**: Ctrl-C or SIGTERM (`docker stop`) — or, in standalone mode,
+  `POST /api/standalone/shutdown` → the server stops accepting connections
   and lets in-flight requests finish (`with_graceful_shutdown`). Measured in the container:
   shutdown in ~0.5 s, exit code 0 (before: SIGTERM ignored, SIGKILL after 10 s). Unfinished
   parses are resumed at the next startup (above).
@@ -45,6 +46,49 @@ POST /api/upload(-raw)  [personal Bearer token]
   `Cache-Control: public, max-age=31536000, immutable` — a missing asset answers 404, never
   `index.html`; `index.html` and the SPA routes as `no-cache`.
 - **Cast/draft write guard**: middleware `auth::guard_writes` (see 05-api.md).
+
+## Standalone import (`standalone/`)
+
+Only in standalone mode (`STANDALONE=1`); without it the routes below answer 404 and nothing
+starts. One background task (`standalone/orchestrator.rs`) owns the upload ledger and runs,
+once the listener is bound (`/api/health` answers 200 during the whole sequence):
+
+1. **seed** the reference data from `REFERENTIAL_FILE` when `dim_heroes` is empty (phase `seeding`);
+2. **detect** the folders: every `Documents/Heroes of the Storm/Accounts/*/*/Replays/Multiplayer`
+   (known-folder API, OneDrive-relocated Documents included) plus the extra folders saved in
+   `app_settings.standalone_extra_folders`; each extra folder is expanded to the folders under it
+   that hold replays (itself when none does yet). None → phase `no-folders`;
+3. **disk gate** on `ARCHIVE_DIR`: free space must be ≥ `2 × size of the folders' replays + 1 GiB`
+   (`storm_codex_supervisor::required_free_bytes`); otherwise phase `disk-full`, no backfill and
+   no watcher until a rescan passes;
+4. **upload token**: a fresh random token is generated at each start and its SHA-256 written to
+   the single `upload_tokens` row named `standalone-watcher` (inserted once, then updated in
+   place with `revoked_at` cleared, under a transaction advisory lock: no duplicate row, never
+   stuck revoked, the previous session's token stops working). The clear token lives only in
+   memory (never logged, never on disk). `/api/upload` keeps its auth contract for everyone;
+5. **ledger** (`LEDGER_FILE`) opened; a corrupt file is moved to `<file>.corrupt` and an empty
+   ledger started (the server dedups re-sent files). Steps 4–5 failing → phase `error`;
+6. **live watcher** started on the folders, then the **backfill** (phase `importing`): oldest
+   first, 4 at a time, through `POST http://<bound address>/api/upload` (the address actually
+   bound, so `BIND_ADDR` may use port 0). Replays reported by the watcher meanwhile wait and
+   are handled afterwards; then phase `ready`: each new replay is uploaded unless the ledger
+   already has it, and its outcome is recorded (write-through).
+
+A rescan or a folder change received during the backfill cancels it (the ledger is flushed) and
+the import restarts. Counts describe the current import run (backfill + live uploads since it
+started) and reset at each rescan; `failed` lists the files that exhausted their retries
+(retried at the next start), `rejected` the files refused as bad content during the run.
+
+| Route | Answer |
+|---|---|
+| `GET /api/standalone/status` | `{phase, folders, total, done, duplicates, rejected: [{file, reason}], failed: [file], freeBytes, neededBytes, dataDir, version}` — `phase` ∈ `seeding`, `importing`, `ready`, `no-folders`, `disk-full`, `error`; `folders` = effective folders; `freeBytes`/`neededBytes` `null` before the first disk gate; `dataDir` = parent of `ARCHIVE_DIR`; `version` = server crate version |
+| `PUT /api/standalone/folders` | body `{folders: [path]}` replaces the extra folders. Each must be an existing directory, else **400** `{error: "not an existing folder: …"}`; only directory listings are read. Saved and resolved, then the watcher restarts and a rescan runs; answers the new status |
+| `POST /api/standalone/rescan` | **202**; re-runs the disk gate and the backfill |
+| `POST /api/standalone/shutdown` | **202**; same graceful shutdown as Ctrl-C (used by the desktop shell before it stops Postgres) |
+
+The routes are unauthenticated (loopback-only server, single user), but a write carrying a
+non-loopback `Origin` header (a foreign web page posting to the local server) is refused with
+**403**.
 
 ## Played-hero correction (`project.rs`)
 
@@ -98,7 +142,8 @@ Failed writes are logged (`warn`):
   `vendor_images` (portraits/maps copied into `IMAGES_DIR`, served on `/images`),
   `sync_patches`, `backfill_hero_sections`.
 - **Standalone mode** (`STANDALONE=1`, installer bundle): no network. When `dim_heroes` is empty
-  and `REFERENTIAL_FILE` is set, it is seeded once from that on-disk snapshot
+  and `REFERENTIAL_FILE` is set, it is seeded once from that on-disk snapshot, as the first step
+  of the standalone import task (phase `seeding`, see "Standalone import" below)
   (`dim::ingest_snapshot_file`, same ingest path as `ingest_snapshot`, one scratch dir per call);
   the 24 h refresh loop is not started. `Config::validate()` (run right after `from_env()`)
   rejects a non-loopback `BIND_ADDR` in this mode ("standalone mode requires a loopback BIND_ADDR").
@@ -177,6 +222,7 @@ Design: `docs/specs/2026-10-24-feed-live-en-partie-design.md`.
 | `HOTSPATCHNOTES_URL` / `REFERENTIAL_URL` | empty | reference data (see above) |
 | `STANDALONE` | empty = off | `1` = standalone (installer) mode: loopback-only `BIND_ADDR` (checked at startup), no reference-data network refresh |
 | `REFERENTIAL_FILE` | empty | bundled `referential.tar.gz` that seeds an empty `dim_heroes` in standalone mode |
+| `LEDGER_FILE` | `<ARCHIVE_DIR>/../uploaded.json` | standalone only: upload ledger of the in-process watcher (the desktop shell passes `<data>/uploaded.json`) |
 | `ORPHEUS_URL` | empty | music proxy for `/api/now-playing` |
 | `PATCH_WEBHOOK_URL` | empty | outgoing new-patch notification |
 | `AZURE_PUSH_URL` / `AZURE_PUSH_TOKEN` | empty | **dormant** (Twitch extension abandoned) |

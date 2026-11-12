@@ -16,9 +16,14 @@ pub fn required_free_bytes(replay_bytes: u64) -> u64 {
     replay_bytes.saturating_mul(2).saturating_add(ONE_GIB)
 }
 
+/// Bytes available to the current user on the filesystem holding `path` (must exist).
+pub fn free_space(path: &Path) -> io::Result<u64> {
+    fs4::available_space(path)
+}
+
 /// Checks that the filesystem holding `path` (must exist) has enough free space.
 pub fn check_free_space(path: &Path, replay_bytes: u64) -> Result<(), DiskError> {
-    let free = fs4::available_space(path)?;
+    let free = free_space(path)?;
     let needed = required_free_bytes(replay_bytes);
     if free < needed {
         return Err(DiskError::Insufficient { free, needed });

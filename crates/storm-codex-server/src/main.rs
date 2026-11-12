@@ -20,6 +20,7 @@ mod raw;
 mod read;
 mod replay2d;
 mod scouting;
+mod standalone;
 mod upload;
 mod ws;
 
@@ -57,6 +58,9 @@ pub struct AppState {
     pub live: Arc<RwLock<Option<live::LiveSession>>>,
     /// Auto playback timer of the draft from a replay (only one at a time).
     pub replay_timer: Arc<std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
+    /// Standalone (installer) mode: import status/commands shared with the import task.
+    /// `Some` only when `cfg.standalone`; the `/api/standalone/*` routes exist only then.
+    pub standalone: Option<Arc<standalone::StandaloneState>>,
 }
 
 #[tokio::main]
@@ -140,6 +144,9 @@ async fn run() -> Result<(), String> {
         .await
         .unwrap_or_else(cast::Series::new);
     let lobby_initial = lobby::store::load(&db).await;
+    let standalone = cfg
+        .standalone
+        .then(|| Arc::new(standalone::StandaloneState::new(&cfg)));
     let state = AppState {
         cfg: Arc::new(cfg),
         db,
@@ -152,6 +159,7 @@ async fn run() -> Result<(), String> {
         lobby: Arc::new(RwLock::new(lobby_initial)),
         live: Arc::new(RwLock::new(None)),
         replay_timer: Arc::default(),
+        standalone,
     };
 
     // Hero/talent/patch reference data + images (best-effort, 24 h refresh; each new patch →
@@ -159,20 +167,11 @@ async fn run() -> Result<(), String> {
     //  - REFERENTIAL_URL  : published snapshot (`referential.tar.gz`) → standalone bundle, without live HPN.
     //  - HOTSPATCHNOTES_URL : live HotsPatchNotes API (maintainer setup).
     // The snapshot takes precedence when both are set.
-    // Standalone mode: no network. Seed once from the bundled snapshot when the table is empty
-    // and never start the 24 h refresh loop.
-    if state.cfg.standalone {
-        if let Some(file) = state.cfg.referential_file.as_deref() {
-            let empty =
-                sqlx::query_scalar::<_, bool>("SELECT NOT EXISTS (SELECT 1 FROM dim_heroes)")
-                    .fetch_one(&state.db)
-                    .await
-                    .unwrap_or(false);
-            if empty {
-                dim::ingest_snapshot_file(&state.db, &state.cfg.images_dir, file).await;
-            }
-        }
-    } else if state.cfg.referential_url.is_some() || state.cfg.hotspatchnotes_url.is_some() {
+    // Standalone mode: no network and no 24 h refresh loop; the import task (started once the
+    // listener is bound) seeds an empty `dim_heroes` from the bundled snapshot first.
+    if !state.cfg.standalone
+        && (state.cfg.referential_url.is_some() || state.cfg.hotspatchnotes_url.is_some())
+    {
         let st = state.clone();
         tokio::spawn(async move {
             loop {
@@ -222,6 +221,7 @@ async fn run() -> Result<(), String> {
         Err(e) => tracing::error!("resuming the pending uploads: {e}"),
     }
     let bind = state.cfg.bind_addr.clone();
+    let standalone_state = state.clone();
     let app = api_router(&state);
     // the front-end: bundle files under `/v2/<bundle>/`, every page at `/` (API routes first)
     let app = match state.cfg.web_dir.as_deref() {
@@ -240,9 +240,26 @@ async fn run() -> Result<(), String> {
     let listener = tokio::net::TcpListener::bind(&bind)
         .await
         .map_err(|e| format!("bind {bind}: {e}"))?;
-    tracing::info!("storm-codex-server listening on {bind}");
+    let local = listener
+        .local_addr()
+        .map_err(|e| format!("bind {bind}: {e}"))?;
+    tracing::info!("storm-codex-server listening on {local}");
+    // Standalone: the import task uploads to this very server, at the address actually bound
+    // (BIND_ADDR may ask for port 0). `/api/health` answers during the whole import.
+    if standalone_state.standalone.is_some() {
+        standalone::spawn(standalone_state.clone(), format!("http://{local}"));
+    }
+    let http_shutdown = standalone_state.standalone.clone();
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(async move {
+            match http_shutdown {
+                Some(st) => tokio::select! {
+                    () = shutdown_signal() => {},
+                    () = st.shutdown_requested() => {},
+                },
+                None => shutdown_signal().await,
+            }
+        })
         .await
         .map_err(|e| format!("serve: {e}"))
 }
@@ -279,7 +296,17 @@ async fn shutdown_signal() {
 }
 
 /// All the API routes + images (without the SPA fallback) — extracted for the integration tests.
+/// The `/api/standalone/*` routes are added only in standalone mode (404 otherwise).
 fn api_router(state: &AppState) -> Router<AppState> {
+    let router = base_router(state);
+    if state.standalone.is_some() {
+        router.merge(standalone::api::router())
+    } else {
+        router
+    }
+}
+
+fn base_router(state: &AppState) -> Router<AppState> {
     Router::new()
         .route("/api/health", get(health))
         .route("/api/upload", post(upload::upload))
@@ -604,6 +631,30 @@ async fn health(State(state): State<AppState>) -> (StatusCode, Json<serde_json::
     )
 }
 
+/// App state for tests around a given config and pool (no draft/cast/lobby restored).
+#[cfg(test)]
+pub(crate) fn test_app_state(cfg: Config, db: PgPool) -> AppState {
+    let (events, _) = tokio::sync::broadcast::channel(64);
+    AppState {
+        cfg: Arc::new(cfg),
+        db,
+        parse_sem: Arc::new(Semaphore::new(2)),
+        events,
+        cast: Arc::new(RwLock::new(cast::Series::new())),
+        cast_version: Arc::default(),
+        cast_saved: Arc::default(),
+        lobby: Arc::new(RwLock::new(None)),
+        live: Arc::new(RwLock::new(None)),
+        replay_timer: Arc::default(),
+        draft: Arc::new(RwLock::new(draft::DraftState::new(
+            draft::Format::Standard,
+            draft::Side::Blue,
+            "Sky Temple".into(),
+        ))),
+        standalone: None,
+    }
+}
+
 /// Router-level integration tests (tower::oneshot, without network listening). Skipped without
 /// `DATABASE_URL` (pattern of the projection test) — run with the dev Docker Postgres,
 /// run in CI against a Postgres service.
@@ -758,6 +809,7 @@ pub(crate) mod api_tests {
             referential_url: None,
             standalone: false,
             referential_file: None,
+            ledger_file: None,
             images_dir: dir.join("images"),
             minimaps_bundle_dir: dir.join("minimaps"),
             orpheus_url: None,
@@ -765,24 +817,7 @@ pub(crate) mod api_tests {
         };
         std::fs::create_dir_all(&cfg.archive_dir).unwrap();
         std::fs::create_dir_all(&cfg.raw_cache_dir).unwrap();
-        let (events, _) = tokio::sync::broadcast::channel(64);
-        Some(AppState {
-            cfg: Arc::new(cfg),
-            db,
-            parse_sem: Arc::new(Semaphore::new(2)),
-            events,
-            cast: Arc::new(RwLock::new(cast::Series::new())),
-            cast_version: Arc::default(),
-            cast_saved: Arc::default(),
-            lobby: Arc::new(RwLock::new(None)),
-            live: Arc::new(RwLock::new(None)),
-            replay_timer: Arc::default(),
-            draft: Arc::new(RwLock::new(draft::DraftState::new(
-                draft::Format::Standard,
-                draft::Side::Blue,
-                "Sky Temple".into(),
-            ))),
-        })
+        Some(super::test_app_state(cfg, db))
     }
 
     pub(crate) fn app(state: &AppState) -> Router {

@@ -33,6 +33,9 @@ pub struct Config {
     /// Bundled `referential.tar.gz` on disk (`REFERENTIAL_FILE`), used to seed an empty
     /// `dim_heroes` in standalone mode. See `dim::ingest_snapshot_file`.
     pub referential_file: Option<PathBuf>,
+    /// Upload ledger of the standalone watcher (`LEDGER_FILE`, standalone only). Default:
+    /// `uploaded.json` next to `archive_dir` (see [`Config::ledger_path`]).
+    pub ledger_file: Option<PathBuf>,
     /// Hero portraits + map images vendored here at startup (self-sufficient,
     /// deterministic — no runtime dependency on HotsPatchNotes), served on `/images`.
     pub images_dir: PathBuf,
@@ -86,6 +89,10 @@ impl Config {
                 .ok()
                 .filter(|s| !s.is_empty())
                 .map(PathBuf::from),
+            ledger_file: std::env::var("LEDGER_FILE")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .map(PathBuf::from),
             images_dir: PathBuf::from(
                 std::env::var("IMAGES_DIR").unwrap_or_else(|_| "./.images".into()),
             ),
@@ -97,6 +104,22 @@ impl Config {
                 .ok()
                 .filter(|s| !s.is_empty()),
         })
+    }
+
+    /// Data folder of the standalone install: the parent of `archive_dir` (the archive
+    /// itself when it has no parent).
+    pub fn data_dir(&self) -> PathBuf {
+        match self.archive_dir.parent() {
+            Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
+            _ => self.archive_dir.clone(),
+        }
+    }
+
+    /// Upload ledger file: `LEDGER_FILE`, otherwise `<data_dir>/uploaded.json`.
+    pub fn ledger_path(&self) -> PathBuf {
+        self.ledger_file
+            .clone()
+            .unwrap_or_else(|| self.data_dir().join("uploaded.json"))
     }
 
     /// Cross-field checks. Standalone mode must never listen beyond the loopback interface.
@@ -135,6 +158,7 @@ mod tests {
             referential_url: None,
             standalone,
             referential_file: None,
+            ledger_file: None,
             images_dir: PathBuf::new(),
             minimaps_bundle_dir: PathBuf::new(),
             orpheus_url: None,
@@ -151,6 +175,16 @@ mod tests {
         assert!(cfg("127.0.0.1:0", true).validate().is_ok());
         assert!(cfg("[::1]:8088", true).validate().is_ok());
         assert!(cfg("not-an-address", true).validate().is_err());
+    }
+
+    #[test]
+    fn ledger_defaults_next_to_the_archive() {
+        let mut c = cfg("127.0.0.1:0", true);
+        c.archive_dir = PathBuf::from("data").join("archive");
+        assert_eq!(c.data_dir(), PathBuf::from("data"));
+        assert_eq!(c.ledger_path(), PathBuf::from("data").join("uploaded.json"));
+        c.ledger_file = Some(PathBuf::from("elsewhere.json"));
+        assert_eq!(c.ledger_path(), PathBuf::from("elsewhere.json"));
     }
 
     #[test]

@@ -1,0 +1,494 @@
+//! Standalone mode: router tests (`tower::ServiceExt`, no listener) and DB-backed tests
+//! (skipped without `DATABASE_URL`, like `api_tests`).
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
+use super::*;
+use crate::{api_router, config::Config, AppState};
+use axum::body::Body;
+use axum::http::{header, Request, StatusCode};
+use axum::Router;
+use http_body_util::BodyExt;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::{Duration, SystemTime};
+use storm_codex_watcher::backfill::{self, Progress};
+use storm_codex_watcher::ledger::Ledger;
+use storm_codex_watcher::upload::{UploadResult, Uploader};
+use tower::util::ServiceExt;
+
+fn test_config(dir: &Path) -> Config {
+    Config {
+        database_url: String::new(),
+        bind_addr: "127.0.0.1:0".into(),
+        archive_dir: dir.join("archive"),
+        raw_cache_dir: dir.join("raw-cache"),
+        raw_cache_max_bytes: 64 * 1024 * 1024,
+        admin_token: None,
+        web_dir: None,
+        redis_url: None,
+        jarvis_channel: "test".into(),
+        azure_push_url: None,
+        azure_push_token: None,
+        hotspatchnotes_url: None,
+        referential_url: None,
+        standalone: true,
+        referential_file: None,
+        ledger_file: None,
+        images_dir: dir.join("images"),
+        minimaps_bundle_dir: dir.join("minimaps"),
+        orpheus_url: None,
+        patch_webhook_url: None,
+    }
+}
+
+/// App state whose pool never reaches a database (unroutable port, 1 s acquire timeout):
+/// enough for the routes and orchestrator steps that do not need Postgres.
+fn lazy_state(dir: &Path, standalone: Option<StandaloneState>) -> AppState {
+    let cfg = test_config(dir);
+    std::fs::create_dir_all(&cfg.archive_dir).unwrap();
+    let db = sqlx::postgres::PgPoolOptions::new()
+        .acquire_timeout(Duration::from_secs(1))
+        .connect_lazy("postgres://nobody:nothing@127.0.0.1:1/none")
+        .unwrap();
+    let mut state = crate::test_app_state(cfg, db);
+    state.standalone = standalone.map(Arc::new);
+    state
+}
+
+fn app(state: &AppState) -> Router {
+    api_router(state).with_state(state.clone())
+}
+
+async fn send(app: &Router, req: Request<Body>) -> (StatusCode, serde_json::Value) {
+    let resp = app.clone().oneshot(req).await.unwrap();
+    let status = resp.status();
+    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let json = serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
+    (status, json)
+}
+
+async fn get_status(app: &Router) -> serde_json::Value {
+    let (code, v) = send(
+        app,
+        Request::get("/api/standalone/status")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK);
+    v
+}
+
+/// Polls the status until `ok` holds (panics after `secs`).
+async fn wait_status(
+    app: &Router,
+    secs: u64,
+    ok: impl Fn(&serde_json::Value) -> bool,
+) -> serde_json::Value {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(secs);
+    loop {
+        let v = get_status(app).await;
+        if ok(&v) {
+            return v;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "status never matched: {v}"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+fn put_folders(folders: &[&str]) -> Request<Body> {
+    Request::put("/api/standalone/folders")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            serde_json::json!({ "folders": folders }).to_string(),
+        ))
+        .unwrap()
+}
+
+/// A replay file whose mtime is old enough for the backfill (> 2 s).
+fn old_replay(dir: &Path, name: &str, content: &[u8]) -> PathBuf {
+    let path = dir.join(name);
+    std::fs::write(&path, content).unwrap();
+    let f = std::fs::File::options().write(true).open(&path).unwrap();
+    f.set_modified(SystemTime::now() - Duration::from_secs(60))
+        .unwrap();
+    path
+}
+
+#[tokio::test]
+async fn status_is_404_when_not_standalone() {
+    let tmp = tempfile::tempdir().unwrap();
+    let app = app(&lazy_state(tmp.path(), None));
+    for req in [
+        Request::get("/api/standalone/status")
+            .body(Body::empty())
+            .unwrap(),
+        put_folders(&[]),
+        Request::post("/api/standalone/rescan")
+            .body(Body::empty())
+            .unwrap(),
+        Request::post("/api/standalone/shutdown")
+            .body(Body::empty())
+            .unwrap(),
+    ] {
+        let path = req.uri().path().to_string();
+        assert_eq!(send(&app, req).await.0, StatusCode::NOT_FOUND, "{path}");
+    }
+}
+
+#[tokio::test]
+async fn status_reports_no_folders_phase_when_none_found() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = test_config(tmp.path());
+    let st = StandaloneState::new(&cfg).with_detector(Vec::new);
+    let state = lazy_state(tmp.path(), Some(st));
+    let app = app(&state);
+    let _task = spawn(state.clone(), "http://127.0.0.1:1".into());
+    let v = wait_status(&app, 10, |v| v["phase"] == "no-folders").await;
+    assert_eq!(v["folders"], serde_json::json!([]));
+    assert_eq!(v["total"], 0);
+    assert_eq!(v["version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(v["dataDir"], tmp.path().to_string_lossy().as_ref());
+    for key in [
+        "done",
+        "duplicates",
+        "rejected",
+        "failed",
+        "freeBytes",
+        "neededBytes",
+    ] {
+        assert!(v.get(key).is_some(), "missing {key}: {v}");
+    }
+}
+
+#[tokio::test]
+async fn disk_full_phase_blocks_backfill() {
+    let tmp = tempfile::tempdir().unwrap();
+    let replays = tmp.path().join("replays");
+    std::fs::create_dir_all(&replays).unwrap();
+    old_replay(&replays, "a.StormReplay", &[7u8; 1000]);
+    let cfg = test_config(tmp.path());
+    let dirs = vec![replays.clone()];
+    let st = StandaloneState::new(&cfg)
+        .with_detector(move || dirs.clone())
+        .with_free_space(|_| Ok(10));
+    let state = lazy_state(tmp.path(), Some(st));
+    let app = app(&state);
+    let _task = spawn(state.clone(), "http://127.0.0.1:1".into());
+    let v = wait_status(&app, 10, |v| v["phase"] == "disk-full").await;
+    assert_eq!(v["freeBytes"], 10);
+    assert_eq!(
+        v["neededBytes"],
+        storm_codex_supervisor::required_free_bytes(1000)
+    );
+    assert_eq!(v["total"], 0);
+    assert_eq!(v["done"], 0);
+    // still blocked a moment later: the backfill never started
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let v = get_status(&app).await;
+    assert_eq!(v["phase"], "disk-full");
+    assert_eq!(v["total"], 0);
+}
+
+/// Stub `/api/upload`: `a*` uploaded, `b*` duplicate, `c*` rejected (400 "corrupt").
+async fn stub_upload_server() -> String {
+    use axum::http::HeaderMap;
+    let route = axum::routing::post(|headers: HeaderMap| async move {
+        let name = headers
+            .get("x-filename")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_string();
+        match name.chars().next() {
+            Some('a') => (StatusCode::OK, "{}".to_string()),
+            Some('b') => (StatusCode::CONFLICT, "{}".to_string()),
+            _ => (StatusCode::BAD_REQUEST, "corrupt".to_string()),
+        }
+    });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, Router::new().route("/api/upload", route)).await;
+    });
+    format!("http://{addr}")
+}
+
+#[tokio::test]
+async fn status_counts_follow_progress() {
+    let tmp = tempfile::tempdir().unwrap();
+    let replays = tmp.path().join("replays");
+    std::fs::create_dir_all(&replays).unwrap();
+    for name in [
+        "a1.StormReplay",
+        "a2.StormReplay",
+        "b1.StormReplay",
+        "c1.StormReplay",
+    ] {
+        old_replay(&replays, name, name.as_bytes());
+    }
+    let base = stub_upload_server().await;
+    let uploader = Uploader::new(base).with_backoff_unit(Duration::from_millis(1));
+    let mut ledger = Ledger::open(&tmp.path().join("uploaded.json")).unwrap();
+    let progress = Arc::new(Progress::default());
+
+    let cfg = test_config(tmp.path());
+    let st = StandaloneState::new(&cfg);
+    st.start_run(progress.clone());
+    let state = lazy_state(tmp.path(), Some(st));
+    let app = app(&state);
+
+    backfill::run(&[replays], &uploader, &mut ledger, &progress).await;
+    let v = get_status(&app).await;
+    assert_eq!(v["total"], 4);
+    assert_eq!(v["done"], 4);
+    assert_eq!(v["duplicates"], 1);
+    assert_eq!(
+        v["rejected"],
+        serde_json::json!([{ "file": "c1.StormReplay", "reason": "corrupt" }])
+    );
+    assert_eq!(v["failed"], serde_json::json!([]));
+
+    // live watcher outcomes add up with the backfill run
+    let st = state.standalone.as_ref().unwrap();
+    st.record_live("d1.StormReplay", &UploadResult::Duplicate);
+    st.record_live("e1.StormReplay", &UploadResult::Retryable("down".into()));
+    let v = get_status(&app).await;
+    assert_eq!(v["total"], 6);
+    assert_eq!(v["done"], 6);
+    assert_eq!(v["duplicates"], 2);
+    assert_eq!(v["failed"], serde_json::json!(["e1.StormReplay"]));
+}
+
+#[tokio::test]
+async fn put_folders_rejects_what_is_not_a_directory() {
+    let tmp = tempfile::tempdir().unwrap();
+    let file = tmp.path().join("file.txt");
+    std::fs::write(&file, "x").unwrap();
+    let cfg = test_config(tmp.path());
+    let state = lazy_state(tmp.path(), Some(StandaloneState::new(&cfg)));
+    let app = app(&state);
+    let missing = tmp.path().join("missing");
+    for bad in [file.to_string_lossy(), missing.to_string_lossy(), "".into()] {
+        let (code, v) = send(&app, put_folders(&[bad.as_ref()])).await;
+        assert_eq!(code, StatusCode::BAD_REQUEST, "{bad}");
+        assert!(
+            v["error"]
+                .as_str()
+                .unwrap()
+                .contains("not an existing folder"),
+            "{v}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn rescan_is_accepted_and_queued() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = test_config(tmp.path());
+    let state = lazy_state(tmp.path(), Some(StandaloneState::new(&cfg)));
+    let mut commands = state.standalone.as_ref().unwrap().take_commands().unwrap();
+    let app = app(&state);
+    let (code, _) = send(
+        &app,
+        Request::post("/api/standalone/rescan")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(code, StatusCode::ACCEPTED);
+    assert!(matches!(commands.try_recv(), Ok(Command::Rescan)));
+}
+
+#[tokio::test]
+async fn shutdown_triggers_the_graceful_stop() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = test_config(tmp.path());
+    let state = lazy_state(tmp.path(), Some(StandaloneState::new(&cfg)));
+    let st = state.standalone.clone().unwrap();
+    let app = app(&state);
+    let (code, _) = send(
+        &app,
+        Request::post("/api/standalone/shutdown")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(code, StatusCode::ACCEPTED);
+    tokio::time::timeout(Duration::from_secs(1), st.shutdown_requested())
+        .await
+        .expect("shutdown notified");
+}
+
+#[tokio::test]
+async fn cross_origin_writes_are_refused() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = test_config(tmp.path());
+    let state = lazy_state(tmp.path(), Some(StandaloneState::new(&cfg)));
+    let st = state.standalone.clone().unwrap();
+    let app = app(&state);
+    let (code, _) = send(
+        &app,
+        Request::post("/api/standalone/shutdown")
+            .header(header::ORIGIN, "https://evil.example")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(code, StatusCode::FORBIDDEN);
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), st.shutdown_requested())
+            .await
+            .is_err(),
+        "a cross-origin request must not stop the server"
+    );
+    // the app's own pages (loopback origin) may write
+    let (code, _) = send(
+        &app,
+        Request::post("/api/standalone/rescan")
+            .header(header::ORIGIN, "http://127.0.0.1:8088")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(code, StatusCode::ACCEPTED);
+}
+
+// ── DB-backed (skipped without DATABASE_URL) ─────────────────────────────────
+
+async fn db_state(dir: &Path, st: impl FnOnce(&Config) -> StandaloneState) -> Option<AppState> {
+    let mut state = crate::api_tests::test_state(None).await?;
+    let mut cfg = (*state.cfg).clone();
+    cfg.standalone = true;
+    cfg.archive_dir = dir.join("archive");
+    std::fs::create_dir_all(&cfg.archive_dir).unwrap();
+    state.standalone = Some(Arc::new(st(&cfg)));
+    state.cfg = Arc::new(cfg);
+    Some(state)
+}
+
+#[tokio::test]
+async fn put_folders_persists_and_returns_status() {
+    let tmp = tempfile::tempdir().unwrap();
+    let extra = tmp.path().join("backup");
+    std::fs::create_dir_all(extra.join("old")).unwrap();
+    old_replay(&extra.join("old"), "x.StormReplay", b"x");
+    let Some(state) = db_state(tmp.path(), |c| {
+        StandaloneState::new(c).with_detector(Vec::new)
+    })
+    .await
+    else {
+        return;
+    };
+    let mut commands = state.standalone.as_ref().unwrap().take_commands().unwrap();
+    let app = app(&state);
+    let extra_str = extra.to_string_lossy().to_string();
+    let (code, v) = send(&app, put_folders(&[&extra_str])).await;
+    assert_eq!(code, StatusCode::OK, "{v}");
+    // the parent is resolved to the folder that holds replays
+    let resolved = extra.join("old").to_string_lossy().to_string();
+    assert_eq!(v["folders"], serde_json::json!([resolved]));
+    let saved: serde_json::Value =
+        sqlx::query_scalar("SELECT value FROM app_settings WHERE key = 'standalone_extra_folders'")
+            .fetch_one(&state.db)
+            .await
+            .unwrap();
+    assert_eq!(saved, serde_json::json!([extra_str]));
+    assert!(matches!(commands.try_recv(), Ok(Command::SetFolders(_))));
+    sqlx::query("DELETE FROM app_settings WHERE key = 'standalone_extra_folders'")
+        .execute(&state.db)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn token_provisioning_is_idempotent() {
+    let Some(state) = crate::api_tests::test_state(None).await else {
+        return;
+    };
+    let db = &state.db;
+    let name = format!("test-standalone-{}", uuid::Uuid::new_v4());
+    let valid = |token: String| async move {
+        let mut h = axum::http::HeaderMap::new();
+        h.insert(
+            header::AUTHORIZATION,
+            format!("Bearer {token}").parse().unwrap(),
+        );
+        crate::upload::token_valide(db, &h).await
+    };
+    let rows = || async {
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM upload_tokens WHERE name = $1")
+            .bind(&name)
+            .fetch_one(db)
+            .await
+            .unwrap()
+    };
+    let first = token::provision(db, &name).await.unwrap();
+    assert!(valid(first.clone()).await);
+    let second = token::provision(db, &name).await.unwrap();
+    assert_eq!(rows().await, 1, "no duplicate row across restarts");
+    assert!(valid(second.clone()).await);
+    assert!(
+        !valid(first).await,
+        "the previous session's token is retired"
+    );
+    // a revoked token is restored at the next start, never stuck
+    sqlx::query("UPDATE upload_tokens SET revoked_at = now() WHERE name = $1")
+        .bind(&name)
+        .execute(db)
+        .await
+        .unwrap();
+    assert!(!valid(second).await);
+    let third = token::provision(db, &name).await.unwrap();
+    assert!(valid(third).await);
+    assert_eq!(rows().await, 1);
+    sqlx::query("DELETE FROM upload_tokens WHERE name = $1")
+        .bind(&name)
+        .execute(db)
+        .await
+        .unwrap();
+}
+
+/// Full chain on a real listener: the orchestrator imports a folder through the server's own
+/// `/api/upload` (token provisioned at startup), then the live watcher picks up a new file.
+#[tokio::test]
+async fn end_to_end_import_then_live_watch() {
+    let tmp = tempfile::tempdir().unwrap();
+    let replays = tmp.path().join("replays");
+    std::fs::create_dir_all(&replays).unwrap();
+    // unique content: never a duplicate of another test's upload
+    let content = format!("not a replay {}", uuid::Uuid::new_v4());
+    old_replay(&replays, "first.StormReplay", content.as_bytes());
+    let dirs = vec![replays.clone()];
+    let Some(state) = db_state(tmp.path(), move |c| {
+        StandaloneState::new(c)
+            .with_detector(move || dirs.clone())
+            .with_free_space(|_| Ok(u64::MAX))
+    })
+    .await
+    else {
+        return;
+    };
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let router = app(&state);
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, router).await;
+    });
+    let app = app(&state);
+    let _task = spawn(state.clone(), format!("http://{addr}"));
+
+    let v = wait_status(&app, 30, |v| v["phase"] == "ready").await;
+    assert_eq!(v["total"], 1, "{v}");
+    assert_eq!(v["done"], 1, "{v}");
+    assert_eq!(v["failed"], serde_json::json!([]), "{v}");
+    assert!(state.cfg.ledger_path().is_file(), "ledger written");
+
+    let content = format!("not a replay either {}", uuid::Uuid::new_v4());
+    std::fs::write(replays.join("second.StormReplay"), content).unwrap();
+    let v = wait_status(&app, 30, |v| v["done"] == 2).await;
+    assert_eq!(v["phase"], "ready");
+    assert_eq!(v["failed"], serde_json::json!([]), "{v}");
+}
