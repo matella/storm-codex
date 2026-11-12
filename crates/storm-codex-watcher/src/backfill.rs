@@ -13,6 +13,7 @@ use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
 use futures_util::stream::{self, StreamExt};
+use tokio::time::MissedTickBehavior;
 
 use crate::detector::is_storm_replay;
 use crate::ledger::{Ledger, Outcome};
@@ -20,6 +21,9 @@ use crate::upload::{file_name, UploadResult, Uploader};
 
 /// Uploads in flight at once.
 pub const CONCURRENCY: usize = 4;
+/// Deferred ledger records written at once (or after [`FLUSH_INTERVAL`], whichever first).
+pub const FLUSH_EVERY: usize = 250;
+pub const FLUSH_INTERVAL: Duration = Duration::from_secs(1);
 /// A file modified more recently than this may still be written by the game.
 const RECENT_WRITE_GRACE: Duration = Duration::from_secs(2);
 
@@ -98,7 +102,28 @@ pub async fn run(dirs: &[PathBuf], uploader: &Uploader, ledger: &mut Ledger, pro
         })
         .buffer_unordered(CONCURRENCY);
 
-    while let Some((name, outcome)) = results.next().await {
+    // Ledger records are deferred and flushed every FLUSH_EVERY records or FLUSH_INTERVAL,
+    // whichever comes first, and once at the end. If the run is cancelled (future dropped),
+    // the guard still flushes, synchronously, in its Drop.
+    let ledger = FlushOnDrop(ledger);
+    let mut unflushed = 0usize;
+    let mut ticker =
+        tokio::time::interval_at(tokio::time::Instant::now() + FLUSH_INTERVAL, FLUSH_INTERVAL);
+    ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
+    loop {
+        let (name, outcome) = tokio::select! {
+            next = results.next() => match next {
+                Some(item) => item,
+                None => break,
+            },
+            _ = ticker.tick() => {
+                if ledger.0.is_dirty() {
+                    flush(ledger.0, &mut unflushed).await;
+                }
+                continue;
+            }
+        };
         let recorded = match outcome {
             FileOutcome::Unstable => {
                 progress.skipped.fetch_add(1, Ordering::Relaxed);
@@ -126,13 +151,16 @@ pub async fn run(dirs: &[PathBuf], uploader: &Uploader, ledger: &mut Ledger, pro
             }
         };
         if let Some(outcome) = recorded {
-            if let Err(e) = ledger.record(&name, outcome) {
-                // Not fatal: the server dedups, the file is only re-sent at the next start.
-                tracing::warn!(file = %name, error = %e, "could not persist the upload ledger");
-            }
+            ledger.0.record_deferred(&name, outcome);
+            unflushed += 1;
         }
         progress.done.fetch_add(1, Ordering::Relaxed);
+        if unflushed >= FLUSH_EVERY {
+            flush(ledger.0, &mut unflushed).await;
+            ticker.reset();
+        }
     }
+    flush(ledger.0, &mut unflushed).await;
 
     tracing::info!(
         uploaded = progress.uploaded(),
@@ -142,6 +170,28 @@ pub async fn run(dirs: &[PathBuf], uploader: &Uploader, ledger: &mut Ledger, pro
         skipped = progress.skipped(),
         "backfill finished"
     );
+}
+
+/// Writes the deferred ledger records off the async worker. A failure is not fatal: the
+/// ledger stays dirty (retried at the next flush) and the server dedups re-sent files.
+async fn flush(ledger: &mut Ledger, unflushed: &mut usize) {
+    if let Err(e) = ledger.flush_async().await {
+        tracing::warn!(error = %e, "could not persist the upload ledger");
+    }
+    *unflushed = 0;
+}
+
+/// Flushes the ledger when `run` is left early (its future dropped before the end).
+struct FlushOnDrop<'a>(&'a mut Ledger);
+
+impl Drop for FlushOnDrop<'_> {
+    fn drop(&mut self) {
+        if self.0.is_dirty() {
+            if let Err(e) = self.0.flush() {
+                tracing::warn!(error = %e, "could not persist the upload ledger");
+            }
+        }
+    }
 }
 
 /// Replays of `dirs` not in the ledger, oldest first, one per file name.

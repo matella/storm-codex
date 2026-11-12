@@ -2,9 +2,11 @@
 //!
 //! The request body is the raw replay (`Content-Type: application/octet-stream`); the file
 //! name travels percent-encoded in `X-Filename`. Answers map to [`UploadResult`]:
-//! 2xx → `Uploaded`, 409 → `Duplicate`, any other 4xx → `Rejected(body)` (never retried),
-//! network error / 5xx → retried with a `2^n` backoff, `Retryable` once
-//! [`MAX_ATTEMPTS`] are spent. A `Retryable` file must not be recorded in the ledger.
+//! 2xx → `Uploaded`, 409 → `Duplicate`, content errors (400, 413, 415, 422) →
+//! `Rejected(body)` (never retried); network error, 5xx and any other 4xx (auth, config,
+//! rate limit) → retried with a `2^n` backoff, `Retryable` once [`MAX_ATTEMPTS`] are spent.
+//! A `Retryable` file must not be recorded in the ledger. An optional bearer token
+//! ([`Uploader::with_token`]) is sent as `Authorization: Bearer <token>`.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -28,11 +30,23 @@ pub enum UploadResult {
     Retryable(String),
 }
 
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for Uploader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Never print the token.
+        f.debug_struct("Uploader")
+            .field("url", &self.url)
+            .field("backoff_unit", &self.backoff_unit)
+            .field("token", &self.token.as_ref().map(|_| "<redacted>"))
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone)]
 pub struct Uploader {
     url: String,
     agent: Arc<ureq::Agent>,
     backoff_unit: Duration,
+    token: Option<Arc<str>>,
 }
 
 impl Uploader {
@@ -46,7 +60,14 @@ impl Uploader {
             url: format!("{}/api/upload", base_url.trim_end_matches('/')),
             agent: Arc::new(config.into()),
             backoff_unit: Duration::from_secs(1),
+            token: None,
         }
+    }
+
+    /// Sends `Authorization: Bearer <token>` with every upload.
+    pub fn with_token(mut self, token: String) -> Self {
+        self.token = Some(token.into());
+        self
     }
 
     /// Scales the retry backoff (`unit * 2^n`, default unit 1 s). Meant for tests.
@@ -89,11 +110,16 @@ impl Uploader {
         let agent = self.agent.clone();
         let url = self.url.clone();
         let header = header.to_string();
+        let token = self.token.clone();
         let sent = tokio::task::spawn_blocking(move || -> Result<(u16, String), String> {
-            let mut response = agent
+            let mut request = agent
                 .post(&url)
                 .header("Content-Type", "application/octet-stream")
-                .header("X-Filename", &header)
+                .header("X-Filename", &header);
+            if let Some(token) = token {
+                request = request.header("Authorization", &format!("Bearer {token}"));
+            }
+            let mut response = request
                 .send(&bytes[..])
                 .map_err(|e| format!("network error: {e}"))?;
             let status = response.status().as_u16();
@@ -115,11 +141,17 @@ enum Attempt {
     Retry(String),
 }
 
+/// 4xx statuses that mean "this file's content is refused" (bad request, too large,
+/// unsupported media type, unprocessable replay). Every other 4xx (401, 403, 404, 408,
+/// 429, ...) is an auth/config/transient problem: retried, never recorded as rejected, so a
+/// misconfigured server cannot poison the whole archive.
+const CONTENT_REJECTIONS: [u16; 4] = [400, 413, 415, 422];
+
 fn classify(status: u16, body: String) -> Attempt {
     match status {
         200..=299 => Attempt::Done(UploadResult::Uploaded),
         409 => Attempt::Done(UploadResult::Duplicate),
-        400..=499 => {
+        s if CONTENT_REJECTIONS.contains(&s) => {
             let reason: String = body.trim().chars().take(MAX_REASON_CHARS).collect();
             let reason = if reason.is_empty() {
                 format!("HTTP {status}")

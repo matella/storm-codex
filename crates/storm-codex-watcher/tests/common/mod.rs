@@ -20,6 +20,8 @@ pub struct Hit {
     /// Raw `X-Filename` header, exactly as sent.
     pub filename: String,
     pub body_len: usize,
+    /// Raw `Authorization` header, if any.
+    pub authorization: Option<String>,
 }
 
 pub struct TestServer {
@@ -29,7 +31,8 @@ pub struct TestServer {
 
 impl TestServer {
     /// Base URL whose `/api/upload` answers according to `mode`:
-    /// `200`, `409`, `422`, `500`, or `mixed` (422 when the file name starts with `bad`, else 200).
+    /// any numeric status (`200`, `409`, `422`, `500`, ...), or `mixed`
+    /// (422 when the file name starts with `bad`, 503 for `slow`, else 200).
     pub fn base(&self, mode: &str) -> String {
         format!("http://{}/{mode}", self.addr)
     }
@@ -59,10 +62,15 @@ async fn handle(
         .to_string();
     let content_type_ok = headers.get("content-type").and_then(|v| v.to_str().ok())
         == Some("application/octet-stream");
+    let authorization = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
     hits.lock().expect("hits lock").push(Hit {
         mode: mode.clone(),
         filename: filename.clone(),
         body_len: body.len(),
+        authorization,
     });
     if !content_type_ok {
         return (
@@ -74,11 +82,20 @@ async fn handle(
         "200" => (StatusCode::OK, r#"{"status":"ok"}"#.into()),
         "409" => (StatusCode::CONFLICT, r#"{"error":"duplicate"}"#.into()),
         "422" => (StatusCode::UNPROCESSABLE_ENTITY, REJECT_BODY.into()),
+        "mixed" if filename.starts_with("slow") => (StatusCode::SERVICE_UNAVAILABLE, "busy".into()),
         "mixed" if filename.starts_with("bad") => {
             (StatusCode::UNPROCESSABLE_ENTITY, REJECT_BODY.into())
         }
         "mixed" => (StatusCode::OK, r#"{"status":"ok"}"#.into()),
-        _ => (StatusCode::INTERNAL_SERVER_ERROR, "boom".into()),
+        // Any other numeric mode answers with that status.
+        code => match code
+            .parse::<u16>()
+            .ok()
+            .and_then(|c| StatusCode::from_u16(c).ok())
+        {
+            Some(status) => (status, format!("status {code}")),
+            None => (StatusCode::INTERNAL_SERVER_ERROR, "boom".into()),
+        },
     }
 }
 

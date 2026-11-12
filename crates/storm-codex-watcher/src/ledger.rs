@@ -5,9 +5,11 @@
 //! the next start retries them. Rejected files are kept with their reason so the UI can list
 //! them once instead of re-sending them forever.
 //!
-//! Every [`Ledger::record`] rewrites the file atomically: the JSON goes to `<path>.tmp`, is
-//! flushed to disk, then renamed over `<path>`. A crash leaves either the old or the new
-//! file, plus at worst a stale `.tmp` that the next write overwrites.
+//! Writes are atomic: compact JSON goes to `<path>.tmp`, is synced to disk, then renamed over
+//! `<path>`. A crash leaves either the old or the new file, plus at worst a stale `.tmp` that
+//! the next write overwrites. [`Ledger::record`] writes through; bulk callers (the backfill)
+//! use [`Ledger::record_deferred`] and [`Ledger::flush`] periodically, so a crash only loses
+//! the last unflushed records, which is harmless: they are re-sent and the server answers 409.
 
 use std::collections::BTreeMap;
 use std::fs::{self, File};
@@ -25,20 +27,28 @@ const FORMAT_VERSION: u32 = 1;
 pub enum Outcome {
     Uploaded,
     Duplicate,
-    /// Refused by the server (corrupt replay, not a custom game, ...): never re-sent.
+    /// Refused by the server as bad content (corrupt replay, ...): never re-sent.
     Rejected(String),
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+/// On-disk shape (`version` is written for future migrations; unknown fields are ignored).
+#[derive(Debug, Deserialize)]
 struct LedgerFile {
-    version: u32,
     entries: BTreeMap<String, Outcome>,
+}
+
+#[derive(Serialize)]
+struct LedgerFileRef<'a> {
+    version: u32,
+    entries: &'a BTreeMap<String, Outcome>,
 }
 
 #[derive(Debug)]
 pub struct Ledger {
     path: PathBuf,
     entries: BTreeMap<String, Outcome>,
+    /// In-memory entries not yet written to disk.
+    dirty: bool,
 }
 
 impl Ledger {
@@ -57,6 +67,7 @@ impl Ledger {
         Ok(Ledger {
             path: path.to_path_buf(),
             entries,
+            dirty: false,
         })
     }
 
@@ -65,18 +76,56 @@ impl Ledger {
         self.entries.contains_key(name)
     }
 
-    /// Records the outcome of `name` and persists the whole ledger atomically.
+    /// Records the outcome of `name` and persists the ledger atomically (write-through).
+    /// On a write error the entry is rolled back in memory.
     pub fn record(&mut self, name: &str, outcome: Outcome) -> io::Result<()> {
         let previous = self.entries.insert(name.to_string(), outcome);
-        let result = self.persist();
+        self.dirty = true;
+        let result = self.flush();
         if result.is_err() {
-            // Keep memory in line with disk so a later retry is not silently skipped.
             match previous {
                 Some(old) => self.entries.insert(name.to_string(), old),
                 None => self.entries.remove(name),
             };
         }
         result
+    }
+
+    /// Records the outcome of `name` in memory only; persisted by the next [`Ledger::flush`]
+    /// (or write-through [`Ledger::record`]).
+    pub fn record_deferred(&mut self, name: &str, outcome: Outcome) {
+        self.entries.insert(name.to_string(), outcome);
+        self.dirty = true;
+    }
+
+    /// True when some records are not on disk yet.
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    /// Writes the ledger atomically if it has unflushed records (blocking file I/O).
+    pub fn flush(&mut self) -> io::Result<()> {
+        if !self.dirty {
+            return Ok(());
+        }
+        write_atomic(&self.path, &self.serialize()?)?;
+        self.dirty = false;
+        Ok(())
+    }
+
+    /// [`Ledger::flush`] with the file I/O on tokio's blocking pool: serialization (cheap)
+    /// stays on the caller, the write + fsync + rename do not block an async worker.
+    pub async fn flush_async(&mut self) -> io::Result<()> {
+        if !self.dirty {
+            return Ok(());
+        }
+        let json = self.serialize()?;
+        let path = self.path.clone();
+        tokio::task::spawn_blocking(move || write_atomic(&path, &json))
+            .await
+            .map_err(io::Error::other)??;
+        self.dirty = false;
+        Ok(())
     }
 
     /// `(file name, server reason)` of every rejected replay, sorted by name.
@@ -90,28 +139,29 @@ impl Ledger {
             .collect()
     }
 
-    fn persist(&self) -> io::Result<()> {
-        if let Some(parent) = self.path.parent() {
-            if !parent.as_os_str().is_empty() {
-                fs::create_dir_all(parent)?;
-            }
-        }
-        let file = LedgerFile {
+    fn serialize(&self) -> io::Result<Vec<u8>> {
+        serde_json::to_vec(&LedgerFileRef {
             version: FORMAT_VERSION,
-            entries: self.entries.clone(),
-        };
-        let json = serde_json::to_vec_pretty(&file)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-
-        let tmp = tmp_path(&self.path);
-        {
-            // `create` truncates a stale temp file left by a crash.
-            let mut f = File::create(&tmp)?;
-            f.write_all(&json)?;
-            f.sync_all()?;
-        }
-        rename_with_retry(&tmp, &self.path)
+            entries: &self.entries,
+        })
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
     }
+}
+
+fn write_atomic(path: &Path, json: &[u8]) -> io::Result<()> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)?;
+        }
+    }
+    let tmp = tmp_path(path);
+    {
+        // `create` truncates a stale temp file left by a crash.
+        let mut f = File::create(&tmp)?;
+        f.write_all(json)?;
+        f.sync_all()?;
+    }
+    rename_with_retry(&tmp, path)
 }
 
 fn tmp_path(path: &Path) -> PathBuf {

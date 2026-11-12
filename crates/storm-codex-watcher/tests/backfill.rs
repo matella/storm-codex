@@ -17,6 +17,71 @@ fn secs(n: u64) -> Duration {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn backfill_flushes_ledger_at_end() {
+    let server = spawn_server().await;
+    let replays = tempfile::tempdir().expect("tempdir");
+    let state = tempfile::tempdir().expect("tempdir");
+    for i in 0..3u64 {
+        write_replay(replays.path(), &format!("g{i}.StormReplay"), secs(600 + i));
+    }
+    let ledger_path = state.path().join("uploaded.json");
+    let mut ledger = Ledger::open(&ledger_path).expect("ledger");
+    let uploader = Uploader::new(server.base("mixed")).with_backoff_unit(FAST);
+    let progress = Progress::default();
+    backfill::run(
+        &[replays.path().to_path_buf()],
+        &uploader,
+        &mut ledger,
+        &progress,
+    )
+    .await;
+
+    // Still holding the ledger: everything is already on disk.
+    assert!(!ledger.is_dirty());
+    let on_disk = Ledger::open(&ledger_path).expect("reopen");
+    for i in 0..3 {
+        assert!(on_disk.contains(&format!("g{i}.StormReplay")));
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn backfill_flushes_ledger_when_cancelled() {
+    let server = spawn_server().await;
+    let replays = tempfile::tempdir().expect("tempdir");
+    let state = tempfile::tempdir().expect("tempdir");
+    write_replay(replays.path(), "good-1.StormReplay", secs(900));
+    write_replay(replays.path(), "good-2.StormReplay", secs(800));
+    // Answers 503: stuck in a 2 s backoff when the run is cancelled.
+    write_replay(replays.path(), "slow.StormReplay", secs(700));
+
+    let ledger_path = state.path().join("uploaded.json");
+    let mut ledger = Ledger::open(&ledger_path).expect("ledger");
+    let uploader = Uploader::new(server.base("mixed"));
+    let progress = Progress::default();
+    // Cancelled well before the 1 s periodic flush.
+    let cancelled = tokio::time::timeout(
+        Duration::from_millis(500),
+        backfill::run(
+            &[replays.path().to_path_buf()],
+            &uploader,
+            &mut ledger,
+            &progress,
+        ),
+    )
+    .await;
+    assert!(
+        cancelled.is_err(),
+        "run should still be retrying slow.StormReplay"
+    );
+    assert_eq!(progress.uploaded(), 2);
+
+    let on_disk = Ledger::open(&ledger_path).expect("reopen");
+    assert!(on_disk.contains("good-1.StormReplay"));
+    assert!(on_disk.contains("good-2.StormReplay"));
+    assert!(!on_disk.contains("slow.StormReplay"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn backfill_skips_already_recorded_and_counts_rejected() {
     let server = spawn_server().await;
     let replays = tempfile::tempdir().expect("tempdir");
