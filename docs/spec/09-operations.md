@@ -95,6 +95,40 @@ a specific version with `:sha-…`) instead of a local build — the box's curre
 case **rebuildable from the raw archive** (re-upload / reprocess) — the backup just avoids
 a re-backfill. The raw archive (the volume's `/data/archive`) is the only irreplaceable data.
 
+## Standalone desktop app
+
+Design: `docs/specs/2026-11-12-standalone-installer-design.md`. The Windows app bundles its own
+Postgres; the supervisor crate `crates/storm-codex-supervisor` drives it.
+
+**Bundled Postgres binaries.** `desktop/postgres-pin.txt` pins the EnterpriseDB Windows x64
+Postgres 17 binaries zip (`url=`, `sha256=`). `pwsh scripts/fetch-postgres.ps1 [-Destination
+<dir>] [-ZipPath <zip>]` downloads it (or takes a local copy), refuses it unless the SHA-256
+matches, and extracts only `bin/`, `lib/`, `share/` and `server_license.txt` into `<dir>`
+(default `target/postgres`). It installs nothing, creates no service and leaves `PATH` alone.
+EDB publishes no checksum: the pin was computed on first download (trust-on-first-use).
+Upgrading the minor version = change both lines in the same commit; the major stays **17**.
+
+**Lifecycle (`Postgres`, `postgres.rs`).** All tools run from the bundled `bin/` through
+`std::process::Command` (no shell, no console window on Windows, inherited `PG*` variables removed).
+- Cluster in `<data root>/pg`: `initdb -U storm -A trust -E UTF8 --locale=C`, skipped when
+  `PG_VERSION` exists; a cluster of another major version is refused (`WrongMajorVersion`).
+  `postgresql.conf` gets `listen_addresses = '127.0.0.1'` and no Unix socket.
+- `clean_stale`: deletes `postmaster.pid` when its PID is not a live `postgres` process (crash,
+  power loss, PID reuse); a live one is left alone.
+- `start`: `pg_ctl start -w -t 60 -o "-p <port> -c listen_addresses=127.0.0.1"`, server log in
+  `<data root>/logs/postgres.log`, pg_ctl's own output in `logs/pg_ctl.log`. A server already
+  running on the cluster is stopped first so it comes back on the requested port.
+- `stop`: `pg_ctl stop -m fast -w -t 60`; no-op when nothing runs.
+- `ensure_database(name)`, `database_url(db)` = `postgres://storm@127.0.0.1:<port>/<db>`.
+- `dump(out)` / `restore(file)`: `pg_dump -Fc` / `pg_restore --clean --if-exists --no-owner` on
+  the `storm_codex` database (created on restore if missing).
+
+**Tests.** `cargo test -p storm-codex-supervisor` always runs the binary-free tests (wrong
+major version, missing binary, stale pid cleanup, URL, name validation). The real-server tests
+(roundtrip, data path with spaces and accents, stale pid, hard-kill recovery, dump/restore) run
+only when `PG_BIN_DIR` is set:
+`$env:PG_BIN_DIR = "$PWD\target\postgres\bin"; cargo test -p storm-codex-supervisor --test postgres_it`.
+
 ## External dependencies (all best-effort)
 
 | Service | Where | If missing |
