@@ -5,7 +5,7 @@ Project-specific rules. GADS loads them via `CLAUDE.md` (`@gads/PROJECT.md`); `A
 ## Commands (same as CI)
 
 - Rust: `cargo clippy --workspace --all-targets -- -D warnings` then `cargo test --workspace`.
-- Web (in `web/`): `npm ci`, `npm test` (vitest), `npm run build` (tsc + vite).
+- Front-end (in `web-rs/`): `cargo clippy -- -D warnings` + `cargo test` (native, `core`), `cargo clippy --target wasm32-unknown-unknown -- -D warnings`, `trunk build --release` in `overlay`, `sources` and `app`.
 
 > Loaded at every session. **Development is driven from the documentation** — in order:
 > 1. `git fetch origin` (the local clone is often behind — several machines push);
@@ -36,7 +36,7 @@ working, and already-applied SQL migrations are never edited, even for comments.
 ## What the project is
 A complete renovation of Stats of the Storm (HotS stats tracker): open-source Rust crates
 (`storm-replay` decoding, `storm-stats` analysis), a single `storm-codex-server` server (axum +
-Postgres + WS) on the box, a React SPA with the Nexus Codex design system, an OBS stream widget, Jarvis
+Postgres + WS) on the box, a Rust (Leptos, wasm) SPA with the Nexus Codex design system, an OBS stream widget, Jarvis
 integration (Redis events) and the existing `client-rs` uploader (Hots-Overlay repo).
 
 ## Hard rules
@@ -83,12 +83,12 @@ in the evening when the box is running. Milestones 0–2 do not need the box at 
 
 ## Conventions
 Rust 2021+, strict clippy, typed errors (`thiserror`), no `unwrap()` outside tests;
-React + Vite + TS + TanStack + uPlot front-end, Nexus Codex tokens; conventional commits;
+Leptos 0.8 (CSR, wasm, Trunk) front-end in `web-rs/`, Nexus Codex tokens; conventional commits;
 secrets only in the box's .env, never committed.
 
 **Up-to-date documentation is mandatory — Context7 MCP.** Before using a library or
-framework API (axum, tokio, sqlx, serde, egui, TanStack, uPlot, React, Vite…), query the
+framework API (axum, tokio, sqlx, serde, egui, leptos, leptos_router, Trunk, wasm-bindgen…), query the
 **Context7** MCP (`resolve-library-id` then `query-docs`) for the current docs — do not rely on the
-model's memory (moving versions/APIs: axum and TanStack in particular). Applies to
+model's memory (moving versions/APIs: axum and leptos in particular). Applies to
 syntax, config, version migrations and library-specific debugging. If Context7
 is not connected in the session, say so rather than coding from memory.

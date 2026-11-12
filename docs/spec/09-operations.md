@@ -6,20 +6,23 @@
 docker compose -f docker-compose.dev.yml up -d   # Postgres 17 :5433 + Redis :6380
 cp .env.example .env                             # DATABASE_URL etc.
 cargo run -p storm-codex-server                  # automatic migrations, :8088
-npm run dev --prefix web                         # or build: npm run build --prefix web + WEB_DIR
 ```
 
-Rust front-end (`web-rs/`, needs `rustup target add wasm32-unknown-unknown` and `trunk`): `trunk build --release` in `web-rs/overlay`,
-`web-rs/sources` and `web-rs/app`, then run the server with `WEB_V2_DIR=web-rs/dist` and open `/v2/cast/overlay`, `/v2/ticker`... (React still answers at `/`); add `WEB_ROOT=rust` to see the Rust front-end at `/` exactly as in production.
+Front-end (`web-rs/`, needs `rustup target add wasm32-unknown-unknown` and `trunk`): `trunk build --release` in `web-rs/overlay`,
+`web-rs/sources` and `web-rs/app` (output in `web-rs/dist`), then run the server with `WEB_DIR=web-rs/dist`: every page is at `/`
+(`/cast/overlay`, `/draft/overlay`, `/ticker`, `/widget`, `/queue`, `/now-playing` for the OBS sources), exactly as in production. The server
+reads the pages at each request, so a rebuild needs no restart.
 
-**Production (the switch, 2026-11-12):** the Docker image builds the three bundles (stage `web-rs`, pinned Trunk) next to the React build and sets `WEB_V2_DIR=/app/web-rs` and `WEB_ROOT=rust`, so the Rust front-end answers at `/` and the OBS URLs are the final ones (`/cast/overlay`, `/draft/overlay`, `/ticker`, `/widget`, `/queue`, `/now-playing`). **Rollback:** set `WEB_ROOT=react` in the container environment and restart (the React build is still in the image); no rebuild. React (`web/`) is deleted one release after the switch.
+**Production:** the Docker image builds the three bundles (stage `web`, pinned Trunk) and sets `WEB_DIR=/app/web`. React was removed after
+the switch of 2026-11-12 (last commit with it: `2134853`), so there is no `WEB_ROOT` rollback switch any more: rolling back means deploying
+the previous image tag (`sha-<commit>`).
 
 Tests: `cargo test` (the projection test is skipped without `DATABASE_URL`); parity:
 `tools/parity-harness/`; benches: `storm-stats-dump --bench`, `backfill_bench.py`.
 
 ⚠️ **The local clone may be behind**: development also happens from the Mac/box.
 `git fetch origin` **before** reading the code or planning; after a pull,
-`npm install --prefix web` if there are new deps.
+rebuild the bundles with `trunk build --release` if `web-rs/` changed.
 
 ## Production (box 192.168.129.85, `~/apps/storm-codex`)
 
@@ -61,10 +64,8 @@ Tests: `cargo test` (the projection test is skipped without `DATABASE_URL`); par
 - `audit`: `cargo audit` (RustSec database) on `Cargo.lock`. Ignored advisories are listed in
   `.cargo/audit.toml`, each with its reason; only crates that are in the lockfile but compiled for
   no target qualify.
-- `web`: `npm ci`, `npm audit --omit=dev --audit-level=high` (dependencies shipped in the
-  bundle), `npm test` (vitest), `npm run build`. Node version: `.nvmrc` (22).
 - `web-rs`: the Rust front-end (`web-rs/`): clippy native (`core`) and wasm32 (every crate), `cargo test` (core), `trunk build --release`
-  of the `overlay` and `sources` bundles and their size budget (each <= 300 kB gzip, `scripts/check-web-rs-size.sh`). Not a `publish` gate until the Dockerfile builds it.
+  of the `overlay` and `sources` bundles and their size budget (each <= 300 kB gzip, `scripts/check-web-rs-size.sh`). It is a `publish` gate (the Docker image builds the same bundles); the app bundle budget is <= 1 MB brotli (`SIZE_CODEC=br`).
 - `publish`: **only on push** (or manual run) **and only if the four previous jobs
   are green** (`needs`). Pushes the image to `ghcr.io/matella/storm-codex` with the
   tags `sha-<first 12 characters of the commit>` (always — allows rollback),
@@ -112,8 +113,6 @@ Accepted as is (context: self-hosted, LAN/Tailscale, one operator):
   cast/draft writes are guarded when `ADMIN_TOKEN` is set (2026-11-07).
 
 Dependencies (operator decision of 2026-11-07: "fix all of it"):
-- **react-router-dom 7** (package kept, re-export of `react-router`), **vite 8**,
-  **@vitejs/plugin-react 6**, **vitest 5**, **dompurify 3.4.17**: `npm audit` → 0 vulnerabilities.
 - `cargo audit` runs in CI (`audit` job).
 
 ## Runbooks (detailed operator procedures)

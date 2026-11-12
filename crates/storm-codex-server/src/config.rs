@@ -13,14 +13,9 @@ pub struct Config {
     /// mode**: no admin auth required — meant for local self-hosting (LAN/Tailscale,
     /// a single operator). Setting it re-enables auth (recommended if exposed through a reverse proxy).
     pub admin_token: Option<String>,
-    /// Folder of the built front (web/dist) served on `/`; empty = serves only the API.
+    /// Folder of the built front-end (`web-rs/dist`, Leptos): `overlay/` (cast and draft overlays), `sources/` (session
+    /// and music sources) and `app/`, one Trunk output each. Every page answers at `/`; empty = serves only the API.
     pub web_dir: Option<PathBuf>,
-    /// Folder of the built Rust front-end (`web-rs`, Leptos) served under `/v2/` while it is ported;
-    /// empty = no `/v2`. Holds `overlay/` (OBS sources) and `app/`, one Trunk output each.
-    pub web_v2_dir: Option<PathBuf>,
-    /// `WEB_ROOT=rust`: the Rust front-end (`web_v2_dir`) answers every page at `/` instead of React (`web_dir`), which
-    /// stays in the image for rollback (`WEB_ROOT=react`, the default). `/v2/...` keeps working either way.
-    pub web_root_rust: bool,
     /// Jarvis Redis (optional); missing = no event emission.
     pub redis_url: Option<String>,
     pub jarvis_channel: String,
@@ -65,11 +60,6 @@ impl Config {
                 .ok()
                 .map(PathBuf::from)
                 .filter(|p| p.is_dir()),
-            web_v2_dir: std::env::var("WEB_V2_DIR")
-                .ok()
-                .map(PathBuf::from)
-                .filter(|p| p.is_dir()),
-            web_root_rust: std::env::var("WEB_ROOT").is_ok_and(|v| v.eq_ignore_ascii_case("rust")),
             redis_url: std::env::var("REDIS_URL").ok().filter(|s| !s.is_empty()),
             jarvis_channel: std::env::var("JARVIS_CHANNEL")
                 .unwrap_or_else(|_| "jarvis:events".into()),

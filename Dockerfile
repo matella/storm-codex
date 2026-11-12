@@ -1,20 +1,12 @@
 # storm-codex-server — production image (front-end + server in a single binary/container).
-# Multi-stage: SPA build (Vite) → Rust server build (release) → slim runtime.
+# Multi-stage: Rust front-end build (Trunk → wasm) → Rust server build (release) → slim runtime.
 # No DATABASE_URL at build time (all sqlx queries are runtime); migrations embedded
 # (sqlx::migrate!) and run at startup; protocol tables committed (no Python).
 
-# ── 1. Front (web/dist) ─────────────────────────────────────────────────────
-FROM node:22-slim AS web
-WORKDIR /web
-COPY web/package.json web/package-lock.json ./
-RUN npm ci
-COPY web/ ./
-RUN npm run build
-
-# ── 1b. Rust front-end (web-rs/dist: overlay, sources, app) ─────────────────
+# ── 1. Front-end (web-rs/dist: overlay, sources, app) ─────────────────
 # Trunk is a prebuilt binary (pinned: the version the bundles are checked with); it downloads its own wasm-bindgen
 # and wasm-opt at build time. The three bundles are built into web-rs/dist by their Trunk.toml.
-FROM rust:1-slim AS web-rs
+FROM rust:1-slim AS web
 RUN rustup target add wasm32-unknown-unknown \
  && apt-get update \
  && apt-get install -y --no-install-recommends curl ca-certificates \
@@ -55,15 +47,10 @@ RUN apt-get update \
  && chown storm:storm /data
 WORKDIR /app
 COPY --from=server /src/target/release/storm-codex-server /usr/local/bin/storm-codex-server
-COPY --from=web /web/dist /app/web
-COPY --from=web-rs /src/web-rs/dist /app/web-rs
+COPY --from=web /src/web-rs/dist /app/web
 # baked in-game minimaps (committed to the repo) — copied into IMAGES_DIR/minimaps at startup
 COPY assets/minimaps /app/minimaps
-# WEB_ROOT=rust: the Rust front-end answers at `/` (the switch). The React build stays in the image for rollback:
-# set WEB_ROOT=react (or remove it) and restart.
 ENV WEB_DIR=/app/web \
-    WEB_V2_DIR=/app/web-rs \
-    WEB_ROOT=rust \
     ARCHIVE_DIR=/data/archive \
     RAW_CACHE_DIR=/data/raw-cache \
     IMAGES_DIR=/data/images \

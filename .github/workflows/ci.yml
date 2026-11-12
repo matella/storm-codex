@@ -61,27 +61,7 @@ jobs:
           tool: cargo-audit
       - name: cargo audit (RustSec)
         run: cargo audit
-  web:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-      - run: npm ci
-        working-directory: web
-      - name: audit (dependencies shipped in the bundle)
-        run: npm audit --omit=dev --audit-level=high
-        working-directory: web
-      - name: tests (vitest)
-        run: npm test
-        working-directory: web
-      - name: build (tsc + vite)
-        run: npm run build
-        working-directory: web
-  # Rust front-end (web-rs, Leptos → wasm), built under /v2 while it is ported. Not yet in the image or in `publish`.
+  # Rust front-end (web-rs, Leptos → wasm): the only front-end; `publish` waits for it.
   web-rs:
     runs-on: ubuntu-latest
     steps:
@@ -126,7 +106,7 @@ jobs:
   # Tags: `latest` (main), `sha-<commit>` (rollback possible), and the git tag name.
   publish:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    needs: [checks, rust, audit, web]
+    needs: [checks, rust, audit, web-rs]
     runs-on: ubuntu-latest
     permissions:
       contents: read

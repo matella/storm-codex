@@ -8,7 +8,7 @@ Gaming PC ──client-rs (Hots-Overlay)──► storm-codex-server (box :5102)
                                               │
         ┌───────────────┬─────────────────────┼──────────────────┬──────────────┐
         ▼               ▼                     ▼                  ▼              ▼
-   React SPA       OBS overlays         Jarvis Redis        HotsPatchNotes   raw archive
+   Rust SPA        OBS overlays         Jarvis Redis        HotsPatchNotes   raw archive
    (served by      (/widget /queue      (PUBLISH match      (:5001, source   (.StormReplay,
     the binary)     /draft/overlay…)     completed)          of dim_*)        source of truth)
 ```
