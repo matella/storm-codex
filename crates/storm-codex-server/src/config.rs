@@ -27,6 +27,12 @@ pub struct Config {
     /// Published reference-data snapshot (`referential.tar.gz`) — standalone bundle mode, without live
     /// HotsPatchNotes. Takes precedence over `hotspatchnotes_url` when set. See `dim::ingest_snapshot`.
     pub referential_url: Option<String>,
+    /// Standalone (installer) mode, `STANDALONE=1`: loopback-only bind, no network refresh of the
+    /// reference data; it is seeded once from `referential_file`. See `Config::validate`.
+    pub standalone: bool,
+    /// Bundled `referential.tar.gz` on disk (`REFERENTIAL_FILE`), used to seed an empty
+    /// `dim_heroes` in standalone mode. See `dim::ingest_snapshot_file`.
+    pub referential_file: Option<PathBuf>,
     /// Hero portraits + map images vendored here at startup (self-sufficient,
     /// deterministic — no runtime dependency on HotsPatchNotes), served on `/images`.
     pub images_dir: PathBuf,
@@ -75,6 +81,11 @@ impl Config {
             referential_url: std::env::var("REFERENTIAL_URL")
                 .ok()
                 .filter(|s| !s.is_empty()),
+            standalone: std::env::var("STANDALONE").is_ok_and(|v| v == "1"),
+            referential_file: std::env::var("REFERENTIAL_FILE")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .map(PathBuf::from),
             images_dir: PathBuf::from(
                 std::env::var("IMAGES_DIR").unwrap_or_else(|_| "./.images".into()),
             ),
@@ -86,5 +97,64 @@ impl Config {
                 .ok()
                 .filter(|s| !s.is_empty()),
         })
+    }
+
+    /// Cross-field checks. Standalone mode must never listen beyond the loopback interface.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.standalone {
+            let loopback = self
+                .bind_addr
+                .parse::<std::net::SocketAddr>()
+                .is_ok_and(|a| a.ip().is_loopback());
+            if !loopback {
+                return Err("standalone mode requires a loopback BIND_ADDR".into());
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg(bind: &str, standalone: bool) -> Config {
+        Config {
+            database_url: String::new(),
+            bind_addr: bind.into(),
+            archive_dir: PathBuf::new(),
+            raw_cache_dir: PathBuf::new(),
+            raw_cache_max_bytes: 0,
+            admin_token: None,
+            web_dir: None,
+            redis_url: None,
+            jarvis_channel: String::new(),
+            azure_push_url: None,
+            azure_push_token: None,
+            hotspatchnotes_url: None,
+            referential_url: None,
+            standalone,
+            referential_file: None,
+            images_dir: PathBuf::new(),
+            minimaps_bundle_dir: PathBuf::new(),
+            orpheus_url: None,
+            patch_webhook_url: None,
+        }
+    }
+
+    #[test]
+    fn standalone_rejects_non_loopback_bind() {
+        assert_eq!(
+            cfg("0.0.0.0:8088", true).validate(),
+            Err("standalone mode requires a loopback BIND_ADDR".to_string())
+        );
+        assert!(cfg("127.0.0.1:0", true).validate().is_ok());
+        assert!(cfg("[::1]:8088", true).validate().is_ok());
+        assert!(cfg("not-an-address", true).validate().is_err());
+    }
+
+    #[test]
+    fn non_standalone_allows_any_bind() {
+        assert!(cfg("0.0.0.0:8088", false).validate().is_ok());
     }
 }

@@ -105,6 +105,7 @@ fn bundle_minimaps(bundle: &std::path::Path, images_dir: &std::path::Path) {
 
 async fn run() -> Result<(), String> {
     let cfg = Config::from_env()?;
+    cfg.validate()?;
     std::fs::create_dir_all(&cfg.archive_dir).map_err(|e| format!("archive_dir: {e}"))?;
     std::fs::create_dir_all(&cfg.raw_cache_dir).map_err(|e| format!("raw_cache_dir: {e}"))?;
     bundle_minimaps(&cfg.minimaps_bundle_dir, &cfg.images_dir);
@@ -158,7 +159,20 @@ async fn run() -> Result<(), String> {
     //  - REFERENTIAL_URL  : published snapshot (`referential.tar.gz`) → standalone bundle, without live HPN.
     //  - HOTSPATCHNOTES_URL : live HotsPatchNotes API (maintainer setup).
     // The snapshot takes precedence when both are set.
-    if state.cfg.referential_url.is_some() || state.cfg.hotspatchnotes_url.is_some() {
+    // Standalone mode: no network. Seed once from the bundled snapshot when the table is empty
+    // and never start the 24 h refresh loop.
+    if state.cfg.standalone {
+        if let Some(file) = state.cfg.referential_file.as_deref() {
+            let empty =
+                sqlx::query_scalar::<_, bool>("SELECT NOT EXISTS (SELECT 1 FROM dim_heroes)")
+                    .fetch_one(&state.db)
+                    .await
+                    .unwrap_or(false);
+            if empty {
+                dim::ingest_snapshot_file(&state.db, &state.cfg.images_dir, file).await;
+            }
+        }
+    } else if state.cfg.referential_url.is_some() || state.cfg.hotspatchnotes_url.is_some() {
         let st = state.clone();
         tokio::spawn(async move {
             loop {
@@ -742,6 +756,8 @@ pub(crate) mod api_tests {
             azure_push_token: None,
             hotspatchnotes_url: None,
             referential_url: None,
+            standalone: false,
+            referential_file: None,
             images_dir: dir.join("images"),
             minimaps_bundle_dir: dir.join("minimaps"),
             orpheus_url: None,

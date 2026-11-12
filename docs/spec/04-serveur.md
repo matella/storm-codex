@@ -97,6 +97,11 @@ Failed writes are logged (`warn`):
 - `HOTSPATCHNOTES_URL`: live API (maintainer setup) → `sync_heroes`, `sync_talents`,
   `vendor_images` (portraits/maps copied into `IMAGES_DIR`, served on `/images`),
   `sync_patches`, `backfill_hero_sections`.
+- **Standalone mode** (`STANDALONE=1`, installer bundle): no network. When `dim_heroes` is empty
+  and `REFERENTIAL_FILE` is set, it is seeded once from that on-disk snapshot
+  (`dim::ingest_snapshot_file`, same ingest path as `ingest_snapshot`, one scratch dir per call);
+  the 24 h refresh loop is not started. `Config::validate()` (run right after `from_env()`)
+  rejects a non-loopback `BIND_ADDR` in this mode ("standalone mode requires a loopback BIND_ADDR").
 
 Each **new patch** detected → WS event `patch.new` + optional outgoing webhook
 (`PATCH_WEBHOOK_URL`, Discord-compatible format).
@@ -170,6 +175,8 @@ Design: `docs/specs/2026-10-24-feed-live-en-partie-design.md`.
 | `IMAGES_DIR` | `./.images` | vendored images, served on `/images` |
 | `REDIS_URL` / `JARVIS_CHANNEL` | empty = no emission / `jarvis:events` (box production: `storm-codex:match_completed`) | Jarvis events |
 | `HOTSPATCHNOTES_URL` / `REFERENTIAL_URL` | empty | reference data (see above) |
+| `STANDALONE` | empty = off | `1` = standalone (installer) mode: loopback-only `BIND_ADDR` (checked at startup), no reference-data network refresh |
+| `REFERENTIAL_FILE` | empty | bundled `referential.tar.gz` that seeds an empty `dim_heroes` in standalone mode |
 | `ORPHEUS_URL` | empty | music proxy for `/api/now-playing` |
 | `PATCH_WEBHOOK_URL` | empty | outgoing new-patch notification |
 | `AZURE_PUSH_URL` / `AZURE_PUSH_TOKEN` | empty | **dormant** (Twitch extension abandoned) |
