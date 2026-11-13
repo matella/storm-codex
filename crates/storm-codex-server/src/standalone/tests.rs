@@ -154,6 +154,8 @@ async fn status_reports_no_folders_phase_when_none_found() {
     let _task = spawn(state.clone(), "http://127.0.0.1:1".into());
     let v = wait_status(&app, 10, |v| v["phase"] == "no-folders").await;
     assert_eq!(v["folders"], serde_json::json!([]));
+    // no saved extra folder: an empty list, never missing
+    assert_eq!(v["extraFolders"], serde_json::json!([]));
     assert_eq!(v["total"], 0);
     assert_eq!(v["version"], env!("CARGO_PKG_VERSION"));
     assert_eq!(v["dataDir"], tmp.path().to_string_lossy().as_ref());
@@ -167,6 +169,22 @@ async fn status_reports_no_folders_phase_when_none_found() {
     ] {
         assert!(v.get(key).is_some(), "missing {key}: {v}");
     }
+}
+
+#[test]
+fn status_carries_the_saved_extra_folders() {
+    let tmp = tempfile::tempdir().unwrap();
+    let st = StandaloneState::new(&test_config(tmp.path()));
+    assert_eq!(st.status().extra_folders, Vec::<String>::new());
+    st.set_folders(&[tmp.path().join("found")]);
+    st.set_extra_folders(&["D:/Backup".to_string()]);
+    let v = serde_json::to_value(st.status()).unwrap();
+    assert_eq!(v["extraFolders"], serde_json::json!(["D:/Backup"]));
+    // the effective list is separate: the saved extras are not mixed into it
+    assert_eq!(
+        v["folders"],
+        serde_json::json!([tmp.path().join("found").to_string_lossy()])
+    );
 }
 
 /// Stub `/api/upload`: `a*` uploaded, `b*` duplicate, `c*` rejected (400 "corrupt").
@@ -428,9 +446,15 @@ async fn put_folders_persists_and_returns_status() {
     };
     let mut commands = state.standalone.as_ref().unwrap().take_commands().unwrap();
     let app = app(&state);
+    let before = get_status(&app).await;
+    assert_eq!(before["extraFolders"], serde_json::json!([]), "{before}");
     let extra_str = extra.to_string_lossy().to_string();
     let (code, v) = send(&app, put_folders(&[&extra_str])).await;
     assert_eq!(code, StatusCode::OK, "{v}");
+    // the saved list as sent (the parent), next to its expansion in `folders`
+    assert_eq!(v["extraFolders"], serde_json::json!([extra_str]));
+    let after = get_status(&app).await;
+    assert_eq!(after["extraFolders"], serde_json::json!([extra_str]));
     // the parent is resolved to the folder that holds replays
     let resolved = extra.join("old").to_string_lossy().to_string();
     assert_eq!(v["folders"], serde_json::json!([resolved]));

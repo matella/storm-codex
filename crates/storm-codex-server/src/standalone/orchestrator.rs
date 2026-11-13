@@ -101,6 +101,12 @@ impl Orchestrator {
         }
 
         let extras = load_extra_folders(&self.app.db).await;
+        self.st.set_extra_folders(
+            &extras
+                .iter()
+                .map(|p| p.to_string_lossy().into_owned())
+                .collect::<Vec<_>>(),
+        );
         let resolver = self.st.clone();
         self.folders =
             match tokio::task::spawn_blocking(move || resolve_folders(resolver.detect(), &extras))

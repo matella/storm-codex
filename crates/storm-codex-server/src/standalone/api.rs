@@ -143,6 +143,7 @@ async fn put_folders(State(state): State<AppState>, Json(body): Json<FoldersBody
             "could not save the folders".into(),
         );
     }
+    st.set_extra_folders(&saved);
     let resolver = st.clone();
     let folders = match tokio::task::spawn_blocking(move || {
         resolve_folders(resolver.detect(), &extras)

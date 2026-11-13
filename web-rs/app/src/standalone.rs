@@ -12,8 +12,8 @@ use storm_web_core::{
     net,
     route::app_href,
     standalone::{
-        error_message, folders_with, folders_without, parse_update_status, poll_ms,
-        redirects_to_welcome, Status, UpdateState, UpdateStatus,
+        error_message, extras_with, extras_without, parse_update_status, poll_ms,
+        redirects_to_welcome, update_failed_message, Status, UpdateState, UpdateStatus,
     },
 };
 
@@ -128,17 +128,26 @@ pub fn rescan(msg: RwSignal<Option<String>>) {
     });
 }
 
-/// Replay folders with add (path typed in) and remove; the server's refusal is shown inline.
+/// Replay folders: the scanned ones (detected, or found under an extra folder) read-only, and the extra folders
+/// the user saved, with add (path typed in) and remove. Only the extras are sent back (`PUT` body); the server's
+/// refusal is shown inline.
 #[component]
 pub fn FolderEditor() -> impl IntoView {
     let ctx = use_standalone();
     let path = RwSignal::new(String::new());
     let error = RwSignal::new(None::<String>);
     let busy = RwSignal::new(false);
-    // a memo: the rows are rebuilt only when the list changes, not at every poll
-    let folders = Memo::new(move |_| {
+    // memos: the rows are rebuilt only when a list changes, not at every poll
+    let scanned = Memo::new(move |_| {
         ctx.status
             .with(|s| s.as_ref().map(|s| s.folders.clone()).unwrap_or_default())
+    });
+    let extras = Memo::new(move |_| {
+        ctx.status.with(|s| {
+            s.as_ref()
+                .map(|s| s.extra_folders.clone())
+                .unwrap_or_default()
+        })
     });
     let save = move |next: Vec<String>, clear_input: bool| {
         busy.set(true);
@@ -156,16 +165,43 @@ pub fn FolderEditor() -> impl IntoView {
             busy.set(false);
         });
     };
-    let add = move || match folders_with(&folders.get_untracked(), &path.get_untracked()) {
-        Ok(next) => save(next, true),
-        Err(e) => error.set(Some(e)),
+    let add = move || {
+        let next = ctx
+            .status
+            .with_untracked(|s| s.as_ref().map(|s| extras_with(s, &path.get_untracked())));
+        match next {
+            Some(Ok(next)) => save(next, true),
+            Some(Err(e)) => error.set(Some(e)),
+            None => {}
+        }
+    };
+    let remove = move |target: &str| {
+        if let Some(next) = ctx
+            .status
+            .with_untracked(|s| s.as_ref().map(|s| extras_without(s, target)))
+        {
+            save(next, false);
+        }
     };
     view! {
         <div class="sa-folders">
+            <div class="sa-sub">"Scanned folders — found automatically or under your extra folders"</div>
             {move || {
-                let list = folders.get();
+                let list = scanned.get();
                 if list.is_empty() {
-                    view! { <div class="sa-none">"No replay folder yet."</div> }.into_any()
+                    view! { <div class="sa-none">"No replay folder found yet."</div> }.into_any()
+                } else {
+                    list.into_iter()
+                        .map(|f| view! { <div class="sa-folder"><span class="mono">{f}</span></div> })
+                        .collect_view()
+                        .into_any()
+                }
+            }}
+            <div class="sa-sub" style="margin-top: 10px">"Your extra folders — scanned with everything under them"</div>
+            {move || {
+                let list = extras.get();
+                if list.is_empty() {
+                    view! { <div class="sa-none">"None added."</div> }.into_any()
                 } else {
                     list.into_iter()
                         .map(|f| {
@@ -174,7 +210,7 @@ pub fn FolderEditor() -> impl IntoView {
                                 <div class="sa-folder">
                                     <span class="mono">{f}</span>
                                     <button class="ds-btn small danger" disabled=move || busy.get()
-                                        on:click=move |_| save(folders_without(&folders.get_untracked(), &target), false)>"Remove"</button>
+                                        on:click=move |_| remove(&target)>"Remove"</button>
                                 </div>
                             }
                         })
@@ -202,6 +238,7 @@ pub const CSS: &str = r#"
 .sa-err{font:12px var(--mono);color:var(--loss-soft)}
 .sa-ok{font:12px var(--mono);color:var(--win)}
 .sa-none{font:12px var(--mono);color:var(--kicker)}
+.sa-sub{font:600 11px var(--mono);color:var(--muted-2)}
 .sa-kv{display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;font-size:13px}
 .sa-kv .mono{font-size:12px;overflow-wrap:anywhere}
 .sa-privacy{margin:14px 0 0;font-weight:600}
@@ -281,26 +318,55 @@ fn tauri_invoke() -> Option<(leptos::wasm_bindgen::JsValue, js_sys::Function)> {
     Some((core, invoke))
 }
 
-/// Calls a Tauri command; its answer as JSON, `None` on any failure (missing shell, rejected promise, odd value).
-async fn invoke(cmd: &str) -> Option<serde_json::Value> {
-    let (core, f) = tauri_invoke()?;
-    let ret = f.call1(&core, &cmd.into()).ok()?;
+/// Readable reason of a rejected Tauri call: the string itself, an `Error`'s `message`, or the value as JSON.
+fn rejection_reason(e: &leptos::wasm_bindgen::JsValue) -> String {
+    if let Some(text) = e.as_string() {
+        return text;
+    }
+    if e.is_object() {
+        if let Some(m) = js_sys::Reflect::get(e, &"message".into())
+            .ok()
+            .and_then(|m| m.as_string())
+        {
+            return m;
+        }
+    }
+    js_sys::JSON::stringify(e)
+        .ok()
+        .and_then(|s| s.as_string())
+        .unwrap_or_default()
+}
+
+/// Calls a Tauri command. `Ok` with the answer as JSON (`Null` when it resolved with `undefined` or a value JSON
+/// cannot hold), `Err` with the reason when the shell is missing, the call throws or the promise rejects. Never
+/// panics whatever `window.__TAURI__` looks like.
+async fn invoke(cmd: &str) -> Result<serde_json::Value, String> {
+    let (core, f) = tauri_invoke().ok_or_else(|| "desktop shell unavailable".to_string())?;
+    let ret = f
+        .call1(&core, &cmd.into())
+        .map_err(|e| rejection_reason(&e))?;
     let value = wasm_bindgen_futures::JsFuture::from(js_sys::Promise::resolve(&ret))
         .await
-        .ok()?;
-    let text = js_sys::JSON::stringify(&value).ok()?.as_string()?;
-    serde_json::from_str(&text).ok()
+        .map_err(|e| rejection_reason(&e))?;
+    Ok(js_sys::JSON::stringify(&value)
+        .ok()
+        .and_then(|t| t.as_string())
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or(serde_json::Value::Null))
 }
 
 /// "Restart to update" banner of the desktop shell: polls `update_status` every 60 s when `window.__TAURI__`
-/// exists; outside the shell it renders nothing and never polls.
+/// exists; outside the shell it renders nothing and never polls. The button is disabled while `install_update`
+/// runs (one call per click sequence); a failure is shown inline and the button comes back.
 #[component]
 pub fn UpdateBanner() -> impl IntoView {
     let update = RwSignal::new(UpdateStatus::default());
+    let busy = RwSignal::new(false);
+    let failure = RwSignal::new(None::<String>);
     if tauri_invoke().is_some() {
         let check = move || {
             spawn_local(async move {
-                if let Some(v) = invoke("update_status").await {
+                if let Ok(v) = invoke("update_status").await {
                     update.set(parse_update_status(&v));
                 }
             })
@@ -309,8 +375,17 @@ pub fn UpdateBanner() -> impl IntoView {
         use_interval(60_000, check);
     }
     let install = move |_| {
+        if busy.get_untracked() {
+            return;
+        }
+        busy.set(true);
+        failure.set(None);
         spawn_local(async move {
-            let _ = invoke("install_update").await;
+            // on success the shell restarts the app: the button stays disabled meanwhile
+            if let Err(reason) = invoke("install_update").await {
+                failure.set(Some(update_failed_message(&reason)));
+                busy.set(false);
+            }
         })
     };
     view! {
@@ -321,7 +396,10 @@ pub fn UpdateBanner() -> impl IntoView {
                     Some(v) => format!("Storm Codex {v} is ready to install."),
                     None => "A new version of Storm Codex is ready to install.".to_string(),
                 }}</span>
-                <button class="ds-btn primary small" on:click=install>"Restart to update"</button>
+                <button class="ds-btn primary small" disabled=move || busy.get() on:click=install>
+                    {move || if busy.get() { "Restarting…" } else { "Restart to update" }}
+                </button>
+                {move || failure.get().map(|m| view! { <span class="sa-err">{m}</span> })}
             </div>
         </Show>
     }

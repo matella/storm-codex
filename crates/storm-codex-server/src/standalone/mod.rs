@@ -69,7 +69,11 @@ pub struct Rejected {
 #[serde(rename_all = "camelCase")]
 pub struct Status {
     pub phase: Phase,
+    /// Effective folders: detected HotS folders plus the replay folders found under each extra.
     pub folders: Vec<String>,
+    /// Extra folders as saved by `PUT /api/standalone/folders` (empty when none): the list the
+    /// settings edit.
+    pub extra_folders: Vec<String>,
     pub total: usize,
     pub done: usize,
     pub duplicates: usize,
@@ -97,6 +101,7 @@ struct LiveCounters {
 struct View {
     phase: Phase,
     folders: Vec<PathBuf>,
+    extra_folders: Vec<String>,
     free_bytes: Option<u64>,
     needed_bytes: Option<u64>,
 }
@@ -133,6 +138,7 @@ impl StandaloneState {
             view: Mutex::new(View {
                 phase: Phase::Seeding,
                 folders: Vec::new(),
+                extra_folders: Vec::new(),
                 free_bytes: None,
                 needed_bytes: None,
             }),
@@ -201,6 +207,7 @@ impl StandaloneState {
                 .iter()
                 .map(|p| p.to_string_lossy().into_owned())
                 .collect(),
+            extra_folders: view.extra_folders.clone(),
             total: progress.total() + live.done,
             done: progress.done() + live.done,
             duplicates: progress.duplicates() + live.duplicates,
@@ -219,6 +226,11 @@ impl StandaloneState {
 
     pub(crate) fn set_folders(&self, folders: &[PathBuf]) {
         lock(&self.view).folders = folders.to_vec();
+    }
+
+    /// Records the saved extra folders shown by the status (`extraFolders`).
+    pub(crate) fn set_extra_folders(&self, extras: &[String]) {
+        lock(&self.view).extra_folders = extras.to_vec();
     }
 
     /// Starts a new backfill run: its progress replaces the previous one, live counts reset.

@@ -29,8 +29,13 @@ pub struct Rejected {
 #[serde(rename_all = "camelCase")]
 pub struct Status {
     pub phase: Phase,
+    /// Effective folders scanned: detected HotS folders plus the replay folders found under each extra.
     #[serde(default)]
     pub folders: Vec<String>,
+    /// Extra folders saved by the user (`PUT /api/standalone/folders`), the list the settings edit. Absent from
+    /// older servers: empty.
+    #[serde(default)]
+    pub extra_folders: Vec<String>,
     #[serde(default)]
     pub total: u64,
     #[serde(default)]
@@ -139,6 +144,27 @@ pub fn folders_without(folders: &[String], path: &str) -> Vec<String> {
     folders.iter().filter(|f| *f != path).cloned().collect()
 }
 
+/// Body list of `PUT /api/standalone/folders` adding `path`: the saved extras plus `path`, never the scanned
+/// (detected or expanded) folders.
+pub fn extras_with(s: &Status, path: &str) -> Result<Vec<String>, String> {
+    folders_with(&s.extra_folders, path)
+}
+
+/// Body list of `PUT /api/standalone/folders` removing `path` from the saved extras.
+pub fn extras_without(s: &Status, path: &str) -> Vec<String> {
+    folders_without(&s.extra_folders, path)
+}
+
+/// Inline message of a failed `install_update` call; `reason` is the shell's rejection.
+pub fn update_failed_message(reason: &str) -> String {
+    let reason = reason.trim();
+    if reason.is_empty() {
+        "Update failed: unknown error".into()
+    } else {
+        format!("Update failed: {reason}")
+    }
+}
+
 /// `error` of a `{error}` answer, or `HTTP <status>` when the body is something else.
 pub fn error_message(status: u16, body: &str) -> String {
     serde_json::from_str::<Value>(body)
@@ -186,7 +212,8 @@ mod tests {
     /// Shape of the server's `Status` (crates/storm-codex-server/src/standalone/mod.rs), as serialised.
     const FIXTURE: &str = r#"{
         "phase": "disk-full",
-        "folders": ["C:\\Users\\me\\Documents\\Heroes of the Storm\\Accounts\\1\\2-Hero-1-3\\Replays\\Multiplayer"],
+        "folders": ["C:\\Users\\me\\Documents\\Heroes of the Storm\\Accounts\\1\\2-Hero-1-3\\Replays\\Multiplayer", "D:\\Backup\\2023"],
+        "extraFolders": ["D:\\Backup"],
         "total": 120,
         "done": 30,
         "duplicates": 4,
@@ -208,7 +235,8 @@ mod tests {
     fn status_deserializes_server_json() {
         let s: Status = serde_json::from_str(FIXTURE).unwrap();
         assert_eq!(s.phase, Phase::DiskFull);
-        assert_eq!(s.folders.len(), 1);
+        assert_eq!(s.folders.len(), 2);
+        assert_eq!(s.extra_folders, vec![r"D:\Backup".to_string()]);
         assert_eq!((s.total, s.done, s.duplicates), (120, 30, 4));
         assert_eq!(
             s.rejected,
@@ -237,6 +265,8 @@ mod tests {
             let s: Status = serde_json::from_str(&json).unwrap();
             assert_eq!(s.phase, phase);
             assert_eq!((s.free_bytes, s.needed_bytes), (None, None));
+            // a server without `extraFolders` still parses: no saved extras
+            assert!(s.extra_folders.is_empty());
         }
     }
 
@@ -309,6 +339,36 @@ mod tests {
         assert!(folders_with(&f, "   ").is_err());
         assert_eq!(folders_without(&f, "C:\\a"), Vec::<String>::new());
         assert_eq!(folders_without(&f, "X"), f);
+    }
+
+    #[test]
+    fn folder_edits_touch_only_the_saved_extras() {
+        let s = status(Phase::Ready);
+        let detected = s.folders[0].clone();
+        let added = extras_with(&s, r"E:\Replays").unwrap();
+        assert_eq!(
+            added,
+            vec![r"D:\Backup".to_string(), r"E:\Replays".to_string()]
+        );
+        // neither the detected folder nor the expansion of the extra is sent
+        assert!(!added.contains(&detected));
+        assert!(!added.iter().any(|f| f == r"D:\Backup\2023"));
+        assert_eq!(extras_without(&s, r"D:\Backup"), Vec::<String>::new());
+        // removing a scanned (detected) folder leaves the saved extras unchanged
+        assert_eq!(
+            extras_without(&s, &detected),
+            vec![r"D:\Backup".to_string()]
+        );
+        assert!(extras_with(&s, " ").is_err());
+    }
+
+    #[test]
+    fn install_failures_read_as_a_message() {
+        assert_eq!(
+            update_failed_message("signature mismatch"),
+            "Update failed: signature mismatch"
+        );
+        assert_eq!(update_failed_message("  "), "Update failed: unknown error");
     }
 
     #[test]

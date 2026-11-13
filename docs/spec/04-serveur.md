@@ -93,8 +93,8 @@ awaited for at most 10 s (then aborted) before the HTTP server drains and `run()
 
 | Route | Answer |
 |---|---|
-| `GET /api/standalone/status` | `{phase, folders, total, done, duplicates, rejected: [{file, reason}], failed: [file], freeBytes, neededBytes, dataDir, version}` — `phase` ∈ `seeding`, `importing`, `ready`, `no-folders`, `disk-full`, `error`; `folders` = effective folders; `freeBytes`/`neededBytes` `null` before the first disk gate; `dataDir` = parent of `ARCHIVE_DIR`; `version` = server crate version |
-| `PUT /api/standalone/folders` | body `{folders: [path]}` replaces the extra folders. Each must be an existing directory, else **400** `{error: "not an existing folder: …"}`; only directory listings are read. Saved and resolved, then the watcher restarts and a rescan runs; answers the new status |
+| `GET /api/standalone/status` | `{phase, folders, extraFolders, total, done, duplicates, rejected: [{file, reason}], failed: [file], freeBytes, neededBytes, dataDir, version}` — `phase` ∈ `seeding`, `importing`, `ready`, `no-folders`, `disk-full`, `error`; `folders` = effective folders (detected + replay folders found under each extra); `extraFolders` = the extra folders exactly as saved (the raw list `PUT /folders` replaces, set when the import task loads them and on each `PUT`; `[]` when none) — clients edit this list, never `folders`; `freeBytes`/`neededBytes` `null` before the first disk gate; `dataDir` = parent of `ARCHIVE_DIR`; `version` = server crate version |
+| `PUT /api/standalone/folders` | body `{folders: [path]}` replaces the extra folders (send `extraFolders` ± one path). Each must be an existing directory, else **400** `{error: "not an existing folder: …"}`; only directory listings are read. Saved and resolved, then the watcher restarts and a rescan runs; answers the new status |
 | `POST /api/standalone/rescan` | **202**; re-runs the disk gate and the backfill |
 | `POST /api/standalone/shutdown` | **202**; same graceful shutdown as Ctrl-C (used by the desktop shell before it stops Postgres) |
 

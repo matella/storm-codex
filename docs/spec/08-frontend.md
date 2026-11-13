@@ -122,9 +122,11 @@ deserialisation, `progress_percent`, `phase_message`, `redirects_to_welcome`, `p
   `error` shows a clear message in the error colour. "Continue to the app" and "Settings" links.
 - **Polling** (`use_status_poll`): only while `/welcome` or the "This PC" section is mounted, every 1 s while the phase is
   `seeding`/`importing`, every 10 s otherwise; stops when the page is left (`on_cleanup` flag) and for good on a 404.
-- **Settings "This PC"** (last numbered section of `/admin`, standalone only): replay folders (`status.folders`, the effective
-  list) with **Remove** and **Add folder** (typed path; `PUT /api/standalone/folders` with the list plus/minus that path; the
-  server's 400 message is shown inline), **Rescan now** (`POST /api/standalone/rescan`), data location (`dataDir`), app version
+- **Settings "This PC"** (last numbered section of `/admin`, standalone only): **Scanned folders** (`status.folders`, read-only:
+  found automatically or under an extra folder) and **Your extra folders** (`status.extraFolders`) with **Remove** and **Add
+  folder** (typed path; the `PUT /api/standalone/folders` body is `extraFolders` plus/minus that path only — `extras_with` /
+  `extras_without` —, never the scanned list; the server's 400 message is shown inline; a status without `extraFolders` (older
+  server) reads as no extras), **Rescan now** (`POST /api/standalone/rescan`), data location (`dataDir`), app version
   (`version`), the sentence "Nothing leaves this PC except the update check.", and the OBS browser-source URLs built from
   `location.origin` + `route::app_href` (never a fixed port). No native folder picker yet (needs the shell IPC).
 - **Onboarding.** The first-launch modal (admin token, uploader) is the box setup: it is not opened automatically in standalone
@@ -133,6 +135,10 @@ deserialisation, `progress_percent`, `phase_message`, `redirects_to_welcome`, `p
   (read defensively with `Reflect`, never panics), the app calls the Tauri command `update_status` at startup and every 60 s; it
   answers `{state: "none" | "downloading" | "ready", version: string | null}` (`parse_update_status`: any other shape or state =
   `none`). On `ready` the banner shows the version and a **Restart to update** button that calls `invoke('install_update')`.
+  The button is disabled while the call runs (one call per click sequence; it stays disabled on success, the shell restarts
+  the app). A rejected call (or a missing shell) shows "Update failed: <reason>" inline (`update_failed_message`; the reason
+  is the rejection string, an `Error`'s `message`, or the value as JSON) and re-enables the button. A call resolving with
+  `undefined` counts as success.
   Without `window.__TAURI__` (browser, box) nothing is rendered and nothing polls.
 
 ## Loading (bundles)
