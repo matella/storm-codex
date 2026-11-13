@@ -48,7 +48,25 @@ const HEALTH_TIMEOUT: Duration = Duration::from_secs(60);
 /// How long the server gets to exit after `POST /api/standalone/shutdown` (its import task
 /// alone may take 10 s to flush the ledger) before it is killed.
 const STOP_TIMEOUT: Duration = Duration::from_secs(20);
+/// Windows force-closes applications a few seconds after `WM_ENDSESSION`: at session end the
+/// server gets this long (counted from the shutdown request) before it is killed. Postgres is
+/// then stopped fast; its crash recovery covers anything cut short.
+const SESSION_END_STOP_TIMEOUT: Duration = Duration::from_secs(3);
+/// Connect/read/write limit of the shutdown request (full budget / session end).
+const SHUTDOWN_IO_TIMEOUT: Duration = Duration::from_secs(5);
+const SESSION_END_IO_TIMEOUT: Duration = Duration::from_secs(1);
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
+/// Connect/read/write limit of one `/api/health` probe.
+const HEALTH_IO_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// How much time [`Stack::stop_with`] may spend on the server before killing it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StopBudget {
+    /// Quit / app exit: up to `stop_timeout` (20 s) so the import task can flush the ledger.
+    Full,
+    /// Windows session end: up to `session_end_stop_timeout` (3 s), then kill.
+    SessionEnd,
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum StartError {
@@ -138,8 +156,9 @@ pub trait Host: Send + Sync {
     fn spawn_server(&self, cmd: &ServerCommand) -> io::Result<Box<dyn ServerChild>>;
     /// True when `GET /api/health` answers 200.
     fn health_ok(&self, port: u16) -> bool;
-    /// `POST /api/standalone/shutdown` (the server answers 202 and exits on its own).
-    fn request_shutdown(&self, port: u16) -> io::Result<()>;
+    /// `POST /api/standalone/shutdown` (the server answers 202 and exits on its own), each
+    /// network step limited to `io_timeout`.
+    fn request_shutdown(&self, port: u16, io_timeout: Duration) -> io::Result<()>;
 }
 
 /// How the server is launched.
@@ -160,6 +179,7 @@ pub struct ServerCommand {
 pub struct Timings {
     pub health_timeout: Duration,
     pub stop_timeout: Duration,
+    pub session_end_stop_timeout: Duration,
     pub poll: Duration,
 }
 
@@ -168,6 +188,7 @@ impl Default for Timings {
         Self {
             health_timeout: HEALTH_TIMEOUT,
             stop_timeout: STOP_TIMEOUT,
+            session_end_stop_timeout: SESSION_END_STOP_TIMEOUT,
             poll: POLL_INTERVAL,
         }
     }
@@ -346,13 +367,18 @@ impl Stack {
         self.port
     }
 
-    /// Stops the server (graceful shutdown request, bounded wait, kill as a last resort), then
-    /// Postgres (`pg_ctl stop -m fast`). Idempotent.
+    /// [`stop_with`](Self::stop_with) the full budget.
     pub fn stop(&mut self) -> Result<(), StopError> {
+        self.stop_with(StopBudget::Full)
+    }
+
+    /// Stops the server (graceful shutdown request, wait bounded by `budget`, kill as a last
+    /// resort), then Postgres (`pg_ctl stop -m fast`). Idempotent.
+    pub fn stop_with(&mut self, budget: StopBudget) -> Result<(), StopError> {
         if self.stopped {
             return Ok(());
         }
-        let server = self.stop_server();
+        let server = self.stop_server(budget);
         // Postgres is stopped even when the server stop reported an error: the server process
         // is gone either way (killed), and leaving Postgres running helps nobody.
         self.db.stop().map_err(StopError::Postgres)?;
@@ -360,15 +386,23 @@ impl Stack {
         server
     }
 
-    /// `POST /api/standalone/shutdown`, wait up to `stop_timeout` for the exit, then kill.
-    fn stop_server(&mut self) -> Result<(), StopError> {
+    /// `POST /api/standalone/shutdown`, wait for the exit until the budget's deadline (counted
+    /// from before the request), then kill.
+    fn stop_server(&mut self, budget: StopBudget) -> Result<(), StopError> {
         let Some(mut server) = self.server.take() else {
             return Ok(());
         };
+        let (limit, io_timeout) = match budget {
+            StopBudget::Full => (self.timings.stop_timeout, SHUTDOWN_IO_TIMEOUT),
+            StopBudget::SessionEnd => (
+                self.timings.session_end_stop_timeout,
+                SESSION_END_IO_TIMEOUT,
+            ),
+        };
+        let deadline = std::time::Instant::now() + limit;
         // A failed request (server already gone or wedged) falls through to the bounded wait
         // and the kill.
-        let _ = self.host.request_shutdown(self.port);
-        let deadline = std::time::Instant::now() + self.timings.stop_timeout;
+        let _ = self.host.request_shutdown(self.port, io_timeout.min(limit));
         loop {
             match server.try_wait() {
                 Ok(Some(_)) => return Ok(()),
@@ -425,10 +459,10 @@ impl Host for RealHost {
         Ok(Box::new(RealChild { child, _job: job }))
     }
     fn health_ok(&self, port: u16) -> bool {
-        http_status(port, "GET", "/api/health").is_ok_and(|s| s == 200)
+        http_status(port, "GET", "/api/health", HEALTH_IO_TIMEOUT).is_ok_and(|s| s == 200)
     }
-    fn request_shutdown(&self, port: u16) -> io::Result<()> {
-        match http_status(port, "POST", "/api/standalone/shutdown")? {
+    fn request_shutdown(&self, port: u16, io_timeout: Duration) -> io::Result<()> {
+        match http_status(port, "POST", "/api/standalone/shutdown", io_timeout)? {
             200..=299 => Ok(()),
             s => Err(io::Error::other(format!("shutdown request answered {s}"))),
         }
@@ -456,13 +490,13 @@ impl ServerChild for RealChild {
 
 /// One HTTP/1.1 request to `127.0.0.1:port` (empty body, `Connection: close`); returns the
 /// status code. The `Host` header is `127.0.0.1:<port>`, which the standalone routes accept.
-fn http_status(port: u16, method: &str, path: &str) -> io::Result<u16> {
+fn http_status(port: u16, method: &str, path: &str, io_timeout: Duration) -> io::Result<u16> {
     use std::io::{BufRead, BufReader, Write};
     use std::net::{Ipv4Addr, SocketAddr, TcpStream};
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
-    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(1))?;
-    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
-    stream.set_write_timeout(Some(Duration::from_secs(5)))?;
+    let mut stream = TcpStream::connect_timeout(&addr, io_timeout.min(Duration::from_secs(1)))?;
+    stream.set_read_timeout(Some(io_timeout))?;
+    stream.set_write_timeout(Some(io_timeout))?;
     // One write: the request reaches the server in a single segment.
     let request = format!(
         "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
@@ -478,27 +512,29 @@ fn http_status(port: u16, method: &str, path: &str) -> io::Result<u16> {
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "malformed HTTP status line"))
 }
 
+/// Test fakes shared with the lifecycle tests.
 #[cfg(test)]
 #[allow(clippy::expect_used)]
-mod tests {
+pub(crate) mod fakes {
     use super::*;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Mutex;
 
-    type Log = Arc<Mutex<Vec<String>>>;
+    pub type Log = Arc<Mutex<Vec<String>>>;
 
-    fn push(log: &Log, s: impl Into<String>) {
+    pub fn push(log: &Log, s: impl Into<String>) {
         log.lock().expect("log").push(s.into());
     }
 
-    fn entries(log: &Log) -> Vec<String> {
+    pub fn entries(log: &Log) -> Vec<String> {
         log.lock().expect("log").clone()
     }
 
-    fn fast() -> Timings {
+    pub fn fast() -> Timings {
         Timings {
             health_timeout: Duration::from_millis(300),
             stop_timeout: Duration::from_millis(300),
+            session_end_stop_timeout: Duration::from_millis(50),
             poll: Duration::from_millis(10),
         }
     }
@@ -555,17 +591,17 @@ mod tests {
         }
     }
 
-    struct FakeHost {
+    pub struct FakeHost {
         log: Log,
-        healthy: bool,
-        honours_shutdown: bool,
-        exits_at_once: bool,
+        pub healthy: bool,
+        pub honours_shutdown: bool,
+        pub exits_at_once: bool,
         shutdown_requested: Arc<AtomicBool>,
-        last_cmd: Mutex<Option<ServerCommand>>,
+        pub last_cmd: Mutex<Option<ServerCommand>>,
     }
 
     impl FakeHost {
-        fn new(log: &Log) -> Self {
+        pub fn new(log: &Log) -> Self {
             Self {
                 log: log.clone(),
                 healthy: true,
@@ -606,18 +642,33 @@ mod tests {
         fn health_ok(&self, _port: u16) -> bool {
             self.healthy
         }
-        fn request_shutdown(&self, port: u16) -> io::Result<()> {
+        fn request_shutdown(&self, port: u16, _io_timeout: Duration) -> io::Result<()> {
             push(&self.log, format!("server.shutdown({port})"));
             self.shutdown_requested.store(true, Ordering::SeqCst);
             Ok(())
         }
     }
 
-    fn start(host: FakeHost, data: &Path) -> (Result<Stack, StartError>, Arc<FakeHost>) {
+    pub fn start_with_timings(
+        host: FakeHost,
+        data: &Path,
+        timings: Timings,
+    ) -> (Result<Stack, StartError>, Arc<FakeHost>) {
         let host = Arc::new(host);
-        let res = Stack::start_with(host.clone(), Path::new("C:/res"), data, fast());
+        let res = Stack::start_with(host.clone(), Path::new("C:/res"), data, timings);
         (res, host)
     }
+
+    pub fn start(host: FakeHost, data: &Path) -> (Result<Stack, StartError>, Arc<FakeHost>) {
+        start_with_timings(host, data, fast())
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use super::fakes::*;
+    use super::*;
 
     #[test]
     fn start_order_is_cleanup_init_start_db_port_server() {
@@ -734,6 +785,35 @@ mod tests {
     }
 
     #[test]
+    fn session_end_stop_never_waits_longer_than_its_budget() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let log = Log::default();
+        let mut host = FakeHost::new(&log);
+        host.honours_shutdown = false; // the child never exits on its own
+        let timings = Timings {
+            stop_timeout: Duration::from_secs(30),
+            session_end_stop_timeout: Duration::from_millis(100),
+            ..fast()
+        };
+        let (stack, _host) = start_with_timings(host, tmp.path(), timings);
+        let mut stack = stack.expect("start");
+        log.lock().expect("log").clear();
+        let began = std::time::Instant::now();
+        stack.stop_with(StopBudget::SessionEnd).expect("stop");
+        let took = began.elapsed();
+        assert!(took >= Duration::from_millis(100), "{took:?}");
+        assert!(took < Duration::from_secs(2), "{took:?}");
+        assert_eq!(
+            entries(&log),
+            [
+                format!("server.shutdown({SERVER_PORT})"),
+                "server.kill".to_string(),
+                "db.stop".to_string()
+            ]
+        );
+    }
+
+    #[test]
     fn http_status_reads_the_status_line_and_sends_a_loopback_host() {
         use std::io::{Read, Write};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
@@ -749,13 +829,19 @@ mod tests {
                 .expect("write");
             String::from_utf8_lossy(&buf[..n]).into_owned()
         });
-        let status = http_status(port, "POST", "/api/standalone/shutdown").expect("status");
+        let status = http_status(
+            port,
+            "POST",
+            "/api/standalone/shutdown",
+            Duration::from_secs(5),
+        )
+        .expect("status");
         assert_eq!(status, 202);
         let request = server.join().expect("join");
         assert!(request.starts_with("POST /api/standalone/shutdown HTTP/1.1\r\n"));
         assert!(request.contains(&format!("Host: 127.0.0.1:{port}\r\n")));
         // Nothing listens any more: an error, not a hang.
-        assert!(http_status(port, "GET", "/api/health").is_err());
+        assert!(http_status(port, "GET", "/api/health", Duration::from_secs(1)).is_err());
     }
 
     #[test]

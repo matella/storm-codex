@@ -17,6 +17,7 @@ mod imp {
         TranslateMessage, MSG, WM_ENDSESSION, WM_QUERYENDSESSION, WNDCLASSW,
     };
 
+    use crate::supervise::StopBudget;
     use crate::Shell;
 
     static SHELL: OnceLock<Arc<Shell>> = OnceLock::new();
@@ -83,12 +84,23 @@ mod imp {
         lparam: LPARAM,
     ) -> LRESULT {
         match msg {
-            // Never veto the end of the session.
-            WM_QUERYENDSESSION => 1,
+            // Never veto the end of the session. From now on every stop (including the one
+            // the main thread runs when the event loop exits) uses the short budget.
+            WM_QUERYENDSESSION => {
+                if let Some(shell) = SHELL.get() {
+                    shell.life.set_session_ending(true);
+                }
+                1
+            }
             WM_ENDSESSION => {
-                if wparam != 0 {
-                    if let Some(shell) = SHELL.get() {
-                        crate::stop_stack(shell, "Windows session end");
+                if let Some(shell) = SHELL.get() {
+                    if wparam != 0 {
+                        // Returns only once the stack is stopped, even if another thread runs
+                        // the stop.
+                        crate::stop_stack(shell, "Windows session end", StopBudget::SessionEnd);
+                    } else {
+                        // The session end was cancelled.
+                        shell.life.set_session_ending(false);
                     }
                 }
                 0

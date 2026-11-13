@@ -7,14 +7,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod job;
+mod lifecycle;
 mod session;
 mod supervise;
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Duration;
+use std::sync::{Arc, OnceLock};
 
 use storm_codex_supervisor::DataDir;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
@@ -22,23 +21,28 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
-use crate::supervise::Stack;
+use crate::lifecycle::{Lifecycle, StopOutcome};
+use crate::supervise::{Stack, StopBudget};
 
 const MAIN: &str = "main";
 const LOADING: &str = "loading";
 const TITLE: &str = "Storm Codex";
 
 /// State shared by the startup thread, the tray, the exit hooks and the session watcher.
-#[derive(Default)]
 pub struct Shell {
-    stack: Mutex<Option<Stack>>,
-    /// True until the startup thread has finished (stack stored, or failed).
-    starting: AtomicBool,
-    quitting: AtomicBool,
+    /// Start/stop handshake: stop once, every caller waits for its end.
+    life: Lifecycle<Stack>,
     logs: OnceLock<PathBuf>,
 }
 
 impl Shell {
+    fn new() -> Self {
+        Self {
+            life: Lifecycle::new(),
+            logs: OnceLock::new(),
+        }
+    }
+
     fn log(&self, msg: &str) {
         let Some(dir) = self.logs.get() else {
             eprintln!("{msg}");
@@ -65,29 +69,22 @@ fn log_to(dir: &Path, msg: &str) {
     }
 }
 
-/// Stops the stack if one runs (idempotent). Waits for an in-progress startup first so a
-/// half-started stack is never left behind.
-pub fn stop_stack(shell: &Shell, why: &str) {
-    while shell.starting.load(Ordering::SeqCst) {
-        std::thread::sleep(Duration::from_millis(100));
-    }
-    let stack = shell
-        .stack
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .take();
-    if let Some(mut stack) = stack {
-        shell.log(&format!("stopping ({why})"));
-        match stack.stop() {
-            Ok(()) => shell.log("stopped"),
-            Err(e) => shell.log(&format!("stop failed: {e}")),
+/// Stops the stack (idempotent). Returns only once the stack is fully stopped, whichever
+/// caller ran the stop; an in-progress start is waited for, then stopped.
+pub fn stop_stack(shell: &Shell, why: &str, budget: StopBudget) {
+    match shell.life.stop(budget) {
+        StopOutcome::Stopped(used, Ok(())) => {
+            shell.log(&format!("stopped ({why}, {used:?} budget)"))
         }
+        StopOutcome::Stopped(used, Err(e)) => {
+            shell.log(&format!("stop failed ({why}, {used:?} budget): {e}"))
+        }
+        StopOutcome::NothingRunning => {}
     }
 }
 
 fn main() {
-    let shell = Arc::new(Shell::default());
-    shell.starting.store(true, Ordering::SeqCst);
+    let shell = Arc::new(Shell::new());
 
     let mut builder = tauri::Builder::default();
     // Registered first (plugin requirement). A second launch only focuses this instance: two
@@ -130,8 +127,10 @@ fn main() {
     app.run(move |_handle, event| match event {
         // No window left (none is ever closed, only hidden): stay in the tray.
         RunEvent::ExitRequested { api, code, .. } if code.is_none() => api.prevent_exit(),
-        RunEvent::ExitRequested { .. } => stop_stack(&shell, "exit requested"),
-        RunEvent::Exit => stop_stack(&shell, "exit"),
+        // Also reached at Windows session end (the event loop exits on WM_ENDSESSION): the
+        // lifecycle then switches to the short budget and waits for the watcher's stop.
+        RunEvent::ExitRequested { .. } => stop_stack(&shell, "exit requested", StopBudget::Full),
+        RunEvent::Exit => stop_stack(&shell, "exit", StopBudget::Full),
         _ => {}
     });
 }
@@ -139,7 +138,7 @@ fn main() {
 /// Resolves the folders, starts the stack, then swaps the loading window for the app window.
 /// Any failure is shown in a native dialog naming the log folder, and the app exits.
 fn startup(app: AppHandle, shell: Arc<Shell>) {
-    let result = (|| -> Result<u16, String> {
+    let result = (|| -> Result<Stack, String> {
         let data_root = data_root(&app)?;
         let logs = DataDir::new(data_root.clone()).logs();
         let _ = shell.logs.set(logs);
@@ -149,25 +148,26 @@ fn startup(app: AppHandle, shell: Arc<Shell>) {
             resources.display(),
             data_root.display()
         ));
-        let stack = Stack::start(&resources, &data_root).map_err(|e| e.to_string())?;
-        let port = stack.port();
-        *shell
-            .stack
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(stack);
-        Ok(port)
+        Stack::start(&resources, &data_root).map_err(|e| e.to_string())
     })();
-    shell.starting.store(false, Ordering::SeqCst);
-    if shell.quitting.load(Ordering::SeqCst) {
-        return; // Quit was clicked meanwhile; its thread stops the stack.
+    let (stack, failure) = match result {
+        Ok(stack) => (Some(stack), None),
+        Err(e) => (None, Some(e)),
+    };
+    let port = stack.as_ref().map(Stack::port);
+    if !shell.life.finish_start(stack) {
+        return; // Quit or session end meanwhile: that caller stops what was started.
     }
-    let opened = result.and_then(|port| {
-        shell.log(&format!("server healthy on 127.0.0.1:{port}"));
-        open_main_window(&app, port).map_err(|e| format!("could not open the window: {e}"))
-    });
+    let opened = match (port, failure) {
+        (Some(port), _) => {
+            shell.log(&format!("server healthy on 127.0.0.1:{port}"));
+            open_main_window(&app, port).map_err(|e| format!("could not open the window: {e}"))
+        }
+        (None, failure) => Err(failure.unwrap_or_else(|| "unknown error".into())),
+    };
     if let Err(e) = opened {
         shell.log(&format!("startup failed: {e}"));
-        stop_stack(&shell, "startup failed");
+        stop_stack(&shell, "startup failed", StopBudget::Full);
         let logs = shell
             .logs
             .get()
@@ -296,7 +296,7 @@ fn create_tray(app: &AppHandle, shell: Arc<Shell>) -> tauri::Result<()> {
 
 /// Hides the windows, stops the stack off the UI thread, then exits.
 fn quit_app(app: &AppHandle, shell: Arc<Shell>) {
-    if shell.quitting.swap(true, Ordering::SeqCst) {
+    if !shell.life.request_stop() {
         return;
     }
     for window in app.webview_windows().values() {
@@ -304,7 +304,7 @@ fn quit_app(app: &AppHandle, shell: Arc<Shell>) {
     }
     let app = app.clone();
     std::thread::spawn(move || {
-        stop_stack(&shell, "quit");
+        stop_stack(&shell, "quit", StopBudget::Full);
         app.exit(0);
     });
 }

@@ -158,7 +158,9 @@ no Postgres needed).
   covered by the uninstaller's "delete app data" option): `pg/`, `pg-password`, `archive/`,
   `raw-cache/`, `images/`, `logs/`, `uploaded.json`. Resources (next to the exe once packaged):
   `storm-codex-server.exe`, `postgres/{bin,lib,share}`, `web/` (= `web-rs/dist`), `minimaps/`
-  (= `assets/minimaps`), `referential.tar.gz`.
+  (= `assets/minimaps`), `referential.tar.gz`. The Tauri identifier `com.matella.stormcodex`
+  determines the data root `%LOCALAPPDATA%\com.matella.stormcodex`; changing it orphans the
+  users' data, so it must stay stable (packaging keeps it).
 - **Start (`Stack::start`).** `DataDir::ensure` → Postgres port (`pick_port(54329)`) →
   `clean_stale` → password check → `init_if_needed` → `start` → `ensure_database("storm_codex")`
   → server port (`pick_port(8088)`) → spawn the server (no console window, cwd = data root,
@@ -173,11 +175,21 @@ no Postgres needed).
   killed, then Postgres stopped) and shows a native error dialog naming the log folder; the app
   then exits. A cluster whose `pg-password` is missing is refused with a clear error (never
   silently re-initialised).
-- **Stop (`Stack::stop`, idempotent).** `POST /api/standalone/shutdown` on
-  `http://127.0.0.1:<port>`, wait up to 20 s for the server to exit (its import task flushes the
-  ledger first, up to 10 s), kill it only as a last resort, **then** `pg_ctl stop -m fast`.
-  Called by tray **Quit**, `RunEvent::ExitRequested`/`Exit`, and the Windows session end
-  (`WM_ENDSESSION` on a hidden top-level window: a GUI process gets no console-control event).
+- **Stop (`Stack::stop_with(budget)`, idempotent).** `POST /api/standalone/shutdown` on
+  `http://127.0.0.1:<port>`, wait for the server to exit, kill it only as a last resort,
+  **then** `pg_ctl stop -m fast`. Budget `Full` (tray **Quit**, `RunEvent::ExitRequested`/`Exit`):
+  up to 20 s (its import task flushes the ledger first, up to 10 s), request I/O limited to 5 s.
+  Budget `SessionEnd` (Windows shutdown/logoff, which force-closes apps after a few seconds): up
+  to 3 s counted from before the request (request I/O 1 s), then kill; Postgres crash recovery
+  covers what is cut short. Session end is seen through `WM_QUERYENDSESSION`/`WM_ENDSESSION` on
+  a hidden top-level window (a GUI process gets no console-control event); from
+  `WM_QUERYENDSESSION` on, every stop uses the `SessionEnd` budget (cleared if the session end
+  is cancelled).
+- **One stop, every caller waits (`lifecycle.rs`).** The stack is stopped once; any other caller
+  (startup failure, Quit, exit hooks, session end, which run on different threads) blocks until
+  that stop has finished, so the process never exits mid-stop. A stop requested while the stack
+  is still starting waits for the start, then stops what was started, and the window is not
+  opened.
 - **Hard kill of the shell.** The server is in a kill-on-close job object, so it dies with the
   shell (no orphan holding the port or the ledger). Postgres keeps running until the next launch,
   where `Postgres::start` finds it is ours and restarts it (the new port may differ).
