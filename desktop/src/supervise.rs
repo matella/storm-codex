@@ -27,20 +27,28 @@ pub const PG_PORT: u16 = 54329;
 /// Password file written by `Postgres::init_if_needed`, a sibling of the cluster directory.
 const PASSWORD_FILE: &str = "pg-password";
 
-/// Server configuration variables the shell never passes through from its own environment:
-/// the ones it sets itself and the ones that must stay unset in standalone mode (no Redis, no
-/// admin token, no network reference-data source, no outgoing hooks).
-pub const SERVER_ENV_REMOVED: &[&str] = &[
-    "REDIS_URL",
-    "JARVIS_CHANNEL",
-    "ADMIN_TOKEN",
-    "HOTSPATCHNOTES_URL",
-    "REFERENTIAL_URL",
-    "ORPHEUS_URL",
-    "PATCH_WEBHOOK_URL",
-    "AZURE_PUSH_URL",
-    "AZURE_PUSH_TOKEN",
-    "RAW_CACHE_MAX_BYTES",
+/// The only variables of the shell's own environment passed to the server (allow-list: the
+/// child starts from an empty environment). Everything else, the server configuration
+/// variables included (`REDIS_URL`, `ADMIN_TOKEN`, `AZURE_PUSH_*`, `DATABASE_URL`, ...), never
+/// reaches it.
+/// - `SystemRoot`, `windir`: Windows system components (Winsock, CNG/crypto, COM) locate
+///   their files through them; networking fails without `SystemRoot`.
+/// - `TEMP`, `TMP`, `USERPROFILE`: `std::env::temp_dir()` (`GetTempPath2`) reads them in
+///   this order; the server extracts the referential and decodes cast replays there.
+///   Without them it would fall back to the Windows folder, which a user cannot write.
+/// - `PATH`: the system DLL search order and any helper a dependency launches.
+/// - `RUST_LOG`: log level for diagnosis (a log filter, no secret).
+///
+/// Not passed: `LOCALAPPDATA`/`APPDATA` (every data path is given explicitly; the replay
+/// folders come from the Documents known-folder API, which does not read the environment).
+pub const SERVER_ENV_PASSTHROUGH: &[&str] = &[
+    "SystemRoot",
+    "windir",
+    "TEMP",
+    "TMP",
+    "USERPROFILE",
+    "PATH",
+    "RUST_LOG",
 ];
 
 /// How long `/api/health` may take to answer 200 after the server is spawned.
@@ -108,6 +116,16 @@ pub enum StopError {
     Postgres(#[source] PgError),
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum RestartError {
+    #[error("the server is still running")]
+    StillRunning,
+    #[error("the stack is stopped")]
+    Stopped,
+    #[error(transparent)]
+    Start(#[from] StartError),
+}
+
 /// The Postgres operations the stack needs (implemented by [`Postgres`]).
 pub trait Db: Send {
     fn clean_stale(&self) -> Result<(), PgError>;
@@ -117,6 +135,10 @@ pub trait Db: Send {
     fn stop(&self) -> Result<(), PgError>;
     /// Secret (holds the password): never log it.
     fn database_url(&self, db: &str) -> String;
+    /// `pg_dump -Fc` of the app database to `out`.
+    fn dump(&self, out: &Path) -> Result<(), PgError>;
+    /// `pg_restore` of a [`dump`](Self::dump) into the app database (one transaction).
+    fn restore(&self, file: &Path) -> Result<(), PgError>;
 }
 
 impl Db for Postgres {
@@ -137,6 +159,12 @@ impl Db for Postgres {
     }
     fn database_url(&self, db: &str) -> String {
         Postgres::database_url(self, db)
+    }
+    fn dump(&self, out: &Path) -> Result<(), PgError> {
+        Postgres::dump(self, out)
+    }
+    fn restore(&self, file: &Path) -> Result<(), PgError> {
+        Postgres::restore(self, file)
     }
 }
 
@@ -165,10 +193,9 @@ pub trait Host: Send + Sync {
 #[derive(Debug, Clone)]
 pub struct ServerCommand {
     pub exe: PathBuf,
-    /// Set on the child (values may hold secrets: `DATABASE_URL` carries the password).
+    /// The child's **whole** environment (it inherits nothing else). Values may hold secrets:
+    /// `DATABASE_URL` carries the password.
     pub env: Vec<(&'static str, OsString)>,
-    /// Removed from the inherited environment.
-    pub env_removed: &'static [&'static str],
     pub cwd: PathBuf,
     /// stdout and stderr go there.
     pub log: PathBuf,
@@ -194,15 +221,17 @@ impl Default for Timings {
     }
 }
 
-/// The server environment: standalone mode, loopback bind, data paths under the data root,
-/// bundled resources. `REDIS_URL` and `ADMIN_TOKEN` are never set.
+/// The server's whole environment: standalone mode, loopback bind, data paths under the data
+/// root, bundled resources, plus the [`SERVER_ENV_PASSTHROUGH`] variables found by `inherited`
+/// (the shell's environment in production). `REDIS_URL` and `ADMIN_TOKEN` are never set.
 pub fn server_env(
     resource_dir: &Path,
     data: &DataDir,
     port: u16,
     database_url: String,
+    inherited: impl Fn(&str) -> Option<OsString>,
 ) -> Vec<(&'static str, OsString)> {
-    vec![
+    let mut env = vec![
         ("STANDALONE", "1".into()),
         ("BIND_ADDR", format!("127.0.0.1:{port}").into()),
         ("DATABASE_URL", database_url.into()),
@@ -216,7 +245,13 @@ pub fn server_env(
             "REFERENTIAL_FILE",
             resource_dir.join("referential.tar.gz").into(),
         ),
-    ]
+    ];
+    for &name in SERVER_ENV_PASSTHROUGH {
+        if let Some(value) = inherited(name) {
+            env.push((name, value));
+        }
+    }
+    env
 }
 
 /// A cluster without its password file cannot be opened (scram auth with a generated
@@ -238,6 +273,9 @@ pub struct Stack {
     host: Arc<dyn Host>,
     db: Box<dyn Db>,
     server: Option<Box<dyn ServerChild>>,
+    /// How the server was launched (reused by [`Stack::restart_server`]).
+    cmd: Option<ServerCommand>,
+    data: DataDir,
     timings: Timings,
     stopped: bool,
 }
@@ -286,6 +324,8 @@ impl Stack {
             host: host.clone(),
             db,
             server: None,
+            cmd: None,
+            data: data.clone(),
             timings,
             stopped: false,
         };
@@ -299,8 +339,13 @@ impl Stack {
         let port = host.pick_port(SERVER_PORT).map_err(StartError::Port)?;
         let cmd = ServerCommand {
             exe: resource_dir.join(SERVER_EXE),
-            env: server_env(resource_dir, &data, port, db.database_url(APP_DATABASE)),
-            env_removed: SERVER_ENV_REMOVED,
+            env: server_env(
+                resource_dir,
+                &data,
+                port,
+                db.database_url(APP_DATABASE),
+                |name| std::env::var_os(name),
+            ),
             cwd: data_root.to_path_buf(),
             log: data.logs().join("server.log"),
         };
@@ -312,8 +357,50 @@ impl Stack {
             })?;
         stack.port = port;
         stack.server = Some(child);
-        stack.wait_healthy(&cmd.log)?;
+        let log = cmd.log.clone();
+        stack.cmd = Some(cmd);
+        stack.wait_healthy(&log)?;
         Ok(stack)
+    }
+
+    /// Starts the server again after [`stop_server`](Self::stop_server) (Postgres kept
+    /// running), same command and port, and waits until it is healthy.
+    pub fn restart_server(&mut self) -> Result<(), RestartError> {
+        if self.stopped {
+            return Err(RestartError::Stopped);
+        }
+        if self.server.is_some() {
+            return Err(RestartError::StillRunning);
+        }
+        let Some(cmd) = self.cmd.clone() else {
+            return Err(RestartError::Stopped);
+        };
+        let child = self
+            .host
+            .spawn_server(&cmd)
+            .map_err(|source| StartError::Spawn {
+                exe: cmd.exe.clone(),
+                source,
+            })?;
+        self.server = Some(child);
+        self.wait_healthy(&cmd.log)?;
+        Ok(())
+    }
+
+    /// The data folder layout of this stack.
+    pub fn data(&self) -> &DataDir {
+        &self.data
+    }
+
+    /// `pg_dump` of the app database (Postgres must be running; the server may be).
+    pub fn dump(&self, out: &Path) -> Result<(), PgError> {
+        self.db.dump(out)
+    }
+
+    /// `pg_restore` into the app database. Stop the server first: `--clean` takes ACCESS
+    /// EXCLUSIVE locks its connections would hold up.
+    pub fn restore(&self, file: &Path) -> Result<(), PgError> {
+        self.db.restore(file)
     }
 
     /// Polls `/api/health` until 200, the server exits, or the timeout. On failure the server
@@ -386,9 +473,9 @@ impl Stack {
         server
     }
 
-    /// `POST /api/standalone/shutdown`, wait for the exit until the budget's deadline (counted
-    /// from before the request), then kill.
-    fn stop_server(&mut self, budget: StopBudget) -> Result<(), StopError> {
+    /// Stops the server only (Postgres keeps running): `POST /api/standalone/shutdown`, wait
+    /// for the exit until the budget's deadline (counted from before the request), then kill.
+    pub fn stop_server(&mut self, budget: StopBudget) -> Result<(), StopError> {
         let Some(mut server) = self.server.take() else {
             return Ok(());
         };
@@ -442,17 +529,8 @@ impl Host for RealHost {
         }
         let out = std::fs::File::create(&cmd.log)?;
         let err = out.try_clone()?;
-        let mut command = Command::new(&cmd.exe);
-        for var in cmd.env_removed {
-            command.env_remove(var);
-        }
-        command
-            .envs(cmd.env.iter().map(|(k, v)| (k, v)))
-            .current_dir(&cmd.cwd)
-            .stdin(Stdio::null())
-            .stdout(out)
-            .stderr(err);
-        crate::job::hide_console(&mut command);
+        let mut command = server_command(cmd);
+        command.stdout(out).stderr(err);
         let child = command.spawn()?;
         // Killed with the shell if the shell dies without stopping it (hard kill, crash).
         let job = crate::job::KillOnClose::adopt(&child);
@@ -467,6 +545,18 @@ impl Host for RealHost {
             s => Err(io::Error::other(format!("shutdown request answered {s}"))),
         }
     }
+}
+
+/// The child process: empty environment plus exactly `cmd.env`, no console window.
+fn server_command(cmd: &ServerCommand) -> Command {
+    let mut command = Command::new(&cmd.exe);
+    command
+        .env_clear()
+        .envs(cmd.env.iter().map(|(k, v)| (k, v)))
+        .current_dir(&cmd.cwd)
+        .stdin(Stdio::null());
+    crate::job::hide_console(&mut command);
+    command
 }
 
 struct RealChild {
@@ -541,6 +631,7 @@ pub(crate) mod fakes {
 
     struct FakeDb {
         log: Log,
+        fail_restore: bool,
     }
 
     impl Db for FakeDb {
@@ -566,6 +657,28 @@ pub(crate) mod fakes {
         }
         fn database_url(&self, db: &str) -> String {
             format!("postgres://storm:secret@127.0.0.1:1/{db}")
+        }
+        fn dump(&self, out: &Path) -> Result<(), PgError> {
+            push(&self.log, "db.dump");
+            std::fs::write(out, b"PGDMP-fake-db").map_err(|source| PgError::Io {
+                path: out.to_path_buf(),
+                source,
+            })
+        }
+        fn restore(&self, file: &Path) -> Result<(), PgError> {
+            let body = std::fs::read(file).unwrap_or_default();
+            push(
+                &self.log,
+                format!("db.restore({})", String::from_utf8_lossy(&body)),
+            );
+            if self.fail_restore {
+                return Err(PgError::CommandFailed {
+                    command: "pg_restore".into(),
+                    status: "exit code: 1".into(),
+                    stderr: "fake failure".into(),
+                });
+            }
+            Ok(())
         }
     }
 
@@ -596,7 +709,9 @@ pub(crate) mod fakes {
         pub healthy: bool,
         pub honours_shutdown: bool,
         pub exits_at_once: bool,
-        shutdown_requested: Arc<AtomicBool>,
+        pub fail_restore: bool,
+        /// Shutdown flag of the most recently spawned child.
+        shutdown_requested: Mutex<Arc<AtomicBool>>,
         pub last_cmd: Mutex<Option<ServerCommand>>,
     }
 
@@ -607,7 +722,8 @@ pub(crate) mod fakes {
                 healthy: true,
                 honours_shutdown: true,
                 exits_at_once: false,
-                shutdown_requested: Arc::new(AtomicBool::new(false)),
+                fail_restore: false,
+                shutdown_requested: Mutex::new(Arc::new(AtomicBool::new(false))),
                 last_cmd: Mutex::new(None),
             }
         }
@@ -626,14 +742,17 @@ pub(crate) mod fakes {
             push(&self.log, format!("open_db({port})"));
             Box::new(FakeDb {
                 log: self.log.clone(),
+                fail_restore: self.fail_restore,
             })
         }
         fn spawn_server(&self, cmd: &ServerCommand) -> io::Result<Box<dyn ServerChild>> {
             push(&self.log, "server.spawn");
             *self.last_cmd.lock().expect("cmd") = Some(cmd.clone());
+            let flag = Arc::new(AtomicBool::new(false));
+            *self.shutdown_requested.lock().expect("flag") = flag.clone();
             Ok(Box::new(FakeChild {
                 log: self.log.clone(),
-                shutdown_requested: self.shutdown_requested.clone(),
+                shutdown_requested: flag,
                 honours_shutdown: self.honours_shutdown,
                 exits_at_once: self.exits_at_once,
                 killed: false,
@@ -644,7 +763,10 @@ pub(crate) mod fakes {
         }
         fn request_shutdown(&self, port: u16, _io_timeout: Duration) -> io::Result<()> {
             push(&self.log, format!("server.shutdown({port})"));
-            self.shutdown_requested.store(true, Ordering::SeqCst);
+            self.shutdown_requested
+                .lock()
+                .expect("flag")
+                .store(true, Ordering::SeqCst);
             Ok(())
         }
     }
@@ -862,8 +984,6 @@ mod tests {
         assert_eq!(get("BIND_ADDR"), Some(format!("127.0.0.1:{SERVER_PORT}")));
         assert!(get("REDIS_URL").is_none());
         assert!(get("ADMIN_TOKEN").is_none());
-        assert!(cmd.env_removed.contains(&"REDIS_URL"));
-        assert!(cmd.env_removed.contains(&"ADMIN_TOKEN"));
         let data = DataDir::new(tmp.path().to_path_buf());
         let path = |p: PathBuf| Some(p.to_string_lossy().into_owned());
         assert_eq!(get("ARCHIVE_DIR"), path(data.archive()));
@@ -880,10 +1000,111 @@ mod tests {
             path(Path::new("C:/res").join("referential.tar.gz"))
         );
         assert!(get("DATABASE_URL").is_some_and(|u| u.contains("@127.0.0.1:")));
-        // No variable is both set and removed.
-        for (k, _) in &cmd.env {
-            assert!(!cmd.env_removed.contains(k), "{k}");
-        }
         assert_eq!(cmd.log, data.logs().join("server.log"));
+    }
+
+    /// Every name the shell may set: its own contract variables plus the allow-list.
+    const CONTRACT: &[&str] = &[
+        "STANDALONE",
+        "BIND_ADDR",
+        "DATABASE_URL",
+        "ARCHIVE_DIR",
+        "RAW_CACHE_DIR",
+        "IMAGES_DIR",
+        "LEDGER_FILE",
+        "WEB_DIR",
+        "MINIMAPS_BUNDLE_DIR",
+        "REFERENTIAL_FILE",
+    ];
+
+    #[test]
+    fn server_env_is_an_allow_list() {
+        let data = DataDir::new(PathBuf::from("C:/data"));
+        // The parent "has" every variable, hostile ones included.
+        let env = server_env(
+            Path::new("C:/res"),
+            &data,
+            8088,
+            "postgres://storm:pw@127.0.0.1:1/storm_codex".into(),
+            |name| Some(OsString::from(format!("parent-{name}"))),
+        );
+        for (k, v) in &env {
+            assert!(
+                CONTRACT.contains(k) || SERVER_ENV_PASSTHROUGH.contains(k),
+                "unexpected {k}"
+            );
+            // The contract values are the shell's own, never the parent's.
+            if CONTRACT.contains(k) {
+                assert!(!v.to_string_lossy().starts_with("parent-"), "{k}");
+            }
+        }
+        for leak in [
+            "REDIS_URL",
+            "ADMIN_TOKEN",
+            "AZURE_PUSH_TOKEN",
+            "JARVIS_CHANNEL",
+        ] {
+            assert!(env.iter().all(|(k, _)| *k != leak), "{leak} leaked");
+        }
+        assert_eq!(
+            env.iter().filter(|(k, _)| *k == "DATABASE_URL").count(),
+            1,
+            "DATABASE_URL is set once, by the shell"
+        );
+        for name in SERVER_ENV_PASSTHROUGH {
+            assert!(env.iter().any(|(k, _)| k == name), "{name} not passed");
+        }
+    }
+
+    /// The real child sees exactly the allow-list: run `cmd /C set` with the command the
+    /// server would get, while the test process holds secrets in its own environment.
+    #[cfg(windows)]
+    #[test]
+    fn child_process_inherits_no_unlisted_variable() {
+        use std::process::Stdio;
+        // SAFETY (edition 2021: safe fn): test-only variables, no other test reads them.
+        for k in [
+            "REDIS_URL",
+            "ADMIN_TOKEN",
+            "AZURE_PUSH_TOKEN",
+            "STORM_CODEX_LEAK_PROBE",
+        ] {
+            std::env::set_var(k, "leaked-secret");
+        }
+        let system_root = std::env::var_os("SystemRoot").expect("SystemRoot");
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let data = DataDir::new(tmp.path().to_path_buf());
+        let cmd = ServerCommand {
+            exe: PathBuf::from(&system_root).join("System32").join("cmd.exe"),
+            env: server_env(
+                Path::new("C:/res"),
+                &data,
+                8088,
+                "postgres://storm:pw@127.0.0.1:1/storm_codex".into(),
+                |name| std::env::var_os(name),
+            ),
+            cwd: tmp.path().to_path_buf(),
+            log: tmp.path().join("unused.log"),
+        };
+        let out = server_command(&cmd)
+            .args(["/D", "/C", "set"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .expect("run cmd");
+        assert!(out.status.success());
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(!text.contains("leaked-secret"), "{text}");
+        // cmd.exe adds a few of its own.
+        let cmd_own = ["COMSPEC", "PATHEXT", "PROMPT"];
+        for line in text.lines().filter(|l| !l.is_empty()) {
+            let name = line.split('=').next().unwrap_or_default().to_uppercase();
+            let allowed = CONTRACT.iter().any(|k| k.eq_ignore_ascii_case(&name))
+                || SERVER_ENV_PASSTHROUGH
+                    .iter()
+                    .any(|k| k.eq_ignore_ascii_case(&name))
+                || cmd_own.contains(&name.as_str());
+            assert!(allowed, "unlisted variable reached the child: {name}");
+        }
     }
 }

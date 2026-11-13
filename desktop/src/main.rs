@@ -6,10 +6,14 @@
 // No console window in release builds (debug keeps it for logs).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod backup;
+mod command_names;
+mod commands;
 mod job;
 mod lifecycle;
 mod session;
 mod supervise;
+mod updater;
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -18,21 +22,28 @@ use std::sync::{Arc, OnceLock};
 use storm_codex_supervisor::DataDir;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::webview::NewWindowResponse;
+use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent, Wry};
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
 use crate::lifecycle::{Lifecycle, StopOutcome};
 use crate::supervise::{Stack, StopBudget};
+use crate::updater::{TauriSource, Updater};
 
 const MAIN: &str = "main";
 const LOADING: &str = "loading";
-const TITLE: &str = "Storm Codex";
+pub(crate) const TITLE: &str = "Storm Codex";
 
-/// State shared by the startup thread, the tray, the exit hooks and the session watcher.
+/// State shared by the startup thread, the tray, the exit hooks, the session watcher and the
+/// IPC commands.
 pub struct Shell {
     /// Start/stop handshake: stop once, every caller waits for its end.
     life: Lifecycle<Stack>,
     logs: OnceLock<PathBuf>,
+    /// Set once the window is up, when the build carries a real updater public key.
+    updater: OnceLock<Arc<Updater<TauriSource>>>,
+    /// Tray "Restart to update", enabled when an update is ready.
+    restart_item: OnceLock<MenuItem<Wry>>,
 }
 
 impl Shell {
@@ -40,6 +51,8 @@ impl Shell {
         Self {
             life: Lifecycle::new(),
             logs: OnceLock::new(),
+            updater: OnceLock::new(),
+            restart_item: OnceLock::new(),
         }
     }
 
@@ -83,6 +96,22 @@ pub fn stop_stack(shell: &Shell, why: &str, budget: StopBudget) {
     }
 }
 
+/// [`stop_stack`] that reports a failed stop (the updater must not install over a running
+/// Postgres).
+pub fn stop_stack_checked(shell: &Shell, why: &str, budget: StopBudget) -> Result<(), String> {
+    match shell.life.stop(budget) {
+        StopOutcome::Stopped(used, Ok(())) => {
+            shell.log(&format!("stopped ({why}, {used:?} budget)"));
+            Ok(())
+        }
+        StopOutcome::Stopped(used, Err(e)) => {
+            shell.log(&format!("stop failed ({why}, {used:?} budget): {e}"));
+            Err(e.to_string())
+        }
+        StopOutcome::NothingRunning => Ok(()),
+    }
+}
+
 fn main() {
     let shell = Arc::new(Shell::new());
 
@@ -97,8 +126,27 @@ fn main() {
         }));
     }
     let setup_shell = shell.clone();
+    // A tray-only start (autostart entry): no window until the user opens one.
+    let minimized = commands::starts_minimized(std::env::args_os());
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![commands::MINIMIZED_ARG]),
+        ));
+    }
     let app = builder
+        .manage(shell.clone())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![
+            commands::update_status,
+            commands::install_update,
+            commands::export_data,
+            commands::import_data,
+            commands::set_autostart,
+            commands::get_autostart,
+        ])
         .on_window_event(|window, event| {
             // The close button hides to the tray; the server keeps running (OBS sources).
             if let WindowEvent::CloseRequested { api, .. } = event {
@@ -107,7 +155,7 @@ fn main() {
             }
         })
         .setup(move |app| {
-            create_loading_window(app.handle())?;
+            create_loading_window(app.handle(), !minimized)?;
             create_tray(app.handle(), setup_shell.clone())?;
             #[cfg(windows)]
             session::watch_session_end(setup_shell.clone());
@@ -142,6 +190,13 @@ fn startup(app: AppHandle, shell: Arc<Shell>) {
         let data_root = data_root(&app)?;
         let logs = DataDir::new(data_root.clone()).logs();
         let _ = shell.logs.set(logs);
+        match commands::apply_autostart_default(&data_root.join(commands::AUTOSTART_MARKER), |on| {
+            commands::set_autostart_now(&app, on)
+        }) {
+            Ok(true) => shell.log("autostart set to its default (off)"),
+            Ok(false) => {}
+            Err(e) => shell.log(&format!("autostart default not applied: {e}")),
+        }
         let resources = resource_dir(&app)?;
         shell.log(&format!(
             "starting: resources {}, data {}",
@@ -161,7 +216,8 @@ fn startup(app: AppHandle, shell: Arc<Shell>) {
     let opened = match (port, failure) {
         (Some(port), _) => {
             shell.log(&format!("server healthy on 127.0.0.1:{port}"));
-            open_main_window(&app, port).map_err(|e| format!("could not open the window: {e}"))
+            open_main_window(&app, &shell, port)
+                .map_err(|e| format!("could not open the window: {e}"))
         }
         (None, failure) => Err(failure.unwrap_or_else(|| "unknown error".into())),
     };
@@ -181,6 +237,45 @@ fn startup(app: AppHandle, shell: Arc<Shell>) {
             .title(TITLE)
             .blocking_show();
         app.exit(1);
+        return;
+    }
+    start_updater(&app, &shell);
+}
+
+/// Starts the update loop (first check now that the window is up, then every 6 h), unless the
+/// build carries no real updater public key: updates are then unavailable (`update_status`
+/// answers `none`), with one log line.
+fn start_updater(app: &AppHandle, shell: &Arc<Shell>) {
+    let pubkey = app
+        .config()
+        .plugins
+        .0
+        .get("updater")
+        .and_then(|u| u.get("pubkey"))
+        .and_then(|k| k.as_str())
+        .unwrap_or_default();
+    if !updater::pubkey_is_usable(pubkey) {
+        shell.log("updates disabled: this build has no updater public key");
+        return;
+    }
+    let updater = Arc::new(Updater::new(TauriSource { app: app.clone() }));
+    if shell.updater.set(updater.clone()).is_err() {
+        return;
+    }
+    let shell = shell.clone();
+    let spawned = std::thread::Builder::new()
+        .name("updater".into())
+        .spawn(move || loop {
+            if let Some(version) = updater.tick(&|m| shell.log(m)) {
+                shell.log(&format!("update {version} ready: tray item enabled"));
+                if let Some(item) = shell.restart_item.get() {
+                    let _ = item.set_enabled(true);
+                }
+            }
+            std::thread::sleep(updater::CHECK_INTERVAL);
+        });
+    if let Err(e) = spawned {
+        eprintln!("updater thread not started: {e}");
     }
 }
 
@@ -208,19 +303,22 @@ fn resource_dir(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| format!("no resource folder: {e}"))
 }
 
-fn create_loading_window(app: &AppHandle) -> tauri::Result<()> {
+fn create_loading_window(app: &AppHandle, visible: bool) -> tauri::Result<()> {
     WebviewWindowBuilder::new(app, LOADING, WebviewUrl::App("loading.html".into()))
         .title(TITLE)
         .inner_size(420.0, 260.0)
         .resizable(false)
         .center()
+        .visible(visible)
         .build()?;
     Ok(())
 }
 
 /// Opens the app window on the local server and closes the loading window. The new window
-/// stays hidden if the user had hidden the loading window to the tray.
-fn open_main_window(app: &AppHandle, port: u16) -> Result<(), String> {
+/// stays hidden if the loading window is hidden (closed to the tray, or a `--minimized`
+/// start). Navigation is guarded: only `http://127.0.0.1:<port>` loads in the window (it is
+/// the only origin the IPC capability trusts); web links open in the system browser.
+fn open_main_window(app: &AppHandle, shell: &Arc<Shell>, port: u16) -> Result<(), String> {
     let url: tauri::Url = format!("http://127.0.0.1:{port}/")
         .parse()
         .map_err(|e| format!("{e}"))?;
@@ -234,6 +332,18 @@ fn open_main_window(app: &AppHandle, port: u16) -> Result<(), String> {
         .min_inner_size(800.0, 560.0)
         .center()
         .visible(visible)
+        .on_navigation({
+            let shell = shell.clone();
+            move |url| commands::guard_navigation(&shell, url, port)
+        })
+        .on_new_window({
+            let shell = shell.clone();
+            move |url, _features| {
+                // `window.open` / `target=_blank`: never a second webview.
+                commands::open_outside(&shell, &url);
+                NewWindowResponse::Deny
+            }
+        })
         .build()
         .map_err(|e| e.to_string())?;
     if let Some(loading) = loading {
@@ -265,6 +375,7 @@ fn create_tray(app: &AppHandle, shell: Arc<Shell>) -> tauri::Result<()> {
         false,
         None::<&str>,
     )?;
+    let _ = shell.restart_item.set(restart.clone());
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
     let menu = Menu::with_items(app, &[&open, &restart, &separator, &quit])?;
@@ -274,6 +385,16 @@ fn create_tray(app: &AppHandle, shell: Arc<Shell>) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(move |app, event| match event.id().as_ref() {
             "open" => show_window(app),
+            "restart_update" => {
+                let app = app.clone();
+                std::thread::spawn(move || {
+                    if let Err(e) = commands::run_install(&app) {
+                        if let Some(shell) = app.try_state::<Arc<Shell>>() {
+                            shell.log(&format!("restart to update: {e}"));
+                        }
+                    }
+                });
+            }
             "quit" => quit_app(app, shell.clone()),
             _ => {}
         })

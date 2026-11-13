@@ -277,6 +277,7 @@ impl Postgres {
 
     /// Restores a [`dump`](Self::dump) into [`APP_DATABASE`] (created if needed), replacing the
     /// objects it contains (`pg_restore --clean --if-exists`). Lock waits are capped at 30 s.
+    /// One transaction (`--single-transaction`): a failed restore leaves the database as it was.
     pub fn restore(&self, file: &Path) -> Result<(), PgError> {
         self.ensure_database(APP_DATABASE)?;
         let mut cmd = self.client("pg_restore")?;
@@ -288,6 +289,7 @@ impl Postgres {
                 "--if-exists",
                 "--no-owner",
                 "--exit-on-error",
+                "--single-transaction",
             ])
             .arg(file);
         run(&mut cmd, "pg_restore", DUMP_LIMIT).map(|_| ())

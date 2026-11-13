@@ -18,10 +18,20 @@ tauri-build = { version = "2", features = [] }
 storm-codex-supervisor = { path = "../crates/storm-codex-supervisor" }
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
 thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Validates the updater public key from the config (placeholder = updates disabled).
+base64 = "0.22"
+# Backup archives (`.stormcodex`): written Stored; Deflate accepted on read.
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+# Opens external links in the system browser (Rust side only: no IPC command exposed).
+open = "5"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

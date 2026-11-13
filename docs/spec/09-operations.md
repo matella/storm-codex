@@ -138,8 +138,9 @@ Upgrading the minor version = change both lines in the same commit; the major st
   is no console), `PGCONNECT_TIMEOUT=10`; `restore` also sets `PGOPTIONS=-c lock_timeout=30s`.
   A wrong or missing password fails at once with `CommandFailed`.
 - `ensure_database(name)`; `database_url(db)` = `postgres://storm:<password>@127.0.0.1:<port>/<db>`.
-- `dump(out)` / `restore(file)`: `pg_dump -Fc` / `pg_restore --clean --if-exists --no-owner` on
-  the `storm_codex` database (created on restore if missing).
+- `dump(out)` / `restore(file)`: `pg_dump -Fc` / `pg_restore --clean --if-exists --no-owner
+  --exit-on-error --single-transaction` on the `storm_codex` database (created on restore if
+  missing). One transaction: a failed restore leaves the database as it was.
 
 **Tests.** `cargo test -p storm-codex-supervisor` always runs the binary-free tests: wrong major
 version, missing binary, stale pid cleanup, foreign live PID treated as stale, non-UTF-8 pid
@@ -152,8 +153,10 @@ dump/restore:
 **Desktop shell (`desktop/`, Tauri v2).** Not a workspace member (own `Cargo.lock`): checks are
 `cargo clippy --manifest-path desktop/Cargo.toml --all-targets -- -D warnings`,
 `cargo fmt --manifest-path desktop/Cargo.toml --check` and
-`cargo test --manifest-path desktop/Cargo.toml` (supervision order and failure paths with fakes,
-no Postgres needed).
+`cargo test --manifest-path desktop/Cargo.toml` (supervision order and failure paths, the updater
+state machine and install flow, backup validation/zip-slip/import orchestration with fakes; no
+Postgres needed). With `PG_BIN_DIR` set, `export_then_import_roundtrip_preserves_a_cast_row`
+also runs a real Postgres 17 export → fresh cluster → import.
 - **Folders.** Data root = Tauri `app_local_data_dir()` (`%LOCALAPPDATA%\com.matella.stormcodex`,
   covered by the uninstaller's "delete app data" option): `pg/`, `pg-password`, `archive/`,
   `raw-cache/`, `images/`, `logs/`, `uploaded.json`. Resources (next to the exe once packaged):
@@ -169,9 +172,15 @@ no Postgres needed).
   `BIND_ADDR=127.0.0.1:<port>`, `DATABASE_URL` (holds the password: never logged),
   `ARCHIVE_DIR`, `RAW_CACHE_DIR`, `IMAGES_DIR`, `LEDGER_FILE=<data>/uploaded.json`,
   `WEB_DIR=<res>/web`, `MINIMAPS_BUNDLE_DIR=<res>/minimaps`,
-  `REFERENTIAL_FILE=<res>/referential.tar.gz`; inherited `REDIS_URL`, `JARVIS_CHANNEL`,
-  `ADMIN_TOKEN`, `HOTSPATCHNOTES_URL`, `REFERENTIAL_URL`, `ORPHEUS_URL`, `PATCH_WEBHOOK_URL`,
-  `AZURE_PUSH_*`, `RAW_CACHE_MAX_BYTES` are removed. Any failure stops what was started (server
+  `REFERENTIAL_FILE=<res>/referential.tar.gz`. **Allow-list:** the child starts from an empty
+  environment (`env_clear`) and gets only these plus, when the shell has them, `SystemRoot` and
+  `windir` (Winsock/CNG/COM need them), `TEMP`, `TMP`, `USERPROFILE` (`std::env::temp_dir()`; the
+  server extracts the referential and decodes cast replays there), `PATH` (system DLL search)
+  and `RUST_LOG`. Nothing else of the shell's environment reaches it (`REDIS_URL`, `ADMIN_TOKEN`,
+  `AZURE_PUSH_*`, a parent `DATABASE_URL`, ...); `LOCALAPPDATA`/`APPDATA` are not passed (every
+  data path is explicit; the replay folders come from the Documents known-folder API). Tested by
+  `server_env_is_an_allow_list` and `child_process_inherits_no_unlisted_variable` (runs
+  `cmd /C set` with the server's command while the test process holds secrets). Any failure stops what was started (server
   killed, then Postgres stopped) and shows a native error dialog naming the log folder; the app
   then exits. A cluster whose `pg-password` is missing is refused with a clear error (never
   silently re-initialised).
@@ -199,9 +208,94 @@ no Postgres needed).
   OBS). Tray: left click shows/focuses the window; menu Open Storm Codex, Restart to update
   (disabled until the updater enables it), Quit. One instance per user
   (`tauri-plugin-single-instance`, registered first): a second launch focuses the first.
-- **IPC.** `app.withGlobalTauri: true` (the web UI detects `window.__TAURI__`).
-  `capabilities/default.json` grants the `main` window IPC from `http://127.0.0.1:*` only, with
-  no permission yet (the updater adds its commands). The loading window has no capability.
+- **IPC (`commands.rs`).** `app.withGlobalTauri: true` (the web UI detects `window.__TAURI__`).
+  Commands: `update_status`, `install_update`, `export_data(path)`, `import_data(path, confirm?)`,
+  `set_autostart(enabled)`, `get_autostart` (list in `src/command_names.rs`, read by `build.rs`).
+  `build.rs` declares them with `tauri_build::AppManifest::commands`, so each one is **denied**
+  unless a capability grants its generated `allow-<command>` permission (without it every
+  registered command is allowed for every window). `capabilities/default.json` grants the `main`
+  window, from `http://127.0.0.1:*` only, exactly those six `allow-*` permissions: no `core:*`,
+  no plugin permission (the dialog, updater and autostart plugins' own JS commands are refused:
+  checked live, e.g. `plugin:updater|check` → "not allowed"). The loading window has no
+  capability. `capability_grants_only_the_shell_commands` fails if the grant list differs from
+  the command list or a second capability file appears; `tauri-build` rejects unknown
+  permission identifiers at compile time. Long commands are `async` and run on a blocking task
+  (a sync command runs on the UI thread).
+- **Navigation guard.** The `main` window's `on_navigation` lets only `http://127.0.0.1:<port>`
+  (same scheme, host, port; no userinfo) load in the window, the only origin the capability
+  trusts, so another page can never reach the IPC. Other `http(s)` links open in the system
+  browser (`open::that_detached`, Rust side only: no opener plugin, no JS command); other schemes
+  are dropped and logged. `window.open` / `target=_blank` (`on_new_window`) never create a
+  webview: same treatment, then `Deny`.
+- **CSP.** `app.security.csp` is strict (`default-src 'self'; script-src 'self'; style-src 'self'
+  'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost; object-src 'none';
+  base-uri 'none'; form-action 'none'; frame-ancestors 'none'`). Tauri injects it only into the
+  assets it serves itself (the bundled `ui/loading.html`, with hashes/nonces for its inline
+  code); it does **not** apply to a `WebviewUrl::External` page, so the app page on
+  `http://127.0.0.1:<port>` is governed by the server's own headers, and protected here by the
+  navigation guard and the command-only capability.
+- **Updater (`updater.rs`, `tauri-plugin-updater`).** State machine `none → downloading →
+  ready(version)` behind the `UpdateSource` trait (fakes in tests). The first check runs once the
+  main window is up, then every 6 h on an `updater` thread: `check()`; an announced update is
+  `download()`ed (signature verified; **not** `download_and_install`) and its bytes kept in
+  memory; then `ready` and the tray item **Restart to update** is enabled. A check or download
+  failure returns to `none` with one log line and is retried at the next tick. `update_status`
+  answers `{state: "none"|"downloading"|"ready", version}` (camelCase JSON, the web banner's
+  contract in `08-frontend.md`). `install_update` (banner or tray item, same path) is refused
+  with a clear message unless `ready`, and a second install while one runs is refused; otherwise:
+  stop the stack (`Lifecycle::stop`, `Full` budget: server then Postgres, waiting for an export
+  or import in progress), `Update::install(bytes)` (NSIS `passive` mode: progress bar, no
+  questions; on Windows it launches the installer and exits the process, the installer
+  relaunches the app with the same arguments), `app.restart()` on other platforms. Migrations
+  run at the next start. **Install failure** (or a failed stop): the stack stays stopped, a
+  native error dialog says the update could not be installed, that the data is unchanged and to
+  start the app again, then the app exits with code 1 (simplest safe state: no half-restarted
+  stack against binaries the installer may have touched; the next launch starts normally).
+  `tauri.conf.json`: `bundle.createUpdaterArtifacts: true`; `plugins.updater.endpoints:
+  ["https://github.com/matella/storm-codex/releases/latest/download/latest.json"]`,
+  `windows.installMode: "passive"`, `pubkey` = a **placeholder** until the operator generates
+  the key pair (`tauri signer generate`; the private key and its password are GitHub secrets,
+  never committed; the public key replaces the placeholder; release signing is documented with
+  packaging, Task 9). With the placeholder (or any value that is not base64 of a minisign
+  public key, `pubkey_is_usable`) the shell never checks: `update_status` stays `none`, one log
+  line "updates disabled: this build has no updater public key".
+- **Updater manual E2E (two signed builds; done with packaging).** Build N and N+1 with the real
+  key (`TAURI_SIGNING_PRIVATE_KEY` set, `createUpdaterArtifacts` gives the `.exe` + `.sig`);
+  install N; serve a `latest.json` naming N+1 (url + signature) from a local static server and
+  point a test build's endpoint at it (or publish a pre-release); start N: within seconds the
+  log shows "update N+1 downloaded … ready", the banner shows **Restart to update** and the tray
+  item is enabled; click: the app stops the stack, the passive installer runs, the app restarts
+  on N+1, the data is intact and the migrations ran (server log). Repeat with the click during a
+  backfill: after the restart the import resumes and no replay is uploaded twice.
+- **Export / import (`backup.rs`).** File `storm-codex-backup-YYYY-MM-DD.stormcodex` (UTC date),
+  a zip with `db.dump` (`pg_dump -Fc`) and `archive/<relative path>` for every file of the
+  archive folder, all `Stored` (replays and the custom-format dump are already compressed; zip64
+  for files ≥ 4 GiB), streamed (never loaded in memory). `export_data(path)`: an empty `path`
+  opens a native save dialog (cancel → "export cancelled"). Postgres and the server keep running:
+  the dump is taken first, then the archive copied (a replay imported meanwhile is an orphan
+  file, harmless); written to `<out>.partial`, renamed when complete. `import_data(path,
+  confirm)`: refused when the archive already holds a file unless `confirm: true`. Then, before
+  anything changes: the zip is validated — exactly one `db.dump` starting with `PGDMP`; every
+  other entry under `archive/`; no `\`, `:`, NUL, absolute path, empty/`.`/`..` component,
+  Windows device name (`CON`, `nul.txt`) or trailing dot/space; no symlink or encrypted entry;
+  ≤ 2,000,000 entries, ≤ 256 GiB per entry, deflated entries ≤ 200× expansion — and the data
+  drive must have the unpacked size + 1 GiB free. It is unpacked into `<data>/import-work`
+  (files created new, exact declared sizes). Then the server is stopped (graceful, `Full`
+  budget; Postgres stays up: `pg_restore --clean` takes ACCESS EXCLUSIVE locks), the dump
+  restored (one transaction), `archive/` swapped by renames (`archive` → `archive.old`, new →
+  `archive`, old removed; put back if the rename fails), `import-work` removed, and the server
+  restarted on the same stack and port (`Stack::restart_server`); the command returns once
+  `/api/health` answers. A failed restore leaves the database and the archive as they were, and
+  the server is restarted either way. The ledger and the raw cache are kept (both keyed by
+  content). Export and import run through `Lifecycle::with_running`: one at a time, and a Quit
+  or session end waits for them to finish. Not exposed in the web UI yet.
+- **Autostart.** `tauri-plugin-autostart` (Windows: per-user `HKCU\…\Run` value "Storm Codex",
+  launched with `--minimized`). `AUTOSTART_DEFAULT = false`: on the first launch with a data
+  folder the shell sets autostart to that default (also clearing a `Run` value an earlier
+  install left behind) and writes `<data>/autostart-initialised`; later launches keep the user's
+  choice (`set_autostart` / `get_autostart`). `--minimized` (parsed by `starts_minimized`, the
+  program name excluded): the loading window is created hidden, the stack starts, and the main
+  window opens hidden in the tray.
 - **Logs.** `logs/desktop.log` (shell), `logs/server.log`, `logs/postgres.log`,
   `logs/pg_ctl.log`.
 - **Dev run (debug builds only, compiled out of release).** `STORM_CODEX_RESOURCE_DIR` replaces

@@ -39,6 +39,8 @@ pub enum StopOutcome<E> {
 struct State<S> {
     starting: bool,
     stopping: bool,
+    /// A [`Lifecycle::with_running`] operation holds the stack.
+    busy: bool,
     stop_requested: bool,
     session_ending: bool,
     stack: Option<S>,
@@ -56,6 +58,7 @@ impl<S: Stoppable> Lifecycle<S> {
             state: Mutex::new(State {
                 starting: true,
                 stopping: false,
+                busy: false,
                 stop_requested: false,
                 session_ending: false,
                 stack: None,
@@ -98,7 +101,7 @@ impl<S: Stoppable> Lifecycle<S> {
     pub fn stop(&self, budget: StopBudget) -> StopOutcome<S::Error> {
         let mut st = self.lock();
         st.stop_requested = true;
-        while st.starting || st.stopping {
+        while st.starting || st.stopping || st.busy {
             st = self
                 .changed
                 .wait(st)
@@ -119,6 +122,48 @@ impl<S: Stoppable> Lifecycle<S> {
         self.lock().stopping = false;
         self.changed.notify_all();
         StopOutcome::Stopped(budget, result)
+    }
+
+    /// Runs `f` on the running stack, one operation at a time (export, import). `None` when
+    /// there is no running stack (start failed, stop requested or done). A stop requested
+    /// meanwhile waits for `f` to return, then stops the stack.
+    pub fn with_running<R>(&self, f: impl FnOnce(&mut S) -> R) -> Option<R> {
+        let mut st = self.lock();
+        while st.starting || st.busy {
+            st = self
+                .changed
+                .wait(st)
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+        }
+        if st.stop_requested || st.stopping {
+            return None;
+        }
+        let stack = st.stack.take()?;
+        st.busy = true;
+        drop(st);
+        // Hands the stack back even if `f` panics.
+        let mut guard = Lease {
+            life: self,
+            stack: Some(stack),
+        };
+        let stack = guard.stack.as_mut()?;
+        Some(f(stack))
+    }
+}
+
+/// The stack lent to a [`Lifecycle::with_running`] operation; returned on drop.
+struct Lease<'a, S: Stoppable> {
+    life: &'a Lifecycle<S>,
+    stack: Option<S>,
+}
+
+impl<S: Stoppable> Drop for Lease<'_, S> {
+    fn drop(&mut self) {
+        let mut st = self.life.lock();
+        st.stack = self.stack.take();
+        st.busy = false;
+        drop(st);
+        self.life.changed.notify_all();
     }
 }
 
@@ -224,6 +269,43 @@ mod tests {
             life.stop(StopBudget::Full),
             StopOutcome::NothingRunning
         ));
+    }
+
+    #[test]
+    fn with_running_lends_the_stack_and_a_stop_waits_for_the_operation() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let log = Log::default();
+        let life = Arc::new(Lifecycle::new());
+        let (stack, _host) = start(FakeHost::new(&log), tmp.path());
+        assert!(life.finish_start(Some(stack.expect("start"))));
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let op = {
+            let life = life.clone();
+            std::thread::spawn(move || {
+                life.with_running(|stack| {
+                    entered_tx.send(stack.port()).expect("send");
+                    release_rx.recv().expect("release");
+                    "done"
+                })
+            })
+        };
+        assert_eq!(entered_rx.recv().expect("entered"), SERVER_PORT);
+        let stopper = {
+            let life = life.clone();
+            std::thread::spawn(move || life.stop(StopBudget::Full))
+        };
+        std::thread::sleep(Duration::from_millis(50));
+        assert!(!stopper.is_finished(), "stop must wait for the operation");
+        assert!(!entries(&log).contains(&"db.stop".to_string()));
+        release_tx.send(()).expect("release");
+        assert_eq!(op.join().expect("join"), Some("done"));
+        assert!(matches!(
+            stopper.join().expect("join"),
+            StopOutcome::Stopped(_, Ok(()))
+        ));
+        // Once stopped, nothing is lent any more.
+        assert!(life.with_running(|_| ()).is_none());
     }
 
     #[test]

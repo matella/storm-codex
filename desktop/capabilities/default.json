@@ -1,10 +1,17 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-window",
-  "description": "The main window loads the local server (http://127.0.0.1:<port>/). IPC is allowed from that origin only; the shell commands are added with the updater (no command yet).",
+  "description": "The main window loads the local server (http://127.0.0.1:<port>/). IPC is allowed from that origin only, and only for the shell's own commands (updater, backup, autostart): no core or plugin permission.",
   "windows": ["main"],
   "remote": {
     "urls": ["http://127.0.0.1:*"]
   },
-  "permissions": []
+  "permissions": [
+    "allow-update-status",
+    "allow-install-update",
+    "allow-export-data",
+    "allow-import-data",
+    "allow-set-autostart",
+    "allow-get-autostart"
+  ]
 }
