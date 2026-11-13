@@ -299,6 +299,35 @@ pub fn storage_set(key: &str, value: &str) {
     }
 }
 
+/// `sessionStorage.getItem` (lives as long as the tab); `None` when absent or blocked.
+pub fn session_get(key: &str) -> Option<String> {
+    web_sys::window()?
+        .session_storage()
+        .ok()??
+        .get_item(key)
+        .ok()?
+}
+
+/// `sessionStorage.setItem`; a blocked storage is ignored.
+pub fn session_set(key: &str, value: &str) {
+    if let Some(Some(s)) = web_sys::window().map(|w| w.session_storage().ok().flatten()) {
+        let _ = s.set_item(key, value);
+    }
+}
+
+/// `GET /api/standalone/status`: `Ok(None)` when the route answers 404 (box deployment, not standalone).
+pub async fn fetch_standalone_status() -> Result<Option<crate::standalone::Status>, String> {
+    const PATH: &str = "/api/standalone/status";
+    let r = Request::get(PATH).send().await.map_err(|e| e.to_string())?;
+    if r.status() == 404 {
+        return Ok(None);
+    }
+    if !r.ok() {
+        return Err(format!("{PATH} → {}", r.status()));
+    }
+    r.json().await.map(Some).map_err(|e| e.to_string())
+}
+
 /// `localStorage.removeItem`.
 pub fn storage_remove(key: &str) {
     if let Some(Some(s)) = web_sys::window().map(|w| w.local_storage().ok().flatten()) {

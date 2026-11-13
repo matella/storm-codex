@@ -10,7 +10,11 @@ use storm_web_core::{
     whatsnew::{entries_since, APP_VERSION},
 };
 
-use crate::ui::{provide_dim, provide_operator, provide_talents, Link};
+use crate::{
+    standalone::{provide_standalone, Standalone, UpdateBanner},
+    ui::{provide_dim, provide_operator, provide_talents, Link},
+};
+use storm_web_core::standalone::Phase;
 
 const ONBOARDING_KEY: &str = "onboarding_done";
 const WHATSNEW_KEY: &str = "whatsnew_seen";
@@ -35,6 +39,14 @@ pub fn Layout() -> impl IntoView {
     provide_talents();
     provide_dim(); // reference data (universe rings)
     provide_operator(); // operator names (operator perspective everywhere)
+
+    // desktop app: import status (404 on the box: nothing shown), first-load redirect to /welcome
+    let standalone = provide_standalone();
+    let importing = move || {
+        standalone
+            .status
+            .with(|s| s.as_ref().is_some_and(|s| s.phase != Phase::Ready))
+    };
 
     let bus = LiveBus {
         matches: RwSignal::new(0),
@@ -112,6 +124,11 @@ pub fn Layout() -> impl IntoView {
                             }
                         })
                         .collect_view()}
+                    <Show when=importing>
+                        <Link to="/welcome" class=Signal::derive(move || if tab_active(app_path(&loc.pathname.get()), "/welcome") { "on".to_string() } else { String::new() })>
+                            "Import"
+                        </Link>
+                    </Show>
                 </nav>
                 <span class="ds-help" title="Help / what's new" on:click=move |_| tour.set(true)>"?"</span>
                 <span class=move || if online.get() { "ds-live" } else { "ds-live off" }>
@@ -119,11 +136,12 @@ pub fn Layout() -> impl IntoView {
                     {move || if online.get() { "online" } else { "offline" }}
                 </span>
             </header>
+            <UpdateBanner />
             <main class="ds-shell">
                 {move || flash.get().map(|t| view! { <div class="ds-flash">{t}</div> })}
                 <Outlet />
             </main>
-            <Onboarding force=tour />
+            <Onboarding force=tour standalone=standalone />
             <WhatsNew />
         </div>
     }
@@ -147,7 +165,7 @@ fn Step(n: u32, title: &'static str, children: Children) -> impl IntoView {
 /// First-launch assistant (identity, uploader, OBS sources): shown until finished once, re-opened by the `?` button
 /// (`force`).
 #[component]
-fn Onboarding(force: RwSignal<bool>) -> impl IntoView {
+fn Onboarding(force: RwSignal<bool>, standalone: Standalone) -> impl IntoView {
     let open = RwSignal::new(net::storage_get(ONBOARDING_KEY).is_none());
     let close = move || {
         net::storage_set(ONBOARDING_KEY, "1");
@@ -155,7 +173,8 @@ fn Onboarding(force: RwSignal<bool>) -> impl IntoView {
         force.set(false);
     };
     view! {
-        <Show when=move || open.get() || force.get()>
+        // not over the desktop app's welcome screen: its steps (tokens, uploader) are the box setup
+        <Show when=move || (open.get() && standalone.known.get() && standalone.status.with(Option::is_none)) || force.get()>
             <div on:click=move |_| close() style=OVERLAY>
                 <div on:click=|e| e.stop_propagation() style="background: var(--surface); border: 1px solid var(--hairline-strong); border-radius: 14px; padding: 22px 26px; max-width: 560px; max-height: 82vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.6)">
                     <div style="display: flex; align-items: baseline; gap: 10px; margin-bottom: 16px">
