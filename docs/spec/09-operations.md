@@ -149,6 +149,55 @@ Postgres PID never signalled, password required and reused, wrong password fails
 dump/restore:
 `$env:PG_BIN_DIR = "$PWD\target\postgres\bin"; cargo test -p storm-codex-supervisor --test postgres_it`.
 
+**Desktop shell (`desktop/`, Tauri v2).** Not a workspace member (own `Cargo.lock`): checks are
+`cargo clippy --manifest-path desktop/Cargo.toml --all-targets -- -D warnings`,
+`cargo fmt --manifest-path desktop/Cargo.toml --check` and
+`cargo test --manifest-path desktop/Cargo.toml` (supervision order and failure paths with fakes,
+no Postgres needed).
+- **Folders.** Data root = Tauri `app_local_data_dir()` (`%LOCALAPPDATA%\com.matella.stormcodex`,
+  covered by the uninstaller's "delete app data" option): `pg/`, `pg-password`, `archive/`,
+  `raw-cache/`, `images/`, `logs/`, `uploaded.json`. Resources (next to the exe once packaged):
+  `storm-codex-server.exe`, `postgres/{bin,lib,share}`, `web/` (= `web-rs/dist`), `minimaps/`
+  (= `assets/minimaps`), `referential.tar.gz`.
+- **Start (`Stack::start`).** `DataDir::ensure` → Postgres port (`pick_port(54329)`) →
+  `clean_stale` → password check → `init_if_needed` → `start` → `ensure_database("storm_codex")`
+  → server port (`pick_port(8088)`) → spawn the server (no console window, cwd = data root,
+  stdout/stderr → `logs/server.log`, the previous run kept as `logs/server.prev.log`) → poll
+  `GET /api/health` until 200 (60 s). Server environment: `STANDALONE=1`,
+  `BIND_ADDR=127.0.0.1:<port>`, `DATABASE_URL` (holds the password: never logged),
+  `ARCHIVE_DIR`, `RAW_CACHE_DIR`, `IMAGES_DIR`, `LEDGER_FILE=<data>/uploaded.json`,
+  `WEB_DIR=<res>/web`, `MINIMAPS_BUNDLE_DIR=<res>/minimaps`,
+  `REFERENTIAL_FILE=<res>/referential.tar.gz`; inherited `REDIS_URL`, `JARVIS_CHANNEL`,
+  `ADMIN_TOKEN`, `HOTSPATCHNOTES_URL`, `REFERENTIAL_URL`, `ORPHEUS_URL`, `PATCH_WEBHOOK_URL`,
+  `AZURE_PUSH_*`, `RAW_CACHE_MAX_BYTES` are removed. Any failure stops what was started (server
+  killed, then Postgres stopped) and shows a native error dialog naming the log folder; the app
+  then exits. A cluster whose `pg-password` is missing is refused with a clear error (never
+  silently re-initialised).
+- **Stop (`Stack::stop`, idempotent).** `POST /api/standalone/shutdown` on
+  `http://127.0.0.1:<port>`, wait up to 20 s for the server to exit (its import task flushes the
+  ledger first, up to 10 s), kill it only as a last resort, **then** `pg_ctl stop -m fast`.
+  Called by tray **Quit**, `RunEvent::ExitRequested`/`Exit`, and the Windows session end
+  (`WM_ENDSESSION` on a hidden top-level window: a GUI process gets no console-control event).
+- **Hard kill of the shell.** The server is in a kill-on-close job object, so it dies with the
+  shell (no orphan holding the port or the ledger). Postgres keeps running until the next launch,
+  where `Postgres::start` finds it is ours and restarts it (the new port may differ).
+- **Windows and tray.** A small bundled `ui/loading.html` window shows during startup; once
+  healthy the `main` window opens on `http://127.0.0.1:<port>/` (`WebviewUrl::External`) and the
+  loading window is destroyed. The close button hides to the tray (the server keeps running for
+  OBS). Tray: left click shows/focuses the window; menu Open Storm Codex, Restart to update
+  (disabled until the updater enables it), Quit. One instance per user
+  (`tauri-plugin-single-instance`, registered first): a second launch focuses the first.
+- **IPC.** `app.withGlobalTauri: true` (the web UI detects `window.__TAURI__`).
+  `capabilities/default.json` grants the `main` window IPC from `http://127.0.0.1:*` only, with
+  no permission yet (the updater adds its commands). The loading window has no capability.
+- **Logs.** `logs/desktop.log` (shell), `logs/server.log`, `logs/postgres.log`,
+  `logs/pg_ctl.log`.
+- **Dev run (debug builds only, compiled out of release).** `STORM_CODEX_RESOURCE_DIR` replaces
+  the resource folder and `STORM_CODEX_DATA_ROOT` the data root, e.g. a scratch folder holding
+  the server exe, `postgres/` from `scripts/fetch-postgres.ps1`, `web/` and `minimaps/`:
+  `$env:STORM_CODEX_RESOURCE_DIR="<res>"; $env:STORM_CODEX_DATA_ROOT="<tmp>"; desktop\target\debug\storm-codex-desktop.exe`.
+  Icons in `desktop/icons/` are placeholders until packaging.
+
 ## External dependencies (all best-effort)
 
 | Service | Where | If missing |

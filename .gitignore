@@ -23,3 +23,6 @@ backups/
 # Rust front-end (web-rs)
 /web-rs/target/
 /web-rs/dist/
+
+# Tauri desktop shell: generated capability schemas
+/desktop/gen/
