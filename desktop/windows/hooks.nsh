@@ -43,8 +43,22 @@
   ${EndIf}
   ${If} ${FileExists} "$INSTDIR\postgres\bin\pg_ctl.exe"
   ${AndIf} ${FileExists} "$LOCALAPPDATA\${BUNDLEID}\pg\postmaster.pid"
-    nsExec::Exec '"$INSTDIR\postgres\bin\pg_ctl.exe" stop -D "$LOCALAPPDATA\${BUNDLEID}\pg" -m fast -w -t 30'
+    ; pg_ctl reads its arguments (and finds its own folder) in the ANSI code page: a profile
+    ; name outside it (e.g. Cyrillic on a Western Windows) must be passed as 8.3 short paths.
+    ; Without 8.3 names the long path is used (and fails for such names; the app's own
+    ; recovery at the next start still handles the cluster).
+    Push $2
+    GetFullPathName /SHORT $0 "$INSTDIR\postgres\bin"
+    ${If} $0 == ""
+      StrCpy $0 "$INSTDIR\postgres\bin"
+    ${EndIf}
+    GetFullPathName /SHORT $2 "$LOCALAPPDATA\${BUNDLEID}\pg"
+    ${If} $2 == ""
+      StrCpy $2 "$LOCALAPPDATA\${BUNDLEID}\pg"
+    ${EndIf}
+    nsExec::Exec '"$0\pg_ctl.exe" stop -D "$2" -m fast -w -t 30'
     Pop $0 ; exit code, ignored
+    Pop $2
   ${EndIf}
   Pop $1
   Pop $0

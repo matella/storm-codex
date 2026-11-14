@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Output, Stdio};
 use std::time::{Duration, Instant};
 
+use crate::toolpath::{ToolPathError, ToolPaths};
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 
 /// Postgres major version the bundled binaries and the data directory must share.
@@ -115,6 +116,8 @@ pub enum PgError {
         #[source]
         source: io::Error,
     },
+    #[error(transparent)]
+    ToolPath(#[from] ToolPathError),
     /// An imported dump holds objects the app never creates (refused, nothing changed).
     #[error("the backup's database holds objects Storm Codex never creates: {0}")]
     UnsafeDump(String),
@@ -145,6 +148,7 @@ pub struct Postgres {
     bin_dir: PathBuf,
     data_dir: PathBuf,
     port: u16,
+    tool_paths: ToolPaths,
 }
 
 impl Postgres {
@@ -153,7 +157,20 @@ impl Postgres {
             bin_dir,
             data_dir,
             port,
+            tool_paths: ToolPaths::system(),
         }
+    }
+
+    /// Replaces how paths are rewritten for the Postgres tools (tests and diagnosis; the
+    /// default is [`ToolPaths::system`]).
+    pub fn with_tool_paths(mut self, tool_paths: ToolPaths) -> Self {
+        self.tool_paths = tool_paths;
+        self
+    }
+
+    /// `path` in a form Postgres' narrow-char tools can read (see `toolpath.rs`).
+    fn tool_path(&self, path: &Path) -> Result<PathBuf, PgError> {
+        Ok(self.tool_paths.map(path)?)
     }
 
     /// Runs `initdb` unless the data directory already holds a cluster. Refuses a cluster of
@@ -167,7 +184,7 @@ impl Postgres {
         let pw_path = self.ensure_password_file()?;
         let mut cmd = initdb;
         cmd.arg("-D")
-            .arg(&self.data_dir)
+            .arg(self.tool_path(&self.data_dir)?)
             .args([
                 "-U",
                 PG_USER,
@@ -177,7 +194,7 @@ impl Postgres {
                 "UTF8",
                 "--locale=C",
             ])
-            .arg(format!("--pwfile={}", pw_path.display()));
+            .arg(format!("--pwfile={}", self.tool_path(&pw_path)?.display()));
         run(&mut cmd, "initdb", CLIENT_LIMIT)?;
         // No Unix-domain socket: the server is reached over TCP loopback only.
         let conf = self.data_dir.join("postgresql.conf");
@@ -218,9 +235,9 @@ impl Postgres {
         let err = out.try_clone().map_err(io_err(&out_path))?;
 
         cmd.args(["start", "-w", "-t", &PG_CTL_TIMEOUT_SECS.to_string(), "-D"])
-            .arg(&self.data_dir)
+            .arg(self.tool_path(&self.data_dir)?)
             .arg("-l")
-            .arg(logs.join("postgres.log"))
+            .arg(self.tool_path(&logs.join("postgres.log"))?)
             .arg("-o")
             .arg(format!("-p {} -c listen_addresses=127.0.0.1", self.port))
             .stdin(Stdio::null())
@@ -259,7 +276,7 @@ impl Postgres {
             &PG_CTL_TIMEOUT_SECS.to_string(),
             "-D",
         ])
-        .arg(&self.data_dir);
+        .arg(self.tool_path(&self.data_dir)?);
         let started = Instant::now();
         let out = output_limited(&mut cmd, "pg_ctl stop", PG_CTL_LIMIT)?;
         if out.status.success() {
@@ -309,7 +326,7 @@ impl Postgres {
     pub fn dump(&self, out: &Path) -> Result<(), PgError> {
         let mut cmd = self.client("pg_dump")?;
         cmd.args(["-d", APP_DATABASE, "-Fc", "--data-only", "-f"])
-            .arg(out);
+            .arg(self.tool_path(out)?);
         run(&mut cmd, "pg_dump", DUMP_LIMIT).map(|_| ())
     }
 
@@ -349,13 +366,13 @@ impl Postgres {
         before_restore: &dyn Fn(&str),
     ) -> Result<(), PgError> {
         let mut list_cmd = self.command("pg_restore")?;
-        list_cmd.arg("-l").arg(file);
+        list_cmd.arg("-l").arg(self.tool_path(file)?);
         let list = run(&mut list_cmd, "pg_restore -l", CLIENT_LIMIT)?;
         let entries = toc_data_entries(&list).map_err(|r| PgError::UnsafeDump(r.join(", ")))?;
         let mut ledger_cmd = self.command("pg_restore")?;
         ledger_cmd
             .args(["--data-only", "-t", MIGRATIONS_TABLE, "-f", "-"])
-            .arg(file);
+            .arg(self.tool_path(file)?);
         let ledger = parse_ledger(&run(&mut ledger_cmd, "pg_restore -t", CLIENT_LIMIT)?)
             .map_err(PgError::IncompatibleBackup)?;
         let target = ledger.iter().map(|(v, _)| *v).max().ok_or_else(|| {
@@ -434,8 +451,8 @@ impl Postgres {
             "--single-transaction",
             "-L",
         ])
-        .arg(list_file)
-        .arg(file);
+        .arg(self.tool_path(list_file)?)
+        .arg(self.tool_path(file)?);
         run(&mut cmd, "pg_restore", DUMP_LIMIT)?;
         self.check_staged()?;
         self.drop_import_role()?;
@@ -541,7 +558,7 @@ impl Postgres {
         write_private(&path, &sql).map_err(io_err(&path))?;
         let mut cmd = self.client("psql")?;
         cmd.args(["-d", "postgres", "-X", "-q", "-v", "ON_ERROR_STOP=1", "-f"])
-            .arg(&path);
+            .arg(self.tool_path(&path)?);
         let result = run(&mut cmd, "psql", CLIENT_LIMIT).map(|_| ());
         let _ = std::fs::remove_file(&path);
         result
@@ -707,7 +724,9 @@ impl Postgres {
         if !exe.is_file() {
             return Err(PgError::MissingBinary(exe));
         }
-        let mut cmd = Command::new(exe);
+        // The tool finds `share/` from its own (narrow) module path: start it by a path that
+        // fits the ANSI code page.
+        let mut cmd = Command::new(self.tool_path(&exe)?);
         for var in PG_ENV_VARS {
             cmd.env_remove(var);
         }

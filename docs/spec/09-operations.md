@@ -125,6 +125,31 @@ Upgrading the minor version = change both lines in the same commit; the major st
 `std::process::Command` (no shell, no console window on Windows, inherited `PG*` variables removed,
 `LC_MESSAGES=C`), each with a wall-clock limit (pg_ctl 90 s, psql/createdb 60 s, dump/restore
 30 min) after which the process is killed and `PgError::Timeout` is returned.
+- **Paths outside the ANSI code page (`toolpath.rs`, `ToolPaths`).** Postgres for Windows is a
+  narrow-char program: its `argv` is converted to the system ANSI code page and it finds `share/`
+  through its own module path, so a Windows user named in a script outside that code page
+  (Cyrillic on a Western Windows) put both the installed binaries and the data root out of reach
+  (`initdb` failed: "could not open file …\????…\pg-password", or "invalid binary"). Every path
+  given to a Postgres tool, **the executable included**, goes through `ToolPaths::map`: (1) kept
+  when every character fits the code page (`WideCharToMultiByte`, `WC_NO_BEST_FIT_CHARS`; an
+  ANSI code page of UTF-8 fits everything); (2) else its 8.3 short form (`GetShortPathNameW` of
+  the deepest existing ancestor + the missing tail); (3) else (8.3 names disabled on the volume,
+  or the folder created while they were) a **directory junction** `%ProgramData%\StormCodex-<user
+  SID>\<16 hex FNV-1a of the folder>` → the deepest folder whose name does not fit, plus the rest
+  of the path. That alias folder is created by the app with owner = the user and a **protected
+  DACL** (the user and SYSTEM only), and refused ("not this user's private folder") if it exists
+  with another owner or an inherited DACL, so no other account can plant or redirect a junction; a
+  junction of ours pointing elsewhere is replaced. The junction holds no data: the cluster, logs,
+  dumps and archive stay in the data root, so export/import, the uninstaller's delete-data option
+  and a later change between the three forms (e.g. 8.3 names turned off) see the same files.
+  Ownership (`postmaster.pid`) compares canonical paths, which resolve short names and junctions:
+  a postmaster started through either form is still recognised as ours. Tests: `toolpath`
+  unit tests (short form, forced junction, reuse, replacement, refused non-private alias folder)
+  and ITs `data_root_outside_the_ansi_code_page_works`, `binaries_outside_the_ansi_code_page_work`
+  (binaries copied under a Cyrillic folder), `without_short_names_a_junction_alias_is_used_and_modes_can_switch`.
+  The NSIS hooks pass `pg_ctl` and the cluster as short paths too (`GetFullPathName /SHORT`; with
+  8.3 names disabled they fall back to the long path, which fails for such names: the app's next
+  start still recovers the cluster).
 - **Authentication: generated password.** On first init a random password (32 bytes from the OS
   CSPRNG, hex) is written to `<data root>/pg-password`, next to (not inside) the cluster
   directory, and reused afterwards. `initdb -U storm -A scram-sha-256 --pwfile=<that file>

@@ -4,6 +4,7 @@ mod datadir;
 mod disk;
 mod ports;
 mod postgres;
+mod toolpath;
 
 pub use datadir::DataDir;
 pub use disk::{check_free_space, free_space, required_free_bytes, DiskError};
@@ -12,3 +13,4 @@ pub use postgres::{
     Migrate, PgError, Postgres, APP_DATABASE, IMPORT_ROLE, MIGRATIONS_TABLE, PREVIOUS_DATABASE,
     STAGING_DATABASE,
 };
+pub use toolpath::{ToolPathError, ToolPaths};

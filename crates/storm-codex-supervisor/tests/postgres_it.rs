@@ -12,7 +12,7 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use storm_codex_supervisor::{
-    DataDir, PgError, Postgres, APP_DATABASE, IMPORT_ROLE, PREVIOUS_DATABASE,
+    DataDir, PgError, Postgres, ToolPaths, APP_DATABASE, IMPORT_ROLE, PREVIOUS_DATABASE,
 };
 use sysinfo::{Pid, ProcessesToUpdate, System};
 
@@ -281,6 +281,102 @@ fn data_dir_with_spaces_and_accents_works() {
         sys.process(Pid::from_u32(postmaster)).is_none(),
         "postmaster must be gone after stop"
     );
+}
+
+/// Full cycle (init, start, query, ownership check, stop) on `pg`, whose data root is `data`.
+fn full_cycle(bin: &Path, data: &DataDir, pg: &Postgres) {
+    pg.clean_stale().expect("clean_stale");
+    pg.init_if_needed().expect("init");
+    pg.start().expect("start");
+    let running = Running(pg);
+    assert!(data.logs().join("postgres.log").is_file(), "server log");
+    pg.ensure_database(APP_DATABASE).expect("ensure_database");
+    assert_eq!(psql(bin, pg, APP_DATABASE, "SELECT 40 + 2"), "42");
+    // the running server is recognised as ours whatever path form it was started with
+    pg.clean_stale().expect("clean_stale while running");
+    assert!(data.pg().join("postmaster.pid").exists());
+    let out = data.logs().join("dump.bin");
+    pg.dump(&out).expect("dump");
+    assert!(out.is_file());
+    drop(running);
+    assert!(!data.pg().join("postmaster.pid").exists());
+}
+
+/// Copies `bin/`, `lib/` and `share/` of the Postgres install holding `bin` under `dest`;
+/// returns the copied `bin/`.
+fn copy_postgres(bin: &Path, dest: &Path) -> PathBuf {
+    fn copy_dir(from: &Path, to: &Path) {
+        std::fs::create_dir_all(to).expect("mkdir");
+        for entry in std::fs::read_dir(from).expect("read_dir") {
+            let entry = entry.expect("entry");
+            let target = to.join(entry.file_name());
+            if entry.file_type().expect("type").is_dir() {
+                copy_dir(&entry.path(), &target);
+            } else {
+                std::fs::copy(entry.path(), &target).expect("copy");
+            }
+        }
+    }
+    let install = bin.parent().expect("bin has a parent");
+    for part in ["bin", "lib", "share"] {
+        copy_dir(&install.join(part), &dest.join(part));
+    }
+    dest.join("bin")
+}
+
+/// A Windows profile named in a script outside the ANSI code page (Cyrillic on a Western
+/// Windows): Postgres' tools receive narrow `argv`, so the data root must reach them in a form
+/// that survives the code page.
+#[test]
+fn data_root_outside_the_ansi_code_page_works() {
+    let Some(bin) = bin_dir() else { return };
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().join("Пользователь é").join("Данные");
+    let (data, pg) = layout(&root, bin.clone());
+    full_cycle(&bin, &data, &pg);
+}
+
+/// Same, with the Postgres binaries themselves under such a folder (the installer puts them
+/// in the user's `%LOCALAPPDATA%`): Postgres finds `share/` from its own module path.
+#[test]
+fn binaries_outside_the_ansi_code_page_work() {
+    let Some(bin) = bin_dir() else { return };
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let profile = tmp.path().join("Пользователь");
+    let cyr_bin = copy_postgres(&bin, &profile.join("Programs").join("postgres"));
+    let (data, pg) = layout(&profile.join("Data"), cyr_bin);
+    full_cycle(&bin, &data, &pg);
+}
+
+/// Volumes without 8.3 names: the tools go through a private junction. The cluster stays in
+/// the data root (the same files with or without the junction), and a cluster made through the
+/// junction is then run through short names, and back, with nothing lost.
+#[test]
+fn without_short_names_a_junction_alias_is_used_and_modes_can_switch() {
+    let Some(bin) = bin_dir() else { return };
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let profile = tmp.path().join("Пользователь");
+    let cyr_bin = copy_postgres(&bin, &profile.join("Programs").join("postgres"));
+    let root = profile.join("Data");
+    let alias = ToolPaths::new(false, tmp.path().join("alias"));
+    let (data, pg) = layout(&root, cyr_bin.clone());
+    let pg = pg.with_tool_paths(alias.clone());
+    full_cycle(&bin, &data, &pg);
+    assert!(
+        data.pg().join("PG_VERSION").is_file(),
+        "the cluster lives in the data root, not in the alias folder"
+    );
+    // the same cluster with the default (short names) mode, then the alias again
+    let (_, pg_short) = layout(&root, cyr_bin.clone());
+    pg_short.start().expect("start with short names");
+    let running = Running(&pg_short);
+    assert_eq!(psql(&bin, &pg_short, APP_DATABASE, "SELECT 1"), "1");
+    drop(running);
+    let (_, pg_alias) = layout(&root, cyr_bin);
+    let pg_alias = pg_alias.with_tool_paths(alias);
+    pg_alias.start().expect("start through the alias again");
+    let _running = Running(&pg_alias);
+    assert_eq!(psql(&bin, &pg_alias, APP_DATABASE, "SELECT 1"), "1");
 }
 
 #[test]

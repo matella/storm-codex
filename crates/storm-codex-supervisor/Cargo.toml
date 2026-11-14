@@ -14,6 +14,19 @@ getrandom = "0.3"
 sysinfo = { version = "0.38", default-features = false, features = ["system"] }
 thiserror = "2"
 
+# Paths for Postgres' narrow-char tools (short names, code-page check, private junction
+# folder); same version the desktop shell already uses.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Globalization",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_Storage_FileSystem",
+  "Win32_System_IO",
+  "Win32_System_Threading",
+] }
+
 [dev-dependencies]
 tempfile = "3"
 
