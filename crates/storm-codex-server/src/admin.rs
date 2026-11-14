@@ -166,8 +166,8 @@ pub async fn reprocess(State(s): State<AppState>, headers: HeaderMap) -> (Status
 }
 
 async fn reprocess_one(state: &AppState, upload_id: i64, path: &str) {
-    let p = std::path::PathBuf::from(path);
-    let fname = path.to_owned();
+    let p = state.cfg.archived_file(path);
+    let fname = p.to_string_lossy().into_owned();
     let out =
         match tokio::task::spawn_blocking(move || storm_stats::process_replay(&p, &fname)).await {
             Ok(out) => out,

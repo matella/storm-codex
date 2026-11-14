@@ -9,7 +9,7 @@ re-process) + **promoted scalar columns** for the hot filter/sort axes (indexed)
 | Table | Role | Key points |
 |---|---|---|
 | `upload_tokens` | personal upload tokens | `token_hash` = hex SHA-256 (never the plaintext); `revoked_at` |
-| `uploads` | 1 row per received file (traceability) | `fingerprint` (content, UNIQUE), `archived_path`, `status` ∈ pending/parsed/duplicate/parse_failed, `error_class`/`error_msg`, `parser_version`, `match_id` → matches (0002) |
+| `uploads` | 1 row per received file (traceability) | `fingerprint` (content, UNIQUE), `archived_path` (see "Archived paths"), `status` ∈ pending/parsed/duplicate/parse_failed, `error_class`/`error_msg`, `parser_version`, `match_id` → matches (0002) |
 | `matches` | projection of a game | `fingerprint` (game, UNIQUE), promoted scalars (build, mode, map, length, played_at, winner, first_*), **`data` = complete storm-stats `match` object** (except the heroes in `takedowns`: played hero, see `04-serveur.md` § Played-hero correction), `parser_version` |
 | `match_players` | 10 rows per match | promoted scalars (hero, team, win, kills…), **`data` = complete `player` object** — `hero` and the heroes copied into `deaths`/`takedowns` = played hero (talents), original in `heroCorrectedFrom` —, UNIQUE (match_id, toon_handle), CASCADE; **`hotkey_profile`** (migration 0015) = `SUserOptionsEvent.m_hotkeyProfile`, the player's hotkey profile name (index on `lower(btrim(…))`); NULL until the replay is re-processed (`PARSER_VERSION` 3); **`apm`** (migration 0016, `DOUBLE PRECISION`) = the player's SCmdEvents ÷ game minutes (`matches.length`), NULL until re-processed (`PARSER_VERSION` 4) or unknown duration |
 | `players` | aggregated player reference | `toon_handle` PK, `last_name`, `names` (JSONB aliases) — denormalised, best-effort, derivable from `match_players`. **Neither `last_name` nor the order of `names` is chronological** (UPSERT in processing order): the current name and the order of names come from the **dated history** `match_players.name` × `matches.played_at` (`players/names.rs`; NULL `played_at` = oldest) |
@@ -62,9 +62,19 @@ personal stats tables: an opponent's replay is never projected into `matches`.
 | Table | Role | Key points |
 |---|---|---|
 | `scouting_reports` | a report | `title`, `target_name`, `roster`/`anchors` (JSONB of toon_handles; roster `[]` = auto detection), `facts` = snapshot `{facts, detection, roster, roster_auto}` recomputed on every mutation, `facts_version`, `analysis` (normalised JSON, only one, overwritable) + `analysis_facts_version` / `analysis_model` / `analysis_imported_at` |
-| `scouting_games` | one replay of a report | UNIQUE `(report_id, fingerprint)`, `file_sha256`, `archived_path` (`ARCHIVE_DIR/scouting/`), `target_team` + `target_source` (`roster`/`anchor`/`manual`), **`summary`** = compact summary (the only input to the facts computation), `data` = complete storm-stats output, `parser_version`; CASCADE from the report |
+| `scouting_games` | one replay of a report | UNIQUE `(report_id, fingerprint)`, `file_sha256`, `archived_path` (`ARCHIVE_DIR/scouting/`, see "Archived paths"), `target_team` + `target_source` (`roster`/`anchor`/`manual`), **`summary`** = compact summary (the only input to the facts computation), `data` = complete storm-stats output, `parser_version`; CASCADE from the report |
 
 A report's status (`empty`/`ready`/`analyzed`/`stale`) is **derived**, never stored.
+
+### Archived paths
+
+`uploads.archived_path` and `scouting_games.archived_path` are written **relative to
+`ARCHIVE_DIR`**: `<sha256>.StormReplay` and `scouting/<sha256>.StormReplay`
+(`Config::archive_entry` / `scouting_entry`). Rows written before (box history, backups made
+on another PC) hold an absolute path. Every reader goes through `Config::archived_file`: an
+absolute path that exists is used as is; otherwise the file is looked up by its name under the
+current `ARCHIVE_DIR` (`scouting/` kept, `/` or `\` separators), so a backup restored on
+another PC or Windows user profile keeps working without rewriting rows (no migration).
 
 ## Conventions for any new migration
 

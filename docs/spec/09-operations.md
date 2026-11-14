@@ -394,6 +394,12 @@ fresh migrated cluster → import.
        A swap whose rollback rename fails too (the replays only in `archive.old`) also keeps
        the journal and the staging database and leaves the server stopped: the next start
        rolls back. Only the cases that really changed nothing say "nothing was changed".
+    **Another PC or user profile.** The rows keep the `archived_path` they were exported
+    with (absolute on data archived before the standalone app, e.g.
+    `C:\Users\<old user>\…\archive\<sha>.StormReplay`); the server resolves every archived
+    path under its own `ARCHIVE_DIR` by file name (`Config::archived_file`, see
+    06-modele-donnees), so the raw dump, the 2D viewer, the resume of `pending` uploads and
+    re-processing find the restored replays. No row is rewritten.
     7. **Crash recovery** (`backup::recover_import`, every start, after Postgres and before
        the server): journal + staging database → not promoted: roll back (`archive.old` put
        back, journal removed, staging dropped); journal without staging database → promoted:

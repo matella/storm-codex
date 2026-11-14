@@ -400,7 +400,7 @@ pub async fn add_replay(
     }
 
     // archive first (source of truth), like the main upload
-    let dir = s.cfg.archive_dir.join("scouting");
+    let dir = s.cfg.archive_dir.join(crate::config::SCOUTING_DIR);
     let path = dir.join(format!("{sha}.StormReplay"));
     let written = async {
         tokio::fs::create_dir_all(&dir).await?;
@@ -436,7 +436,7 @@ pub async fn add_replay(
     .bind(id)
     .bind(&fp)
     .bind(&sha)
-    .bind(path.to_string_lossy().as_ref())
+    .bind(crate::config::Config::scouting_entry(&sha))
     .bind(filename)
     .bind(sum.date.as_deref())
     .bind(&sum.map)
@@ -689,8 +689,9 @@ pub async fn reprocess_stale(s: &AppState) -> usize {
     let n = targets.len();
     let mut reports = std::collections::BTreeSet::new();
     for (gid, rid, path, name) in targets {
-        let p = std::path::PathBuf::from(&path);
-        match parse(s, p, name.unwrap_or(path)).await {
+        let p = s.cfg.archived_file(&path);
+        let name = name.unwrap_or_else(|| p.to_string_lossy().into_owned());
+        match parse(s, p, name).await {
             Ok((out, sum, _)) => {
                 match sqlx::query(
                     "UPDATE scouting_games SET summary = $2, data = $3, parser_version = $4 WHERE id = $1",

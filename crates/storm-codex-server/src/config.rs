@@ -1,6 +1,9 @@
 //! Configuration through environment variables (V2-ready: stateless server, everything through env).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+/// Sub-folder of `ARCHIVE_DIR` holding the scouting replays.
+pub const SCOUTING_DIR: &str = "scouting";
 
 #[derive(Clone)]
 pub struct Config {
@@ -115,6 +118,40 @@ impl Config {
         }
     }
 
+    /// Where the archived file of a row (`uploads.archived_path`, `scouting_games.archived_path`)
+    /// is now. New rows hold a path relative to `ARCHIVE_DIR` ([`Config::archive_entry`],
+    /// [`Config::scouting_entry`]); older rows hold the absolute path of the PC (or box) that
+    /// archived them. An absolute path that exists is used as is; otherwise the file is looked up
+    /// by its name under the current archive (`scouting/` kept), whatever the separator: a
+    /// backup restored on another PC or user profile keeps working without rewriting rows.
+    pub fn archived_file(&self, stored: &str) -> PathBuf {
+        let path = Path::new(stored);
+        if path.is_absolute() && path.exists() {
+            return path.to_path_buf();
+        }
+        let mut parts = stored.rsplit(['/', '\\']).filter(|p| !p.is_empty());
+        let name = parts.next().unwrap_or_default();
+        if name.is_empty() || name == "." || name == ".." {
+            return path.to_path_buf();
+        }
+        match parts.next() {
+            Some(SCOUTING_DIR) => self.archive_dir.join(SCOUTING_DIR).join(name),
+            _ => self.archive_dir.join(name),
+        }
+    }
+
+    /// `archived_path` written for an upload whose content hash is `hash` (relative to
+    /// `ARCHIVE_DIR`).
+    pub fn archive_entry(hash: &str) -> String {
+        format!("{hash}.StormReplay")
+    }
+
+    /// `archived_path` written for a scouting replay whose content hash is `hash` (relative to
+    /// `ARCHIVE_DIR`).
+    pub fn scouting_entry(hash: &str) -> String {
+        format!("{SCOUTING_DIR}/{hash}.StormReplay")
+    }
+
     /// Upload ledger file: `LEDGER_FILE`, otherwise `<data_dir>/uploaded.json`.
     pub fn ledger_path(&self) -> PathBuf {
         self.ledger_file
@@ -138,6 +175,7 @@ impl Config {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 
@@ -185,6 +223,48 @@ mod tests {
         assert_eq!(c.ledger_path(), PathBuf::from("data").join("uploaded.json"));
         c.ledger_file = Some(PathBuf::from("elsewhere.json"));
         assert_eq!(c.ledger_path(), PathBuf::from("elsewhere.json"));
+    }
+
+    /// Archived replays are found under the current `ARCHIVE_DIR` whatever path a row holds:
+    /// relative (written since the standalone app), or absolute from another PC or user
+    /// profile (a restored backup).
+    #[test]
+    fn archived_paths_resolve_under_the_current_archive() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut c = cfg("127.0.0.1:0", true);
+        c.archive_dir = tmp.path().join("archive");
+        std::fs::create_dir_all(&c.archive_dir).unwrap();
+        let a = c.archive_dir.clone();
+        assert_eq!(c.archived_file("ab.StormReplay"), a.join("ab.StormReplay"));
+        assert_eq!(
+            c.archived_file("scouting/cd.StormReplay"),
+            a.join("scouting").join("cd.StormReplay")
+        );
+        // another PC's absolute paths (Windows and Unix spellings), missing here
+        assert_eq!(
+            c.archived_file(
+                r"C:\Users\Old\AppData\Local\com.matella.stormcodex\archive\ab.StormReplay"
+            ),
+            a.join("ab.StormReplay")
+        );
+        assert_eq!(
+            c.archived_file(
+                r"C:\Users\Old\AppData\Local\com.matella.stormcodex\archive\scouting\cd.StormReplay"
+            ),
+            a.join("scouting").join("cd.StormReplay")
+        );
+        assert_eq!(
+            c.archived_file("/data/archive/scouting/cd.StormReplay"),
+            a.join("scouting").join("cd.StormReplay")
+        );
+        // an absolute path that exists is kept (an archive moved by hand on the box)
+        let elsewhere = tmp.path().join("elsewhere.StormReplay");
+        std::fs::write(&elsewhere, b"x").unwrap();
+        let stored = elsewhere.to_string_lossy().into_owned();
+        assert_eq!(c.archived_file(&stored), elsewhere);
+        // what is stored for new files
+        assert_eq!(Config::archive_entry("ab"), "ab.StormReplay");
+        assert_eq!(Config::scouting_entry("cd"), "scouting/cd.StormReplay");
     }
 
     #[test]

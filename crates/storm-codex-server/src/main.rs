@@ -1696,6 +1696,33 @@ pub(crate) mod api_tests {
         assert_eq!(v["status"], "parsed", "response: {v}");
         let match_id = v["match_id"].as_i64().expect("match_id");
 
+        // stored relative to ARCHIVE_DIR; a row restored from another PC's backup (absolute
+        // path of that PC, missing here) still finds the file in this archive
+        let stored: String =
+            sqlx::query_scalar("SELECT archived_path FROM uploads WHERE fingerprint = $1")
+                .bind(&hash)
+                .fetch_one(&state.db)
+                .await
+                .unwrap();
+        assert_eq!(stored, format!("{hash}.StormReplay"));
+        sqlx::query("UPDATE uploads SET archived_path = $2 WHERE fingerprint = $1")
+            .bind(&hash)
+            .bind(format!(
+                r"C:\Users\OldPc\AppData\Local\com.matella.stormcodex\archive\{hash}.StormReplay"
+            ))
+            .execute(&state.db)
+            .await
+            .unwrap();
+        let resp = app(&state)
+            .oneshot(
+                Request::get(format!("/api/matches/{match_id}/raw?stream=header"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "raw from a restored row");
+
         // reading the detail: {match, players} shape, messages present (chat + pings)
         let resp = app(&state)
             .oneshot(
