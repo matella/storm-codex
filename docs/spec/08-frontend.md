@@ -107,7 +107,7 @@ bundle), hence two bundles: an OBS source only loads the bundle of its family. O
 Contract with the server: `GET /api/standalone/status`, `PUT /api/standalone/folders`, `POST /api/standalone/rescan`
 (`04-serveur.md`, "Standalone import"). Types and pure helpers in `web-rs/core/src/standalone.rs` (native tests: `Status`
 deserialisation, `progress_percent`, `phase_message`, `redirects_to_welcome`, `poll_ms`, `human_bytes`, folder list add/remove,
-`error_message`, `parse_update_status`, `BackupAction`, `backup_outcome`, `reloads_after`); app side in `web-rs/app/src/standalone.rs` and `pages/welcome.rs`.
+`error_message`, `parse_update_status`, `BackupAction`, `backup_outcome`, `reloads_after`, `reprocess_message`); app side in `web-rs/app/src/standalone.rs` and `pages/welcome.rs`.
 
 - **Detection.** The layout reads the status **once** at startup (`provide_standalone`). A 404 (box deployment) or any failure
   leaves the status empty: no nav entry, no section, no banner, no poll — the box makes exactly one extra request per app load.
@@ -119,7 +119,10 @@ deserialisation, `progress_percent`, `phase_message`, `redirects_to_welcome`, `p
   (duplicates), rejected, failed; collapsible lists of rejected replays (file — reason) and failed uploads. `no-folders` and
   `disk-full` are states, not errors: `no-folders` shows the folder editor ("No replays found: add a folder…"), `disk-full`
   shows free vs needed space in human units (`human_bytes`, binary multiples labelled KB/MB/GB) and a "Rescan now" button;
-  `error` shows a clear message in the error colour. "Continue to the app" and "Settings" links.
+  `error` shows a clear message in the error colour. While the server re-processes the stored replays after an update
+  (`reprocessDone < reprocessTotal`), a second line says "Updating your stats for this version: N of M replays. Pages may
+  show older numbers until then." (`reprocess_message`; absent fields from older servers read as 0). "Continue to the
+  app" and "Settings" links.
 - **Polling** (`use_status_poll`): only while `/welcome` or the "This PC" section is mounted, every 1 s while the phase is
   `seeding`/`importing`, every 10 s otherwise; stops when the page is left (`on_cleanup` flag) and for good on a 404.
 - **Settings "This PC"** (last numbered section of `/admin`, standalone only): **Scanned folders** (`status.folders`, read-only:

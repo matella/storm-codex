@@ -86,6 +86,11 @@ pub struct Status {
     pub needed_bytes: Option<u64>,
     pub data_dir: String,
     pub version: &'static str,
+    /// Stored replays parsed by an older parser, re-processed in the background after an
+    /// update (0 when none).
+    pub reprocess_total: usize,
+    /// Of `reprocess_total`, those already re-processed (successfully or not).
+    pub reprocess_done: usize,
 }
 
 /// Outcomes of the live watcher since the current backfill run started.
@@ -128,6 +133,8 @@ pub struct StandaloneState {
     detector: Detector,
     /// `upload_tokens.name` of the watcher's token ([`token::TOKEN_NAME`]).
     token_name: String,
+    /// Background re-process after a parser bump: (total, done).
+    reprocess: Mutex<(usize, usize)>,
 }
 
 impl StandaloneState {
@@ -152,6 +159,7 @@ impl StandaloneState {
             free_space: Arc::new(storm_codex_supervisor::free_space),
             detector: Arc::new(storm_codex_watcher::detector::detect_replay_dirs),
             token_name: token::TOKEN_NAME.to_string(),
+            reprocess: Mutex::new((0, 0)),
         }
     }
 
@@ -188,6 +196,7 @@ impl StandaloneState {
         let view = lock(&self.view);
         let progress = lock(&self.progress).clone();
         let live = lock(&self.live);
+        let (reprocess_total, reprocess_done) = *lock(&self.reprocess);
         let rejected = progress
             .rejected_files()
             .into_iter()
@@ -217,7 +226,20 @@ impl StandaloneState {
             needed_bytes: view.needed_bytes,
             data_dir: self.data_dir.to_string_lossy().into_owned(),
             version: env!("CARGO_PKG_VERSION"),
+            reprocess_total,
+            reprocess_done,
         }
+    }
+
+    /// Starts counting a background re-process of `total` uploads.
+    pub(crate) fn start_reprocess(&self, total: usize) {
+        *lock(&self.reprocess) = (total, 0);
+    }
+
+    /// One upload of the background re-process handled.
+    pub(crate) fn reprocess_step(&self) {
+        let mut r = lock(&self.reprocess);
+        r.1 = (r.1 + 1).min(r.0);
     }
 
     pub(crate) fn set_phase(&self, phase: Phase) {

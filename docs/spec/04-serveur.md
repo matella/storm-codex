@@ -63,6 +63,15 @@ once the listener is bound (`/api/health` answers 200 during the whole sequence)
 
 1. **seed** the reference data from `REFERENTIAL_FILE` when `dim_heroes` is empty or the bundled
    file differs from the one last ingested (an app update ships a newer one) (phase `seeding`);
+   then, in a background task beside the import, the **re-process after an update**: every
+   upload `parsed` with `parser_version < PARSER_VERSION` is re-parsed and re-projected
+   (`admin::outdated_uploads` + `admin::reprocess_one`, one `parse_sem` permit each, so it
+   shares the parse budget with the uploads), then the outdated scouting replays
+   (`scouting::api::reprocess_stale`). Progress in the status (`reprocessTotal`,
+   `reprocessDone`; `0`/`0` when nothing is outdated). It stops between two replays on
+   shutdown; the rest is picked up at the next start (the query is the criterion). Rows
+   `parse_failed` are not retried automatically (they would be re-parsed at every start):
+   `POST /api/admin/reprocess` still retries them;
 2. **detect** the folders: every `Documents/Heroes of the Storm/Accounts/*/*/Replays/Multiplayer`
    (known-folder API, OneDrive-relocated Documents included) plus the extra folders saved in
    `app_settings.standalone_extra_folders`; each extra folder is expanded to the folders under it
@@ -106,7 +115,7 @@ awaited for at most 10 s (then aborted) before the HTTP server drains and `run()
 
 | Route | Answer |
 |---|---|
-| `GET /api/standalone/status` | `{phase, folders, extraFolders, total, done, duplicates, rejected: [{file, reason}], failed: [file], freeBytes, neededBytes, dataDir, version}` — `phase` ∈ `seeding`, `importing`, `ready`, `no-folders`, `disk-full`, `error`; `folders` = effective folders (detected + replay folders found under each extra); `extraFolders` = the extra folders exactly as saved (the raw list `PUT /folders` replaces, loaded from `app_settings` before the server listens — so already right during `seeding` — and updated on each `PUT`; a refused `PUT` (400) changes nothing; `[]` when none) — clients edit this list, never `folders`; `freeBytes`/`neededBytes` `null` before the first disk gate; `dataDir` = parent of `ARCHIVE_DIR`; `version` = server crate version |
+| `GET /api/standalone/status` | `{phase, folders, extraFolders, total, done, duplicates, rejected: [{file, reason}], failed: [file], freeBytes, neededBytes, dataDir, version, reprocessTotal, reprocessDone}` — `phase` ∈ `seeding`, `importing`, `ready`, `no-folders`, `disk-full`, `error`; `folders` = effective folders (detected + replay folders found under each extra); `extraFolders` = the extra folders exactly as saved (the raw list `PUT /folders` replaces, loaded from `app_settings` before the server listens — so already right during `seeding` — and updated on each `PUT`; a refused `PUT` (400) changes nothing; `[]` when none) — clients edit this list, never `folders`; `freeBytes`/`neededBytes` `null` before the first disk gate; `dataDir` = parent of `ARCHIVE_DIR`; `version` = server crate version; `reprocessTotal` / `reprocessDone` = background re-process after a parser bump (step 1) |
 | `PUT /api/standalone/folders` | body `{folders: [path]}` replaces the extra folders (send `extraFolders` ± one path). Each must be an existing directory, else **400** `{error: "not an existing folder: …"}`; only directory listings are read. Saved and resolved, then the watcher restarts and a rescan runs; answers the new status |
 | `POST /api/standalone/rescan` | **202**; re-runs the disk gate and the backfill |
 | `POST /api/standalone/shutdown` | **202**; same graceful shutdown as Ctrl-C (used by the desktop shell before it stops Postgres) |

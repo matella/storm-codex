@@ -165,7 +165,21 @@ pub async fn reprocess(State(s): State<AppState>, headers: HeaderMap) -> (Status
     )
 }
 
-async fn reprocess_one(state: &AppState, upload_id: i64, path: &str) {
+/// Uploads parsed by an older parser (`parsed`, `parser_version < PARSER_VERSION`): what the
+/// standalone server re-processes by itself after an update (failures are not retried there,
+/// they would be re-parsed at every start; `POST /api/admin/reprocess` still does).
+pub(crate) async fn outdated_uploads(db: &sqlx::PgPool) -> Result<Vec<(i64, String)>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT id, archived_path FROM uploads
+         WHERE archived_path IS NOT NULL AND status = 'parsed' AND parser_version < $1
+         ORDER BY id",
+    )
+    .bind(PARSER_VERSION)
+    .fetch_all(db)
+    .await
+}
+
+pub(crate) async fn reprocess_one(state: &AppState, upload_id: i64, path: &str) {
     let p = state.cfg.archived_file(path);
     let fname = p.to_string_lossy().into_owned();
     let out =

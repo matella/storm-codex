@@ -99,6 +99,9 @@ impl Orchestrator {
             () = seed_reference_data(&self.app) => {},
             () = st.stopping() => return,
         }
+        // after the seed (projection reads the reference data); runs beside the import
+        let app = self.app.clone();
+        tokio::spawn(async move { reprocess_outdated(&app).await });
 
         let extras = load_extra_folders(&self.app.db).await;
         self.st.set_extra_folders(
@@ -324,6 +327,48 @@ fn open_ledger(path: &Path) -> io::Result<Ledger> {
             Ledger::open(path)
         }
         other => other,
+    }
+}
+
+/// After an update that raised `PARSER_VERSION`: re-processes, in the background and bounded
+/// by `parse_sem`, the stored replays parsed by an older parser (uploads, then scouting), with
+/// the progress in the status (`reprocessTotal` / `reprocessDone`). Idempotent (`project_match`
+/// replaces); stops between two replays on shutdown, the rest is picked up at the next start.
+pub(super) async fn reprocess_outdated(app: &AppState) {
+    let Some(st) = app.standalone.clone() else {
+        return;
+    };
+    let targets = match crate::admin::outdated_uploads(&app.db).await {
+        Ok(targets) => targets,
+        Err(e) => {
+            tracing::error!("re-process after update: selection failed: {e}");
+            return;
+        }
+    };
+    if !targets.is_empty() {
+        tracing::info!(
+            "re-processing {} replay(s) parsed by an older parser",
+            targets.len()
+        );
+    }
+    st.start_reprocess(targets.len());
+    for (upload_id, path) in targets {
+        let one = async {
+            let _permit = app.parse_sem.acquire().await;
+            crate::admin::reprocess_one(app, upload_id, &path).await;
+        };
+        tokio::select! {
+            () = one => st.reprocess_step(),
+            () = st.stopping() => return,
+        }
+    }
+    tokio::select! {
+        n = crate::scouting::api::reprocess_stale(app) => {
+            if n > 0 {
+                tracing::info!("scouting re-process after update: {n} replay(s)");
+            }
+        }
+        () = st.stopping() => {}
     }
 }
 

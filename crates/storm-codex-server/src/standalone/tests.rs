@@ -998,3 +998,53 @@ async fn a_newer_bundled_snapshot_is_ingested_once() {
         .await
         .unwrap();
 }
+
+/// An update raised `PARSER_VERSION`: the stored replays parsed by the older parser are
+/// re-processed in the background, with the progress in the status.
+#[tokio::test]
+async fn outdated_replays_are_reprocessed_with_progress() {
+    let tmp = tempfile::tempdir().unwrap();
+    let Some((state, _settings)) = db_state(tmp.path(), |c| {
+        StandaloneState::new(c).with_detector(Vec::new)
+    })
+    .await
+    else {
+        return;
+    };
+    let replay = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../storm-replay/tests/data/2026-05-27 22.37.45 Industrial District.StormReplay");
+    // a fingerprint of its own: other tests upload the same fixture
+    let key = format!("reprocess-{}", uuid::Uuid::new_v4().simple());
+    std::fs::copy(
+        &replay,
+        state.cfg.archive_dir.join(Config::archive_entry(&key)),
+    )
+    .unwrap();
+    let id: i64 = sqlx::query_scalar(
+        "INSERT INTO uploads (filename, fingerprint, archived_path, status, parser_version)
+         VALUES ('old.StormReplay', $1, $2, 'parsed', $3) RETURNING id",
+    )
+    .bind(&key)
+    .bind(Config::archive_entry(&key))
+    .bind(crate::PARSER_VERSION - 1)
+    .fetch_one(&state.db)
+    .await
+    .unwrap();
+
+    orchestrator::reprocess_outdated(&state).await;
+
+    let version: i32 = sqlx::query_scalar("SELECT parser_version FROM uploads WHERE id = $1")
+        .bind(id)
+        .fetch_one(&state.db)
+        .await
+        .unwrap();
+    let status = state.standalone.as_ref().unwrap().status();
+    sqlx::query("DELETE FROM uploads WHERE id = $1")
+        .bind(id)
+        .execute(&state.db)
+        .await
+        .unwrap();
+    assert_eq!(version, crate::PARSER_VERSION, "re-processed");
+    assert!(status.reprocess_total >= 1, "{status:?}");
+    assert_eq!(status.reprocess_done, status.reprocess_total, "{status:?}");
+}

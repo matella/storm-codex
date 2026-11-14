@@ -2,7 +2,9 @@
 //! rejected and failed replays, and the states that need the user (no folder, not enough disk space).
 
 use leptos::prelude::*;
-use storm_web_core::standalone::{human_bytes, phase_message, progress_percent, Phase, Status};
+use storm_web_core::standalone::{
+    human_bytes, phase_message, progress_percent, reprocess_message, Phase, Status,
+};
 
 use crate::{
     standalone::{rescan, use_standalone, use_status_poll, FolderEditor, CSS},
@@ -56,6 +58,7 @@ fn Body() -> impl IntoView {
             <p class=move || if phase.get() == Some(Phase::Error) { "wmsg bad" } else { "wmsg" }>
                 {move || read(status, phase_message)}
             </p>
+            {move || status.get().as_ref().and_then(reprocess_message).map(|m| view! { <p class="wmsg">{m}</p> })}
             <div style:display=move || if matches!(phase.get(), Some(Phase::NoFolders | Phase::Error)) { "none" } else { "block" }>
                 <div class="wbar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow=move || pct().to_string()>
                     <i style:width=move || format!("{}%", pct())></i>

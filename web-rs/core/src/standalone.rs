@@ -56,6 +56,22 @@ pub struct Status {
     pub data_dir: String,
     #[serde(default)]
     pub version: String,
+    /// Stored replays parsed by an older parser, re-processed in the background after an update (0 when none or
+    /// from older servers).
+    #[serde(default)]
+    pub reprocess_total: u64,
+    #[serde(default)]
+    pub reprocess_done: u64,
+}
+
+/// Line shown while the server re-processes the stored replays after an update (`None` when it is not).
+pub fn reprocess_message(s: &Status) -> Option<String> {
+    (s.reprocess_done < s.reprocess_total).then(|| {
+        format!(
+            "Updating your stats for this version: {} of {} replays. Pages may show older numbers until then.",
+            s.reprocess_done, s.reprocess_total
+        )
+    })
 }
 
 /// Share of the import done, 0..=100 (0 when there is nothing to import yet).
@@ -304,6 +320,28 @@ mod tests {
         let mut s: Status = serde_json::from_str(FIXTURE).unwrap();
         s.phase = phase;
         s
+    }
+
+    #[test]
+    fn reprocess_message_only_while_it_runs() {
+        let mut s = status(Phase::Ready);
+        assert_eq!(
+            (s.reprocess_total, s.reprocess_done),
+            (0, 0),
+            "absent from older servers"
+        );
+        assert_eq!(reprocess_message(&s), None);
+        let v: Status =
+            serde_json::from_str(r#"{"phase":"ready","reprocessTotal":40,"reprocessDone":12}"#)
+                .unwrap();
+        assert_eq!((v.reprocess_total, v.reprocess_done), (40, 12));
+        assert_eq!(
+            reprocess_message(&v).as_deref(),
+            Some("Updating your stats for this version: 12 of 40 replays. Pages may show older numbers until then.")
+        );
+        s.reprocess_total = 40;
+        s.reprocess_done = 40;
+        assert_eq!(reprocess_message(&s), None, "finished");
     }
 
     #[test]
