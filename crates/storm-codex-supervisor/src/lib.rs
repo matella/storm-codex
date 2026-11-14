@@ -8,4 +8,6 @@ mod postgres;
 pub use datadir::DataDir;
 pub use disk::{check_free_space, free_space, required_free_bytes, DiskError};
 pub use ports::pick_port;
-pub use postgres::{PgError, Postgres, APP_DATABASE};
+pub use postgres::{
+    PgError, Postgres, APP_DATABASE, IMPORT_ROLE, PREVIOUS_DATABASE, STAGING_DATABASE,
+};

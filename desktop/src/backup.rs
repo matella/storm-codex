@@ -2,9 +2,11 @@
 //! database) and the whole `archive/` folder (the raw replays, the source of truth).
 //!
 //! Export streams every file into the zip (`Stored`: replays and the custom-format dump are
-//! already compressed), never loading a file in memory. Import validates the whole zip before
-//! touching anything (entry names, kinds, sizes), unpacks it next to the data, then stops the
-//! server, restores the dump and swaps the archive folder in.
+//! already compressed), never loading a file in memory. Import copies the chosen file to a
+//! private one, validates that copy (entry names, kinds, sizes) and unpacks it within the
+//! validated budget, restores the dump into a staging database under an unprivileged role,
+//! then stops the server, swaps the archive folder and promotes the database, with a journal
+//! for crash recovery ([`recover_import`]).
 
 use std::fs::File;
 use std::io::{self, Read, Write};
@@ -84,7 +86,9 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 }
 
 /// Writes the backup to `out`: `dump` writes the database dump to a file in `work_dir`, then
-/// the zip is built in `<out>.partial` and renamed to `out` once complete. The dump is taken
+/// the zip is built in `<out>.partial` (created new: an existing file there is never
+/// overwritten) and renamed to `out` once complete; `out` itself is the path the user chose in
+/// the save dialog, which asked before replacing a file. The dump is taken
 /// first, the archive copied after: every replay the dump references is in the zip (a replay
 /// imported meanwhile is an orphan file, harmless).
 pub fn export(
@@ -98,7 +102,18 @@ pub fn export(
     dump(&dump_file).map_err(BackupError::Dump)?;
     let files = list_files(archive_dir)?;
     let partial = partial_path(out);
-    let result = write_zip(&partial, &dump_file, archive_dir, &files);
+    let file = match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&partial)
+    {
+        Ok(f) => f,
+        Err(e) => {
+            let _ = std::fs::remove_file(&dump_file);
+            return Err(io_err(&partial)(e));
+        }
+    };
+    let result = write_zip(file, &partial, &dump_file, archive_dir, &files);
     let _ = std::fs::remove_file(&dump_file);
     match result {
         Ok(contents) => {
@@ -153,6 +168,7 @@ fn list_files(dir: &Path) -> Result<Vec<String>, BackupError> {
 }
 
 fn write_zip(
+    file: File,
     partial: &Path,
     dump_file: &Path,
     archive_dir: &Path,
@@ -162,7 +178,6 @@ fn write_zip(
         path: partial.to_path_buf(),
         source,
     };
-    let file = File::create(partial).map_err(io_err(partial))?;
     let mut zip = zip::ZipWriter::new(io::BufWriter::new(file));
     let add = |zip: &mut zip::ZipWriter<io::BufWriter<File>>,
                name: &str,
@@ -207,7 +222,8 @@ enum Entry {
 
 const RESERVED: &[&str] = &[
     "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8",
-    "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+    "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9", "conin$",
+    "conout$", "clock$", "com¹", "com²", "com³", "lpt¹", "lpt²", "lpt³",
 ];
 
 /// Classifies an entry name, refusing anything that could land outside the target folder or
@@ -240,7 +256,13 @@ fn classify(name: &str) -> Result<Entry, String> {
         if part.ends_with(['.', ' ']) {
             return bad("trailing dot or space");
         }
-        let stem = part.split('.').next().unwrap_or(part).to_ascii_lowercase();
+        // Windows ignores spaces before the extension: `con .txt` is `CON`.
+        let stem = part
+            .split('.')
+            .next()
+            .unwrap_or(part)
+            .trim_end()
+            .to_ascii_lowercase();
         if RESERVED.contains(&stem.as_str()) {
             return bad("reserved Windows device name");
         }
@@ -353,27 +375,65 @@ fn copy_exact(from: impl Read, to: &mut impl Write, size: u64) -> io::Result<u64
 }
 
 /// Extracts a [`validate`]d backup: the dump to `dump_out`, the replays under `archive_out`
-/// (which must not exist yet). Names are re-checked; files are created new (never
-/// overwritten).
-pub fn unpack(file: &Path, dump_out: &Path, archive_out: &Path) -> Result<(), BackupError> {
+/// (which must not exist yet). Names are re-checked and the zip must stay within `budget` (what
+/// [`validate`] counted: entries, bytes, one dump of the validated size); symlinks and
+/// encrypted entries are refused again. Files are created new (never overwritten).
+pub fn unpack(
+    file: &Path,
+    dump_out: &Path,
+    archive_out: &Path,
+    budget: &BackupContents,
+) -> Result<(), BackupError> {
     if archive_out.exists() {
         return Err(io_err(archive_out)(io::Error::new(
             io::ErrorKind::AlreadyExists,
             "target folder already exists",
         )));
     }
-    std::fs::create_dir_all(archive_out).map_err(io_err(archive_out))?;
     let mut zip = open_zip(file)?;
+    if zip.len() > MAX_ENTRIES {
+        return Err(BackupError::Invalid(format!(
+            "{} entries (limit {MAX_ENTRIES})",
+            zip.len()
+        )));
+    }
+    std::fs::create_dir_all(archive_out).map_err(io_err(archive_out))?;
     let zip_err = |source| BackupError::Zip {
         path: file.to_path_buf(),
         source,
     };
+    let over = |what: &str| {
+        Err(BackupError::Invalid(format!(
+            "the file holds more {what} than was validated"
+        )))
+    };
+    let mut seen = BackupContents {
+        dump_bytes: 0,
+        archive_files: 0,
+        total_bytes: 0,
+    };
+    let mut dumps = 0;
     for i in 0..zip.len() {
         let entry = zip.by_index(i).map_err(zip_err)?;
         let name = entry.name().map_err(zip_err)?.into_owned();
+        if entry.is_symlink() || entry.encrypted() {
+            return Err(BackupError::Invalid(format!(
+                "entry {name:?} is a symbolic link or encrypted"
+            )));
+        }
         let size = entry.size();
+        seen.total_bytes = seen.total_bytes.saturating_add(size);
+        if seen.total_bytes > budget.total_bytes {
+            return over("bytes");
+        }
         let target = match classify(&name).map_err(BackupError::Invalid)? {
-            Entry::Dump => dump_out.to_path_buf(),
+            Entry::Dump => {
+                dumps += 1;
+                if dumps > 1 || size != budget.dump_bytes {
+                    return over("dump data");
+                }
+                dump_out.to_path_buf()
+            }
             Entry::ArchiveDir(parts) => {
                 let dir = parts
                     .iter()
@@ -381,9 +441,15 @@ pub fn unpack(file: &Path, dump_out: &Path, archive_out: &Path) -> Result<(), Ba
                 std::fs::create_dir_all(&dir).map_err(io_err(&dir))?;
                 continue;
             }
-            Entry::ArchiveFile(parts) => parts
-                .iter()
-                .fold(archive_out.to_path_buf(), |p, c| p.join(c)),
+            Entry::ArchiveFile(parts) => {
+                seen.archive_files += 1;
+                if seen.archive_files > budget.archive_files {
+                    return over("files");
+                }
+                parts
+                    .iter()
+                    .fold(archive_out.to_path_buf(), |p, c| p.join(c))
+            }
         };
         if let Some(parent) = target.parent() {
             std::fs::create_dir_all(parent).map_err(io_err(parent))?;
@@ -395,6 +461,9 @@ pub fn unpack(file: &Path, dump_out: &Path, archive_out: &Path) -> Result<(), Ba
             .map_err(io_err(&target))?;
         copy_exact(entry, &mut out, size).map_err(io_err(&target))?;
         out.sync_all().map_err(io_err(&target))?;
+    }
+    if dumps != 1 {
+        return Err(BackupError::Invalid("no db.dump".into()));
     }
     Ok(())
 }
@@ -411,28 +480,212 @@ pub fn has_files(dir: &Path) -> bool {
     })
 }
 
-/// Replaces folder `target` by `new` (renames on the same drive; `target` is kept as
-/// `<target>.old` until `new` is in place, and put back if that fails).
-pub fn replace_dir(new: &Path, target: &Path) -> Result<(), BackupError> {
-    let mut old_name = target.file_name().unwrap_or_default().to_os_string();
-    old_name.push(".old");
-    let old = target.with_file_name(old_name);
-    if old.exists() {
-        std::fs::remove_dir_all(&old).map_err(io_err(&old))?;
+/// Refuses what is not a plain local file path: UNC shares (`\\server\share`), device and
+/// verbatim paths (`\\?\`, `\\.\`), relative paths and, on Windows, mapped network drives.
+pub fn check_local_path(path: &Path) -> Result<(), String> {
+    let text = path.as_os_str().to_string_lossy();
+    if text.starts_with(r"\\") || text.starts_with("//") || text.starts_with(r"\/") {
+        return Err(format!(
+            "{}: network and device paths are not supported; pick a file on a local drive",
+            path.display()
+        ));
     }
-    let had_target = target.exists();
-    if had_target {
-        std::fs::rename(target, &old).map_err(io_err(target))?;
-    }
-    if let Err(e) = std::fs::rename(new, target) {
-        if had_target {
-            let _ = std::fs::rename(&old, target);
+    #[cfg(windows)]
+    {
+        use std::path::{Component, Prefix};
+        let drive = match path.components().next() {
+            Some(Component::Prefix(p)) => match p.kind() {
+                Prefix::Disk(letter) => Some(letter),
+                _ => None,
+            },
+            _ => None,
+        };
+        let Some(letter) = drive.filter(|_| path.is_absolute()) else {
+            return Err(format!(
+                "{}: not an absolute path on a local drive",
+                path.display()
+            ));
+        };
+        if is_network_drive(letter) {
+            return Err(format!(
+                "{}: network drives are not supported; pick a file on a local drive",
+                path.display()
+            ));
         }
-        return Err(io_err(target)(e));
     }
-    if had_target {
-        // The new data is in place; a leftover `.old` is removed by the next import.
-        let _ = std::fs::remove_dir_all(&old);
+    #[cfg(not(windows))]
+    if !path.is_absolute() {
+        return Err(format!("{}: not an absolute path", path.display()));
+    }
+    Ok(())
+}
+
+/// `GetDriveTypeW` says `DRIVE_REMOTE` (a mapped network share).
+#[cfg(windows)]
+fn is_network_drive(letter: u8) -> bool {
+    use windows_sys::Win32::Storage::FileSystem::GetDriveTypeW;
+    const DRIVE_REMOTE: u32 = 4;
+    let root: Vec<u16> = format!("{}:\\", char::from(letter))
+        .encode_utf16()
+        .chain(Some(0))
+        .collect();
+    // SAFETY: `root` is a NUL-terminated UTF-16 string that outlives the call.
+    unsafe { GetDriveTypeW(root.as_ptr()) == DRIVE_REMOTE }
+}
+
+/// Folder (data root) where an import is prepared; removed afterwards and at every start.
+pub const IMPORT_WORK: &str = "import-work";
+/// Present (data root) from just before the server is stopped for an import until the import
+/// is committed or rolled back: [`recover_import`] reads it at the next start.
+pub const IMPORT_JOURNAL: &str = "import-journal";
+/// Private copy of the chosen backup, inside [`IMPORT_WORK`].
+const PRIVATE_COPY: &str = "backup.zip";
+
+/// Free space an import needs once its private copy is on disk: the unpacked size, about three
+/// times the dump for the staging database (tables, indexes, WAL), and the margin.
+pub fn import_space_needed(contents: &BackupContents) -> u64 {
+    contents
+        .total_bytes
+        .saturating_add(contents.dump_bytes.saturating_mul(3))
+        .saturating_add(IMPORT_FREE_MARGIN)
+}
+
+/// Copies `source` (`size` bytes, read before) to the new file `dest`; refused when the source
+/// holds another number of bytes (it changed meanwhile).
+pub fn copy_private(source: &Path, dest: &Path, size: u64) -> Result<(), BackupError> {
+    let from = File::open(source).map_err(io_err(source))?;
+    let mut out = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(dest)
+        .map_err(io_err(dest))?;
+    copy_exact(io::BufReader::new(from), &mut out, size).map_err(|e| {
+        BackupError::Invalid(format!(
+            "{} changed while it was copied: {e}",
+            source.display()
+        ))
+    })?;
+    out.sync_all().map_err(io_err(dest))
+}
+
+/// `<target>.old`.
+fn old_dir(target: &Path) -> PathBuf {
+    let mut name = target.file_name().unwrap_or_default().to_os_string();
+    name.push(".old");
+    target.with_file_name(name)
+}
+
+/// `std::fs::rename`, retried a few times: an antivirus or indexer may hold a file briefly.
+pub fn rename_retrying(from: &Path, to: &Path) -> io::Result<()> {
+    let mut attempt = 0;
+    loop {
+        match std::fs::rename(from, to) {
+            Ok(()) => return Ok(()),
+            Err(e) if attempt >= 4 => return Err(e),
+            Err(_) => {
+                attempt += 1;
+                std::thread::sleep(std::time::Duration::from_millis(250));
+            }
+        }
+    }
+}
+
+/// Swaps folder `new` in as `target`, keeping the replaced folder as `<target>.old` (removed
+/// once the import is committed, put back by [`unswap_dir`] otherwise). Refused when
+/// `<target>.old` already exists (never overwritten). On failure `target` is as before.
+pub fn swap_dir(
+    new: &Path,
+    target: &Path,
+    rename: impl Fn(&Path, &Path) -> io::Result<()>,
+) -> Result<(), BackupError> {
+    let old = old_dir(target);
+    if old.exists() {
+        return Err(io_err(&old)(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "a folder from an earlier import is in the way; move it elsewhere first",
+        )));
+    }
+    std::fs::create_dir_all(target).map_err(io_err(target))?;
+    rename(target, &old).map_err(io_err(target))?;
+    if let Err(e) = rename(new, target) {
+        return match rename(&old, target) {
+            Ok(()) => Err(io_err(target)(e)),
+            Err(back) => Err(io_err(target)(io::Error::new(
+                e.kind(),
+                format!(
+                    "{e}; putting the previous folder back from {} also failed: {back}",
+                    old.display()
+                ),
+            ))),
+        };
+    }
+    Ok(())
+}
+
+/// Undoes [`swap_dir`]: `<target>.old` goes back to `target` (the folder there, the imported
+/// one, is removed). Nothing to do without `<target>.old`.
+pub fn unswap_dir(target: &Path) -> Result<(), BackupError> {
+    let old = old_dir(target);
+    if !old.exists() {
+        return Ok(());
+    }
+    if target.exists() {
+        std::fs::remove_dir_all(target).map_err(io_err(target))?;
+    }
+    rename_retrying(&old, target).map_err(io_err(&old))
+}
+
+fn remove_file_if_exists(path: &Path) -> Result<(), String> {
+    match std::fs::remove_file(path) {
+        Err(e) if e.kind() != io::ErrorKind::NotFound => Err(format!("{}: {e}", path.display())),
+        _ => Ok(()),
+    }
+}
+
+/// After the promote: the upload ledger is reset (it lists what the replaced database had
+/// imported), the replaced archive removed, then the journal.
+fn complete_import(data: &DataDir) -> Result<(), String> {
+    remove_file_if_exists(&data.ledger())?;
+    let old = old_dir(&data.archive());
+    if old.exists() {
+        std::fs::remove_dir_all(&old).map_err(|e| format!("{}: {e}", old.display()))?;
+    }
+    remove_file_if_exists(&data_root(data).join(IMPORT_JOURNAL))
+}
+
+/// Startup step (Postgres up, server not started): finishes or rolls back an import a crash
+/// cut short, then removes the work folder.
+/// - journal and staging database: not promoted, so roll back (archive put back from
+///   `archive.old`, journal removed, staging dropped);
+/// - journal, no staging database: promoted, so complete it (finish, ledger reset,
+///   `archive.old` removed, journal removed);
+/// - no journal: a staging database is an orphan (dropped); an `archive.old` next to an empty
+///   `archive` is put back; an `archive.old` next to a non-empty `archive` is left alone.
+pub fn recover_import(data: &DataDir, db: &dyn crate::supervise::Db) -> Result<(), String> {
+    let root = data_root(data);
+    let journal = root.join(IMPORT_JOURNAL);
+    let staged = db.staging_exists().map_err(|e| e.to_string())?;
+    let archive = data.archive();
+    if journal.exists() {
+        if staged {
+            unswap_dir(&archive).map_err(|e| e.to_string())?;
+            remove_file_if_exists(&journal)?;
+            db.discard_import().map_err(|e| e.to_string())?;
+        } else {
+            db.finish_import().map_err(|e| e.to_string())?;
+            complete_import(data)?;
+        }
+    } else {
+        if staged {
+            db.discard_import().map_err(|e| e.to_string())?;
+        }
+        if old_dir(&archive).exists() && !has_files(&archive) {
+            unswap_dir(&archive).map_err(|e| e.to_string())?;
+        }
+    }
+    let work = root.join(IMPORT_WORK);
+    if work.exists() {
+        std::fs::remove_dir_all(&work).map_err(|e| format!("{}: {e}", work.display()))?;
     }
     Ok(())
 }
@@ -459,69 +712,137 @@ pub fn export_stack(stack: &Stack, out: &Path) -> Result<BackupContents, BackupE
     result
 }
 
-/// Imports a backup into the running stack. Refused when the app already has replays unless
-/// `confirm`. The zip is validated and unpacked first (nothing changed on failure); then the
-/// server is stopped (Postgres stays up), the dump restored (one transaction), the archive
-/// folder swapped, and the server restarted; returns once it is healthy again.
+/// Imports the backup `source` into the running stack (the caller asked the user first).
+/// 1. `source` must be a local path; it is copied to a private file in `import-work` (free
+///    space checked), and only that copy is validated and unpacked (within the validated
+///    budget; free space for the unpacked data and the staging database checked).
+/// 2. The dump is restored into the staging database ([`Stack::stage_import`]: TOC allow-list,
+///    unprivileged role, catalog check) while the server keeps running.
+/// 3. Journal written, server stopped, archive swapped, staging database promoted; the ledger
+///    is reset, `archive.old` and the journal removed, the server restarted.
+///
+/// A failure before the promote rolls everything back (archive, staging database) and
+/// restarts the server; a crash is handled by [`recover_import`] at the next start.
 pub fn import_into(
     stack: &mut Stack,
-    file: &Path,
-    confirm: bool,
+    source: &Path,
     free_space: impl Fn(&Path) -> io::Result<u64>,
 ) -> Result<BackupContents, String> {
+    check_local_path(source)?;
     let data = stack.data().clone();
-    if !confirm && has_files(&data.archive()) {
-        return Err(
-            "this app already has replays: importing replaces all of its data; call again with \
-             confirm to proceed"
-                .into(),
-        );
-    }
-    let contents = validate(file).map_err(|e| e.to_string())?;
     let root = data_root(&data);
-    let free = free_space(&root).map_err(|e| format!("cannot read the free space: {e}"))?;
-    let needed = contents.total_bytes.saturating_add(IMPORT_FREE_MARGIN);
+    let work = root.join(IMPORT_WORK);
+    let clean = |work: &Path| -> Result<(), String> {
+        if work.exists() {
+            std::fs::remove_dir_all(work).map_err(|e| format!("{}: {e}", work.display()))?;
+        }
+        Ok(())
+    };
+    clean(&work)?;
+    std::fs::create_dir_all(&work).map_err(|e| format!("{}: {e}", work.display()))?;
+    let result = prepare(source, &work, &root, &free_space)
+        .and_then(|contents| commit(stack, &work, &data).map(|()| contents));
+    let _ = clean(&work);
+    result
+}
+
+fn check_space(
+    free_space: &dyn Fn(&Path) -> io::Result<u64>,
+    root: &Path,
+    needed: u64,
+) -> Result<(), String> {
+    let free = free_space(root).map_err(|e| format!("cannot read the free space: {e}"))?;
     if free < needed {
         return Err(format!(
             "not enough free disk space: {needed} bytes needed, {free} bytes free"
         ));
     }
-    let work = data_root(&data).join("import-work");
-    if work.exists() {
-        std::fs::remove_dir_all(&work).map_err(|e| format!("{}: {e}", work.display()))?;
-    }
-    let result = import_unpacked(stack, file, &work, &data);
-    let _ = std::fs::remove_dir_all(&work);
-    result.map(|()| contents)
+    Ok(())
 }
 
-fn import_unpacked(
-    stack: &mut Stack,
-    file: &Path,
+/// Private copy, validation and unpacking into `work` (nothing else is touched).
+fn prepare(
+    source: &Path,
     work: &Path,
-    data: &DataDir,
-) -> Result<(), String> {
+    root: &Path,
+    free_space: &dyn Fn(&Path) -> io::Result<u64>,
+) -> Result<BackupContents, String> {
+    let size = std::fs::metadata(source)
+        .map_err(|e| format!("{}: {e}", source.display()))?
+        .len();
+    check_space(free_space, root, size.saturating_add(IMPORT_FREE_MARGIN))?;
+    let copy = work.join(PRIVATE_COPY);
+    copy_private(source, &copy, size).map_err(|e| e.to_string())?;
+    let contents = validate(&copy).map_err(|e| e.to_string())?;
+    check_space(free_space, root, import_space_needed(&contents))?;
+    unpack(
+        &copy,
+        &work.join(DUMP_ENTRY),
+        &work.join(ARCHIVE_ENTRY),
+        &contents,
+    )
+    .map_err(|e| e.to_string())?;
+    let _ = std::fs::remove_file(&copy);
+    Ok(contents)
+}
+
+fn commit(stack: &mut Stack, work: &Path, data: &DataDir) -> Result<(), String> {
     let dump = work.join(DUMP_ENTRY);
-    let archive = work.join(ARCHIVE_ENTRY);
-    unpack(file, &dump, &archive).map_err(|e| e.to_string())?;
-    // `pg_restore --clean` takes ACCESS EXCLUSIVE locks: the server goes first.
-    stack
-        .stop_server(StopBudget::Full)
-        .map_err(|e| e.to_string())?;
-    let imported = stack
-        .restore(&dump)
-        .map_err(|e| format!("restoring the database failed (nothing was changed): {e}"))
-        .and_then(|()| {
-            replace_dir(&archive, &data.archive()).map_err(|e| {
-                format!(
-                    "the database was restored but the replay folder could not be replaced: {e}"
-                )
-            })
+    stack.stage_import(&dump).map_err(|e| {
+        format!("the backup was refused or could not be restored (nothing was changed): {e}")
+    })?;
+    let _ = std::fs::remove_file(&dump);
+    let journal = data_root(data).join(IMPORT_JOURNAL);
+    let discard = |stack: &Stack, e: String| -> String {
+        let _ = remove_file_if_exists(&journal);
+        match stack.discard_import() {
+            Ok(()) => e,
+            Err(d) => format!("{e}; dropping the staged import failed: {d}"),
+        }
+    };
+    if let Err(e) = std::fs::write(&journal, b"import in progress\n") {
+        return Err(discard(stack, format!("{}: {e}", journal.display())));
+    }
+    if let Err(e) = stack.stop_server(StopBudget::Full) {
+        let msg = discard(stack, e.to_string());
+        return Err(match stack.restart_server() {
+            Ok(()) => msg,
+            Err(r) => format!("{msg}; the server did not start again: {r}"),
         });
+    }
+    let archive = data.archive();
+    let committed = match swap_dir(&work.join(ARCHIVE_ENTRY), &archive, rename_retrying) {
+        Err(e) => Err(discard(
+            stack,
+            format!("the replay folder could not be replaced (nothing was changed): {e}"),
+        )),
+        Ok(()) => match stack.promote_import() {
+            Ok(()) => complete_import(data).map_err(|e| {
+                format!(
+                    "the import is done but its cleanup failed (retried at the next start): {e}"
+                )
+            }),
+            Err(e) => match unswap_dir(&archive) {
+                Ok(()) => Err(discard(
+                    stack,
+                    format!("switching to the imported database failed (nothing was changed): {e}"),
+                )),
+                // Journal and staging kept: the next start finishes the rollback. The server
+                // stays stopped rather than run on a replay folder that does not match.
+                Err(u) => {
+                    return Err(format!(
+                        "switching to the imported database failed ({e}) and the previous \
+                         replay folder could not be put back ({u}); restart Storm Codex to \
+                         finish the rollback"
+                    ))
+                }
+            },
+        },
+    };
     let restarted = stack
         .restart_server()
         .map_err(|e| format!("the server did not start again: {e}"));
-    match (imported, restarted) {
+    match (committed, restarted) {
         (Ok(()), Ok(())) => Ok(()),
         (Err(e), Ok(())) | (Ok(()), Err(e)) => Err(e),
         (Err(a), Err(b)) => Err(format!("{a}; {b}")),
@@ -653,7 +974,21 @@ mod tests {
                 zip::CompressionMethod::Stored
             );
         }
-        assert!(!out.with_extension("stormcodex.partial").exists());
+        assert!(!partial_path(&out).exists());
+        // A file already at the temporary name is never overwritten.
+        write(&partial_path(&out), b"someone else's file");
+        let again = tmp.path().join("out").join("b.stormcodex");
+        assert!(export(
+            |p| std::fs::write(p, b"PGDMP-fake").map_err(|e| e.to_string()),
+            &archive,
+            &tmp.path().join("work"),
+            &again,
+        )
+        .is_err());
+        assert_eq!(
+            std::fs::read(partial_path(&out)).unwrap(),
+            b"someone else's file"
+        );
         assert!(validate(&out).is_ok());
     }
 
@@ -697,6 +1032,12 @@ mod tests {
             "archive/CON",
             "archive/x/nul.txt",
             "archive/trailing.",
+            "archive/CONIN$",
+            "archive/x/conout$.txt",
+            "archive/clock$.log",
+            "archive/COM\u{b9}",
+            "archive/lpt\u{b3}.txt",
+            "archive/con .txt",
         ] {
             let msg = invalid(&[dump, (evil, b"x")]);
             assert!(msg.contains("entry"), "{evil}: {msg}");
@@ -757,28 +1098,136 @@ mod tests {
         assert_eq!(contents.total_bytes, 9);
         let work = tmp.path().join("work");
         std::fs::create_dir_all(&work).unwrap();
-        unpack(&zip, &work.join("db.dump"), &work.join("archive")).expect("unpack");
+        unpack(
+            &zip,
+            &work.join("db.dump"),
+            &work.join("archive"),
+            &contents,
+        )
+        .expect("unpack");
         assert_eq!(std::fs::read(work.join("db.dump")).unwrap(), b"PGDMP-1");
         assert_eq!(
             archive_tree(&work.join("archive")),
             BTreeMap::from([("ab/x.StormReplay".to_string(), b"xx".to_vec())])
         );
-        assert!(unpack(&zip, &work.join("d2"), &work.join("archive")).is_err());
+        assert!(unpack(&zip, &work.join("d2"), &work.join("archive"), &contents).is_err());
     }
 
     #[test]
-    fn replace_dir_swaps_and_removes_the_old_folder() {
+    fn unpack_refuses_more_than_the_validated_budget() {
+        let tmp = tempfile::tempdir().unwrap();
+        let zip = tmp.path().join("ok.stormcodex");
+        make_zip(
+            &zip,
+            &[
+                ("db.dump", b"PGDMP-1"),
+                ("archive/a.StormReplay", b"aa"),
+                ("archive/b.StormReplay", b"bb"),
+            ],
+        );
+        let full = validate(&zip).expect("valid");
+        let tighter = [
+            BackupContents {
+                archive_files: 1,
+                ..full.clone()
+            },
+            BackupContents {
+                total_bytes: full.total_bytes - 1,
+                ..full.clone()
+            },
+            BackupContents {
+                dump_bytes: 5,
+                ..full.clone()
+            },
+        ];
+        for (i, budget) in tighter.iter().enumerate() {
+            let out = tmp.path().join(format!("w{i}"));
+            let err = unpack(&zip, &out.join("db.dump"), &out.join("archive"), budget)
+                .expect_err("over budget");
+            assert!(
+                matches!(err, BackupError::Invalid(_)),
+                "{budget:?}: {err:?}"
+            );
+        }
+        let out = tmp.path().join("ok");
+        unpack(&zip, &out.join("db.dump"), &out.join("archive"), &full).expect("exact budget");
+    }
+
+    #[test]
+    fn network_device_and_relative_paths_are_refused() {
+        for bad in [
+            r"\\server\share\b.stormcodex",
+            "//server/share/b.stormcodex",
+            r"\\?\C:\b.stormcodex",
+            r"\\.\C:\b.stormcodex",
+            r"\\?\UNC\server\share\b.stormcodex",
+            "b.stormcodex",
+            r"..\b.stormcodex",
+        ] {
+            assert!(check_local_path(Path::new(bad)).is_err(), "{bad}");
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        check_local_path(&tmp.path().join("b.stormcodex")).expect("local temp folder");
+    }
+
+    #[test]
+    fn private_copy_refuses_a_file_that_changed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src.stormcodex");
+        std::fs::write(&src, b"0123456789").unwrap();
+        copy_private(&src, &tmp.path().join("a"), 10).expect("same size");
+        assert_eq!(std::fs::read(tmp.path().join("a")).unwrap(), b"0123456789");
+        // Grew or shrank since its size was read.
+        assert!(copy_private(&src, &tmp.path().join("b"), 8).is_err());
+        assert!(copy_private(&src, &tmp.path().join("c"), 12).is_err());
+        // Never overwrites.
+        assert!(copy_private(&src, &tmp.path().join("a"), 10).is_err());
+    }
+
+    #[test]
+    fn import_space_counts_unpacked_data_staging_database_and_margin() {
+        let c = BackupContents {
+            dump_bytes: 100,
+            archive_files: 3,
+            total_bytes: 1_000,
+        };
+        assert_eq!(import_space_needed(&c), 1_000 + 300 + IMPORT_FREE_MARGIN);
+    }
+
+    #[test]
+    fn swap_dir_puts_the_target_back_when_the_second_rename_fails() {
         let tmp = tempfile::tempdir().unwrap();
         let target = tmp.path().join("archive");
         let new = tmp.path().join("import-work").join("archive");
         write(&target.join("old.StormReplay"), b"old");
         write(&new.join("new.StormReplay"), b"new");
-        replace_dir(&new, &target).expect("replace");
+        let calls = std::cell::Cell::new(0);
+        let err = swap_dir(&new, &target, |a, b| {
+            calls.set(calls.get() + 1);
+            if calls.get() == 2 {
+                Err(io::Error::new(io::ErrorKind::PermissionDenied, "locked"))
+            } else {
+                std::fs::rename(a, b)
+            }
+        })
+        .expect_err("second rename fails");
+        assert!(err.to_string().contains("locked"), "{err}");
         assert_eq!(
             archive_tree(&target),
-            BTreeMap::from([("new.StormReplay".to_string(), b"new".to_vec())])
+            BTreeMap::from([("old.StormReplay".to_string(), b"old".to_vec())])
         );
-        assert!(!new.exists());
+        assert!(new.exists());
+        assert!(!tmp.path().join("archive.old").exists());
+        // A successful swap keeps the old folder until the import is committed; unswap puts
+        // it back.
+        swap_dir(&new, &target, |a, b| std::fs::rename(a, b)).expect("swap");
+        assert!(archive_tree(&target).contains_key("new.StormReplay"));
+        assert!(tmp.path().join("archive.old").exists());
+        unswap_dir(&target).expect("unswap");
+        assert_eq!(
+            archive_tree(&target),
+            BTreeMap::from([("old.StormReplay".to_string(), b"old".to_vec())])
+        );
         assert!(!tmp.path().join("archive.old").exists());
         assert!(has_files(&target));
         assert!(!has_files(&tmp.path().join("nothing")));
@@ -799,6 +1248,7 @@ mod tests {
                 body,
             );
         }
+        write(&stack.data().ledger(), b"{\"ledger\":1}");
         (stack, host)
     }
 
@@ -818,52 +1268,123 @@ mod tests {
         Ok(u64::MAX)
     }
 
+    fn old_archive() -> BTreeMap<String, Vec<u8>> {
+        BTreeMap::from([("aa/old.StormReplay".to_string(), b"old".to_vec())])
+    }
+
+    fn new_archive() -> BTreeMap<String, Vec<u8>> {
+        BTreeMap::from([("bb/new.StormReplay".to_string(), b"new".to_vec())])
+    }
+
+    /// No work folder, journal or `archive.old` left behind.
+    fn assert_clean(root: &Path) {
+        for leftover in [IMPORT_WORK, IMPORT_JOURNAL, "archive.old"] {
+            assert!(!root.join(leftover).exists(), "{leftover} left behind");
+        }
+    }
+
     #[test]
-    fn import_stops_server_restores_swaps_archive_and_restarts() {
+    fn import_stages_then_swaps_promotes_resets_the_ledger_and_restarts() {
         let tmp = tempfile::tempdir().unwrap();
         let src = tempfile::tempdir().unwrap();
         let log = Log::default();
-        let (mut stack, _host) = stack_with_archive(FakeHost::new(&log), tmp.path(), Some(b"old"));
+        let (mut stack, host) = stack_with_archive(FakeHost::new(&log), tmp.path(), Some(b"old"));
         log.lock().unwrap().clear();
         let zip = good_backup(src.path());
-        import_into(&mut stack, &zip, true, plenty).expect("import");
+        import_into(&mut stack, &zip, plenty).expect("import");
         assert_eq!(
             entries(&log),
             [
+                "db.stage(PGDMP-import)".to_string(),
                 format!("server.shutdown({SERVER_PORT})"),
-                "db.restore(PGDMP-import)".to_string(),
+                "db.promote".to_string(),
                 "server.spawn".to_string(),
             ]
         );
-        assert_eq!(
-            archive_tree(&stack.data().archive()),
-            BTreeMap::from([("bb/new.StormReplay".to_string(), b"new".to_vec())])
-        );
-        // No work folder left next to the data.
-        assert!(!tmp.path().join("import-work").exists());
-        assert!(!tmp.path().join("archive.old").exists());
+        assert_eq!(archive_tree(&stack.data().archive()), new_archive());
+        assert!(!stack.data().ledger().exists(), "the ledger is reset");
+        assert!(!host.staged.load(std::sync::atomic::Ordering::SeqCst));
+        assert_clean(tmp.path());
+        // The chosen file is untouched.
+        assert!(zip.exists());
     }
 
     #[test]
-    fn import_into_an_app_with_replays_needs_confirm() {
+    fn refused_stage_changes_nothing_and_keeps_the_server_up() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tempfile::tempdir().unwrap();
+        let log = Log::default();
+        let mut host = FakeHost::new(&log);
+        host.fail_stage = true;
+        let (mut stack, _host) = stack_with_archive(host, tmp.path(), Some(b"old"));
+        log.lock().unwrap().clear();
+        let err = import_into(&mut stack, &good_backup(src.path()), plenty).expect_err("refused");
+        assert!(err.contains("fake failure"), "{err}");
+        assert_eq!(entries(&log), ["db.stage(PGDMP-import)".to_string()]);
+        assert_eq!(archive_tree(&stack.data().archive()), old_archive());
+        assert!(stack.data().ledger().exists());
+        assert_clean(tmp.path());
+    }
+
+    #[test]
+    fn failed_promote_puts_the_archive_back_drops_the_stage_and_restarts() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tempfile::tempdir().unwrap();
+        let log = Log::default();
+        let mut host = FakeHost::new(&log);
+        host.fail_promote = true;
+        let (mut stack, _host) = stack_with_archive(host, tmp.path(), Some(b"old"));
+        log.lock().unwrap().clear();
+        let err =
+            import_into(&mut stack, &good_backup(src.path()), plenty).expect_err("promote fails");
+        assert!(err.contains("nothing was changed"), "{err}");
+        assert_eq!(
+            entries(&log),
+            [
+                "db.stage(PGDMP-import)".to_string(),
+                format!("server.shutdown({SERVER_PORT})"),
+                "db.promote".to_string(),
+                "db.discard".to_string(),
+                "server.spawn".to_string(),
+            ]
+        );
+        assert_eq!(archive_tree(&stack.data().archive()), old_archive());
+        assert!(stack.data().ledger().exists());
+        assert_clean(tmp.path());
+    }
+
+    #[test]
+    fn a_leftover_archive_old_blocks_the_swap_and_is_kept() {
         let tmp = tempfile::tempdir().unwrap();
         let src = tempfile::tempdir().unwrap();
         let log = Log::default();
         let (mut stack, _host) = stack_with_archive(FakeHost::new(&log), tmp.path(), Some(b"old"));
+        write(
+            &tmp.path().join("archive.old").join("keep.StormReplay"),
+            b"keep",
+        );
         log.lock().unwrap().clear();
-        let err =
-            import_into(&mut stack, &good_backup(src.path()), false, plenty).expect_err("refused");
-        assert!(err.contains("confirm"), "{err}");
-        assert!(entries(&log).is_empty(), "{:?}", entries(&log));
-        // An app with no replay yet imports without confirm.
-        let tmp2 = tempfile::tempdir().unwrap();
-        let log2 = Log::default();
-        let (mut fresh, _h) = stack_with_archive(FakeHost::new(&log2), tmp2.path(), None);
-        import_into(&mut fresh, &good_backup(src.path()), false, plenty).expect("import");
+        let err = import_into(&mut stack, &good_backup(src.path()), plenty).expect_err("blocked");
+        assert!(err.contains("could not be replaced"), "{err}");
+        assert_eq!(
+            entries(&log),
+            [
+                "db.stage(PGDMP-import)".to_string(),
+                format!("server.shutdown({SERVER_PORT})"),
+                "db.discard".to_string(),
+                "server.spawn".to_string(),
+            ]
+        );
+        assert_eq!(archive_tree(&stack.data().archive()), old_archive());
+        assert_eq!(
+            archive_tree(&tmp.path().join("archive.old")),
+            BTreeMap::from([("keep.StormReplay".to_string(), b"keep".to_vec())])
+        );
+        assert!(!tmp.path().join(IMPORT_JOURNAL).exists());
     }
 
     #[test]
-    fn invalid_backup_or_low_disk_touches_nothing() {
+    fn invalid_backup_network_path_or_low_disk_touches_nothing() {
         let tmp = tempfile::tempdir().unwrap();
         let src = tempfile::tempdir().unwrap();
         let log = Log::default();
@@ -871,52 +1392,137 @@ mod tests {
         log.lock().unwrap().clear();
         let bad = src.path().join("bad.stormcodex");
         make_zip(&bad, &[("db.dump", b"PGDMP"), ("../evil", b"x")]);
-        let err = import_into(&mut stack, &bad, true, plenty).expect_err("invalid");
+        let err = import_into(&mut stack, &bad, plenty).expect_err("invalid");
         assert!(err.contains("not a valid Storm Codex backup"), "{err}");
-        let err = import_into(&mut stack, &good_backup(src.path()), true, |_| Ok(1024))
-            .expect_err("disk");
+        let err =
+            import_into(&mut stack, &good_backup(src.path()), |_| Ok(1024)).expect_err("disk");
         assert!(err.contains("free"), "{err}");
+        let err = import_into(
+            &mut stack,
+            Path::new(r"\\server\share\in.stormcodex"),
+            plenty,
+        )
+        .expect_err("network");
+        assert!(err.contains("network"), "{err}");
         assert!(entries(&log).is_empty(), "{:?}", entries(&log));
-        assert!(has_files(&stack.data().archive()));
+        assert_eq!(archive_tree(&stack.data().archive()), old_archive());
+        assert!(stack.data().ledger().exists());
         assert!(!src.path().join("..").join("evil").exists());
+        assert_clean(tmp.path());
     }
 
-    #[test]
-    fn failed_restore_keeps_the_archive_and_restarts_the_server() {
-        let tmp = tempfile::tempdir().unwrap();
-        let src = tempfile::tempdir().unwrap();
+    /// Lays out the data root as a crash would leave it, then starts the stack.
+    fn crashed(
+        root: &Path,
+        journal: bool,
+        staged: bool,
+        archive: Option<&[u8]>,
+        archive_old: Option<&[u8]>,
+    ) -> (Stack, Log) {
+        let data = DataDir::new(root.to_path_buf());
+        if let Some(body) = archive {
+            write(&data.archive().join("bb").join("new.StormReplay"), body);
+        }
+        if let Some(body) = archive_old {
+            write(
+                &root.join("archive.old").join("aa").join("old.StormReplay"),
+                body,
+            );
+        }
+        if journal {
+            write(&root.join(IMPORT_JOURNAL), b"import in progress\n");
+        }
+        write(&data.ledger(), b"{}");
+        write(&root.join(IMPORT_WORK).join("db.dump"), b"PGDMP");
         let log = Log::default();
-        let mut host = FakeHost::new(&log);
-        host.fail_restore = true;
-        let (mut stack, _host) = stack_with_archive(host, tmp.path(), Some(b"old"));
-        log.lock().unwrap().clear();
-        let err = import_into(&mut stack, &good_backup(src.path()), true, plenty)
-            .expect_err("restore fails");
-        assert!(err.contains("fake failure"), "{err}");
-        assert_eq!(
-            entries(&log),
-            [
-                format!("server.shutdown({SERVER_PORT})"),
-                "db.restore(PGDMP-import)".to_string(),
-                "server.spawn".to_string(),
-            ]
-        );
-        assert_eq!(
-            archive_tree(&stack.data().archive()),
-            BTreeMap::from([("aa/old.StormReplay".to_string(), b"old".to_vec())])
-        );
-        assert!(!tmp.path().join("import-work").exists());
+        let host = FakeHost::new(&log);
+        host.staged
+            .store(staged, std::sync::atomic::Ordering::SeqCst);
+        let (stack, _host) = start(host, root);
+        (stack.expect("start"), log)
     }
 
-    /// Real Postgres 17 (skipped unless `PG_BIN_DIR` points at its `bin/`): a row and a replay
-    /// exported from one data root come back in a fresh one.
+    /// The recovery steps logged before the server started.
+    fn recovery_steps(log: &Log) -> Vec<String> {
+        let all = entries(log);
+        let first = all
+            .iter()
+            .position(|e| e.starts_with("db.ensure_database"))
+            .unwrap();
+        let spawn = all.iter().position(|e| e == "server.spawn").unwrap();
+        all[first + 1..spawn]
+            .iter()
+            .filter(|e| !e.starts_with("pick_port"))
+            .cloned()
+            .collect()
+    }
+
     #[test]
+    fn crash_after_the_swap_before_the_promote_is_rolled_back_at_start() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (stack, log) = crashed(tmp.path(), true, true, Some(b"new"), Some(b"old"));
+        assert_eq!(recovery_steps(&log), ["db.discard"]);
+        assert_eq!(archive_tree(&stack.data().archive()), old_archive());
+        assert!(stack.data().ledger().exists());
+        assert_clean(tmp.path());
+    }
+
+    #[test]
+    fn crash_in_the_middle_of_the_swap_is_rolled_back_at_start() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (stack, log) = crashed(tmp.path(), true, true, None, Some(b"old"));
+        assert_eq!(recovery_steps(&log), ["db.discard"]);
+        assert_eq!(archive_tree(&stack.data().archive()), old_archive());
+        assert_clean(tmp.path());
+    }
+
+    #[test]
+    fn crash_before_the_swap_keeps_the_archive() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (stack, log) = crashed(tmp.path(), true, true, Some(b"new"), None);
+        assert_eq!(recovery_steps(&log), ["db.discard"]);
+        assert_eq!(archive_tree(&stack.data().archive()), new_archive());
+        assert_clean(tmp.path());
+    }
+
+    #[test]
+    fn crash_after_the_promote_is_completed_at_start() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (stack, log) = crashed(tmp.path(), true, false, Some(b"new"), Some(b"old"));
+        assert_eq!(recovery_steps(&log), ["db.finish"]);
+        assert_eq!(archive_tree(&stack.data().archive()), new_archive());
+        assert!(!stack.data().ledger().exists(), "the ledger is reset");
+        assert_clean(tmp.path());
+    }
+
+    #[test]
+    fn without_a_journal_an_orphan_stage_is_dropped_and_archives_are_kept() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (stack, log) = crashed(tmp.path(), false, true, Some(b"new"), Some(b"old"));
+        assert_eq!(recovery_steps(&log), ["db.discard"]);
+        // Both folders hold files and no journal says which is current: nothing is deleted.
+        assert_eq!(archive_tree(&stack.data().archive()), new_archive());
+        assert!(tmp.path().join("archive.old").exists());
+        assert!(stack.data().ledger().exists());
+        assert!(!tmp.path().join(IMPORT_WORK).exists());
+        // An empty archive next to `archive.old` gets it back.
+        let tmp2 = tempfile::tempdir().unwrap();
+        let (stack2, log2) = crashed(tmp2.path(), false, false, None, Some(b"old"));
+        assert!(recovery_steps(&log2).is_empty());
+        assert_eq!(archive_tree(&stack2.data().archive()), old_archive());
+        assert_clean(tmp2.path());
+    }
+
+    /// Real Postgres 17: a row and a replay exported from one data root come back in a fresh
+    /// one. Ignored by default; run it with `PG_BIN_DIR` pointing at Postgres 17's `bin/` and
+    /// `cargo test -- --ignored` (it fails, never skips, without `PG_BIN_DIR`).
+    #[test]
+    #[ignore = "needs PG_BIN_DIR (Postgres 17 bin/); run with --ignored"]
     fn export_then_import_roundtrip_preserves_a_cast_row() {
         use storm_codex_supervisor::{Postgres, APP_DATABASE};
-        let Some(bin) = std::env::var_os("PG_BIN_DIR").filter(|v| !v.is_empty()) else {
-            eprintln!("PG_BIN_DIR not set: Postgres roundtrip skipped");
-            return;
-        };
+        let bin = std::env::var_os("PG_BIN_DIR")
+            .filter(|v| !v.is_empty())
+            .expect("PG_BIN_DIR must point at Postgres 17's bin/ for this test");
         let bin = PathBuf::from(bin);
         let free_port = || {
             std::net::TcpListener::bind("127.0.0.1:0")
@@ -978,17 +1584,24 @@ mod tests {
         .expect("export");
         drop(src);
 
-        // New PC: fresh cluster, then validate, unpack, restore, swap.
+        // New PC: fresh cluster, then validate, unpack, stage, swap, promote.
         let b = tempfile::tempdir().unwrap();
         let dst = boot(b.path());
         let contents = validate(&out).expect("valid");
         assert_eq!(contents.archive_files, 1);
         let work = b.path().join("import-work");
         std::fs::create_dir_all(&work).unwrap();
-        unpack(&out, &work.join("db.dump"), &work.join("archive")).expect("unpack");
-        dst.0.restore(&work.join("db.dump")).expect("restore");
+        unpack(
+            &out,
+            &work.join("db.dump"),
+            &work.join("archive"),
+            &contents,
+        )
+        .expect("unpack");
+        dst.0.stage_import(&work.join("db.dump")).expect("stage");
         let data_b = DataDir::new(b.path().to_path_buf());
-        replace_dir(&work.join("archive"), &data_b.archive()).expect("swap");
+        swap_dir(&work.join("archive"), &data_b.archive(), rename_retrying).expect("swap");
+        dst.0.promote_import().expect("promote");
         assert_eq!(
             psql(&dst.0, "SELECT caster FROM cast_sessions WHERE id = 42"),
             "Zoe"
@@ -997,8 +1610,11 @@ mod tests {
             std::fs::read(data_b.archive().join("ab").join("abc.StormReplay")).unwrap(),
             b"replay-bytes"
         );
-        // Importing again over existing data replaces it (--clean), still one row.
-        dst.0.restore(&work.join("db.dump")).expect("restore again");
+        // Importing again replaces the whole database: still one row.
+        dst.0
+            .stage_import(&work.join("db.dump"))
+            .expect("stage again");
+        dst.0.promote_import().expect("promote again");
         assert_eq!(psql(&dst.0, "SELECT count(*) FROM cast_sessions"), "1");
     }
 }

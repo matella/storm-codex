@@ -1,6 +1,7 @@
-//! IPC commands of the shell, callable from the main window only (capability
-//! `capabilities/default.json`: origin `http://127.0.0.1:*`, these commands and nothing else),
-//! plus the pure helpers behind the navigation guard and `--minimized`.
+//! IPC commands of the shell, callable from the main window only (runtime capability
+//! [`main_capability`]: the exact origin `http://127.0.0.1:<port>`, these commands and nothing
+//! else), plus the pure helpers behind the navigation guard, `--minimized` and the export /
+//! import dialogs.
 //!
 //! Long commands are `async` and run their work on a blocking task: a synchronous command
 //! would run on the main (UI) thread.
@@ -9,8 +10,9 @@ use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use tauri::ipc::CapabilityBuilder;
 use tauri::{AppHandle, Manager, Url};
-use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 use crate::backup;
 use crate::supervise::StopBudget;
@@ -167,29 +169,97 @@ pub fn run_install(app: &AppHandle) -> Result<(), String> {
     }
 }
 
+/// The native dialogs export and import open (fakes in tests). The page passes no path and
+/// no confirmation: the user answers these dialogs, shown by the shell.
+pub trait Dialogs {
+    /// Save dialog (Windows asks itself before replacing an existing file); `None` if cancelled.
+    fn save_backup(&self, default_name: &str) -> Option<PathBuf>;
+    /// Open dialog; `None` if cancelled.
+    fn open_backup(&self) -> Option<PathBuf>;
+    /// OK / Cancel question; true on OK.
+    fn confirm(&self, title: &str, message: &str) -> bool;
+}
+
+pub struct TauriDialogs<'a>(pub &'a AppHandle);
+
+impl Dialogs for TauriDialogs<'_> {
+    fn save_backup(&self, default_name: &str) -> Option<PathBuf> {
+        self.0
+            .dialog()
+            .file()
+            .set_title("Export Storm Codex data")
+            .set_file_name(default_name)
+            .add_filter("Storm Codex backup", &[backup::BACKUP_EXTENSION])
+            .blocking_save_file()
+            .and_then(|p| p.into_path().ok())
+    }
+    fn open_backup(&self) -> Option<PathBuf> {
+        self.0
+            .dialog()
+            .file()
+            .set_title("Import Storm Codex data")
+            .add_filter("Storm Codex backup", &[backup::BACKUP_EXTENSION])
+            .blocking_pick_file()
+            .and_then(|p| p.into_path().ok())
+    }
+    fn confirm(&self, title: &str, message: &str) -> bool {
+        self.0
+            .dialog()
+            .message(message)
+            .kind(MessageDialogKind::Warning)
+            .title(title)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Import".into(),
+                "Cancel".into(),
+            ))
+            .blocking_show()
+    }
+}
+
+/// Where the export goes: the save dialog's answer (default name for `now_secs`), a local path.
+pub fn choose_export_target(d: &dyn Dialogs, now_secs: u64) -> Result<PathBuf, String> {
+    let out = d
+        .save_backup(&backup::backup_file_name(now_secs))
+        .ok_or_else(|| "export cancelled".to_string())?;
+    backup::check_local_path(&out)?;
+    Ok(out)
+}
+
+/// The backup to import: the open dialog's answer (a local path), then an explicit OK in a
+/// confirmation dialog that says what is replaced.
+pub fn choose_import_source(d: &dyn Dialogs, has_replays: bool) -> Result<PathBuf, String> {
+    let file = d
+        .open_backup()
+        .ok_or_else(|| "import cancelled".to_string())?;
+    backup::check_local_path(&file)?;
+    let message = format!(
+        "Import {}?\n\nThis replaces all Storm Codex data on this PC (database and replay \
+         folder){}. The server is stopped during the import.",
+        file.display(),
+        if has_replays {
+            ", including the replays already imported here"
+        } else {
+            ""
+        }
+    );
+    if !d.confirm(crate::TITLE, &message) {
+        return Err("import cancelled".into());
+    }
+    Ok(file)
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or_default()
+}
+
 #[tauri::command]
-pub async fn export_data(app: AppHandle, path: String) -> Result<(), String> {
+pub async fn export_data(app: AppHandle) -> Result<(), String> {
     blocking(move || {
         let shell = shell(&app);
-        let out = if path.trim().is_empty() {
-            let secs = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or_default();
-            let picked = app
-                .dialog()
-                .file()
-                .set_title("Export Storm Codex data")
-                .set_file_name(backup::backup_file_name(secs))
-                .add_filter("Storm Codex backup", &[backup::BACKUP_EXTENSION])
-                .blocking_save_file();
-            match picked {
-                Some(p) => p.into_path().map_err(|e| e.to_string())?,
-                None => return Err("export cancelled".into()),
-            }
-        } else {
-            PathBuf::from(path)
-        };
+        let out = choose_export_target(&TauriDialogs(&app), now_secs())?;
         shell.log(&format!("export to {}", out.display()));
         let result = shell
             .life
@@ -213,27 +283,20 @@ pub async fn export_data(app: AppHandle, path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn import_data(
-    app: AppHandle,
-    path: String,
-    confirm: Option<bool>,
-) -> Result<(), String> {
+pub async fn import_data(app: AppHandle) -> Result<(), String> {
     blocking(move || {
         let shell = shell(&app);
-        if path.trim().is_empty() {
-            return Err("no backup file given".into());
-        }
-        let file = PathBuf::from(path);
+        // A short look (the dialogs are shown outside the lease: a Quit is not held up).
+        let has_replays = shell
+            .life
+            .with_running(|stack| backup::has_files(&stack.data().archive()))
+            .ok_or_else(|| "Storm Codex is not running".to_string())?;
+        let file = choose_import_source(&TauriDialogs(&app), has_replays)?;
         shell.log(&format!("import from {}", file.display()));
         let result = shell
             .life
             .with_running(|stack| {
-                backup::import_into(
-                    stack,
-                    &file,
-                    confirm.unwrap_or(false),
-                    storm_codex_supervisor::free_space,
-                )
+                backup::import_into(stack, &file, storm_codex_supervisor::free_space)
             })
             .ok_or_else(|| "Storm Codex is not running".to_string())?;
         match result {
@@ -248,6 +311,35 @@ pub async fn import_data(
         }
     })
     .await
+}
+
+/// Identifier of the main window's runtime capability.
+pub const MAIN_CAPABILITY: &str = "main-window-commands";
+
+/// The one origin the IPC trusts: the local server, exact port.
+pub fn app_origin(port: u16) -> String {
+    format!("http://127.0.0.1:{port}")
+}
+
+/// `allow-<command>` for each of the shell's commands (generated by `build.rs`).
+pub fn app_permissions() -> Vec<String> {
+    crate::command_names::APP_COMMANDS
+        .iter()
+        .map(|c| format!("allow-{}", c.replace('_', "-")))
+        .collect()
+}
+
+/// The main window's capability, added at runtime once the server port is known: remote
+/// origin [`app_origin`] only (no wildcard port: a page served on another local port gets no
+/// IPC), not for local app assets, the shell's commands only.
+pub fn main_capability(window: &str, port: u16) -> CapabilityBuilder {
+    app_permissions().into_iter().fold(
+        CapabilityBuilder::new(MAIN_CAPABILITY)
+            .remote(app_origin(port))
+            .local(false)
+            .window(window),
+        |cap, p| cap.permission(p),
+    )
 }
 
 #[tauri::command]
@@ -268,6 +360,7 @@ pub fn get_autostart(app: AppHandle) -> Result<bool, String> {
 mod tests {
     use super::*;
     use crate::command_names::APP_COMMANDS;
+    use std::path::Path;
 
     #[test]
     fn autostart_default_is_off() {
@@ -344,23 +437,12 @@ mod tests {
         }
     }
 
-    /// The remote capability grants exactly the shell's own commands, to the main window,
-    /// from the loopback origin: no core, plugin or unrelated permission.
+    /// The capability grants exactly the shell's own commands, from the exact app origin: no
+    /// other port, host or scheme, and no capability file can widen it.
     #[test]
-    fn capability_grants_only_the_shell_commands() {
-        let cap: serde_json::Value =
-            serde_json::from_str(include_str!("../capabilities/default.json")).expect("json");
-        assert_eq!(cap["windows"], serde_json::json!(["main"]));
-        assert_eq!(
-            cap["remote"]["urls"],
-            serde_json::json!(["http://127.0.0.1:*"])
-        );
-        let mut granted: Vec<String> = cap["permissions"]
-            .as_array()
-            .expect("permissions")
-            .iter()
-            .map(|p| p.as_str().expect("plain identifier").to_string())
-            .collect();
+    fn capability_is_the_exact_origin_and_the_shell_commands_only() {
+        use tauri::utils::acl::RemoteUrlPattern;
+        let mut granted = app_permissions();
         let mut expected: Vec<String> = APP_COMMANDS
             .iter()
             .map(|c| format!("allow-{}", c.replace('_', "-")))
@@ -368,11 +450,106 @@ mod tests {
         granted.sort();
         expected.sort();
         assert_eq!(granted, expected);
-        // A single capability file: nothing else can widen the grant.
-        let files: Vec<_> = std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/capabilities"))
-            .expect("dir")
-            .map(|e| e.expect("entry").file_name())
-            .collect();
-        assert_eq!(files, ["default.json"]);
+        let pattern: RemoteUrlPattern = app_origin(8088).parse().expect("pattern");
+        for ok in [
+            "http://127.0.0.1:8088/",
+            "http://127.0.0.1:8088/matches/42?x=1#t",
+        ] {
+            assert!(pattern.test(&url(ok)), "{ok}");
+        }
+        for bad in [
+            "http://127.0.0.1:8089/",
+            "http://127.0.0.1:5173/",
+            "https://127.0.0.1:8088/",
+            "http://localhost:8088/",
+            "http://127.0.0.2:8088/",
+        ] {
+            assert!(!pattern.test(&url(bad)), "{bad}");
+        }
+        // No static capability file: the runtime one is the only grant.
+        assert!(!Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/capabilities")).exists());
+    }
+
+    struct FakeDialogs {
+        save: Option<PathBuf>,
+        open: Option<PathBuf>,
+        ok: bool,
+        asked: std::cell::RefCell<Vec<String>>,
+    }
+
+    impl Dialogs for FakeDialogs {
+        fn save_backup(&self, default_name: &str) -> Option<PathBuf> {
+            self.asked.borrow_mut().push(format!("save {default_name}"));
+            self.save.clone()
+        }
+        fn open_backup(&self) -> Option<PathBuf> {
+            self.asked.borrow_mut().push("open".into());
+            self.open.clone()
+        }
+        fn confirm(&self, _title: &str, message: &str) -> bool {
+            self.asked.borrow_mut().push(format!("confirm {message}"));
+            self.ok
+        }
+    }
+
+    fn dialogs(save: Option<&Path>, open: Option<&Path>, ok: bool) -> FakeDialogs {
+        FakeDialogs {
+            save: save.map(Path::to_path_buf),
+            open: open.map(Path::to_path_buf),
+            ok,
+            asked: Default::default(),
+        }
+    }
+
+    #[test]
+    fn export_target_comes_from_the_save_dialog_and_must_be_local() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let out = tmp.path().join("b.stormcodex");
+        let d = dialogs(Some(&out), None, true);
+        assert_eq!(choose_export_target(&d, 0), Ok(out));
+        assert_eq!(
+            *d.asked.borrow(),
+            ["save storm-codex-backup-1970-01-01.stormcodex"]
+        );
+        assert_eq!(
+            choose_export_target(&dialogs(None, None, true), 0),
+            Err("export cancelled".into())
+        );
+        let unc = Path::new(r"\\server\share\b.stormcodex");
+        assert!(choose_export_target(&dialogs(Some(unc), None, true), 0).is_err());
+    }
+
+    #[test]
+    fn import_source_needs_the_open_dialog_and_an_explicit_ok() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let file = tmp.path().join("in.stormcodex");
+        let d = dialogs(None, Some(&file), true);
+        assert_eq!(choose_import_source(&d, true), Ok(file.clone()));
+        let asked = d.asked.borrow();
+        assert_eq!(asked[0], "open");
+        assert!(asked[1].contains("replaces all"), "{}", asked[1]);
+        assert!(
+            asked[1].contains("replays already imported"),
+            "{}",
+            asked[1]
+        );
+        // Always confirmed, even without replays yet.
+        let d = dialogs(None, Some(&file), true);
+        choose_import_source(&d, false).expect("ok");
+        assert_eq!(d.asked.borrow().len(), 2);
+        // Cancel at either step.
+        assert_eq!(
+            choose_import_source(&dialogs(None, Some(&file), false), true),
+            Err("import cancelled".into())
+        );
+        assert_eq!(
+            choose_import_source(&dialogs(None, None, true), true),
+            Err("import cancelled".into())
+        );
+        // A network path is refused before any question.
+        let unc = Path::new(r"\\server\share\in.stormcodex");
+        let d = dialogs(None, Some(unc), true);
+        assert!(choose_import_source(&d, true).is_err());
+        assert_eq!(*d.asked.borrow(), ["open"]);
     }
 }

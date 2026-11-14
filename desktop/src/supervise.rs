@@ -106,6 +106,8 @@ pub enum StartError {
     ServerExited { status: String, log: PathBuf },
     #[error("the server did not answer /api/health within {secs} s; see {log}")]
     NotHealthy { secs: u64, log: PathBuf },
+    #[error("an interrupted import could not be finished or rolled back: {0}")]
+    ImportRecovery(String),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -137,8 +139,17 @@ pub trait Db: Send {
     fn database_url(&self, db: &str) -> String;
     /// `pg_dump -Fc` of the app database to `out`.
     fn dump(&self, out: &Path) -> Result<(), PgError>;
-    /// `pg_restore` of a [`dump`](Self::dump) into the app database (one transaction).
-    fn restore(&self, file: &Path) -> Result<(), PgError>;
+    /// Restores an untrusted dump into the staging database (TOC allow-list, unprivileged
+    /// role, catalog check: [`Postgres::stage_import`]). The app database is not touched.
+    fn stage_import(&self, file: &Path) -> Result<(), PgError>;
+    /// True when a staged import exists.
+    fn staging_exists(&self) -> Result<bool, PgError>;
+    /// Swaps the staged database in (atomic), then [`finish_import`](Self::finish_import).
+    fn promote_import(&self) -> Result<(), PgError>;
+    /// Post-promote cleanup (idempotent).
+    fn finish_import(&self) -> Result<(), PgError>;
+    /// Drops the staging database, if any.
+    fn discard_import(&self) -> Result<(), PgError>;
 }
 
 impl Db for Postgres {
@@ -163,8 +174,20 @@ impl Db for Postgres {
     fn dump(&self, out: &Path) -> Result<(), PgError> {
         Postgres::dump(self, out)
     }
-    fn restore(&self, file: &Path) -> Result<(), PgError> {
-        Postgres::restore(self, file)
+    fn stage_import(&self, file: &Path) -> Result<(), PgError> {
+        Postgres::stage_import(self, file)
+    }
+    fn staging_exists(&self) -> Result<bool, PgError> {
+        Postgres::staging_exists(self)
+    }
+    fn promote_import(&self) -> Result<(), PgError> {
+        Postgres::promote_import(self)
+    }
+    fn finish_import(&self) -> Result<(), PgError> {
+        Postgres::finish_import(self)
+    }
+    fn discard_import(&self) -> Result<(), PgError> {
+        Postgres::discard_import(self)
     }
 }
 
@@ -336,6 +359,8 @@ impl Stack {
         db.init_if_needed()?;
         db.start()?;
         db.ensure_database(APP_DATABASE)?;
+        // Before the server touches the data: finish or roll back an import a crash cut short.
+        crate::backup::recover_import(&data, db).map_err(StartError::ImportRecovery)?;
         let port = host.pick_port(SERVER_PORT).map_err(StartError::Port)?;
         let cmd = ServerCommand {
             exe: resource_dir.join(SERVER_EXE),
@@ -397,10 +422,19 @@ impl Stack {
         self.db.dump(out)
     }
 
-    /// `pg_restore` into the app database. Stop the server first: `--clean` takes ACCESS
-    /// EXCLUSIVE locks its connections would hold up.
-    pub fn restore(&self, file: &Path) -> Result<(), PgError> {
-        self.db.restore(file)
+    /// Restores an untrusted dump into the staging database (the server may keep running).
+    pub fn stage_import(&self, file: &Path) -> Result<(), PgError> {
+        self.db.stage_import(file)
+    }
+
+    /// Swaps the staged import in. Stop the server first (nothing may be connected).
+    pub fn promote_import(&self) -> Result<(), PgError> {
+        self.db.promote_import()
+    }
+
+    /// Drops the staged import, if any.
+    pub fn discard_import(&self) -> Result<(), PgError> {
+        self.db.discard_import()
     }
 
     /// Polls `/api/health` until 200, the server exits, or the timeout. On failure the server
@@ -629,9 +663,20 @@ pub(crate) mod fakes {
         }
     }
 
-    struct FakeDb {
-        log: Log,
-        fail_restore: bool,
+    pub struct FakeDb {
+        pub log: Log,
+        pub fail_stage: bool,
+        pub fail_promote: bool,
+        /// Whether the staging database exists (shared with the host, so a test can set it).
+        pub staged: Arc<AtomicBool>,
+    }
+
+    fn fake_failure(command: &str) -> PgError {
+        PgError::CommandFailed {
+            command: command.into(),
+            status: "exit code: 1".into(),
+            stderr: "fake failure".into(),
+        }
     }
 
     impl Db for FakeDb {
@@ -665,19 +710,37 @@ pub(crate) mod fakes {
                 source,
             })
         }
-        fn restore(&self, file: &Path) -> Result<(), PgError> {
+        fn stage_import(&self, file: &Path) -> Result<(), PgError> {
             let body = std::fs::read(file).unwrap_or_default();
             push(
                 &self.log,
-                format!("db.restore({})", String::from_utf8_lossy(&body)),
+                format!("db.stage({})", String::from_utf8_lossy(&body)),
             );
-            if self.fail_restore {
-                return Err(PgError::CommandFailed {
-                    command: "pg_restore".into(),
-                    status: "exit code: 1".into(),
-                    stderr: "fake failure".into(),
-                });
+            if self.fail_stage {
+                return Err(fake_failure("pg_restore"));
             }
+            self.staged.store(true, Ordering::SeqCst);
+            Ok(())
+        }
+        /// Not logged: every start asks.
+        fn staging_exists(&self) -> Result<bool, PgError> {
+            Ok(self.staged.load(Ordering::SeqCst))
+        }
+        fn promote_import(&self) -> Result<(), PgError> {
+            push(&self.log, "db.promote");
+            if self.fail_promote {
+                return Err(fake_failure("psql"));
+            }
+            self.staged.store(false, Ordering::SeqCst);
+            Ok(())
+        }
+        fn finish_import(&self) -> Result<(), PgError> {
+            push(&self.log, "db.finish");
+            Ok(())
+        }
+        fn discard_import(&self) -> Result<(), PgError> {
+            push(&self.log, "db.discard");
+            self.staged.store(false, Ordering::SeqCst);
             Ok(())
         }
     }
@@ -709,7 +772,9 @@ pub(crate) mod fakes {
         pub healthy: bool,
         pub honours_shutdown: bool,
         pub exits_at_once: bool,
-        pub fail_restore: bool,
+        pub fail_stage: bool,
+        pub fail_promote: bool,
+        pub staged: Arc<AtomicBool>,
         /// Shutdown flag of the most recently spawned child.
         shutdown_requested: Mutex<Arc<AtomicBool>>,
         pub last_cmd: Mutex<Option<ServerCommand>>,
@@ -722,7 +787,9 @@ pub(crate) mod fakes {
                 healthy: true,
                 honours_shutdown: true,
                 exits_at_once: false,
-                fail_restore: false,
+                fail_stage: false,
+                fail_promote: false,
+                staged: Arc::new(AtomicBool::new(false)),
                 shutdown_requested: Mutex::new(Arc::new(AtomicBool::new(false))),
                 last_cmd: Mutex::new(None),
             }
@@ -742,7 +809,9 @@ pub(crate) mod fakes {
             push(&self.log, format!("open_db({port})"));
             Box::new(FakeDb {
                 log: self.log.clone(),
-                fail_restore: self.fail_restore,
+                fail_stage: self.fail_stage,
+                fail_promote: self.fail_promote,
+                staged: self.staged.clone(),
             })
         }
         fn spawn_server(&self, cmd: &ServerCommand) -> io::Result<Box<dyn ServerChild>> {

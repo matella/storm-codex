@@ -504,3 +504,265 @@ fn wrong_password_fails_fast_instead_of_prompting() {
     pg.ensure_database(APP_DATABASE)
         .expect("works again with the right password");
 }
+
+// ---- Import of an untrusted dump (stage as a non-superuser, check, swap) ----
+
+/// The server's migrations, applied with psql in order (the app schema a real export holds).
+fn apply_migrations(bin: &Path, pg: &Postgres) {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../storm-codex-server/migrations");
+    let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .expect("migrations dir")
+        .map(|e| e.expect("entry").path())
+        .filter(|p| p.extension().is_some_and(|e| e == "sql"))
+        .collect();
+    files.sort();
+    assert!(!files.is_empty());
+    for file in files {
+        let out = Command::new(bin.join(format!("psql{}", std::env::consts::EXE_SUFFIX)))
+            .args(["-X", "-w", "-q", "-v", "ON_ERROR_STOP=1", "-d"])
+            .arg(pg.database_url(APP_DATABASE))
+            .arg("-f")
+            .arg(&file)
+            .env_remove("PGPASSWORD")
+            .env("PGCLIENTENCODING", "UTF8")
+            .output()
+            .expect("psql -f");
+        assert!(
+            out.status.success(),
+            "{}: {}",
+            file.display(),
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}
+
+/// A running cluster with the app database, for the import tests.
+fn cluster(root: &Path, bin: &Path) -> Postgres {
+    let (_data, pg) = layout(root, bin.to_path_buf());
+    pg.init_if_needed().expect("init");
+    pg.start().expect("start");
+    pg.ensure_database(APP_DATABASE).expect("ensure_database");
+    pg
+}
+
+fn db_exists(bin: &Path, pg: &Postgres, name: &str) -> bool {
+    psql(
+        bin,
+        pg,
+        "postgres",
+        &format!("SELECT count(*) FROM pg_database WHERE datname = '{name}'"),
+    ) == "1"
+}
+
+/// Dumps a source database prepared with `sql` (after the migrations).
+fn dump_of(bin: &Path, root: &Path, sql: &str) -> PathBuf {
+    let pg = cluster(&root.join("src"), bin);
+    let _running = Running(&pg);
+    apply_migrations(bin, &pg);
+    psql(bin, &pg, APP_DATABASE, sql);
+    let dump = root.join("db.dump");
+    pg.dump(&dump).expect("dump");
+    dump
+}
+
+#[test]
+fn import_of_an_app_dump_is_staged_then_swapped_in() {
+    let Some(bin) = bin_dir() else { return };
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let dump = dump_of(
+        &bin,
+        tmp.path(),
+        "CREATE TABLE cast_row (id bigserial PRIMARY KEY, name text NOT NULL DEFAULT lower('X'), \
+         at timestamptz DEFAULT now()); INSERT INTO cast_row (name) VALUES ('kept')",
+    );
+    let pg = cluster(&tmp.path().join("dst"), &bin);
+    let _running = Running(&pg);
+    psql(&bin, &pg, APP_DATABASE, "CREATE TABLE old_only (x int)");
+
+    pg.stage_import(&dump).expect("stage");
+    assert!(pg.staging_exists().expect("staging"));
+    // The app database is untouched until the swap.
+    assert_eq!(
+        psql(
+            &bin,
+            &pg,
+            APP_DATABASE,
+            "SELECT count(*) FROM pg_tables WHERE tablename = 'old_only'"
+        ),
+        "1"
+    );
+    pg.promote_import().expect("promote");
+    assert!(!pg.staging_exists().expect("staging"));
+    assert!(!db_exists(
+        &bin,
+        &pg,
+        storm_codex_supervisor::PREVIOUS_DATABASE
+    ));
+    assert_eq!(
+        psql(&bin, &pg, APP_DATABASE, "SELECT name FROM cast_row"),
+        "kept"
+    );
+    assert_eq!(
+        psql(
+            &bin,
+            &pg,
+            APP_DATABASE,
+            "SELECT count(*) FROM pg_tables WHERE tablename = 'old_only'"
+        ),
+        "0"
+    );
+    // Owned by the superuser again, like a fresh install; the import role owns nothing.
+    assert_eq!(
+        psql(
+            &bin,
+            &pg,
+            APP_DATABASE,
+            "SELECT tableowner FROM pg_tables WHERE tablename = 'cast_row'"
+        ),
+        "storm"
+    );
+    assert_eq!(
+        psql(
+            &bin,
+            &pg,
+            "postgres",
+            "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = 'storm_codex'"
+        ),
+        "storm"
+    );
+    // Idempotent (crash recovery runs it again).
+    pg.finish_import().expect("finish again");
+}
+
+fn assert_refused(dump: &Path, pg: &Postgres, bin: &Path, needle: &str) {
+    let err = pg.stage_import(dump).expect_err("must be refused");
+    assert!(matches!(err, PgError::UnsafeDump(_)), "{err:?}");
+    assert!(err.to_string().contains(needle), "{err}");
+    assert!(
+        !pg.staging_exists().expect("staging"),
+        "staging left behind"
+    );
+    assert_eq!(
+        psql(
+            bin,
+            pg,
+            APP_DATABASE,
+            "SELECT count(*) FROM pg_tables WHERE tablename = 'old_only'"
+        ),
+        "1",
+        "the app database was touched"
+    );
+}
+
+#[test]
+fn import_refuses_a_dump_with_a_function_before_restoring() {
+    let Some(bin) = bin_dir() else { return };
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let dump = dump_of(
+        &bin,
+        tmp.path(),
+        "CREATE FUNCTION evil() RETURNS int LANGUAGE sql AS 'SELECT 1'",
+    );
+    let pg = cluster(&tmp.path().join("dst"), &bin);
+    let _running = Running(&pg);
+    psql(&bin, &pg, APP_DATABASE, "CREATE TABLE old_only (x int)");
+    assert_refused(&dump, &pg, &bin, "FUNCTION public evil()");
+}
+
+#[test]
+fn import_refuses_an_expression_calling_a_file_function() {
+    let Some(bin) = bin_dir() else { return };
+    let tmp = tempfile::tempdir().expect("tempdir");
+    // Restored as a non-superuser this succeeds (EXECUTE is checked at use, not at creation),
+    // but the superuser server would run it on the next insert: the catalog check refuses it.
+    let dump = dump_of(
+        &bin,
+        tmp.path(),
+        "CREATE TABLE trap (x text DEFAULT pg_read_file('PG_VERSION'))",
+    );
+    let pg = cluster(&tmp.path().join("dst"), &bin);
+    let _running = Running(&pg);
+    psql(&bin, &pg, APP_DATABASE, "CREATE TABLE old_only (x int)");
+    assert_refused(&dump, &pg, &bin, "pg_read_file");
+}
+
+#[test]
+fn import_role_cannot_run_programs_or_read_files() {
+    let Some(bin) = bin_dir() else { return };
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let dump = dump_of(&bin, tmp.path(), "SELECT 1");
+    let pg = cluster(&tmp.path().join("dst"), &bin);
+    let _running = Running(&pg);
+    pg.stage_import(&dump).expect("stage");
+    let marker = tmp.path().join("pwned.txt");
+    let marker_sql = marker
+        .display()
+        .to_string()
+        .replace(std::path::MAIN_SEPARATOR, "/");
+    let url = pg.import_role_url(storm_codex_supervisor::STAGING_DATABASE);
+    for sql in [
+        format!("COPY (SELECT 1) TO PROGRAM 'cmd /c echo x > \"{marker_sql}\"'"),
+        format!("COPY (SELECT 1) TO '{marker_sql}'"),
+        "SELECT pg_read_file('PG_VERSION')".to_string(),
+        "ALTER SYSTEM SET work_mem = '1MB'".to_string(),
+        "CREATE ROLE sneaky SUPERUSER".to_string(),
+    ] {
+        let out = psql_url(&bin, &url, &sql);
+        assert!(!out.status.success(), "{sql} succeeded as the import role");
+    }
+    assert!(!marker.exists());
+    // The role really is the one used (it can work in its own database).
+    let out = psql_url(&bin, &url, "CREATE TABLE mine (x int)");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    pg.discard_import().expect("discard");
+}
+
+#[test]
+fn staged_database_settings_cannot_hide_objects_from_the_check() {
+    let Some(bin) = bin_dir() else { return };
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let dump = dump_of(&bin, tmp.path(), "SELECT 1");
+    let pg = cluster(&tmp.path().join("dst"), &bin);
+    let _running = Running(&pg);
+    psql(&bin, &pg, APP_DATABASE, "CREATE TABLE old_only (x int)");
+    pg.stage_import(&dump).expect("stage");
+    // What a crafted TOC entry, run as the import role (owner of the staging database), could
+    // do: shadow the catalogs in a schema searched before pg_catalog, hide a function there.
+    let url = pg.import_role_url(storm_codex_supervisor::STAGING_DATABASE);
+    for sql in [
+        "CREATE SCHEMA evil",
+        "CREATE FUNCTION evil.f() RETURNS int LANGUAGE sql AS 'SELECT 1'",
+        "CREATE VIEW evil.pg_proc AS SELECT * FROM pg_catalog.pg_proc WHERE false",
+        "CREATE VIEW evil.pg_namespace AS SELECT * FROM pg_catalog.pg_namespace WHERE false",
+        "ALTER DATABASE storm_codex_import SET search_path = evil, pg_catalog",
+    ] {
+        let out = psql_url(&bin, &url, sql);
+        assert!(
+            out.status.success(),
+            "{sql}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    let err = pg.check_staged().expect_err("must be refused");
+    let msg = err.to_string();
+    assert!(msg.contains("evil.f()"), "{msg}");
+    assert!(msg.contains("schema evil"), "{msg}");
+    assert!(msg.contains("search_path"), "{msg}");
+    // The promote re-checks: refused, nothing swapped.
+    assert!(pg.promote_import().is_err());
+    assert!(pg.staging_exists().expect("staging"));
+    assert_eq!(
+        psql(
+            &bin,
+            &pg,
+            APP_DATABASE,
+            "SELECT count(*) FROM pg_tables WHERE tablename = 'old_only'"
+        ),
+        "1"
+    );
+    pg.discard_import().expect("discard");
+}

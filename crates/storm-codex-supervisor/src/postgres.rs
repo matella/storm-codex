@@ -21,6 +21,50 @@ pub const PG_MAJOR: &str = "17";
 pub const APP_DATABASE: &str = "storm_codex";
 /// Superuser created by `initdb` (password auth, loopback only).
 const PG_USER: &str = "storm";
+/// Non-superuser role an imported (untrusted) dump is restored as: `NOSUPERUSER NOCREATEDB
+/// NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT`, member of no role, owner of the staging
+/// database only. It cannot run programs, read or write server files, load C code or change the
+/// server configuration.
+pub const IMPORT_ROLE: &str = "storm_import";
+/// Database an import is restored into before it replaces [`APP_DATABASE`].
+pub const STAGING_DATABASE: &str = "storm_codex_import";
+/// Name the replaced app database has between the swap and its removal.
+pub const PREVIOUS_DATABASE: &str = "storm_codex_previous";
+
+/// Archive entry kinds (`pg_restore -l`) an imported dump may hold: the app schema has tables,
+/// sequences, indexes, constraints, defaults and data only. Anything else (functions,
+/// procedures, triggers, rules, extensions, languages, casts, operators, foreign data, event
+/// triggers, publications, ACLs, ...) is refused before anything is restored.
+const ALLOWED_TOC_KINDS: &[&str] = &[
+    "ENCODING",
+    "STDSTRINGS",
+    "SEARCHPATH",
+    "TABLE",
+    "TABLE DATA",
+    "SEQUENCE",
+    "SEQUENCE OWNED BY",
+    "SEQUENCE SET",
+    "DEFAULT",
+    "INDEX",
+    "CONSTRAINT",
+    "FK CONSTRAINT",
+    "COMMENT",
+];
+
+/// First OID of objects created after `initdb` (`FirstNormalObjectId`).
+const FIRST_USER_OID: u32 = 16384;
+
+/// Built-in functions the app schema's expressions (column defaults, check constraints,
+/// index expressions, views) may use. Any other function referenced by a restored object is
+/// refused: the server connects as the superuser, and a default such as
+/// `pg_read_file(...)` would run with its rights on the next insert.
+const ALLOWED_EXPRESSION_FUNCTIONS: &[&str] = &[
+    "now()",
+    "nextval(regclass)",
+    "lower(text)",
+    "upper(text)",
+    "btrim(text)",
+];
 /// Name of the password file, a sibling of the cluster directory.
 const PASSWORD_FILE: &str = "pg-password";
 /// Random bytes in the generated password (hex-encoded: 64 characters).
@@ -83,6 +127,9 @@ pub enum PgError {
         #[source]
         source: io::Error,
     },
+    /// An imported dump holds objects the app never creates (refused, nothing changed).
+    #[error("the backup's database holds objects Storm Codex never creates: {0}")]
+    UnsafeDump(String),
 }
 
 fn io_err(path: &Path) -> impl FnOnce(io::Error) -> PgError + '_ {
@@ -295,6 +342,263 @@ impl Postgres {
         run(&mut cmd, "pg_restore", DUMP_LIMIT).map(|_| ())
     }
 
+    /// Restores an **untrusted** dump into [`STAGING_DATABASE`] without touching
+    /// [`APP_DATABASE`] (the server may keep running):
+    /// 1. `pg_restore -l`: refused unless every entry kind is in the allow-list;
+    /// 2. a fresh staging database owned by [`IMPORT_ROLE`] (non-superuser);
+    /// 3. `pg_restore` connected **as that role** (`--no-owner --no-acl`, one transaction,
+    ///    `-L` with the checked entries only);
+    /// 4. catalog check of the result (no function, trigger, rule, extension, policy,
+    ///    operator, cast, language or foreign table of its own; expressions may only call the
+    ///    allow-listed built-ins).
+    ///
+    /// On any failure the staging database is dropped. [`promote_import`](Self::promote_import)
+    /// then swaps it in.
+    pub fn stage_import(&self, file: &Path) -> Result<(), PgError> {
+        let mut list_cmd = self.command("pg_restore")?;
+        list_cmd.arg("-l").arg(file);
+        let list = run(&mut list_cmd, "pg_restore -l", CLIENT_LIMIT)?;
+        let refused = toc_refusals(&list);
+        if !refused.is_empty() {
+            return Err(PgError::UnsafeDump(refused.join(", ")));
+        }
+        let list_file = file.with_extension("toc");
+        std::fs::write(&list_file, &list).map_err(io_err(&list_file))?;
+        self.discard_import()?;
+        let result = self.stage_checked(file, &list_file);
+        let _ = std::fs::remove_file(&list_file);
+        if result.is_err() {
+            let _ = self.discard_import();
+        }
+        result
+    }
+
+    fn stage_checked(&self, file: &Path, list_file: &Path) -> Result<(), PgError> {
+        self.ensure_import_role()?;
+        self.psql_postgres(&format!(
+            "CREATE DATABASE {STAGING_DATABASE} OWNER {IMPORT_ROLE}"
+        ))?;
+        self.psql_postgres(&format!(
+            "REVOKE ALL ON DATABASE {STAGING_DATABASE} FROM PUBLIC"
+        ))?;
+        let mut cmd = self.client_as("pg_restore", IMPORT_ROLE)?;
+        cmd.args([
+            "-d",
+            STAGING_DATABASE,
+            "--no-owner",
+            "--no-acl",
+            "--exit-on-error",
+            "--single-transaction",
+            "-L",
+        ])
+        .arg(list_file)
+        .arg(file);
+        run(&mut cmd, "pg_restore", DUMP_LIMIT)?;
+        self.check_staged()
+    }
+
+    /// Catalog check of the staging database (see [`stage_import`](Self::stage_import)).
+    pub fn check_staged(&self) -> Result<(), PgError> {
+        let unsafe_objects = self.unsafe_objects(STAGING_DATABASE)?;
+        if unsafe_objects.is_empty() {
+            Ok(())
+        } else {
+            Err(PgError::UnsafeDump(unsafe_objects.join(", ")))
+        }
+    }
+
+    /// True when a staged import exists (restored, not swapped in yet).
+    pub fn staging_exists(&self) -> Result<bool, PgError> {
+        let mut cmd = self.client("psql")?;
+        cmd.args(["-d", "postgres", "-X", "-q", "-t", "-A", "-c"])
+            .arg(format!(
+                "SELECT 1 FROM pg_database WHERE datname = '{STAGING_DATABASE}'"
+            ));
+        Ok(run(&mut cmd, "psql", CLIENT_LIMIT)?.trim() == "1")
+    }
+
+    /// Drops the staging database, if any.
+    pub fn discard_import(&self) -> Result<(), PgError> {
+        self.psql_postgres(&format!(
+            "DROP DATABASE IF EXISTS {STAGING_DATABASE} WITH (FORCE)"
+        ))
+    }
+
+    /// Swaps the staged database in, atomically (both renames in one transaction): afterwards
+    /// either the staging database still exists (nothing changed) or it is the app database.
+    /// Nothing may be connected to [`APP_DATABASE`] (stop the server first). Then
+    /// [`finish_import`](Self::finish_import).
+    pub fn promote_import(&self) -> Result<(), PgError> {
+        // Settings the dump may have given the database or the import role never reach the
+        // app: reset, then the catalog check runs again right before the swap.
+        self.psql_postgres(&format!("ALTER DATABASE {STAGING_DATABASE} RESET ALL"))?;
+        self.psql_postgres(&format!("ALTER ROLE {IMPORT_ROLE} RESET ALL"))?;
+        self.check_staged()?;
+        self.psql_postgres(&format!(
+            "DROP DATABASE IF EXISTS {PREVIOUS_DATABASE} WITH (FORCE)"
+        ))?;
+        // One `-c` string with several statements runs as one transaction.
+        self.psql_postgres(&format!(
+            "ALTER DATABASE {APP_DATABASE} RENAME TO {PREVIOUS_DATABASE}; \
+             ALTER DATABASE {STAGING_DATABASE} RENAME TO {APP_DATABASE}"
+        ))?;
+        self.finish_import()
+    }
+
+    /// After a promote (idempotent, also run by crash recovery): every object of the new app
+    /// database goes back to the superuser that owns a fresh install, and the replaced
+    /// database is dropped.
+    pub fn finish_import(&self) -> Result<(), PgError> {
+        let mut cmd = self.client("psql")?;
+        cmd.args([
+            "-d",
+            APP_DATABASE,
+            "-X",
+            "-q",
+            "-v",
+            "ON_ERROR_STOP=1",
+            "-c",
+        ])
+        .arg(format!(
+            "DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{IMPORT_ROLE}') \
+                 THEN EXECUTE 'REASSIGN OWNED BY {IMPORT_ROLE} TO {PG_USER}'; END IF; END $$"
+        ));
+        run(&mut cmd, "psql", CLIENT_LIMIT)?;
+        self.psql_postgres(&format!(
+            "DROP DATABASE IF EXISTS {PREVIOUS_DATABASE} WITH (FORCE)"
+        ))
+    }
+
+    /// Connection URL as [`IMPORT_ROLE`] (same generated password). Secret: do not log it.
+    pub fn import_role_url(&self, db: &str) -> String {
+        match self.password() {
+            Ok(pw) => format!("postgres://{IMPORT_ROLE}:{pw}@127.0.0.1:{}/{db}", self.port),
+            Err(_) => format!("postgres://{IMPORT_ROLE}@127.0.0.1:{}/{db}", self.port),
+        }
+    }
+
+    /// Creates or resets [`IMPORT_ROLE`]. The SQL (it holds the password) goes through a
+    /// private file next to the cluster, never the command line.
+    fn ensure_import_role(&self) -> Result<(), PgError> {
+        let pw = self.password()?;
+        let attrs = "LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT";
+        let sql = format!(
+            "SELECT format('CREATE ROLE {IMPORT_ROLE}') \
+             WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{IMPORT_ROLE}') \\gexec\n\
+             ALTER ROLE {IMPORT_ROLE} WITH {attrs} PASSWORD '{pw}';\n\
+             ALTER ROLE {IMPORT_ROLE} RESET ALL;\n"
+        );
+        let path = self.password_file().with_file_name("import-role.sql");
+        let _ = std::fs::remove_file(&path);
+        write_private(&path, &sql).map_err(io_err(&path))?;
+        let mut cmd = self.client("psql")?;
+        cmd.args(["-d", "postgres", "-X", "-q", "-v", "ON_ERROR_STOP=1", "-f"])
+            .arg(&path);
+        let result = run(&mut cmd, "psql", CLIENT_LIMIT).map(|_| ());
+        let _ = std::fs::remove_file(&path);
+        result
+    }
+
+    /// Objects of `db` the app never creates, described for the error message (read from the
+    /// catalogs only: no user code runs).
+    fn unsafe_objects(&self, db: &str) -> Result<Vec<String>, PgError> {
+        let allowed = ALLOWED_EXPRESSION_FUNCTIONS
+            .iter()
+            .map(|f| format!("'{f}'"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        // Objects created after initdb only (`oid >= FirstNormalObjectId`): the catalogs also
+        // list the system's own. Functions called by expressions are read from the stored
+        // expression trees (`:funcid <oid>`): built-in functions are pinned, so `pg_depend`
+        // records no dependency on them. Operators are not listed: user operators are refused
+        // above and the built-in ones only call built-in comparison/arithmetic functions.
+        // Every relation, function and type is schema-qualified, and the session runs with
+        // `search_path=pg_catalog,pg_temp` forced by the client (see `client_as`): settings the
+        // dump gave the database (`ALTER DATABASE ... SET search_path`) cannot shadow the
+        // catalogs. Those settings, and any schema besides `public`, are refused too.
+        let sql = format!(
+            "SELECT 'function ' || p.oid::pg_catalog.regprocedure::pg_catalog.text \
+               FROM pg_catalog.pg_proc p WHERE p.oid >= {FIRST_USER_OID} \
+             UNION ALL SELECT 'schema ' || n.nspname::pg_catalog.text FROM pg_catalog.pg_namespace n \
+               WHERE n.nspname NOT IN ('pg_catalog', 'information_schema', 'public', 'pg_toast') \
+               AND n.nspname::pg_catalog.text !~ '^pg_(toast_)?temp_' \
+             UNION ALL SELECT 'setting ' || pg_catalog.array_to_string(s.setconfig, ',') \
+               FROM pg_catalog.pg_db_role_setting s \
+               WHERE s.setdatabase = (SELECT d.oid FROM pg_catalog.pg_database d \
+                                      WHERE d.datname = pg_catalog.current_database()) \
+               OR s.setrole = (SELECT r.oid FROM pg_catalog.pg_roles r \
+                               WHERE r.rolname = '{IMPORT_ROLE}') \
+             UNION ALL SELECT 'trigger ' || t.tgname::pg_catalog.text FROM pg_catalog.pg_trigger t \
+               WHERE NOT t.tgisinternal \
+             UNION ALL SELECT 'rule ' || r.rulename::pg_catalog.text FROM pg_catalog.pg_rewrite r \
+               WHERE r.oid >= {FIRST_USER_OID} AND r.rulename <> '_RETURN' \
+             UNION ALL SELECT 'extension ' || x.extname::pg_catalog.text \
+               FROM pg_catalog.pg_extension x WHERE x.oid >= {FIRST_USER_OID} \
+             UNION ALL SELECT 'policy ' || y.polname::pg_catalog.text FROM pg_catalog.pg_policy y \
+             UNION ALL SELECT 'operator ' || o.oid::pg_catalog.regoperator::pg_catalog.text \
+               FROM pg_catalog.pg_operator o WHERE o.oid >= {FIRST_USER_OID} \
+             UNION ALL SELECT 'cast ' || c.oid::pg_catalog.text FROM pg_catalog.pg_cast c \
+               WHERE c.oid >= {FIRST_USER_OID} \
+             UNION ALL SELECT 'language ' || l.lanname::pg_catalog.text \
+               FROM pg_catalog.pg_language l WHERE l.oid >= {FIRST_USER_OID} \
+             UNION ALL SELECT 'foreign table ' || ft.ftrelid::pg_catalog.regclass::pg_catalog.text \
+               FROM pg_catalog.pg_foreign_table ft \
+             UNION ALL SELECT 'event trigger ' || et.evtname::pg_catalog.text \
+               FROM pg_catalog.pg_event_trigger et \
+             UNION ALL SELECT 'publication ' || pb.pubname::pg_catalog.text \
+               FROM pg_catalog.pg_publication pb \
+             UNION ALL SELECT DISTINCT 'use of function ' || \
+               used.f::pg_catalog.regprocedure::pg_catalog.text FROM ( \
+               SELECT (pg_catalog.regexp_matches(e, ':(?:funcid|aggfnoid|winfnoid) (\\d+)', 'g'))[1]::pg_catalog.oid AS f \
+               FROM ( \
+                 SELECT ad.adbin::pg_catalog.text FROM pg_catalog.pg_attrdef ad \
+                   WHERE ad.oid >= {FIRST_USER_OID} \
+                 UNION ALL SELECT co.conbin::pg_catalog.text FROM pg_catalog.pg_constraint co \
+                   WHERE co.oid >= {FIRST_USER_OID} AND co.conbin IS NOT NULL \
+                 UNION ALL SELECT i.indexprs::pg_catalog.text FROM pg_catalog.pg_index i \
+                   WHERE i.indexrelid >= {FIRST_USER_OID} AND i.indexprs IS NOT NULL \
+                 UNION ALL SELECT i.indpred::pg_catalog.text FROM pg_catalog.pg_index i \
+                   WHERE i.indexrelid >= {FIRST_USER_OID} AND i.indpred IS NOT NULL \
+                 UNION ALL SELECT rw.ev_action::pg_catalog.text FROM pg_catalog.pg_rewrite rw \
+                   WHERE rw.oid >= {FIRST_USER_OID} \
+                 UNION ALL SELECT se.stxexprs::pg_catalog.text FROM pg_catalog.pg_statistic_ext se \
+                   WHERE se.oid >= {FIRST_USER_OID} AND se.stxexprs IS NOT NULL \
+                 UNION ALL SELECT cl.relpartbound::pg_catalog.text FROM pg_catalog.pg_class cl \
+                   WHERE cl.oid >= {FIRST_USER_OID} AND cl.relpartbound IS NOT NULL \
+               ) AS exprs(e) \
+             ) AS used \
+             WHERE used.f::pg_catalog.regprocedure::pg_catalog.text NOT IN ({allowed})"
+        );
+        let mut cmd = self.client("psql")?;
+        cmd.args([
+            "-d",
+            db,
+            "-X",
+            "-q",
+            "-t",
+            "-A",
+            "-v",
+            "ON_ERROR_STOP=1",
+            "-c",
+        ])
+        .arg(sql);
+        let out = run(&mut cmd, "psql", CLIENT_LIMIT)?;
+        Ok(out
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(String::from)
+            .collect())
+    }
+
+    /// One statement on the `postgres` maintenance database, as the superuser.
+    fn psql_postgres(&self, sql: &str) -> Result<(), PgError> {
+        let mut cmd = self.client("psql")?;
+        cmd.args(["-d", "postgres", "-X", "-q", "-v", "ON_ERROR_STOP=1", "-c"])
+            .arg(sql);
+        run(&mut cmd, "psql", CLIENT_LIMIT).map(|_| ())
+    }
+
     fn pid_file(&self) -> PathBuf {
         self.data_dir.join("postmaster.pid")
     }
@@ -425,12 +729,21 @@ impl Postgres {
     /// A client tool for the server on loopback: never prompts (`-w`), password through
     /// `PGPASSWORD`, bounded connection time.
     fn client(&self, tool: &str) -> Result<Command, PgError> {
+        self.client_as(tool, PG_USER)
+    }
+
+    /// [`client`](Self::client) connected as `role` (same generated password). The session's
+    /// `search_path` is forced to `pg_catalog,pg_temp` (`PGOPTIONS`: a client startup option
+    /// overrides `ALTER DATABASE/ROLE ... SET`), so an imported database's settings cannot
+    /// make a superuser session resolve names to its objects.
+    fn client_as(&self, tool: &str, role: &str) -> Result<Command, PgError> {
         let mut cmd = self.command(tool)?;
-        cmd.env("PGPASSWORD", self.password()?)
+        cmd.env("PGOPTIONS", "-c search_path=pg_catalog,pg_temp")
+            .env("PGPASSWORD", self.password()?)
             .env("PGCONNECT_TIMEOUT", CONNECT_TIMEOUT_SECS)
             .args(["-w", "-h", "127.0.0.1", "-p"])
             .arg(self.port.to_string())
-            .args(["-U", PG_USER]);
+            .args(["-U", role]);
         Ok(cmd)
     }
 }
@@ -574,6 +887,36 @@ fn pg_ctl_error(command: &str, status: String, detail: String, elapsed: Duration
     }
 }
 
+/// Entry kinds of a `pg_restore -l` listing that are not in [`ALLOWED_TOC_KINDS`] (each as
+/// `KIND name`). Comment lines (`;`) are ignored; an entry line is
+/// `<id>; <catalog oid> <object oid> <KIND> <schema> <name> <owner>`.
+fn toc_refusals(list: &str) -> Vec<String> {
+    let mut kinds: Vec<&str> = ALLOWED_TOC_KINDS.to_vec();
+    // Longest first: "TABLE DATA" before "TABLE".
+    kinds.sort_by_key(|k| std::cmp::Reverse(k.len()));
+    let mut refused = Vec::new();
+    for line in list.lines().map(str::trim) {
+        if line.is_empty() || line.starts_with(';') {
+            continue;
+        }
+        let rest = line
+            .split_once(';')
+            .map(|(_, r)| r.trim_start())
+            .and_then(|r| r.split_once(' ').map(|(_, r)| r))
+            .and_then(|r| r.split_once(' ').map(|(_, r)| r));
+        let ok = rest.is_some_and(|rest| {
+            kinds.iter().any(|k| {
+                rest.strip_prefix(k)
+                    .is_some_and(|after| after.starts_with(' '))
+            })
+        });
+        if !ok {
+            refused.push(rest.unwrap_or(line).to_string());
+        }
+    }
+    refused
+}
+
 /// PID on the first line of `postmaster.pid`.
 fn parse_pid(bytes: &[u8]) -> Option<u32> {
     let first = bytes.split(|&b| b == b'\n').next()?;
@@ -598,6 +941,33 @@ fn validate_db_name(name: &str) -> Result<(), PgError> {
 #[allow(clippy::expect_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn toc_listing_allows_only_the_app_schema_kinds() {
+        let ok = "; Archive created at 2026-11-14\n\
+                  ;     dbname: storm_codex\n\
+                  3; 0 0 ENCODING - ENCODING\n\
+                  216; 1259 16390 TABLE public matches storm\n\
+                  215; 1259 16389 SEQUENCE public matches_id_seq storm\n\
+                  4790; 0 0 SEQUENCE OWNED BY public matches_id_seq storm\n\
+                  4627; 2604 16393 DEFAULT public matches id storm\n\
+                  4950; 0 16390 TABLE DATA public matches storm\n\
+                  4951; 0 0 SEQUENCE SET public matches_id_seq storm\n\
+                  4637; 2606 16400 CONSTRAINT public matches matches_pkey storm\n\
+                  4640; 1259 16410 INDEX public matches_played_at storm\n\
+                  4660; 2606 16420 FK CONSTRAINT public match_players fk storm\n";
+        assert!(toc_refusals(ok).is_empty(), "{:?}", toc_refusals(ok));
+        let bad = "217; 1255 16500 FUNCTION public evil() storm\n\
+                   218; 2620 16501 TRIGGER public matches t storm\n\
+                   219; 3079 16502 EXTENSION - dblink \n\
+                   220; 0 0 ACL - SCHEMA public storm\n\
+                   221; 1259 16503 TABLEX public x storm\n\
+                   garbage line\n";
+        let refused = toc_refusals(bad);
+        assert_eq!(refused.len(), 6, "{refused:?}");
+        assert!(refused[0].starts_with("FUNCTION public evil()"));
+        assert!(refused.iter().any(|r| r.starts_with("EXTENSION")));
+    }
 
     #[test]
     fn db_names_are_validated() {

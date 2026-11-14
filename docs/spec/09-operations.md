@@ -209,21 +209,31 @@ also runs a real Postgres 17 export → fresh cluster → import.
   (disabled until the updater enables it), Quit. One instance per user
   (`tauri-plugin-single-instance`, registered first): a second launch focuses the first.
 - **IPC (`commands.rs`).** `app.withGlobalTauri: true` (the web UI detects `window.__TAURI__`).
-  Commands: `update_status`, `install_update`, `export_data(path)`, `import_data(path, confirm?)`,
+  Commands: `update_status`, `install_update`, `export_data()`, `import_data()`,
   `set_autostart(enabled)`, `get_autostart` (list in `src/command_names.rs`, read by `build.rs`).
-  `build.rs` declares them with `tauri_build::AppManifest::commands`, so each one is **denied**
-  unless a capability grants its generated `allow-<command>` permission (without it every
-  registered command is allowed for every window). `capabilities/default.json` grants the `main`
-  window, from `http://127.0.0.1:*` only, exactly those six `allow-*` permissions: no `core:*`,
-  no plugin permission (the dialog, updater and autostart plugins' own JS commands are refused:
-  checked live, e.g. `plugin:updater|check` → "not allowed"). The loading window has no
-  capability. `capability_grants_only_the_shell_commands` fails if the grant list differs from
-  the command list or a second capability file appears; `tauri-build` rejects unknown
-  permission identifiers at compile time. Long commands are `async` and run on a blocking task
-  (a sync command runs on the UI thread).
+  `export_data` and `import_data` take **no argument**: the page can neither choose a path nor
+  confirm; the shell opens the native dialogs itself (see Export / import). `build.rs` declares
+  the commands with `tauri_build::AppManifest::commands`, so each one is **denied** unless a
+  capability grants its generated `allow-<command>` permission (without it every registered
+  command is allowed for every window). There is **no capability file**: the shell adds one
+  capability at runtime (`Manager::add_capability`, `commands::main_capability`) right before it
+  opens the `main` window, once the server port is known: window `main`, remote origin exactly
+  `http://127.0.0.1:<port>` (no port wildcard: a page or iframe served on another local port,
+  e.g. a dev server, gets no IPC), `local: false`, exactly those six `allow-*` permissions: no
+  `core:*`, no plugin permission (the dialog, updater and autostart plugins' own JS commands are
+  refused: checked live, e.g. `plugin:updater|check` → "not allowed"). Tauri cannot express the
+  exact port in a static file because the port is chosen at startup (`8088` or the next free
+  one); the runtime capability needs the default `dynamic-acl` feature. The loading window has
+  no capability. `capability_is_the_exact_origin_and_the_shell_commands_only` fails if the grant
+  list differs from the command list, if the origin pattern matches another port, host or
+  scheme, or if a `capabilities/` folder reappears. Long commands are `async` and run on a
+  blocking task (a sync command runs on the UI thread).
 - **Navigation guard.** The `main` window's `on_navigation` lets only `http://127.0.0.1:<port>`
   (same scheme, host, port; no userinfo) load in the window, the only origin the capability
-  trusts, so another page can never reach the IPC. Other `http(s)` links open in the system
+  trusts. This keeps other sites out of the top-level window; it does not make the app page
+  safe by itself: any script running in that origin (an XSS in the web UI, or content the
+  server serves there) can call the six commands, which is why they take no path or
+  confirmation from the page. Other `http(s)` links open in the system
   browser (`open::that_detached`, Rust side only: no opener plugin, no JS command); other schemes
   are dropped and logged. `window.open` / `target=_blank` (`on_new_window`) never create a
   webview: same treatment, then `Deny`.
@@ -238,7 +248,8 @@ also runs a real Postgres 17 export → fresh cluster → import.
   ready(version)` behind the `UpdateSource` trait (fakes in tests). The first check runs once the
   main window is up, then every 6 h on an `updater` thread: `check()`; an announced update is
   `download()`ed (signature verified; **not** `download_and_install`) and its bytes kept in
-  memory; then `ready` and the tray item **Restart to update** is enabled. A check or download
+  memory (the installer's size, tens of MB, held until install or exit: accepted; streaming it
+  to a file is deferred); then `ready` and the tray item **Restart to update** is enabled. A check or download
   failure returns to `none` with one log line and is retried at the next tick. `update_status`
   answers `{state: "none"|"downloading"|"ready", version}` (camelCase JSON, the web banner's
   contract in `08-frontend.md`). `install_update` (banner or tray item, same path) is refused
@@ -270,25 +281,105 @@ also runs a real Postgres 17 export → fresh cluster → import.
 - **Export / import (`backup.rs`).** File `storm-codex-backup-YYYY-MM-DD.stormcodex` (UTC date),
   a zip with `db.dump` (`pg_dump -Fc`) and `archive/<relative path>` for every file of the
   archive folder, all `Stored` (replays and the custom-format dump are already compressed; zip64
-  for files ≥ 4 GiB), streamed (never loaded in memory). `export_data(path)`: an empty `path`
-  opens a native save dialog (cancel → "export cancelled"). Postgres and the server keep running:
-  the dump is taken first, then the archive copied (a replay imported meanwhile is an orphan
-  file, harmless); written to `<out>.partial`, renamed when complete. `import_data(path,
-  confirm)`: refused when the archive already holds a file unless `confirm: true`. Then, before
-  anything changes: the zip is validated — exactly one `db.dump` starting with `PGDMP`; every
-  other entry under `archive/`; no `\`, `:`, NUL, absolute path, empty/`.`/`..` component,
-  Windows device name (`CON`, `nul.txt`) or trailing dot/space; no symlink or encrypted entry;
-  ≤ 2,000,000 entries, ≤ 256 GiB per entry, deflated entries ≤ 200× expansion — and the data
-  drive must have the unpacked size + 1 GiB free. It is unpacked into `<data>/import-work`
-  (files created new, exact declared sizes). Then the server is stopped (graceful, `Full`
-  budget; Postgres stays up: `pg_restore --clean` takes ACCESS EXCLUSIVE locks), the dump
-  restored (one transaction), `archive/` swapped by renames (`archive` → `archive.old`, new →
-  `archive`, old removed; put back if the rename fails), `import-work` removed, and the server
-  restarted on the same stack and port (`Stack::restart_server`); the command returns once
-  `/api/health` answers. A failed restore leaves the database and the archive as they were, and
-  the server is restarted either way. The ledger and the raw cache are kept (both keyed by
-  content). Export and import run through `Lifecycle::with_running`: one at a time, and a Quit
-  or session end waits for them to finish. Not exposed in the web UI yet.
+  for files ≥ 4 GiB), streamed (never loaded in memory). Export and import run through
+  `Lifecycle::with_running`: one at a time, and a Quit or session end waits for them to finish.
+  Not exposed in the web UI yet.
+  - **Export (`export_data()`).** The shell opens the native save dialog (default name above;
+    cancel → "export cancelled"). Windows' save dialog asks before replacing an existing file
+    (`FOS_OVERWRITEPROMPT`, the default of the dialog plugin's `rfd` backend); nothing else
+    ever replaces a file. UNC, device (`\\?\`, `\\.\`), relative paths and mapped network
+    drives (`GetDriveTypeW` = remote) are refused (`backup::check_local_path`). Postgres and the
+    server keep running: the dump is taken first, then the archive copied (a replay imported
+    meanwhile is an orphan file, harmless); written to `<out>.partial` (created new: an
+    existing file of that name is never overwritten, the export fails instead), renamed to the
+    chosen path when complete.
+  - **Import (`import_data()`).** The shell opens the native open dialog, refuses a non-local
+    path as above, then always asks for an explicit OK in a native confirmation ("replaces all
+    Storm Codex data on this PC", naming the replays already there if any). Then
+    (`backup::import_into`):
+    1. **Private copy.** The chosen file is copied (exact size read first; refused if it
+       changes meanwhile; free space ≥ its size + 1 GiB) to `<data>/import-work/backup.zip`;
+       everything below reads only that copy, so the file cannot be swapped between the check
+       and the use.
+    2. **Validation** of the copy — exactly one `db.dump` starting with `PGDMP`; every other
+       entry under `archive/`; no `\`, `:`, NUL, absolute path, empty/`.`/`..` component,
+       Windows device name (`CON`, `nul.txt`, `con .txt`, `CONIN$`, `CONOUT$`, `CLOCK$`,
+       `COM1`–`9`, `LPT1`–`9`, `COM¹`–`³`, `LPT¹`–`³`) or trailing dot/space; no symlink or
+       encrypted entry; ≤ 2,000,000 entries, ≤ 256 GiB per entry, deflated entries ≤ 200×
+       expansion — and free space ≥ unpacked size + 3 × dump size (the staging database
+       beside the current one) + 1 GiB.
+    3. **Unpack** into `import-work` within the validated budget (entry count, total bytes,
+       file count, one dump of the validated size; symlink/encryption re-checked; files created
+       new with exact declared sizes).
+    4. **Staged restore** while the server keeps running (`Postgres::stage_import`, see below).
+       A refused or failed restore changes nothing.
+    5. **Commit.** `<data>/import-journal` written, server stopped (graceful, `Full` budget;
+       Postgres stays up), `archive` → `archive.old` and the unpacked folder → `archive`
+       (renames, retried briefly; refused if an `archive.old` already exists, which is never
+       deleted blindly), then `promote_import`: database settings reset, catalog check run
+       again, `storm_codex` → `storm_codex_previous` and `storm_codex_import` → `storm_codex`
+       in **one transaction**, objects reassigned to the superuser, previous database dropped.
+       Then the upload **ledger (`uploaded.json`) is reset**: it lists what the replaced
+       database had imported, and a stale entry would make the watcher skip a replay the new
+       database lacks (re-scanning is safe: uploads are deduplicated by content hash); the raw
+       cache is kept (keyed by content). `archive.old` and the journal are removed and the
+       server restarted on the same stack and port (`Stack::restart_server`); the command
+       returns once `/api/health` answers.
+    6. **Rollback.** If the swap or the promote fails, `archive.old` is put back, the staging
+       database dropped, the journal removed and the server restarted: nothing changed. If even
+       putting `archive.old` back fails, the server stays stopped and the error says to restart
+       Storm Codex (the journal makes the next start finish the rollback).
+    7. **Crash recovery** (`backup::recover_import`, every start, after Postgres and before
+       the server): journal + staging database → not promoted: roll back (`archive.old` put
+       back, journal removed, staging dropped); journal without staging database → promoted:
+       finish it (reassign, ledger reset, `archive.old` and journal removed); no journal → a
+       staging database is an orphan (dropped), and an `archive.old` next to an **empty**
+       `archive` is put back (one next to a non-empty `archive` is left alone and must be
+       removed by hand). `import-work` is removed. A recovery failure stops the startup with
+       "an interrupted import could not be finished or rolled back".
+  - **Untrusted dump: defence in depth (`Postgres::stage_import`).** A backup may come from
+    anyone; `pg_restore` executes the SQL a dump carries, and the server connects as a
+    superuser. Layers:
+    1. **TOC allow-list.** `pg_restore -l` lists the entries; any kind outside `ENCODING`,
+       `STDSTRINGS`, `SEARCHPATH`, `TABLE`, `TABLE DATA`, `SEQUENCE`, `SEQUENCE OWNED BY`,
+       `SEQUENCE SET`, `DEFAULT`, `INDEX`, `CONSTRAINT`, `FK CONSTRAINT`, `COMMENT` (so every
+       `FUNCTION`, `PROCEDURE`, `AGGREGATE`, `EXTENSION`, `LANGUAGE`, `TRIGGER`, `RULE`,
+       `EVENT TRIGGER`, `POLICY`, `VIEW`, `SCHEMA`, `DATABASE`, `OPERATOR`, `CAST`, `SERVER`,
+       `FOREIGN TABLE`, `PUBLICATION`, …) refuses the file before anything is restored; the
+       checked list is passed to the restore with `-L`.
+    2. **Unprivileged role.** The restore runs connected as `storm_import` (`LOGIN NOSUPERUSER
+       NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT`, settings reset, same
+       generated password, set through a private file, never the command line), into a fresh
+       `storm_codex_import` database it owns (`CONNECT` revoked from `PUBLIC`), `--no-owner
+       --no-acl --exit-on-error --single-transaction`. It cannot run programs, read or write
+       server files, change the server configuration or create roles (tested: `COPY … TO
+       PROGRAM`, `COPY … TO '<file>'`, `pg_read_file`, `ALTER SYSTEM`, `CREATE ROLE …
+       SUPERUSER` all fail).
+    3. **Catalog check** of the staging database, as the superuser, from the catalogs only (no
+       user code runs): refused if it has any function, procedure, trigger, rule (besides view
+       `_RETURN`), extension, policy, operator, cast, language, foreign table, event trigger or
+       publication of its own, any schema besides `public`, any database- or import-role-level
+       setting (`pg_db_role_setting`), or a stored expression (column defaults, check
+       constraints, index expressions and predicates, statistics expressions, partition
+       bounds) calling a function outside `now()`, `nextval(regclass)`, `lower(text)`,
+       `upper(text)`, `btrim(text)` (read from the expression trees: built-in functions are
+       pinned and never recorded in `pg_depend`). Every catalog, function and type in that
+       query is schema-qualified (`pg_catalog.`), and **every** superuser client session runs
+       with `PGOPTIONS=-c search_path=pg_catalog,pg_temp` (a client startup option overrides
+       `ALTER DATABASE/ROLE … SET`): a crafted TOC entry that sets the staging database's
+       `search_path` to its own schema cannot shadow the catalogs or operators the check uses
+       (test `staged_database_settings_cannot_hide_objects_from_the_check`).
+    4. **Before the promote**: `ALTER DATABASE storm_codex_import RESET ALL` and `ALTER ROLE
+       storm_import RESET ALL` as the superuser, then the catalog check again.
+    **Residual risk** (accepted, documented): the allow-list checks entry kinds, not their SQL
+    text; an entry of an allowed kind can carry arbitrary SQL, which then runs with the import
+    role's rights only (its own database: tables, data, sequences, schemas, settings — all
+    checked or reset before the promote). Within those limits a malicious backup can still
+    put arbitrary **data** in the app tables (wrong stats, very large tables, strings that the
+    web UI must escape like any other data) and use disk space and time during the restore.
+    It cannot gain the superuser's rights through the import unless Postgres itself has a
+    privilege-escalation bug reachable by an ordinary role. Only import backups from a source
+    you trust.
 - **Autostart.** `tauri-plugin-autostart` (Windows: per-user `HKCU\…\Run` value "Storm Codex",
   launched with `--minimized`). `AUTOSTART_DEFAULT = false`: on the first launch with a data
   folder the shell sets autostart to that default (also clearing a `Run` value an earlier

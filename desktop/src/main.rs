@@ -317,7 +317,8 @@ fn create_loading_window(app: &AppHandle, visible: bool) -> tauri::Result<()> {
 /// Opens the app window on the local server and closes the loading window. The new window
 /// stays hidden if the loading window is hidden (closed to the tray, or a `--minimized`
 /// start). Navigation is guarded: only `http://127.0.0.1:<port>` loads in the window (it is
-/// the only origin the IPC capability trusts); web links open in the system browser.
+/// the only origin the IPC capability, added here, trusts); web links open in the system
+/// browser.
 fn open_main_window(app: &AppHandle, shell: &Arc<Shell>, port: u16) -> Result<(), String> {
     let url: tauri::Url = format!("http://127.0.0.1:{port}/")
         .parse()
@@ -326,6 +327,9 @@ fn open_main_window(app: &AppHandle, shell: &Arc<Shell>, port: u16) -> Result<()
     let visible = loading
         .as_ref()
         .is_none_or(|w| w.is_visible().unwrap_or(true));
+    // The IPC grant exists only from here on, for this exact origin.
+    app.add_capability(commands::main_capability(MAIN, port))
+        .map_err(|e| format!("IPC capability: {e}"))?;
     WebviewWindowBuilder::new(app, MAIN, WebviewUrl::External(url))
         .title(TITLE)
         .inner_size(1280.0, 800.0)
