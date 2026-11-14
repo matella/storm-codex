@@ -36,11 +36,11 @@ afterwards.
 | Check | Result | Evidence |
 |---|---|---|
 | Data root with spaces and accents (`…\Mätt é Test\data`) | **Pass** | initdb, Postgres, server, import all fine; `dataDir` in the status shows the path intact |
-| Data root with Cyrillic (`…\Пользователь é\data`) | **Fail** (known, see Known limitations) | `desktop.log`: "startup failed: Postgres: `initdb` failed … could not open file "…\???????????? �\data\pg-password"" (ANSI code page 1252); error dialog, nothing left running |
+| Data root with Cyrillic (`…\Пользователь é\data`) | **Fail before the fix, Pass after** (L1) | before: `desktop.log` "startup failed: Postgres: `initdb` failed … could not open file "…\???????????? �\data\pg-password"" (ANSI code page 1252). After the fix, an install-shaped run with **both** the resources (`…\Пользователь é\AppData\Local\Programs\Storm Codex`, Postgres binaries copied there) and the data root (`…\AppData\Local\com.matella.stormcodex`) under the Cyrillic folder: first start 9.3–10 s, Postgres runs as `…\A494~1\…\postgres.exe -D …\COMMAT~1.STO\pg` (8.3 forms), import of 3,427 replays `ready` in 201 s, hard kill mid-import → relaunch recognised the orphan as ours (fast shutdown, restart, "4 pending upload(s) resumed"), clean stop leaves nothing running, restart `ready` with 3,345 matches / 3,425 uploads (same as the accented run); no `%ProgramData%\StormCodex-*` alias needed |
 | First launch imports with no manual step, progress shown | **Pass** | status `importing`, total 3,427, done rising (1,190 after ~40 s); the Welcome page (read over WebView2 CDP) shows "100% · 2127 of 2127 replays … 17 ALREADY KNOWN 0 REJECTED 0 FAILED" at the end |
 | Hard kill of the shell mid-import (`Stop-Process -Force`, at 1,315 of 3,427) | **Pass** | server died with the shell (job object); Postgres and its `postmaster.pid` stayed (by design). DB: 1,319 uploads, ledger 1,300 entries, 3 `pending` |
 | Relaunch after the kill: no leftover postmaster, import resumes, no data loss | **Pass** | `postgres.log`: fast shutdown of the orphan, then a new start (port 54329 → 49728, see L4); `server.log`: "3 pending upload(s) resumed at startup"; import `ready` 100 s later. Final: 3,425 uploads = **3,425 distinct source files** (SHA-256 of all 3,427; 2 byte-identical copies), 3,345 matches, 80 `parse_failed` (see L5), ledger 3,427 entries, 3,425 archive files, 0 `pending` |
-| New replay copied in afterwards appears without restart | **Pass** | extra folder `…\Extra Пользователь é` added with `PUT /api/standalone/folders` (Cyrillic **replay** path works: only the Postgres data dir is affected); one game removed from the scratch DB, its replay copied in under a new name → new match in `matches` after **2.63 s**, visible in `GET /api/matches` |
+| New replay copied in afterwards appears without restart | **Pass** | extra folder `…\Extra Пользователь é` added with `PUT /api/standalone/folders` (Cyrillic **replay** path works: the watcher is Rust, Unicode paths throughout); one game removed from the scratch DB, its replay copied in under a new name → new match in `matches` after **2.63 s**, visible in `GET /api/matches` |
 | Six OBS routes on the running port | **Pass after fix** | before: 200 on `127.0.0.1:8088`, but `http://localhost:8088/...` → 404 from qBittorrent (`::1` first). After the `pick_port` fix: port 51042, all six (`/cast/overlay`, `/draft/overlay`, `/ticker`, `/now-playing`, `/widget`, `/queue`) 200 on both `127.0.0.1` and `localhost` |
 | Second launch | **Pass** | second process exited with code 0 in 0.19 s; still 1 shell / 1 server; first window visible, not minimised, foreground |
 | Clean stop | **Pass** | `WM_QUERYENDSESSION` + `WM_ENDSESSION` to the session watcher: `desktop.log` "stopped (Windows session end, SessionEnd budget)", no server or Postgres left, no `postmaster.pid` |
@@ -102,9 +102,11 @@ pair, set `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, 
    reinstall: data back. Uninstall with the box ticked: folder gone.
 9. **Profile name with spaces and accents** (e.g. user `Mätt Test`). *Expected:* works (passed in
    the dev run with a data root of that shape).
-10. **Profile name in Cyrillic** (e.g. `Пользователь`) on an English/French Windows. *Expected
-    today:* **fails** at first start with an initdb error (known limitation L1). Also try on a
-    Russian-locale Windows (ANSI code page 1251), where it may work.
+10. **Profile name in Cyrillic** (e.g. `Пользователь`) on an English/French Windows. *Expected:*
+    install, import and restart work (fixed, L1); `logs/postgres.log` and Task Manager's command
+    line show 8.3 short paths. Repeat on a volume with 8.3 names disabled if one is at hand
+    (`fsutil 8dot3name query`): a `%ProgramData%\StormCodex-<SID>` folder with a junction
+    appears and everything still works.
 11. **No HotS install.** VM user without a `Heroes of the Storm` folder. *Expected:* phase
     `no-folders`, the Welcome page asks for a folder; adding one in settings starts the import.
 12. **Export / import.** Export from the operator's PC, import on the VM. *Expected:* same
@@ -115,12 +117,15 @@ pair, set `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, 
 ## Known limitations (v1, accepted or deferred)
 
 Findings of the 2026-11-14 run (severity for a v1 user):
-- **L1 — High: data root not representable in the ANSI code page.** Postgres' Windows tools take
-  `char*` paths; a Windows profile named in Cyrillic (or any script outside the system's ANSI code
-  page) puts `%LOCALAPPDATA%` outside it and initdb fails: the app cannot start (clear error
-  dialog, nothing left running). Ruled at Task 2 as a Task 10 acceptance test; reproduced. Fix
-  directions (not done): 8.3 short paths (not guaranteed on every volume), or a data root under
-  an ASCII-only location when the profile path is not representable.
+- **L1 — fixed: paths outside the ANSI code page.** Postgres' Windows tools take `char*`
+  arguments and find `share/` from their own module path, so a profile named in Cyrillic (or any
+  script outside the ANSI code page) broke both the installed binaries and the data root. Every
+  path handed to a Postgres tool now goes through `ToolPaths::map`: unchanged when it fits, else
+  its 8.3 short form, else a junction in a private `%ProgramData%\StormCodex-<SID>` folder (see
+  09-operations "Paths outside the ANSI code page"). Remaining limits: the NSIS hooks have only
+  the short-path form (8.3 disabled + Cyrillic profile + app killed before an upgrade = the
+  upgrade may find `postgres\` locked); the junction fallback is covered by integration tests,
+  not by a real 8.3-disabled volume.
 - **L2 — fixed: port held on `[::]` by another program.** `pick_port` now also refuses a port
   that accepts connections on `[::1]` (`localhost` → `::1` first); test
   `pick_port_falls_back_when_taken_on_ipv6_loopback_only`.
@@ -128,11 +133,16 @@ Findings of the 2026-11-14 run (severity for a v1 user):
   listens; DB-backed tests added (see 04-serveur).
 - **L4 — Low:** after a hard kill, the next start picks the Postgres port before stopping the
   orphan Postgres, so the port moves (54329 → another). Harmless (the URL is rebuilt each start).
-- **L5 — Low/Medium:** replays the server stores as `parse_failed` (on the operator's PC: 37 too
-  old, 28 stats failures, 14 unsupported modes, 1 with computer players) are counted as imported:
-  the Welcome page shows "0 rejected". The spec wants corrupt replays "listed once at the end";
-  today only HTTP-level rejections are listed (the server never sends them for bad content).
-  The 28 `stats_failure` replays deserve a parser look (outside this project).
+- **L5 — fixed: replays that give no match are listed.** The watcher now reads the server's
+  `200 {"status":"parse_failed","error_class":c}` as a rejection `not imported: c`: on the
+  operator's replays the Welcome page lists 81 (37 too_old, 28 stats_failure, 14
+  unsupported_mode, 1 computer_player, 1 projection). The list covers the current run only (a
+  restart with nothing left to import shows none). The 28 `stats_failure` replays deserve a
+  parser look (outside this project).
+- **L8 — Low (server, pre-existing):** two byte-identical replays uploaded at the same moment:
+  the second resets the shared `uploads` row to `pending` and its projection fails on the
+  unique match fingerprint, so the run lists one `not imported: projection` although the game
+  is imported once (seen once on 3,427 files).
 - **L6 — Low:** after a resume, progress shows only the files left ("2127 of 2127"), not the
   whole folder.
 - **L7 — Low:** the ledger is keyed by file name: a replay whose name is already recorded from

@@ -17,8 +17,10 @@ uploads), new replay live in 2.6 s, six OBS routes 200, second launch focuses th
 root OK. Measured: parse median ≈ 140 ms (spike50), API p95 39 ms on 3,345 matches, backfill ≈ 2.7 min for 3,427
 files, first start 7.7–8.8 s (debug shell). Fixed during the run: a port held on `[::]` by another program
 (qBittorrent on 8088) made `http://localhost:<port>` reach that program (`pick_port` now probes `[::1]`); saved extra
-folders now load before the server listens (were `[]` while seeding). **Known blocker for some users:** a data root
-outside the ANSI code page (Cyrillic profile name on a Western Windows) makes initdb fail (L1 in the acceptance doc).
+folders now load before the server listens (were `[]` while seeding); Postgres' narrow-char tools now get every path
+(binaries included) in a form that fits the ANSI code page (8.3 short path, else a junction in a private
+`%ProgramData%\StormCodex-<SID>` folder), so a Cyrillic profile name works (L1, verified end to end with binaries and
+data under a Cyrillic folder); replays the server stores as `parse_failed` are listed as "not imported" (L5).
 
 **Next step (operator):**
 1. Generate the updater key pair (`cargo tauri signer generate`), set the secrets `TAURI_SIGNING_PRIVATE_KEY` and
@@ -29,7 +31,7 @@ outside the ANSI code page (Cyrillic profile name on a Western Windows) makes in
    size and first start in `09-operations.md`.
 4. Run the VM acceptance checklist in `docs/standalone-acceptance.md` (install, live game, OBS, kill/power cut,
    update N → N+1, hooks, uninstall keep/delete, Cyrillic/accented profile, no HotS install, export/import).
-5. Decide on L1 (non-ANSI profile paths) before a public release; then review/merge the branch and tag `desktop-v0.1.0`.
+5. Review/merge the branch and tag `desktop-v0.1.0`.
 
 Follow-ups outside v1: HotsPatchNotes snapshot publication (matella/HeroesOfTheStormPatchNotes#1), runtime snapshot
 refresh, SQLite instead of bundled Postgres (matella/storm-codex#31), a code-signing certificate (SmartScreen).
