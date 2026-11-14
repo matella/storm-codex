@@ -603,9 +603,13 @@ new `actions/cache` is SHA-pinned.
 
 | Measure | Value | Date / build |
 |---|---|---|
-| Installer size (`StormCodex_X.Y.Z_x64-setup.exe`) | not measured yet | — |
-| First start, install → app window (clean profile, empty data) | not measured yet | — |
-| First start, install → import `ready` (operator's replays) | not measured yet | — |
+| Installer size (`StormCodex_X.Y.Z_x64-setup.exe`) | not measured yet (no installer built) | — |
+| First start, install → app window (clean profile, empty data) | not measured yet (installed build) | — |
+| First start, empty data root → first page served (dev run: **debug** shell, release server, initdb + migrations + a tiny test snapshot) | 7.7 s and 8.8 s (2 runs) | 2026-11-14, `feat/standalone-installer` |
+| Restart with existing data → first page served (same dev run) | 3.5 s and 3.6 s (2 runs; one after a hard kill) | 2026-11-14 |
+| First start → import `ready`, operator's replays (3,427 files, 3.1 GB, 2024-08 → 2026-11) | ≈ 2.7 min of import time (63 s + 100 s, interrupted once by a hard kill) | 2026-11-14 |
+
+Method and the other figures (parse, API p95): [`docs/standalone-acceptance.md`](../standalone-acceptance.md).
 
 **Not verified yet** (no tag pushed, no workflow run): the real `cargo tauri build`, the NSIS
 hooks at install/uninstall time, the keep/delete prompt, the release workflow end to end and the

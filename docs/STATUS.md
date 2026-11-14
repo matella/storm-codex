@@ -1,5 +1,39 @@
 # STATUS — read first, update last
 
+## Standalone Windows installer (2026-11-14), branch `feat/standalone-installer` (not merged, not released)
+
+Spec `docs/specs/2026-11-12-standalone-installer-design.md`, plan `docs/plans/2026-11-12-standalone-installer.md`
+(Tasks 1–10 implemented). One Windows app: Tauri v2 shell (`desktop/`) supervising a bundled Postgres 17
+(`crates/storm-codex-supervisor`) and the server in standalone mode (`STANDALONE=1`: loopback only, in-process replay
+watcher `crates/storm-codex-watcher`, first-launch import with progress, `/api/standalone/*`), Welcome page and "This PC"
+settings in the web app, tray, single instance, updater (signed, `latest.json`), export/import of all data, autostart
+(off by default), NSIS installer (per user, keep/delete data on uninstall) and `release-desktop.yml`. Contracts:
+`docs/spec/04-serveur.md` (Standalone import), `05-api.md`, `08-frontend.md`, `09-operations.md` (Standalone desktop app).
+
+**Acceptance: not complete** — [`docs/standalone-acceptance.md`](standalone-acceptance.md). Run on the operator's PC
+with a debug shell and the real replay folders (read in place, scratch data root): first-launch import of 3,427
+replays with no manual step, hard kill mid-import then resume with no data loss (3,425 distinct files = 3,425
+uploads), new replay live in 2.6 s, six OBS routes 200, second launch focuses the first, clean stop, accented data
+root OK. Measured: parse median ≈ 140 ms (spike50), API p95 39 ms on 3,345 matches, backfill ≈ 2.7 min for 3,427
+files, first start 7.7–8.8 s (debug shell). Fixed during the run: a port held on `[::]` by another program
+(qBittorrent on 8088) made `http://localhost:<port>` reach that program (`pick_port` now probes `[::1]`); saved extra
+folders now load before the server listens (were `[]` while seeding). **Known blocker for some users:** a data root
+outside the ANSI code page (Cyrillic profile name on a Western Windows) makes initdb fail (L1 in the acceptance doc).
+
+**Next step (operator):**
+1. Generate the updater key pair (`cargo tauri signer generate`), set the secrets `TAURI_SIGNING_PRIVATE_KEY` and
+   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, replace `plugins.updater.pubkey` in `desktop/tauri.conf.json`.
+2. Build the reference snapshot from the real HotsPatchNotes API (`scripts/make-referential.sh`), upload it to a
+   non-latest pre-release, commit its URL + SHA-256 in `desktop/referential-pin.txt`.
+3. First dry run of `release-desktop.yml` (Run workflow → draft): proves the NSIS hooks compile; record installer
+   size and first start in `09-operations.md`.
+4. Run the VM acceptance checklist in `docs/standalone-acceptance.md` (install, live game, OBS, kill/power cut,
+   update N → N+1, hooks, uninstall keep/delete, Cyrillic/accented profile, no HotS install, export/import).
+5. Decide on L1 (non-ANSI profile paths) before a public release; then review/merge the branch and tag `desktop-v0.1.0`.
+
+Follow-ups outside v1: HotsPatchNotes snapshot publication (matella/HeroesOfTheStormPatchNotes#1), runtime snapshot
+refresh, SQLite instead of bundled Postgres (matella/storm-codex#31), a code-signing certificate (SmartScreen).
+
 **React removed (2026-11-12), branch `chore/remove-react-frontend`:** `web/`, `.nvmrc`, the CI `web` job, the Dockerfile Node stage, the `storm-codex-web` launch config and the server's React serving (`serve_spa`, `WEB_ROOT`, `WEB_V2_DIR`) are gone. `WEB_DIR` now points at the Rust bundles (`web-rs/dist`; `/app/web` in the image) and every page answers at `/`; `publish` waits for `web-rs`. Rollback = deploy the previous image tag. Last commit with the React sources: `2134853` (the `Port of web/src/...` comments in `web-rs/` refer to it). Specs 01/04/08/09/10, `gads/PROJECT.md` and the spec README rewritten for the Rust front-end; dated specs, plans, runbooks and STATUS-historique are left as written (history).
 
 **Leftovers closed (2026-11-12):** nothing of React is left unported. The `window.__cal` hook is ported; Replay 2D (playback, calibration save, webm export) and every Cast write (New series, marks, start/remove game, winners, per-game and batch replay load, Draft pick/undo/reset, Draft replay Auto) were exercised in the Rust app on an isolated database, with no discrepancy found; stale comments fixed. Only `web/` itself remains, for rollback, until one release after the switch.

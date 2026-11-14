@@ -182,6 +182,13 @@ time, no table.
 🔑 = upload token (like `/api/upload-raw`). Each chunk that adds events, and each
 status change → WS `live.updated` (signal only).
 
+## Standalone desktop app (`standalone/api.rs`) — only when `STANDALONE=1`
+
+`GET /api/standalone/status`, `PUT /api/standalone/folders`, `POST /api/standalone/rescan`,
+`POST /api/standalone/shutdown`: loopback `Host` only (other hosts 403), cross-origin writes
+refused (403), 404 when the server is not in standalone mode. Bodies and answers: the route table
+in [04-serveur.md](04-serveur.md) ("Standalone import").
+
 ## Static
 
 `/` = SPA (`index.html` fallback as `no-cache` — a redeploy changes the bundle hash);
