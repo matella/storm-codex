@@ -5,8 +5,12 @@
 # - Manual run (workflow_dispatch): same build, published as a **draft** release (never "latest", invisible to
 #   installed apps): the dry run. Delete the draft afterwards.
 # Fails on purpose while desktop/referential-pin.txt or the updater public key are placeholders, or when the signing
-# secret is missing. Tools are pinned: tauri-cli (cargo install --locked), Trunk (prebuilt, SHA-256 checked); NSIS is
-# downloaded by the Tauri bundler itself.
+# secret is missing. Tools are pinned: tauri-cli (cargo install --locked --force), Trunk (prebuilt, SHA-256 committed
+# below), the Rust toolchain version; NSIS is downloaded by the Tauri bundler itself.
+# Supply-chain rules of this job (it holds contents:write and the updater signing key): every action is pinned to a
+# full commit SHA (version in a comment); no build cache is restored (no rust-cache: a restored ~/.cargo/bin or
+# target/ could plant a cargo-tauri or a build output); checkout does not persist the token; event values reach
+# scripts through env, never by expression interpolation inside `run:`.
 name: release-desktop
 on:
   push:
@@ -20,6 +24,10 @@ concurrency:
 env:
   TAURI_CLI_VERSION: "2.12.4"
   TRUNK_VERSION: "0.22.0-beta.1" # same as the Dockerfile
+  # SHA-256 of trunk-x86_64-pc-windows-msvc.zip v0.22.0-beta.1 (10,270,358 bytes), computed on download 2026-11-14.
+  # Change it together with TRUNK_VERSION.
+  TRUNK_SHA256: "5324764f6a7d130753e9087e3713a8c3398d7c4cef2985a698042de91b8d3f51"
+  RUST_TOOLCHAIN: "1.94.0" # the toolchain the release build is checked with locally
 jobs:
   release:
     runs-on: windows-latest
@@ -27,13 +35,18 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false # the contents:write token stays out of .git/config (gh gets it via GH_TOKEN)
       - name: version (tag = desktop/tauri.conf.json)
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
           $version = (Get-Content desktop/tauri.conf.json -Raw | ConvertFrom-Json).version
           if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "tauri.conf.json version '$version' is not X.Y.Z" }
-          if ("${{ github.event_name }}" -eq 'push') {
-            $tag = "${{ github.ref_name }}"
+          if ($env:EVENT_NAME -eq 'push') {
+            $tag = $env:REF_NAME
             if ($tag -ne "desktop-v$version") { throw "tag $tag does not match tauri.conf.json version $version (expected desktop-v$version)" }
           }
           "VERSION=$version" >> $env:GITHUB_ENV
@@ -51,29 +64,25 @@ jobs:
         run: ./scripts/fetch-referential.ps1
       - name: Postgres 17 binaries (pinned, SHA-256 checked)
         run: ./scripts/fetch-postgres.ps1
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned to the commit of the action's `stable` branch tip on 2026-11-14 (b725eda, committed 2026-10-16); the
+      # toolchain itself is pinned by `toolchain:` (the branch name only selects the action's default).
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch, 2026-10-16
         with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
           targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            . -> target
-            web-rs -> target
-            desktop -> target
-      - name: install Trunk (pinned prebuilt)
+      - name: install Trunk (pinned prebuilt, committed SHA-256)
         run: |
+          if ($env:TRUNK_SHA256 -notmatch '^[0-9a-f]{64}$') { throw "TRUNK_SHA256 is missing or not 64 lowercase hex characters" }
           $url = "https://github.com/trunk-rs/trunk/releases/download/v$env:TRUNK_VERSION/trunk-x86_64-pc-windows-msvc.zip"
           $zip = Join-Path $env:RUNNER_TEMP 'trunk.zip'
           Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
-          Invoke-WebRequest -Uri "$url.sha256" -OutFile "$zip.sha256" -UseBasicParsing
-          $expected = ((Get-Content "$zip.sha256" -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
           $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($actual -ne $expected) { throw "trunk.zip SHA-256 mismatch: expected $expected, actual $actual" }
+          if ($actual -ne $env:TRUNK_SHA256) { throw "trunk.zip SHA-256 mismatch: expected $env:TRUNK_SHA256, actual $actual" }
           $dir = Join-Path $env:RUNNER_TEMP 'trunk'
           Expand-Archive -LiteralPath $zip -DestinationPath $dir
           $dir >> $env:GITHUB_PATH
       - name: install tauri-cli (pinned)
-        run: cargo install tauri-cli --version $env:TAURI_CLI_VERSION --locked
+        run: cargo install tauri-cli --version $env:TAURI_CLI_VERSION --locked --force
       - name: web bundles (overlay, sources, app → web-rs/dist)
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
@@ -93,6 +102,8 @@ jobs:
         # tauri-build copies resources on every cargo build and fails when they are missing).
         run: cargo tauri build --config tauri.bundle.conf.json
       - name: release assets (installer, .sig, latest.json)
+        env:
+          REPOSITORY: ${{ github.repository }}
         run: |
           $setup = @(Get-ChildItem desktop/target/release/bundle/nsis -Filter '*-setup.exe')
           if ($setup.Count -ne 1) { throw "expected exactly one NSIS installer, found $($setup.Count)" }
@@ -111,7 +122,7 @@ jobs:
               'windows-x86_64' = [ordered]@{
                 # the .sig file's content, not a path or URL
                 signature = (Get-Content -LiteralPath $sigFile -Raw).Trim()
-                url       = "https://github.com/${{ github.repository }}/releases/download/$($env:TAG)/$name"
+                url       = "https://github.com/$($env:REPOSITORY)/releases/download/$($env:TAG)/$name"
               }
             }
           }
@@ -122,11 +133,14 @@ jobs:
       - name: publish the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          COMMIT_SHA: ${{ github.sha }}
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           $files = (Get-ChildItem out).FullName
-          if ("${{ github.event_name }}" -eq 'push') {
+          if ($env:EVENT_NAME -eq 'push') {
             gh release create $env:TAG @files --verify-tag --latest --title "Storm Codex $($env:VERSION)" --notes "Windows installer: StormCodex_$($env:VERSION)_x64-setup.exe. Installed apps update themselves."
           } else {
-            gh release create $env:TAG @files --draft --target "${{ github.sha }}" --title "Storm Codex $($env:VERSION) (dry run)" --notes "Dry run from a manual workflow run: a draft, never served to installed apps. Delete it after checking."
+            gh release create $env:TAG @files --draft --target $env:COMMIT_SHA --title "Storm Codex $($env:VERSION) (dry run)" --notes "Dry run from a manual workflow run: a draft, never served to installed apps. Delete it after checking."
           }

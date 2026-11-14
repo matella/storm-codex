@@ -479,9 +479,14 @@ fresh migrated cluster → import.
   -t 30`, through `nsExec`, only when `postgres\bin\pg_ctl.exe` and `pg\postmaster.pid` exist,
   result ignored). Postgres may outlive a hard-killed shell and would keep `postgres\` locked, so
   an upgrade could not replace those files and an uninstall could not remove them. pg_ctl only
-  signals the postmaster named in that cluster's own pid file. The template runs PREINSTALL before
-  its own "app is running" check: installing over a running app stops its database first (the
-  app is closed right after). Updates from the app stop the stack themselves before installing.
+  signals the postmaster named in that cluster's own pid file. **Ask first:** the template runs
+  these hooks *before* its own "app is running" check, so in an interactive run (not `/S`, not `/P`
+  passive, not `/UPDATE`) the hook first looks for a running `<main binary>.exe` (`tasklist /FO
+  CSV`); if found it shows "Storm Codex is running. Quit it first (tray icon, then Quit)…" and
+  aborts **without stopping anything** (tray Quit stops the server, then Postgres, cleanly). An
+  update started by the app (`/P /UPDATE`) skips that question: the app has already stopped its
+  stack and is exiting (the template closes it if it is still there), so stopping Postgres is a
+  no-op or finishes what the app started.
 - **SmartScreen.** The installer is **not code-signed** (no certificate, a non-goal of the spec):
   Windows SmartScreen shows "Windows protected your PC" on first download; users click **More
   info → Run anyway**. The updater signature (minisign, below) is unrelated: it protects updates,
@@ -533,7 +538,36 @@ fresh migrated cluster → import.
 published as a **draft** release `desktop-v<version>` targeting the commit (drafts are never
 "latest" and are invisible to installed apps). Download the installer from the draft, install it,
 check, fill in the measurements below, then delete the draft. Do it before tagging that version
-(a draft with the tag of an existing release cannot be created).
+(a draft with the tag of an existing release cannot be created). Dry-run checklist: the workflow's
+`cargo tauri build` compiled `windows/hooks.nsh` (proves `nsExec`, `${FileExists}`, `${Silent}`,
+`$PassiveMode`/`$UpdateMode` and `${MAINBINARYNAME}` resolve); installing while the app runs shows
+the "Quit it first" message and leaves it running; installing over an app killed from Task Manager
+(its Postgres still running) stops that Postgres (`logs/postgres.log` shows a fast shutdown) and
+replaces `postgres\`; the uninstaller shows the "Delete the application data" box unticked and
+keeps `%LOCALAPPDATA%\com.matella.stormcodex` when left unticked; installer size and first start
+measured.
+
+**Supply-chain rules of the release job** (it holds `contents: write` and the signing key):
+- every action pinned to a full commit SHA with the version in a comment (`actions/checkout`
+  v4.4.0; `dtolnay/rust-toolchain` at the commit of its `stable` branch tip on 2026-11-14 — the
+  toolchain itself is pinned by `toolchain: 1.94.0`, env `RUST_TOOLCHAIN`, the version the build is
+  checked with locally). Bumping an action = resolve the new tag's commit
+  (`gh api repos/<owner>/<repo>/git/ref/tags/<tag>`, dereferencing an annotated tag) and replace
+  SHA and comment together;
+- **no build cache** (no `rust-cache`): a restored `~/.cargo/bin` or `target/` could supply a
+  `cargo-tauri` or a build output to the step that holds the key. Clean build, releases are rare.
+  `cargo install tauri-cli … --locked --force` never reuses an existing binary;
+- Trunk is checked against the SHA-256 **committed** in the workflow (`TRUNK_SHA256`, next to
+  `TRUNK_VERSION`; computed by downloading the pinned asset once, 2026-11-14), not a hash from the
+  same release. Bump both together;
+- `actions/checkout` with `persist-credentials: false` (the token is not left in `.git/config`;
+  `gh` gets it through `GH_TOKEN`);
+- event values (`github.ref_name`, `github.event_name`, `github.sha`, `github.repository`) reach the
+  scripts through `env:`, never interpolated inside `run:` (a tag name can contain `$(…)`).
+Deferred hardening: `ci.yml` (no signing key; only `publish` writes) still uses movable action refs
+(`actions/checkout@v4`, `dtolnay/rust-toolchain@stable`, `Swatinem/rust-cache@v2`,
+`taiki-e/install-action@v2`, `docker/*@v3`/`@v6`) and the default `persist-credentials`; only its
+new `actions/cache` is SHA-pinned.
 
 **Cutting a release.**
 1. Bump `version` in `desktop/tauri.conf.json` (`X.Y.Z`; also `desktop/Cargo.toml` for clarity),
@@ -542,9 +576,9 @@ check, fill in the measurements below, then delete the draft. Do it before taggi
    version, else the workflow fails).
 3. The workflow (windows-latest): refuses a placeholder updater pubkey, a missing signing secret
    or a placeholder referential pin; fetches the snapshot and Postgres 17 (both SHA-256 checked);
-   installs pinned tools (Trunk prebuilt `0.22.0-beta.1`, SHA-256 checked against the release's
-   `.sha256`; `cargo install tauri-cli --version 2.12.4 --locked`; NSIS is downloaded by the Tauri
-   bundler itself); builds the three `web-rs` bundles, `cargo build --release --locked -p
+   installs pinned tools (Rust `1.94.0` + `wasm32-unknown-unknown`; Trunk prebuilt `0.22.0-beta.1`,
+   SHA-256 checked against the committed `TRUNK_SHA256`; `cargo install tauri-cli --version 2.12.4
+   --locked --force`; NSIS is downloaded by the Tauri bundler itself); builds the three `web-rs` bundles, `cargo build --release --locked -p
    storm-codex-server`, then `cargo tauri build --config tauri.bundle.conf.json` with the signing
    secrets in the environment (gives `…-setup.exe` and its `.sig`).
 4. It publishes, with `gh release create --latest`, the release `desktop-vX.Y.Z` with
