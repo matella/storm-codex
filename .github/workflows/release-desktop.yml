@@ -1,0 +1,132 @@
+# Desktop installer release (docs/spec/09-operations.md, "Releasing the desktop app").
+# - Tag `desktop-v<X.Y.Z>` (must equal `version` in desktop/tauri.conf.json): builds the signed NSIS installer and
+#   publishes it, its `.sig` and the updater manifest `latest.json` as the repository's **latest** GitHub Release
+#   (installed apps read releases/latest/download/latest.json).
+# - Manual run (workflow_dispatch): same build, published as a **draft** release (never "latest", invisible to
+#   installed apps): the dry run. Delete the draft afterwards.
+# Fails on purpose while desktop/referential-pin.txt or the updater public key are placeholders, or when the signing
+# secret is missing. Tools are pinned: tauri-cli (cargo install --locked), Trunk (prebuilt, SHA-256 checked); NSIS is
+# downloaded by the Tauri bundler itself.
+name: release-desktop
+on:
+  push:
+    tags: ["desktop-v*"]
+  workflow_dispatch: {}
+permissions:
+  contents: write # create the release and upload its assets (GITHUB_TOKEN)
+concurrency:
+  group: release-desktop
+  cancel-in-progress: false
+env:
+  TAURI_CLI_VERSION: "2.12.4"
+  TRUNK_VERSION: "0.22.0-beta.1" # same as the Dockerfile
+jobs:
+  release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - name: version (tag = desktop/tauri.conf.json)
+        run: |
+          $version = (Get-Content desktop/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "tauri.conf.json version '$version' is not X.Y.Z" }
+          if ("${{ github.event_name }}" -eq 'push') {
+            $tag = "${{ github.ref_name }}"
+            if ($tag -ne "desktop-v$version") { throw "tag $tag does not match tauri.conf.json version $version (expected desktop-v$version)" }
+          }
+          "VERSION=$version" >> $env:GITHUB_ENV
+          "TAG=desktop-v$version" >> $env:GITHUB_ENV
+      - name: refuse placeholders (updater public key, signing secret)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          $pubkey = (Get-Content desktop/tauri.conf.json -Raw | ConvertFrom-Json).plugins.updater.pubkey
+          if (-not $pubkey -or $pubkey.StartsWith('PLACEHOLDER')) {
+            throw "plugins.updater.pubkey in desktop/tauri.conf.json is still a placeholder: generate the key pair (cargo tauri signer generate) and commit the public key"
+          }
+          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) { throw "repository secret TAURI_SIGNING_PRIVATE_KEY is not set" }
+      - name: reference-data snapshot (pinned, SHA-256 checked)
+        run: ./scripts/fetch-referential.ps1
+      - name: Postgres 17 binaries (pinned, SHA-256 checked)
+        run: ./scripts/fetch-postgres.ps1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            web-rs -> target
+            desktop -> target
+      - name: install Trunk (pinned prebuilt)
+        run: |
+          $url = "https://github.com/trunk-rs/trunk/releases/download/v$env:TRUNK_VERSION/trunk-x86_64-pc-windows-msvc.zip"
+          $zip = Join-Path $env:RUNNER_TEMP 'trunk.zip'
+          Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+          Invoke-WebRequest -Uri "$url.sha256" -OutFile "$zip.sha256" -UseBasicParsing
+          $expected = ((Get-Content "$zip.sha256" -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
+          $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "trunk.zip SHA-256 mismatch: expected $expected, actual $actual" }
+          $dir = Join-Path $env:RUNNER_TEMP 'trunk'
+          Expand-Archive -LiteralPath $zip -DestinationPath $dir
+          $dir >> $env:GITHUB_PATH
+      - name: install tauri-cli (pinned)
+        run: cargo install tauri-cli --version $env:TAURI_CLI_VERSION --locked
+      - name: web bundles (overlay, sources, app → web-rs/dist)
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          foreach ($b in 'overlay', 'sources', 'app') {
+            Push-Location "web-rs/$b"
+            trunk build --release
+            Pop-Location
+          }
+      - name: server (release)
+        run: cargo build --release --locked -p storm-codex-server
+      - name: installer (tauri build, signed)
+        working-directory: desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        # tauri.bundle.conf.json turns bundling on and adds the resources (kept out of tauri.conf.json because
+        # tauri-build copies resources on every cargo build and fails when they are missing).
+        run: cargo tauri build --config tauri.bundle.conf.json
+      - name: release assets (installer, .sig, latest.json)
+        run: |
+          $setup = @(Get-ChildItem desktop/target/release/bundle/nsis -Filter '*-setup.exe')
+          if ($setup.Count -ne 1) { throw "expected exactly one NSIS installer, found $($setup.Count)" }
+          $sigFile = "$($setup[0].FullName).sig"
+          if (-not (Test-Path -LiteralPath $sigFile)) { throw "missing updater signature $sigFile" }
+          # A name without spaces: GitHub rewrites spaces in asset names, the URL below must match exactly.
+          $name = "StormCodex_$($env:VERSION)_x64-setup.exe"
+          New-Item -ItemType Directory -Path out | Out-Null
+          Copy-Item -LiteralPath $setup[0].FullName -Destination "out/$name"
+          Copy-Item -LiteralPath $sigFile -Destination "out/$name.sig"
+          $manifest = [ordered]@{
+            version   = $env:VERSION
+            notes     = "Storm Codex $($env:VERSION)"
+            pub_date  = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            platforms = [ordered]@{
+              'windows-x86_64' = [ordered]@{
+                # the .sig file's content, not a path or URL
+                signature = (Get-Content -LiteralPath $sigFile -Raw).Trim()
+                url       = "https://github.com/${{ github.repository }}/releases/download/$($env:TAG)/$name"
+              }
+            }
+          }
+          $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath out/latest.json -Encoding utf8NoBOM
+          $mb = [math]::Round((Get-Item "out/$name").Length / 1MB, 1)
+          "Installer ``$name``: $mb MB" >> $env:GITHUB_STEP_SUMMARY
+          Get-ChildItem out | Format-Table Name, Length
+      - name: publish the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $files = (Get-ChildItem out).FullName
+          if ("${{ github.event_name }}" -eq 'push') {
+            gh release create $env:TAG @files --verify-tag --latest --title "Storm Codex $($env:VERSION)" --notes "Windows installer: StormCodex_$($env:VERSION)_x64-setup.exe. Installed apps update themselves."
+          } else {
+            gh release create $env:TAG @files --draft --target "${{ github.sha }}" --title "Storm Codex $($env:VERSION) (dry run)" --notes "Dry run from a manual workflow run: a draft, never served to installed apps. Delete it after checking."
+          }

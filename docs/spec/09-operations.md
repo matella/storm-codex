@@ -50,7 +50,10 @@ rebuild the bundles with `trunk build --release` if `web-rs/` changed.
 + `AUTH_TOKEN=<personal token>`. At launch: **complete** backfill of what has not been uploaded
 (oldest-first, idempotent — persisted set + server 409), then watches the replays folder.
 
-## CI — a single workflow (`ci.yml`): checks, tests, audit, then image publication
+## CI — `ci.yml` (checks, tests, audit, then image publication) and `release-desktop.yml`
+
+`release-desktop.yml` builds and publishes the desktop installer on a `desktop-v*` tag: see "Releasing the desktop
+app" below. Everything else is `ci.yml`.
 
 **Jobs** (push to `main`, `v*` tags, PRs, manual run):
 - `checks`: `cargo fmt --all -- --check`; **frozen migrations** (`scripts/check-migrations.sh`):
@@ -60,7 +63,17 @@ rebuild the bundles with `trunk build --release` if `web-rs/` changed.
   (`VersionMismatch`) for every database that already applied it. A schema change = a
   **new** migration. Modifying a migration added in the same PR is still allowed.
 - `rust`: strict clippy (`-D warnings`) + `cargo test --workspace` against a **Postgres 17
-  service** (DB-gated integration tests actually run).
+  service** (DB-gated integration tests actually run). The supervisor's real-Postgres tests need
+  Postgres **binaries** (`PG_BIN_DIR`), not a server: here they skip or stay ignored; the `desktop`
+  job runs them.
+- `desktop` (windows-latest): the desktop shell (`desktop/`, own `Cargo.lock`) —
+  `cargo fmt --manifest-path desktop/Cargo.toml --check`, strict clippy `--all-targets`, then
+  `cargo test --manifest-path desktop/Cargo.toml -- --include-ignored` and
+  `cargo test -p storm-codex-supervisor -- --include-ignored` with `PG_BIN_DIR` set to the pinned
+  Postgres 17 binaries (`scripts/fetch-postgres.ps1`, SHA-256 checked, cached with `actions/cache`
+  under a key derived from `desktop/postgres-pin.txt`). So the real-Postgres tests of the
+  supervisor and the shell's export → import roundtrip run on every push/PR. Not a `publish` gate
+  (the Docker image does not contain the shell).
 - `audit`: `cargo audit` (RustSec database) on `Cargo.lock`. Ignored advisories are listed in
   `.cargo/audit.toml`, each with its reason; only crates that are in the lockfile but compiled for
   no target qualify.
@@ -151,6 +164,7 @@ signalled, password required and reused, wrong password fails fast, data-only du
 import (same, older and newer version, schema objects refused, what the import role cannot do,
 large object refused):
 `$env:PG_BIN_DIR = "$PWD\target\postgres\bin"; cargo test -p storm-codex-supervisor --test postgres_it -- --include-ignored`.
+CI runs them in the `desktop` job (see CI above).
 The import tests play the server's `migrate` with psql over `crates/storm-codex-server/migrations`
 (same ledger table, deterministic checksums).
 
@@ -270,9 +284,9 @@ fresh migrated cluster → import.
   `tauri.conf.json`: `bundle.createUpdaterArtifacts: true`; `plugins.updater.endpoints:
   ["https://github.com/matella/storm-codex/releases/latest/download/latest.json"]`,
   `windows.installMode: "passive"`, `pubkey` = a **placeholder** until the operator generates
-  the key pair (`tauri signer generate`; the private key and its password are GitHub secrets,
-  never committed; the public key replaces the placeholder; release signing is documented with
-  packaging, Task 9). With the placeholder (or any value that is not base64 of a minisign
+  the key pair (`cargo tauri signer generate`; the private key and its password are GitHub
+  secrets, never committed; the public key replaces the placeholder; see "Releasing the desktop
+  app"). With the placeholder (or any value that is not base64 of a minisign
   public key, `pubkey_is_usable`) the shell never checks: `update_status` stays `none`, one log
   line "updates disabled: this build has no updater public key".
 - **Updater manual E2E (two signed builds; done with packaging).** Build N and N+1 with the real
@@ -289,7 +303,8 @@ fresh migrated cluster → import.
   archive folder, all `Stored` (replays and the custom-format dump are already compressed; zip64
   for files ≥ 4 GiB), streamed (never loaded in memory). Export and import run through
   `Lifecycle::with_running`: one at a time, and a Quit or session end waits for them to finish.
-  Not exposed in the web UI yet.
+  Web UI: "Backup" block of the "This PC" settings (`08-frontend.md`), which calls both commands
+  without arguments.
   - **Export (`export_data()`).** The shell opens the native save dialog (default name above;
     cancel → "export cancelled"). Windows' save dialog asks before replacing an existing file
     (`FOS_OVERWRITEPROMPT`, the default of the dialog plugin's `rfd` backend); nothing else
@@ -431,7 +446,130 @@ fresh migrated cluster → import.
   the resource folder and `STORM_CODEX_DATA_ROOT` the data root, e.g. a scratch folder holding
   the server exe, `postgres/` from `scripts/fetch-postgres.ps1`, `web/` and `minimaps/`:
   `$env:STORM_CODEX_RESOURCE_DIR="<res>"; $env:STORM_CODEX_DATA_ROOT="<tmp>"; desktop\target\debug\storm-codex-desktop.exe`.
-  Icons in `desktop/icons/` are placeholders until packaging.
+  Icons in `desktop/icons/` are still placeholders (packaging uses them as they are; replace the
+  files, same names, before a public release).
+
+### Packaging (NSIS installer)
+
+- **Config.** `desktop/tauri.conf.json` (always read): `bundle.targets: ["nsis"]`,
+  `bundle.publisher`, `bundle.windows.nsis.installMode: "currentUser"` (installs under
+  `%LOCALAPPDATA%`, no administrator prompt; per-user `HKCU` uninstall entry),
+  `bundle.windows.nsis.installerHooks: "./windows/hooks.nsh"`, `bundle.createUpdaterArtifacts:
+  true`, `bundle.active: false`. `desktop/tauri.bundle.conf.json` (passed only to the release build,
+  `cargo tauri build --config tauri.bundle.conf.json`, merged over the main file) sets
+  `bundle.active: true` and `bundle.resources`. They are kept apart because `tauri-build` copies
+  `bundle.resources` next to the binary on **every** `cargo build` and fails when one is missing:
+  in the main file, `cargo clippy`/`cargo test` of `desktop/` would need the whole release payload.
+- **Resources** (map form, source relative to `desktop/` → path under the resource folder), exactly
+  what `supervise.rs` resolves: `../target/release/storm-codex-server.exe` →
+  `storm-codex-server.exe`; `../target/postgres/` (from `scripts/fetch-postgres.ps1`) →
+  `postgres/`; `../web-rs/dist/` → `web/` (`app/`, `overlay/`, `sources/`); `../assets/minimaps/` →
+  `minimaps/`; `../target/referential/referential.tar.gz` (from `scripts/fetch-referential.ps1`)
+  → `referential.tar.gz`. `loading.html` is not a resource: it is `build.frontendDist` (`desktop/ui`),
+  embedded in the executable.
+- **Uninstall: keep or delete the data.** Tauri's NSIS template already provides it: the
+  uninstaller's confirmation page has a **"Delete the application data"** checkbox, **unticked by
+  default**; only when ticked does it remove `%LOCALAPPDATA%\com.matella.stormcodex` (the data root:
+  database cluster, password file, archived replays, logs) and `%APPDATA%\com.matella.stormcodex`.
+  The template skips that deletion in update mode (`/UPDATE`, used when an update replaces the
+  installation), and a silent uninstall (`/S`) shows no page so the box stays unticked: **an
+  update or a silent uninstall never deletes data**. No custom code deletes data.
+- **Hooks (`desktop/windows/hooks.nsh`).** `NSIS_HOOK_PREINSTALL` and `NSIS_HOOK_PREUNINSTALL`
+  stop the bundled Postgres of the current user's data root (`pg_ctl stop -D <data>\pg -m fast -w
+  -t 30`, through `nsExec`, only when `postgres\bin\pg_ctl.exe` and `pg\postmaster.pid` exist,
+  result ignored). Postgres may outlive a hard-killed shell and would keep `postgres\` locked, so
+  an upgrade could not replace those files and an uninstall could not remove them. pg_ctl only
+  signals the postmaster named in that cluster's own pid file. The template runs PREINSTALL before
+  its own "app is running" check: installing over a running app stops its database first (the
+  app is closed right after). Updates from the app stop the stack themselves before installing.
+- **SmartScreen.** The installer is **not code-signed** (no certificate, a non-goal of the spec):
+  Windows SmartScreen shows "Windows protected your PC" on first download; users click **More
+  info → Run anyway**. The updater signature (minisign, below) is unrelated: it protects updates,
+  not the first install.
+
+### Reference-data snapshot (`referential.tar.gz`)
+
+- **Build.** `sh scripts/make-referential.sh <hpn-base-url> [out]` (or `HPN_BASE_URL=<url>`;
+  default out `target/referential/referential.tar.gz`; needs `curl`, `jq`, `tar`, `sha256sum` or
+  `shasum`) downloads from the operator's HotsPatchNotes API: `heroes.json` (`/api/heroes`),
+  `hero-details.json` (`{shortName: /api/heroes/<shortName>}`), `patches.json`
+  (`/api/patches?page=1&pageSize=200`, the same page `sync_patches` reads), `patch-details.json`
+  (`{internalId: /api/patches/<internalId>}`) and `images/**` (the `/images/...` files named by
+  `heroes[].icon` and `/api/battlegrounds` `imageUrl`; a 404 is skipped like the server's own
+  vendoring). That is exactly the layout `dim::ingest_snapshot_file` reads. It fails on an empty
+  hero or patch list, on a key or image path with unexpected characters, and prints the SHA-256.
+  No host or secret is built in. Checked locally against a fake API (2026-11-14); never run
+  against the real HotsPatchNotes yet.
+- **Publish and pin.** The operator uploads the file as an asset of a dedicated **pre-release**
+  that is never "latest" (e.g. `gh release create referential-2026-11-14 referential.tar.gz
+  --prerelease --latest=false --title "Reference data 2026-11-14"`; a "latest" release would hijack
+  the updater URL `releases/latest/download/latest.json`), then commits its asset URL and SHA-256 in
+  `desktop/referential-pin.txt`. `scripts/fetch-referential.ps1` (used by the release workflow)
+  refuses a placeholder pin, a non-https URL or a hash mismatch. **The pin is a placeholder today:
+  the release workflow fails until the operator uploads the first snapshot.**
+- **Stale snapshot (accepted risk).** A standalone install never contacts HotsPatchNotes: heroes,
+  talents and patches released after the snapshot are unknown until a new installer ships with a
+  newer snapshot (new hero = generic portrait and missing talent names; replays still import and
+  every stat is computed from the replay itself). Refreshing = rebuild, upload, re-pin, release.
+  Follow-up: a public snapshot endpoint/publication on the HotsPatchNotes side
+  (matella/HeroesOfTheStormPatchNotes#1), so the snapshot can be refreshed without the operator's
+  private API; a runtime refresh stays out of scope (spec non-goal).
+
+### Releasing the desktop app (`release-desktop.yml`)
+
+**One-time setup (operator).**
+1. Generate the updater key pair on a trusted machine: `cargo tauri signer generate -w
+   ~/.tauri/storm-codex.key` (asks for a password). It writes the private key and
+   `storm-codex.key.pub`. Keep the private key and its password offline as well: **losing either
+   means installed apps can never be updated again**.
+2. GitHub → repository → Settings → Secrets and variables → Actions: secrets
+   `TAURI_SIGNING_PRIVATE_KEY` (the private key file's content) and
+   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Never committed, never in logs.
+3. Replace `plugins.updater.pubkey` in `desktop/tauri.conf.json` with the **content** of
+   `storm-codex.key.pub` (one base64 line), commit. Builds made before that never check for updates.
+4. Build, upload and pin the reference-data snapshot (above).
+
+**Dry run** (no tag, nothing reaches users): Actions → `release-desktop` → Run workflow. Same build,
+published as a **draft** release `desktop-v<version>` targeting the commit (drafts are never
+"latest" and are invisible to installed apps). Download the installer from the draft, install it,
+check, fill in the measurements below, then delete the draft. Do it before tagging that version
+(a draft with the tag of an existing release cannot be created).
+
+**Cutting a release.**
+1. Bump `version` in `desktop/tauri.conf.json` (`X.Y.Z`; also `desktop/Cargo.toml` for clarity),
+   commit, push.
+2. `git tag desktop-vX.Y.Z && git push origin desktop-vX.Y.Z` (the tag must equal the config
+   version, else the workflow fails).
+3. The workflow (windows-latest): refuses a placeholder updater pubkey, a missing signing secret
+   or a placeholder referential pin; fetches the snapshot and Postgres 17 (both SHA-256 checked);
+   installs pinned tools (Trunk prebuilt `0.22.0-beta.1`, SHA-256 checked against the release's
+   `.sha256`; `cargo install tauri-cli --version 2.12.4 --locked`; NSIS is downloaded by the Tauri
+   bundler itself); builds the three `web-rs` bundles, `cargo build --release --locked -p
+   storm-codex-server`, then `cargo tauri build --config tauri.bundle.conf.json` with the signing
+   secrets in the environment (gives `…-setup.exe` and its `.sig`).
+4. It publishes, with `gh release create --latest`, the release `desktop-vX.Y.Z` with
+   `StormCodex_X.Y.Z_x64-setup.exe` (renamed: no spaces, so the URL is stable), its `.sig` and
+   `latest.json`:
+   `{"version": "X.Y.Z", "notes": "...", "pub_date": "<RFC 3339>", "platforms": {"windows-x86_64":
+   {"signature": "<content of the .sig>", "url": "https://github.com/<repo>/releases/download/desktop-vX.Y.Z/StormCodex_X.Y.Z_x64-setup.exe"}}}`
+   (static updater manifest: `version`, `platforms.<target>.url` and `.signature` required; the
+   signature is the file's content, not a path). Installed apps read
+   `releases/latest/download/latest.json`, so the desktop release must stay the repository's
+   **latest** release (the repository had no GitHub Release on 2026-11-14; any other release, the
+   snapshot's included, is created with `--latest=false`).
+5. The job summary prints the installer size.
+
+**Measurements** (no cap, per the spec; to fill in at the first dry run / Task 10):
+
+| Measure | Value | Date / build |
+|---|---|---|
+| Installer size (`StormCodex_X.Y.Z_x64-setup.exe`) | not measured yet | — |
+| First start, install → app window (clean profile, empty data) | not measured yet | — |
+| First start, install → import `ready` (operator's replays) | not measured yet | — |
+
+**Not verified yet** (no tag pushed, no workflow run): the real `cargo tauri build`, the NSIS
+hooks at install/uninstall time, the keep/delete prompt, the release workflow end to end and the
+`latest.json` consumed by a real update.
 
 ## External dependencies (all best-effort)
 

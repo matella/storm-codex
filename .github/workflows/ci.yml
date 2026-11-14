@@ -52,6 +52,44 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: tests (unit + DB integration)
         run: cargo test --workspace
+  # Standalone desktop app (Windows): the Tauri shell (desktop/, own Cargo.lock, outside the workspace) and the
+  # real-Postgres tests of the supervisor and the shell. Those need the bundled Postgres 17 binaries (PG_BIN_DIR):
+  # in the `rust` job they skip (supervisor) or stay ignored. Not a `publish` gate (the image does not ship them).
+  desktop:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            desktop -> target
+      - uses: actions/cache@v4.3.0
+        id: pg
+        with:
+          path: ${{ runner.temp }}\postgres
+          key: postgres-${{ hashFiles('desktop/postgres-pin.txt') }}
+      - name: Postgres 17 binaries (pinned, SHA-256 checked; cached per pin)
+        if: steps.pg.outputs.cache-hit != 'true'
+        run: ./scripts/fetch-postgres.ps1 -Destination "$env:RUNNER_TEMP\postgres"
+      - name: format (desktop)
+        run: cargo fmt --manifest-path desktop/Cargo.toml --check
+      - name: clippy (desktop, strict)
+        run: cargo clippy --manifest-path desktop/Cargo.toml --all-targets -- -D warnings
+      - name: tests (desktop, real Postgres included)
+        run: cargo test --manifest-path desktop/Cargo.toml -- --include-ignored
+        env:
+          PG_BIN_DIR: ${{ runner.temp }}\postgres\bin
+      - name: tests (supervisor, real Postgres included)
+        run: cargo test -p storm-codex-supervisor -- --include-ignored
+        env:
+          PG_BIN_DIR: ${{ runner.temp }}\postgres\bin
   audit:
     runs-on: ubuntu-latest
     steps:

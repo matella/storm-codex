@@ -40,6 +40,14 @@ POST /api/upload(-raw)  [personal Bearer token]
   and lets in-flight requests finish (`with_graceful_shutdown`). Measured in the container:
   shutdown in ~0.5 s, exit code 0 (before: SIGTERM ignored, SIGKILL after 10 s). Unfinished
   parses are resumed at the next startup (above).
+- **`migrate` subcommand** (`migrate_cmd.rs`): `storm-codex-server migrate [--to <version>]` runs this build's
+  embedded migrations on `DATABASE_URL` and exits without starting the server (no bind, no background task).
+  Without `--to`: every pending migration; with `--to N`: up to version `N` only (`run_to`). Exit codes: **0** done;
+  **2** usage (bad arguments, `DATABASE_URL` unset); **3** `N` is newer than this build's newest migration (the
+  database or backup comes from a newer app); **1** any other failure (unknown version `N`, connection, migration
+  error). Messages go to stderr; `DATABASE_URL` (it holds a password) is never printed. Used by the desktop shell's
+  backup import (`09-operations.md`, "Untrusted dump: data only"): first `--to N` on the staging database, then
+  without a target once the rows are restored.
 - **Compression**: `CompressionLayer` (gzip / brotli depending on `Accept-Encoding`) on all
   responses; the default predicate skips small responses, images and streams.
 - **SPA HTTP cache**: `/assets/*` (names fingerprinted by Vite) as
