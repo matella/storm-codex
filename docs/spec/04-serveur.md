@@ -150,7 +150,9 @@ box operator's name (`["matella"]`), which drives the "me" side of every stats p
 standalone mode, each time a backfill completes (`orchestrator::detect_operator_names`) and
 until `app_settings.operator_names_detected` exists: if the names are still that seed (or
 empty), they are replaced by the most frequent player of the imported games (`match_players`,
-most distinct matches) and the mark is written; names the user already set are kept and only
+most distinct matches; the write is conditional on the value still being the seed or empty, so
+a concurrent `PUT /api/admin/settings` wins) and the mark is written; names the user already set
+are kept and only
 the mark is written; with no game imported yet nothing is written (retried at the next
 completion). The user edits them on `/welcome` ("Your in-game names") or in Settings.
 

@@ -135,7 +135,9 @@ the copies in `bin/` serve them too. It then runs **`scripts/check-pe-imports.ps
 <lib> -ResolveDir <bin>`**: it reads the import and delay-load import tables of every `.exe` and
 `.dll` (no loading) and fails on a `vcruntime*`/`msvcp*`/`concrt*`/`vccorlib*` import not found
 next to the file or in `-ResolveDir` (the Universal CRT is part of Windows 10+ and not checked).
-The CI cache key of the Postgres folder includes both scripts.
+The CI cache key of the Postgres folder includes both scripts. App-local copies are not
+serviced by Windows Update: when Microsoft ships a security fix to the VC++ runtime (new MSVC
+redistributable on the runner), cut a new desktop release so installed apps get it.
 **Server: static CRT in the release.** `release-desktop.yml` builds `storm-codex-server` with
 `RUSTFLAGS=-C target-feature=+crt-static` (that step only: dev and CI builds keep the dynamic CRT)
 and checks with `check-pe-imports.ps1` that the server imports no VC++ runtime and that the

@@ -408,11 +408,14 @@ async fn save_detected_names(
     let mut tx = db.begin().await?;
     if let Some(names) = names {
         tracing::info!(?names, "operator names detected from the imported games");
+        // conditional: a `PUT /api/admin/settings` that landed since the read is kept
         sqlx::query(
             "INSERT INTO app_settings (key, value) VALUES ('operator_names', $1)
-             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+             WHERE app_settings.value IN (jsonb_build_array($2::text), '[]'::jsonb)",
         )
         .bind(serde_json::json!(names))
+        .bind(SEEDED_OPERATOR)
         .execute(&mut *tx)
         .await?;
     }
