@@ -723,7 +723,8 @@ async fn saved_extras_are_in_the_status_while_seeding() {
     else {
         return;
     };
-    save_extra_folders(&state.db, &["D:/Backup".to_string()])
+    let backup = tmp.path().join("Backup").to_string_lossy().into_owned();
+    save_extra_folders(&state.db, std::slice::from_ref(&backup))
         .await
         .unwrap();
     // what `main` builds at startup, before the import task runs
@@ -731,7 +732,7 @@ async fn saved_extras_are_in_the_status_while_seeding() {
     fresh.load_saved_extras(&state.db).await;
     let status = fresh.status();
     assert_eq!(status.phase, Phase::Seeding);
-    assert_eq!(status.extra_folders, vec!["D:/Backup".to_string()]);
+    assert_eq!(status.extra_folders, vec![backup]);
     clear_saved_extras(&state.db).await;
 }
 
