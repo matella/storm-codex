@@ -1,6 +1,6 @@
 //! Standalone (desktop) mode: the import status served by `GET /api/standalone/status`, the welcome screen's
-//! pure helpers, and the desktop shell's update status (`update_status` Tauri command). Pure, so it is tested
-//! natively. On the box deployment the status route answers 404 and none of this is shown.
+//! pure helpers, the desktop shell's update status (`update_status` Tauri command) and its backup commands
+//! (`export_data` / `import_data`). Pure, so it is tested natively. On the box deployment the status route answers 404 and none of this is shown.
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -205,6 +205,81 @@ pub fn parse_update_status(v: &Value) -> UpdateStatus {
     UpdateStatus { state, version }
 }
 
+/// Backup commands of the desktop shell. Both take **no argument**: the shell opens the native save/open dialogs
+/// and the import confirmation itself; the page only starts the command and shows how it ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BackupAction {
+    Export,
+    Import,
+}
+
+impl BackupAction {
+    /// Tauri command name (`window.__TAURI__.core.invoke(<name>)`, no arguments).
+    pub fn command(self) -> &'static str {
+        match self {
+            BackupAction::Export => "export_data",
+            BackupAction::Import => "import_data",
+        }
+    }
+
+    /// Button text while the command runs.
+    pub fn busy_label(self) -> &'static str {
+        match self {
+            BackupAction::Export => "Exporting…",
+            BackupAction::Import => "Importing…",
+        }
+    }
+}
+
+/// How a backup command ended, as shown under the buttons.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BackupOutcome {
+    /// Finished; an import replaced the data, so the page reloads.
+    Done(String),
+    /// The user closed a dialog or declined the confirmation (the shell's `export cancelled` / `import cancelled`).
+    Cancelled(String),
+    /// Refused or failed; the text carries the shell's reason.
+    Failed(String),
+}
+
+impl BackupOutcome {
+    pub fn text(&self) -> &str {
+        match self {
+            BackupOutcome::Done(t) | BackupOutcome::Cancelled(t) | BackupOutcome::Failed(t) => t,
+        }
+    }
+}
+
+/// Reads the result of `export_data` / `import_data` (`Err` = the shell's rejection text).
+pub fn backup_outcome(action: BackupAction, result: Result<(), &str>) -> BackupOutcome {
+    let (cancelled, done, failed) = match action {
+        BackupAction::Export => ("export cancelled", "✓ Backup saved.", "Export failed"),
+        BackupAction::Import => (
+            "import cancelled",
+            "✓ Backup imported. Reloading…",
+            "Import failed",
+        ),
+    };
+    match result {
+        Ok(()) => BackupOutcome::Done(done.into()),
+        Err(reason) => {
+            let reason = reason.trim();
+            if reason.eq_ignore_ascii_case(cancelled) {
+                BackupOutcome::Cancelled("Cancelled.".into())
+            } else if reason.is_empty() {
+                BackupOutcome::Failed(format!("{failed}: unknown error"))
+            } else {
+                BackupOutcome::Failed(format!("{failed}: {reason}"))
+            }
+        }
+    }
+}
+
+/// True when the page must reload after the outcome: a finished import replaced every row the page shows.
+pub fn reloads_after(action: BackupAction, outcome: &BackupOutcome) -> bool {
+    action == BackupAction::Import && matches!(outcome, BackupOutcome::Done(_))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -378,6 +453,67 @@ mod tests {
             "not an existing folder: \"X\""
         );
         assert_eq!(error_message(500, "oops"), "HTTP 500");
+    }
+
+    #[test]
+    fn backup_commands_take_the_shell_names() {
+        assert_eq!(BackupAction::Export.command(), "export_data");
+        assert_eq!(BackupAction::Import.command(), "import_data");
+        assert_eq!(BackupAction::Export.busy_label(), "Exporting…");
+        assert_eq!(BackupAction::Import.busy_label(), "Importing…");
+    }
+
+    #[test]
+    fn backup_outcomes_read_the_shell_rejection() {
+        let ex = BackupAction::Export;
+        let im = BackupAction::Import;
+        assert_eq!(
+            backup_outcome(ex, Ok(())),
+            BackupOutcome::Done("✓ Backup saved.".into())
+        );
+        assert_eq!(
+            backup_outcome(im, Ok(())),
+            BackupOutcome::Done("✓ Backup imported. Reloading…".into())
+        );
+        // the shell's own cancel texts are not failures
+        assert_eq!(
+            backup_outcome(ex, Err("export cancelled")),
+            BackupOutcome::Cancelled("Cancelled.".into())
+        );
+        assert_eq!(
+            backup_outcome(im, Err(" import cancelled ")),
+            BackupOutcome::Cancelled("Cancelled.".into())
+        );
+        // another action's cancel text, or a longer message, is shown as a failure with the reason
+        assert_eq!(
+            backup_outcome(ex, Err("import cancelled")),
+            BackupOutcome::Failed("Export failed: import cancelled".into())
+        );
+        let refused = backup_outcome(
+            im,
+            Err("this backup was made by a newer version of Storm Codex; update Storm Codex, then import it again"),
+        );
+        assert!(matches!(refused, BackupOutcome::Failed(_)));
+        assert!(refused
+            .text()
+            .starts_with("Import failed: this backup was made by a newer version"));
+        assert_eq!(
+            backup_outcome(ex, Err("  ")),
+            BackupOutcome::Failed("Export failed: unknown error".into())
+        );
+    }
+
+    #[test]
+    fn only_a_finished_import_reloads_the_page() {
+        let im = BackupAction::Import;
+        let ex = BackupAction::Export;
+        assert!(reloads_after(im, &backup_outcome(im, Ok(()))));
+        assert!(!reloads_after(ex, &backup_outcome(ex, Ok(()))));
+        assert!(!reloads_after(
+            im,
+            &backup_outcome(im, Err("import cancelled"))
+        ));
+        assert!(!reloads_after(im, &backup_outcome(im, Err("disk full"))));
     }
 
     #[test]

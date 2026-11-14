@@ -107,7 +107,7 @@ bundle), hence two bundles: an OBS source only loads the bundle of its family. O
 Contract with the server: `GET /api/standalone/status`, `PUT /api/standalone/folders`, `POST /api/standalone/rescan`
 (`04-serveur.md`, "Standalone import"). Types and pure helpers in `web-rs/core/src/standalone.rs` (native tests: `Status`
 deserialisation, `progress_percent`, `phase_message`, `redirects_to_welcome`, `poll_ms`, `human_bytes`, folder list add/remove,
-`error_message`, `parse_update_status`); app side in `web-rs/app/src/standalone.rs` and `pages/welcome.rs`.
+`error_message`, `parse_update_status`, `BackupAction`, `backup_outcome`, `reloads_after`); app side in `web-rs/app/src/standalone.rs` and `pages/welcome.rs`.
 
 - **Detection.** The layout reads the status **once** at startup (`provide_standalone`). A 404 (box deployment) or any failure
   leaves the status empty: no nav entry, no section, no banner, no poll — the box makes exactly one extra request per app load.
@@ -129,6 +129,16 @@ deserialisation, `progress_percent`, `phase_message`, `redirects_to_welcome`, `p
   server) reads as no extras), **Rescan now** (`POST /api/standalone/rescan`), data location (`dataDir`), app version
   (`version`), the sentence "Nothing leaves this PC except the update check.", and the OBS browser-source URLs built from
   `location.origin` + `route::app_href` (never a fixed port). No native folder picker yet (needs the shell IPC).
+- **Backup** (block of "This PC", rendered only when `window.__TAURI__.core.invoke` exists, i.e. inside the desktop shell; in a
+  browser on the same server the block is absent). **Export my data** calls `invoke('export_data')` and **Import a backup**
+  `invoke('import_data')`, both with **no argument**: the shell opens the native save/open dialogs and the import
+  confirmation itself (contract in `09-operations.md`, "Export / import"); the page never sends a path. One command at a
+  time: both buttons are disabled while one runs and the running one reads "Exporting…" / "Importing…". Outcome inline
+  (`backup_outcome`): success "✓ Backup saved." / "✓ Backup imported. Reloading…" (green); the shell's exact rejection
+  `export cancelled` / `import cancelled` reads "Cancelled." (neutral); any other rejection "Export failed: <reason>" /
+  "Import failed: <reason>" (error colour; reason read like the update banner's). A finished import reloads the page after
+  1.5 s (`reloads_after`): the data it shows was replaced. A short note says a backup holds the database and the replays
+  and that importing replaces all data on this PC.
 - **Onboarding.** The first-launch modal (admin token, uploader) is the box setup: it is not opened automatically in standalone
   mode (the `?` button still opens it).
 - **Update banner** (`UpdateBanner`, under the top bar). Contract with the desktop shell: when `window.__TAURI__.core.invoke` exists

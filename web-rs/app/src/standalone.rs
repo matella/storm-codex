@@ -1,5 +1,6 @@
 //! Standalone (desktop) mode in the app: the import status shared by the layout, the welcome page and the
-//! settings, its poller, the "This PC" settings section and the desktop shell's update banner. On the box
+//! settings, its poller, the "This PC" settings section (with the desktop shell's backup export/import) and the
+//! desktop shell's update banner. On the box
 //! deployment `GET /api/standalone/status` answers 404 once at startup and nothing here shows or polls.
 
 use std::sync::{
@@ -12,8 +13,9 @@ use storm_web_core::{
     net,
     route::app_href,
     standalone::{
-        error_message, extras_with, extras_without, parse_update_status, poll_ms,
-        redirects_to_welcome, update_failed_message, Status, UpdateState, UpdateStatus,
+        backup_outcome, error_message, extras_with, extras_without, parse_update_status, poll_ms,
+        redirects_to_welcome, reloads_after, update_failed_message, BackupAction, BackupOutcome,
+        Status, UpdateState, UpdateStatus,
     },
 };
 
@@ -280,6 +282,7 @@ pub fn ThisPc(num: Signal<u32>) -> impl IntoView {
                             view! { <span class=class>{m}</span> }
                         })}
                     </div>
+                    <Backup />
                     <div class="ds-label" style="margin-top: 18px">"About"</div>
                     <div class="sa-kv">
                         <span>"Data location"</span>
@@ -353,6 +356,64 @@ async fn invoke(cmd: &str) -> Result<serde_json::Value, String> {
         .and_then(|t| t.as_string())
         .and_then(|t| serde_json::from_str(&t).ok())
         .unwrap_or(serde_json::Value::Null))
+}
+
+/// "Backup" block of the "This PC" section: export and import through the desktop shell's `export_data` /
+/// `import_data` commands, called with **no argument** (the shell opens the native dialogs and asks for the import
+/// confirmation itself). Rendered only inside the shell (`window.__TAURI__`); one command at a time, both buttons
+/// disabled while it runs; the outcome (or the shell's rejection text) is shown inline; a finished import reloads
+/// the page, whose data it replaced.
+#[component]
+fn Backup() -> impl IntoView {
+    let busy = RwSignal::new(None::<BackupAction>);
+    let outcome = RwSignal::new(None::<BackupOutcome>);
+    let run = move |action: BackupAction| {
+        if busy.get_untracked().is_some() {
+            return;
+        }
+        busy.set(Some(action));
+        outcome.set(None);
+        spawn_local(async move {
+            let result = invoke(action.command()).await;
+            let out = backup_outcome(action, result.as_ref().map(|_| ()).map_err(String::as_str));
+            if reloads_after(action, &out) {
+                net::after_ms(1500, net::reload);
+            }
+            outcome.set(Some(out));
+            busy.set(None);
+        });
+    };
+    let label = move |action: BackupAction, idle: &'static str| {
+        move || {
+            if busy.get() == Some(action) {
+                action.busy_label()
+            } else {
+                idle
+            }
+        }
+    };
+    tauri_invoke().is_some().then(|| {
+        view! {
+            <div class="ds-label" style="margin-top: 18px">"Backup"</div>
+            <div class="sa-row">
+                <button class="ds-btn" disabled=move || busy.get().is_some()
+                    on:click=move |_| run(BackupAction::Export)>{label(BackupAction::Export, "Export my data")}</button>
+                <button class="ds-btn" disabled=move || busy.get().is_some()
+                    on:click=move |_| run(BackupAction::Import)>{label(BackupAction::Import, "Import a backup")}</button>
+                {move || outcome.get().map(|o| {
+                    let class = match o {
+                        BackupOutcome::Done(_) => "sa-ok",
+                        BackupOutcome::Cancelled(_) => "sa-none",
+                        BackupOutcome::Failed(_) => "sa-err",
+                    };
+                    view! { <span class=class>{o.text().to_string()}</span> }
+                })}
+            </div>
+            <div class="sa-none" style="margin-top: 6px">
+                "A backup holds your database and your replays. Importing one replaces all Storm Codex data on this PC."
+            </div>
+        }
+    })
 }
 
 /// "Restart to update" banner of the desktop shell: polls `update_status` every 60 s when `window.__TAURI__`

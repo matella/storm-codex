@@ -227,6 +227,13 @@ pub fn pathname() -> String {
         .unwrap_or_default()
 }
 
+/// Reloads the page (no-op outside a browser).
+pub fn reload() {
+    if let Some(w) = web_sys::window() {
+        let _ = w.location().reload();
+    }
+}
+
 /// Local calendar day `YYYY-MM-DD` of an ISO date, in the viewer's time zone (not UTC: a game played in the
 /// evening stays on the right local day).
 pub fn local_day(iso: &str) -> String {
