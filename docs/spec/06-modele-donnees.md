@@ -72,8 +72,11 @@ A report's status (`empty`/`ready`/`analyzed`/`stale`) is **derived**, never sto
 `ARCHIVE_DIR`**: `<sha256>.StormReplay` and `scouting/<sha256>.StormReplay`
 (`Config::archive_entry` / `scouting_entry`). Rows written before (box history, backups made
 on another PC) hold an absolute path. Every reader goes through `Config::archived_file`: an
-absolute path that exists is used as is; otherwise the file is looked up by its name under the
-current `ARCHIVE_DIR` (`scouting/` kept, `/` or `\` separators), so a backup restored on
+absolute path that exists **under `ARCHIVE_DIR`** is used as is; otherwise the file is looked up
+by its name under the current `ARCHIVE_DIR` (`scouting/` kept, `/` or `\` separators). Nothing
+resolves outside the archive: an absolute path elsewhere is looked up by name, and a name that is
+empty, `.`, `..` or holds a `:` (drive prefix) resolves to the archive folder itself, which no
+reader can open (a crafted row in an imported backup cannot point a reader at another file); so a backup restored on
 another PC or Windows user profile keeps working without rewriting rows (no migration).
 
 ## Conventions for any new migration

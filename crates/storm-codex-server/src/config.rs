@@ -121,18 +121,21 @@ impl Config {
     /// Where the archived file of a row (`uploads.archived_path`, `scouting_games.archived_path`)
     /// is now. New rows hold a path relative to `ARCHIVE_DIR` ([`Config::archive_entry`],
     /// [`Config::scouting_entry`]); older rows hold the absolute path of the PC (or box) that
-    /// archived them. An absolute path that exists is used as is; otherwise the file is looked up
+    /// archived them. An absolute path that exists under `ARCHIVE_DIR` is used as is (no row can
+    /// point outside the archive, e.g. a crafted backup); otherwise the file is looked up
     /// by its name under the current archive (`scouting/` kept), whatever the separator: a
     /// backup restored on another PC or user profile keeps working without rewriting rows.
     pub fn archived_file(&self, stored: &str) -> PathBuf {
         let path = Path::new(stored);
-        if path.is_absolute() && path.exists() {
+        if path.is_absolute() && path.starts_with(&self.archive_dir) && path.exists() {
             return path.to_path_buf();
         }
         let mut parts = stored.rsplit(['/', '\\']).filter(|p| !p.is_empty());
         let name = parts.next().unwrap_or_default();
-        if name.is_empty() || name == "." || name == ".." {
-            return path.to_path_buf();
+        // never outside the archive: no `.`/`..`, no drive prefix (`X:name` would replace the
+        // root in `join`); such a row points at the archive folder itself, which no reader opens
+        if name.is_empty() || name == "." || name == ".." || name.contains(':') {
+            return self.archive_dir.clone();
         }
         match parts.next() {
             Some(SCOUTING_DIR) => self.archive_dir.join(SCOUTING_DIR).join(name),
@@ -257,11 +260,25 @@ mod tests {
             c.archived_file("/data/archive/scouting/cd.StormReplay"),
             a.join("scouting").join("cd.StormReplay")
         );
-        // an absolute path that exists is kept (an archive moved by hand on the box)
-        let elsewhere = tmp.path().join("elsewhere.StormReplay");
+        // an absolute path that exists inside the archive is kept (the box's rows)
+        let inside = a.join("kept.StormReplay");
+        std::fs::write(&inside, b"x").unwrap();
+        let stored = inside.to_string_lossy().into_owned();
+        assert_eq!(c.archived_file(&stored), inside);
+        // one outside it is never opened (a crafted row in an imported backup): looked up by
+        // name under the archive instead
+        let elsewhere = tmp.path().join("secret.StormReplay");
         std::fs::write(&elsewhere, b"x").unwrap();
         let stored = elsewhere.to_string_lossy().into_owned();
-        assert_eq!(c.archived_file(&stored), elsewhere);
+        assert_eq!(c.archived_file(&stored), a.join("secret.StormReplay"));
+        // nothing escapes the archive: a drive-relative name, `..`, an empty name
+        for bad in ["X:secret.StormReplay", r"C:\a\X:b", "..", "a/..", ""] {
+            assert!(
+                c.archived_file(bad).starts_with(&a),
+                "{bad} -> {:?}",
+                c.archived_file(bad)
+            );
+        }
         // what is stored for new files
         assert_eq!(Config::archive_entry("ab"), "ab.StormReplay");
         assert_eq!(Config::scouting_entry("cd"), "scouting/cd.StormReplay");
