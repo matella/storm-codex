@@ -17,6 +17,21 @@ A **single binary** (`storm-codex-server`) serves the API, the built front-end a
 The `storm-replay` (decoding) and `storm-stats` (analysis) crates are pure libraries, publishable
 independently (MIT).
 
+### Standalone desktop app (Windows installer)
+
+```
+desktop/ (Tauri v2 shell, one instance, tray)
+  ├─ supervises ─► bundled Postgres 17 (127.0.0.1:<pg port>, cluster in <data>/pg)
+  ├─ supervises ─► storm-codex-server, STANDALONE=1 (127.0.0.1:<port>, in-process watcher)
+  └─ window ─────► http://127.0.0.1:<port>/ (the same SPA, served by the server)
+```
+
+Same binary and same pages as the box; only the process supervision differs. `desktop/` is
+**not** part of the Cargo workspace (own `Cargo.lock`, like `spike/*`); its process logic is in
+`crates/storm-codex-supervisor` (workspace member) and `desktop/src/supervise.rs`. Operations:
+[09-operations.md](09-operations.md) "Standalone desktop app".
+Design: `docs/specs/2026-11-12-standalone-installer-design.md`.
+
 ## The 3 data tiers (hard rule no. 5)
 
 1. **Raw archive** (`ARCHIVE_DIR`): every `.StormReplay` received is kept as is —

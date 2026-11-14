@@ -35,16 +35,126 @@ POST /api/upload(-raw)  [personal Bearer token]
 
 ## Process lifecycle (`main.rs`)
 
-- **Graceful shutdown**: Ctrl-C or SIGTERM (`docker stop`) → the server stops accepting connections
+- **Graceful shutdown**: Ctrl-C or SIGTERM (`docker stop`) — or, in standalone mode,
+  `POST /api/standalone/shutdown` → the server stops accepting connections
   and lets in-flight requests finish (`with_graceful_shutdown`). Measured in the container:
   shutdown in ~0.5 s, exit code 0 (before: SIGTERM ignored, SIGKILL after 10 s). Unfinished
   parses are resumed at the next startup (above).
+- **`migrate` subcommand** (`migrate_cmd.rs`): `storm-codex-server migrate [--to <version>]` runs this build's
+  embedded migrations on `DATABASE_URL` and exits without starting the server (no bind, no background task).
+  Without `--to`: every pending migration; with `--to N`: up to version `N` only (`run_to`). Exit codes: **0** done;
+  **2** usage (bad arguments, `DATABASE_URL` unset); **3** `N` is newer than this build's newest migration (the
+  database or backup comes from a newer app); **1** any other failure (unknown version `N`, connection, migration
+  error). Messages go to stderr; `DATABASE_URL` (it holds a password) is never printed. Used by the desktop shell's
+  backup import (`09-operations.md`, "Untrusted dump: data only"): first `--to N` on the staging database, then
+  without a target once the rows are restored.
 - **Compression**: `CompressionLayer` (gzip / brotli depending on `Accept-Encoding`) on all
   responses; the default predicate skips small responses, images and streams.
 - **SPA HTTP cache**: `/assets/*` (names fingerprinted by Vite) as
   `Cache-Control: public, max-age=31536000, immutable` — a missing asset answers 404, never
   `index.html`; `index.html` and the SPA routes as `no-cache`.
 - **Cast/draft write guard**: middleware `auth::guard_writes` (see 05-api.md).
+
+## Standalone import (`standalone/`)
+
+Only in standalone mode (`STANDALONE=1`); without it the routes below answer 404 and nothing
+starts. One background task (`standalone/orchestrator.rs`) owns the upload ledger and runs,
+once the listener is bound (`/api/health` answers 200 during the whole sequence):
+
+1. **seed** the reference data from `REFERENTIAL_FILE` when `dim_heroes` is empty or the bundled
+   file differs from the one last ingested (an app update ships a newer one) (phase `seeding`);
+   then, in a background task beside the import, the **re-process after an update**: every
+   upload `parsed` with `parser_version < PARSER_VERSION` is re-parsed and re-projected
+   (`admin::outdated_uploads` + `admin::reprocess_one`, one `parse_sem` permit each, so it
+   shares the parse budget with the uploads), then the outdated scouting replays
+   (`scouting::api::reprocess_stale`). Progress in the status (`reprocessTotal`,
+   `reprocessDone`; `0`/`0` when nothing is outdated). It stops between two replays on
+   shutdown; the rest is picked up at the next start (the query is the criterion). Rows
+   `parse_failed` are not retried automatically (they would be re-parsed at every start):
+   `POST /api/admin/reprocess` still retries them;
+2. **detect** the folders: every `Documents/Heroes of the Storm/Accounts/*/*/Replays/Multiplayer`
+   (known-folder API, OneDrive-relocated Documents included) plus the extra folders saved in
+   `app_settings.standalone_extra_folders`; each extra folder is expanded to the folders under it
+   that hold replays (itself when none does yet). None → phase `no-folders`;
+3. **ledger** (`LEDGER_FILE`) opened; a corrupt file is moved to `<file>.corrupt` and an empty
+   ledger started (the server dedups re-sent files). Writes are atomic (unique temp file per
+   write, synced, renamed); overlapping writes publish in order (sequence number checked under
+   a lock: an older snapshot never replaces a newer one); stale temp files are removed on open;
+4. **disk gate** on `ARCHIVE_DIR`, sized on the replays **not yet in the ledger** (what the
+   backfill will send): free space must be ≥ `2 × their size + 1 GiB`
+   (`storm_codex_supervisor::required_free_bytes`); otherwise phase `disk-full`: no backfill
+   until a rescan passes, but the live watcher still runs (new games keep being imported). When
+   the free space cannot be measured (unusual filesystem), a warning is logged and the import is
+   **not** blocked;
+5. **upload token**: a fresh random token is generated at each start and its SHA-256 written to
+   the single `upload_tokens` row named `standalone-watcher` (inserted once, then updated in
+   place with `revoked_at` cleared, under a transaction advisory lock: no duplicate row, never
+   stuck revoked, the previous session's token stops working). The clear token lives only in
+   memory (never logged, never on disk). `/api/upload` keeps its auth contract for everyone.
+   One server per database: a second server on the same database would rotate the token.
+   Steps 3 or 5 failing → phase `error`;
+6. **live watcher** started on the folders, then the **backfill** (phase `importing`; when it
+   completes, the **operator names** are detected once, see below): oldest
+   first, 4 at a time, through `POST http://<bound address>/api/upload` (the address actually
+   bound, so `BIND_ADDR` may use port 0). Replays reported by the watcher meanwhile wait and
+   are handled afterwards; then phase `ready`: each new replay is uploaded unless the ledger
+   already has it, and its outcome is recorded (write-through).
+
+A rescan or a folder change received during the backfill cancels it (the ledger is flushed) and
+the import restarts. Counts describe the current import run (backfill + live uploads since it
+started) and reset at each rescan; `failed` lists the files that exhausted their retries
+(retried at the next start), `rejected` the files refused as bad content during the run: a 4xx
+content error, or a `200 {"status": "parse_failed", "error_class": c}` answer (the replay is
+archived but gave no match: too old, unsupported mode, computer players, stats failure...),
+listed with reason `not imported: c` and recorded in the ledger as rejected (never re-sent: the
+server keeps the archived copy, and `POST /api/admin/reprocess` re-parses `parse_failed` uploads).
+
+**Shutdown** (Ctrl-C, SIGTERM or `POST /api/standalone/shutdown`): the import task is told to
+stop first, while the server still answers: in-flight uploads are abandoned (not recorded, the
+server dedups them at the next start), the ledger is flushed once and the task ends; it is
+awaited for at most 10 s (then aborted) before the HTTP server drains and `run()` returns.
+
+| Route | Answer |
+|---|---|
+| `GET /api/standalone/status` | `{phase, folders, extraFolders, total, done, duplicates, rejected: [{file, reason}], failed: [file], freeBytes, neededBytes, dataDir, version, reprocessTotal, reprocessDone}` — `phase` ∈ `seeding`, `importing`, `ready`, `no-folders`, `disk-full`, `error`; `folders` = effective folders (detected + replay folders found under each extra); `extraFolders` = the extra folders exactly as saved (the raw list `PUT /folders` replaces, loaded from `app_settings` before the server listens — so already right during `seeding` — and updated on each `PUT`; a refused `PUT` (400) changes nothing; `[]` when none) — clients edit this list, never `folders`; `freeBytes`/`neededBytes` `null` before the first disk gate; `dataDir` = parent of `ARCHIVE_DIR`; `version` = server crate version; `reprocessTotal` / `reprocessDone` = background re-process after a parser bump (step 1) |
+| `PUT /api/standalone/folders` | body `{folders: [path]}` replaces the extra folders (send `extraFolders` ± one path). Each must be an existing plain local directory (no UNC, device or verbatim path; saved entries failing that rule are dropped on load, so a restored backup cannot point the watcher at a share), else **400** `{error: "not an existing folder: …"}`; only directory listings are read. Saved and resolved, then the watcher restarts and a rescan runs; answers the new status |
+| `POST /api/standalone/rescan` | **202**; re-runs the disk gate and the backfill |
+| `POST /api/standalone/shutdown` | **202**; same graceful shutdown as Ctrl-C (used by the desktop shell before it stops Postgres) |
+
+The routes are unauthenticated (loopback-only server, single user, no `ADMIN_TOKEN`, so the
+whole API is in open mode). In standalone mode every request to **any** route (the whole API,
+the pages, `/v2` bundles, `/images`, `/ws`; one middleware on the whole app, `app_router`) must
+come from this PC, otherwise **403**:
+- **Host** (every method, reads included): the `Host` header (or the HTTP/2 authority) must
+  be exactly `127.0.0.1`, `localhost` or `[::1]` (case-sensitive, no suffix), with no port or
+  the port actually bound; a missing `Host` is refused. This blocks DNS rebinding (a foreign
+  name resolving to 127.0.0.1 cannot read the stats or the status, whose folders and data path
+  carry the Windows user name, mint an upload token or delete data). The desktop shell loads
+  `http://127.0.0.1:<port>/`, which passes; OBS browser sources on `127.0.0.1`/`localhost`
+  and the bound port pass too;
+- **Origin** (every method, `GET` and WebSocket upgrades included): a request carrying an
+  `Origin` header is refused unless it is the app's own origin: `http://` followed by an
+  authority that passes the Host rule above (loopback name, no port or the bound port). This
+  refuses a foreign page posting to the local server (including a body-less
+  `fetch(…, {mode: 'no-cors'})` to `/api/admin/reprocess` or `/api/draft/reset`), reading it
+  with a CORS fetch, or opening `ws://127.0.0.1:<port>/ws` (a WebSocket is not bound by the
+  same-origin policy and its upgrade is a `GET`), as well as `Origin: null` and another local
+  web app on another port. Requests without `Origin` (navigations, `<img>`, OBS browser
+  sources, the in-process uploader, the shell) are unaffected.
+
+Server mode (the box, `STANDALONE` unset) is unchanged: no Host or Origin filter (it sits behind
+its reverse proxy).
+
+**Operator names on a player's PC.** Migration 0003 seeds `app_settings.operator_names` with the
+box operator's name (`["matella"]`), which drives the "me" side of every stats page. In
+standalone mode, each time a backfill completes (`orchestrator::detect_operator_names`) and
+until `app_settings.operator_names_detected` exists: if the names are still that seed (or
+empty), they are replaced by the most frequent player of the imported games (`match_players`,
+most distinct matches; the write is conditional on the value still being the seed or empty, so
+a concurrent `PUT /api/admin/settings` wins) and the mark is written; names the user already set
+are kept and only
+the mark is written; with no game imported yet nothing is written (retried at the next
+completion). The user edits them on `/welcome` ("Your in-game names") or in Settings.
 
 ## Played-hero correction (`project.rs`)
 
@@ -97,6 +207,16 @@ Failed writes are logged (`warn`):
 - `HOTSPATCHNOTES_URL`: live API (maintainer setup) → `sync_heroes`, `sync_talents`,
   `vendor_images` (portraits/maps copied into `IMAGES_DIR`, served on `/images`),
   `sync_patches`, `backfill_hero_sections`.
+- **Standalone mode** (`STANDALONE=1`, installer bundle): no network. When `REFERENTIAL_FILE` is
+  set, its SHA-256 is compared with `app_settings.reference_snapshot_sha256` (a JSON string) at
+  each start; when `dim_heroes` is empty or the hashes differ (an app update ships a newer
+  snapshot), the on-disk snapshot is ingested, as the first step of the standalone import task
+  (phase `seeding`, see "Standalone import" below) (`dim::ingest_snapshot_file`, same upsert
+  ingest path as `ingest_snapshot`, one scratch dir per call), and the hash is saved only after
+  a successful ingest (an unreadable or corrupt file is retried at the next start). Heroes no
+  longer in the snapshot are kept;
+  the 24 h refresh loop is not started. `Config::validate()` (run right after `from_env()`)
+  rejects a non-loopback `BIND_ADDR` in this mode ("standalone mode requires a loopback BIND_ADDR").
 
 Each **new patch** detected → WS event `patch.new` + optional outgoing webhook
 (`PATCH_WEBHOOK_URL`, Discord-compatible format).
@@ -170,6 +290,9 @@ Design: `docs/specs/2026-10-24-feed-live-en-partie-design.md`.
 | `IMAGES_DIR` | `./.images` | vendored images, served on `/images` |
 | `REDIS_URL` / `JARVIS_CHANNEL` | empty = no emission / `jarvis:events` (box production: `storm-codex:match_completed`) | Jarvis events |
 | `HOTSPATCHNOTES_URL` / `REFERENTIAL_URL` | empty | reference data (see above) |
+| `STANDALONE` | empty = off | `1` = standalone (installer) mode: loopback-only `BIND_ADDR` (checked at startup), no reference-data network refresh |
+| `REFERENTIAL_FILE` | empty | bundled `referential.tar.gz` that seeds an empty `dim_heroes` in standalone mode |
+| `LEDGER_FILE` | `<ARCHIVE_DIR>/../uploaded.json` | standalone only: upload ledger of the in-process watcher (the desktop shell passes `<data>/uploaded.json`) |
 | `ORPHEUS_URL` | empty | music proxy for `/api/now-playing` |
 | `PATCH_WEBHOOK_URL` | empty | outgoing new-patch notification |
 | `AZURE_PUSH_URL` / `AZURE_PUSH_TOKEN` | empty | **dormant** (Twitch extension abandoned) |

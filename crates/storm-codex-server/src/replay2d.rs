@@ -11,7 +11,6 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use std::collections::HashMap;
-use std::path::PathBuf;
 use storm_replay::Replay;
 use storm_replay_viewer::{build_model, player_toons, ViewerModel, VIEWER_VERSION};
 
@@ -37,7 +36,7 @@ pub async fn get_replay2d(State(s): State<AppState>, Path(id): Path<i64>) -> Res
     .await
     .ok()
     .flatten();
-    let Some(archived) = archived else {
+    let Some(file) = archived.map(|a| s.cfg.archived_file(&a)) else {
         return (
             StatusCode::NOT_FOUND,
             "match ou fichier archivé introuvable",
@@ -64,7 +63,7 @@ pub async fn get_replay2d(State(s): State<AppState>, Path(id): Path<i64>) -> Res
     // miss: decoding on the fly (CPU) off the runtime thread — a single decoding for the geometry
     // AND the playerId→toon mapping (the Replay is consumed in the closure).
     let decoded = tokio::task::spawn_blocking(move || -> Result<_, storm_replay_viewer::Error> {
-        let r = Replay::open(PathBuf::from(archived))?;
+        let r = Replay::open(file)?;
         let model = build_model(&r)?;
         let toons = player_toons(&r)?;
         Ok((model, toons))

@@ -35,7 +35,9 @@ behaviour, and to **update in the same commit** as the change.
 6. [Data model](06-modele-donnees.md) — Postgres schema (migrations)
 7. [Events](07-evenements.md) — WS `/ws` and Jarvis contract (Redis)
 8. [Frontend](08-frontend.md) — SPA pages, OBS overlays
-9. [Operations](09-operations.md) — dev, box deployment, CI, backups, pitfalls
+9. [Operations](09-operations.md) — dev, box deployment, CI, backups, pitfalls, **standalone
+   desktop app** (bundled Postgres, Tauri shell, installer, updater, release); its acceptance
+   state and operator checklist: [`docs/standalone-acceptance.md`](../standalone-acceptance.md)
 10. [**Development workflow**](10-developpement.md) — **read before any change**:
     spec-first cycle, doc/proof checklist per type of change, definition of "done"
 
@@ -44,11 +46,14 @@ behaviour, and to **update in the same commit** as the change.
 | Path | Contents | Status |
 |---|---|---|
 | `crates/storm-replay` · `storm-stats` | public libraries (decoding, stats) | active — publishable on crates.io |
-| `crates/storm-codex-server` | server (API + front-end + overlays) + migrations | active |
+| `crates/storm-codex-server` | server (API + front-end + overlays) + migrations; standalone mode (`standalone/`) | active |
+| `crates/storm-codex-supervisor` | bundled Postgres lifecycle, data folders, port and disk checks (desktop app) | active |
+| `crates/storm-codex-watcher` | replay folder detection, upload ledger, backfill, live watch (in-process in standalone mode) | active |
+| `desktop/` | Tauri v2 Windows shell (supervision, tray, updater, export/import, NSIS packaging); not a workspace member | active |
 | `web-rs/` | Rust front-end (Leptos → wasm, Trunk): app + OBS sources, built into `web-rs/dist` | active |
 | `tools/` | `protocol_gen.py` (protocol tables), `crosscheck_streams.py` (decoding parity), `parity-harness/` (stats parity vs hots-parser) | tooling — required for evidence |
 | `corpus/` | real test replays (`spike50` bench, `stats` parity) — **not committed** (gitignored, NAS/box) | local data |
 | `spike/` | milestone 0 (go/no-go decoding spike, .NET/Python benches) | archive — do not touch |
-| `scripts/` | `backup.sh` (pg_dump + retention) | active |
-| `.github/workflows/` | `ci.yml` (clippy + Rust/web tests, service Postgres) · `publish.yml` (Docker image → ghcr.io on every `main` push) | active |
+| `scripts/` | `backup.sh` (pg_dump + retention), `check-migrations.sh`, `check-web-rs-size.sh`, desktop release inputs `fetch-postgres.ps1`, `make-referential.sh`, `fetch-referential.ps1` | active |
+| `.github/workflows/` | `ci.yml` (clippy + Rust/web tests, service Postgres, `desktop` job, then the Docker image → ghcr.io on `main`) · `release-desktop.yml` (signed Windows installer on a `desktop-v*` tag or a draft dry run) | active |
 | `docs/` | see documentation map above | — |

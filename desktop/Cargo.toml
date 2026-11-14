@@ -1,0 +1,52 @@
+[package]
+name = "storm-codex-desktop"
+version = "0.1.0"
+description = "Storm Codex standalone desktop app: Tauri shell supervising Postgres and the server"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/matella/storm-codex"
+publish = false
+
+# Excluded from the root workspace (own Cargo.lock, like `spike/*`): Tauri pulls a large,
+# Windows-specific dependency tree that the server CI does not need.
+[workspace]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+storm-codex-supervisor = { path = "../crates/storm-codex-supervisor" }
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Validates the updater public key from the config (placeholder = updates disabled).
+base64 = "0.22"
+# Backup archives (`.stormcodex`): written Stored; Deflate accepted on read.
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+# Opens external links in the system browser (Rust side only: no IPC command exposed).
+open = "5"
+
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Storage_FileSystem",
+  "Win32_System_JobObjects",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Threading",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "warn"

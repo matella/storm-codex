@@ -1,5 +1,6 @@
 //! `storm-codex-server` — single server (axum + Postgres): upload, parse, projection,
-//! WebSocket, REST. Milestone 3. Config through env (see `.env.example`).
+//! WebSocket, REST. Milestone 3. Config through env (see `.env.example`). Subcommand
+//! `migrate [--to <version>]`: migrations only (`migrate_cmd`).
 
 mod admin;
 mod auth;
@@ -13,6 +14,7 @@ mod jarvis;
 mod live;
 mod lobby;
 mod manage;
+mod migrate_cmd;
 mod players;
 pub mod project;
 mod rank;
@@ -20,6 +22,7 @@ mod raw;
 mod read;
 mod replay2d;
 mod scouting;
+mod standalone;
 mod upload;
 mod ws;
 
@@ -57,6 +60,9 @@ pub struct AppState {
     pub live: Arc<RwLock<Option<live::LiveSession>>>,
     /// Auto playback timer of the draft from a replay (only one at a time).
     pub replay_timer: Arc<std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
+    /// Standalone (installer) mode: import status/commands shared with the import task.
+    /// `Some` only when `cfg.standalone`; the `/api/standalone/*` routes exist only then.
+    pub standalone: Option<Arc<standalone::StandaloneState>>,
 }
 
 #[tokio::main]
@@ -67,6 +73,18 @@ async fn main() {
                 .unwrap_or_else(|_| "storm_codex_server=info,tower_http=warn".into()),
         )
         .init();
+
+    // `migrate [--to <version>]`: migrations only, then exit (see `migrate_cmd`).
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("migrate") {
+        match migrate_cmd::run(&args[1..]).await {
+            Ok(()) => std::process::exit(0),
+            Err((code, msg)) => {
+                eprintln!("{msg}");
+                std::process::exit(code);
+            }
+        }
+    }
 
     if let Err(e) = run().await {
         tracing::error!("startup failed: {e}");
@@ -105,6 +123,7 @@ fn bundle_minimaps(bundle: &std::path::Path, images_dir: &std::path::Path) {
 
 async fn run() -> Result<(), String> {
     let cfg = Config::from_env()?;
+    cfg.validate()?;
     std::fs::create_dir_all(&cfg.archive_dir).map_err(|e| format!("archive_dir: {e}"))?;
     std::fs::create_dir_all(&cfg.raw_cache_dir).map_err(|e| format!("raw_cache_dir: {e}"))?;
     bundle_minimaps(&cfg.minimaps_bundle_dir, &cfg.images_dir);
@@ -139,6 +158,13 @@ async fn run() -> Result<(), String> {
         .await
         .unwrap_or_else(cast::Series::new);
     let lobby_initial = lobby::store::load(&db).await;
+    let standalone = if cfg.standalone {
+        let st = standalone::StandaloneState::new(&cfg);
+        st.load_saved_extras(&db).await;
+        Some(Arc::new(st))
+    } else {
+        None
+    };
     let state = AppState {
         cfg: Arc::new(cfg),
         db,
@@ -151,6 +177,7 @@ async fn run() -> Result<(), String> {
         lobby: Arc::new(RwLock::new(lobby_initial)),
         live: Arc::new(RwLock::new(None)),
         replay_timer: Arc::default(),
+        standalone,
     };
 
     // Hero/talent/patch reference data + images (best-effort, 24 h refresh; each new patch →
@@ -158,7 +185,11 @@ async fn run() -> Result<(), String> {
     //  - REFERENTIAL_URL  : published snapshot (`referential.tar.gz`) → standalone bundle, without live HPN.
     //  - HOTSPATCHNOTES_URL : live HotsPatchNotes API (maintainer setup).
     // The snapshot takes precedence when both are set.
-    if state.cfg.referential_url.is_some() || state.cfg.hotspatchnotes_url.is_some() {
+    // Standalone mode: no network and no 24 h refresh loop; the import task (started once the
+    // listener is bound) seeds an empty `dim_heroes` from the bundled snapshot first.
+    if !state.cfg.standalone
+        && (state.cfg.referential_url.is_some() || state.cfg.hotspatchnotes_url.is_some())
+    {
         let st = state.clone();
         tokio::spawn(async move {
             loop {
@@ -208,27 +239,57 @@ async fn run() -> Result<(), String> {
         Err(e) => tracing::error!("resuming the pending uploads: {e}"),
     }
     let bind = state.cfg.bind_addr.clone();
-    let app = api_router(&state);
-    // the front-end: bundle files under `/v2/<bundle>/`, every page at `/` (API routes first)
-    let app = match state.cfg.web_dir.as_deref() {
-        Some(dir) => serve_v2_at_root(serve_v2(app, Some(dir)), dir),
-        None => app,
-    }
-    .with_state(state)
-    // Request body limit: the axum default (2 MB) rejected with 413 — BEFORE the handler, so
-    // without a trace or an uploads row — the replays of long games (a 5v5 Braxis Holdout exceeds
-    // 2 MB), making the uploader loop. 64 MB covers it widely (replays < ~10 MB).
-    .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024))
-    // gzip/brotli according to `Accept-Encoding` (API JSON, JS/CSS bundle); the default predicate
-    // skips small responses, images and streams (WS: 101 response without a body).
-    .layer(tower_http::compression::CompressionLayer::new());
+    let standalone_state = state.clone();
+    let app = app_router(state);
 
     let listener = tokio::net::TcpListener::bind(&bind)
         .await
         .map_err(|e| format!("bind {bind}: {e}"))?;
-    tracing::info!("storm-codex-server listening on {bind}");
+    serve(listener, app, &standalone_state, shutdown_signal()).await
+}
+
+/// How long the shutdown waits for the standalone import task to flush and stop.
+const IMPORT_STOP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Serves `app` until `signal` (or, in standalone mode, `POST /api/standalone/shutdown`), then
+/// shuts down gracefully. Standalone: the import task is started first and uploads to this very
+/// server at the address actually bound (`BIND_ADDR` may ask for port 0; `/api/health` answers
+/// during the whole import). On shutdown it is told to stop and awaited (bounded) while the
+/// server still answers its in-flight uploads, so the ledger is flushed before this returns.
+async fn serve(
+    listener: tokio::net::TcpListener,
+    app: Router,
+    state: &AppState,
+    signal: impl std::future::Future<Output = ()> + Send + 'static,
+) -> Result<(), String> {
+    let local = listener.local_addr().map_err(|e| format!("bind: {e}"))?;
+    tracing::info!("storm-codex-server listening on {local}");
+    let standalone = state.standalone.clone();
+    let import = standalone.as_ref().map(|st| {
+        st.set_port(local.port());
+        standalone::spawn(state.clone(), format!("http://{local}"))
+    });
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(async move {
+            let Some(st) = standalone else {
+                return signal.await;
+            };
+            tokio::select! {
+                () = signal => {},
+                () = st.shutdown_requested() => {},
+            }
+            tracing::info!("shutdown requested: stopping the import task");
+            st.stop_import();
+            if let Some(mut import) = import {
+                if tokio::time::timeout(IMPORT_STOP_TIMEOUT, &mut import)
+                    .await
+                    .is_err()
+                {
+                    tracing::warn!("import task did not stop in time, aborted");
+                    import.abort();
+                }
+            }
+        })
         .await
         .map_err(|e| format!("serve: {e}"))
 }
@@ -264,8 +325,48 @@ async fn shutdown_signal() {
     tracing::info!("shutdown requested: finishing the ongoing requests");
 }
 
+/// The whole served app: API routes, images, the front-end (when `WEB_DIR` is set) and the
+/// global layers.
+fn app_router(state: AppState) -> Router {
+    let app = api_router(&state);
+    // the front-end: bundle files under `/v2/<bundle>/`, every page at `/` (API routes first)
+    let app = match state.cfg.web_dir.as_deref() {
+        Some(dir) => serve_v2_at_root(serve_v2(app, Some(dir)), dir),
+        None => app,
+    }
+    .with_state(state.clone())
+    // Request body limit: the axum default (2 MB) rejected with 413 — BEFORE the handler, so
+    // without a trace or an uploads row — the replays of long games (a 5v5 Braxis Holdout exceeds
+    // 2 MB), making the uploader loop. 64 MB covers it widely (replays < ~10 MB).
+    .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024))
+    // gzip/brotli according to `Accept-Encoding` (API JSON, JS/CSS bundle); the default predicate
+    // skips small responses, images and streams (WS: 101 response without a body).
+    .layer(tower_http::compression::CompressionLayer::new());
+    // Standalone: the server runs on a player's PC in open mode (no ADMIN_TOKEN), so every
+    // request must name the loopback server (DNS rebinding) and no write may come from another
+    // site (CSRF). Outermost, so it also covers the pages, images and the WebSocket.
+    if state.standalone.is_some() {
+        app.layer(axum::middleware::from_fn_with_state(
+            state,
+            standalone::api::local_requests_only,
+        ))
+    } else {
+        app
+    }
+}
+
 /// All the API routes + images (without the SPA fallback) — extracted for the integration tests.
+/// The `/api/standalone/*` routes are added only in standalone mode (404 otherwise).
 fn api_router(state: &AppState) -> Router<AppState> {
+    let router = base_router(state);
+    if state.standalone.is_some() {
+        router.merge(standalone::api::router())
+    } else {
+        router
+    }
+}
+
+fn base_router(state: &AppState) -> Router<AppState> {
     Router::new()
         .route("/api/health", get(health))
         .route("/api/upload", post(upload::upload))
@@ -590,6 +691,30 @@ async fn health(State(state): State<AppState>) -> (StatusCode, Json<serde_json::
     )
 }
 
+/// App state for tests around a given config and pool (no draft/cast/lobby restored).
+#[cfg(test)]
+pub(crate) fn test_app_state(cfg: Config, db: PgPool) -> AppState {
+    let (events, _) = tokio::sync::broadcast::channel(64);
+    AppState {
+        cfg: Arc::new(cfg),
+        db,
+        parse_sem: Arc::new(Semaphore::new(2)),
+        events,
+        cast: Arc::new(RwLock::new(cast::Series::new())),
+        cast_version: Arc::default(),
+        cast_saved: Arc::default(),
+        lobby: Arc::new(RwLock::new(None)),
+        live: Arc::new(RwLock::new(None)),
+        replay_timer: Arc::default(),
+        draft: Arc::new(RwLock::new(draft::DraftState::new(
+            draft::Format::Standard,
+            draft::Side::Blue,
+            "Sky Temple".into(),
+        ))),
+        standalone: None,
+    }
+}
+
 /// Router-level integration tests (tower::oneshot, without network listening). Skipped without
 /// `DATABASE_URL` (pattern of the projection test) — run with the dev Docker Postgres,
 /// run in CI against a Postgres service.
@@ -742,6 +867,9 @@ pub(crate) mod api_tests {
             azure_push_token: None,
             hotspatchnotes_url: None,
             referential_url: None,
+            standalone: false,
+            referential_file: None,
+            ledger_file: None,
             images_dir: dir.join("images"),
             minimaps_bundle_dir: dir.join("minimaps"),
             orpheus_url: None,
@@ -749,24 +877,7 @@ pub(crate) mod api_tests {
         };
         std::fs::create_dir_all(&cfg.archive_dir).unwrap();
         std::fs::create_dir_all(&cfg.raw_cache_dir).unwrap();
-        let (events, _) = tokio::sync::broadcast::channel(64);
-        Some(AppState {
-            cfg: Arc::new(cfg),
-            db,
-            parse_sem: Arc::new(Semaphore::new(2)),
-            events,
-            cast: Arc::new(RwLock::new(cast::Series::new())),
-            cast_version: Arc::default(),
-            cast_saved: Arc::default(),
-            lobby: Arc::new(RwLock::new(None)),
-            live: Arc::new(RwLock::new(None)),
-            replay_timer: Arc::default(),
-            draft: Arc::new(RwLock::new(draft::DraftState::new(
-                draft::Format::Standard,
-                draft::Side::Blue,
-                "Sky Temple".into(),
-            ))),
-        })
+        Some(super::test_app_state(cfg, db))
     }
 
     pub(crate) fn app(state: &AppState) -> Router {
@@ -1584,6 +1695,33 @@ pub(crate) mod api_tests {
         let v = json_body(resp).await;
         assert_eq!(v["status"], "parsed", "response: {v}");
         let match_id = v["match_id"].as_i64().expect("match_id");
+
+        // stored relative to ARCHIVE_DIR; a row restored from another PC's backup (absolute
+        // path of that PC, missing here) still finds the file in this archive
+        let stored: String =
+            sqlx::query_scalar("SELECT archived_path FROM uploads WHERE fingerprint = $1")
+                .bind(&hash)
+                .fetch_one(&state.db)
+                .await
+                .unwrap();
+        assert_eq!(stored, format!("{hash}.StormReplay"));
+        sqlx::query("UPDATE uploads SET archived_path = $2 WHERE fingerprint = $1")
+            .bind(&hash)
+            .bind(format!(
+                r"C:\Users\OldPc\AppData\Local\com.matella.stormcodex\archive\{hash}.StormReplay"
+            ))
+            .execute(&state.db)
+            .await
+            .unwrap();
+        let resp = app(&state)
+            .oneshot(
+                Request::get(format!("/api/matches/{match_id}/raw?stream=header"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "raw from a restored row");
 
         // reading the detail: {match, players} shape, messages present (chat + pings)
         let resp = app(&state)

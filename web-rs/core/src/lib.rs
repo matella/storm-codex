@@ -22,5 +22,6 @@ pub mod sanitize;
 pub mod scenes;
 pub mod scouting;
 pub mod session;
+pub mod standalone;
 pub mod trends;
 pub mod whatsnew;

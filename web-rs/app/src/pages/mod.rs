@@ -20,3 +20,4 @@ pub mod scouting_report;
 pub mod session;
 pub mod synergies;
 pub mod trends;
+pub mod welcome;
