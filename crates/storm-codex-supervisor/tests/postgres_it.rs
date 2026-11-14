@@ -11,7 +11,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use storm_codex_supervisor::{DataDir, PgError, Postgres, APP_DATABASE};
+use storm_codex_supervisor::{
+    DataDir, PgError, Postgres, APP_DATABASE, IMPORT_ROLE, PREVIOUS_DATABASE,
+};
 use sysinfo::{Pid, ProcessesToUpdate, System};
 
 fn bin_dir() -> Option<PathBuf> {
@@ -337,7 +339,7 @@ fn start_after_hard_kill_recovers() {
 }
 
 #[test]
-fn dump_then_restore_roundtrip() {
+fn dump_holds_data_only() {
     let Some(bin) = bin_dir() else { return };
     let tmp = tempfile::tempdir().expect("tempdir");
     let (_data, pg) = layout(&tmp.path().join("src"), bin.clone());
@@ -349,38 +351,21 @@ fn dump_then_restore_roundtrip() {
         &bin,
         &pg,
         APP_DATABASE,
-        // U&'Zo\00EB' = 'Zoë': psql receives argv in the ANSI code page on Windows, so the
-        // non-ASCII value is written as a Unicode escape.
-        r"CREATE TABLE cast_row (name text); INSERT INTO cast_row VALUES (U&'Zo\00EB')",
+        "CREATE TABLE cast_row (name text); INSERT INTO cast_row VALUES ('Zoe')",
     );
-
     let dump = tmp.path().join("export dir").join("db.dump");
     std::fs::create_dir_all(dump.parent().expect("parent")).expect("mkdir");
     pg.dump(&dump).expect("dump");
-    assert!(std::fs::metadata(&dump).expect("dump file").len() > 0);
-
-    // Restore over modified data in the same cluster: --clean puts the dump back.
-    psql(&bin, &pg, APP_DATABASE, "DELETE FROM cast_row");
-    pg.restore(&dump).expect("restore in place");
-    assert_eq!(
-        psql(
-            &bin,
-            &pg,
-            APP_DATABASE,
-            r"SELECT count(*) FROM cast_row WHERE name = U&'Zo\00EB'"
-        ),
-        "1"
-    );
-
-    // Restore into a fresh cluster (the import path): the database is created if needed.
-    let (_data2, pg2) = layout(&tmp.path().join("dst"), bin.clone());
-    pg2.init_if_needed().expect("init 2");
-    pg2.start().expect("start 2");
-    let _running2 = Running(&pg2);
-    pg2.restore(&dump).expect("restore into fresh cluster");
-    assert_eq!(
-        psql(&bin, &pg2, APP_DATABASE, "SELECT count(*) FROM cast_row"),
-        "1"
+    let out = Command::new(bin.join(format!("pg_restore{}", std::env::consts::EXE_SUFFIX)))
+        .arg("-l")
+        .arg(&dump)
+        .output()
+        .expect("pg_restore -l");
+    let list = String::from_utf8_lossy(&out.stdout);
+    assert!(list.contains("TABLE DATA public cast_row"), "{list}");
+    assert!(
+        !list.contains(" TABLE public cast_row"),
+        "schema in a backup: {list}"
     );
 }
 
@@ -505,34 +490,90 @@ fn wrong_password_fails_fast_instead_of_prompting() {
         .expect("works again with the right password");
 }
 
-// ---- Import of an untrusted dump (stage as a non-superuser, check, swap) ----
+// ---- Import of an untrusted backup (data only, schema from the app's migrations) ----
+//
+// Security tests: `#[ignore]`d so a run without Postgres never reports them as passed; run
+// with `PG_BIN_DIR=<Postgres 17 bin/> cargo test -p storm-codex-supervisor -- --include-ignored`.
 
-/// The server's migrations, applied with psql in order (the app schema a real export holds).
-fn apply_migrations(bin: &Path, pg: &Postgres) {
+fn required_bin() -> PathBuf {
+    bin_dir().expect("PG_BIN_DIR must point at Postgres 17's bin/ for this test")
+}
+
+/// The server's migrations (`crates/storm-codex-server/migrations/NNNN_*.sql`), by version.
+fn migration_files() -> Vec<(i64, PathBuf)> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../storm-codex-server/migrations");
-    let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)
+    let mut files: Vec<(i64, PathBuf)> = std::fs::read_dir(&dir)
         .expect("migrations dir")
         .map(|e| e.expect("entry").path())
         .filter(|p| p.extension().is_some_and(|e| e == "sql"))
+        .map(|p| {
+            let name = p.file_name().expect("name").to_string_lossy().to_string();
+            let digits: String = name.chars().take_while(char::is_ascii_digit).collect();
+            (digits.parse().expect("version prefix"), p)
+        })
         .collect();
     files.sort();
     assert!(!files.is_empty());
-    for file in files {
-        let out = Command::new(bin.join(format!("psql{}", std::env::consts::EXE_SUFFIX)))
-            .args(["-X", "-w", "-q", "-v", "ON_ERROR_STOP=1", "-d"])
-            .arg(pg.database_url(APP_DATABASE))
-            .arg("-f")
-            .arg(&file)
-            .env_remove("PGPASSWORD")
-            .env("PGCLIENTENCODING", "UTF8")
-            .output()
-            .expect("psql -f");
-        assert!(
-            out.status.success(),
-            "{}: {}",
-            file.display(),
-            String::from_utf8_lossy(&out.stderr)
+    files
+}
+
+fn psql_ok(bin: &Path, url: &str, sql: &str) -> String {
+    let out = psql_url(bin, url, sql);
+    assert!(
+        out.status.success(),
+        "{sql}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+/// What the server's `migrate [--to N]` does (sqlx semantics: same ledger table, versions
+/// applied in order up to `target`; a target above the newest migration is refused), with
+/// psql and a deterministic checksum per version.
+fn psql_migrate(bin: PathBuf) -> impl Fn(&str, Option<i64>) -> Result<(), String> {
+    move |url: &str, target: Option<i64>| {
+        let files = migration_files();
+        let newest = files.last().map(|(v, _)| *v).unwrap_or_default();
+        if let Some(t) = target.filter(|t| *t > newest) {
+            return Err(format!(
+                "database version {t} is newer than this build's ({newest})"
+            ));
+        }
+        psql_ok(
+            &bin,
+            url,
+            "CREATE TABLE IF NOT EXISTS _sqlx_migrations (version BIGINT PRIMARY KEY, \
+             description TEXT NOT NULL, installed_on TIMESTAMPTZ NOT NULL DEFAULT now(), \
+             success BOOLEAN NOT NULL, checksum BYTEA NOT NULL, execution_time BIGINT NOT NULL)",
         );
+        let applied = psql_ok(&bin, url, "SELECT version FROM _sqlx_migrations");
+        let applied: Vec<i64> = applied.lines().filter_map(|l| l.parse().ok()).collect();
+        for (v, file) in files {
+            if target.is_some_and(|t| v > t) || applied.contains(&v) {
+                continue;
+            }
+            let out = Command::new(bin.join(format!("psql{}", std::env::consts::EXE_SUFFIX)))
+                .args(["-X", "-w", "-q", "-v", "ON_ERROR_STOP=1", "-d"])
+                .arg(url)
+                .arg("-f")
+                .arg(&file)
+                .env_remove("PGPASSWORD")
+                .env("PGCLIENTENCODING", "UTF8")
+                .output()
+                .map_err(|e| e.to_string())?;
+            if !out.status.success() {
+                return Err(String::from_utf8_lossy(&out.stderr).into_owned());
+            }
+            psql_ok(
+                &bin,
+                url,
+                &format!(
+                    "INSERT INTO _sqlx_migrations (version, description, success, checksum, \
+                     execution_time) VALUES ({v}, 'm{v}', true, decode(md5('m{v}'), 'hex'), 1)"
+                ),
+            );
+        }
+        Ok(())
     }
 }
 
@@ -554,215 +595,332 @@ fn db_exists(bin: &Path, pg: &Postgres, name: &str) -> bool {
     ) == "1"
 }
 
-/// Dumps a source database prepared with `sql` (after the migrations).
-fn dump_of(bin: &Path, root: &Path, sql: &str) -> PathBuf {
+fn role_exists(bin: &Path, pg: &Postgres) -> bool {
+    psql(
+        bin,
+        pg,
+        "postgres",
+        &format!("SELECT count(*) FROM pg_roles WHERE rolname = '{IMPORT_ROLE}'"),
+    ) == "1"
+}
+
+/// Backup (data-only dump) of a source app database migrated up to `version` (all if
+/// `None`), after `sql`.
+fn backup_of(bin: &Path, root: &Path, version: Option<i64>, sql: &str) -> PathBuf {
     let pg = cluster(&root.join("src"), bin);
     let _running = Running(&pg);
-    apply_migrations(bin, &pg);
+    psql_migrate(bin.to_path_buf())(&pg.database_url(APP_DATABASE), version).expect("migrate");
     psql(bin, &pg, APP_DATABASE, sql);
     let dump = root.join("db.dump");
     pg.dump(&dump).expect("dump");
     dump
 }
 
-#[test]
-fn import_of_an_app_dump_is_staged_then_swapped_in() {
-    let Some(bin) = bin_dir() else { return };
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let dump = dump_of(
-        &bin,
-        tmp.path(),
-        "CREATE TABLE cast_row (id bigserial PRIMARY KEY, name text NOT NULL DEFAULT lower('X'), \
-         at timestamptz DEFAULT now()); INSERT INTO cast_row (name) VALUES ('kept')",
-    );
-    let pg = cluster(&tmp.path().join("dst"), &bin);
-    let _running = Running(&pg);
-    psql(&bin, &pg, APP_DATABASE, "CREATE TABLE old_only (x int)");
-
-    pg.stage_import(&dump).expect("stage");
-    assert!(pg.staging_exists().expect("staging"));
-    // The app database is untouched until the swap.
-    assert_eq!(
-        psql(
-            &bin,
-            &pg,
-            APP_DATABASE,
-            "SELECT count(*) FROM pg_tables WHERE tablename = 'old_only'"
-        ),
-        "1"
-    );
-    pg.promote_import().expect("promote");
-    assert!(!pg.staging_exists().expect("staging"));
-    assert!(!db_exists(
-        &bin,
+/// Destination cluster with a migrated app database holding the marker setting `old`.
+fn destination(bin: &Path, root: &Path) -> Postgres {
+    let pg = cluster(&root.join("dst"), bin);
+    psql_migrate(bin.to_path_buf())(&pg.database_url(APP_DATABASE), None).expect("migrate");
+    psql(
+        bin,
         &pg,
-        storm_codex_supervisor::PREVIOUS_DATABASE
-    ));
-    assert_eq!(
-        psql(&bin, &pg, APP_DATABASE, "SELECT name FROM cast_row"),
-        "kept"
+        APP_DATABASE,
+        "INSERT INTO app_settings VALUES ('marker', '\"old\"') \
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
     );
-    assert_eq!(
-        psql(
-            &bin,
-            &pg,
-            APP_DATABASE,
-            "SELECT count(*) FROM pg_tables WHERE tablename = 'old_only'"
-        ),
-        "0"
-    );
-    // Owned by the superuser again, like a fresh install; the import role owns nothing.
-    assert_eq!(
-        psql(
-            &bin,
-            &pg,
-            APP_DATABASE,
-            "SELECT tableowner FROM pg_tables WHERE tablename = 'cast_row'"
-        ),
-        "storm"
-    );
-    assert_eq!(
-        psql(
-            &bin,
-            &pg,
-            "postgres",
-            "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = 'storm_codex'"
-        ),
-        "storm"
-    );
-    // Idempotent (crash recovery runs it again).
-    pg.finish_import().expect("finish again");
+    pg
 }
 
-fn assert_refused(dump: &Path, pg: &Postgres, bin: &Path, needle: &str) {
-    let err = pg.stage_import(dump).expect_err("must be refused");
-    assert!(matches!(err, PgError::UnsafeDump(_)), "{err:?}");
-    assert!(err.to_string().contains(needle), "{err}");
+fn marker(bin: &Path, pg: &Postgres) -> String {
+    psql(
+        bin,
+        pg,
+        APP_DATABASE,
+        "SELECT value #>> '{}' FROM app_settings WHERE key = 'marker'",
+    )
+}
+
+fn assert_untouched(bin: &Path, pg: &Postgres) {
+    assert_eq!(marker(bin, pg), "old", "the app database was touched");
     assert!(
         !pg.staging_exists().expect("staging"),
         "staging left behind"
     );
-    assert_eq!(
-        psql(
-            bin,
-            pg,
-            APP_DATABASE,
-            "SELECT count(*) FROM pg_tables WHERE tablename = 'old_only'"
-        ),
-        "1",
-        "the app database was touched"
-    );
+    assert!(!role_exists(bin, pg), "import role left behind");
 }
 
 #[test]
-fn import_refuses_a_dump_with_a_function_before_restoring() {
-    let Some(bin) = bin_dir() else { return };
+#[ignore = "needs PG_BIN_DIR (Postgres 17 bin/); run with --include-ignored"]
+fn import_restores_data_into_a_migrated_staging_database_then_swaps() {
+    let bin = required_bin();
     let tmp = tempfile::tempdir().expect("tempdir");
-    let dump = dump_of(
+    let dump = backup_of(
         &bin,
         tmp.path(),
-        "CREATE FUNCTION evil() RETURNS int LANGUAGE sql AS 'SELECT 1'",
+        None,
+        "INSERT INTO app_settings VALUES ('marker', '\"new\"'); \
+         UPDATE app_settings SET value = '[\"zoe\"]' WHERE key = 'operator_names'",
     );
-    let pg = cluster(&tmp.path().join("dst"), &bin);
+    let pg = destination(&bin, tmp.path());
     let _running = Running(&pg);
-    psql(&bin, &pg, APP_DATABASE, "CREATE TABLE old_only (x int)");
-    assert_refused(&dump, &pg, &bin, "FUNCTION public evil()");
-}
+    let migrate = psql_migrate(bin.clone());
 
-#[test]
-fn import_refuses_an_expression_calling_a_file_function() {
-    let Some(bin) = bin_dir() else { return };
-    let tmp = tempfile::tempdir().expect("tempdir");
-    // Restored as a non-superuser this succeeds (EXECUTE is checked at use, not at creation),
-    // but the superuser server would run it on the next insert: the catalog check refuses it.
-    let dump = dump_of(
-        &bin,
-        tmp.path(),
-        "CREATE TABLE trap (x text DEFAULT pg_read_file('PG_VERSION'))",
-    );
-    let pg = cluster(&tmp.path().join("dst"), &bin);
-    let _running = Running(&pg);
-    psql(&bin, &pg, APP_DATABASE, "CREATE TABLE old_only (x int)");
-    assert_refused(&dump, &pg, &bin, "pg_read_file");
-}
-
-#[test]
-fn import_role_cannot_run_programs_or_read_files() {
-    let Some(bin) = bin_dir() else { return };
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let dump = dump_of(&bin, tmp.path(), "SELECT 1");
-    let pg = cluster(&tmp.path().join("dst"), &bin);
-    let _running = Running(&pg);
-    pg.stage_import(&dump).expect("stage");
-    let marker = tmp.path().join("pwned.txt");
-    let marker_sql = marker
-        .display()
-        .to_string()
-        .replace(std::path::MAIN_SEPARATOR, "/");
-    let url = pg.import_role_url(storm_codex_supervisor::STAGING_DATABASE);
-    for sql in [
-        format!("COPY (SELECT 1) TO PROGRAM 'cmd /c echo x > \"{marker_sql}\"'"),
-        format!("COPY (SELECT 1) TO '{marker_sql}'"),
-        "SELECT pg_read_file('PG_VERSION')".to_string(),
-        "ALTER SYSTEM SET work_mem = '1MB'".to_string(),
-        "CREATE ROLE sneaky SUPERUSER".to_string(),
-    ] {
-        let out = psql_url(&bin, &url, &sql);
-        assert!(!out.status.success(), "{sql} succeeded as the import role");
-    }
-    assert!(!marker.exists());
-    // The role really is the one used (it can work in its own database).
-    let out = psql_url(&bin, &url, "CREATE TABLE mine (x int)");
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    pg.discard_import().expect("discard");
-}
-
-#[test]
-fn staged_database_settings_cannot_hide_objects_from_the_check() {
-    let Some(bin) = bin_dir() else { return };
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let dump = dump_of(&bin, tmp.path(), "SELECT 1");
-    let pg = cluster(&tmp.path().join("dst"), &bin);
-    let _running = Running(&pg);
-    psql(&bin, &pg, APP_DATABASE, "CREATE TABLE old_only (x int)");
-    pg.stage_import(&dump).expect("stage");
-    // What a crafted TOC entry, run as the import role (owner of the staging database), could
-    // do: shadow the catalogs in a schema searched before pg_catalog, hide a function there.
-    let url = pg.import_role_url(storm_codex_supervisor::STAGING_DATABASE);
-    for sql in [
-        "CREATE SCHEMA evil",
-        "CREATE FUNCTION evil.f() RETURNS int LANGUAGE sql AS 'SELECT 1'",
-        "CREATE VIEW evil.pg_proc AS SELECT * FROM pg_catalog.pg_proc WHERE false",
-        "CREATE VIEW evil.pg_namespace AS SELECT * FROM pg_catalog.pg_namespace WHERE false",
-        "ALTER DATABASE storm_codex_import SET search_path = evil, pg_catalog",
-    ] {
-        let out = psql_url(&bin, &url, sql);
-        assert!(
-            out.status.success(),
-            "{sql}: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-    }
-    let err = pg.check_staged().expect_err("must be refused");
-    let msg = err.to_string();
-    assert!(msg.contains("evil.f()"), "{msg}");
-    assert!(msg.contains("schema evil"), "{msg}");
-    assert!(msg.contains("search_path"), "{msg}");
-    // The promote re-checks: refused, nothing swapped.
-    assert!(pg.promote_import().is_err());
+    pg.stage_import(&dump, &migrate).expect("stage");
     assert!(pg.staging_exists().expect("staging"));
+    assert!(
+        !role_exists(&bin, &pg),
+        "the role is dropped right after the restore"
+    );
+    assert_eq!(marker(&bin, &pg), "old", "untouched until the swap");
+    pg.promote_import().expect("promote");
+    assert!(!pg.staging_exists().expect("staging"));
+    assert!(!db_exists(&bin, &pg, PREVIOUS_DATABASE));
+    assert_eq!(marker(&bin, &pg), "new");
+    // The seeded row was replaced by the backup's, not duplicated.
     assert_eq!(
         psql(
             &bin,
             &pg,
             APP_DATABASE,
-            "SELECT count(*) FROM pg_tables WHERE tablename = 'old_only'"
+            "SELECT value::text FROM app_settings WHERE key = 'operator_names'"
         ),
-        "1"
+        "[\"zoe\"]"
     );
+    // Schema and ledger are the app's own; everything belongs to the superuser.
+    assert_eq!(
+        psql(
+            &bin,
+            &pg,
+            APP_DATABASE,
+            "SELECT count(*) FROM _sqlx_migrations"
+        ),
+        migration_files().len().to_string()
+    );
+    assert_eq!(
+        psql(
+            &bin,
+            &pg,
+            APP_DATABASE,
+            "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND tableowner <> 'storm'"
+        ),
+        "0"
+    );
+    pg.finish_import().expect("finish again (idempotent)");
+}
+
+#[test]
+#[ignore = "needs PG_BIN_DIR (Postgres 17 bin/); run with --include-ignored"]
+fn an_older_backup_is_migrated_forward() {
+    let bin = required_bin();
+    let files = migration_files();
+    let older = files[files.len() - 2].0;
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let dump = backup_of(
+        &bin,
+        tmp.path(),
+        Some(older),
+        "INSERT INTO app_settings VALUES ('marker', '\"new\"')",
+    );
+    let pg = destination(&bin, tmp.path());
+    let _running = Running(&pg);
+    pg.stage_import(&dump, &psql_migrate(bin.clone()))
+        .expect("stage");
+    pg.promote_import().expect("promote");
+    assert_eq!(marker(&bin, &pg), "new");
+    assert_eq!(
+        psql(
+            &bin,
+            &pg,
+            APP_DATABASE,
+            "SELECT max(version) FROM _sqlx_migrations"
+        ),
+        files.last().expect("last").0.to_string()
+    );
+}
+
+#[test]
+#[ignore = "needs PG_BIN_DIR (Postgres 17 bin/); run with --include-ignored"]
+fn a_backup_from_a_newer_app_is_refused() {
+    let bin = required_bin();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let dump = backup_of(
+        &bin,
+        tmp.path(),
+        None,
+        "INSERT INTO _sqlx_migrations VALUES (99999, 'future', now(), true, '\\x00', 1)",
+    );
+    let pg = destination(&bin, tmp.path());
+    let _running = Running(&pg);
+    let err = pg
+        .stage_import(&dump, &psql_migrate(bin.clone()))
+        .expect_err("newer");
+    assert!(matches!(err, PgError::Migrate(_)), "{err:?}");
+    assert!(err.to_string().contains("newer"), "{err}");
+    assert_untouched(&bin, &pg);
+}
+
+#[test]
+#[ignore = "needs PG_BIN_DIR (Postgres 17 bin/); run with --include-ignored"]
+fn a_dump_with_any_schema_object_is_refused_before_anything_runs() {
+    let bin = required_bin();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    // A full (schema + data) dump, as a crafted backup would hold, with a domain whose
+    // default runs a superuser-only function (`lo_export` would work the same way).
+    let src = cluster(&tmp.path().join("src"), &bin);
+    let full = {
+        let _running = Running(&src);
+        psql_migrate(bin.clone())(&src.database_url(APP_DATABASE), None).expect("migrate");
+        psql(
+            &bin,
+            &src,
+            APP_DATABASE,
+            "CREATE DOMAIN d2 AS text DEFAULT pg_read_file('PG_VERSION'); \
+             ALTER TABLE app_settings ADD COLUMN y d2",
+        );
+        let full = tmp.path().join("full.dump");
+        let out = Command::new(bin.join(format!("pg_dump{}", std::env::consts::EXE_SUFFIX)))
+            .args(["-Fc", "-f"])
+            .arg(&full)
+            .arg("-d")
+            .arg(src.database_url(APP_DATABASE))
+            .env_remove("PGPASSWORD")
+            .output()
+            .expect("pg_dump");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        full
+    };
+    let pg = destination(&bin, tmp.path());
+    let _running = Running(&pg);
+    let err = pg
+        .stage_import(&full, &|_, _| panic!("must be refused before migrating"))
+        .expect_err("schema objects");
+    assert!(matches!(err, PgError::UnsafeDump(_)), "{err:?}");
+    assert!(err.to_string().contains("DOMAIN public d2"), "{err}");
+    assert!(
+        err.to_string().contains("TABLE public app_settings"),
+        "{err}"
+    );
+    assert_untouched(&bin, &pg);
+}
+
+#[test]
+#[ignore = "needs PG_BIN_DIR (Postgres 17 bin/); run with --include-ignored"]
+fn sql_run_as_the_import_role_cannot_create_code_settings_or_grants() {
+    let bin = required_bin();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let dump = backup_of(
+        &bin,
+        tmp.path(),
+        None,
+        "INSERT INTO app_settings VALUES ('marker', '\"new\"')",
+    );
+    let pg = destination(&bin, tmp.path());
+    let _running = Running(&pg);
+    let pwned = tmp.path().join("pwned.txt");
+    let pwned_sql = pwned
+        .display()
+        .to_string()
+        .replace(std::path::MAIN_SEPARATOR, "/");
+    let role_url = std::cell::RefCell::new(String::new());
+    let succeeded = std::cell::RefCell::new(Vec::new());
+    let hook = |url: &str| {
+        *role_url.borrow_mut() = url.to_string();
+        // What SQL hidden in a dump entry would try, as the import role.
+        for sql in [
+            format!(
+                "CREATE DOMAIN public.d2 AS int DEFAULT pg_catalog.lo_export(1, '{pwned_sql}')"
+            ),
+            "CREATE FUNCTION public.lower(varchar) RETURNS text LANGUAGE sql AS 'SELECT 1'".into(),
+            "CREATE SCHEMA evil".into(),
+            "CREATE TABLE public.extra (x int)".into(),
+            "CREATE TEMP TABLE t (x int)".into(),
+            "ALTER TABLE public.app_settings ADD COLUMN y int".into(),
+            "ALTER DATABASE storm_codex_import SET search_path = evil, pg_catalog".into(),
+            "INSERT INTO public._sqlx_migrations VALUES (99999, 'x', now(), true, '\\x00', 1)"
+                .into(),
+            format!("COPY (SELECT 1) TO PROGRAM 'cmd /c echo x > \"{pwned_sql}\"'"),
+            format!("COPY (SELECT 1) TO '{pwned_sql}'"),
+            "SELECT pg_read_file('PG_VERSION')".into(),
+            "ALTER SYSTEM SET work_mem = '1MB'".into(),
+            "CREATE ROLE sneaky SUPERUSER".into(),
+            "CREATE ROLE sneaky".into(),
+        ] {
+            if psql_url(&bin, url, &sql).status.success() {
+                succeeded.borrow_mut().push(sql);
+            }
+        }
+        // Grants without the privilege only warn ("no privileges were granted"): checked by
+        // their effect below.
+        for sql in [
+            "GRANT ALL ON public.app_settings TO PUBLIC",
+            "GRANT CREATE ON SCHEMA public TO PUBLIC",
+            "GRANT CONNECT, TEMP ON DATABASE storm_codex_import TO PUBLIC",
+        ] {
+            let _ = psql_url(&bin, url, sql);
+        }
+        // What it is for: inserting rows.
+        let out = psql_url(
+            &bin,
+            url,
+            "INSERT INTO public.app_settings VALUES ('probe', '1')",
+        );
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let out = psql_url(
+            &bin,
+            url,
+            "DELETE FROM public.app_settings WHERE key = 'probe'",
+        );
+        assert!(!out.status.success(), "the role can only insert");
+    };
+    pg.stage_import_with_hook(&dump, &psql_migrate(bin.clone()), &hook)
+        .expect("stage: the role could only insert rows");
+    assert!(succeeded.borrow().is_empty(), "{:?}", succeeded.borrow());
+    assert_eq!(
+        psql(
+            &bin,
+            &pg,
+            storm_codex_supervisor::STAGING_DATABASE,
+            "SELECT has_table_privilege('public', 'public.app_settings', 'INSERT') \
+             OR has_table_privilege('public', 'public.app_settings', 'SELECT') \
+             OR has_schema_privilege('public', 'public', 'CREATE') \
+             OR has_database_privilege('public', 'storm_codex_import', 'CONNECT') \
+             OR has_database_privilege('public', 'storm_codex_import', 'TEMP')"
+        ),
+        "f",
+        "PUBLIC got a privilege"
+    );
+    assert!(!pwned.exists());
+    // The role is gone and cannot log in any more.
+    assert!(!role_exists(&bin, &pg));
+    assert!(!psql_url(&bin, &role_url.borrow(), "SELECT 1")
+        .status
+        .success());
     pg.discard_import().expect("discard");
+}
+
+#[test]
+#[ignore = "needs PG_BIN_DIR (Postgres 17 bin/); run with --include-ignored"]
+fn a_large_object_created_during_the_restore_refuses_the_import() {
+    let bin = required_bin();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let dump = backup_of(&bin, tmp.path(), None, "SELECT 1");
+    let pg = destination(&bin, tmp.path());
+    let _running = Running(&pg);
+    let hook = |url: &str| {
+        // Any role may create a large object: the ready-made payload for `lo_export`.
+        psql_ok(&bin, url, "SELECT lo_from_bytea(0, 'echo pwned')");
+    };
+    let err = pg
+        .stage_import_with_hook(&dump, &psql_migrate(bin.clone()), &hook)
+        .expect_err("large object");
+    assert!(matches!(err, PgError::UnsafeDump(_)), "{err:?}");
+    assert!(err.to_string().contains("large object"), "{err}");
+    assert_untouched(&bin, &pg);
 }

@@ -1,5 +1,6 @@
 //! `storm-codex-server` — single server (axum + Postgres): upload, parse, projection,
-//! WebSocket, REST. Milestone 3. Config through env (see `.env.example`).
+//! WebSocket, REST. Milestone 3. Config through env (see `.env.example`). Subcommand
+//! `migrate [--to <version>]`: migrations only (`migrate_cmd`).
 
 mod admin;
 mod auth;
@@ -13,6 +14,7 @@ mod jarvis;
 mod live;
 mod lobby;
 mod manage;
+mod migrate_cmd;
 mod players;
 pub mod project;
 mod rank;
@@ -71,6 +73,18 @@ async fn main() {
                 .unwrap_or_else(|_| "storm_codex_server=info,tower_http=warn".into()),
         )
         .init();
+
+    // `migrate [--to <version>]`: migrations only, then exit (see `migrate_cmd`).
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("migrate") {
+        match migrate_cmd::run(&args[1..]).await {
+            Ok(()) => std::process::exit(0),
+            Err((code, msg)) => {
+                eprintln!("{msg}");
+                std::process::exit(code);
+            }
+        }
+    }
 
     if let Err(e) = run().await {
         tracing::error!("startup failed: {e}");

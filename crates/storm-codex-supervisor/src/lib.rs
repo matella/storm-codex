@@ -9,5 +9,6 @@ pub use datadir::DataDir;
 pub use disk::{check_free_space, free_space, required_free_bytes, DiskError};
 pub use ports::pick_port;
 pub use postgres::{
-    PgError, Postgres, APP_DATABASE, IMPORT_ROLE, PREVIOUS_DATABASE, STAGING_DATABASE,
+    Migrate, PgError, Postgres, APP_DATABASE, IMPORT_ROLE, MIGRATIONS_TABLE, PREVIOUS_DATABASE,
+    STAGING_DATABASE,
 };

@@ -1,12 +1,13 @@
-//! Backup archives (`.stormcodex`): a zip holding `db.dump` (`pg_dump -Fc` of the app
-//! database) and the whole `archive/` folder (the raw replays, the source of truth).
+//! Backup archives (`.stormcodex`): a zip holding `db.dump` (`pg_dump -Fc --data-only` of the
+//! app database: rows only, the migration ledger included) and the whole `archive/` folder (the
+//! raw replays, the source of truth).
 //!
 //! Export streams every file into the zip (`Stored`: replays and the custom-format dump are
 //! already compressed), never loading a file in memory. Import copies the chosen file to a
 //! private one, validates that copy (entry names, kinds, sizes) and unpacks it within the
-//! validated budget, restores the dump into a staging database under an unprivileged role,
-//! then stops the server, swaps the archive folder and promotes the database, with a journal
-//! for crash recovery ([`recover_import`]).
+//! validated budget, restores the dump's rows into a staging database whose schema the server's
+//! own migrations created (under an unprivileged role), then stops the server, swaps the archive
+//! folder and promotes the database, with a journal for crash recovery ([`recover_import`]).
 
 use std::fs::File;
 use std::io::{self, Read, Write};
@@ -592,7 +593,8 @@ pub fn rename_retrying(from: &Path, to: &Path) -> io::Result<()> {
 
 /// Swaps folder `new` in as `target`, keeping the replaced folder as `<target>.old` (removed
 /// once the import is committed, put back by [`unswap_dir`] otherwise). Refused when
-/// `<target>.old` already exists (never overwritten). On failure `target` is as before.
+/// `<target>.old` already exists (never overwritten). On failure `target` is as before, unless
+/// putting it back failed too: then `target` is missing and only `<target>.old` holds it.
 pub fn swap_dir(
     new: &Path,
     target: &Path,
@@ -716,17 +718,33 @@ pub fn export_stack(stack: &Stack, out: &Path) -> Result<BackupContents, BackupE
 /// 1. `source` must be a local path; it is copied to a private file in `import-work` (free
 ///    space checked), and only that copy is validated and unpacked (within the validated
 ///    budget; free space for the unpacked data and the staging database checked).
-/// 2. The dump is restored into the staging database ([`Stack::stage_import`]: TOC allow-list,
-///    unprivileged role, catalog check) while the server keeps running.
+/// 2. The dump's rows are restored into the staging database ([`Stack::stage_import`]: schema
+///    from the server's `migrate`, TOC allow-list, unprivileged role) while the server keeps
+///    running; a backup from a newer app is refused there.
 /// 3. Journal written, server stopped, archive swapped, staging database promoted; the ledger
 ///    is reset, `archive.old` and the journal removed, the server restarted.
 ///
-/// A failure before the promote rolls everything back (archive, staging database) and
-/// restarts the server; a crash is handled by [`recover_import`] at the next start.
+/// A failure before the database rename rolls everything back (archive, staging database) and
+/// restarts the server. Once the rename has committed nothing is rolled back: the import is
+/// completed (or left for the next start to complete). When the state cannot be read or the
+/// replay folder cannot be put back, the server stays stopped and [`recover_import`] finishes
+/// at the next start; a crash is handled the same way.
 pub fn import_into(
     stack: &mut Stack,
     source: &Path,
     free_space: impl Fn(&Path) -> io::Result<u64>,
+) -> Result<BackupContents, String> {
+    import_into_with(stack, source, free_space, &rename_retrying)
+}
+
+/// How a folder is renamed (injected by the tests).
+type Rename<'a> = &'a dyn Fn(&Path, &Path) -> io::Result<()>;
+
+fn import_into_with(
+    stack: &mut Stack,
+    source: &Path,
+    free_space: impl Fn(&Path) -> io::Result<u64>,
+    rename: Rename<'_>,
 ) -> Result<BackupContents, String> {
     check_local_path(source)?;
     let data = stack.data().clone();
@@ -741,7 +759,7 @@ pub fn import_into(
     clean(&work)?;
     std::fs::create_dir_all(&work).map_err(|e| format!("{}: {e}", work.display()))?;
     let result = prepare(source, &work, &root, &free_space)
-        .and_then(|contents| commit(stack, &work, &data).map(|()| contents));
+        .and_then(|contents| commit(stack, &work, &data, rename).map(|()| contents));
     let _ = clean(&work);
     result
 }
@@ -786,7 +804,7 @@ fn prepare(
     Ok(contents)
 }
 
-fn commit(stack: &mut Stack, work: &Path, data: &DataDir) -> Result<(), String> {
+fn commit(stack: &mut Stack, work: &Path, data: &DataDir, rename: Rename) -> Result<(), String> {
     let dump = work.join(DUMP_ENTRY);
     stack.stage_import(&dump).map_err(|e| {
         format!("the backup was refused or could not be restored (nothing was changed): {e}")
@@ -811,7 +829,14 @@ fn commit(stack: &mut Stack, work: &Path, data: &DataDir) -> Result<(), String> 
         });
     }
     let archive = data.archive();
-    let committed = match swap_dir(&work.join(ARCHIVE_ENTRY), &archive, rename_retrying) {
+    let committed = match swap_dir(&work.join(ARCHIVE_ENTRY), &archive, rename) {
+        // Both renames back failed: the replays are only in `archive.old`. Journal and staging
+        // kept, server left stopped: the next start puts the folder back (rollback).
+        Err(e) if !archive.exists() && old_dir(&archive).exists() => {
+            return Err(format!(
+                "the replay folder could not be replaced and the previous one could not be put                  back ({e}); the server is stopped: restart Storm Codex to finish the rollback"
+            ));
+        }
         Err(e) => Err(discard(
             stack,
             format!("the replay folder could not be replaced (nothing was changed): {e}"),
@@ -822,18 +847,39 @@ fn commit(stack: &mut Stack, work: &Path, data: &DataDir) -> Result<(), String> 
                     "the import is done but its cleanup failed (retried at the next start): {e}"
                 )
             }),
-            Err(e) => match unswap_dir(&archive) {
-                Ok(()) => Err(discard(
-                    stack,
-                    format!("switching to the imported database failed (nothing was changed): {e}"),
-                )),
-                // Journal and staging kept: the next start finishes the rollback. The server
-                // stays stopped rather than run on a replay folder that does not match.
-                Err(u) => {
+            Err(e) => match stack.staging_exists() {
+                // The rename did not happen: the previous database is still the app's.
+                Ok(true) => match unswap_dir(&archive) {
+                    Ok(()) => Err(discard(
+                        stack,
+                        format!(
+                            "switching to the imported database failed (nothing was changed): {e}"
+                        ),
+                    )),
+                    // Journal and staging kept: the next start finishes the rollback. The
+                    // server stays stopped rather than run on a replay folder that does not
+                    // match.
+                    Err(u) => {
+                        return Err(format!(
+                            "switching to the imported database failed ({e}) and the previous                              replay folder could not be put back ({u}); restart Storm Codex to                              finish the rollback"
+                        ))
+                    }
+                },
+                // The rename committed: the imported database is the app's. Never roll back;
+                // complete the import (journal kept on failure: the next start completes it).
+                Ok(false) => stack
+                    .finish_import()
+                    .map_err(|f| f.to_string())
+                    .and_then(|()| complete_import(data))
+                    .map_err(|f| {
+                        format!(
+                            "the backup was imported and is in use, but its cleanup failed                              ({e}; {f}); it is completed at the next start"
+                        )
+                    }),
+                // Unknown state: leave everything (journal included) to the next start.
+                Err(s) => {
                     return Err(format!(
-                        "switching to the imported database failed ({e}) and the previous \
-                         replay folder could not be put back ({u}); restart Storm Codex to \
-                         finish the rollback"
+                        "switching to the imported database failed ({e}) and whether it took                          effect could not be read ({s}); the server is stopped: restart Storm                          Codex to complete or roll back the import"
                     ))
                 }
             },
@@ -1296,6 +1342,7 @@ mod tests {
             entries(&log),
             [
                 "db.stage(PGDMP-import)".to_string(),
+                "server.migrate".to_string(),
                 format!("server.shutdown({SERVER_PORT})"),
                 "db.promote".to_string(),
                 "server.spawn".to_string(),
@@ -1320,7 +1367,7 @@ mod tests {
         log.lock().unwrap().clear();
         let err = import_into(&mut stack, &good_backup(src.path()), plenty).expect_err("refused");
         assert!(err.contains("fake failure"), "{err}");
-        assert_eq!(entries(&log), ["db.stage(PGDMP-import)".to_string()]);
+        assert_eq!(entries(&log), ["db.stage(PGDMP-import)", "server.migrate"]);
         assert_eq!(archive_tree(&stack.data().archive()), old_archive());
         assert!(stack.data().ledger().exists());
         assert_clean(tmp.path());
@@ -1342,6 +1389,7 @@ mod tests {
             entries(&log),
             [
                 "db.stage(PGDMP-import)".to_string(),
+                "server.migrate".to_string(),
                 format!("server.shutdown({SERVER_PORT})"),
                 "db.promote".to_string(),
                 "db.discard".to_string(),
@@ -1350,6 +1398,100 @@ mod tests {
         );
         assert_eq!(archive_tree(&stack.data().archive()), old_archive());
         assert!(stack.data().ledger().exists());
+        assert_clean(tmp.path());
+    }
+
+    #[test]
+    fn a_backup_from_a_newer_app_is_refused_with_the_migrate_message() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tempfile::tempdir().unwrap();
+        let log = Log::default();
+        let mut host = FakeHost::new(&log);
+        host.fail_migrate = Some("made by a newer version of Storm Codex".into());
+        let (mut stack, _host) = stack_with_archive(host, tmp.path(), Some(b"old"));
+        log.lock().unwrap().clear();
+        let err = import_into(&mut stack, &good_backup(src.path()), plenty).expect_err("newer");
+        assert!(err.contains("newer version"), "{err}");
+        assert!(err.contains("nothing was changed"), "{err}");
+        assert_eq!(entries(&log), ["db.stage(PGDMP-import)", "server.migrate"]);
+        assert_eq!(archive_tree(&stack.data().archive()), old_archive());
+        assert_clean(tmp.path());
+    }
+
+    /// The rename committed, then the promote's cleanup failed: the import is completed
+    /// (never rolled back) and reported as done.
+    #[test]
+    fn a_failure_after_the_rename_committed_rolls_forward() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tempfile::tempdir().unwrap();
+        let log = Log::default();
+        let mut host = FakeHost::new(&log);
+        host.fail_promote_after_rename = true;
+        let (mut stack, host) = stack_with_archive(host, tmp.path(), Some(b"old"));
+        log.lock().unwrap().clear();
+        import_into(&mut stack, &good_backup(src.path()), plenty).expect("rolled forward");
+        assert_eq!(
+            entries(&log),
+            [
+                "db.stage(PGDMP-import)".to_string(),
+                "server.migrate".to_string(),
+                format!("server.shutdown({SERVER_PORT})"),
+                "db.promote".to_string(),
+                "db.finish".to_string(),
+                "server.spawn".to_string(),
+            ]
+        );
+        assert_eq!(archive_tree(&stack.data().archive()), new_archive());
+        assert!(!stack.data().ledger().exists(), "the ledger is reset");
+        assert!(!host.staged.load(std::sync::atomic::Ordering::SeqCst));
+        assert_clean(tmp.path());
+    }
+
+    /// Both renames of the swap fail and the previous folder cannot be put back: journal and
+    /// staging kept, server left stopped; the next start rolls back.
+    #[test]
+    fn a_double_swap_failure_leaves_the_server_stopped_for_the_next_start() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tempfile::tempdir().unwrap();
+        let log = Log::default();
+        let (mut stack, host) = stack_with_archive(FakeHost::new(&log), tmp.path(), Some(b"old"));
+        log.lock().unwrap().clear();
+        let calls = std::cell::Cell::new(0);
+        let rename = |a: &Path, b: &Path| {
+            calls.set(calls.get() + 1);
+            if calls.get() == 1 {
+                std::fs::rename(a, b)
+            } else {
+                Err(io::Error::new(io::ErrorKind::PermissionDenied, "locked"))
+            }
+        };
+        let err = import_into_with(&mut stack, &good_backup(src.path()), plenty, &rename)
+            .expect_err("double failure");
+        assert!(err.contains("restart Storm Codex"), "{err}");
+        assert!(!err.contains("nothing was changed"), "{err}");
+        assert_eq!(
+            entries(&log),
+            [
+                "db.stage(PGDMP-import)".to_string(),
+                "server.migrate".to_string(),
+                format!("server.shutdown({SERVER_PORT})"),
+            ]
+        );
+        assert!(tmp.path().join(IMPORT_JOURNAL).exists());
+        assert!(host.staged.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(!stack.data().archive().exists());
+        assert_eq!(archive_tree(&tmp.path().join("archive.old")), old_archive());
+        // The next start rolls back.
+        drop(stack);
+        let log2 = Log::default();
+        let host2 = FakeHost::new(&log2);
+        host2
+            .staged
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let (stack2, _host2) = start(host2, tmp.path());
+        let stack2 = stack2.expect("start");
+        assert_eq!(recovery_steps(&log2), ["db.discard"]);
+        assert_eq!(archive_tree(&stack2.data().archive()), old_archive());
         assert_clean(tmp.path());
     }
 
@@ -1370,6 +1512,7 @@ mod tests {
             entries(&log),
             [
                 "db.stage(PGDMP-import)".to_string(),
+                "server.migrate".to_string(),
                 format!("server.shutdown({SERVER_PORT})"),
                 "db.discard".to_string(),
                 "server.spawn".to_string(),
@@ -1514,12 +1657,14 @@ mod tests {
     }
 
     /// Real Postgres 17: a row and a replay exported from one data root come back in a fresh
-    /// one. Ignored by default; run it with `PG_BIN_DIR` pointing at Postgres 17's `bin/` and
-    /// `cargo test -- --ignored` (it fails, never skips, without `PG_BIN_DIR`).
+    /// one (data-only dump restored into a schema built by the migrations). The server's
+    /// `migrate` subcommand is played by psql over the server's migration files (same ledger
+    /// table, deterministic checksum). Ignored by default; run it with `PG_BIN_DIR` pointing at
+    /// Postgres 17's `bin/` and `cargo test -- --ignored` (it fails, never skips, without it).
     #[test]
     #[ignore = "needs PG_BIN_DIR (Postgres 17 bin/); run with --ignored"]
-    fn export_then_import_roundtrip_preserves_a_cast_row() {
-        use storm_codex_supervisor::{Postgres, APP_DATABASE};
+    fn export_then_import_roundtrip_preserves_a_settings_row() {
+        use storm_codex_supervisor::{Postgres, APP_DATABASE, MIGRATIONS_TABLE};
         let bin = std::env::var_os("PG_BIN_DIR")
             .filter(|v| !v.is_empty())
             .expect("PG_BIN_DIR must point at Postgres 17's bin/ for this test");
@@ -1537,20 +1682,73 @@ mod tests {
                 let _ = self.0.stop();
             }
         }
-        let psql = |pg: &Postgres, sql: &str| -> String {
+        let run_psql = |url: &str, args: &[&std::ffi::OsStr]| -> Result<String, String> {
             let out = std::process::Command::new(bin.join("psql"))
-                .args(["-X", "-w", "-q", "-t", "-A", "-v", "ON_ERROR_STOP=1", "-d"])
-                .arg(pg.database_url(APP_DATABASE))
-                .args(["-c", sql])
+                .args([
+                    "-X",
+                    "-w",
+                    "-q",
+                    "-t",
+                    "-A",
+                    "-v",
+                    "ON_ERROR_STOP=1",
+                    "-d",
+                    url,
+                ])
+                .args(args)
                 .env_remove("PGPASSWORD")
+                .env("PGCLIENTENCODING", "UTF8")
                 .output()
-                .unwrap();
-            assert!(
-                out.status.success(),
-                "{}",
-                String::from_utf8_lossy(&out.stderr)
-            );
-            String::from_utf8_lossy(&out.stdout).trim().to_string()
+                .map_err(|e| e.to_string())?;
+            if !out.status.success() {
+                return Err(String::from_utf8_lossy(&out.stderr).into_owned());
+            }
+            Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+        };
+        let sql = |url: &str, q: &str| run_psql(url, &["-c".as_ref(), q.as_ref()]);
+        let migrations = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("crates")
+            .join("storm-codex-server")
+            .join("migrations");
+        let mut files: Vec<(i64, PathBuf)> = std::fs::read_dir(&migrations)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.extension().is_some_and(|e| e == "sql"))
+            .map(|p| {
+                let name = p.file_name().unwrap().to_string_lossy().to_string();
+                let digits: String = name.chars().take_while(char::is_ascii_digit).collect();
+                (digits.parse().unwrap(), p)
+            })
+            .collect();
+        files.sort();
+        let migrate = |url: &str, target: Option<i64>| -> Result<(), String> {
+            sql(
+                url,
+                &format!(
+                    "CREATE TABLE IF NOT EXISTS {MIGRATIONS_TABLE} (version BIGINT PRIMARY KEY, \
+                     description TEXT NOT NULL, installed_on TIMESTAMPTZ NOT NULL DEFAULT now(), \
+                     success BOOLEAN NOT NULL, checksum BYTEA NOT NULL, \
+                     execution_time BIGINT NOT NULL)"
+                ),
+            )?;
+            let applied = sql(url, &format!("SELECT version FROM {MIGRATIONS_TABLE}"))?;
+            let applied: Vec<i64> = applied.lines().filter_map(|l| l.parse().ok()).collect();
+            for (v, file) in &files {
+                if target.is_some_and(|t| *v > t) || applied.contains(v) {
+                    continue;
+                }
+                run_psql(url, &["-f".as_ref(), file.as_os_str()])?;
+                sql(
+                    url,
+                    &format!(
+                        "INSERT INTO {MIGRATIONS_TABLE} (version, description, success, \
+                         checksum, execution_time) \
+                         VALUES ({v}, 'm{v}', true, decode(md5('m{v}'), 'hex'), 1)"
+                    ),
+                )?;
+            }
+            Ok(())
         };
         let boot = |root: &Path| -> Running {
             let data = DataDir::new(root.to_path_buf());
@@ -1559,16 +1757,20 @@ mod tests {
             pg.init_if_needed().unwrap();
             pg.start().unwrap();
             pg.ensure_database(APP_DATABASE).unwrap();
+            migrate(&pg.database_url(APP_DATABASE), None).unwrap();
             Running(pg)
         };
+        let marker = "SELECT value FROM app_settings WHERE key = 'marker'";
 
         // Source PC.
         let a = tempfile::tempdir().unwrap();
         let src = boot(a.path());
-        psql(
-            &src.0,
-            "CREATE TABLE cast_sessions (id int PRIMARY KEY, caster text NOT NULL);              INSERT INTO cast_sessions VALUES (42, 'Zoe');",
-        );
+        let src_url = src.0.database_url(APP_DATABASE);
+        sql(
+            &src_url,
+            "INSERT INTO app_settings VALUES ('marker', '\"zoe\"')",
+        )
+        .unwrap();
         let data_a = DataDir::new(a.path().to_path_buf());
         write(
             &data_a.archive().join("ab").join("abc.StormReplay"),
@@ -1587,6 +1789,7 @@ mod tests {
         // New PC: fresh cluster, then validate, unpack, stage, swap, promote.
         let b = tempfile::tempdir().unwrap();
         let dst = boot(b.path());
+        let dst_url = dst.0.database_url(APP_DATABASE);
         let contents = validate(&out).expect("valid");
         assert_eq!(contents.archive_files, 1);
         let work = b.path().join("import-work");
@@ -1598,23 +1801,29 @@ mod tests {
             &contents,
         )
         .expect("unpack");
-        dst.0.stage_import(&work.join("db.dump")).expect("stage");
+        dst.0
+            .stage_import(&work.join("db.dump"), &migrate)
+            .expect("stage");
         let data_b = DataDir::new(b.path().to_path_buf());
         swap_dir(&work.join("archive"), &data_b.archive(), rename_retrying).expect("swap");
         dst.0.promote_import().expect("promote");
-        assert_eq!(
-            psql(&dst.0, "SELECT caster FROM cast_sessions WHERE id = 42"),
-            "Zoe"
-        );
+        assert_eq!(sql(&dst_url, marker).unwrap(), "\"zoe\"");
         assert_eq!(
             std::fs::read(data_b.archive().join("ab").join("abc.StormReplay")).unwrap(),
             b"replay-bytes"
         );
-        // Importing again replaces the whole database: still one row.
+        // Importing again replaces the whole database: still one marker row.
         dst.0
-            .stage_import(&work.join("db.dump"))
+            .stage_import(&work.join("db.dump"), &migrate)
             .expect("stage again");
         dst.0.promote_import().expect("promote again");
-        assert_eq!(psql(&dst.0, "SELECT count(*) FROM cast_sessions"), "1");
+        assert_eq!(
+            sql(
+                &dst_url,
+                "SELECT count(*) FROM app_settings WHERE key = 'marker'"
+            )
+            .unwrap(),
+            "1"
+        );
     }
 }

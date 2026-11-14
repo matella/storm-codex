@@ -135,28 +135,33 @@ Upgrading the minor version = change both lines in the same commit; the major st
 - `stop`: `pg_ctl stop -m fast -w -t 60` for our server only; a stale pid file is removed; no-op
   when there is none.
 - Client tools (`psql`, `createdb`, `pg_dump`, `pg_restore`) run with `-w` (never prompt: there
-  is no console), `PGCONNECT_TIMEOUT=10`; `restore` also sets `PGOPTIONS=-c lock_timeout=30s`.
+  is no console), `PGCONNECT_TIMEOUT=10`, `PGOPTIONS=-c search_path=pg_catalog,pg_temp`.
   A wrong or missing password fails at once with `CommandFailed`.
 - `ensure_database(name)`; `database_url(db)` = `postgres://storm:<password>@127.0.0.1:<port>/<db>`.
-- `dump(out)` / `restore(file)`: `pg_dump -Fc` / `pg_restore --clean --if-exists --no-owner
-  --exit-on-error --single-transaction` on the `storm_codex` database (created on restore if
-  missing). One transaction: a failed restore leaves the database as it was.
+- `dump(out)`: `pg_dump -Fc --data-only` of the `storm_codex` database (rows and sequence
+  values only, the migration ledger `_sqlx_migrations` included; no schema). There is no plain
+  `restore`: a dump is only ever restored through `stage_import` (see Export / import).
 
 **Tests.** `cargo test -p storm-codex-supervisor` always runs the binary-free tests: wrong major
 version, missing binary, stale pid cleanup, foreign live PID treated as stale, non-UTF-8 pid
 file, password file, URL, name validation. The real-server tests run only when `PG_BIN_DIR` is
-set: roundtrip, data path with spaces and accents, stale pid, hard-kill recovery, foreign
-Postgres PID never signalled, password required and reused, wrong password fails fast,
-dump/restore:
-`$env:PG_BIN_DIR = "$PWD\target\postgres\bin"; cargo test -p storm-codex-supervisor --test postgres_it`.
+set; the import tests are `#[ignore]`d and **fail** (never skip) without it: roundtrip, data
+path with spaces and accents, stale pid, hard-kill recovery, foreign Postgres PID never
+signalled, password required and reused, wrong password fails fast, data-only dump, staged
+import (same, older and newer version, schema objects refused, what the import role cannot do,
+large object refused):
+`$env:PG_BIN_DIR = "$PWD\target\postgres\bin"; cargo test -p storm-codex-supervisor --test postgres_it -- --include-ignored`.
+The import tests play the server's `migrate` with psql over `crates/storm-codex-server/migrations`
+(same ledger table, deterministic checksums).
 
 **Desktop shell (`desktop/`, Tauri v2).** Not a workspace member (own `Cargo.lock`): checks are
 `cargo clippy --manifest-path desktop/Cargo.toml --all-targets -- -D warnings`,
 `cargo fmt --manifest-path desktop/Cargo.toml --check` and
 `cargo test --manifest-path desktop/Cargo.toml` (supervision order and failure paths, the updater
 state machine and install flow, backup validation/zip-slip/import orchestration with fakes; no
-Postgres needed). With `PG_BIN_DIR` set, `export_then_import_roundtrip_preserves_a_cast_row`
-also runs a real Postgres 17 export → fresh cluster → import.
+Postgres needed). With `PG_BIN_DIR` set and `-- --include-ignored`,
+`export_then_import_roundtrip_preserves_a_settings_row` also runs a real Postgres 17 export →
+fresh migrated cluster → import.
 - **Folders.** Data root = Tauri `app_local_data_dir()` (`%LOCALAPPDATA%\com.matella.stormcodex`,
   covered by the uninstaller's "delete app data" option): `pg/`, `pg-password`, `archive/`,
   `raw-cache/`, `images/`, `logs/`, `uploaded.json`. Resources (next to the exe once packaged):
@@ -279,7 +284,8 @@ also runs a real Postgres 17 export → fresh cluster → import.
   on N+1, the data is intact and the migrations ran (server log). Repeat with the click during a
   backfill: after the restart the import resumes and no replay is uploaded twice.
 - **Export / import (`backup.rs`).** File `storm-codex-backup-YYYY-MM-DD.stormcodex` (UTC date),
-  a zip with `db.dump` (`pg_dump -Fc`) and `archive/<relative path>` for every file of the
+  a zip with `db.dump` (`pg_dump -Fc --data-only`: rows only, with the migration ledger that
+  says which schema version they belong to) and `archive/<relative path>` for every file of the
   archive folder, all `Stored` (replays and the custom-format dump are already compressed; zip64
   for files ≥ 4 GiB), streamed (never loaded in memory). Export and import run through
   `Lifecycle::with_running`: one at a time, and a Quit or session end waits for them to finish.
@@ -312,74 +318,106 @@ also runs a real Postgres 17 export → fresh cluster → import.
        file count, one dump of the validated size; symlink/encryption re-checked; files created
        new with exact declared sizes).
     4. **Staged restore** while the server keeps running (`Postgres::stage_import`, see below).
-       A refused or failed restore changes nothing.
+       A refused or failed restore (a backup from a newer app included) changes nothing.
     5. **Commit.** `<data>/import-journal` written, server stopped (graceful, `Full` budget;
        Postgres stays up), `archive` → `archive.old` and the unpacked folder → `archive`
        (renames, retried briefly; refused if an `archive.old` already exists, which is never
-       deleted blindly), then `promote_import`: database settings reset, catalog check run
-       again, `storm_codex` → `storm_codex_previous` and `storm_codex_import` → `storm_codex`
-       in **one transaction**, objects reassigned to the superuser, previous database dropped.
-       Then the upload **ledger (`uploaded.json`) is reset**: it lists what the replaced
-       database had imported, and a stale entry would make the watcher skip a replay the new
-       database lacks (re-scanning is safe: uploads are deduplicated by content hash); the raw
-       cache is kept (keyed by content). `archive.old` and the journal are removed and the
-       server restarted on the same stack and port (`Stack::restart_server`); the command
-       returns once `/api/health` answers.
-    6. **Rollback.** If the swap or the promote fails, `archive.old` is put back, the staging
-       database dropped, the journal removed and the server restarted: nothing changed. If even
-       putting `archive.old` back fails, the server stays stopped and the error says to restart
-       Storm Codex (the journal makes the next start finish the rollback).
+       deleted blindly), then `promote_import`: staging database settings reset, staging check
+       run again, `storm_codex` → `storm_codex_previous` and `storm_codex_import` →
+       `storm_codex` in **one transaction**, then `finish_import` (previous database and any
+       leftover `storm_import` role dropped). Then the upload **ledger (`uploaded.json`) is
+       reset**: it lists what the replaced database had imported, and a stale entry would make
+       the watcher skip a replay the new database lacks (re-scanning is safe: uploads are
+       deduplicated by content hash); the raw cache is kept (keyed by content). `archive.old`
+       and the journal are removed and the server restarted on the same stack and port
+       (`Stack::restart_server`); the command returns once `/api/health` answers.
+    6. **Failure during the commit.** Which side of the rename transaction a `promote_import`
+       error happened on is read back (`staging_exists`):
+       - **before the rename** (staging database still there): `archive.old` is put back, the
+         staging database dropped, the journal removed, the server restarted; the message says
+         nothing was changed. If putting `archive.old` back fails, the server stays stopped and
+         the error says to restart Storm Codex (the journal makes the next start roll back);
+       - **after the rename committed** (the imported database is the app's): **never rolled
+         back**. The import is completed (`finish_import`, ledger reset, `archive.old` and
+         journal removed) and the command succeeds; if that cleanup fails too, the server is
+         restarted on the imported data and the error says the backup was imported and is in
+         use and that the cleanup is completed at the next start (the journal is kept);
+       - **state unreadable**: everything (journal, staging, `archive.old`) is left as is, the
+         server stays stopped, and the error says to restart Storm Codex, whose recovery
+         decides.
+       A swap whose rollback rename fails too (the replays only in `archive.old`) also keeps
+       the journal and the staging database and leaves the server stopped: the next start
+       rolls back. Only the cases that really changed nothing say "nothing was changed".
     7. **Crash recovery** (`backup::recover_import`, every start, after Postgres and before
        the server): journal + staging database → not promoted: roll back (`archive.old` put
        back, journal removed, staging dropped); journal without staging database → promoted:
-       finish it (reassign, ledger reset, `archive.old` and journal removed); no journal → a
-       staging database is an orphan (dropped), and an `archive.old` next to an **empty**
-       `archive` is put back (one next to a non-empty `archive` is left alone and must be
-       removed by hand). `import-work` is removed. A recovery failure stops the startup with
+       complete it (`finish_import`, ledger reset, `archive.old` and journal removed); no
+       journal → a staging database is an orphan (dropped), and an `archive.old` next to an
+       **empty** `archive` is put back (one next to a non-empty `archive` is left alone and must
+       be removed by hand). `import-work` is removed. A recovery failure stops the startup with
        "an interrupted import could not be finished or rolled back".
-  - **Untrusted dump: defence in depth (`Postgres::stage_import`).** A backup may come from
-    anyone; `pg_restore` executes the SQL a dump carries, and the server connects as a
-    superuser. Layers:
-    1. **TOC allow-list.** `pg_restore -l` lists the entries; any kind outside `ENCODING`,
-       `STDSTRINGS`, `SEARCHPATH`, `TABLE`, `TABLE DATA`, `SEQUENCE`, `SEQUENCE OWNED BY`,
-       `SEQUENCE SET`, `DEFAULT`, `INDEX`, `CONSTRAINT`, `FK CONSTRAINT`, `COMMENT` (so every
-       `FUNCTION`, `PROCEDURE`, `AGGREGATE`, `EXTENSION`, `LANGUAGE`, `TRIGGER`, `RULE`,
-       `EVENT TRIGGER`, `POLICY`, `VIEW`, `SCHEMA`, `DATABASE`, `OPERATOR`, `CAST`, `SERVER`,
-       `FOREIGN TABLE`, `PUBLICATION`, …) refuses the file before anything is restored; the
-       checked list is passed to the restore with `-L`.
-    2. **Unprivileged role.** The restore runs connected as `storm_import` (`LOGIN NOSUPERUSER
-       NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT`, settings reset, same
-       generated password, set through a private file, never the command line), into a fresh
-       `storm_codex_import` database it owns (`CONNECT` revoked from `PUBLIC`), `--no-owner
-       --no-acl --exit-on-error --single-transaction`. It cannot run programs, read or write
-       server files, change the server configuration or create roles (tested: `COPY … TO
-       PROGRAM`, `COPY … TO '<file>'`, `pg_read_file`, `ALTER SYSTEM`, `CREATE ROLE …
-       SUPERUSER` all fail).
-    3. **Catalog check** of the staging database, as the superuser, from the catalogs only (no
-       user code runs): refused if it has any function, procedure, trigger, rule (besides view
-       `_RETURN`), extension, policy, operator, cast, language, foreign table, event trigger or
-       publication of its own, any schema besides `public`, any database- or import-role-level
-       setting (`pg_db_role_setting`), or a stored expression (column defaults, check
-       constraints, index expressions and predicates, statistics expressions, partition
-       bounds) calling a function outside `now()`, `nextval(regclass)`, `lower(text)`,
-       `upper(text)`, `btrim(text)` (read from the expression trees: built-in functions are
-       pinned and never recorded in `pg_depend`). Every catalog, function and type in that
-       query is schema-qualified (`pg_catalog.`), and **every** superuser client session runs
-       with `PGOPTIONS=-c search_path=pg_catalog,pg_temp` (a client startup option overrides
-       `ALTER DATABASE/ROLE … SET`): a crafted TOC entry that sets the staging database's
-       `search_path` to its own schema cannot shadow the catalogs or operators the check uses
-       (test `staged_database_settings_cannot_hide_objects_from_the_check`).
-    4. **Before the promote**: `ALTER DATABASE storm_codex_import RESET ALL` and `ALTER ROLE
-       storm_import RESET ALL` as the superuser, then the catalog check again.
-    **Residual risk** (accepted, documented): the allow-list checks entry kinds, not their SQL
-    text; an entry of an allowed kind can carry arbitrary SQL, which then runs with the import
-    role's rights only (its own database: tables, data, sequences, schemas, settings — all
-    checked or reset before the promote). Within those limits a malicious backup can still
-    put arbitrary **data** in the app tables (wrong stats, very large tables, strings that the
-    web UI must escape like any other data) and use disk space and time during the restore.
-    It cannot gain the superuser's rights through the import unless Postgres itself has a
-    privilege-escalation bug reachable by an ordinary role. Only import backups from a source
-    you trust.
+    8. **Port during the commit.** While the server is stopped (seconds) another local program
+       could bind the server port; the restart then fails its health check and the error names
+       the log. Accepted: the window is short, the data is already committed, and the next start
+       picks a free port.
+  - **Untrusted dump: data only (`Postgres::stage_import`).** A backup may come from anyone,
+    and the shell drives Postgres as a superuser. No schema object from the file is ever used:
+    a backup holds **rows only**, and the schema they go into is built by the app's own
+    migrations.
+    1. **TOC filter.** `pg_restore -l` lists the entries; each must be exactly (kind compared
+       as a whole, not as a prefix) `ENCODING`, `STDSTRINGS` or `SEARCHPATH` (schema `-`), or
+       `TABLE DATA` / `SEQUENCE SET` in schema `public`. Anything else (a `TABLE`, `FUNCTION`,
+       `DOMAIN`, `TYPE`, `TRIGGER`, `CONSTRAINT TRIGGER`, `DEFAULT ACL`, `BLOB`, `ACL`, an entry
+       in another schema, an unparsable line) refuses the file before anything runs. The
+       checked list, minus the migration ledger's own data, is passed to the restore with `-L`.
+    2. **Version from the ledger.** The dump's `_sqlx_migrations` rows are read as text
+       (`pg_restore --data-only -t _sqlx_migrations -f -`, parsed, nothing executed); every
+       row must be successful; the highest version is the backup's version `N`.
+    3. **Schema from the app.** A fresh `storm_codex_import` database (owned by the superuser,
+       `CONNECT` revoked from `PUBLIC`) is migrated **by the server binary itself** up to `N`:
+       `storm-codex-server migrate --to N` (`DATABASE_URL` = the staging database; exit 0 done,
+       2 usage, **3 = `N` is newer than this build**, 1 other failure; output in
+       `logs/migrate.log`, 30 min limit). Exit 3 refuses the import with "this backup was made
+       by a newer version of Storm Codex; update Storm Codex, then import it again". The
+       staging ledger must then equal the dump's (versions and checksums), else the backup is
+       refused as incompatible.
+    4. **Restore as a throw-away role.** The rows the migrations seeded are truncated, `CREATE`
+       on schema `public` is revoked from `PUBLIC`, and a fresh role `storm_import` is created
+       (`LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT`, its
+       **own** random password, never the superuser's; the `CREATE ROLE` goes through a private
+       file in a session with `log_statement = none` and `log_min_error_statement = panic`, so
+       the password reaches neither a command line nor the server log). It gets `CONNECT`,
+       `USAGE` on `public`, `INSERT` on the app tables (not on `_sqlx_migrations`) and `UPDATE`
+       on their sequences: no ownership, no `CREATE`, no `TEMP`, no `DELETE` or `TRUNCATE`.
+       `pg_restore --data-only --no-owner --no-acl --exit-on-error --single-transaction -L`
+       runs connected as that role.
+    5. **Check, then the role is gone.** As the superuser, from the catalogs only: refused if
+       anything is owned by `storm_import` (`pg_shdepend`), if any large object exists, or if
+       the staging database has a setting. Then `ALTER ROLE storm_import NOLOGIN PASSWORD
+       NULL`, `DROP OWNED BY storm_import` in the staging database and `DROP ROLE`.
+    6. **Forward.** `storm-codex-server migrate` (no target) applies this build's remaining
+       migrations: a backup from an older app is brought up to date like any database at
+       server start.
+    Any failure drops the staging database and the role. Tests (supervisor ITs): same-version
+    import and swap, older backup migrated forward, newer backup refused, a full (schema) dump
+    with a `DOMAIN … DEFAULT pg_read_file(…)` refused by the TOC filter before anything runs,
+    SQL run as the import role (as a crafted entry would) failing to create a domain with a
+    `lo_export` default, a function, a schema, a table or a temp table, to alter a table or
+    the database, to write the ledger, `COPY … PROGRAM`/file, `pg_read_file`, `ALTER SYSTEM`
+    and `CREATE ROLE`, its `GRANT … TO PUBLIC` having no effect, and the role gone (login
+    refused) afterwards; a large object created during the restore refuses the import.
+    **Residual risk** (accepted, documented): the SQL text of an allowed entry is not parsed,
+    so a crafted backup can run arbitrary SQL **as `storm_import`**, which can only insert rows
+    into the app tables and set sequence values in the staging database (and change its own
+    role settings, discarded with the role). So a malicious backup can put arbitrary **data**
+    in the app tables (wrong stats, very large tables, strings the web UI must escape like any
+    other data), make the forward migrations process that data (this build's own static SQL,
+    which treats rows as data), and use disk space and time during the restore. No function,
+    type, domain, trigger, default or setting from the file ever exists in the database. This
+    rests on Postgres enforcing an ordinary role's privileges; a Postgres privilege-escalation
+    bug reachable by such a role would bypass it. Only import backups from a source you trust.
+    **Compatibility:** backups in the earlier full-schema format are refused by the TOC filter;
+    none were released.
 - **Autostart.** `tauri-plugin-autostart` (Windows: per-user `HKCU\…\Run` value "Storm Codex",
   launched with `--minimized`). `AUTOSTART_DEFAULT = false`: on the first launch with a data
   folder the shell sets autostart to that default (also clearing a `Run` value an earlier

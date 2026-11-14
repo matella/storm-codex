@@ -11,7 +11,7 @@ use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
 
-use storm_codex_supervisor::{DataDir, PgError, Postgres, APP_DATABASE};
+use storm_codex_supervisor::{DataDir, Migrate, PgError, Postgres, APP_DATABASE};
 
 /// Server binary shipped in the resource folder.
 pub const SERVER_EXE: &str = if cfg!(windows) {
@@ -137,11 +137,12 @@ pub trait Db: Send {
     fn stop(&self) -> Result<(), PgError>;
     /// Secret (holds the password): never log it.
     fn database_url(&self, db: &str) -> String;
-    /// `pg_dump -Fc` of the app database to `out`.
+    /// `pg_dump -Fc --data-only` of the app database to `out`.
     fn dump(&self, out: &Path) -> Result<(), PgError>;
-    /// Restores an untrusted dump into the staging database (TOC allow-list, unprivileged
-    /// role, catalog check: [`Postgres::stage_import`]). The app database is not touched.
-    fn stage_import(&self, file: &Path) -> Result<(), PgError>;
+    /// Restores the data of an untrusted data-only dump into a staging database whose schema
+    /// `migrate` created (TOC allow-list, unprivileged role: [`Postgres::stage_import`]). The
+    /// app database is not touched.
+    fn stage_import(&self, file: &Path, migrate: Migrate<'_>) -> Result<(), PgError>;
     /// True when a staged import exists.
     fn staging_exists(&self) -> Result<bool, PgError>;
     /// Swaps the staged database in (atomic), then [`finish_import`](Self::finish_import).
@@ -174,8 +175,8 @@ impl Db for Postgres {
     fn dump(&self, out: &Path) -> Result<(), PgError> {
         Postgres::dump(self, out)
     }
-    fn stage_import(&self, file: &Path) -> Result<(), PgError> {
-        Postgres::stage_import(self, file)
+    fn stage_import(&self, file: &Path, migrate: Migrate<'_>) -> Result<(), PgError> {
+        Postgres::stage_import(self, file, migrate)
     }
     fn staging_exists(&self) -> Result<bool, PgError> {
         Postgres::staging_exists(self)
@@ -210,7 +211,20 @@ pub trait Host: Send + Sync {
     /// `POST /api/standalone/shutdown` (the server answers 202 and exits on its own), each
     /// network step limited to `io_timeout`.
     fn request_shutdown(&self, port: u16, io_timeout: Duration) -> io::Result<()>;
+    /// Runs `<server> migrate [--to <target>]` on `database_url` (the server's environment
+    /// otherwise) and waits for it. The message of an error is shown to the user.
+    fn migrate(
+        &self,
+        cmd: &ServerCommand,
+        database_url: &str,
+        target: Option<i64>,
+    ) -> Result<(), String>;
 }
+
+/// Exit code of `storm-codex-server migrate` when the target version is newer than the build.
+const MIGRATE_EXIT_NEWER: i32 = 3;
+/// Upper bound of one `migrate` run (a large database migrated forward).
+const MIGRATE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
 /// How the server is launched.
 #[derive(Debug, Clone)]
@@ -422,9 +436,25 @@ impl Stack {
         self.db.dump(out)
     }
 
-    /// Restores an untrusted dump into the staging database (the server may keep running).
+    /// Restores an untrusted data-only dump into the staging database (the server may keep
+    /// running); the staging schema comes from the server binary's own migrations.
     pub fn stage_import(&self, file: &Path) -> Result<(), PgError> {
-        self.db.stage_import(file)
+        let Some(cmd) = self.cmd.clone() else {
+            return Err(PgError::Migrate("the stack is stopped".into()));
+        };
+        let host = self.host.clone();
+        let migrate = move |url: &str, target: Option<i64>| host.migrate(&cmd, url, target);
+        self.db.stage_import(file, &migrate)
+    }
+
+    /// True when a staged import exists.
+    pub fn staging_exists(&self) -> Result<bool, PgError> {
+        self.db.staging_exists()
+    }
+
+    /// Post-promote cleanup (idempotent).
+    pub fn finish_import(&self) -> Result<(), PgError> {
+        self.db.finish_import()
     }
 
     /// Swaps the staged import in. Stop the server first (nothing may be connected).
@@ -579,6 +609,72 @@ impl Host for RealHost {
             s => Err(io::Error::other(format!("shutdown request answered {s}"))),
         }
     }
+    fn migrate(
+        &self,
+        cmd: &ServerCommand,
+        database_url: &str,
+        target: Option<i64>,
+    ) -> Result<(), String> {
+        let log = cmd.log.with_file_name("migrate.log");
+        let out = std::fs::File::create(&log)
+            .map_err(|e| format!("could not create {}: {e}", log.display()))?;
+        let err = out
+            .try_clone()
+            .map_err(|e| format!("could not open {}: {e}", log.display()))?;
+        let mut command = server_command(cmd);
+        // Overrides the app database URL of the server environment.
+        command
+            .env("DATABASE_URL", database_url)
+            .arg("migrate")
+            .stdout(out)
+            .stderr(err);
+        if let Some(t) = target {
+            command.arg("--to").arg(t.to_string());
+        }
+        let mut child = command
+            .spawn()
+            .map_err(|e| format!("could not start {}: {e}", cmd.exe.display()))?;
+        let _job = crate::job::KillOnClose::adopt(&child);
+        let deadline = std::time::Instant::now() + MIGRATE_TIMEOUT;
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status,
+                Ok(None) if std::time::Instant::now() < deadline => {
+                    std::thread::sleep(POLL_INTERVAL)
+                }
+                Ok(None) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(format!(
+                        "the database migration did not finish within {} min; see {}",
+                        MIGRATE_TIMEOUT.as_secs() / 60,
+                        log.display()
+                    ));
+                }
+                Err(e) => return Err(format!("waiting for the database migration: {e}")),
+            }
+        };
+        match status.code() {
+            Some(0) => Ok(()),
+            Some(MIGRATE_EXIT_NEWER) => Err(
+                "this backup was made by a newer version of Storm Codex; update Storm Codex, \
+                 then import it again"
+                    .into(),
+            ),
+            _ => {
+                let tail = std::fs::read_to_string(&log)
+                    .map(|t| {
+                        let lines: Vec<&str> = t.lines().rev().take(5).collect();
+                        lines.into_iter().rev().collect::<Vec<_>>().join("\n")
+                    })
+                    .unwrap_or_default();
+                Err(format!(
+                    "the database migration failed ({status}): {tail}; see {}",
+                    log.display()
+                ))
+            }
+        }
+    }
 }
 
 /// The child process: empty environment plus exactly `cmd.env`, no console window.
@@ -667,6 +763,8 @@ pub(crate) mod fakes {
         pub log: Log,
         pub fail_stage: bool,
         pub fail_promote: bool,
+        /// The rename commits, then the cleanup fails (the staging database is gone).
+        pub fail_promote_after_rename: bool,
         /// Whether the staging database exists (shared with the host, so a test can set it).
         pub staged: Arc<AtomicBool>,
     }
@@ -710,12 +808,13 @@ pub(crate) mod fakes {
                 source,
             })
         }
-        fn stage_import(&self, file: &Path) -> Result<(), PgError> {
+        fn stage_import(&self, file: &Path, migrate: Migrate<'_>) -> Result<(), PgError> {
             let body = std::fs::read(file).unwrap_or_default();
             push(
                 &self.log,
                 format!("db.stage({})", String::from_utf8_lossy(&body)),
             );
+            migrate(&self.database_url("storm_codex_import"), Some(1)).map_err(PgError::Migrate)?;
             if self.fail_stage {
                 return Err(fake_failure("pg_restore"));
             }
@@ -732,6 +831,9 @@ pub(crate) mod fakes {
                 return Err(fake_failure("psql"));
             }
             self.staged.store(false, Ordering::SeqCst);
+            if self.fail_promote_after_rename {
+                return Err(fake_failure("dropdb"));
+            }
             Ok(())
         }
         fn finish_import(&self) -> Result<(), PgError> {
@@ -774,6 +876,8 @@ pub(crate) mod fakes {
         pub exits_at_once: bool,
         pub fail_stage: bool,
         pub fail_promote: bool,
+        pub fail_promote_after_rename: bool,
+        pub fail_migrate: Option<String>,
         pub staged: Arc<AtomicBool>,
         /// Shutdown flag of the most recently spawned child.
         shutdown_requested: Mutex<Arc<AtomicBool>>,
@@ -789,6 +893,8 @@ pub(crate) mod fakes {
                 exits_at_once: false,
                 fail_stage: false,
                 fail_promote: false,
+                fail_promote_after_rename: false,
+                fail_migrate: None,
                 staged: Arc::new(AtomicBool::new(false)),
                 shutdown_requested: Mutex::new(Arc::new(AtomicBool::new(false))),
                 last_cmd: Mutex::new(None),
@@ -811,6 +917,7 @@ pub(crate) mod fakes {
                 log: self.log.clone(),
                 fail_stage: self.fail_stage,
                 fail_promote: self.fail_promote,
+                fail_promote_after_rename: self.fail_promote_after_rename,
                 staged: self.staged.clone(),
             })
         }
@@ -837,6 +944,18 @@ pub(crate) mod fakes {
                 .expect("flag")
                 .store(true, Ordering::SeqCst);
             Ok(())
+        }
+        fn migrate(
+            &self,
+            _cmd: &ServerCommand,
+            _database_url: &str,
+            _target: Option<i64>,
+        ) -> Result<(), String> {
+            push(&self.log, "server.migrate");
+            match &self.fail_migrate {
+                Some(message) => Err(message.clone()),
+                None => Ok(()),
+            }
         }
     }
 
