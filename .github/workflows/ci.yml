@@ -74,7 +74,7 @@ jobs:
         id: pg
         with:
           path: ${{ runner.temp }}\postgres
-          key: postgres-${{ hashFiles('desktop/postgres-pin.txt') }}
+          key: postgres-${{ hashFiles('desktop/postgres-pin.txt', 'scripts/fetch-postgres.ps1', 'scripts/check-pe-imports.ps1') }}
       - name: Postgres 17 binaries (pinned, SHA-256 checked; cached per pin)
         if: steps.pg.outputs.cache-hit != 'true'
         run: ./scripts/fetch-postgres.ps1 -Destination "$env:RUNNER_TEMP\postgres"

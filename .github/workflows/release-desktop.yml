@@ -62,7 +62,9 @@ jobs:
           if (-not $env:TAURI_SIGNING_PRIVATE_KEY) { throw "repository secret TAURI_SIGNING_PRIVATE_KEY is not set" }
       - name: reference-data snapshot (pinned, SHA-256 checked)
         run: ./scripts/fetch-referential.ps1
-      - name: Postgres 17 binaries (pinned, SHA-256 checked)
+      # Also copies the VC++ runtime DLLs the EDB binaries import into postgres/bin (from the runner's Visual Studio
+      # redistributable folder) and fails unless every bin/ and lib/ binary finds them there (check-pe-imports.ps1).
+      - name: Postgres 17 binaries (pinned, SHA-256 checked) + VC++ runtime (app-local)
         run: ./scripts/fetch-postgres.ps1
       # Pinned to the commit of the action's `stable` branch tip on 2026-11-14 (b725eda, committed 2026-10-16); the
       # toolchain itself is pinned by `toolchain:` (the branch name only selects the action's default).
@@ -91,8 +93,18 @@ jobs:
             trunk build --release
             Pop-Location
           }
-      - name: server (release)
+      # Static CRT: a clean Windows install has no VC++ redistributable and the per-user installer cannot add one.
+      # Scoped to this step (RUSTFLAGS), so local and CI dev builds keep the default dynamic CRT; the shell already
+      # links it statically (tauri-build static_vcruntime).
+      - name: server (release, static CRT)
+        env:
+          RUSTFLAGS: "-C target-feature=+crt-static"
         run: cargo build --release --locked -p storm-codex-server
+      - name: bundled binaries find their VC++ runtime (server imports none)
+        run: |
+          ./scripts/check-pe-imports.ps1 -Path target/release/storm-codex-server.exe -List
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          ./scripts/check-pe-imports.ps1 -Path target/postgres/bin, target/postgres/lib -ResolveDir target/postgres/bin
       - name: installer (tauri build, signed)
         working-directory: desktop
         env:

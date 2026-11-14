@@ -121,6 +121,27 @@ matches, and extracts only `bin/`, `lib/`, `share/` and `server_license.txt` int
 EDB publishes no checksum: the pin was computed on first download (trust-on-first-use).
 Upgrading the minor version = change both lines in the same commit; the major stays **17**.
 
+**VC++ runtime (app-local).** The EDB binaries import the Visual C++ runtime: every `bin/` and
+`lib/` binary imports `VCRUNTIME140.dll` (some `VCRUNTIME140_1.dll`), the ICU libraries also
+`MSVCP140.dll` (159 PE files, 168 unresolved imports before the fix). A clean Windows install has
+no VC++ redistributable and the per-user installer cannot install one (no admin), so
+`fetch-postgres.ps1` copies `vcruntime140.dll`, `vcruntime140_1.dll` and `msvcp140.dll` into
+`bin/` from the Visual Studio redistributable folder (`-VcRedistDir`, else
+`$env:VCToolsRedistDir\x64\Microsoft.VC14*.CRT`, else the newest
+`VC\Redist\MSVC\<ver>\x64\Microsoft.VC14*.CRT` of the installations `vswhere` lists; these files
+are the ones Microsoft allows to be redistributed app-locally) and fails when the folder or a
+file is missing. `lib/` modules are loaded by `postgres.exe`, whose folder is searched first, so
+the copies in `bin/` serve them too. It then runs **`scripts/check-pe-imports.ps1 -Path <bin>,
+<lib> -ResolveDir <bin>`**: it reads the import and delay-load import tables of every `.exe` and
+`.dll` (no loading) and fails on a `vcruntime*`/`msvcp*`/`concrt*`/`vccorlib*` import not found
+next to the file or in `-ResolveDir` (the Universal CRT is part of Windows 10+ and not checked).
+The CI cache key of the Postgres folder includes both scripts.
+**Server: static CRT in the release.** `release-desktop.yml` builds `storm-codex-server` with
+`RUSTFLAGS=-C target-feature=+crt-static` (that step only: dev and CI builds keep the dynamic CRT)
+and checks with `check-pe-imports.ps1` that the server imports no VC++ runtime and that the
+Postgres folder resolves all of its imports. The Tauri shell already links the CRT statically
+(`tauri-build` `static_vcruntime`).
+
 **Lifecycle (`Postgres`, `postgres.rs`).** All tools run from the bundled `bin/` through
 `std::process::Command` (no shell, no console window on Windows, inherited `PG*` variables removed,
 `LC_MESSAGES=C`), each with a wall-clock limit (pg_ctl 90 s, psql/createdb 60 s, dump/restore
