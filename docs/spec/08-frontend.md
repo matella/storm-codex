@@ -97,7 +97,7 @@ Status: the six OBS sources are built and checked in the browser against React o
 DOM identical for ticker, widget with and without MVP, queue with mixed modes / awards / two operator accounts / a streak and
 the music card, now playing default / `?mini` / `?reveal`, draft overlay with a skin, cast overlay; the reveal hold of about 2.6 s
 observed). **Real-OBS check pending for each source (operator).** JetBrains Mono (400/600 in `sources`, 700 in `overlay`, latin subset, `fonts/` next to each bundle) is self-hosted, so no OBS source needs Google Fonts for it; the overlay still loads Cinzel and Oswald from Google Fonts, exactly like the React overlay. The app bundle is below.
-Contract: **OBS bundles stay <= 300 kB gzip; the app bundle stays <= 1 MB brotli** (911 kB on 2026-11-11, 937 kB on 2026-11-13 with the standalone screens; the server negotiates brotli; `SIZE_CODEC=br` in the script) (`scripts/check-web-rs-size.sh`, enforced in CI; `overlay` 229 kB and `sources`
+Contract: **OBS bundles stay <= 300 kB gzip; the app bundle stays <= 1 MB brotli** (911 kB on 2026-11-11, 937 kB on 2026-11-13 with the standalone screens, 943 kB on 2026-11-14 with the startup toggle; the server negotiates brotli; `SIZE_CODEC=br` in the script) (`scripts/check-web-rs-size.sh`, enforced in CI; `overlay` 229 kB and `sources`
 191 kB on 2026-11-11). Putting the session and music sources in the overlay bundle gave 314 kB (the view machinery is linked once per
 bundle), hence two bundles: an OBS source only loads the bundle of its family. One bundle per page family: the sanitiser
 (`ammonia`, about 300 kB) must never be linked into an OBS bundle.
@@ -107,7 +107,8 @@ bundle), hence two bundles: an OBS source only loads the bundle of its family. O
 Contract with the server: `GET /api/standalone/status`, `PUT /api/standalone/folders`, `POST /api/standalone/rescan`
 (`04-serveur.md`, "Standalone import"). Types and pure helpers in `web-rs/core/src/standalone.rs` (native tests: `Status`
 deserialisation, `progress_percent`, `phase_message`, `redirects_to_welcome`, `poll_ms`, `human_bytes`, folder list add/remove,
-`error_message`, `parse_update_status`, `BackupAction`, `backup_outcome`, `reloads_after`, `reprocess_message`); app side in `web-rs/app/src/standalone.rs` and `pages/welcome.rs`.
+`error_message`, `parse_update_status`, `BackupAction`, `backup_outcome`, `reloads_after`, `reprocess_message`,
+`autostart_args`, `parse_autostart`, `autostart_error`); app side in `web-rs/app/src/standalone.rs` and `pages/welcome.rs`.
 
 - **Detection.** The layout reads the status **once** at startup (`provide_standalone`). A 404 (box deployment) or any failure
   leaves the status empty: no nav entry, no section, no banner, no poll — the box makes exactly one extra request per app load.
@@ -132,6 +133,11 @@ deserialisation, `progress_percent`, `phase_message`, `redirects_to_welcome`, `p
   server) reads as no extras), **Rescan now** (`POST /api/standalone/rescan`), data location (`dataDir`), app version
   (`version`), the sentence "Nothing leaves this PC except the update check.", and the OBS browser-source URLs built from
   `location.origin` + `route::app_href` (never a fixed port). No native folder picker yet (needs the shell IPC).
+- **Startup** (block of "This PC", rendered only inside the desktop shell, like Backup): a **Start with Windows** checkbox.
+  It reads `invoke('get_autostart')` once (no argument, a boolean; disabled until known) and a change calls
+  `invoke('set_autostart', {enabled})` (`autostart_args`); disabled while the call runs; a refusal leaves the box as it was
+  and shows "Could not change “Start with Windows”: <reason>" inline (`autostart_error`). Default off (shell decision,
+  `09-operations.md`); the autostart entry starts the app in the tray so the watcher catches new games.
 - **Backup** (block of "This PC", rendered only when `window.__TAURI__.core.invoke` exists, i.e. inside the desktop shell; in a
   browser on the same server the block is absent). **Export my data** calls `invoke('export_data')` and **Import a backup**
   `invoke('import_data')`, both with **no argument**: the shell opens the native save/open dialogs and the import

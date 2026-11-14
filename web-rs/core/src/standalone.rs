@@ -221,6 +221,31 @@ pub fn parse_update_status(v: &Value) -> UpdateStatus {
     UpdateStatus { state, version }
 }
 
+/// "Start with Windows" setting of the desktop shell: `get_autostart` (no argument, answers a boolean) and
+/// `set_autostart` (`{enabled}`). Off by default (operator decision); the shell writes the per-user Run key.
+pub const GET_AUTOSTART: &str = "get_autostart";
+pub const SET_AUTOSTART: &str = "set_autostart";
+
+/// Argument object of `set_autostart`.
+pub fn autostart_args(enabled: bool) -> Value {
+    serde_json::json!({ "enabled": enabled })
+}
+
+/// Reads the answer of `get_autostart`: `None` unless it is a boolean.
+pub fn parse_autostart(v: &Value) -> Option<bool> {
+    v.as_bool()
+}
+
+/// Inline message when the shell refuses to read or change the setting.
+pub fn autostart_error(reason: &str) -> String {
+    let reason = reason.trim();
+    if reason.is_empty() {
+        "Could not change “Start with Windows”.".into()
+    } else {
+        format!("Could not change “Start with Windows”: {reason}")
+    }
+}
+
 /// Backup commands of the desktop shell. Both take **no argument**: the shell opens the native save/open dialogs
 /// and the import confirmation itself; the page only starts the command and shows how it ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -320,6 +345,26 @@ mod tests {
         let mut s: Status = serde_json::from_str(FIXTURE).unwrap();
         s.phase = phase;
         s
+    }
+
+    #[test]
+    fn autostart_contract() {
+        assert_eq!(GET_AUTOSTART, "get_autostart");
+        assert_eq!(SET_AUTOSTART, "set_autostart");
+        assert_eq!(autostart_args(true), serde_json::json!({"enabled": true}));
+        assert_eq!(autostart_args(false), serde_json::json!({"enabled": false}));
+        assert_eq!(parse_autostart(&serde_json::json!(true)), Some(true));
+        assert_eq!(parse_autostart(&serde_json::json!(false)), Some(false));
+        assert_eq!(parse_autostart(&Value::Null), None);
+        assert_eq!(parse_autostart(&serde_json::json!("true")), None);
+        assert_eq!(
+            autostart_error(" registry denied "),
+            "Could not change “Start with Windows”: registry denied"
+        );
+        assert_eq!(
+            autostart_error(""),
+            "Could not change “Start with Windows”."
+        );
     }
 
     #[test]

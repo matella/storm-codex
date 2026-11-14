@@ -13,9 +13,10 @@ use storm_web_core::{
     net,
     route::app_href,
     standalone::{
-        backup_outcome, error_message, extras_with, extras_without, parse_update_status, poll_ms,
-        redirects_to_welcome, reloads_after, update_failed_message, BackupAction, BackupOutcome,
-        Status, UpdateState, UpdateStatus,
+        autostart_args, autostart_error, backup_outcome, error_message, extras_with,
+        extras_without, parse_autostart, parse_update_status, poll_ms, redirects_to_welcome,
+        reloads_after, update_failed_message, BackupAction, BackupOutcome, Status, UpdateState,
+        UpdateStatus, GET_AUTOSTART, SET_AUTOSTART,
     },
 };
 
@@ -282,6 +283,7 @@ pub fn ThisPc(num: Signal<u32>) -> impl IntoView {
                             view! { <span class=class>{m}</span> }
                         })}
                     </div>
+                    <Autostart />
                     <Backup />
                     <div class="ds-label" style="margin-top: 18px">"About"</div>
                     <div class="sa-kv">
@@ -344,10 +346,23 @@ fn rejection_reason(e: &leptos::wasm_bindgen::JsValue) -> String {
 /// cannot hold), `Err` with the reason when the shell is missing, the call throws or the promise rejects. Never
 /// panics whatever `window.__TAURI__` looks like.
 async fn invoke(cmd: &str) -> Result<serde_json::Value, String> {
+    invoke_with(cmd, None).await
+}
+
+/// [`invoke`] with an argument object (`args`, JSON).
+async fn invoke_with(
+    cmd: &str,
+    args: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
     let (core, f) = tauri_invoke().ok_or_else(|| "desktop shell unavailable".to_string())?;
-    let ret = f
-        .call1(&core, &cmd.into())
-        .map_err(|e| rejection_reason(&e))?;
+    let ret = match args {
+        None => f.call1(&core, &cmd.into()),
+        Some(a) => {
+            let js = js_sys::JSON::parse(&a.to_string()).map_err(|e| rejection_reason(&e))?;
+            f.call2(&core, &cmd.into(), &js)
+        }
+    }
+    .map_err(|e| rejection_reason(&e))?;
     let value = wasm_bindgen_futures::JsFuture::from(js_sys::Promise::resolve(&ret))
         .await
         .map_err(|e| rejection_reason(&e))?;
@@ -356,6 +371,54 @@ async fn invoke(cmd: &str) -> Result<serde_json::Value, String> {
         .and_then(|t| t.as_string())
         .and_then(|t| serde_json::from_str(&t).ok())
         .unwrap_or(serde_json::Value::Null))
+}
+
+/// "Start with Windows" checkbox of the "This PC" section: reads `get_autostart` once, writes `set_autostart({enabled})`.
+/// Rendered only inside the shell (`window.__TAURI__`); disabled until the current value is known and while a change
+/// runs; a refused change puts the box back and shows the reason inline.
+#[component]
+fn Autostart() -> impl IntoView {
+    let on = RwSignal::new(None::<bool>);
+    let busy = RwSignal::new(false);
+    let error = RwSignal::new(None::<String>);
+    let shell = tauri_invoke().is_some();
+    if shell {
+        spawn_local(async move {
+            match invoke(GET_AUTOSTART).await {
+                Ok(v) => on.set(parse_autostart(&v)),
+                Err(reason) => error.set(Some(autostart_error(&reason))),
+            }
+        });
+    }
+    let change = move |enabled: bool| {
+        if busy.get_untracked() {
+            return;
+        }
+        busy.set(true);
+        error.set(None);
+        spawn_local(async move {
+            match invoke_with(SET_AUTOSTART, Some(autostart_args(enabled))).await {
+                Ok(_) => on.set(Some(enabled)),
+                Err(reason) => error.set(Some(autostart_error(&reason))),
+            }
+            busy.set(false);
+        });
+    };
+    shell.then(|| {
+        view! {
+            <div class="ds-label" style="margin-top: 18px">"Startup"</div>
+            <div class="sa-row">
+                <label>
+                    <input type="checkbox"
+                        prop:checked=move || on.get().unwrap_or(false)
+                        disabled=move || on.get().is_none() || busy.get()
+                        on:change=move |ev| change(event_target_checked(&ev)) />
+                    " Start with Windows (in the tray, so new games are imported even when the window was not opened)"
+                </label>
+                {move || error.get().map(|m| view! { <span class="sa-err">{m}</span> })}
+            </div>
+        }
+    })
 }
 
 /// "Backup" block of the "This PC" section: export and import through the desktop shell's `export_data` /
