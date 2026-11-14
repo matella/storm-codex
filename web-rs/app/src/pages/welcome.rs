@@ -2,13 +2,18 @@
 //! rejected and failed replays, and the states that need the user (no folder, not enough disk space).
 
 use leptos::prelude::*;
-use storm_web_core::standalone::{
-    human_bytes, phase_message, progress_percent, reprocess_message, Phase, Status,
+use leptos::task::spawn_local;
+use storm_web_core::{
+    net,
+    standalone::{
+        human_bytes, names_text, parse_names, phase_message, progress_percent, reprocess_message,
+        Phase, Status,
+    },
 };
 
 use crate::{
     standalone::{rescan, use_standalone, use_status_poll, FolderEditor, CSS},
-    ui::Link,
+    ui::{use_operator, Link},
 };
 
 const PAGE_CSS: &str = r#"
@@ -90,6 +95,58 @@ fn Body() -> impl IntoView {
     }
 }
 
+/// "Your in-game names": the names that make "me" on every stats page (`app_settings.operator_names`). The server
+/// fills them once with the most frequent player when the first import is done; the field re-reads them at each phase
+/// change until the user edits it, then saves through `PUT /api/admin/settings` (open in the desktop app).
+#[component]
+fn Identity() -> impl IntoView {
+    let operator = use_operator();
+    let status = use_standalone().status;
+    let typed = RwSignal::new(None::<String>);
+    let msg = RwSignal::new(None::<String>);
+    let phase = Memo::new(move |_| status.with(|s| s.as_ref().map(|s| s.phase)));
+    Effect::new(move |_| {
+        phase.track();
+        spawn_local(async move {
+            if let Ok(s) = net::fetch_settings().await {
+                operator.set(s.operator_names);
+            }
+        });
+    });
+    let value = move || typed.get().unwrap_or_else(|| names_text(&operator.get()));
+    let save = move || {
+        let names = parse_names(&value());
+        let body = serde_json::json!({ "operator_names": names }).to_string();
+        spawn_local(async move {
+            let m = match net::write("PUT", "/api/admin/settings", Some(body), None).await {
+                Ok((s, _)) if (200..300).contains(&s) => {
+                    operator.set(names);
+                    typed.set(None);
+                    "✓ Saved.".to_string()
+                }
+                Ok((s, _)) => format!("Could not save (HTTP {s})."),
+                Err(_) => "Could not save: the local server did not answer.".to_string(),
+            };
+            msg.set(Some(m));
+        });
+    };
+    view! {
+        <div class="ds-panel" style="margin-top: 14px">
+            <div class="ds-label">"Your in-game names"</div>
+            <p class="sa-none" style="margin: 0 0 10px">"Every stats page is shown from your side. Filled in from your games once they are imported; add your other accounts, separated by commas."</p>
+            <div class="sa-row">
+                <input class="ds-input" style="min-width: 260px" placeholder="Name, other account"
+                    prop:value=value on:input=move |ev| typed.set(Some(event_target_value(&ev))) />
+                <button class="ds-btn" on:click=move |_| save()>"Save"</button>
+                {move || msg.get().map(|m| {
+                    let class = if m.starts_with('✓') { "sa-ok" } else { "sa-err" };
+                    view! { <span class=class>{m}</span> }
+                })}
+            </div>
+        </div>
+    }
+}
+
 #[component]
 pub fn Welcome() -> impl IntoView {
     let ctx = use_standalone();
@@ -114,6 +171,9 @@ pub fn Welcome() -> impl IntoView {
                     (true, false) => view! { <div class="sa-none">"The import screen is only available in the Storm Codex desktop app."</div> }.into_any(),
                     (true, true) => view! { <Body /> }.into_any(),
                 }}
+                <Show when=move || present.get()>
+                    <Identity />
+                </Show>
                 <Show when=move || no_folders.get()>
                     <div class="ds-panel" style="margin-top: 14px">
                         <div class="ds-label">"Add a replay folder"</div>

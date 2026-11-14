@@ -221,6 +221,23 @@ pub fn parse_update_status(v: &Value) -> UpdateStatus {
     UpdateStatus { state, version }
 }
 
+/// In-game names typed as one comma-separated field: trimmed, empty entries dropped, duplicates removed (first kept),
+/// as the server stores them (`PUT /api/admin/settings` `{operator_names}`).
+pub fn parse_names(input: &str) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    for n in input.split(',').map(str::trim).filter(|n| !n.is_empty()) {
+        if !names.iter().any(|m| m == n) {
+            names.push(n.to_string());
+        }
+    }
+    names
+}
+
+/// The names as the field shows them.
+pub fn names_text(names: &[String]) -> String {
+    names.join(", ")
+}
+
 /// "Start with Windows" setting of the desktop shell: `get_autostart` (no argument, answers a boolean) and
 /// `set_autostart` (`{enabled}`). Off by default (operator decision); the shell writes the per-user Run key.
 pub const GET_AUTOSTART: &str = "get_autostart";
@@ -345,6 +362,13 @@ mod tests {
         let mut s: Status = serde_json::from_str(FIXTURE).unwrap();
         s.phase = phase;
         s
+    }
+
+    #[test]
+    fn names_field_round_trip() {
+        assert_eq!(parse_names(" Me , Alt,,me, Me "), vec!["Me", "Alt", "me"]);
+        assert!(parse_names(" , ").is_empty());
+        assert_eq!(names_text(&parse_names("Me,Alt")), "Me, Alt");
     }
 
     #[test]

@@ -203,6 +203,7 @@ impl Orchestrator {
             };
             match interrupted {
                 None => {
+                    detect_operator_names(&self.app).await;
                     self.st.set_phase(Phase::Ready);
                     return Flow::Continue;
                 }
@@ -328,6 +329,97 @@ fn open_ledger(path: &Path) -> io::Result<Ledger> {
         }
         other => other,
     }
+}
+
+/// `operator_names` written by migration 0003 for the box's operator: on a player's PC it is not
+/// their name.
+const SEEDED_OPERATOR: &str = "matella";
+/// `app_settings` key set once the operator names were detected (or found set by the user).
+const NAMES_DETECTED_KEY: &str = "operator_names_detected";
+
+/// What [`detect_operator_names`] writes: `Some(names)` replaces `operator_names`, `None`
+/// keeps them. Only the migration seed (or nothing) is replaced, by the most frequent player.
+pub(super) fn detected_names(current: &[String], top: Option<String>) -> Option<Vec<String>> {
+    if !is_seeded(current) {
+        return None;
+    }
+    top.filter(|t| !t.trim().is_empty()).map(|t| vec![t])
+}
+
+/// True when `operator_names` is still the migration seed (or empty).
+fn is_seeded(current: &[String]) -> bool {
+    current.is_empty() || (current.len() == 1 && current[0] == SEEDED_OPERATOR)
+}
+
+/// Once per install, after the first completed import: the "me" of every stats page is the
+/// player of (almost) every imported game, as the box's onboarding expects the operator to set
+/// it. Names the user already set are kept; nothing is done (and it is retried at the next
+/// `ready`) while no game is imported. The user edits them on the welcome page or in Settings.
+pub(super) async fn detect_operator_names(app: &AppState) {
+    let done =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM app_settings WHERE key = $1)")
+            .bind(NAMES_DETECTED_KEY)
+            .fetch_one(&app.db)
+            .await
+            .unwrap_or(true);
+    if done {
+        return;
+    }
+    let current: Vec<String> = sqlx::query_scalar::<_, serde_json::Value>(
+        "SELECT value FROM app_settings WHERE key = 'operator_names'",
+    )
+    .fetch_optional(&app.db)
+    .await
+    .ok()
+    .flatten()
+    .and_then(|v| serde_json::from_value(v).ok())
+    .unwrap_or_default();
+    let top: Option<String> = match sqlx::query_scalar(
+        "SELECT name FROM match_players WHERE name IS NOT NULL AND name <> ''
+         GROUP BY name ORDER BY count(DISTINCT match_id) DESC, name LIMIT 1",
+    )
+    .fetch_optional(&app.db)
+    .await
+    {
+        Ok(top) => top,
+        Err(e) => {
+            tracing::warn!("operator names: detection failed: {e}");
+            return;
+        }
+    };
+    let names = detected_names(&current, top);
+    if is_seeded(&current) && names.is_none() {
+        return; // nothing imported yet: retried at the next `ready`
+    }
+    if let Err(e) = save_detected_names(&app.db, names.as_deref()).await {
+        tracing::warn!("operator names: {e}");
+    }
+}
+
+/// Writes the detected names (if any) and the "detected" mark in one transaction.
+async fn save_detected_names(
+    db: &sqlx::PgPool,
+    names: Option<&[String]>,
+) -> Result<(), sqlx::Error> {
+    let mut tx = db.begin().await?;
+    if let Some(names) = names {
+        tracing::info!(?names, "operator names detected from the imported games");
+        sqlx::query(
+            "INSERT INTO app_settings (key, value) VALUES ('operator_names', $1)
+             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+        )
+        .bind(serde_json::json!(names))
+        .execute(&mut *tx)
+        .await?;
+    }
+    sqlx::query(
+        "INSERT INTO app_settings (key, value) VALUES ($1, 'true'::jsonb)
+         ON CONFLICT (key) DO NOTHING",
+    )
+    .bind(NAMES_DETECTED_KEY)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await
 }
 
 /// After an update that raised `PARSER_VERSION`: re-processes, in the background and bounded

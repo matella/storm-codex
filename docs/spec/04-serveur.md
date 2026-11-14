@@ -93,7 +93,8 @@ once the listener is bound (`/api/health` answers 200 during the whole sequence)
    memory (never logged, never on disk). `/api/upload` keeps its auth contract for everyone.
    One server per database: a second server on the same database would rotate the token.
    Steps 3 or 5 failing → phase `error`;
-6. **live watcher** started on the folders, then the **backfill** (phase `importing`): oldest
+6. **live watcher** started on the folders, then the **backfill** (phase `importing`; when it
+   completes, the **operator names** are detected once, see below): oldest
    first, 4 at a time, through `POST http://<bound address>/api/upload` (the address actually
    bound, so `BIND_ADDR` may use port 0). Replays reported by the watcher meanwhile wait and
    are handled afterwards; then phase `ready`: each new replay is uploaded unless the ledger
@@ -138,6 +139,15 @@ come from this PC, otherwise **403**:
 
 Server mode (the box, `STANDALONE` unset) is unchanged: no Host or Origin filter (it sits behind
 its reverse proxy).
+
+**Operator names on a player's PC.** Migration 0003 seeds `app_settings.operator_names` with the
+box operator's name (`["matella"]`), which drives the "me" side of every stats page. In
+standalone mode, each time a backfill completes (`orchestrator::detect_operator_names`) and
+until `app_settings.operator_names_detected` exists: if the names are still that seed (or
+empty), they are replaced by the most frequent player of the imported games (`match_players`,
+most distinct matches) and the mark is written; names the user already set are kept and only
+the mark is written; with no game imported yet nothing is written (retried at the next
+completion). The user edits them on `/welcome` ("Your in-game names") or in Settings.
 
 ## Played-hero correction (`project.rs`)
 

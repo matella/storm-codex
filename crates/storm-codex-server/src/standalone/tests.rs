@@ -1048,3 +1048,120 @@ async fn outdated_replays_are_reprocessed_with_progress() {
     assert!(status.reprocess_total >= 1, "{status:?}");
     assert_eq!(status.reprocess_done, status.reprocess_total, "{status:?}");
 }
+
+#[test]
+fn only_the_seeded_operator_name_is_replaced() {
+    use orchestrator::detected_names;
+    let me = || Some("Me".to_string());
+    assert_eq!(
+        detected_names(&["matella".into()], me()),
+        Some(vec!["Me".into()])
+    );
+    assert_eq!(detected_names(&[], me()), Some(vec!["Me".into()]));
+    assert_eq!(
+        detected_names(&["Mine".into()], me()),
+        None,
+        "user's names kept"
+    );
+    assert_eq!(
+        detected_names(&["matella".into(), "Alt".into()], me()),
+        None
+    );
+    assert_eq!(
+        detected_names(&["matella".into()], None),
+        None,
+        "nothing imported"
+    );
+    assert_eq!(detected_names(&["matella".into()], Some(" ".into())), None);
+}
+
+async fn setting(state: &AppState, key: &str) -> Option<serde_json::Value> {
+    sqlx::query_scalar("SELECT value FROM app_settings WHERE key = $1")
+        .bind(key)
+        .fetch_optional(&state.db)
+        .await
+        .unwrap()
+}
+
+async fn put_setting(state: &AppState, key: &str, value: Option<serde_json::Value>) {
+    match value {
+        Some(v) => sqlx::query(
+            "INSERT INTO app_settings (key, value) VALUES ($1, $2)
+             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+        )
+        .bind(key)
+        .bind(v)
+        .execute(&state.db)
+        .await
+        .unwrap(),
+        None => sqlx::query("DELETE FROM app_settings WHERE key = $1")
+            .bind(key)
+            .execute(&state.db)
+            .await
+            .unwrap(),
+    };
+}
+
+/// A fresh install carries the box operator's name (migration 0003): after the first import it
+/// becomes the most frequent player, once; names the user set are never replaced.
+#[tokio::test]
+async fn operator_names_are_detected_once_after_the_import() {
+    let tmp = tempfile::tempdir().unwrap();
+    let Some((state, _settings)) = db_state(tmp.path(), |c| {
+        StandaloneState::new(c).with_detector(Vec::new)
+    })
+    .await
+    else {
+        return;
+    };
+    let saved = (
+        setting(&state, "operator_names").await,
+        setting(&state, "operator_names_detected").await,
+    );
+    let top: Option<String> = sqlx::query_scalar(
+        "SELECT name FROM match_players WHERE name IS NOT NULL AND name <> ''
+         GROUP BY name ORDER BY count(DISTINCT match_id) DESC, name LIMIT 1",
+    )
+    .fetch_optional(&state.db)
+    .await
+    .unwrap();
+
+    // user's own names: kept, marked as done
+    put_setting(&state, "operator_names_detected", None).await;
+    put_setting(&state, "operator_names", Some(serde_json::json!(["Mine"]))).await;
+    orchestrator::detect_operator_names(&state).await;
+    let mine = setting(&state, "operator_names").await;
+    let marked = setting(&state, "operator_names_detected").await.is_some();
+
+    // the migration seed: replaced by the most frequent player (when any game exists)
+    put_setting(&state, "operator_names_detected", None).await;
+    put_setting(
+        &state,
+        "operator_names",
+        Some(serde_json::json!(["matella"])),
+    )
+    .await;
+    orchestrator::detect_operator_names(&state).await;
+    let detected = setting(&state, "operator_names").await;
+    // once: a later edit back to the seed is not replaced again
+    put_setting(
+        &state,
+        "operator_names",
+        Some(serde_json::json!(["matella"])),
+    )
+    .await;
+    orchestrator::detect_operator_names(&state).await;
+    let again = setting(&state, "operator_names").await;
+
+    put_setting(&state, "operator_names", saved.0).await;
+    put_setting(&state, "operator_names_detected", saved.1).await;
+    assert_eq!(mine, Some(serde_json::json!(["Mine"])));
+    assert!(marked);
+    match top {
+        Some(top) => {
+            assert_eq!(detected, Some(serde_json::json!([top])));
+            assert_eq!(again, Some(serde_json::json!(["matella"])));
+        }
+        None => assert_eq!(detected, Some(serde_json::json!(["matella"]))),
+    }
+}
