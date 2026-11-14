@@ -526,7 +526,7 @@ async fn db_state(
     cfg.archive_dir = dir.join("archive");
     std::fs::create_dir_all(&cfg.archive_dir).unwrap();
     let name = format!("test-standalone-{}", uuid::Uuid::new_v4());
-    state.standalone = Some(Arc::new(st(&cfg).with_token_name(name)));
+    state.standalone = Some(Arc::new(st(&cfg).with_token_name(name).without_upkeep()));
     state.cfg = Arc::new(cfg);
     Some((state, guard))
 }

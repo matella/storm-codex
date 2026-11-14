@@ -135,6 +135,9 @@ pub struct StandaloneState {
     token_name: String,
     /// Background re-process after a parser bump: (total, done).
     reprocess: Mutex<(usize, usize)>,
+    /// Database-wide upkeep of the import task (re-process after an update, operator names
+    /// detection). Off only in tests that share one database.
+    upkeep: bool,
 }
 
 impl StandaloneState {
@@ -160,6 +163,7 @@ impl StandaloneState {
             detector: Arc::new(storm_codex_watcher::detector::detect_replay_dirs),
             token_name: token::TOKEN_NAME.to_string(),
             reprocess: Mutex::new((0, 0)),
+            upkeep: true,
         }
     }
 
@@ -186,6 +190,18 @@ impl StandaloneState {
     pub fn with_token_name(mut self, name: String) -> Self {
         self.token_name = name;
         self
+    }
+
+    /// Test seam: no database-wide upkeep from the import task (tests share one database; the
+    /// upkeep steps have tests of their own).
+    #[cfg(test)]
+    pub fn without_upkeep(mut self) -> Self {
+        self.upkeep = false;
+        self
+    }
+
+    pub(crate) fn upkeep(&self) -> bool {
+        self.upkeep
     }
 
     pub(crate) fn token_name(&self) -> &str {

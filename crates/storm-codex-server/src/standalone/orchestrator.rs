@@ -101,7 +101,9 @@ impl Orchestrator {
         }
         // after the seed (projection reads the reference data); runs beside the import
         let app = self.app.clone();
-        tokio::spawn(async move { reprocess_outdated(&app).await });
+        if self.st.upkeep() {
+            tokio::spawn(async move { reprocess_outdated(&app).await });
+        }
 
         let extras = load_extra_folders(&self.app.db).await;
         self.st.set_extra_folders(
@@ -203,7 +205,9 @@ impl Orchestrator {
             };
             match interrupted {
                 None => {
-                    detect_operator_names(&self.app).await;
+                    if self.st.upkeep() {
+                        detect_operator_names(&self.app).await;
+                    }
                     self.st.set_phase(Phase::Ready);
                     return Flow::Continue;
                 }
