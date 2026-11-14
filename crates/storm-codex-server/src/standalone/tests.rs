@@ -381,6 +381,8 @@ async fn cross_origin_writes_are_refused() {
     let cfg = test_config(tmp.path());
     let state = lazy_state(tmp.path(), Some(StandaloneState::new(&cfg)));
     let st = state.standalone.clone().unwrap();
+    // the app's pages are served from the bound port: their Origin carries it
+    st.set_port(8088);
     let app = app(&state);
     let (code, _) = send(
         &app,
@@ -478,6 +480,62 @@ async fn standalone_refuses_a_cross_site_post_on_the_whole_app() {
             .unwrap();
         assert_eq!(send(&app, req).await.0, StatusCode::FORBIDDEN, "{path}");
     }
+}
+
+fn ws_upgrade(origin: Option<&str>) -> Request<Body> {
+    let mut req = Request::get("/ws")
+        .header(header::HOST, "127.0.0.1:8088")
+        .header(header::CONNECTION, "upgrade")
+        .header(header::UPGRADE, "websocket")
+        .header(header::SEC_WEBSOCKET_VERSION, "13")
+        .header(header::SEC_WEBSOCKET_KEY, "dGhlIHNhbXBsZSBub25jZQ==");
+    if let Some(o) = origin {
+        req = req.header(header::ORIGIN, o);
+    }
+    req.body(Body::empty()).unwrap()
+}
+
+/// A WebSocket is not bound by the same-origin policy and its upgrade is a GET: a page on
+/// another site opening `ws://127.0.0.1:<port>/ws` (loopback Host, foreign Origin) must be
+/// refused, as must a cross-origin GET reading the API. No Origin (OBS, the shell) and the
+/// app's own origin pass.
+#[tokio::test]
+async fn standalone_refuses_a_foreign_origin_on_reads_and_websocket_upgrades() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (_state, app) = full_app(tmp.path(), true);
+    for origin in [
+        "https://evil.example",
+        "null",
+        "http://127.0.0.1:9999",
+        "http://localhost.evil.example:8088",
+    ] {
+        let (code, _) = send(&app, ws_upgrade(Some(origin))).await;
+        assert_eq!(code, StatusCode::FORBIDDEN, "ws upgrade, Origin {origin}");
+        let req = Request::get("/api/standalone/status")
+            .header(header::HOST, "127.0.0.1:8088")
+            .header(header::ORIGIN, origin)
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(
+            send(&app, req).await.0,
+            StatusCode::FORBIDDEN,
+            "GET, Origin {origin}"
+        );
+    }
+    for origin in [
+        None,
+        Some("http://127.0.0.1:8088"),
+        Some("http://localhost:8088"),
+    ] {
+        let (code, _) = send(&app, ws_upgrade(origin)).await;
+        assert_ne!(code, StatusCode::FORBIDDEN, "ws upgrade, Origin {origin:?}");
+    }
+    // OBS-style GET: no Origin
+    let req = Request::get("/cast/overlay")
+        .header(header::HOST, "localhost:8088")
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(send(&app, req).await.0, StatusCode::OK);
 }
 
 /// OBS browser sources (GET, no `Origin`) and the app's pages keep working on every loopback

@@ -6,13 +6,17 @@
 //! - the `Host` must name the loopback server exactly (`127.0.0.1`, `localhost` or `[::1]`,
 //!   with no port or the bound port): a DNS-rebound page (`evil.example` resolving to
 //!   127.0.0.1) cannot read the stats or the status, mint an upload token or delete data;
-//! - a write carrying a non-loopback `Origin` (a web page on another site posting to the
-//!   local server) is refused.
+//! - a request carrying an `Origin` other than the app's own (`http://` + a Host that passes
+//!   the rule above), whatever its method, is refused: a page on another site posting to the
+//!   local server, reading it with a CORS fetch, or opening `ws://127.0.0.1:<port>/ws` (a
+//!   WebSocket upgrade is a GET and is not bound by the same-origin policy). Requests without
+//!   `Origin` (navigations, `<img>`, OBS browser sources, the shell, the in-process uploader)
+//!   are unaffected.
 
 use std::path::PathBuf;
 
 use axum::extract::{Request, State};
-use axum::http::{header, Method, StatusCode};
+use axum::http::{header, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
@@ -39,12 +43,13 @@ fn not_found() -> Response {
     StatusCode::NOT_FOUND.into_response()
 }
 
-/// True for an `Origin` served from the loopback interface (the app's own pages).
-fn is_loopback_origin(origin: &str) -> bool {
-    let Ok(uri) = origin.parse::<axum::http::Uri>() else {
-        return false;
-    };
-    matches!(uri.host(), Some("127.0.0.1" | "localhost" | "[::1]"))
+/// True for the `Origin` of the app's own pages: `http://` and an authority that passes
+/// [`is_local_host`] (loopback name, no port or the bound port). Another local web app on
+/// another port, `null` and any other site are refused.
+fn is_app_origin(origin: &str, bound: Option<u16>) -> bool {
+    origin
+        .strip_prefix("http://")
+        .is_some_and(|authority| is_local_host(authority, bound))
 }
 
 /// True for a `Host` (or HTTP/2 authority) naming the loopback server: exactly `127.0.0.1`,
@@ -86,12 +91,11 @@ pub(crate) async fn local_requests_only(
     if !host.is_some_and(|h| is_local_host(&h, bound)) {
         return error(StatusCode::FORBIDDEN, "unexpected Host header".into());
     }
-    let read = matches!(*request.method(), Method::GET | Method::HEAD);
     let foreign = request
         .headers()
         .get(header::ORIGIN)
-        .is_some_and(|o| !o.to_str().is_ok_and(is_loopback_origin));
-    if !read && foreign {
+        .is_some_and(|o| !o.to_str().is_ok_and(|o| is_app_origin(o, bound)));
+    if foreign {
         return error(
             StatusCode::FORBIDDEN,
             "cross-origin requests are not allowed".into(),
@@ -198,7 +202,7 @@ async fn shutdown(State(state): State<AppState>) -> Response {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_local_host, is_loopback_origin};
+    use super::{is_app_origin, is_local_host};
 
     #[test]
     fn local_hosts() {
@@ -239,12 +243,17 @@ mod tests {
     }
 
     #[test]
-    fn loopback_origins() {
-        assert!(is_loopback_origin("http://127.0.0.1:8088"));
-        assert!(is_loopback_origin("http://localhost:3000"));
-        assert!(is_loopback_origin("http://[::1]:8088"));
-        assert!(!is_loopback_origin("https://evil.example"));
-        assert!(!is_loopback_origin("http://127.0.0.1.evil.example"));
-        assert!(!is_loopback_origin("null"));
+    fn app_origins() {
+        let bound = Some(8088);
+        assert!(is_app_origin("http://127.0.0.1:8088", bound));
+        assert!(is_app_origin("http://localhost:8088", bound));
+        assert!(is_app_origin("http://[::1]:8088", bound));
+        // another local web app, another site, opaque origins
+        assert!(!is_app_origin("http://localhost:3000", bound));
+        assert!(!is_app_origin("https://127.0.0.1:8088", bound));
+        assert!(!is_app_origin("https://evil.example", bound));
+        assert!(!is_app_origin("http://127.0.0.1.evil.example", bound));
+        assert!(!is_app_origin("http://127.0.0.1:8088/", bound));
+        assert!(!is_app_origin("null", bound));
     }
 }

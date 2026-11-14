@@ -132,10 +132,15 @@ come from this PC, otherwise **403**:
   carry the Windows user name, mint an upload token or delete data). The desktop shell loads
   `http://127.0.0.1:<port>/`, which passes; OBS browser sources on `127.0.0.1`/`localhost`
   and the bound port pass too;
-- **Origin** (every method but `GET`/`HEAD`): a request carrying a non-loopback `Origin`
-  header (a foreign web page posting to the local server, including a body-less
-  `fetch(…, {mode: 'no-cors'})` to `/api/admin/reprocess` or `/api/draft/reset`) is refused.
-  Requests without `Origin` (OBS, the in-process uploader, the shell) are unaffected.
+- **Origin** (every method, `GET` and WebSocket upgrades included): a request carrying an
+  `Origin` header is refused unless it is the app's own origin: `http://` followed by an
+  authority that passes the Host rule above (loopback name, no port or the bound port). This
+  refuses a foreign page posting to the local server (including a body-less
+  `fetch(…, {mode: 'no-cors'})` to `/api/admin/reprocess` or `/api/draft/reset`), reading it
+  with a CORS fetch, or opening `ws://127.0.0.1:<port>/ws` (a WebSocket is not bound by the
+  same-origin policy and its upgrade is a `GET`), as well as `Origin: null` and another local
+  web app on another port. Requests without `Origin` (navigations, `<img>`, OBS browser
+  sources, the in-process uploader, the shell) are unaffected.
 
 Server mode (the box, `STANDALONE` unset) is unchanged: no Host or Origin filter (it sits behind
 its reverse proxy).
