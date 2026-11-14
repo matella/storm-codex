@@ -61,7 +61,8 @@ Only in standalone mode (`STANDALONE=1`); without it the routes below answer 404
 starts. One background task (`standalone/orchestrator.rs`) owns the upload ledger and runs,
 once the listener is bound (`/api/health` answers 200 during the whole sequence):
 
-1. **seed** the reference data from `REFERENTIAL_FILE` when `dim_heroes` is empty (phase `seeding`);
+1. **seed** the reference data from `REFERENTIAL_FILE` when `dim_heroes` is empty or the bundled
+   file differs from the one last ingested (an app update ships a newer one) (phase `seeding`);
 2. **detect** the folders: every `Documents/Heroes of the Storm/Accounts/*/*/Replays/Multiplayer`
    (known-folder API, OneDrive-relocated Documents included) plus the extra folders saved in
    `app_settings.standalone_extra_folders`; each extra folder is expanded to the folders under it
@@ -180,10 +181,14 @@ Failed writes are logged (`warn`):
 - `HOTSPATCHNOTES_URL`: live API (maintainer setup) → `sync_heroes`, `sync_talents`,
   `vendor_images` (portraits/maps copied into `IMAGES_DIR`, served on `/images`),
   `sync_patches`, `backfill_hero_sections`.
-- **Standalone mode** (`STANDALONE=1`, installer bundle): no network. When `dim_heroes` is empty
-  and `REFERENTIAL_FILE` is set, it is seeded once from that on-disk snapshot, as the first step
-  of the standalone import task (phase `seeding`, see "Standalone import" below)
-  (`dim::ingest_snapshot_file`, same ingest path as `ingest_snapshot`, one scratch dir per call);
+- **Standalone mode** (`STANDALONE=1`, installer bundle): no network. When `REFERENTIAL_FILE` is
+  set, its SHA-256 is compared with `app_settings.reference_snapshot_sha256` (a JSON string) at
+  each start; when `dim_heroes` is empty or the hashes differ (an app update ships a newer
+  snapshot), the on-disk snapshot is ingested, as the first step of the standalone import task
+  (phase `seeding`, see "Standalone import" below) (`dim::ingest_snapshot_file`, same upsert
+  ingest path as `ingest_snapshot`, one scratch dir per call), and the hash is saved only after
+  a successful ingest (an unreadable or corrupt file is retried at the next start). Heroes no
+  longer in the snapshot are kept;
   the 24 h refresh loop is not started. `Config::validate()` (run right after `from_env()`)
   rejects a non-loopback `BIND_ADDR` in this mode ("standalone mode requires a loopback BIND_ADDR").
 

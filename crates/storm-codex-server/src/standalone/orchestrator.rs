@@ -327,17 +327,72 @@ fn open_ledger(path: &Path) -> io::Result<Ledger> {
     }
 }
 
-/// Seeds an empty `dim_heroes` once from the bundled snapshot (`REFERENTIAL_FILE`); no network
-/// and no 24 h refresh in standalone mode.
-async fn seed_reference_data(app: &AppState) {
-    let Some(file) = app.cfg.referential_file.as_deref() else {
+/// `app_settings` key holding the SHA-256 (hex) of the last bundled snapshot ingested.
+const SNAPSHOT_KEY: &str = "reference_snapshot_sha256";
+
+/// Ingests the bundled snapshot (`REFERENTIAL_FILE`) when `dim_heroes` is empty or the file
+/// differs from the one last ingested (an app update ships a newer one); no network and no
+/// 24 h refresh in standalone mode. The hash is saved only after a successful ingest, so a
+/// failed one is retried at the next start. Upserts: running it again is harmless.
+pub(super) async fn seed_reference_data(app: &AppState) {
+    let Some(file) = app.cfg.referential_file.clone() else {
         return;
+    };
+    let hashed = tokio::task::spawn_blocking({
+        let file = file.clone();
+        move || -> Result<String, String> {
+            use sha2::{Digest, Sha256};
+            let bytes = std::fs::read(&file).map_err(|e| format!("{}: {e}", file.display()))?;
+            Ok(hex::encode(Sha256::digest(&bytes)))
+        }
+    })
+    .await;
+    let hash = match hashed {
+        Ok(Ok(hash)) => hash,
+        Ok(Err(e)) => {
+            tracing::warn!("reference data: bundled snapshot unreadable ({e})");
+            return;
+        }
+        Err(e) => {
+            tracing::warn!("reference data: hashing the snapshot failed ({e})");
+            return;
+        }
     };
     let empty = sqlx::query_scalar::<_, bool>("SELECT NOT EXISTS (SELECT 1 FROM dim_heroes)")
         .fetch_one(&app.db)
         .await
         .unwrap_or(false);
-    if empty {
-        crate::dim::ingest_snapshot_file(&app.db, &app.cfg.images_dir, file).await;
+    let stored = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT value #>> '{}' FROM app_settings WHERE key = $1",
+    )
+    .bind(SNAPSHOT_KEY)
+    .fetch_optional(&app.db)
+    .await
+    .ok()
+    .flatten()
+    .flatten();
+    if !empty && stored.as_deref() == Some(hash.as_str()) {
+        return;
+    }
+    tracing::info!(
+        "reference data: ingesting the bundled snapshot {}",
+        &hash[..12]
+    );
+    if crate::dim::ingest_snapshot_file(&app.db, &app.cfg.images_dir, &file)
+        .await
+        .is_err()
+    {
+        return;
+    }
+    if let Err(e) = sqlx::query(
+        "INSERT INTO app_settings (key, value) VALUES ($1, to_jsonb($2::text))
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+    )
+    .bind(SNAPSHOT_KEY)
+    .bind(&hash)
+    .execute(&app.db)
+    .await
+    {
+        tracing::warn!("reference data: could not record the snapshot hash ({e})");
     }
 }

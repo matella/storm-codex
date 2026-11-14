@@ -920,3 +920,81 @@ async fn shutdown_flushes_the_ledger_and_serve_returns() {
         "every outcome recorded before the stop is on disk"
     );
 }
+
+/// Writes a snapshot holding `heroes` (names) at `file`, replacing it.
+fn snapshot_with(file: &Path, heroes: &[&str]) {
+    let gz = flate2::write::GzEncoder::new(
+        std::fs::File::create(file).unwrap(),
+        flate2::Compression::fast(),
+    );
+    let mut tar = tar::Builder::new(gz);
+    let body = serde_json::to_string(
+        &heroes
+            .iter()
+            .map(|h| serde_json::json!({"name": h, "role": "Support", "universe": "Nexus"}))
+            .collect::<Vec<_>>(),
+    )
+    .unwrap();
+    let mut h = tar::Header::new_gnu();
+    h.set_size(body.len() as u64);
+    h.set_mode(0o644);
+    h.set_cksum();
+    tar.append_data(&mut h, "heroes.json", body.as_bytes())
+        .unwrap();
+    tar.into_inner().unwrap().finish().unwrap();
+}
+
+async fn hero_exists(state: &AppState, name: &str) -> bool {
+    sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM dim_heroes WHERE id = $1)")
+        .bind(name)
+        .fetch_one(&state.db)
+        .await
+        .unwrap()
+}
+
+/// An app update ships a newer bundled snapshot: it is ingested although `dim_heroes` is not
+/// empty; the same snapshot is not ingested twice.
+#[tokio::test]
+async fn a_newer_bundled_snapshot_is_ingested_once() {
+    let tmp = tempfile::tempdir().unwrap();
+    let Some((mut state, _settings)) = db_state(tmp.path(), |c| {
+        StandaloneState::new(c).with_detector(Vec::new)
+    })
+    .await
+    else {
+        return;
+    };
+    let tag = uuid::Uuid::new_v4().simple().to_string();
+    let (old, new) = (format!("Old {tag}"), format!("New {tag}"));
+    let file = tmp.path().join("referential.tar.gz");
+    let mut cfg = (*state.cfg).clone();
+    cfg.referential_file = Some(file.clone());
+    cfg.images_dir = tmp.path().join("images");
+    state.cfg = Arc::new(cfg);
+
+    snapshot_with(&file, &[&old]);
+    orchestrator::seed_reference_data(&state).await;
+    assert!(hero_exists(&state, &old).await, "first snapshot ingested");
+
+    // release N+1: the bundled file changes, dim_heroes is not empty
+    snapshot_with(&file, &[&old, &new]);
+    orchestrator::seed_reference_data(&state).await;
+    assert!(hero_exists(&state, &new).await, "newer snapshot ingested");
+
+    // same snapshot at the next start: not ingested again
+    sqlx::query("DELETE FROM dim_heroes WHERE id = $1")
+        .bind(&new)
+        .execute(&state.db)
+        .await
+        .unwrap();
+    orchestrator::seed_reference_data(&state).await;
+    assert!(
+        !hero_exists(&state, &new).await,
+        "unchanged snapshot skipped"
+    );
+    sqlx::query("DELETE FROM dim_heroes WHERE id = $1")
+        .bind(&old)
+        .execute(&state.db)
+        .await
+        .unwrap();
+}

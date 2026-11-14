@@ -546,7 +546,9 @@ fresh migrated cluster → import.
 - **Stale snapshot (accepted risk).** A standalone install never contacts HotsPatchNotes: heroes,
   talents and patches released after the snapshot are unknown until a new installer ships with a
   newer snapshot (new hero = generic portrait and missing talent names; replays still import and
-  every stat is computed from the replay itself). Refreshing = rebuild, upload, re-pin, release.
+  every stat is computed from the replay itself). Refreshing = rebuild, upload, re-pin, release:
+  the updated app sees a bundled snapshot whose SHA-256 differs from the one it last ingested
+  and ingests it at the next start (`04-serveur.md`, Reference data).
   Follow-up: a public snapshot endpoint/publication on the HotsPatchNotes side
   (matella/HeroesOfTheStormPatchNotes#1), so the snapshot can be refreshed without the operator's
   private API; a runtime refresh stays out of scope (spec non-goal).

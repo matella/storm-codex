@@ -293,17 +293,19 @@ pub async fn ingest_snapshot(db: &PgPool, images_dir: &Path, url: &str) -> Vec<(
         }
     })
     .await;
-    ingest_unpacked(db, images_dir, tmp, prep).await
+    ingest_unpacked(db, images_dir, tmp, prep)
+        .await
+        .unwrap_or_default()
 }
 
 /// Same as [`ingest_snapshot`] but reads the `referential.tar.gz` from disk (standalone bundle:
-/// the installer ships the snapshot, no network). Best-effort: a missing/corrupt file logs a
-/// warning and returns an empty list.
+/// the installer ships the snapshot, no network). A missing/corrupt file logs a warning and is
+/// an `Err` (nothing written); row-level write failures are logged and do not fail the ingest.
 pub async fn ingest_snapshot_file(
     db: &PgPool,
     images_dir: &Path,
     file: &Path,
-) -> Vec<(String, String)> {
+) -> Result<Vec<(String, String)>, String> {
     let file = file.to_path_buf();
     let tmp = unique_tmp_dir();
     let prep = tokio::task::spawn_blocking({
@@ -337,16 +339,16 @@ async fn ingest_unpacked(
     images_dir: &Path,
     tmp: PathBuf,
     prep: Result<Result<(), String>, tokio::task::JoinError>,
-) -> Vec<(String, String)> {
+) -> Result<Vec<(String, String)>, String> {
     let dir = images_dir.to_path_buf();
     match prep {
         Ok(Ok(())) => {}
         Ok(Err(e)) => {
             tracing::warn!("reference data: snapshot unavailable ({e}) — universe rings fall back");
             let _ = std::fs::remove_dir_all(&tmp);
-            return Vec::new();
+            return Err(e);
         }
-        Err(_) => return Vec::new(),
+        Err(e) => return Err(e.to_string()),
     }
 
     let read = |name: &str| -> Option<serde_json::Value> {
@@ -525,7 +527,7 @@ async fn ingest_unpacked(
     })
     .await;
 
-    new_patches
+    Ok(new_patches)
 }
 
 /// Recursive copy `src` → `dst` (creates the folders, skips the files already present). Returns the
@@ -805,13 +807,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ingest_snapshot_file_missing_file_returns_empty_without_panic() {
+    async fn ingest_snapshot_file_missing_file_is_an_error_without_panic() {
         // A lazy pool never connects: the missing file must bail out before any query.
         let db = sqlx::postgres::PgPoolOptions::new()
             .connect_lazy("postgres://nobody@127.0.0.1:1/none")
             .unwrap();
         let missing = std::env::temp_dir().join(format!("absent-{}.tar.gz", uuid::Uuid::new_v4()));
         let out = ingest_snapshot_file(&db, &std::env::temp_dir(), &missing).await;
-        assert!(out.is_empty());
+        assert!(out.is_err());
     }
 }
