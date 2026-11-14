@@ -82,6 +82,12 @@ async fn handle(
         "200" => (StatusCode::OK, r#"{"status":"ok"}"#.into()),
         "409" => (StatusCode::CONFLICT, r#"{"error":"duplicate"}"#.into()),
         "422" => (StatusCode::UNPROCESSABLE_ENTITY, REJECT_BODY.into()),
+        // storm-codex-server's answer for a replay it stored but could not turn into a match.
+        "parse_failed" => (
+            StatusCode::OK,
+            r#"{"status":"parse_failed","error_class":"too_old"}"#.into(),
+        ),
+        "parse_failed_no_class" => (StatusCode::OK, r#"{"status":"parse_failed"}"#.into()),
         "mixed" if filename.starts_with("slow") => (StatusCode::SERVICE_UNAVAILABLE, "busy".into()),
         "mixed" if filename.starts_with("bad") => {
             (StatusCode::UNPROCESSABLE_ENTITY, REJECT_BODY.into())

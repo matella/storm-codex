@@ -92,7 +92,11 @@ once the listener is bound (`/api/health` answers 200 during the whole sequence)
 A rescan or a folder change received during the backfill cancels it (the ledger is flushed) and
 the import restarts. Counts describe the current import run (backfill + live uploads since it
 started) and reset at each rescan; `failed` lists the files that exhausted their retries
-(retried at the next start), `rejected` the files refused as bad content during the run.
+(retried at the next start), `rejected` the files refused as bad content during the run: a 4xx
+content error, or a `200 {"status": "parse_failed", "error_class": c}` answer (the replay is
+archived but gave no match: too old, unsupported mode, computer players, stats failure...),
+listed with reason `not imported: c` and recorded in the ledger as rejected (never re-sent: the
+server keeps the archived copy, and `POST /api/admin/reprocess` re-parses `parse_failed` uploads).
 
 **Shutdown** (Ctrl-C, SIGTERM or `POST /api/standalone/shutdown`): the import task is told to
 stop first, while the server still answers: in-flight uploads are abandoned (not recorded, the

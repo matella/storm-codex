@@ -130,6 +130,34 @@ async fn upload_maps_status_codes() {
     assert_eq!(slash.upload(&replay).await, UploadResult::Uploaded);
 }
 
+/// A 200 whose body says `parse_failed` (the server kept the file but no match came out of
+/// it: too old, unsupported mode, stats failure...) is a rejection with that class as the
+/// reason, so the import lists it once at the end instead of counting it as imported.
+#[tokio::test(flavor = "multi_thread")]
+async fn upload_reports_a_parse_failed_answer_as_rejected() {
+    let server = spawn_server().await;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let replay = write_replay(dir.path(), "game.StormReplay", OLD);
+    let up = |mode: &str| Uploader::new(server.base(mode)).with_backoff_unit(FAST);
+    assert_eq!(
+        up("parse_failed").upload(&replay).await,
+        UploadResult::Rejected("not imported: too_old".into())
+    );
+    assert_eq!(
+        up("parse_failed_no_class").upload(&replay).await,
+        UploadResult::Rejected("not imported: parse_failed".into())
+    );
+    // never retried
+    assert_eq!(
+        server
+            .hits()
+            .iter()
+            .filter(|h| h.mode.starts_with("parse_failed"))
+            .count(),
+        2
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn upload_retries_then_reports_failure_without_recording() {
     let server = spawn_server().await;

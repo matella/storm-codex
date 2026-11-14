@@ -2,8 +2,9 @@
 //!
 //! The request body is the raw replay (`Content-Type: application/octet-stream`); the file
 //! name travels percent-encoded in `X-Filename`. Answers map to [`UploadResult`]:
-//! 2xx → `Uploaded`, 409 → `Duplicate`, content errors (400, 413, 415, 422) →
-//! `Rejected(body)` (never retried); network error, 5xx and any other 4xx (auth, config,
+//! 2xx → `Uploaded` (except a body `{"status":"parse_failed", "error_class": c}`, the server's
+//! answer for a stored replay that gave no match → `Rejected("not imported: c")`), 409 →
+//! `Duplicate`, content errors (400, 413, 415, 422) → `Rejected(body)` (never retried); network error, 5xx and any other 4xx (auth, config,
 //! rate limit) → retried with a `2^n` backoff, `Retryable` once [`MAX_ATTEMPTS`] are spent.
 //! A `Retryable` file must not be recorded in the ledger. An optional bearer token
 //! ([`Uploader::with_token`]) is sent as `Authorization: Bearer <token>`.
@@ -149,7 +150,10 @@ const CONTENT_REJECTIONS: [u16; 4] = [400, 413, 415, 422];
 
 fn classify(status: u16, body: String) -> Attempt {
     match status {
-        200..=299 => Attempt::Done(UploadResult::Uploaded),
+        200..=299 => Attempt::Done(match parse_failed_class(&body) {
+            Some(class) => UploadResult::Rejected(format!("not imported: {class}")),
+            None => UploadResult::Uploaded,
+        }),
         409 => Attempt::Done(UploadResult::Duplicate),
         s if CONTENT_REJECTIONS.contains(&s) => {
             let reason: String = body.trim().chars().take(MAX_REASON_CHARS).collect();
@@ -162,6 +166,28 @@ fn classify(status: u16, body: String) -> Attempt {
         }
         _ => Attempt::Retry(format!("HTTP {status}: {}", body.trim())),
     }
+}
+
+/// The error class of a storm-codex-server `200 {"status":"parse_failed", "error_class": ...}`
+/// answer (`"parse_failed"` when the class is missing): the file was stored but no match came
+/// out of it (too old, unsupported mode, stats failure...). Any other body is a success.
+fn parse_failed_class(body: &str) -> Option<String> {
+    #[derive(serde::Deserialize)]
+    struct Answer {
+        status: Option<String>,
+        error_class: Option<String>,
+    }
+    let answer: Answer = serde_json::from_str(body).ok()?;
+    if answer.status.as_deref() != Some("parse_failed") {
+        return None;
+    }
+    let class: String = answer
+        .error_class
+        .unwrap_or_else(|| "parse_failed".into())
+        .chars()
+        .take(MAX_REASON_CHARS)
+        .collect();
+    Some(class)
 }
 
 /// Percent-encodes a file name for the `X-Filename` header: ASCII alphanumerics and
