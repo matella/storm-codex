@@ -61,6 +61,24 @@ the uninstaller, the updater.
 | Restart with data → first page | 3.5 s, 3.6 s | same |
 | Installer size | **not measured** | no installer built (no `cargo tauri build` here; the first dry run records it) |
 
+## Final review fixes (2026-11-14)
+
+The whole-branch review (`.superpowers/sdd/2026-11-12-standalone-installer/final-review.md`) found
+one critical and five important gaps; all are fixed on the branch, with automated tests where
+code changed. What they change for the checklist below:
+- **C1 VC++ runtime.** `postgres\bin` now ships `vcruntime140.dll`, `vcruntime140_1.dll`,
+  `msvcp140.dll` (copied by `fetch-postgres.ps1`, checked by `scripts/check-pe-imports.ps1`: 159
+  PE files, 0 unresolved imports); the release server is built with a static CRT. Verified only
+  by import-table scans on this PC (which has the redistributable): step 0 is the real proof.
+- **I1 backups across PCs.** Archived paths are stored relative to the archive and older
+  absolute ones are resolved under the current archive (step 12).
+- **I2 / I3 updates.** A newer bundled reference snapshot is ingested, and replays parsed by an
+  older parser are re-processed in the background with progress on the Welcome page (step 6).
+- **I4 local-only API.** Host and Origin checks cover the whole app in standalone mode (step 3).
+- **I5 Start with Windows.** A checkbox in Settings → This PC (step 7b).
+- **Minors.** The player's in-game names are detected after the first import and editable on the
+  Welcome page (step 1); import error dialogs no longer carry runs of spaces.
+
 ## Operator acceptance checklist (not run)
 
 Do these on a **clean Windows 11 VM** (fresh local user) unless said otherwise. Record the
@@ -71,11 +89,17 @@ pair, set `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, 
 `plugins.updater.pubkey`, build/upload/pin the reference snapshot, run the release workflow as a
 **dry run** (draft) and download the installer. Record the installer size.
 
+0. **VM without the VC++ redistributable** (check *Apps → Installed apps*: no "Microsoft Visual
+   C++ 2015-2022 Redistributable (x64)"; `C:\Windows\System32\vcruntime140.dll` absent). Do steps
+   1–3 on it. *Expected:* `initdb`, Postgres and the server start (no `0xC0000135`); the
+   installed `postgres\bin` holds `vcruntime140.dll`, `vcruntime140_1.dll`, `msvcp140.dll`.
 1. **Install (acceptance 1).** Copy a real `Documents\Heroes of the Storm\Accounts\…` tree (or
    install HotS and log in) into the VM user's Documents. Run the installer (SmartScreen: More
    info → Run anyway). *Expected:* no admin prompt; app starts; loading window, then the Welcome
    page with a progress bar; import reaches `ready` with no click; the page shows where the data
    lives (`%LOCALAPPDATA%\com.matella.stormcodex`). Time install-finished → window and → `ready`.
+   Once `ready`, the Welcome page's "Your in-game names" shows the VM user's main HotS name (not
+   `matella`) and the stats pages use it.
 2. **Live game (acceptance 2).** With the app running, play a game (or copy a replay that is not
    in the folder yet, with a new file name). *Expected:* the match is in Matches within ~5 s, no
    restart.
@@ -83,7 +107,9 @@ pair, set `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, 
    `/draft/overlay`, `/ticker`, `/now-playing`, `/widget`, `/queue` (port = the one in the app's
    OBS URLs). *Expected:* each renders (no 404, no blank page). Repeat with another program
    listening on 8088 (e.g. `python -m http.server 8088 --bind ::`) before starting the app:
-   the app takes another port and `localhost` still reaches it.
+   the app takes another port and `localhost` still reaches it. From a normal browser tab on
+   another site, `fetch('http://127.0.0.1:<port>/api/admin/reprocess', {method: 'POST', mode:
+   'no-cors'})` must be refused (403 in `logs/server.log`, nothing re-processed).
 4. **Kill mid-import (acceptance 4).** Start from an empty data root (uninstall with "Delete the
    application data" ticked, reinstall), and during the import end `storm-codex-desktop.exe` in
    Task Manager. Relaunch. *Expected:* import resumes, ends `ready`; the number of matches equals
@@ -95,9 +121,15 @@ pair, set `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, 
    manual E2E"). *Expected:* banner and tray item "Restart to update"; click → app restarts on
    N+1; all matches still there; `server.log` shows the migrations. Repeat with the click during
    a backfill: resumes, nothing uploaded twice. Also run N+1's installer by hand over N: data kept.
+   If N+1 raises `PARSER_VERSION`: the Welcome page shows "Updating your stats for this version:
+   n of m" until done, and `uploads.parser_version` ends at the new value. If N+1 ships a newer
+   reference snapshot: a hero or talent only in the new snapshot shows its portrait and name.
 7. **Installer hooks.** Run the installer while the app runs: "Quit it first" message, app left
    running. Kill the app in Task Manager (Postgres keeps running), run the installer: it stops
    that Postgres (`postgres.log` fast shutdown) and replaces `postgres\`.
+7b. **Start with Windows.** Settings → This PC → tick "Start with Windows", sign out and in:
+   the app starts in the tray, no window; untick: no start at the next sign-in. Default (fresh
+   install) is unticked.
 8. **Uninstall.** Uninstall with the box unticked: `%LOCALAPPDATA%\com.matella.stormcodex` kept;
    reinstall: data back. Uninstall with the box ticked: folder gone.
 9. **Profile name with spaces and accents** (e.g. user `Mätt Test`). *Expected:* works (passed in
@@ -109,8 +141,10 @@ pair, set `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, 
     appears and everything still works.
 11. **No HotS install.** VM user without a `Heroes of the Storm` folder. *Expected:* phase
     `no-folders`, the Welcome page asks for a folder; adding one in settings starts the import.
-12. **Export / import.** Export from the operator's PC, import on the VM. *Expected:* same
-    matches; the replay archive restored.
+12. **Export / import.** Export from the operator's PC, import on the VM (a different Windows
+    user name). *Expected:* same matches; the replay archive restored; a match's raw dump
+    (`/api/matches/<id>/raw?stream=header`) and the 2D viewer work for an imported match (the
+    rows' old absolute paths are resolved under the VM's archive).
 13. **Perf on the operator's PC with the installed build:** first start → window and → `ready`
     on the real replays; API p95 with the installed build.
 

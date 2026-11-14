@@ -22,6 +22,15 @@ folders now load before the server listens (were `[]` while seeding); Postgres' 
 `%ProgramData%\StormCodex-<SID>` folder), so a Cyrillic profile name works (L1, verified end to end with binaries and
 data under a Cyrillic folder); replays the server stores as `parse_failed` are listed as "not imported" (L5).
 
+**Final whole-branch review (2026-11-14): fixed** — C1 (VC++ runtime bundled app-locally in `postgres\bin` + static
+CRT for the release server, both checked by `scripts/check-pe-imports.ps1`), I1 (archived paths relative + resolved
+under the current archive: backups move across PCs), I2 (newer bundled reference snapshot ingested after an update),
+I3 (outdated `parser_version` re-processed in the background, progress on Welcome), I4 (Host/Origin checks on the
+whole app in standalone mode), I5 ("Start with Windows" in This PC), plus in-game names detected after the first
+import (were the box operator's seed) and clean import error messages. Report:
+`.superpowers/sdd/2026-11-12-standalone-installer/final-fix-report.md`. Not verifiable here: a VM without the VC++
+redistributable (acceptance step 0), the release workflow and NSIS hooks (never run).
+
 **Next step (operator):**
 1. Generate the updater key pair (`cargo tauri signer generate`), set the secrets `TAURI_SIGNING_PRIVATE_KEY` and
    `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, replace `plugins.updater.pubkey` in `desktop/tauri.conf.json`.
