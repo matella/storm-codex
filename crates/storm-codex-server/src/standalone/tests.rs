@@ -3,7 +3,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use super::*;
-use crate::{api_router, config::Config, AppState};
+use crate::{config::Config, AppState};
 use axum::body::Body;
 use axum::http::{header, Method, Request, StatusCode};
 use axum::Router;
@@ -56,7 +56,7 @@ fn lazy_state(dir: &Path, standalone: Option<StandaloneState>) -> AppState {
 }
 
 fn app(state: &AppState) -> Router {
-    api_router(state).with_state(state.clone())
+    crate::app_router(state.clone())
 }
 
 /// Sends `req` (with `Host: 127.0.0.1` unless the test set one).
@@ -407,6 +407,106 @@ async fn cross_origin_writes_are_refused() {
     )
     .await;
     assert_eq!(code, StatusCode::ACCEPTED);
+}
+
+/// The served app as `run` builds it, with a front-end folder holding the app page.
+fn full_app(dir: &Path, standalone: bool) -> (AppState, Router) {
+    let web = dir.join("web");
+    std::fs::create_dir_all(web.join("app")).unwrap();
+    std::fs::create_dir_all(web.join("overlay")).unwrap();
+    std::fs::write(web.join("app/index.html"), "<html>app</html>").unwrap();
+    std::fs::write(web.join("overlay/index.html"), "<html>overlay</html>").unwrap();
+    let cfg = test_config(dir);
+    let st = standalone.then(|| StandaloneState::new(&cfg));
+    let mut state = lazy_state(dir, st);
+    let mut cfg = (*state.cfg).clone();
+    cfg.web_dir = Some(web);
+    cfg.standalone = standalone;
+    state.cfg = Arc::new(cfg);
+    if let Some(st) = &state.standalone {
+        st.set_port(8088);
+    }
+    let app = crate::app_router(state.clone());
+    (state, app)
+}
+
+/// A DNS-rebound page (`evil.example` resolving to 127.0.0.1) cannot use any route of the
+/// open-mode API, the pages or the images: not only `/api/standalone/*`.
+#[tokio::test]
+async fn standalone_refuses_a_rebound_host_on_the_whole_app() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (_state, app) = full_app(tmp.path(), true);
+    for (method, path) in [
+        (Method::GET, "/api/health"),
+        (Method::GET, "/api/matches"),
+        (Method::POST, "/api/admin/tokens"),
+        (Method::POST, "/api/admin/reprocess"),
+        (Method::POST, "/api/draft/reset"),
+        (Method::GET, "/"),
+        (Method::GET, "/cast/overlay"),
+    ] {
+        let req = Request::builder()
+            .method(method.clone())
+            .uri(path)
+            .header(header::HOST, "evil.example:8088")
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(
+            send(&app, req).await.0,
+            StatusCode::FORBIDDEN,
+            "{method} {path}"
+        );
+    }
+}
+
+/// Any site can fire a body-less cross-origin POST (`fetch(…, {mode: 'no-cors'})`): with a
+/// loopback Host but a foreign Origin, it is refused before the handler runs.
+#[tokio::test]
+async fn standalone_refuses_a_cross_site_post_on_the_whole_app() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (_state, app) = full_app(tmp.path(), true);
+    for path in [
+        "/api/admin/reprocess",
+        "/api/draft/reset",
+        "/api/draft/undo",
+        "/api/admin/tokens",
+    ] {
+        let req = Request::post(path)
+            .header(header::HOST, "127.0.0.1:8088")
+            .header(header::ORIGIN, "https://evil.example")
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(send(&app, req).await.0, StatusCode::FORBIDDEN, "{path}");
+    }
+}
+
+/// OBS browser sources (GET, no `Origin`) and the app's pages keep working on every loopback
+/// name the user may have typed.
+#[tokio::test]
+async fn standalone_serves_obs_sources_and_pages_on_loopback_hosts() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (_state, app) = full_app(tmp.path(), true);
+    for host in ["127.0.0.1:8088", "localhost:8088", "[::1]:8088"] {
+        for path in ["/api/standalone/status", "/cast/overlay", "/"] {
+            let req = Request::get(path)
+                .header(header::HOST, host)
+                .body(Body::empty())
+                .unwrap();
+            assert_eq!(send(&app, req).await.0, StatusCode::OK, "{host} {path}");
+        }
+    }
+}
+
+/// The box (behind its reverse proxy, public Host names) is unaffected.
+#[tokio::test]
+async fn server_mode_keeps_accepting_any_host() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (_state, app) = full_app(tmp.path(), false);
+    let req = Request::get("/cast/overlay")
+        .header(header::HOST, "stats.example.org")
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(send(&app, req).await.0, StatusCode::OK);
 }
 
 // ── DB-backed (skipped without DATABASE_URL) ─────────────────────────────────

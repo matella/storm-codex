@@ -185,8 +185,10 @@ status change → WS `live.updated` (signal only).
 ## Standalone desktop app (`standalone/api.rs`) — only when `STANDALONE=1`
 
 `GET /api/standalone/status`, `PUT /api/standalone/folders`, `POST /api/standalone/rescan`,
-`POST /api/standalone/shutdown`: loopback `Host` only (other hosts 403), cross-origin writes
-refused (403), 404 when the server is not in standalone mode. Bodies and answers: the route table
+`POST /api/standalone/shutdown`: 404 when the server is not in standalone mode.
+In standalone mode **every** route of this page (and the pages, images and `/ws`) accepts only
+a loopback `Host` (other hosts 403) and refuses non-`GET`/`HEAD` requests whose `Origin` is not
+loopback (403); see [04-serveur.md](04-serveur.md) "Standalone import". Bodies and answers: the route table
 in [04-serveur.md](04-serveur.md) ("Standalone import").
 
 ## Static

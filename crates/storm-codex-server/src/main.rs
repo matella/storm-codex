@@ -240,20 +240,7 @@ async fn run() -> Result<(), String> {
     }
     let bind = state.cfg.bind_addr.clone();
     let standalone_state = state.clone();
-    let app = api_router(&state);
-    // the front-end: bundle files under `/v2/<bundle>/`, every page at `/` (API routes first)
-    let app = match state.cfg.web_dir.as_deref() {
-        Some(dir) => serve_v2_at_root(serve_v2(app, Some(dir)), dir),
-        None => app,
-    }
-    .with_state(state)
-    // Request body limit: the axum default (2 MB) rejected with 413 — BEFORE the handler, so
-    // without a trace or an uploads row — the replays of long games (a 5v5 Braxis Holdout exceeds
-    // 2 MB), making the uploader loop. 64 MB covers it widely (replays < ~10 MB).
-    .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024))
-    // gzip/brotli according to `Accept-Encoding` (API JSON, JS/CSS bundle); the default predicate
-    // skips small responses, images and streams (WS: 101 response without a body).
-    .layer(tower_http::compression::CompressionLayer::new());
+    let app = app_router(state);
 
     let listener = tokio::net::TcpListener::bind(&bind)
         .await
@@ -338,12 +325,42 @@ async fn shutdown_signal() {
     tracing::info!("shutdown requested: finishing the ongoing requests");
 }
 
+/// The whole served app: API routes, images, the front-end (when `WEB_DIR` is set) and the
+/// global layers.
+fn app_router(state: AppState) -> Router {
+    let app = api_router(&state);
+    // the front-end: bundle files under `/v2/<bundle>/`, every page at `/` (API routes first)
+    let app = match state.cfg.web_dir.as_deref() {
+        Some(dir) => serve_v2_at_root(serve_v2(app, Some(dir)), dir),
+        None => app,
+    }
+    .with_state(state.clone())
+    // Request body limit: the axum default (2 MB) rejected with 413 — BEFORE the handler, so
+    // without a trace or an uploads row — the replays of long games (a 5v5 Braxis Holdout exceeds
+    // 2 MB), making the uploader loop. 64 MB covers it widely (replays < ~10 MB).
+    .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024))
+    // gzip/brotli according to `Accept-Encoding` (API JSON, JS/CSS bundle); the default predicate
+    // skips small responses, images and streams (WS: 101 response without a body).
+    .layer(tower_http::compression::CompressionLayer::new());
+    // Standalone: the server runs on a player's PC in open mode (no ADMIN_TOKEN), so every
+    // request must name the loopback server (DNS rebinding) and no write may come from another
+    // site (CSRF). Outermost, so it also covers the pages, images and the WebSocket.
+    if state.standalone.is_some() {
+        app.layer(axum::middleware::from_fn_with_state(
+            state,
+            standalone::api::local_requests_only,
+        ))
+    } else {
+        app
+    }
+}
+
 /// All the API routes + images (without the SPA fallback) — extracted for the integration tests.
 /// The `/api/standalone/*` routes are added only in standalone mode (404 otherwise).
 fn api_router(state: &AppState) -> Router<AppState> {
     let router = base_router(state);
     if state.standalone.is_some() {
-        router.merge(standalone::api::router(state))
+        router.merge(standalone::api::router())
     } else {
         router
     }

@@ -1,10 +1,11 @@
-//! `/api/standalone/*` routes, registered only in standalone mode (loopback-only server).
+//! `/api/standalone/*` routes, registered only in standalone mode (loopback-only server), and
+//! the request filter that standalone mode applies to the whole app.
 //!
-//! Unauthenticated, like the rest of a single-user local install, but every request must come
-//! from the app itself (403 otherwise):
+//! Unauthenticated, like the rest of a single-user local install, but every request to any
+//! route (API, pages, images, WebSocket) must come from this PC (403 otherwise):
 //! - the `Host` must name the loopback server exactly (`127.0.0.1`, `localhost` or `[::1]`,
 //!   with no port or the bound port): a DNS-rebound page (`evil.example` resolving to
-//!   127.0.0.1) cannot read the status (folders and data path carry the user name);
+//!   127.0.0.1) cannot read the stats or the status, mint an upload token or delete data;
 //! - a write carrying a non-loopback `Origin` (a web page on another site posting to the
 //!   local server) is refused.
 
@@ -21,16 +22,12 @@ use serde::Deserialize;
 use super::{resolve_folders, save_extra_folders, Command, Phase};
 use crate::AppState;
 
-pub fn router(state: &AppState) -> Router<AppState> {
+pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/standalone/status", get(status))
         .route("/api/standalone/folders", put(put_folders))
         .route("/api/standalone/rescan", post(rescan))
         .route("/api/standalone/shutdown", post(shutdown))
-        .route_layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            local_requests_only,
-        ))
 }
 
 fn error(code: StatusCode, message: String) -> Response {
@@ -74,7 +71,9 @@ fn is_local_host(host: &str, bound: Option<u16>) -> bool {
     }
 }
 
-async fn local_requests_only(
+/// Middleware applied to the whole app in standalone mode (`app_router`): API, pages, images,
+/// WebSocket. OBS browser sources send GETs without `Origin` and are unaffected.
+pub(crate) async fn local_requests_only(
     State(state): State<AppState>,
     request: Request,
     next: Next,

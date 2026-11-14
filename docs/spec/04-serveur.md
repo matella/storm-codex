@@ -110,15 +110,24 @@ awaited for at most 10 s (then aborted) before the HTTP server drains and `run()
 | `POST /api/standalone/rescan` | **202**; re-runs the disk gate and the backfill |
 | `POST /api/standalone/shutdown` | **202**; same graceful shutdown as Ctrl-C (used by the desktop shell before it stops Postgres) |
 
-The routes are unauthenticated (loopback-only server, single user), but every request must
-come from the app itself, otherwise **403**:
-- **Host** (all four routes, reads included): the `Host` header (or the HTTP/2 authority) must
+The routes are unauthenticated (loopback-only server, single user, no `ADMIN_TOKEN`, so the
+whole API is in open mode). In standalone mode every request to **any** route (the whole API,
+the pages, `/v2` bundles, `/images`, `/ws`; one middleware on the whole app, `app_router`) must
+come from this PC, otherwise **403**:
+- **Host** (every method, reads included): the `Host` header (or the HTTP/2 authority) must
   be exactly `127.0.0.1`, `localhost` or `[::1]` (case-sensitive, no suffix), with no port or
   the port actually bound; a missing `Host` is refused. This blocks DNS rebinding (a foreign
-  name resolving to 127.0.0.1 cannot read the status, whose folders and data path carry the
-  Windows user name). The desktop shell loads `http://127.0.0.1:<port>/`, which passes;
-- **Origin** (writes): a write carrying a non-loopback `Origin` header (a foreign web page
-  posting to the local server) is refused.
+  name resolving to 127.0.0.1 cannot read the stats or the status, whose folders and data path
+  carry the Windows user name, mint an upload token or delete data). The desktop shell loads
+  `http://127.0.0.1:<port>/`, which passes; OBS browser sources on `127.0.0.1`/`localhost`
+  and the bound port pass too;
+- **Origin** (every method but `GET`/`HEAD`): a request carrying a non-loopback `Origin`
+  header (a foreign web page posting to the local server, including a body-less
+  `fetch(…, {mode: 'no-cors'})` to `/api/admin/reprocess` or `/api/draft/reset`) is refused.
+  Requests without `Origin` (OBS, the in-process uploader, the shell) are unaffected.
+
+Server mode (the box, `STANDALONE` unset) is unchanged: no Host or Origin filter (it sits behind
+its reverse proxy).
 
 ## Played-hero correction (`project.rs`)
 
