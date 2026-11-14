@@ -834,7 +834,8 @@ fn commit(stack: &mut Stack, work: &Path, data: &DataDir, rename: Rename) -> Res
         // kept, server left stopped: the next start puts the folder back (rollback).
         Err(e) if !archive.exists() && old_dir(&archive).exists() => {
             return Err(format!(
-                "the replay folder could not be replaced and the previous one could not be put                  back ({e}); the server is stopped: restart Storm Codex to finish the rollback"
+                "the replay folder could not be replaced and the previous one could not be put \
+                 back ({e}); the server is stopped: restart Storm Codex to finish the rollback"
             ));
         }
         Err(e) => Err(discard(
@@ -861,7 +862,9 @@ fn commit(stack: &mut Stack, work: &Path, data: &DataDir, rename: Rename) -> Res
                     // match.
                     Err(u) => {
                         return Err(format!(
-                            "switching to the imported database failed ({e}) and the previous                              replay folder could not be put back ({u}); restart Storm Codex to                              finish the rollback"
+                            "switching to the imported database failed ({e}) and the previous \
+                             replay folder could not be put back ({u}); restart Storm Codex to \
+                             finish the rollback"
                         ))
                     }
                 },
@@ -873,13 +876,16 @@ fn commit(stack: &mut Stack, work: &Path, data: &DataDir, rename: Rename) -> Res
                     .and_then(|()| complete_import(data))
                     .map_err(|f| {
                         format!(
-                            "the backup was imported and is in use, but its cleanup failed                              ({e}; {f}); it is completed at the next start"
+                            "the backup was imported and is in use, but its cleanup failed \
+                             ({e}; {f}); it is completed at the next start"
                         )
                     }),
                 // Unknown state: leave everything (journal included) to the next start.
                 Err(s) => {
                     return Err(format!(
-                        "switching to the imported database failed ({e}) and whether it took                          effect could not be read ({s}); the server is stopped: restart Storm                          Codex to complete or roll back the import"
+                        "switching to the imported database failed ({e}) and whether it took \
+                         effect could not be read ({s}); the server is stopped: restart Storm \
+                         Codex to complete or roll back the import"
                     ))
                 }
             },
@@ -903,6 +909,23 @@ mod tests {
     use crate::supervise::SERVER_PORT;
     use std::collections::BTreeMap;
     use zip::write::SimpleFileOptions;
+
+    /// The import error dialogs show these strings as they are: a string literal continued
+    /// on a new line without `\` would carry the source indentation into the message.
+    #[test]
+    fn user_messages_carry_no_source_indentation() {
+        let source = include_str!("backup.rs");
+        let bad: Vec<(usize, &str)> = source
+            .lines()
+            .enumerate()
+            .filter(|(_, l)| {
+                let t = l.trim_start();
+                t.starts_with('"') && t.trim_end().contains("  ")
+            })
+            .map(|(i, l)| (i + 1, l.trim()))
+            .collect();
+        assert!(bad.is_empty(), "space runs in messages: {bad:?}");
+    }
 
     fn write(path: &Path, body: &[u8]) {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
