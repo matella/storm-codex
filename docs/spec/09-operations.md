@@ -187,7 +187,13 @@ fresh migrated cluster → import.
   `clean_stale` → password check → `init_if_needed` → `start` → `ensure_database("storm_codex")`
   → server port (`pick_port(8088)`) → spawn the server (no console window, cwd = data root,
   stdout/stderr → `logs/server.log`, the previous run kept as `logs/server.prev.log`) → poll
-  `GET /api/health` until 200 (60 s). Server environment: `STANDALONE=1`,
+  `GET /api/health` until 200 (60 s). **Port choice (`pick_port`):** the preferred port is kept
+  only if 127.0.0.1 can be bound **and** nothing accepts a connection on `[::1]` (250 ms probe);
+  otherwise an OS-assigned port passing the same test. Reason: `http://localhost:<port>` resolves
+  to `::1` first on Windows, and Windows lets the server bind 127.0.0.1 while another program of
+  the same user listens on `[::]` (seen on the operator's PC: qBittorrent's web UI on `[::]:8088`
+  answered `http://localhost:8088/cast/overlay` with 404 while the app was on 127.0.0.1:8088).
+  The URLs the app shows use `127.0.0.1` (the page origin). Server environment: `STANDALONE=1`,
   `BIND_ADDR=127.0.0.1:<port>`, `DATABASE_URL` (holds the password: never logged),
   `ARCHIVE_DIR`, `RAW_CACHE_DIR`, `IMAGES_DIR`, `LEDGER_FILE=<data>/uploaded.json`,
   `WEB_DIR=<res>/web`, `MINIMAPS_BUNDLE_DIR=<res>/minimaps`,
