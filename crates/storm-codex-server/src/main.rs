@@ -158,9 +158,13 @@ async fn run() -> Result<(), String> {
         .await
         .unwrap_or_else(cast::Series::new);
     let lobby_initial = lobby::store::load(&db).await;
-    let standalone = cfg
-        .standalone
-        .then(|| Arc::new(standalone::StandaloneState::new(&cfg)));
+    let standalone = if cfg.standalone {
+        let st = standalone::StandaloneState::new(&cfg);
+        st.load_saved_extras(&db).await;
+        Some(Arc::new(st))
+    } else {
+        None
+    };
     let state = AppState {
         cfg: Arc::new(cfg),
         db,

@@ -471,6 +471,112 @@ async fn put_folders_persists_and_returns_status() {
         .unwrap();
 }
 
+async fn saved_extras(db: &sqlx::PgPool) -> Option<serde_json::Value> {
+    sqlx::query_scalar("SELECT value FROM app_settings WHERE key = 'standalone_extra_folders'")
+        .fetch_optional(db)
+        .await
+        .unwrap()
+}
+
+async fn clear_saved_extras(db: &sqlx::PgPool) {
+    sqlx::query("DELETE FROM app_settings WHERE key = 'standalone_extra_folders'")
+        .execute(db)
+        .await
+        .unwrap();
+}
+
+/// Only the folders the user sent are saved: the detected folders (shown in `folders`) never
+/// become saved extras, and a parent stays a parent (not its expansion).
+#[tokio::test]
+async fn put_folders_saves_only_the_sent_extras_not_the_detected_folders() {
+    let tmp = tempfile::tempdir().unwrap();
+    let detected = tmp.path().join("Documents").join("Multiplayer");
+    std::fs::create_dir_all(&detected).unwrap();
+    let extra = tmp.path().join("backup");
+    std::fs::create_dir_all(extra.join("old")).unwrap();
+    old_replay(&extra.join("old"), "x.StormReplay", b"x");
+    let found = detected.clone();
+    let Some((state, _settings)) = db_state(tmp.path(), move |c| {
+        StandaloneState::new(c).with_detector(move || vec![found.clone()])
+    })
+    .await
+    else {
+        return;
+    };
+    clear_saved_extras(&state.db).await;
+    let _commands = state.standalone.as_ref().unwrap().take_commands().unwrap();
+    let app = app(&state);
+    let extra_str = extra.to_string_lossy().to_string();
+    let (code, v) = send(&app, put_folders(&[&extra_str])).await;
+    assert_eq!(code, StatusCode::OK, "{v}");
+    let detected_str = detected.to_string_lossy().to_string();
+    let resolved = extra.join("old").to_string_lossy().to_string();
+    assert_eq!(v["folders"], serde_json::json!([detected_str, resolved]));
+    assert_eq!(v["extraFolders"], serde_json::json!([extra_str]));
+    assert_eq!(
+        saved_extras(&state.db).await,
+        Some(serde_json::json!([extra_str]))
+    );
+    clear_saved_extras(&state.db).await;
+}
+
+/// A refused folder list (400) changes neither the saved extras nor the status.
+#[tokio::test]
+async fn put_folders_400_leaves_the_saved_extras_unchanged() {
+    let tmp = tempfile::tempdir().unwrap();
+    let kept = tmp.path().join("kept");
+    std::fs::create_dir_all(&kept).unwrap();
+    let Some((state, _settings)) = db_state(tmp.path(), |c| {
+        StandaloneState::new(c).with_detector(Vec::new)
+    })
+    .await
+    else {
+        return;
+    };
+    let _commands = state.standalone.as_ref().unwrap().take_commands().unwrap();
+    let app = app(&state);
+    let kept_str = kept.to_string_lossy().to_string();
+    let (code, _) = send(&app, put_folders(&[&kept_str])).await;
+    assert_eq!(code, StatusCode::OK);
+    let missing = tmp.path().join("missing").to_string_lossy().to_string();
+    let (code, v) = send(&app, put_folders(&[&kept_str, &missing])).await;
+    assert_eq!(code, StatusCode::BAD_REQUEST, "{v}");
+    assert_eq!(
+        saved_extras(&state.db).await,
+        Some(serde_json::json!([kept_str]))
+    );
+    assert_eq!(
+        get_status(&app).await["extraFolders"],
+        serde_json::json!([kept_str])
+    );
+    clear_saved_extras(&state.db).await;
+}
+
+/// The saved extras are in the status from the first request, while the import task is still
+/// seeding: the settings page builds its `PUT` from `extraFolders`, so an empty list there
+/// would make "add a folder" save over the user's extras.
+#[tokio::test]
+async fn saved_extras_are_in_the_status_while_seeding() {
+    let tmp = tempfile::tempdir().unwrap();
+    let Some((state, _settings)) = db_state(tmp.path(), |c| {
+        StandaloneState::new(c).with_detector(Vec::new)
+    })
+    .await
+    else {
+        return;
+    };
+    save_extra_folders(&state.db, &["D:/Backup".to_string()])
+        .await
+        .unwrap();
+    // what `main` builds at startup, before the import task runs
+    let fresh = StandaloneState::new(&state.cfg);
+    fresh.load_saved_extras(&state.db).await;
+    let status = fresh.status();
+    assert_eq!(status.phase, Phase::Seeding);
+    assert_eq!(status.extra_folders, vec!["D:/Backup".to_string()]);
+    clear_saved_extras(&state.db).await;
+}
+
 #[tokio::test]
 async fn token_provisioning_is_idempotent() {
     let Some(state) = crate::api_tests::test_state(None).await else {

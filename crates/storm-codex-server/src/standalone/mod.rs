@@ -229,6 +229,18 @@ impl StandaloneState {
     }
 
     /// Records the saved extra folders shown by the status (`extraFolders`).
+    /// Puts the saved extra folders in the status. `main` calls it before the server listens,
+    /// so `extraFolders` is right while the import task is still seeding (the settings page
+    /// builds its `PUT` from it: an empty list there would save over the user's extras).
+    pub async fn load_saved_extras(&self, db: &sqlx::PgPool) {
+        let extras: Vec<String> = load_extra_folders(db)
+            .await
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        self.set_extra_folders(&extras);
+    }
+
     pub(crate) fn set_extra_folders(&self, extras: &[String]) {
         lock(&self.view).extra_folders = extras.to_vec();
     }
