@@ -1223,3 +1223,15 @@ async fn operator_names_are_detected_once_after_the_import() {
         None => assert_eq!(detected, Some(serde_json::json!(["matella"]))),
     }
 }
+
+#[cfg(windows)]
+#[test]
+fn only_plain_local_folders_are_accepted() {
+    use super::is_plain_local_folder as ok;
+    use std::path::Path;
+    assert!(ok(Path::new(r"C:\Users\me\Replays")));
+    assert!(!ok(Path::new(r"\server\share\Replays")));
+    assert!(!ok(Path::new(r"\?\UNC\server\share")));
+    assert!(!ok(Path::new(r"\.\pipe\x")));
+    assert!(!ok(Path::new(r"relative\dir")));
+}

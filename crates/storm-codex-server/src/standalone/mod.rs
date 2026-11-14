@@ -400,7 +400,24 @@ pub(crate) fn replay_bytes(files: &[PathBuf]) -> u64 {
         .fold(0u64, |total, meta| total.saturating_add(meta.len()))
 }
 
+/// True for a plain absolute local folder path: no UNC share (`\\server\share`), device or
+/// verbatim prefix (`\\?\`, `\\.\`), no relative path. A backup restored from someone else
+/// (or a crafted one) must not make the watcher touch a network share (NTLM leak) or a device.
+/// A mapped network drive (`Z:\`) cannot be told apart from a local one here.
+pub(crate) fn is_plain_local_folder(path: &Path) -> bool {
+    use std::path::{Component, Prefix};
+    if !path.is_absolute() {
+        return false;
+    }
+    match path.components().next() {
+        Some(Component::Prefix(p)) => matches!(p.kind(), Prefix::Disk(_)),
+        Some(Component::RootDir) => true,
+        _ => false,
+    }
+}
+
 /// Extra folders saved by `PUT /api/standalone/folders` (empty when unset or unreadable).
+/// Entries that are not plain local folders (see [`is_plain_local_folder`]) are dropped.
 pub(crate) async fn load_extra_folders(db: &sqlx::PgPool) -> Vec<PathBuf> {
     match sqlx::query_scalar::<_, serde_json::Value>(
         "SELECT value FROM app_settings WHERE key = $1",
@@ -413,6 +430,7 @@ pub(crate) async fn load_extra_folders(db: &sqlx::PgPool) -> Vec<PathBuf> {
             .unwrap_or_default()
             .into_iter()
             .map(PathBuf::from)
+            .filter(|p| is_plain_local_folder(p))
             .collect(),
         Ok(None) => Vec::new(),
         Err(e) => {

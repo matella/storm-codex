@@ -127,7 +127,15 @@ impl Config {
     /// backup restored on another PC or user profile keeps working without rewriting rows.
     pub fn archived_file(&self, stored: &str) -> PathBuf {
         let path = Path::new(stored);
-        if path.is_absolute() && path.starts_with(&self.archive_dir) && path.exists() {
+        // `starts_with` compares components without normalising, so `<archive>/../x` would
+        // pass: refuse any `.`/`..` component before trusting the stored absolute path
+        let plain = path.components().all(|c| {
+            !matches!(
+                c,
+                std::path::Component::ParentDir | std::path::Component::CurDir
+            )
+        });
+        if plain && path.is_absolute() && path.starts_with(&self.archive_dir) && path.exists() {
             return path.to_path_buf();
         }
         let mut parts = stored.rsplit(['/', '\\']).filter(|p| !p.is_empty());
@@ -205,6 +213,23 @@ mod tests {
             orpheus_url: None,
             patch_webhook_url: None,
         }
+    }
+
+    #[test]
+    fn archived_file_never_follows_parent_components_out_of_the_archive() {
+        let dir = std::env::temp_dir().join(format!("sc-arch-{}", std::process::id()));
+        let archive = dir.join("archive");
+        std::fs::create_dir_all(&archive).unwrap();
+        std::fs::write(dir.join("secret.txt"), b"x").unwrap();
+        let mut c = cfg("127.0.0.1:0", true);
+        c.archive_dir = archive.clone();
+        let crafted = archive.join("..").join("secret.txt");
+        let got = c.archived_file(&crafted.to_string_lossy());
+        assert!(got.starts_with(&archive), "{got:?}");
+        assert!(!got
+            .components()
+            .any(|x| x == std::path::Component::ParentDir));
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

@@ -127,7 +127,7 @@ async fn put_folders(State(state): State<AppState>, Json(body): Json<FoldersBody
     let mut extras = Vec::with_capacity(body.folders.len());
     for folder in &body.folders {
         let path = PathBuf::from(folder.trim());
-        if folder.trim().is_empty() || !path.is_dir() {
+        if folder.trim().is_empty() || !super::is_plain_local_folder(&path) || !path.is_dir() {
             return error(
                 StatusCode::BAD_REQUEST,
                 format!("not an existing folder: {folder:?}"),
