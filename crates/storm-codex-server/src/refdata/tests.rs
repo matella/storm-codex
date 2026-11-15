@@ -349,6 +349,27 @@ fn slugs_and_keys() {
     assert_eq!(universe("Classic"), "Nexus");
 }
 
+/// Image destinations come from dataset names: a crafted name cannot escape the images folder.
+#[test]
+fn unsafe_image_destinations_are_refused() {
+    assert!(safe_image_dest("heroes/abathur.png"));
+    assert!(safe_image_dest("battlegrounds/blackhearts-bay.png"));
+    assert!(safe_image_dest(&format!(
+        "battlegrounds/{}.png",
+        map_slug("Sandbox (Cursed Hollow)")
+    )));
+    for bad in [
+        format!("battlegrounds/{}.png", map_slug("../../etc/passwd")),
+        format!("battlegrounds/{}/x.png", map_slug("..")),
+        format!("battlegrounds/{}.png", map_slug("C:\\Windows\\x")),
+        format!("battlegrounds/{}.png", map_slug("Checkpoint: Hanamura")),
+        "/abs.png".to_string(),
+        "heroes//x.png".to_string(),
+    ] {
+        assert!(!safe_image_dest(&bad), "{bad}");
+    }
+}
+
 /// Criterion 1 on the whole release (`REFDATA_DATASET_DIR`).
 #[test]
 fn full_release_counts() {
@@ -387,7 +408,8 @@ fn full_release_counts() {
         .filter(|s| s["heroId"].is_string())
         .count();
     assert_eq!(rows.sections.len(), hero_sections);
-    // every hero portrait and every map art of the release is listed
+    // every hero portrait and every map art of the release is listed, except "Checkpoint: Hanamura"
+    // (its slug holds a `:`, refused by `safe_image_dest`)
     assert_eq!(
         rows.images
             .iter()
@@ -400,7 +422,7 @@ fn full_release_counts() {
             .iter()
             .filter(|i| i.dest.starts_with("battlegrounds/"))
             .count(),
-        35
+        34
     );
     let alias = rows
         .patches

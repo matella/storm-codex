@@ -230,7 +230,11 @@ records `app_settings.refdata_dataset_version`.
   front: lowercase, apostrophes dropped, spaces → `-`).
 - **Images (D3).** The square `heroSelect` icon when the dataset bundles it, else the loading
   portrait. A file already in `IMAGES_DIR` is never overwritten, so the square icons vendored by
-  the old API stay on the box; new heroes and fresh installs get the portrait.
+  the old API stay on the box; new heroes and fresh installs get the portrait. Destinations are
+  built from dataset names, so each path segment must be a plain file name (ASCII alphanumerics,
+  `-`, `_`, `.`, `(`, `)`; not `.`/`..`), otherwise the image is skipped with a warning
+  (`refdata::safe_image_dest`). In release `data-c8d8ff8f…` this skips one map, "Checkpoint:
+  Hanamura": its slug has a `:`, which on Windows would name an NTFS alternate data stream.
 - **Patch detail.** Rebuilt in the old API shape and stored in `dim_patches.data.detail`:
   `sectionType` = `Hero` (section `heroId`), `Battleground` (`battlegroundId`) or `General`;
   `anchor` = section `id`; `tableOfContents` from `heading`/`level`; `content` = the article HTML

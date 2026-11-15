@@ -279,6 +279,22 @@ pub fn map_slug(name: &str) -> String {
         .join("-")
 }
 
+/// An image destination is joined to the images folder, and the names it is built from come from the
+/// dataset: every `/`-separated segment must be a plain file name (ASCII alphanumerics, `-`, `_`, `.`,
+/// `(`, `)`; not empty, `.` or `..`), so a crafted map or hero name cannot write outside that folder.
+/// A `:` is refused too: on Windows it would name an NTFS alternate data stream ("Checkpoint: Hanamura"
+/// gets no map art).
+pub fn safe_image_dest(dest: &str) -> bool {
+    dest.split('/').all(|seg| {
+        !seg.is_empty()
+            && seg != "."
+            && seg != ".."
+            && seg
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '(' | ')'))
+    })
+}
+
 /// Normalises a hero name for the patch-section join (mirror of `hero_key()` on the front side):
 /// accents folded, lowercase alphanumeric only, leading "the" removed ("The Lost Vikings" → `lostvikings`).
 pub fn hero_key(s: &str) -> String {
@@ -327,6 +343,10 @@ pub fn build(ds: &Dataset) -> Result<Rows, RefdataError> {
         })
         .collect();
     let image = |file: Option<&str>, dest: String| -> Option<ImageCopy> {
+        if !safe_image_dest(&dest) {
+            tracing::warn!("reference data: image destination {dest:?} refused (unsafe path)");
+            return None;
+        }
         let (path, sha) = by_file.get(file?)?;
         Some(ImageCopy {
             source: (*path).to_string(),
