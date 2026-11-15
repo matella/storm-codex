@@ -54,7 +54,7 @@ fn talent_hero(p: &J, lut: &HashMap<String, String>) -> Option<String> {
 
 /// Toon → played hero, only for the players whose hero resolved through the talents differs from the
 /// parser's hero (attribute 4002).
-fn hero_corrections(
+pub(crate) fn hero_corrections(
     players: &Map<String, J>,
     lut: &HashMap<String, String>,
 ) -> HashMap<String, String> {

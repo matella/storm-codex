@@ -108,6 +108,8 @@ pub struct PatchDetail {
     pub content: Option<String>,
     pub table_of_contents: Vec<TocEntry>,
     pub sections: Vec<PatchSection>,
+    /// Only community sources: labelled "Community notes", never presented as official.
+    pub community_only: bool,
 }
 
 /// Table of contents without the `Quick Navigation` entry (the page itself is the navigation).

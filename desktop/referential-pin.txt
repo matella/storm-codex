@@ -1,11 +1,8 @@
-# Reference-data snapshot (referential.tar.gz: heroes, talents, patches, images) bundled by the
-# standalone desktop installer. Built by scripts/make-referential.sh from the operator's
-# HotsPatchNotes API, uploaded by the operator as a GitHub release asset (a pre-release that is
-# never "latest", see docs/spec/09-operations.md), then pinned here. Read by
-# scripts/fetch-referential.ps1, which refuses the file unless the SHA-256 matches.
-# Refresh = new snapshot, new asset, change both lines in the same commit.
-#
-# PLACEHOLDER: no snapshot has been uploaded yet. The release workflow fails on purpose until the
-# operator replaces both values with the real asset URL and SHA-256.
-url=PLACEHOLDER-upload-referential.tar.gz-then-put-its-release-asset-url-here
-sha256=PLACEHOLDER-sha256-printed-by-scripts-make-referential.sh
+# Reference dataset bundled (trimmed) by the standalone desktop installer: a HotsPatchNotes dataset release
+# (schema v1, https://github.com/matella/HeroesOfTheStormPatchNotes/releases), pinned by the URL and SHA-256 of
+# its `dataset.tar.gz` (spec docs/specs/2026-11-15-reference-dataset-adapter-design.md, D5).
+# The release workflow downloads it, refuses it unless the SHA-256 matches, then runs
+# `storm-codex-server refdata trim` to build the bundled referential.tar.gz (only what the app reads).
+# Refresh = pick a newer `data-<sha256>` release, change both lines in the same commit (the tag is the SHA-256).
+url=https://github.com/matella/HeroesOfTheStormPatchNotes/releases/download/data-c8d8ff8f5357d9e8b644d416376bb541c3dd31ec3406f60c9f41f44037483bab/dataset.tar.gz
+sha256=c8d8ff8f5357d9e8b644d416376bb541c3dd31ec3406f60c9f41f44037483bab

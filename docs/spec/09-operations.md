@@ -63,7 +63,10 @@ app" below. Everything else is `ci.yml`.
   (`VersionMismatch`) for every database that already applied it. A schema change = a
   **new** migration. Modifying a migration added in the same PR is still allowed.
 - `rust`: strict clippy (`-D warnings`) + `cargo test --workspace` against a **Postgres 17
-  service** (DB-gated integration tests actually run). The supervisor's real-Postgres tests need
+  service** (DB-gated integration tests actually run; the `refdata` tests create and drop their own
+  throwaway databases on it). Before the tests it downloads the five data files of the HotsPatchNotes
+  dataset release pinned in `desktop/referential-pin.txt` into `REFDATA_DATASET_DIR`, so the
+  full-release `refdata` tests (counts, corpus talent-hero diff) run too. The supervisor's real-Postgres tests need
   Postgres **binaries** (`PG_BIN_DIR`), not a server: here they skip or stay ignored; the `desktop`
   job runs them.
 - `desktop` (windows-latest): the desktop shell (`desktop/`, own `Cargo.lock`) —
@@ -527,8 +530,8 @@ fresh migrated cluster → import.
   what `supervise.rs` resolves: `../target/release/storm-codex-server.exe` →
   `storm-codex-server.exe`; `../target/postgres/` (from `scripts/fetch-postgres.ps1`) →
   `postgres/`; `../web-rs/dist/` → `web/` (`app/`, `overlay/`, `sources/`); `../assets/minimaps/` →
-  `minimaps/`; `../target/referential/referential.tar.gz` (from `scripts/fetch-referential.ps1`)
-  → `referential.tar.gz`. `loading.html` is not a resource: it is `build.frontendDist` (`desktop/ui`),
+  `minimaps/`; `../target/referential/referential.tar.gz` (trimmed by `storm-codex-server refdata trim`
+  in the release workflow) → `referential.tar.gz`. `loading.html` is not a resource: it is `build.frontendDist` (`desktop/ui`),
   embedded in the executable.
 - **Uninstall: keep or delete the data.** Tauri's NSIS template already provides it: the
   uninstaller's confirmation page has a **"Delete the application data"** checkbox, **unticked by
@@ -558,33 +561,32 @@ fresh migrated cluster → import.
 
 ### Reference-data snapshot (`referential.tar.gz`)
 
-- **Build.** `sh scripts/make-referential.sh <hpn-base-url> [out]` (or `HPN_BASE_URL=<url>`;
-  default out `target/referential/referential.tar.gz`; needs `curl`, `jq`, `tar`, `sha256sum` or
-  `shasum`) downloads from the operator's HotsPatchNotes API: `heroes.json` (`/api/heroes`),
-  `hero-details.json` (`{shortName: /api/heroes/<shortName>}`), `patches.json`
-  (`/api/patches?page=1&pageSize=200`, the same page `sync_patches` reads), `patch-details.json`
-  (`{internalId: /api/patches/<internalId>}`) and `images/**` (the `/images/...` files named by
-  `heroes[].icon` and `/api/battlegrounds` `imageUrl`; a 404 is skipped like the server's own
-  vendoring). That is exactly the layout `dim::ingest_snapshot_file` reads. It fails on an empty
-  hero or patch list, on a key or image path with unexpected characters, and prints the SHA-256.
-  No host or secret is built in. Checked locally against a fake API (2026-11-14); never run
-  against the real HotsPatchNotes yet.
-- **Publish and pin.** The operator uploads the file as an asset of a dedicated **pre-release**
-  that is never "latest" (e.g. `gh release create referential-2026-11-14 referential.tar.gz
-  --prerelease --latest=false --title "Reference data 2026-11-14"`; a "latest" release would hijack
-  the updater URL `releases/latest/download/latest.json`), then commits its asset URL and SHA-256 in
-  `desktop/referential-pin.txt`. `scripts/fetch-referential.ps1` (used by the release workflow)
-  refuses a placeholder pin, a non-https URL or a hash mismatch. **The pin is a placeholder today:
-  the release workflow fails until the operator uploads the first snapshot.**
+Spec `docs/specs/2026-11-15-reference-dataset-adapter-design.md` (D5).
+
+- **Source and pin.** `desktop/referential-pin.txt` pins a HotsPatchNotes **dataset release**
+  (schema v1): `url=` the release's `dataset.tar.gz`, `sha256=` its SHA-256 (the release tag is
+  `data-<that SHA-256>`). Current pin: `data-c8d8ff8f5357d9e8b644d416376bb541c3dd31ec3406f60c9f41f44037483bab`
+  (2026-11-12, game 2.57.0.98348, `datasetVersion` `bf6c543f…`). Refresh = pick a newer release, change
+  both lines in one commit.
+- **Build (release workflow).** Step "reference dataset" downloads the pinned `dataset.tar.gz`,
+  refuses a non-https URL or a hash mismatch and writes `dataset.tar.gz.sha256`; once the server is
+  built, step "reference bundle" runs `storm-codex-server refdata trim --from <dataset.tar.gz> --out
+  target/referential/referential.tar.gz` (checks the `.sha256` again, the schema version and every
+  kept file against the manifest; `04-serveur.md`). The bundle keeps the manifest, `game.json`,
+  `patches.json`, `assets.json`, `locales/enus.json` and the images the app shows (hero portraits,
+  map art); not the talent/ability icons, the other 11 locales, the schemas or the licences.
+  Locally: `gh release download <tag> -R matella/HeroesOfTheStormPatchNotes -p 'dataset.tar.gz*'`
+  then the same `refdata trim` command.
+- **Measured** (release `data-c8d8ff8f…`, 2026-11-15, release build on the gaming PC):
+  `dataset.tar.gz` 97,626,201 bytes → `referential.tar.gz` **68,191,914 bytes** (125 files: 89 hero
+  portraits + 2 square icons, 29 map arts, 5 JSON files; trim ≈ 2 s). The PNG art does not compress:
+  it is most of the size.
 - **Stale snapshot (accepted risk).** A standalone install never contacts HotsPatchNotes: heroes,
-  talents and patches released after the snapshot are unknown until a new installer ships with a
-  newer snapshot (new hero = generic portrait and missing talent names; replays still import and
-  every stat is computed from the replay itself). Refreshing = rebuild, upload, re-pin, release:
-  the updated app sees a bundled snapshot whose SHA-256 differs from the one it last ingested
-  and ingests it at the next start (`04-serveur.md`, Reference data).
-  Follow-up: a public snapshot endpoint/publication on the HotsPatchNotes side
-  (matella/HeroesOfTheStormPatchNotes#1), so the snapshot can be refreshed without the operator's
-  private API; a runtime refresh stays out of scope (spec non-goal).
+  talents and patches released after the pinned dataset are unknown until a new installer ships
+  with a newer pin (new hero = generic portrait and missing talent names; replays still import and
+  every stat is computed from the replay itself). The updated app sees a bundle whose SHA-256
+  differs from the one it last ingested and ingests it at the next start (`04-serveur.md`,
+  Reference data). A runtime refresh stays out of scope (spec non-goal).
 
 ### Releasing the desktop app (`release-desktop.yml`)
 
@@ -640,12 +642,12 @@ new `actions/cache` is SHA-pinned.
    commit, push.
 2. `git tag desktop-vX.Y.Z && git push origin desktop-vX.Y.Z` (the tag must equal the config
    version, else the workflow fails).
-3. The workflow (windows-latest): refuses a placeholder updater pubkey, a missing signing secret
-   or a placeholder referential pin; fetches the snapshot and Postgres 17 (both SHA-256 checked);
+3. The workflow (windows-latest): refuses a placeholder updater pubkey or a missing signing secret;
+   fetches the pinned reference dataset and Postgres 17 (both SHA-256 checked);
    installs pinned tools (Rust `1.94.0` + `wasm32-unknown-unknown`; Trunk prebuilt `0.22.0-beta.1`,
    SHA-256 checked against the committed `TRUNK_SHA256`; `cargo install tauri-cli --version 2.12.4
    --locked --force`; NSIS is downloaded by the Tauri bundler itself); builds the three `web-rs` bundles, `cargo build --release --locked -p
-   storm-codex-server`, then `cargo tauri build --config tauri.bundle.conf.json` with the signing
+   storm-codex-server`, trims the reference bundle (`refdata trim`), then `cargo tauri build --config tauri.bundle.conf.json` with the signing
    secrets in the environment (gives `…-setup.exe` and its `.sig`).
 4. It publishes, with `gh release create --latest`, the release `desktop-vX.Y.Z` with
    `StormCodex_X.Y.Z_x64-setup.exe` (renamed: no spaces, so the URL is stable), its `.sig` and
@@ -656,7 +658,7 @@ new `actions/cache` is SHA-pinned.
    signature is the file's content, not a path). Installed apps read
    `releases/latest/download/latest.json`, so the desktop release must stay the repository's
    **latest** release (the repository had no GitHub Release on 2026-11-14; any other release, the
-   snapshot's included, is created with `--latest=false`).
+   dataset releases live in the HotsPatchNotes repository, not here).
 5. The job summary prints the installer size.
 
 **Measurements** (no cap, per the spec; to fill in at the first dry run / Task 10):

@@ -21,16 +21,25 @@ re-process) + **promoted scalar columns** for the hot filter/sort axes (indexed)
 unused: grouping is done by `teams.league`), `collections` (match_ids JSONB).
 Recreated by hand in the UI — **never** derived from replays.
 
-## Replicated reference data (0001, 0005, 0006, 0007) — owned by the `dim.rs` job
+## Replicated reference data (0001, 0005, 0006, 0007, 0017) — owned by the `refdata` adapter
 
 | Table | Contents | Join key |
 |---|---|---|
-| `dim_heroes` | 90 heroes (name, role, universe, data) | internal name |
-| `dim_talents` | ~1,900 talents | **`tree_id`** (0005) = `talentTreeId`, the same identifier as `player.talents[TierNChoice]` written by the parser |
-| `dim_patches` | list of patch notes | `internal_id`; detail proxied on demand |
-| `patch_hero_sections` | hero sections of patches (0007) | `hero_key` (normalised name) → hero ↔ patch links, BUFF/NERF/MIXED classification |
+| `dim_heroes` | 91 heroes (name, role, universe, data: dataset key, attributeId, icon, expandedRole…) | `id` = `name` = parser name (via `attributeId`) |
+| `dim_talents` | ~1,940 talents | **`tree_id`** (0005) = dataset `talentId` (= the old `talentTreeId`), the same identifier as `player.talents[TierNChoice]` written by the parser |
+| `dim_patches` | 276 patch notes, detail in `data.detail` | `internal_id` = dataset id; **`aliases`** (0017, `text[]`, GIN) = old HotsPatchNotes internalIds |
+| `patch_hero_sections` | hero sections of patches (0007) | `hero_key` (normalised parser name) → hero ↔ patch links, BUFF/NERF/MIXED/REWORK/BUGFIX classification (`refdata::classify`); **`channel`** (0017) `live`/`ptr` |
 
-These tables are **rebuildable** (full refresh at startup/24 h) — no primary data.
+These tables are **rebuildable** (one-transaction full refresh from a HotsPatchNotes dataset release, see
+`04-serveur.md`) — no primary data. `app_settings.refdata_dataset_version` holds the `datasetVersion` last
+ingested (a box round with the same version stops after the manifest).
+
+Migration **0017** (`refdata_dataset`): empties `dim_patches` and `patch_hero_sections` (the patch identity becomes
+the dataset id, so the first ingest is a first seed and sends no `patch.new`), adds `dim_patches.aliases`
+(`text[] NOT NULL DEFAULT '{}'`, GIN index) and `patch_hero_sections.channel`, and deletes
+`app_settings.reference_snapshot_sha256` (the standalone bundle is ingested again). Applied on the dev Postgres
+(tests on a fresh database per test). Old ids in `aliases`: in release `data-c8d8ff8f…`, 97 of the 300 distinct
+old internalIds the old service listed are aliases; the other old `/patch/<id>` links answer "Patch not found".
 
 ## Settings & draft (0003, 0008)
 

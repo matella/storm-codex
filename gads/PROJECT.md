@@ -53,12 +53,13 @@ integration (Redis events) and the existing `client-rs` uploader (Hots-Overlay r
    cache. Never any mass pre-decoding.
 6. Events to Jarvis: spine invariants (schema_version, correlation_id/causation_id,
    occurred_at/recorded_at, past-tense `entity.verb`).
-7. The hero/talent reference data comes from the HotsPatchNotes API (replicated into `dim_*` at startup) —
-   no second sync pipeline.
+7. The hero/talent/map/patch reference data comes from the HotsPatchNotes **dataset** (schema v1, GitHub releases),
+   through the single `refdata` adapter, replicated into `dim_*`. Box: latest validated release, verified, refreshed
+   every 24 h. Standalone: a trimmed snapshot of a pinned release, bundled in the installer. No second sync pipeline.
 
 ## Environment
 - Box: matella@192.168.129.85 (evening server ~6pm→night); Jarvis Postgres/Redis on it;
-  HotsPatchNotes api :5001 / web :5100; Node overlay :8086 (to be decommissioned at milestone 5,
+  Node overlay :8086 (to be decommissioned at milestone 5,
   the Twitch Azure EBS stays). Deployment: rsync + docker compose build (no `git pull` on the box).
 - Windows gaming PC: replays in `Documents/Heroes of the Storm/Accounts/*/*/Replays/Multiplayer`
   (~3,000 files, 2–3 GB); uploader = `client-rs` (Hots-Overlay repo).
@@ -75,7 +76,7 @@ local dependency on the other projects. Milestone 0 is ideally done **on the Win
 | ebshimizu/stats-of-the-storm | public GitHub | functional reference (already summarised in docs/research) |
 | Blizzard/heroprotocol | public GitHub | generation of the protocol tables (milestones 0–1) |
 | matella Hots-Overlay | GitHub (private) | milestone 3 — adapt `client-rs` (backfill mode, re-pointing) |
-| matella HeroesOfTheStormPatchNotes | GitHub (private) | milestone 4 — reference data consumed **via the box's API** (:5001, Tailscale); the clone is only useful to read the code |
+| matella HeroesOfTheStormPatchNotes | GitHub (public) | reference data consumed as **dataset releases** (schema v1, `refdata` adapter); the clone is only useful to read the producer's code |
 | Jarvis | **not on GitHub** (box remote only) | milestone 5 — the connector is written from the Mac/box; nothing to clone on the PC |
 
 Box access from anywhere: Tailscale (subnet route active) → 192.168.129.85 (SSH + APIs),

@@ -12,3 +12,7 @@ gads/** text eol=lf
 
 # shell scripts run in CI (Linux)
 *.sh text eol=lf
+
+# refdata fixture: cut from a HotsPatchNotes dataset release, checked by SHA-256 against its own manifest;
+# a CRLF checkout would make every file fail the check.
+crates/storm-codex-server/tests/fixtures/refdata/** -text

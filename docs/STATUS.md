@@ -1,5 +1,27 @@
 # STATUS — read first, update last
 
+## Reference dataset adapter (2026-11-15), branch `feat/reference-dataset-adapter` (on top of `feat/standalone-installer`, not merged)
+
+Spec `docs/specs/2026-11-15-reference-dataset-adapter-design.md` (D1–D7) implemented. New module
+`crates/storm-codex-server/src/refdata/` (pure dataset → rows, `classify` = port of `PatchClassifier.cs`, `load` =
+box loader `REFDATA_URL` + standalone `ingest_bundle` + `refdata trim`); migration 0017 (`aliases`, `channel`);
+`/api/patches/{id}` accepts an old id; PTR kept out of `/hero-changes`; "Community notes" label in the patch pages.
+Removed: `dim.rs` (`sync_*`, `vendor_images`, `backfill_hero_sections`, `ingest_snapshot*`), `read::hpn_proxy`,
+`HOTSPATCHNOTES_URL`, `REFERENTIAL_URL`, `scripts/make-referential.sh`, `scripts/fetch-referential.ps1`.
+`desktop/referential-pin.txt` now pins release `data-c8d8ff8f…` (the release workflow downloads and trims it).
+
+Verified: the 8 acceptance criteria except the clean-VM half of 7 (fixture tests; full release with
+`REFDATA_DATASET_DIR`: 91 heroes, 1,941 talents, 276 patches, 2,174 hero sections; corpus talent-hero diff 40 players,
+no difference; end-to-end box run against the real GitHub release, second round = manifest only; trimmed bundle
+68.2 MB). Open points for the operator:
+- `.env.example` and `crates/storm-codex-server/.env.example` still name `HOTSPATCHNOTES_URL` (the agent could not
+  edit `.env*` files): replace with `REFDATA_URL`.
+- Only 97 of the 300 distinct old HotsPatchNotes internalIds are dataset `aliases`: the other old `/patch/<id>` links
+  answer "Patch not found" (goal 6 partly met; needs more aliases on the producer side or a decision).
+- D3 issue on HotsPatchNotes (bundle the `heroSelect` icons) not filed.
+- Box deployment: set `REFDATA_URL` (or keep the default) in the box `.env`, drop `HOTSPATCHNOTES_URL`; the old
+  .NET service can then be stopped.
+
 ## Standalone Windows installer (2026-11-14), branch `feat/standalone-installer` (not merged, not released)
 
 Spec `docs/specs/2026-11-12-standalone-installer-design.md`, plan `docs/plans/2026-11-12-standalone-installer.md`
@@ -34,17 +56,15 @@ redistributable (acceptance step 0), the release workflow and NSIS hooks (never 
 **Next step (operator):**
 1. Generate the updater key pair (`cargo tauri signer generate`), set the secrets `TAURI_SIGNING_PRIVATE_KEY` and
    `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, replace `plugins.updater.pubkey` in `desktop/tauri.conf.json`.
-2. Build the reference snapshot from the real HotsPatchNotes API (`scripts/make-referential.sh`), upload it to a
-   non-latest pre-release, commit its URL + SHA-256 in `desktop/referential-pin.txt`.
+2. Reference snapshot: done by the reference dataset adapter (above) — the pin names a dataset release and the
+   release workflow trims it.
 3. First dry run of `release-desktop.yml` (Run workflow → draft): proves the NSIS hooks compile; record installer
    size and first start in `09-operations.md`.
 4. Run the VM acceptance checklist in `docs/standalone-acceptance.md` (install, live game, OBS, kill/power cut,
    update N → N+1, hooks, uninstall keep/delete, Cyrillic/accented profile, no HotS install, export/import).
 5. Review/merge the branch and tag `desktop-v0.1.0`.
 
-Follow-ups outside v1: **reference dataset adapter** (approved spec `docs/specs/2026-11-15-reference-dataset-adapter-design.md`:
-HotsPatchNotes now publishes a versioned dataset instead of its API; needed before the first installer release, it
-replaces `make-referential.sh` and the pin format), runtime snapshot refresh, SQLite instead of bundled Postgres (matella/storm-codex#31), a code-signing certificate (SmartScreen).
+Follow-ups outside v1: runtime snapshot refresh, SQLite instead of bundled Postgres (matella/storm-codex#31), a code-signing certificate (SmartScreen).
 
 **React removed (2026-11-12), branch `chore/remove-react-frontend`:** `web/`, `.nvmrc`, the CI `web` job, the Dockerfile Node stage, the `storm-codex-web` launch config and the server's React serving (`serve_spa`, `WEB_ROOT`, `WEB_V2_DIR`) are gone. `WEB_DIR` now points at the Rust bundles (`web-rs/dist`; `/app/web` in the image) and every page answers at `/`; `publish` waits for `web-rs`. Rollback = deploy the previous image tag. Last commit with the React sources: `2134853` (the `Port of web/src/...` comments in `web-rs/` refer to it). Specs 01/04/08/09/10, `gads/PROJECT.md` and the spec README rewritten for the Rust front-end; dated specs, plans, runbooks and STATUS-historique are left as written (history).
 

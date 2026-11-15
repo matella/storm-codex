@@ -25,16 +25,14 @@ pub struct Config {
     /// Post-game push to the Twitch Azure EBS (optional).
     pub azure_push_url: Option<String>,
     pub azure_push_token: Option<String>,
-    /// HotsPatchNotes API (hero/talent reference data) — replicated into `dim_*` at startup.
-    pub hotspatchnotes_url: Option<String>,
-    /// Published reference-data snapshot (`referential.tar.gz`) — standalone bundle mode, without live
-    /// HotsPatchNotes. Takes precedence over `hotspatchnotes_url` when set. See `dim::ingest_snapshot`.
-    pub referential_url: Option<String>,
+    /// HotsPatchNotes dataset release download base (`REFDATA_URL`, default the producer's
+    /// `releases/latest/download/`; empty = no reference-data refresh). Box only. See `refdata::load`.
+    pub refdata_url: Option<String>,
     /// Standalone (installer) mode, `STANDALONE=1`: loopback-only bind, no network refresh of the
     /// reference data; it is seeded once from `referential_file`. See `Config::validate`.
     pub standalone: bool,
     /// Bundled `referential.tar.gz` on disk (`REFERENTIAL_FILE`), used to seed an empty
-    /// `dim_heroes` in standalone mode. See `dim::ingest_snapshot_file`.
+    /// `dim_heroes` in standalone mode. See `refdata::load::ingest_bundle`.
     pub referential_file: Option<PathBuf>,
     /// Upload ledger of the standalone watcher (`LEDGER_FILE`, standalone only). Default:
     /// `uploaded.json` next to `archive_dir` (see [`Config::ledger_path`]).
@@ -81,12 +79,11 @@ impl Config {
             azure_push_token: std::env::var("AZURE_PUSH_TOKEN")
                 .ok()
                 .filter(|s| !s.is_empty()),
-            hotspatchnotes_url: std::env::var("HOTSPATCHNOTES_URL")
-                .ok()
-                .filter(|s| !s.is_empty()),
-            referential_url: std::env::var("REFERENTIAL_URL")
-                .ok()
-                .filter(|s| !s.is_empty()),
+            refdata_url: match std::env::var("REFDATA_URL") {
+                Ok(v) if v.is_empty() => None,
+                Ok(v) => Some(v),
+                Err(_) => Some(crate::refdata::load::DEFAULT_URL.to_string()),
+            },
             standalone: std::env::var("STANDALONE").is_ok_and(|v| v == "1"),
             referential_file: std::env::var("REFERENTIAL_FILE")
                 .ok()
@@ -208,8 +205,7 @@ mod tests {
             jarvis_channel: String::new(),
             azure_push_url: None,
             azure_push_token: None,
-            hotspatchnotes_url: None,
-            referential_url: None,
+            refdata_url: None,
             standalone,
             referential_file: None,
             ledger_file: None,
