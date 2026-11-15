@@ -42,8 +42,9 @@ redistributable (acceptance step 0), the release workflow and NSIS hooks (never 
    update N → N+1, hooks, uninstall keep/delete, Cyrillic/accented profile, no HotS install, export/import).
 5. Review/merge the branch and tag `desktop-v0.1.0`.
 
-Follow-ups outside v1: HotsPatchNotes snapshot publication (matella/HeroesOfTheStormPatchNotes#1), runtime snapshot
-refresh, SQLite instead of bundled Postgres (matella/storm-codex#31), a code-signing certificate (SmartScreen).
+Follow-ups outside v1: **reference dataset adapter** (approved spec `docs/specs/2026-11-15-reference-dataset-adapter-design.md`:
+HotsPatchNotes now publishes a versioned dataset instead of its API; needed before the first installer release, it
+replaces `make-referential.sh` and the pin format), runtime snapshot refresh, SQLite instead of bundled Postgres (matella/storm-codex#31), a code-signing certificate (SmartScreen).
 
 **React removed (2026-11-12), branch `chore/remove-react-frontend`:** `web/`, `.nvmrc`, the CI `web` job, the Dockerfile Node stage, the `storm-codex-web` launch config and the server's React serving (`serve_spa`, `WEB_ROOT`, `WEB_V2_DIR`) are gone. `WEB_DIR` now points at the Rust bundles (`web-rs/dist`; `/app/web` in the image) and every page answers at `/`; `publish` waits for `web-rs`. Rollback = deploy the previous image tag. Last commit with the React sources: `2134853` (the `Port of web/src/...` comments in `web-rs/` refer to it). Specs 01/04/08/09/10, `gads/PROJECT.md` and the spec README rewritten for the Rust front-end; dated specs, plans, runbooks and STATUS-historique are left as written (history).
 
