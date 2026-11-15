@@ -512,6 +512,10 @@ pub async fn upload_logo(
 }
 
 /// GET /api/cast/logo/{side} — logo bytes (404 if none), `X-Content-Type-Options: nosniff`.
+/// The stored row is re-checked like an upload (image type + magic bytes): a row that did not
+/// come through `upload_logo` (e.g. restored from an imported backup) is never served as
+/// another type, such as HTML on the app's own origin. `Content-Security-Policy: sandbox`
+/// as a second barrier.
 pub async fn get_logo(State(s): State<AppState>, Path(side): Path<String>) -> Response {
     let Some(side) = side_str(&side) else {
         return err(StatusCode::NOT_FOUND, "bad_side").into_response();
@@ -522,11 +526,23 @@ pub async fn get_logo(State(s): State<AppState>, Path(side): Path<String>) -> Re
             .fetch_optional(&s.db)
             .await;
     match row {
+        Ok(Some((mime, _))) if !LOGO_MIMES.contains(&mime.as_str()) => {
+            tracing::warn!("cast logo {side}: stored type {mime:?} is not an image, not served");
+            err(StatusCode::NOT_FOUND, "no_logo").into_response()
+        }
+        Ok(Some((mime, bytes))) if !magic_matches(&mime, &bytes) => {
+            tracing::warn!("cast logo {side}: stored bytes do not match {mime:?}, not served");
+            err(StatusCode::NOT_FOUND, "no_logo").into_response()
+        }
         Ok(Some((mime, bytes))) => (
             [
                 (header::CONTENT_TYPE, mime),
                 (header::CACHE_CONTROL, "public, max-age=86400".to_string()),
                 (header::X_CONTENT_TYPE_OPTIONS, "nosniff".to_string()),
+                (
+                    header::CONTENT_SECURITY_POLICY,
+                    "sandbox; default-src 'none'".to_string(),
+                ),
             ],
             bytes,
         )

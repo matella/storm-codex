@@ -399,7 +399,12 @@ fn Autostart() -> impl IntoView {
         spawn_local(async move {
             match invoke_with(SET_AUTOSTART, Some(autostart_args(enabled))).await {
                 Ok(_) => on.set(Some(enabled)),
-                Err(reason) => error.set(Some(autostart_error(&reason))),
+                Err(reason) => {
+                    // The browser already toggled the box; re-setting the old value re-runs
+                    // `prop:checked` (`set` always notifies) and puts it back.
+                    on.set(Some(!enabled));
+                    error.set(Some(autostart_error(&reason)));
+                }
             }
             busy.set(false);
         });

@@ -176,15 +176,28 @@ impl Postgres {
     /// Runs `initdb` unless the data directory already holds a cluster. Refuses a cluster of
     /// another major version (checked before any binary is needed). On first init a random
     /// password is generated (or an existing password file reused) and set for `storm`.
+    ///
+    /// Crash-safe: `initdb` writes `PG_VERSION` early, so the cluster is built in a sibling
+    /// staging folder (`<data dir>.init`, wiped first if a previous attempt was interrupted)
+    /// and renamed into place only once complete. A data directory that holds `PG_VERSION`
+    /// is therefore always a finished cluster.
     pub fn init_if_needed(&self) -> Result<(), PgError> {
         if self.check_version()? {
             return Ok(());
         }
         let initdb = self.command("initdb")?;
         let pw_path = self.ensure_password_file()?;
+        let staging = self.staging_dir();
+        match std::fs::remove_dir_all(&staging) {
+            Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(io_err(&staging)(e)),
+            _ => {}
+        }
+        // Created empty (initdb accepts it) so the tool path can be mapped (8.3 names need an
+        // existing path).
+        std::fs::create_dir_all(&staging).map_err(io_err(&staging))?;
         let mut cmd = initdb;
         cmd.arg("-D")
-            .arg(self.tool_path(&self.data_dir)?)
+            .arg(self.tool_path(&staging)?)
             .args([
                 "-U",
                 PG_USER,
@@ -197,12 +210,29 @@ impl Postgres {
             .arg(format!("--pwfile={}", self.tool_path(&pw_path)?.display()));
         run(&mut cmd, "initdb", CLIENT_LIMIT)?;
         // No Unix-domain socket: the server is reached over TCP loopback only.
-        let conf = self.data_dir.join("postgresql.conf");
+        let conf = staging.join("postgresql.conf");
         let mut text = std::fs::read_to_string(&conf).map_err(io_err(&conf))?;
         text.push_str(
             "\n# Storm Codex standalone\nlisten_addresses = '127.0.0.1'\nunix_socket_directories = ''\n",
         );
-        std::fs::write(&conf, text).map_err(io_err(&conf))
+        std::fs::write(&conf, text).map_err(io_err(&conf))?;
+        // `DataDir::ensure` creates the cluster folder empty; rename cannot replace a folder.
+        match std::fs::remove_dir(&self.data_dir) {
+            Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(io_err(&self.data_dir)(e)),
+            _ => {}
+        }
+        std::fs::rename(&staging, &self.data_dir).map_err(io_err(&self.data_dir))
+    }
+
+    /// Where [`init_if_needed`](Self::init_if_needed) builds the cluster before moving it in.
+    fn staging_dir(&self) -> PathBuf {
+        let mut name = self
+            .data_dir
+            .file_name()
+            .map(std::ffi::OsStr::to_os_string)
+            .unwrap_or_else(|| "pg".into());
+        name.push(".init");
+        self.data_dir.with_file_name(name)
     }
 
     /// Removes `postmaster.pid` unless it names a live postmaster of this cluster (our
@@ -763,9 +793,24 @@ impl Postgres {
 }
 
 /// Writes `contents` to a new file readable by the current user only (Unix mode 0600; on
-/// Windows the per-user data folder's ACL applies).
+/// Windows the per-user data folder's ACL applies). Atomic: written to `<path>.tmp` (a
+/// leftover from an interrupted write is replaced), synced, then renamed, so `path` is either
+/// absent or complete. Fails if `path` already exists.
 fn write_private(path: &Path, contents: &str) -> io::Result<()> {
     use std::io::Write;
+    if path.exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "file already exists",
+        ));
+    }
+    let mut tmp_name = path.as_os_str().to_os_string();
+    tmp_name.push(".tmp");
+    let tmp = PathBuf::from(tmp_name);
+    match std::fs::remove_file(&tmp) {
+        Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e),
+        _ => {}
+    }
     let mut opts = std::fs::OpenOptions::new();
     opts.write(true).create_new(true);
     #[cfg(unix)]
@@ -773,9 +818,11 @@ fn write_private(path: &Path, contents: &str) -> io::Result<()> {
         use std::os::unix::fs::OpenOptionsExt;
         opts.mode(0o600);
     }
-    let mut f = opts.open(path)?;
+    let mut f = opts.open(&tmp)?;
     f.write_all(contents.as_bytes())?;
-    f.sync_all()
+    f.sync_all()?;
+    drop(f);
+    std::fs::rename(&tmp, path)
 }
 
 /// Compares two paths for identity: canonical forms when both resolve, otherwise a

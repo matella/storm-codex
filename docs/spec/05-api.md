@@ -122,7 +122,10 @@ Every mutation except `/series` and `/scene` returns `409 SeriesInactive` while 
 `415 unsupported_mime` type not accepted, `400` empty body, `413` too large, `415 mime_mismatch` if the first bytes are
 not the signature of the declared type — PNG `89 50 4E 47`, JPEG `FF D8 FF`, WebP `RIFF....WEBP` — nothing is stored;
 `404` unknown side; allowed on an inactive series) → `Series` with
-`Team.logo = "/api/cast/logo/{side}?v={updated_at_ms}"` · `GET /api/cast/logo/{side}` → bytes (`404` if none; `X-Content-Type-Options: nosniff`).
+`Team.logo = "/api/cast/logo/{side}?v={updated_at_ms}"` · `GET /api/cast/logo/{side}` → bytes (`404` if none; `X-Content-Type-Options: nosniff`,
+`Content-Security-Policy: sandbox; default-src 'none'`). The stored row is re-checked like an upload (accepted type + magic
+bytes) and answered `404` otherwise: a row restored from an imported backup is never served as another type (e.g. HTML on
+the app's origin, which the desktop shell grants IPC).
 **Series → draft sync** (one way) after `/series`, `/teams`, `/games/{n}/winner`, `DELETE /games/{n}`, `/score`: names, player names
 (`Player.name`), score (`Series::score()`) and `bo` copied into `DraftState` without touching cursor/assignments/replay
 queue/fearless; both states are persisted, WS `draft.updated` + `cast.updated`.

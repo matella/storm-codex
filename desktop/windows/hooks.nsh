@@ -29,8 +29,10 @@
   ${IfNot} ${Silent}
   ${AndIf} $PassiveMode <> 1
   ${AndIf} $UpdateMode <> 1
-    ; One CSV row per matching process (it starts with a quote); otherwise an INFO line.
-    nsExec::ExecToStack '"$SYSDIR\tasklist.exe" /FI "IMAGENAME eq ${MAINBINARYNAME}.exe" /NH /FO CSV'
+    ; One CSV row per matching process (it starts with a quote); otherwise an INFO line. Only
+    ; this Windows user's processes: another account's tray app is not ours to quit.
+    ReadEnvStr $1 USERNAME
+    nsExec::ExecToStack '"$SYSDIR\tasklist.exe" /FI "IMAGENAME eq ${MAINBINARYNAME}.exe" /FI "USERNAME eq $1" /NH /FO CSV'
     Pop $0 ; exit code
     Pop $1 ; output
     StrCpy $1 $1 1

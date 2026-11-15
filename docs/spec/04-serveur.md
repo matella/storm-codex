@@ -63,15 +63,19 @@ once the listener is bound (`/api/health` answers 200 during the whole sequence)
 
 1. **seed** the reference data from `REFERENTIAL_FILE` when `dim_heroes` is empty or the bundled
    file differs from the one last ingested (an app update ships a newer one) (phase `seeding`);
-   then, in a background task beside the import, the **re-process after an update**: every
+   then, in a background task started **once the first import run ends** (step 6; so it does
+   not compete with the backfill for `parse_sem`, whose saturation makes uploads answer 202
+   before their outcome is known), the **re-process after an update**: every
    upload `parsed` with `parser_version < PARSER_VERSION` is re-parsed and re-projected
    (`admin::outdated_uploads` + `admin::reprocess_one`, one `parse_sem` permit each, so it
-   shares the parse budget with the uploads), then the outdated scouting replays
+   shares the parse budget with the live uploads), then the outdated scouting replays
    (`scouting::api::reprocess_stale`). Progress in the status (`reprocessTotal`,
    `reprocessDone`; `0`/`0` when nothing is outdated). It stops between two replays on
-   shutdown; the rest is picked up at the next start (the query is the criterion). Rows
-   `parse_failed` are not retried automatically (they would be re-parsed at every start):
-   `POST /api/admin/reprocess` still retries them;
+   shutdown; the rest is picked up at the next start (the query is the criterion). An upload
+   the new parser cannot re-process keeps its previous projection and gets the current
+   `parser_version` (`admin::mark_reprocess_failed`), so it is not re-parsed at every start.
+   Rows `parse_failed` are not retried automatically: `POST /api/admin/reprocess` still
+   retries both;
 2. **detect** the folders: every `Documents/Heroes of the Storm/Accounts/*/*/Replays/Multiplayer`
    (known-folder API, OneDrive-relocated Documents included) plus the extra folders saved in
    `app_settings.standalone_extra_folders`; each extra folder is expanded to the folders under it
@@ -95,7 +99,8 @@ once the listener is bound (`/api/health` answers 200 during the whole sequence)
    Steps 3 or 5 failing → phase `error`;
 6. **live watcher** started on the folders, then the **backfill** (phase `importing`; when it
    completes, the **operator names** are detected once, see below): oldest
-   first, 4 at a time, through `POST http://<bound address>/api/upload` (the address actually
+   first, 4 at a time (at most the CPU count: the server parses one replay per core and
+   answers 202 when all are busy, so a parse failure would be recorded as uploaded), through `POST http://<bound address>/api/upload` (the address actually
    bound, so `BIND_ADDR` may use port 0). Replays reported by the watcher meanwhile wait and
    are handled afterwards; then phase `ready`: each new replay is uploaded unless the ledger
    already has it, and its outcome is recorded (write-through).
@@ -118,7 +123,7 @@ awaited for at most 10 s (then aborted) before the HTTP server drains and `run()
 |---|---|
 | `GET /api/standalone/status` | `{phase, folders, extraFolders, total, done, duplicates, rejected: [{file, reason}], failed: [file], freeBytes, neededBytes, dataDir, version, reprocessTotal, reprocessDone}` — `phase` ∈ `seeding`, `importing`, `ready`, `no-folders`, `disk-full`, `error`; `folders` = effective folders (detected + replay folders found under each extra); `extraFolders` = the extra folders exactly as saved (the raw list `PUT /folders` replaces, loaded from `app_settings` before the server listens — so already right during `seeding` — and updated on each `PUT`; a refused `PUT` (400) changes nothing; `[]` when none) — clients edit this list, never `folders`; `freeBytes`/`neededBytes` `null` before the first disk gate; `dataDir` = parent of `ARCHIVE_DIR`; `version` = server crate version; `reprocessTotal` / `reprocessDone` = background re-process after a parser bump (step 1) |
 | `PUT /api/standalone/folders` | body `{folders: [path]}` replaces the extra folders (send `extraFolders` ± one path). Each must be an existing plain local directory (no UNC, device or verbatim path; saved entries failing that rule are dropped on load, so a restored backup cannot point the watcher at a share), else **400** `{error: "not an existing folder: …"}`; only directory listings are read. Saved and resolved, then the watcher restarts and a rescan runs; answers the new status |
-| `POST /api/standalone/rescan` | **202**; re-runs the disk gate and the backfill |
+| `POST /api/standalone/rescan` | **202**; re-detects the folders (a HotS replay folder created since, e.g. after the first game or for a new account, is picked up and watched), then re-runs the disk gate and the backfill |
 | `POST /api/standalone/shutdown` | **202**; same graceful shutdown as Ctrl-C (used by the desktop shell before it stops Postgres) |
 
 The routes are unauthenticated (loopback-only server, single user, no `ADMIN_TOKEN`, so the
@@ -216,7 +221,9 @@ Failed writes are logged (`warn`):
   a successful ingest (an unreadable or corrupt file is retried at the next start). Heroes no
   longer in the snapshot are kept;
   the 24 h refresh loop is not started. `Config::validate()` (run right after `from_env()`)
-  rejects a non-loopback `BIND_ADDR` in this mode ("standalone mode requires a loopback BIND_ADDR").
+  rejects a non-loopback `BIND_ADDR` in this mode ("standalone mode requires a loopback BIND_ADDR"):
+  the IP must be exactly `127.0.0.1` or `::1`, the addresses the Host guard accepts (another
+  127/8 address would make every in-process upload a 403).
 
 Each **new patch** detected → WS event `patch.new` + optional outgoing webhook
 (`PATCH_WEBHOOK_URL`, Discord-compatible format).

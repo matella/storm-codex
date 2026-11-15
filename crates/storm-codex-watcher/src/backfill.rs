@@ -19,8 +19,17 @@ use crate::detector::is_storm_replay;
 use crate::ledger::{Ledger, Outcome};
 use crate::upload::{file_name, UploadResult, Uploader};
 
-/// Uploads in flight at once.
+/// Uploads in flight at once, at most (see [`concurrency`]).
 pub const CONCURRENCY: usize = 4;
+
+/// [`CONCURRENCY`], capped to the CPU count: the local server parses with one worker per core
+/// and answers 202 (outcome unknown) when they are all busy, so more uploads in flight than
+/// cores would record parse failures as uploaded.
+pub fn concurrency() -> usize {
+    std::thread::available_parallelism()
+        .map_or(1, std::num::NonZeroUsize::get)
+        .clamp(1, CONCURRENCY)
+}
 /// Deferred ledger records written at once (or after [`FLUSH_INTERVAL`], whichever first).
 pub const FLUSH_EVERY: usize = 250;
 pub const FLUSH_INTERVAL: Duration = Duration::from_secs(1);
@@ -100,7 +109,7 @@ pub async fn run(dirs: &[PathBuf], uploader: &Uploader, ledger: &mut Ledger, pro
             let outcome = process(uploader, &path).await;
             (file_name(&path), outcome)
         })
-        .buffer_unordered(CONCURRENCY);
+        .buffer_unordered(concurrency());
 
     // Ledger records are deferred and flushed every FLUSH_EVERY records or FLUSH_INTERVAL,
     // whichever comes first, and once at the end. If the run is cancelled (future dropped),

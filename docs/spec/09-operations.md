@@ -175,14 +175,17 @@ Postgres folder resolves all of its imports. The Tauri shell already links the C
   start still recovers the cluster).
 - **Authentication: generated password.** On first init a random password (32 bytes from the OS
   CSPRNG, hex) is written to `<data root>/pg-password`, next to (not inside) the cluster
-  directory, and reused afterwards. `initdb -U storm -A scram-sha-256 --pwfile=<that file>
+  directory, and reused afterwards (written atomically: temp file, sync, rename, so an
+  interrupted first run never leaves an empty password file). `initdb -U storm -A scram-sha-256 --pwfile=<that file>
   -E UTF8 --locale=C`: every connection, local or TCP, needs the password, so other local
   accounts cannot log in as superuser. The password is a secret: child tools get it through
   `PGPASSWORD` (never on the command line), and it never appears in errors or logs.
   `database_url` contains it, so do not log that URL.
 - Cluster in `<data root>/pg`: init skipped when `PG_VERSION` exists; a cluster of another major
-  version is refused (`WrongMajorVersion`). `postgresql.conf` gets
-  `listen_addresses = '127.0.0.1'` and no Unix socket.
+  version is refused (`WrongMajorVersion`). Init is crash-safe: `initdb` runs in
+  `<data root>/pg.init` (wiped first when a previous attempt was interrupted), its
+  `postgresql.conf` gets `listen_addresses = '127.0.0.1'` and no Unix socket, and only then is
+  the folder renamed to `pg`, so `PG_VERSION` in `pg` always means a finished cluster.
 - Pid-file ownership: `postmaster.pid` is "ours" only if its PID is alive, runs
   `<bin>/postgres.exe` and was started with `-D <our pg dir>`. Anything else (dead PID, PID
   reused by another program or by **another Postgres**) is stale: it is deleted, never signalled.
@@ -380,7 +383,7 @@ fresh migrated cluster → import.
        entry under `archive/`; no `\`, `:`, NUL, absolute path, empty/`.`/`..` component,
        Windows device name (`CON`, `nul.txt`, `con .txt`, `CONIN$`, `CONOUT$`, `CLOCK$`,
        `COM1`–`9`, `LPT1`–`9`, `COM¹`–`³`, `LPT¹`–`³`) or trailing dot/space; no symlink or
-       encrypted entry; ≤ 2,000,000 entries, ≤ 256 GiB per entry, deflated entries ≤ 200×
+       encrypted entry; ≤ 200,000 entries, ≤ 256 GiB per entry, deflated entries ≤ 200×
        expansion — and free space ≥ unpacked size + 3 × dump size (the staging database
        beside the current one) + 1 GiB.
     3. **Unpack** into `import-work` within the validated budget (entry count, total bytes,
@@ -541,8 +544,9 @@ fresh migrated cluster → import.
   an upgrade could not replace those files and an uninstall could not remove them. pg_ctl only
   signals the postmaster named in that cluster's own pid file. **Ask first:** the template runs
   these hooks *before* its own "app is running" check, so in an interactive run (not `/S`, not `/P`
-  passive, not `/UPDATE`) the hook first looks for a running `<main binary>.exe` (`tasklist /FO
-  CSV`); if found it shows "Storm Codex is running. Quit it first (tray icon, then Quit)…" and
+  passive, not `/UPDATE`) the hook first looks for a running `<main binary>.exe` of **this
+  Windows user** (`tasklist /FI "USERNAME eq %USERNAME%" /FO CSV`: another account's tray app is
+  not ours to quit); if found it shows "Storm Codex is running. Quit it first (tray icon, then Quit)…" and
   aborts **without stopping anything** (tray Quit stops the server, then Postgres, cleanly). An
   update started by the app (`/P /UPDATE`) skips that question: the app has already stopped its
   stack and is exiting (the template closes it if it is still there), so stopping Postgres is a

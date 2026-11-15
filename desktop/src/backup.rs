@@ -23,7 +23,9 @@ pub const DUMP_ENTRY: &str = "db.dump";
 pub const ARCHIVE_ENTRY: &str = "archive";
 pub const BACKUP_EXTENSION: &str = "stormcodex";
 /// Sanity limits on an imported zip.
-pub const MAX_ENTRIES: usize = 2_000_000;
+/// A real backup holds a few thousand replays; this bounds what a crafted central directory
+/// makes the zip reader allocate.
+pub const MAX_ENTRIES: usize = 200_000;
 pub const MAX_ENTRY_BYTES: u64 = 256 << 30;
 /// Deflated entries may not expand more than this (zip bomb).
 pub const MAX_RATIO: u64 = 200;
@@ -117,10 +119,14 @@ pub fn export(
     let result = write_zip(file, &partial, &dump_file, archive_dir, &files);
     let _ = std::fs::remove_file(&dump_file);
     match result {
-        Ok(contents) => {
-            std::fs::rename(&partial, out).map_err(io_err(out))?;
-            Ok(contents)
-        }
+        Ok(contents) => match std::fs::rename(&partial, out) {
+            Ok(()) => Ok(contents),
+            Err(e) => {
+                // A leftover would block every later export to the same name (create_new).
+                let _ = std::fs::remove_file(&partial);
+                Err(io_err(out)(e))
+            }
+        },
         Err(e) => {
             let _ = std::fs::remove_file(&partial);
             Err(e)

@@ -99,34 +99,21 @@ impl Orchestrator {
             () = seed_reference_data(&self.app) => {},
             () = st.stopping() => return,
         }
-        // after the seed (projection reads the reference data); runs beside the import
-        let app = self.app.clone();
-        if self.st.upkeep() {
-            tokio::spawn(async move { reprocess_outdated(&app).await });
-        }
+        // The status' `extraFolders` were set by `main` before listening; not re-set here, so a
+        // `PUT /folders` made meanwhile is not overwritten with this older read.
+        self.folders = self.resolve_current().await;
 
-        let extras = load_extra_folders(&self.app.db).await;
-        self.st.set_extra_folders(
-            &extras
-                .iter()
-                .map(|p| p.to_string_lossy().into_owned())
-                .collect::<Vec<_>>(),
-        );
-        let resolver = self.st.clone();
-        self.folders =
-            match tokio::task::spawn_blocking(move || resolve_folders(resolver.detect(), &extras))
-                .await
-            {
-                Ok(folders) => folders,
-                Err(e) => {
-                    tracing::error!(error = %e, "replay folder detection failed");
-                    Vec::new()
-                }
-            };
-
+        // After the seed (projection reads the reference data) and after the first import: the
+        // re-process and the backfill would otherwise compete for `parse_sem`, and a saturated
+        // pool answers uploads 202 before their parse result is known.
+        let mut reprocess = self.st.upkeep();
         loop {
             if let Flow::Stop = self.import().await {
                 return;
+            }
+            if std::mem::take(&mut reprocess) {
+                let app = self.app.clone();
+                tokio::spawn(async move { reprocess_outdated(&app).await });
             }
             // Live phase (or a blocked one): new replays and commands until the next import.
             loop {
@@ -134,7 +121,7 @@ impl Orchestrator {
                     () = st.stopping() => return,
                     command = self.commands.recv() => match command {
                         Some(command) => {
-                            self.apply(command);
+                            self.apply(command).await;
                             break;
                         }
                         None => return,
@@ -145,10 +132,30 @@ impl Orchestrator {
         }
     }
 
-    fn apply(&mut self, command: Command) {
-        if let Command::SetFolders(folders) = command {
+    async fn apply(&mut self, command: Command) {
+        let folders = match command {
+            Command::SetFolders(folders) => folders,
+            // Re-detect too: a HotS replay folder (first game, new account or region) may have
+            // appeared since the last resolution.
+            Command::Rescan => self.resolve_current().await,
+        };
+        if folders != self.folders {
             self.folders = folders;
             self.watch = None; // restarted on the new folders by `import`
+        }
+    }
+
+    /// Detected HotS folders plus the saved extra folders, resolved off the runtime.
+    async fn resolve_current(&self) -> Vec<PathBuf> {
+        let extras = load_extra_folders(&self.app.db).await;
+        let resolver = self.st.clone();
+        match tokio::task::spawn_blocking(move || resolve_folders(resolver.detect(), &extras)).await
+        {
+            Ok(folders) => folders,
+            Err(e) => {
+                tracing::error!(error = %e, "replay folder detection failed");
+                Vec::new()
+            }
         }
     }
 
@@ -214,7 +221,7 @@ impl Orchestrator {
                 Some(None) => return Flow::Stop,
                 Some(Some(command)) => {
                     tracing::info!("import restarted on request");
-                    self.apply(command);
+                    self.apply(command).await;
                 }
             }
         }
@@ -454,10 +461,15 @@ pub(super) async fn reprocess_outdated(app: &AppState) {
     for (upload_id, path) in targets {
         let one = async {
             let _permit = app.parse_sem.acquire().await;
-            crate::admin::reprocess_one(app, upload_id, &path).await;
+            crate::admin::reprocess_one(app, upload_id, &path).await
         };
         tokio::select! {
-            () = one => st.reprocess_step(),
+            ok = one => {
+                if !ok {
+                    crate::admin::mark_reprocess_failed(&app.db, upload_id).await;
+                }
+                st.reprocess_step();
+            }
             () = st.stopping() => return,
         }
     }

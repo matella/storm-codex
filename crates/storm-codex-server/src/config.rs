@@ -176,7 +176,12 @@ impl Config {
             let loopback = self
                 .bind_addr
                 .parse::<std::net::SocketAddr>()
-                .is_ok_and(|a| a.ip().is_loopback());
+                // Exactly the addresses the Host guard accepts (`127.0.0.1`, `[::1]`):
+                // another 127/8 address would make every in-process upload a 403.
+                .is_ok_and(|a| {
+                    a.ip() == std::net::IpAddr::from([127, 0, 0, 1])
+                        || a.ip() == std::net::Ipv6Addr::LOCALHOST
+                });
             if !loopback {
                 return Err("standalone mode requires a loopback BIND_ADDR".into());
             }
@@ -241,6 +246,8 @@ mod tests {
         assert!(cfg("127.0.0.1:0", true).validate().is_ok());
         assert!(cfg("[::1]:8088", true).validate().is_ok());
         assert!(cfg("not-an-address", true).validate().is_err());
+        // loopback, but not a Host the guard accepts
+        assert!(cfg("127.0.0.2:8088", true).validate().is_err());
     }
 
     #[test]
