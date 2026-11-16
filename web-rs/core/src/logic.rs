@@ -227,10 +227,22 @@ pub fn scene_transition(st: &Layers, s: Option<&CastSeries>) -> Layers {
     }
 }
 
-/// Map slug: lower case, apostrophes removed, whitespace runs -> dashes.
+/// A character an image slug keeps: the dataset's `Battleground.slug` rule (`[a-z0-9-_.()]`), so
+/// "Checkpoint: Hanamura" → `checkpoint-hanamura` (a `:` is not a valid file name on Windows).
+pub fn slug_char(c: char) -> bool {
+    c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '-' | '_' | '.' | '(' | ')')
+}
+
+/// Map slug: lower case, apostrophes removed, whitespace runs -> dashes, then only `slug_char`s kept.
 pub fn map_slug(map: &str) -> String {
     let lower = map.to_lowercase().replace(['\'', '\u{2019}'], "");
-    lower.split_whitespace().collect::<Vec<_>>().join("-")
+    lower
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join("-")
+        .chars()
+        .filter(|c| slug_char(*c))
+        .collect()
 }
 
 /// Painted loading-screen art of a map (404 for maps without one, e.g. ARAM).
@@ -390,6 +402,7 @@ pub(crate) mod tests {
     #[test]
     fn map_art_url_uses_the_slug() {
         assert_eq!(map_slug("Blackheart's Bay"), "blackhearts-bay");
+        assert_eq!(map_slug("Checkpoint: Hanamura"), "checkpoint-hanamura");
         assert_eq!(
             map_image("Tomb of the Spider Queen"),
             "/images/battlegrounds/tomb-of-the-spider-queen.png"

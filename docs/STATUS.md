@@ -8,17 +8,19 @@ box loader `REFDATA_URL` + standalone `ingest_bundle` + `refdata trim`); migrati
 `/api/patches/{id}` accepts an old id; PTR kept out of `/hero-changes`; "Community notes" label in the patch pages.
 Removed: `dim.rs` (`sync_*`, `vendor_images`, `backfill_hero_sections`, `ingest_snapshot*`), `read::hpn_proxy`,
 `HOTSPATCHNOTES_URL`, `REFERENTIAL_URL`, `scripts/make-referential.sh`, `scripts/fetch-referential.ps1`.
-`desktop/referential-pin.txt` now pins release `data-c8d8ff8f…` (the release workflow downloads and trims it).
+`desktop/referential-pin.txt` now pins release `data-d6776d73…` (2026-11-16; the release workflow downloads and trims
+it). That release came from HotsPatchNotes PR 6: 260 patches (blog/forum duplicates merged), old ids as aliases, the
+square `heroSelect` icons (D3), and a file-safe `Battleground.slug` that names the map art (the front's `map_slug`
+follows the same rule, so "Checkpoint: Hanamura" → `checkpoint-hanamura`).
 
 Verified: the 8 acceptance criteria except the clean-VM half of 7 (fixture tests; full release with
-`REFDATA_DATASET_DIR`: 91 heroes, 1,941 talents, 276 patches, 2,174 hero sections; corpus talent-hero diff 40 players,
-no difference; end-to-end box run against the real GitHub release, second round = manifest only; trimmed bundle
-68.2 MB). Open points for the operator:
+`REFDATA_DATASET_DIR`: 91 heroes, every talentId, 260 patches, 1,893 hero sections, 91 square icons, 35 map arts;
+corpus talent-hero diff 40 players, no difference; end-to-end box run against the earlier release `data-c8d8ff8f…`,
+second round = manifest only; trimmed bundle 66.2 MB). 254 of the 300 distinct old HotsPatchNotes internalIds
+resolve; the other 46 are left out on purpose (19 old PTR notes, kept out by the dataset's PTR policy, which the
+operator confirmed; 27 Nexus-only patches, a source the dataset may not use). Open points for the operator:
 - `.env.example` and `crates/storm-codex-server/.env.example` still name `HOTSPATCHNOTES_URL` (the agent could not
   edit `.env*` files): replace with `REFDATA_URL`.
-- Only 97 of the 300 distinct old HotsPatchNotes internalIds are dataset `aliases`: the other old `/patch/<id>` links
-  answer "Patch not found" (goal 6 partly met; needs more aliases on the producer side or a decision).
-- D3 issue on HotsPatchNotes (bundle the `heroSelect` icons) not filed.
 - Box deployment: set `REFDATA_URL` (or keep the default) in the box `.env`, drop `HOTSPATCHNOTES_URL`; the old
   .NET service can then be stopped.
 

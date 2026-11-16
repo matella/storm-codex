@@ -4,5 +4,5 @@
 # The release workflow downloads it, refuses it unless the SHA-256 matches, then runs
 # `storm-codex-server refdata trim` to build the bundled referential.tar.gz (only what the app reads).
 # Refresh = pick a newer `data-<sha256>` release, change both lines in the same commit (the tag is the SHA-256).
-url=https://github.com/matella/HeroesOfTheStormPatchNotes/releases/download/data-c8d8ff8f5357d9e8b644d416376bb541c3dd31ec3406f60c9f41f44037483bab/dataset.tar.gz
-sha256=c8d8ff8f5357d9e8b644d416376bb541c3dd31ec3406f60c9f41f44037483bab
+url=https://github.com/matella/HeroesOfTheStormPatchNotes/releases/download/data-d6776d732e7265d6b714dfce5ba508b1bc8975ea7cadc4a18a41ba5b337a2c0f/dataset.tar.gz
+sha256=d6776d732e7265d6b714dfce5ba508b1bc8975ea7cadc4a18a41ba5b337a2c0f

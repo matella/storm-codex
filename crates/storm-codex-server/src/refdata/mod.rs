@@ -269,14 +269,20 @@ pub fn hero_slug(name: &str) -> String {
         .collect()
 }
 
-/// Image slug of a map, as the front computes it (`web-rs/core` `map_slug`): lowercase, apostrophes
-/// dropped, whitespace runs → `-`.
+/// Image slug of a map, the rule of the dataset's `Battleground.slug` and of the front's `map_slug`
+/// (`web-rs/core`): lowercase, apostrophes dropped, whitespace runs → `-`, then only `[a-z0-9-_.()]`
+/// kept ("Checkpoint: Hanamura" → `checkpoint-hanamura`). Used when a release has no `slug`.
 pub fn map_slug(name: &str) -> String {
     name.to_lowercase()
         .replace(['\'', '\u{2019}'], "")
         .split_whitespace()
         .collect::<Vec<_>>()
         .join("-")
+        .chars()
+        .filter(|c| {
+            c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '-' | '_' | '.' | '(' | ')')
+        })
+        .collect()
 }
 
 /// An image destination is joined to the images folder, and the names it is built from come from the
@@ -453,7 +459,12 @@ pub fn build(ds: &Dataset) -> Result<Rows, RefdataError> {
             .get("structure")
             .and_then(|s| s.get("loadingScreenImage"))
             .and_then(J::as_str);
-        if let Some(img) = image(art, format!("battlegrounds/{}.png", map_slug(&name))) {
+        // The release's `slug` (HotsPatchNotes, same rule) wins; older releases have none.
+        let slug = m
+            .get("slug")
+            .and_then(J::as_str)
+            .map_or_else(|| map_slug(&name), str::to_string);
+        if let Some(img) = image(art, format!("battlegrounds/{slug}.png")) {
             images.insert(img);
         }
     }

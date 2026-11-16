@@ -565,8 +565,8 @@ Spec `docs/specs/2026-11-15-reference-dataset-adapter-design.md` (D5).
 
 - **Source and pin.** `desktop/referential-pin.txt` pins a HotsPatchNotes **dataset release**
   (schema v1): `url=` the release's `dataset.tar.gz`, `sha256=` its SHA-256 (the release tag is
-  `data-<that SHA-256>`). Current pin: `data-c8d8ff8f5357d9e8b644d416376bb541c3dd31ec3406f60c9f41f44037483bab`
-  (2026-11-12, game 2.57.0.98348, `datasetVersion` `bf6c543f…`). Refresh = pick a newer release, change
+  `data-<that SHA-256>`). Current pin: `data-d6776d732e7265d6b714dfce5ba508b1bc8975ea7cadc4a18a41ba5b337a2c0f`
+  (2026-11-16, game 2.57.0.98348, `datasetVersion` `aacf7673…`; 260 patches, square hero icons, map `slug`). Refresh = pick a newer release, change
   both lines in one commit.
 - **Build (release workflow).** Step "reference dataset" downloads the pinned `dataset.tar.gz`,
   refuses a non-https URL or a hash mismatch and writes `dataset.tar.gz.sha256`; once the server is
@@ -577,9 +577,9 @@ Spec `docs/specs/2026-11-15-reference-dataset-adapter-design.md` (D5).
   map art); not the talent/ability icons, the other 11 locales, the schemas or the licences.
   Locally: `gh release download <tag> -R matella/HeroesOfTheStormPatchNotes -p 'dataset.tar.gz*'`
   then the same `refdata trim` command.
-- **Measured** (release `data-c8d8ff8f…`, 2026-11-15, release build on the gaming PC):
-  `dataset.tar.gz` 97,626,201 bytes → `referential.tar.gz` **68,191,914 bytes** (125 files: 89 hero
-  portraits + 2 square icons, 29 map arts, 5 JSON files; trim ≈ 2 s). The PNG art does not compress:
+- **Measured** (release `data-d6776d73…`, 2026-11-16, release build on the gaming PC):
+  `dataset.tar.gz` 100,024,455 bytes → `referential.tar.gz` **66,237,721 bytes** (125 files: 91 square
+  hero icons, 29 map arts, 5 JSON files; trim ≈ 2 s). The PNG art does not compress:
   it is most of the size.
 - **Stale snapshot (accepted risk).** A standalone install never contacts HotsPatchNotes: heroes,
   talents and patches released after the pinned dataset are unknown until a new installer ships

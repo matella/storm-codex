@@ -344,29 +344,40 @@ fn slugs_and_keys() {
     assert_eq!(hero_slug("Kel'Thuzad"), "kelthuzad");
     assert_eq!(hero_key("The Lost Vikings"), "lostvikings");
     assert_eq!(map_slug("Blackheart's Bay"), "blackhearts-bay");
-    assert_eq!(map_slug("Checkpoint: Hanamura"), "checkpoint:-hanamura");
+    assert_eq!(map_slug("Checkpoint: Hanamura"), "checkpoint-hanamura");
+    assert_eq!(
+        map_slug("Sandbox (Cursed Hollow)"),
+        "sandbox-(cursed-hollow)"
+    );
     assert_eq!(universe("Starcraft"), "StarCraft");
     assert_eq!(universe("Classic"), "Nexus");
 }
 
-/// Image destinations come from dataset names: a crafted name cannot escape the images folder.
+/// Image destinations come from dataset names and from the dataset's raw `slug`: a crafted value cannot
+/// escape the images folder.
 #[test]
 fn unsafe_image_destinations_are_refused() {
     assert!(safe_image_dest("heroes/abathur.png"));
     assert!(safe_image_dest("battlegrounds/blackhearts-bay.png"));
-    assert!(safe_image_dest(&format!(
-        "battlegrounds/{}.png",
-        map_slug("Sandbox (Cursed Hollow)")
-    )));
-    for bad in [
-        format!("battlegrounds/{}.png", map_slug("../../etc/passwd")),
-        format!("battlegrounds/{}/x.png", map_slug("..")),
-        format!("battlegrounds/{}.png", map_slug("C:\\Windows\\x")),
-        format!("battlegrounds/{}.png", map_slug("Checkpoint: Hanamura")),
-        "/abs.png".to_string(),
-        "heroes//x.png".to_string(),
+    // a derived slug keeps only file-name characters, whatever the map name
+    for name in [
+        "Sandbox (Cursed Hollow)",
+        "../../etc/passwd",
+        "C:\\Windows\\x",
     ] {
-        assert!(!safe_image_dest(&bad), "{bad}");
+        let dest = format!("battlegrounds/{}.png", map_slug(name));
+        assert!(safe_image_dest(&dest), "{dest}");
+    }
+    // a release's `slug` is used as is, so the check refuses a crafted one
+    for bad in [
+        "battlegrounds/../../etc/passwd.png",
+        "battlegrounds/../x.png",
+        "battlegrounds/c:\\windows\\x.png",
+        "battlegrounds/checkpoint:-hanamura.png",
+        "/abs.png",
+        "heroes//x.png",
+    ] {
+        assert!(!safe_image_dest(bad), "{bad}");
     }
 }
 
@@ -397,7 +408,7 @@ fn full_release_counts() {
     got.sort_unstable();
     got.dedup();
     assert_eq!(got, ids);
-    assert_eq!(rows.patches.len(), 276);
+    assert_eq!(rows.patches.len(), 260);
     let hero_sections = ds
         .patches
         .as_array()
@@ -408,22 +419,25 @@ fn full_release_counts() {
         .filter(|s| s["heroId"].is_string())
         .count();
     assert_eq!(rows.sections.len(), hero_sections);
-    // every hero portrait and every map art of the release is listed, except "Checkpoint: Hanamura"
-    // (its slug holds a `:`, refused by `safe_image_dest`)
-    assert_eq!(
-        rows.images
-            .iter()
-            .filter(|i| i.dest.starts_with("heroes/"))
-            .count(),
-        91
-    );
+    // every hero gets its square heroSelect icon (D3) and every map its art, named by the release `slug`
+    let heroes: Vec<_> = rows
+        .images
+        .iter()
+        .filter(|i| i.dest.starts_with("heroes/"))
+        .collect();
+    assert_eq!(heroes.len(), 91);
+    assert!(heroes.iter().all(|i| i.source.contains("heroselect")));
     assert_eq!(
         rows.images
             .iter()
             .filter(|i| i.dest.starts_with("battlegrounds/"))
             .count(),
-        34
+        35
     );
+    assert!(rows
+        .images
+        .iter()
+        .any(|i| i.dest == "battlegrounds/checkpoint-hanamura.png"));
     let alias = rows
         .patches
         .iter()

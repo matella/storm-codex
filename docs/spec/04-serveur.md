@@ -226,15 +226,17 @@ records `app_settings.refdata_dataset_version`.
   labels of the old API: `live` → `Patch Notes`, `balance` → `Balance Update`, `hotfix` →
   `Hotfix Patch`, `ptr` → `PTR`. Hero icon `/images/heroes/<slug>.png`, slug = English name,
   accents folded, lowercase alphanumeric (the old file names). Map art
-  `/images/battlegrounds/<map_slug>.png` from `structure.loadingScreenImage` (`map_slug` as the
-  front: lowercase, apostrophes dropped, spaces → `-`).
+  `/images/battlegrounds/<slug>.png` from `structure.loadingScreenImage` (the release's
+  `Battleground.slug`, the same rule as the front's `map_slug`; see Images below).
 - **Images (D3).** The square `heroSelect` icon when the dataset bundles it, else the loading
   portrait. A file already in `IMAGES_DIR` is never overwritten, so the square icons vendored by
   the old API stay on the box; new heroes and fresh installs get the portrait. Destinations are
   built from dataset names, so each path segment must be a plain file name (ASCII alphanumerics,
   `-`, `_`, `.`, `(`, `)`; not `.`/`..`), otherwise the image is skipped with a warning
-  (`refdata::safe_image_dest`). In release `data-c8d8ff8f…` this skips one map, "Checkpoint:
-  Hanamura": its slug has a `:`, which on Windows would name an NTFS alternate data stream.
+  (`refdata::safe_image_dest`). A map image is named from the release's `Battleground.slug`
+  (lowercase, apostrophes dropped, whitespace → `-`, only `[a-z0-9-_.()]` kept: "Checkpoint:
+  Hanamura" → `checkpoint-hanamura`); a release without `slug` gets the same rule from
+  `refdata::map_slug`, and the front's `map_slug` (`web-rs/core`) applies it too.
 - **Patch detail.** Rebuilt in the old API shape and stored in `dim_patches.data.detail`:
   `sectionType` = `Hero` (section `heroId`), `Battleground` (`battlegroundId`) or `General`;
   `anchor` = section `id`; `tableOfContents` from `heading`/`level`; `content` = the article HTML
