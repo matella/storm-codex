@@ -1,0 +1,7 @@
+# Postgres 17 Windows x64 binaries bundled by the standalone desktop app.
+# Read by scripts/fetch-postgres.ps1. Upgrade = change both lines in the same commit.
+# Source: EnterpriseDB binaries page (https://www.enterprisedb.com/download-postgresql-binaries).
+# EDB publishes no checksum for this archive: the SHA-256 below was computed on first download
+# (2026-11-12, 386263884 bytes) and is pinned trust-on-first-use.
+url=https://get.enterprisedb.com/postgresql/postgresql-17.12-1-windows-x64-binaries.zip
+sha256=a2cd8a774389347b70be7748ac4a37ef43cb6ee539c5fc3e85ae264b15e4a04c

@@ -4,7 +4,10 @@ use leptos::{prelude::*, task::spawn_local};
 use serde_json::Value;
 use storm_web_core::net;
 
-use crate::ui::{fetch, use_operator};
+use crate::{
+    standalone::ThisPc,
+    ui::{fetch, use_operator},
+};
 
 const CSS: &str = r#"
 .admin .mode.open{font:12px var(--mono);color:var(--muted-2)}
@@ -57,7 +60,7 @@ fn null_if_empty(s: String) -> Value {
 }
 
 #[component]
-fn Sec(
+pub(crate) fn Sec(
     num: Signal<u32>,
     title: &'static str,
     #[prop(optional, into)] note: Option<ViewFn>,
@@ -225,6 +228,7 @@ pub fn Admin() -> impl IntoView {
     let n_tokens = Signal::derive(move || if has_health() { 3 } else { 2 });
     let n_teams = Signal::derive(move || if has_health() { 4 } else { 3 });
     let n_colls = Signal::derive(move || if has_health() { 5 } else { 4 });
+    let n_this_pc = Signal::derive(move || n_colls.get() + 1);
 
     view! {
         <div class="ds-page admin">
@@ -355,6 +359,9 @@ pub fn Admin() -> impl IntoView {
                     </div>
                 </Sec>
             </div>
+
+            // desktop app only: hidden (and never polled) on the box
+            <ThisPc num=n_this_pc />
         </div>
     }
 }

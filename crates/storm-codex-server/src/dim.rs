@@ -277,8 +277,7 @@ pub async fn vendor_images(images_dir: &Path, base_url: &str) {
 /// notification), like `sync_patches`; no "new" ones on the first seed (empty table). Best-effort.
 pub async fn ingest_snapshot(db: &PgPool, images_dir: &Path, url: &str) -> Vec<(String, String)> {
     let url = url.to_string();
-    let dir = images_dir.to_path_buf();
-    let tmp = std::env::temp_dir().join("storm-codex-referential");
+    let tmp = unique_tmp_dir();
 
     // Download + unpacking (blocking: network + tar/gzip).
     let prep = tokio::task::spawn_blocking({
@@ -290,23 +289,66 @@ pub async fn ingest_snapshot(db: &PgPool, images_dir: &Path, url: &str) -> Vec<(
                 .body_mut()
                 .read_to_vec()
                 .map_err(|e| e.to_string())?;
-            let _ = std::fs::remove_dir_all(&tmp);
-            std::fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
-            let gz = flate2::read::GzDecoder::new(&bytes[..]);
-            tar::Archive::new(gz)
-                .unpack(&tmp)
-                .map_err(|e| e.to_string())?;
-            Ok(())
+            unpack_snapshot(&bytes, &tmp)
         }
     })
     .await;
+    ingest_unpacked(db, images_dir, tmp, prep)
+        .await
+        .unwrap_or_default()
+}
+
+/// Same as [`ingest_snapshot`] but reads the `referential.tar.gz` from disk (standalone bundle:
+/// the installer ships the snapshot, no network). A missing/corrupt file logs a warning and is
+/// an `Err` (nothing written); row-level write failures are logged and do not fail the ingest.
+pub async fn ingest_snapshot_file(
+    db: &PgPool,
+    images_dir: &Path,
+    file: &Path,
+) -> Result<Vec<(String, String)>, String> {
+    let file = file.to_path_buf();
+    let tmp = unique_tmp_dir();
+    let prep = tokio::task::spawn_blocking({
+        let tmp = tmp.clone();
+        move || -> Result<(), String> {
+            let bytes = std::fs::read(&file).map_err(|e| format!("{}: {e}", file.display()))?;
+            unpack_snapshot(&bytes, &tmp)
+        }
+    })
+    .await;
+    ingest_unpacked(db, images_dir, tmp, prep).await
+}
+
+/// One scratch directory per call so two overlapping ingests never clobber each other.
+fn unique_tmp_dir() -> PathBuf {
+    std::env::temp_dir().join(format!("storm-codex-referential-{}", uuid::Uuid::new_v4()))
+}
+
+/// Unpacks a gzipped tarball into a fresh `tmp`.
+fn unpack_snapshot(bytes: &[u8], tmp: &Path) -> Result<(), String> {
+    let _ = std::fs::remove_dir_all(tmp);
+    std::fs::create_dir_all(tmp).map_err(|e| e.to_string())?;
+    let gz = flate2::read::GzDecoder::new(bytes);
+    tar::Archive::new(gz).unpack(tmp).map_err(|e| e.to_string())
+}
+
+/// Shared tail of both entry points: checks the preparation outcome, ingests the unpacked
+/// snapshot in `tmp` (removed afterwards, also on failure).
+async fn ingest_unpacked(
+    db: &PgPool,
+    images_dir: &Path,
+    tmp: PathBuf,
+    prep: Result<Result<(), String>, tokio::task::JoinError>,
+) -> Result<Vec<(String, String)>, String> {
+    let dir = images_dir.to_path_buf();
     match prep {
         Ok(Ok(())) => {}
         Ok(Err(e)) => {
             tracing::warn!("reference data: snapshot unavailable ({e}) — universe rings fall back");
-            return Vec::new();
+            let _ = std::fs::remove_dir_all(&tmp);
+            return Err(e);
         }
-        Err(_) => return Vec::new(),
+        Err(e) => return Err(e.to_string()),
     }
 
     let read = |name: &str| -> Option<serde_json::Value> {
@@ -485,7 +527,7 @@ pub async fn ingest_snapshot(db: &PgPool, images_dir: &Path, url: &str) -> Vec<(
     })
     .await;
 
-    new_patches
+    Ok(new_patches)
 }
 
 /// Recursive copy `src` → `dst` (creates the folders, skips the files already present). Returns the
@@ -692,4 +734,86 @@ fn download_referenced(
         }
     }
     n
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    /// Builds a tiny snapshot (1 hero, 1 patch) as a `.tar.gz` file and returns its path.
+    fn tiny_snapshot(dir: &Path) -> PathBuf {
+        std::fs::create_dir_all(dir).unwrap();
+        let file = dir.join("referential.tar.gz");
+        let gz = flate2::write::GzEncoder::new(
+            std::fs::File::create(&file).unwrap(),
+            flate2::Compression::fast(),
+        );
+        let mut tar = tar::Builder::new(gz);
+        let mut add = |name: &str, body: &str| {
+            let mut h = tar::Header::new_gnu();
+            h.set_size(body.len() as u64);
+            h.set_mode(0o644);
+            h.set_cksum();
+            tar.append_data(&mut h, name, body.as_bytes()).unwrap();
+        };
+        add(
+            "heroes.json",
+            r#"[{"name":"Seedtest Hero","role":"Warrior","universe":"Warcraft"}]"#,
+        );
+        add(
+            "patches.json",
+            r#"{"items":[{"internalId":"seedtest-1","patchName":"Seed Test Patch","patchType":"Live","liveDate":"2026-01-01T00:00:00Z","heroCount":1,"mapCount":0}]}"#,
+        );
+        add("images/heroes/seedtest.png", "png");
+        tar.into_inner().unwrap().finish().unwrap();
+        file
+    }
+
+    #[tokio::test]
+    async fn ingest_snapshot_file_seeds_heroes_and_patches() {
+        let Ok(url) = std::env::var("DATABASE_URL") else {
+            eprintln!("DATABASE_URL missing → snapshot seed test skipped");
+            return;
+        };
+        let db = sqlx::postgres::PgPoolOptions::new()
+            .connect(&url)
+            .await
+            .expect("connexion");
+        sqlx::migrate!("./migrations")
+            .run(&db)
+            .await
+            .expect("migrations");
+        let root = std::env::temp_dir().join(format!("storm-codex-seed-{}", uuid::Uuid::new_v4()));
+        let file = tiny_snapshot(&root);
+        let images = root.join("images-out");
+
+        let _ = ingest_snapshot_file(&db, &images, &file).await;
+
+        let hero: Option<String> =
+            sqlx::query_scalar("SELECT role FROM dim_heroes WHERE id = 'Seedtest Hero'")
+                .fetch_optional(&db)
+                .await
+                .unwrap();
+        assert_eq!(hero.as_deref(), Some("Warrior"));
+        let patch: Option<String> =
+            sqlx::query_scalar("SELECT name FROM dim_patches WHERE internal_id = 'seedtest-1'")
+                .fetch_optional(&db)
+                .await
+                .unwrap();
+        assert_eq!(patch.as_deref(), Some("Seed Test Patch"));
+        assert!(images.join("heroes/seedtest.png").is_file());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn ingest_snapshot_file_missing_file_is_an_error_without_panic() {
+        // A lazy pool never connects: the missing file must bail out before any query.
+        let db = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://nobody@127.0.0.1:1/none")
+            .unwrap();
+        let missing = std::env::temp_dir().join(format!("absent-{}.tar.gz", uuid::Uuid::new_v4()));
+        let out = ingest_snapshot_file(&db, &std::env::temp_dir(), &missing).await;
+        assert!(out.is_err());
+    }
 }

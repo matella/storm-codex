@@ -122,7 +122,10 @@ Every mutation except `/series` and `/scene` returns `409 SeriesInactive` while 
 `415 unsupported_mime` type not accepted, `400` empty body, `413` too large, `415 mime_mismatch` if the first bytes are
 not the signature of the declared type — PNG `89 50 4E 47`, JPEG `FF D8 FF`, WebP `RIFF....WEBP` — nothing is stored;
 `404` unknown side; allowed on an inactive series) → `Series` with
-`Team.logo = "/api/cast/logo/{side}?v={updated_at_ms}"` · `GET /api/cast/logo/{side}` → bytes (`404` if none; `X-Content-Type-Options: nosniff`).
+`Team.logo = "/api/cast/logo/{side}?v={updated_at_ms}"` · `GET /api/cast/logo/{side}` → bytes (`404` if none; `X-Content-Type-Options: nosniff`,
+`Content-Security-Policy: sandbox; default-src 'none'`). The stored row is re-checked like an upload (accepted type + magic
+bytes) and answered `404` otherwise: a row restored from an imported backup is never served as another type (e.g. HTML on
+the app's origin, which the desktop shell grants IPC).
 **Series → draft sync** (one way) after `/series`, `/teams`, `/games/{n}/winner`, `DELETE /games/{n}`, `/score`: names, player names
 (`Player.name`), score (`Series::score()`) and `bo` copied into `DraftState` without touching cursor/assignments/replay
 queue/fearless; both states are persisted, WS `draft.updated` + `cast.updated`.
@@ -181,6 +184,16 @@ time, no table.
 
 🔑 = upload token (like `/api/upload-raw`). Each chunk that adds events, and each
 status change → WS `live.updated` (signal only).
+
+## Standalone desktop app (`standalone/api.rs`) — only when `STANDALONE=1`
+
+`GET /api/standalone/status`, `PUT /api/standalone/folders`, `POST /api/standalone/rescan`,
+`POST /api/standalone/shutdown`: 404 when the server is not in standalone mode.
+In standalone mode **every** route of this page (and the pages, images and `/ws`) accepts only
+a loopback `Host` (other hosts 403) and refuses any request, `GET` and the `/ws` upgrade
+included, whose `Origin` is present and is not the app's own (`http://` + loopback name + bound
+port) (403); see [04-serveur.md](04-serveur.md) "Standalone import". Bodies and answers: the route table
+in [04-serveur.md](04-serveur.md) ("Standalone import").
 
 ## Static
 

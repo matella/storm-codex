@@ -1,0 +1,11 @@
+# Reference-data snapshot (referential.tar.gz: heroes, talents, patches, images) bundled by the
+# standalone desktop installer. Built by scripts/make-referential.sh from the operator's
+# HotsPatchNotes API, uploaded by the operator as a GitHub release asset (a pre-release that is
+# never "latest", see docs/spec/09-operations.md), then pinned here. Read by
+# scripts/fetch-referential.ps1, which refuses the file unless the SHA-256 matches.
+# Refresh = new snapshot, new asset, change both lines in the same commit.
+#
+# PLACEHOLDER: no snapshot has been uploaded yet. The release workflow fails on purpose until the
+# operator replaces both values with the real asset URL and SHA-256.
+url=PLACEHOLDER-upload-referential.tar.gz-then-put-its-release-asset-url-here
+sha256=PLACEHOLDER-sha256-printed-by-scripts-make-referential.sh

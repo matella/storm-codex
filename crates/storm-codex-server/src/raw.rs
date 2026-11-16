@@ -10,7 +10,6 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::Value as J;
-use std::path::PathBuf;
 use storm_replay::{Replay, Value};
 
 #[derive(Deserialize)]
@@ -54,7 +53,7 @@ pub async fn get_raw(
     .await
     .ok()
     .flatten();
-    let Some(archived) = archived else {
+    let Some(file) = archived.map(|a| s.cfg.archived_file(&a)) else {
         return (
             StatusCode::NOT_FOUND,
             "match ou fichier archivé introuvable",
@@ -71,8 +70,7 @@ pub async fn get_raw(
 
     // miss: decoding on the fly (CPU) off the runtime thread
     let stream = q.stream.clone();
-    let decoded =
-        tokio::task::spawn_blocking(move || decode_stream(&PathBuf::from(archived), &stream)).await;
+    let decoded = tokio::task::spawn_blocking(move || decode_stream(&file, &stream)).await;
     let json = match decoded {
         Ok(Ok(v)) => v,
         Ok(Err(e)) => {

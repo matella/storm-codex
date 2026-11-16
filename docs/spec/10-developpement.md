@@ -46,6 +46,8 @@ working. Already-applied SQL migrations are never edited, so their French commen
 | Decoding (`storm-replay`) | `02-storm-replay.md` | heroprotocol crosscheck + mini-corpus |
 | Front-end (`web-rs/`) page/route/overlay/crate | `08-frontend.md` | `cargo clippy` native + `--target wasm32-unknown-unknown`, `cargo test` in `web-rs/`, `trunk build`, size budget, browser check on real data (+ real OBS for OBS sources) |
 | Env variable, compose, Dockerfile, CI | `04-serveur.md` / `09-operations.md` | build/deployment tested |
+| Desktop shell (`desktop/`: IPC command, supervision, updater, backup, `tauri.conf.json`) | `09-operations.md` "Standalone desktop app" (+ `08-frontend.md` if the web UI's IPC contract changes) | `cargo fmt`/`clippy --all-targets -D warnings`/`test -- --include-ignored` on `desktop/` with `PG_BIN_DIR` (CI `desktop` job) |
+| Desktop packaging/release (`tauri.bundle.conf.json`, `windows/hooks.nsh`, `release-desktop.yml`, `*-pin.txt`, `scripts/fetch-*.ps1`, `scripts/make-referential.sh`) | `09-operations.md` "Packaging", "Reference-data snapshot", "Releasing the desktop app" | dry run (`release-desktop` manual run → draft release) installed on a clean profile; measurements table updated |
 | WS or Jarvis event | `07-evenements.md` | event observed (WS or Redis) |
 | Perf affected (parse, API, backfill) | budget re-measured in `01-architecture.md` | matching bench |
 | New draft format, setting, reference data | `04-serveur.md` + relevant section | engine test (draft = TDD, zero I/O) |

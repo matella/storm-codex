@@ -1,0 +1,13 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "active": true,
+    "resources": {
+      "../target/release/storm-codex-server.exe": "storm-codex-server.exe",
+      "../target/postgres/": "postgres/",
+      "../web-rs/dist/": "web/",
+      "../assets/minimaps/": "minimaps/",
+      "../target/referential/referential.tar.gz": "referential.tar.gz"
+    }
+  }
+}

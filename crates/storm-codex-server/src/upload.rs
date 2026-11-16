@@ -1,7 +1,7 @@
 //! Upload pipeline (milestone 3's parser.js): token → archive first → parse pool →
 //! projection → status. Semantics: waits for the result up to 2 s, otherwise `202 accepted`.
 
-use crate::{project, AppState, PARSER_VERSION};
+use crate::{config::Config, project, AppState, PARSER_VERSION};
 use axum::{
     body::Bytes,
     extract::State,
@@ -145,7 +145,7 @@ pub async fn upload(
     .bind(token_id)
     .bind(filename(&headers).unwrap_or_else(|| format!("{content_hash}.StormReplay")))
     .bind(&content_hash)
-    .bind(archived.to_string_lossy().as_ref())
+    .bind(Config::archive_entry(&content_hash))
     .fetch_one(&state.db)
     .await
     {
@@ -403,7 +403,8 @@ pub(crate) async fn resume_pending(state: &AppState) -> Result<usize, sqlx::Erro
         let st = state.clone();
         tokio::spawn(async move {
             if let Ok(p) = st.parse_sem.clone().acquire_owned().await {
-                run_parse(st, upload_id, PathBuf::from(path), p).await;
+                let file = st.cfg.archived_file(&path);
+                run_parse(st, upload_id, file, p).await;
             }
         });
     }

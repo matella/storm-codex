@@ -9,6 +9,7 @@ mod pages;
 mod patchui;
 mod replay;
 mod safehtml;
+mod standalone;
 mod ui;
 
 use leptos::{mount::mount_to, prelude::*, wasm_bindgen::JsCast, web_sys};
@@ -24,6 +25,7 @@ use pages::{
     leagues::Leagues, live::Live, maps::Maps, match_detail::MatchDetail, matches::Matches,
     patch::Patch, patches::Patches, player::Player, players::Players, scouting::Scouting,
     scouting_report::ScoutingReport, session::Session, synergies::Synergies, trends::Trends,
+    welcome::Welcome,
 };
 
 /// Redirect of an old page (`legacyRoutes.ts`), kept for bookmarks.
@@ -57,6 +59,7 @@ fn App() -> impl IntoView {
                     <Route path=path!("scouting") view=Scouting />
                     <Route path=path!("scouting/:id") view=ScoutingReport />
                     <Route path=path!("admin") view=Admin />
+                    <Route path=path!("welcome") view=Welcome />
                     <Route path=path!("draft") view=|| view! { <Legacy to=LEGACY_REDIRECTS[0].1 /> } />
                     <Route path=path!("draft/replay") view=|| view! { <Legacy to=LEGACY_REDIRECTS[1].1 /> } />
                 </ParentRoute>

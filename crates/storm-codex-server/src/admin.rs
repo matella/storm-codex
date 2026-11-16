@@ -165,37 +165,74 @@ pub async fn reprocess(State(s): State<AppState>, headers: HeaderMap) -> (Status
     )
 }
 
-async fn reprocess_one(state: &AppState, upload_id: i64, path: &str) {
-    let p = std::path::PathBuf::from(path);
-    let fname = path.to_owned();
+/// Uploads parsed by an older parser (`parsed`, `parser_version < PARSER_VERSION`): what the
+/// standalone server re-processes by itself after an update (a failure is recorded with
+/// [`mark_reprocess_failed`] so it is not re-parsed at every start; `POST /api/admin/reprocess`
+/// still retries it).
+pub(crate) async fn outdated_uploads(db: &sqlx::PgPool) -> Result<Vec<(i64, String)>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT id, archived_path FROM uploads
+         WHERE archived_path IS NOT NULL AND status = 'parsed' AND parser_version < $1
+         ORDER BY id",
+    )
+    .bind(PARSER_VERSION)
+    .fetch_all(db)
+    .await
+}
+
+/// Re-parses and re-projects one upload. `true` once the row carries the current
+/// `PARSER_VERSION`; `false` when anything failed (the row and its projection are left as is).
+pub(crate) async fn reprocess_one(state: &AppState, upload_id: i64, path: &str) -> bool {
+    let p = state.cfg.archived_file(path);
+    let fname = p.to_string_lossy().into_owned();
     let out =
         match tokio::task::spawn_blocking(move || storm_stats::process_replay(&p, &fname)).await {
             Ok(out) => out,
             Err(e) => {
                 tracing::error!("reprocess upload {upload_id}: worker failed: {e}");
-                return;
+                return false;
             }
         };
     if out.status != 1 {
-        return; // the failure stays classified as is
+        return false; // the failure stays classified as is
     }
-    if let Some(fp) = crate::upload::game_fingerprint(&out) {
-        match project::project_match(&state.db, &fp, PARSER_VERSION, &out).await {
-            Ok(match_id) => {
-                if let Err(e) = sqlx::query(
-                    "UPDATE uploads SET status='parsed', parser_version=$2, match_id=$3,
-                     error_class=NULL, error_msg=NULL, parsed_at=now() WHERE id=$1",
-                )
-                .bind(upload_id)
-                .bind(PARSER_VERSION)
-                .bind(match_id)
-                .execute(&state.db)
-                .await
-                {
-                    tracing::error!("reprocess upload {upload_id}: status not written: {e}");
-                }
+    let Some(fp) = crate::upload::game_fingerprint(&out) else {
+        return false;
+    };
+    match project::project_match(&state.db, &fp, PARSER_VERSION, &out).await {
+        Ok(match_id) => {
+            if let Err(e) = sqlx::query(
+                "UPDATE uploads SET status='parsed', parser_version=$2, match_id=$3,
+                 error_class=NULL, error_msg=NULL, parsed_at=now() WHERE id=$1",
+            )
+            .bind(upload_id)
+            .bind(PARSER_VERSION)
+            .bind(match_id)
+            .execute(&state.db)
+            .await
+            {
+                tracing::error!("reprocess upload {upload_id}: status not written: {e}");
+                return false;
             }
-            Err(e) => tracing::error!("reprocess upload {upload_id}: projection: {e}"),
+            true
         }
+        Err(e) => {
+            tracing::error!("reprocess upload {upload_id}: projection: {e}");
+            false
+        }
+    }
+}
+
+/// Standalone: an upload the current parser could not re-process keeps its previous
+/// projection, and its `parser_version` is raised so it is not re-parsed at every start.
+/// `POST /api/admin/reprocess` (which selects every row) can still retry it.
+pub(crate) async fn mark_reprocess_failed(db: &sqlx::PgPool, upload_id: i64) {
+    if let Err(e) = sqlx::query("UPDATE uploads SET parser_version=$2 WHERE id=$1")
+        .bind(upload_id)
+        .bind(PARSER_VERSION)
+        .execute(db)
+        .await
+    {
+        tracing::error!("reprocess upload {upload_id}: failure not recorded: {e}");
     }
 }
