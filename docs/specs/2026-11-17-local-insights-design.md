@@ -128,4 +128,3 @@ F1, F2 → F3, F4 → F5 → F6 → F7, one commit per feature (code + spec docs
   - F7 nemesis has no "most-used hero against them" (the corpus keeps toons only, to save memory).
 - Perf: compare reads the corpus too (110 → 12 ms). Player insights (75–100 ms for 2,684 games) sits at the
   API p95 < 100 ms contract; recorded in `docs/spec/01-architecture.md` for the operator.
-
