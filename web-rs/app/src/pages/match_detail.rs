@@ -24,6 +24,7 @@ use storm_web_core::{
 
 use crate::{
     matchui::{AwardTag, ModeTag},
+    pages::match_insights::{MatchInsightsSections, Who},
     ui::{fetch, map_art, use_operator, use_talents, Link, Portrait, SecHead, Tone},
 };
 
@@ -674,6 +675,23 @@ fn score_tab(
             }
         })
     };
+    let insights_n = next();
+    next();
+    next();
+    let who: HashMap<String, Who> = ctx
+        .players
+        .iter()
+        .filter_map(|p| {
+            Some((
+                text(get(p, "ToonHandle"))?.to_string(),
+                Who {
+                    name: text(get(p, "name")).unwrap_or("").to_string(),
+                    hero: text(get(p, "hero")).unwrap_or("").to_string(),
+                    team: if is_num(get(p, "team"), 1.0) { 1 } else { 0 },
+                },
+            ))
+        })
+        .collect();
     let timeline_n = next();
     let chat_n = next();
     let bm_n = next();
@@ -692,6 +710,7 @@ fn score_tab(
         </section>
         {level}
         {xp}
+        <MatchInsightsSections id=ctx.id my_team=ctx.my_team who=who first=insights_n />
         <MatchTimeline m=mm.clone() players=by_toon.clone() n=timeline_n />
         <ChatLog m=mm.clone() players=by_toon n=chat_n />
         <BmTable players=players m=mm n=bm_n />

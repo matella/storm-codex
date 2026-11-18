@@ -1,6 +1,29 @@
 # STATUS — read first, update last
 
-## Reference dataset adapter (2026-11-15), branch `feat/reference-dataset-adapter` (on top of `feat/standalone-installer`, not merged)
+## Local insights (2026-11-18), branch `feat/local-insights`, not merged, not deployed
+
+Spec `docs/specs/2026-11-17-local-insights-design.md` (approved 2026-11-18, issue #34), from the hotsdash.com
+gap analysis (`docs/research/2026-11-17-hotsdash-gap-analysis.md`; operator: local only, no Twitch/Discord).
+F1–F7 implemented: `/records`, early leads on `/maps`, team fights + time window + camps on the match page,
+`/compare`, Player "Insights" tab. Server `crates/storm-codex-server/src/insights/` (logic, endpoints, in-memory
+corpus with incremental refresh + startup warm-up); web `pages/{records,compare,match_insights}.rs`,
+`core/insights.rs`. Contracts in `docs/spec/05-api.md` ("Local insights"), `04-serveur.md`, `08-frontend.md`.
+
+- Damage over a time window is **not in replays** (end-of-game totals only); the window shows what is
+  timestamped and the whole-game teamfight totals, labelled.
+- Measured on a copy of the box DB (3,480 games, release build): warm endpoints 4–100 ms (player insights at the 100 ms API budget); corpus load 3.3 s at
+  startup (background); server RSS 55 MB after it (11 MB without). App bundle 977 kB br (budget 1 MB: 23 kB left).
+- Checked in a browser on the copy: Records, Maps early leads, match fights/window/camps (fight click → window
+  in URL), Player Insights, Compare.
+- Synced with `origin/main` at `c1a034f` (reference dataset adapter). On the merged tree: 475 workspace tests passed, 10 ignored, and 145 web tests passed. The unchanged watcher backfill ordering test failed once, then passed five targeted reruns and the full rerun. All three web bundles are within budget (app: 976,994 bytes Brotli).
+- Resynced with `origin/main` at `0ad25d7`, including the Windows Postgres path fix (PR #35) and release workflow changes (PR #36). The desktop release workflow succeeded on the path-fix commit (run `44367878850`), and the operator reported a successful full installer. On the resynced insights branch, Rust formatting and Clippy passed and 475 workspace tests passed (10 ignored).
+- **Not done on this branch**: Windows standalone acceptance with Local Insights (mh-home); deploy (R3, operator).
+- Reviewer pass done (GADS): corpus staleness bug, possible panic on a bad team index, interleaved fights,
+  front-end error/empty states, Records map/hero filters fixed; deviations noted in the spec.
+- Fight rule (≤ 15 s, ≤ 30 map units, ≥ 2 deaths) and camp reasons are heuristics: tune on real games if they
+  read wrong.
+
+## Reference dataset adapter (2026-11-15), merged into `main` in PR #33
 
 Spec `docs/specs/2026-11-15-reference-dataset-adapter-design.md` (D1–D7) implemented. New module
 `crates/storm-codex-server/src/refdata/` (pure dataset → rows, `classify` = port of `PatchClassifier.cs`, `load` =

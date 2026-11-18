@@ -265,7 +265,7 @@ pub fn map_art(map: &str) -> String {
 }
 
 /// Pill that is "on" when `on` is true.
-fn pill_class(on: bool) -> &'static str {
+pub(crate) fn pill_class(on: bool) -> &'static str {
     if on {
         "ds-pill on"
     } else {

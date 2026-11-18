@@ -67,6 +67,9 @@ Design: `docs/specs/2026-11-12-standalone-installer-design.md`.
 | End of game → page updated | < 5 s | 1.4 s (`docs/research/2026-06-12-jalon3-bench.md`) |
 | API p95 | < 100 ms | 52 ms (same); `GET /api/scouting/{id}`: 5.9 ms (25 requests, real 3-game report, 2026-09-26) |
 | 3-year archive backfill (~2,800) | < 5 min | 1.8 min (same) |
+| Local insights (`/api/records`, `/api/maps/early-leads`, `/api/matches/{id}/insights`, `/api/compare`) | API p95 < 100 ms | warm: 35 / 6 / 4 / 12 ms (copy of the box DB, 3,480 games, release, 2026-11-18) |
+| Local insights: `/api/players/{toon}/insights` | API p95 < 100 ms — **at the limit, operator to accept or ask for more work** | 75–100 ms (same setup; account with 2,684 games) |
+| Insights corpus (in memory) | load in the background at startup; RAM documented | 3.3 s load, +44 MB RSS for 3,480 games (~13 kB/game) (same setup) |
 
 Any PR that puts a budget at risk re-measures it (benches: `storm-stats-dump --bench`,
 `backfill_bench.py`).

@@ -2,6 +2,7 @@
 
 pub mod admin;
 pub mod cast;
+pub mod compare;
 pub mod hero;
 pub mod hero_changes;
 pub mod heroes;
@@ -9,12 +10,14 @@ pub mod leagues;
 pub mod live;
 pub mod maps;
 pub mod match_detail;
+pub mod match_insights;
 pub mod matches;
 pub mod patch;
 pub mod patches;
 pub mod player;
 pub mod player_identity;
 pub mod players;
+pub mod records;
 pub mod scouting;
 pub mod scouting_report;
 pub mod session;

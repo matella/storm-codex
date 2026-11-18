@@ -52,6 +52,99 @@ fn PlayerChat(toon: Signal<String>) -> impl IntoView {
     }
 }
 
+/// Insights tab: nemesis, thrown leads, comebacks, deaths outside fights, best and worst maps and heroes
+/// (spec `docs/specs/2026-11-17-local-insights-design.md`, F7).
+/// Up to three best and three worst, never the same entry in both (a short list is split in two).
+fn best_worst(
+    list: &[storm_web_core::insights::Ranked],
+) -> (
+    Vec<storm_web_core::insights::Ranked>,
+    Vec<storm_web_core::insights::Ranked>,
+) {
+    let n = list.len().min(6);
+    let best = n.div_ceil(2);
+    (
+        list.iter().take(best).cloned().collect(),
+        list.iter().rev().take(n - best).cloned().collect(),
+    )
+}
+
+#[component]
+fn PlayerInsightsTab(toon: Signal<String>) -> impl IntoView {
+    use storm_web_core::insights::{pct as ipct, PlayerInsights, Ranked};
+    let data = fetch::<PlayerInsights>(move || {
+        format!("/api/players/{}/insights", uri_component(&toon.get()))
+    });
+    let ranked = |list: Vec<Ranked>, link: fn(&str) -> String| {
+        list.into_iter()
+            .map(|r| {
+                let to = link(&r.name);
+                view! {
+                    <div class="ds-kv"><span><Link to=to>{r.name.clone()}</Link></span>
+                        <span class=format!("ds-num wr {}", tone(r.pct as i64))>{format!("{}% · {}g", r.pct, r.games)}</span></div>
+                }
+            })
+            .collect_view()
+    };
+    move || {
+        let d = match data.get() {
+            None => return view! { <div class="ds-empty">"loading…"</div> }.into_any(),
+            Some(Err(_)) => {
+                return view! { <div class="ds-empty">"No insights for this player."</div> }
+                    .into_any()
+            }
+            Some(Ok(d)) => d,
+        };
+        let map_link: fn(&str) -> String = |m| format!("/matches?map={}", uri_component(m));
+        let hero_link: fn(&str) -> String = |h| format!("/hero/{}", uri_component(h));
+        let (best_maps, worst_maps) = best_worst(&d.maps);
+        let (best_heroes, worst_heroes) = best_worst(&d.heroes);
+        view! {
+            {d.small_sample.then(|| view! { <div class="ds-empty">{format!("Small sample: {} games. Read these as hints.", d.games)}</div> })}
+            <section class="ds-sec">
+                <SecHead num=1 title="At a glance" sub=format!("{} games", d.games) />
+                <div class="ds-panel">
+                    <div class="ds-statline">
+                        <div class="ds-stat"><span class="ds-label">"Thrown leads"</span><strong>{ipct(d.thrown.count, d.thrown.losses)}<span>"%"</span></strong>
+                            <small>{format!("{} of {} losses after leading by 2+ levels", d.thrown.count, d.thrown.losses)}</small></div>
+                        <div class="ds-stat"><span class="ds-label">"Comebacks"</span><strong>{ipct(d.comebacks.count, d.comebacks.wins)}<span>"%"</span></strong>
+                            <small>{format!("{} of {} wins after trailing by 2+ levels", d.comebacks.count, d.comebacks.wins)}</small></div>
+                        <div class="ds-stat"><span class="ds-label">"Deaths outside fights"</span><strong>{ipct(d.deaths.isolated, d.deaths.total)}<span>"%"</span></strong>
+                            <small>{format!("{} of {} deaths were not part of a team fight", d.deaths.isolated, d.deaths.total)}</small></div>
+                    </div>
+                </div>
+            </section>
+            <section class="ds-sec">
+                <SecHead num=2 title="Nemesis" sub="who took part in killing this player most" />
+                <div class="ds-panel flush">
+                    {d.nemesis.into_iter().map(|n| view! {
+                        <div class="ds-kv"><span><Link to=format!("/player/{}", uri_component(&n.toon))>{n.name.clone().unwrap_or(n.toon.clone())}</Link></span>
+                            <span class="ds-num">{format!("{} kills in {} games", n.kills, n.games)}</span></div>
+                    }).collect_view()}
+                </div>
+            </section>
+            <section class="ds-sec">
+                <SecHead num=3 title="Maps" sub="10 games or more" />
+                <div class="ds-panel flush">
+                    <div class="ds-kv"><span class="ds-label">"Best"</span><span></span></div>
+                    {ranked(best_maps, map_link)}
+                    <div class="ds-kv"><span class="ds-label">"Worst"</span><span></span></div>
+                    {ranked(worst_maps, map_link)}
+                </div>
+            </section>
+            <section class="ds-sec">
+                <SecHead num=4 title="Heroes" sub="play more of the first, less of the second · 10 games or more" />
+                <div class="ds-panel flush">
+                    <div class="ds-kv"><span class="ds-label">"Best"</span><span></span></div>
+                    {ranked(best_heroes, hero_link)}
+                    <div class="ds-kv"><span class="ds-label">"Worst"</span><span></span></div>
+                    {ranked(worst_heroes, hero_link)}
+                </div>
+            </section>
+        }.into_any()
+    }
+}
+
 #[component]
 pub fn Player() -> impl IntoView {
     let params = use_params_map();
@@ -66,6 +159,7 @@ pub fn Player() -> impl IntoView {
         fetch::<Identity>(move || format!("/api/players/{}/identity", uri_component(&toon.get())));
     let all_heroes = RwSignal::new(false);
     let identity_tab = move || query_value(&loc.search.get(), "tab").as_deref() == Some("identity");
+    let insights_tab = move || query_value(&loc.search.get(), "tab").as_deref() == Some("insights");
     let go = move |to: String, replace: bool| {
         nav.with_value(|nav| {
             nav(
@@ -96,6 +190,8 @@ pub fn Player() -> impl IntoView {
                     let ident_link = format!("/player/{}?tab=identity", uri_component(&tk));
                     let base_path = format!("/player/{}", uri_component(&tk));
                     let (bp, ip) = (base_path.clone(), ident_link.clone());
+                    let ins_link = format!("/player/{}?tab=insights", uri_component(&tk));
+                    let cmp_link = format!("/compare?a={}", uri_component(&tk));
                     view! {
                         <header class="ds-hhead" style=format!("--ring: {ring}")>
                             {main.clone().map(|h| view! { <Portrait hero=h size=160 class="xl" /> })}
@@ -121,11 +217,15 @@ pub fn Player() -> impl IntoView {
                         </header>
 
                         <nav class="ds-nav" aria-label="Player sections">
-                            <a class=move || if identity_tab() { None } else { Some("map") } href="?" on:click=move |e| { e.prevent_default(); go(bp.clone(), false) }>"Stats"</a>
+                            <a class=move || if identity_tab() || insights_tab() { None } else { Some("map") } href="?" on:click=move |e| { e.prevent_default(); go(bp.clone(), false) }>"Stats"</a>
+                            <a class=move || if insights_tab() { Some("map") } else { None } href="?tab=insights" on:click=move |e| { e.prevent_default(); go(ins_link.clone(), false) }>"Insights"</a>
                             <a class=move || if identity_tab() { Some("map") } else { None } href="?tab=identity" on:click=move |e| { e.prevent_default(); go(ip.clone(), false) }>"Identity"</a>
+                            <Link to=cmp_link>"Compare ›"</Link>
                         </nav>
                         {move || if identity_tab() {
                             view! { <PlayerIdentity toon=toon data=identity /> }.into_any()
+                        } else if insights_tab() {
+                            view! { <PlayerInsightsTab toon=toon /> }.into_any()
                         } else {
                             let heroes = d.heroes.clone();
                             let n_heroes = heroes.len();

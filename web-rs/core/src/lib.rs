@@ -5,6 +5,7 @@ pub mod castctl;
 pub mod dashboard;
 pub mod herodetail;
 pub mod heroes;
+pub mod insights;
 pub mod live;
 pub mod livegame;
 pub mod logic;

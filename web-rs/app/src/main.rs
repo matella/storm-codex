@@ -21,11 +21,11 @@ use storm_web_core::route::LEGACY_REDIRECTS;
 
 use layout::Layout;
 use pages::{
-    admin::Admin, cast::Cast, hero::Hero, hero_changes::HeroChanges, heroes::Heroes,
-    leagues::Leagues, live::Live, maps::Maps, match_detail::MatchDetail, matches::Matches,
-    patch::Patch, patches::Patches, player::Player, players::Players, scouting::Scouting,
-    scouting_report::ScoutingReport, session::Session, synergies::Synergies, trends::Trends,
-    welcome::Welcome,
+    admin::Admin, cast::Cast, compare::ComparePage, hero::Hero, hero_changes::HeroChanges,
+    heroes::Heroes, leagues::Leagues, live::Live, maps::Maps, match_detail::MatchDetail,
+    matches::Matches, patch::Patch, patches::Patches, player::Player, players::Players,
+    records::RecordsPage, scouting::Scouting, scouting_report::ScoutingReport, session::Session,
+    synergies::Synergies, trends::Trends, welcome::Welcome,
 };
 
 /// Redirect of an old page (`legacyRoutes.ts`), kept for bookmarks.
@@ -53,6 +53,8 @@ fn App() -> impl IntoView {
                     <Route path=path!("hero-changes") view=HeroChanges />
                     <Route path=path!("patch/:id") view=Patch />
                     <Route path=path!("maps") view=Maps />
+                    <Route path=path!("records") view=RecordsPage />
+                    <Route path=path!("compare") view=ComparePage />
                     <Route path=path!("trends") view=Trends />
                     <Route path=path!("leagues") view=Leagues />
                     <Route path=path!("cast") view=Cast />

@@ -221,13 +221,14 @@ pub fn uri_component(s: &str) -> String {
 }
 
 /// Top-bar tabs of the app: (path, label). Same order as `Layout.tsx`.
-pub const TABS: [(&str, &str); 13] = [
+pub const TABS: [(&str, &str); 14] = [
     ("/", "Session"),
     ("/live", "Live"),
     ("/matches", "Matches"),
     ("/players", "Players"),
     ("/heroes", "Heroes"),
     ("/maps", "Maps"),
+    ("/records", "Records"),
     ("/synergies", "Synergies"),
     ("/patches", "Patch Notes"),
     ("/trends", "Trends"),
