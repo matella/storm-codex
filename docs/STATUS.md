@@ -1,11 +1,23 @@
 # STATUS — read first, update last
 
-## hotsdash.com gap analysis (2026-11-17), issue #34, research only
+## Local insights (2026-11-18), branch `feat/local-insights`, not merged, not deployed
 
-`docs/research/2026-11-17-hotsdash-gap-analysis.md`: 22 gaps rated by data, effort and value, plus a
-recommended order (quick wins, coaching, streaming). Operator: local only, no Twitch/Discord. Branch
-`feat/local-insights`: spec `docs/specs/2026-11-17-local-insights-design.md` (F1–F7) **awaiting approval**; no code yet.
-Finding: damage over a time window is not in replays (end-of-game totals only).
+Spec `docs/specs/2026-11-17-local-insights-design.md` (approved 2026-11-18, issue #34), from the hotsdash.com
+gap analysis (`docs/research/2026-11-17-hotsdash-gap-analysis.md`; operator: local only, no Twitch/Discord).
+F1–F7 implemented: `/records`, early leads on `/maps`, team fights + time window + camps on the match page,
+`/compare`, Player "Insights" tab. Server `crates/storm-codex-server/src/insights/` (logic, endpoints, in-memory
+corpus with incremental refresh + startup warm-up); web `pages/{records,compare,match_insights}.rs`,
+`core/insights.rs`. Contracts in `docs/spec/05-api.md` ("Local insights"), `04-serveur.md`, `08-frontend.md`.
+
+- Damage over a time window is **not in replays** (end-of-game totals only); the window shows what is
+  timestamped and the whole-game teamfight totals, labelled.
+- Measured on a copy of the box DB (3,480 games, release build): warm endpoints 4–130 ms; corpus load 3.3 s at
+  startup (background); server RSS 55 MB after it (11 MB without). App bundle 973 kB br (budget 1 MB: 27 kB left).
+- Checked in a browser on the copy: Records, Maps early leads, match fights/window/camps (fight click → window
+  in URL), Player Insights, Compare.
+- **Not done**: Windows standalone acceptance (mh-home); deploy (R3, operator).
+- Fight rule (≤ 15 s, ≤ 30 map units, ≥ 2 deaths) and camp reasons are heuristics: tune on real games if they
+  read wrong.
 
 ## Standalone Windows installer (2026-11-14), branch `feat/standalone-installer` (not merged, not released)
 
