@@ -618,25 +618,30 @@ measured.
 
 **Supply-chain rules of the release job** (it holds `contents: write` and the signing key):
 - every action pinned to a full commit SHA with the version in a comment (`actions/checkout`
-  v4.4.0; `dtolnay/rust-toolchain` at the commit of its `stable` branch tip on 2026-11-14 — the
+  v7.0.1, Node 24; `dtolnay/rust-toolchain` at the commit of its `stable` branch tip on 2026-11-14 — the
   toolchain itself is pinned by `toolchain: 1.94.0`, env `RUST_TOOLCHAIN`, the version the build is
   checked with locally). Bumping an action = resolve the new tag's commit
   (`gh api repos/<owner>/<repo>/git/ref/tags/<tag>`, dereferencing an annotated tag) and replace
   SHA and comment together;
 - **no build cache** (no `rust-cache`): a restored `~/.cargo/bin` or `target/` could supply a
   `cargo-tauri` or a build output to the step that holds the key. Clean build, releases are rare.
-  `cargo install tauri-cli … --locked --force` never reuses an existing binary;
-- Trunk is checked against the SHA-256 **committed** in the workflow (`TRUNK_SHA256`, next to
-  `TRUNK_VERSION`; computed by downloading the pinned asset once, 2026-11-14), not a hash from the
-  same release. Bump both together;
+- tauri-cli and Trunk are the projects' official prebuilt Windows binaries, each checked against a
+  SHA-256 **committed** in the workflow (`TAURI_CLI_SHA256` next to `TAURI_CLI_VERSION`, 2026-11-18,
+  equal to the digest GitHub lists for `cargo-tauri-x86_64-pc-windows-msvc.zip`; `TRUNK_SHA256` next
+  to `TRUNK_VERSION`, 2026-11-14), not a hash from the same release, and `cargo tauri --version` must
+  print the pinned version. Bump each version and hash together. The prebuilt tauri-cli replaced a
+  `cargo install --locked --force` that compiled it from source (~11 of the run's ~33 min,
+  measured 2026-11-18);
 - `actions/checkout` with `persist-credentials: false` (the token is not left in `.git/config`;
   `gh` gets it through `GH_TOKEN`);
 - event values (`github.ref_name`, `github.event_name`, `github.sha`, `github.repository`) reach the
   scripts through `env:`, never interpolated inside `run:` (a tag name can contain `$(…)`).
 Deferred hardening: `ci.yml` (no signing key; only `publish` writes) still uses movable action refs
-(`actions/checkout@v4`, `dtolnay/rust-toolchain@stable`, `Swatinem/rust-cache@v2`,
-`taiki-e/install-action@v2`, `docker/*@v3`/`@v6`) and the default `persist-credentials`; only its
-new `actions/cache` is SHA-pinned.
+(`actions/checkout@v7`, `dtolnay/rust-toolchain@stable`, `Swatinem/rust-cache@v2`,
+`taiki-e/install-action@v2`, `docker/setup-buildx-action@v4`, `docker/login-action@v4`,
+`docker/build-push-action@v7`) and the default `persist-credentials`; only its `actions/cache`
+(v6.1.0) is SHA-pinned. Every action of both workflows runs on Node 24 or is composite (2026-11-18:
+GitHub deprecated Node 20 actions).
 
 **Cutting a release.**
 1. Bump `version` in `desktop/tauri.conf.json` (`X.Y.Z`; also `desktop/Cargo.toml` for clarity),
@@ -646,8 +651,8 @@ new `actions/cache` is SHA-pinned.
 3. The workflow (windows-latest): refuses a placeholder updater pubkey or a missing signing secret;
    fetches the pinned reference dataset and Postgres 17 (both SHA-256 checked);
    installs pinned tools (Rust `1.94.0` + `wasm32-unknown-unknown`; Trunk prebuilt `0.22.0-beta.1`,
-   SHA-256 checked against the committed `TRUNK_SHA256`; `cargo install tauri-cli --version 2.12.4
-   --locked --force`; NSIS is downloaded by the Tauri bundler itself); builds the three `web-rs` bundles, `cargo build --release --locked -p
+   SHA-256 checked against the committed `TRUNK_SHA256`; tauri-cli `2.12.4` prebuilt, checked against
+   `TAURI_CLI_SHA256`; NSIS is downloaded by the Tauri bundler itself); builds the three `web-rs` bundles, `cargo build --release --locked -p
    storm-codex-server`, trims the reference bundle (`refdata trim`), then `cargo tauri build --config tauri.bundle.conf.json` with the signing
    secrets in the environment (gives `…-setup.exe` and its `.sig`).
 4. It publishes, with `gh release create --latest`, the release `desktop-vX.Y.Z` with

@@ -6,7 +6,7 @@
 #   installed apps): the dry run. Delete the draft afterwards.
 # Fails on purpose while the updater public key is a placeholder, when the signing secret is missing, or when the
 # pinned reference dataset (desktop/referential-pin.txt) does not match its SHA-256. Tools are pinned: tauri-cli
-# (cargo install --locked --force), Trunk (prebuilt, SHA-256 committed below), the Rust toolchain version; NSIS is downloaded by the Tauri bundler itself.
+# and Trunk (official prebuilt binaries, SHA-256 committed below), the Rust toolchain version; NSIS is downloaded by the Tauri bundler itself.
 # Supply-chain rules of this job (it holds contents:write and the updater signing key): every action is pinned to a
 # full commit SHA (version in a comment); no build cache is restored (no rust-cache: a restored ~/.cargo/bin or
 # target/ could plant a cargo-tauri or a build output); checkout does not persist the token; event values reach
@@ -23,6 +23,10 @@ concurrency:
   cancel-in-progress: false
 env:
   TAURI_CLI_VERSION: "2.12.4"
+  # SHA-256 of cargo-tauri-x86_64-pc-windows-msvc.zip from release tauri-cli-v2.12.4 (7,763,590 bytes; equal to the
+  # digest GitHub lists for the asset), computed on download 2026-11-18. Change it together with TAURI_CLI_VERSION.
+  # The prebuilt binary replaces a `cargo install` that compiled tauri-cli from source (~11 min per run).
+  TAURI_CLI_SHA256: "3e8687fb184bd7f10ebd8642f7715f79f4a605c0694c142a21507e8a24dc0f8b"
   TRUNK_VERSION: "0.22.0-beta.1" # same as the Dockerfile
   # SHA-256 of trunk-x86_64-pc-windows-msvc.zip v0.22.0-beta.1 (10,270,358 bytes), computed on download 2026-11-14.
   # Change it together with TRUNK_VERSION.
@@ -35,7 +39,7 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (Node 24)
         with:
           persist-credentials: false # the contents:write token stays out of .git/config (gh gets it via GH_TOKEN)
       - name: version (tag = desktop/tauri.conf.json)
@@ -100,8 +104,23 @@ jobs:
           $dir = Join-Path $env:RUNNER_TEMP 'trunk'
           Expand-Archive -LiteralPath $zip -DestinationPath $dir
           $dir >> $env:GITHUB_PATH
-      - name: install tauri-cli (pinned)
-        run: cargo install tauri-cli --version $env:TAURI_CLI_VERSION --locked --force
+      - name: install tauri-cli (pinned prebuilt, committed SHA-256)
+        run: |
+          if ($env:TAURI_CLI_SHA256 -notmatch '^[0-9a-f]{64}$') { throw "TAURI_CLI_SHA256 is missing or not 64 lowercase hex characters" }
+          $url = "https://github.com/tauri-apps/tauri/releases/download/tauri-cli-v$env:TAURI_CLI_VERSION/cargo-tauri-x86_64-pc-windows-msvc.zip"
+          $zip = Join-Path $env:RUNNER_TEMP 'cargo-tauri.zip'
+          Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+          $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $env:TAURI_CLI_SHA256) { throw "cargo-tauri.zip SHA-256 mismatch: expected $env:TAURI_CLI_SHA256, actual $actual" }
+          $dir = Join-Path $env:RUNNER_TEMP 'cargo-tauri'
+          Expand-Archive -LiteralPath $zip -DestinationPath $dir
+          if (-not (Test-Path (Join-Path $dir 'cargo-tauri.exe'))) { throw "cargo-tauri.exe not found in the archive" }
+          $dir >> $env:GITHUB_PATH
+      - name: tauri-cli version
+        run: |
+          $v = cargo tauri --version
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          if ($v -notmatch [regex]::Escape($env:TAURI_CLI_VERSION)) { throw "cargo tauri --version gave '$v', expected $env:TAURI_CLI_VERSION" }
       - name: web bundles (overlay, sources, app → web-rs/dist)
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
