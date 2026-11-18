@@ -255,6 +255,36 @@ fn init_start_stop_roundtrip() {
     );
 }
 
+/// The installed app got its resource folder as `\\?\C:\…`: `initdb` started by that path failed
+/// ("program \"postgres\" is needed by initdb but was not found"). Binaries and data root given in
+/// the verbatim form must still init, start, be recognised as running, and stop.
+#[cfg(windows)]
+#[test]
+fn verbatim_bin_and_data_paths_work() {
+    let Some(bin) = bin_dir() else { return };
+    let verbatim = |p: &Path| {
+        let abs = std::path::absolute(p).expect("absolute");
+        PathBuf::from(format!(r"\\?\{}", abs.display()))
+    };
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().join("Storm Codex");
+    let (data, pg) = layout(&verbatim(&root), verbatim(&bin));
+
+    pg.init_if_needed()
+        .expect("init from a verbatim bin folder");
+    pg.start().expect("start");
+    let _running = Running(&pg);
+    pg.ensure_database(APP_DATABASE).expect("ensure_database");
+    assert_eq!(psql(&bin, &pg, APP_DATABASE, "SELECT 40 + 2"), "42");
+    pg.clean_stale().expect("clean_stale while running");
+    assert!(
+        data.pg().join("postmaster.pid").exists(),
+        "the live server is recognised as ours"
+    );
+    pg.stop().expect("stop");
+    assert!(!data.pg().join("postmaster.pid").exists());
+}
+
 #[test]
 fn data_dir_with_spaces_and_accents_works() {
     let Some(bin) = bin_dir() else { return };
