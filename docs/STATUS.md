@@ -16,7 +16,8 @@ corpus with incremental refresh + startup warm-up); web `pages/{records,compare,
 - Checked in a browser on the copy: Records, Maps early leads, match fights/window/camps (fight click → window
   in URL), Player Insights, Compare.
 - Synced with `origin/main` at `c1a034f` (reference dataset adapter). On the merged tree: 475 workspace tests passed, 10 ignored, and 145 web tests passed. The unchanged watcher backfill ordering test failed once, then passed five targeted reruns and the full rerun. All three web bundles are within budget (app: 976,994 bytes Brotli).
-- **Not done**: Windows standalone acceptance (mh-home); deploy (R3, operator).
+- Resynced with `origin/main` at `0ad25d7`, including the Windows Postgres path fix (PR #35) and release workflow changes (PR #36). The desktop release workflow succeeded on the path-fix commit (run `44367878850`), and the operator reported a successful full installer. On the resynced insights branch, Rust formatting and Clippy passed and 475 workspace tests passed (10 ignored).
+- **Not done on this branch**: Windows standalone acceptance with Local Insights (mh-home); deploy (R3, operator).
 - Reviewer pass done (GADS): corpus staleness bug, possible panic on a bad team index, interleaved fights,
   front-end error/empty states, Records map/hero filters fixed; deviations noted in the spec.
 - Fight rule (≤ 15 s, ≤ 30 map units, ≥ 2 deaths) and camp reasons are heuristics: tune on real games if they

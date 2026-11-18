@@ -46,6 +46,35 @@ pub enum ToolPathError {
     },
 }
 
+/// `path` without its Win32 verbatim prefix: `\\?\C:\x` → `C:\x`, `\\?\UNC\srv\share\x` →
+/// `\\srv\share\x`. The Tauri resource folder can come back in the verbatim form, and a Postgres
+/// tool started by such a path derives the paths of its sibling tools from it and runs them
+/// through the shell (`initdb` runs `"…/postgres.exe" -V`), which cannot open them. Any other
+/// path, including a verbatim one with no plain form (`\\?\GLOBALROOT\…`), is returned as is.
+fn plain_form(path: &Path) -> PathBuf {
+    use std::path::Prefix;
+    let mut parts = path.components();
+    let base = match parts.next() {
+        Some(Component::Prefix(p)) => match p.kind() {
+            Prefix::VerbatimDisk(letter) => format!("{}:\\", char::from(letter)),
+            Prefix::VerbatimUNC(server, share) => format!(
+                r"\\{}\{}\",
+                server.to_string_lossy(),
+                share.to_string_lossy()
+            ),
+            _ => return path.to_path_buf(),
+        },
+        _ => return path.to_path_buf(),
+    };
+    let mut out = PathBuf::from(base);
+    for part in parts {
+        if !matches!(part, Component::RootDir) {
+            out.push(part);
+        }
+    }
+    out
+}
+
 /// How [`ToolPaths::map`] may rewrite a path (see the module documentation).
 #[derive(Debug, Clone)]
 pub struct ToolPaths {
@@ -85,6 +114,7 @@ impl ToolPaths {
             path: path.to_path_buf(),
             source,
         })?;
+        let path = plain_form(&path);
         if fits_ansi(&path) {
             return Ok(path);
         }
@@ -589,6 +619,27 @@ mod tests {
         let plain = tmp.path().join("Zoë Müller").join("pg");
         assert_eq!(tp.map(&plain).expect("map"), plain);
         assert!(!tmp.path().join("alias").exists(), "no alias made");
+    }
+
+    /// The installed app's resource folder can come back as `\\?\C:\…` (seen on the first
+    /// installer: `initdb` started by that path ran `"//?/C:/…/postgres.exe" -V` through the
+    /// shell, which cannot open it). Tools get the plain form.
+    #[test]
+    fn a_verbatim_path_is_given_in_its_plain_form() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let tp = ToolPaths::new(true, tmp.path().join("alias"));
+        let plain = tmp.path().join("Storm Codex").join("postgres").join("bin");
+        let verbatim = PathBuf::from(format!(r"\\?\{}", plain.display()));
+        assert_eq!(tp.map(&verbatim).expect("map"), plain);
+        assert_eq!(
+            tp.map(Path::new(r"\\?\UNC\server\share\pg")).expect("map"),
+            PathBuf::from(r"\\server\share\pg")
+        );
+        // a verbatim path with no plain form (a device namespace) is left alone
+        assert_eq!(
+            tp.map(Path::new(r"\\?\GLOBALROOT\Device\x")).expect("map"),
+            PathBuf::from(r"\\?\GLOBALROOT\Device\x")
+        );
     }
 
     #[test]
