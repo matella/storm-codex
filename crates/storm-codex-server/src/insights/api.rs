@@ -66,7 +66,7 @@ pub async fn match_insights(
     .map_err(db_err)?;
     let teams: HashMap<String, u8> = rows
         .iter()
-        .filter_map(|(t, team, _)| Some((t.clone(), u8::try_from((*team)?).ok()?)))
+        .filter_map(|(t, team, _)| Some((t.clone(), cache::team(*team)?)))
         .collect();
     let facts = MatchFacts::from_match(&data, &teams);
     let fights = logic::team_fights(&facts);
@@ -145,19 +145,16 @@ fn is_op(ops: &[String], name: Option<&str>) -> bool {
 
 /// Top `limit` rows per stat over `corpus`, best first (ties: most recent game first). Zero values never count.
 pub fn top_records(corpus: &Corpus, ops: &[String], q: &RecordsQuery, limit: usize) -> Vec<J> {
-    let keep: Vec<(usize, &cache::PlayerRow, &cache::Game)> = corpus
-        .players
-        .iter()
-        .enumerate()
-        .filter_map(|(i, p)| Some((i, p, corpus.games.get(&p.match_id)?)))
-        .filter(|(_, _, g)| q.mode.is_none_or(|m| g.mode == Some(m)))
-        .filter(|(_, _, g)| q.map.as_deref().is_none_or(|m| g.map.as_deref() == Some(m)))
-        .filter(|(_, p, _)| {
+    let keep: Vec<(&cache::PlayerRow, &cache::Game)> = corpus
+        .rows()
+        .filter(|(_, g)| q.mode.is_none_or(|m| g.mode == Some(m)))
+        .filter(|(_, g)| q.map.as_deref().is_none_or(|m| g.map.as_deref() == Some(m)))
+        .filter(|(p, _)| {
             q.hero
                 .as_deref()
                 .is_none_or(|h| p.hero.as_deref() == Some(h))
         })
-        .filter(|(_, p, _)| !q.mine || is_op(ops, p.name.as_deref()))
+        .filter(|(p, _)| !q.mine || is_op(ops, p.name.as_deref()))
         .collect();
     RECORD_STATS
         .iter()
@@ -165,7 +162,7 @@ pub fn top_records(corpus: &Corpus, ops: &[String], q: &RecordsQuery, limit: usi
         .map(|(k, (key, label))| {
             let mut rows: Vec<(f64, &cache::PlayerRow, &cache::Game)> = keep
                 .iter()
-                .filter_map(|(_, p, g)| Some((p.stats[k].filter(|v| *v > 0.0)?, *p, *g)))
+                .filter_map(|(p, g)| Some((p.stats[k].filter(|v| *v > 0.0)?, *p, *g)))
                 .collect();
             rows.sort_by(|a, b| b.0.total_cmp(&a.0).then(b.2.played_at.cmp(&a.2.played_at)));
             let rows: Vec<J> = rows
@@ -290,7 +287,7 @@ pub async fn early_leads(State(s): State<AppState>, Query(q): Query<AggQuery>) -
         .filter(|g| from.is_none_or(|f| g.played_at.is_some_and(|p| p >= f)))
         .filter(|g| to.is_none_or(|t| g.played_at.is_some_and(|p| p < t)))
         .filter_map(|g| {
-            let me = g.players.iter().map(|&i| &corpus.players[i]).find(|p| {
+            let me = g.players.iter().find(|p| {
                 let n = p.name.as_deref().map(str::to_lowercase);
                 match &account {
                     Some(a) => n.as_deref() == Some(a.as_str()),
@@ -319,24 +316,38 @@ pub struct CompareQuery {
     b: Option<String>,
 }
 
-async fn player_card(db: &sqlx::PgPool, toon: &str) -> Result<J, sqlx::Error> {
-    sqlx::query_scalar(
-        "SELECT jsonb_build_object(
-           'toon', $1::text,
-           'name', (SELECT p.last_name FROM players p WHERE p.toon_handle = $1),
-           'games', count(*), 'wins', count(*) FILTER (WHERE mp.win),
-           'kills', round(avg(mp.kills)::numeric, 1),
-           'deaths', round(avg(mp.deaths)::numeric, 1),
-           'assists', round(avg((mp.data #>> '{gameStats,Assists}')::float8)::numeric, 1),
-           'heroes', (SELECT COALESCE(jsonb_agg(h ORDER BY h.games DESC, h.hero), '[]'::jsonb) FROM (
-               SELECT hero, count(*) AS games, count(*) FILTER (WHERE win) AS wins
-               FROM match_players WHERE toon_handle = $1 AND hero IS NOT NULL
-               GROUP BY hero ORDER BY count(*) DESC, hero LIMIT 5) h))
-         FROM match_players mp WHERE mp.toon_handle = $1",
-    )
-    .bind(toon)
-    .fetch_one(db)
-    .await
+/// `{toon, name, games, wins, kills, deaths, assists (averages, 1 decimal), heroes (top 5)}` from the corpus.
+pub fn player_card(corpus: &Corpus, toon: &str, name: Option<String>) -> J {
+    let rows: Vec<&cache::PlayerRow> = corpus
+        .rows()
+        .filter(|(p, _)| p.toon == toon)
+        .map(|(p, _)| p)
+        .collect();
+    let avg = |k: usize| {
+        let v: Vec<f64> = rows.iter().filter_map(|p| p.stats[k]).collect();
+        (!v.is_empty()).then(|| (v.iter().sum::<f64>() / v.len() as f64 * 10.0).round() / 10.0)
+    };
+    let mut heroes: HashMap<&str, (u32, u32)> = HashMap::new();
+    for p in &rows {
+        if let Some(h) = p.hero.as_deref() {
+            let e = heroes.entry(h).or_default();
+            e.0 += 1;
+            e.1 += u32::from(p.win);
+        }
+    }
+    let mut heroes: Vec<(&str, u32, u32)> =
+        heroes.into_iter().map(|(h, (g, w))| (h, g, w)).collect();
+    heroes.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+    json!({
+        "toon": toon,
+        "name": name,
+        "games": rows.len(),
+        "wins": rows.iter().filter(|p| p.win).count(),
+        "kills": avg(0),
+        "deaths": avg(3),
+        "assists": avg(2),
+        "heroes": heroes.iter().take(5).map(|(h, g, w)| json!({"hero": h, "games": g, "wins": w})).collect::<Vec<_>>(),
+    })
 }
 
 /// GET /api/compare?a=<toon>&b=<toon> — two players side by side, and the games they shared.
@@ -347,8 +358,22 @@ pub async fn compare(State(s): State<AppState>, Query(q): Query<CompareQuery>) -
     if a == b {
         return Err(bad("same_player"));
     }
-    let pa = player_card(&s.db, &a).await.map_err(db_err)?;
-    let pb = player_card(&s.db, &b).await.map_err(db_err)?;
+    let corpus = cache::corpus(&s.db).await.map_err(db_err)?;
+    let name = |t: &str| {
+        let t = t.to_string();
+        let db = s.db.clone();
+        async move {
+            sqlx::query_scalar::<_, Option<String>>(
+                "SELECT last_name FROM players WHERE toon_handle = $1",
+            )
+            .bind(t)
+            .fetch_optional(&db)
+            .await
+            .map(Option::flatten)
+        }
+    };
+    let pa = player_card(&corpus, &a, name(&a).await.map_err(db_err)?);
+    let pb = player_card(&corpus, &b, name(&b).await.map_err(db_err)?);
     let shared: J = sqlx::query_scalar(
         "SELECT COALESCE(jsonb_agg(t ORDER BY t.played_at DESC NULLS LAST), '[]'::jsonb) FROM (
            SELECT m.id AS match_id, m.map, m.mode, m.played_at, x.team = y.team AS together,
@@ -460,12 +485,8 @@ pub fn ranked(rows: impl Iterator<Item = (String, bool)>) -> Vec<J> {
 /// and heroes (≥ 10 games).
 pub async fn player_insights(State(s): State<AppState>, Path(toon): Path<String>) -> Resp {
     let corpus = cache::corpus(&s.db).await.map_err(db_err)?;
-    let mine: Vec<(&cache::PlayerRow, &cache::Game)> = corpus
-        .players
-        .iter()
-        .filter(|p| p.toon == toon)
-        .filter_map(|p| Some((p, corpus.games.get(&p.match_id)?)))
-        .collect();
+    let mine: Vec<(&cache::PlayerRow, &cache::Game)> =
+        corpus.rows().filter(|(p, _)| p.toon == toon).collect();
     let games: Vec<PlayerGame> = mine
         .iter()
         .filter_map(|(p, g)| {
@@ -482,11 +503,10 @@ pub async fn player_insights(State(s): State<AppState>, Path(toon): Path<String>
         for n in list.iter_mut() {
             let t = n["toon"].as_str().unwrap_or_default();
             let name = corpus
-                .players
-                .iter()
-                .filter(|p| p.toon == t && p.name.is_some())
-                .max_by_key(|p| corpus.games.get(&p.match_id).and_then(|g| g.played_at))
-                .and_then(|p| p.name.clone());
+                .rows()
+                .filter(|(p, _)| p.toon == t && p.name.is_some())
+                .max_by_key(|(_, g)| g.played_at)
+                .and_then(|(p, _)| p.name.clone());
             n["name"] = json!(name);
         }
     }
@@ -632,7 +652,7 @@ mod tests {
         .unwrap();
         let after = cache::corpus(&state.db).await.unwrap();
         assert!(after.games.contains_key(&id));
-        let rows: Vec<_> = after.players.iter().filter(|p| p.match_id == id).collect();
+        let rows: Vec<_> = after.games[&id].players.iter().collect();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].stats[0], Some(7.0));
         assert_eq!(rows[0].stats[2], Some(3.0));

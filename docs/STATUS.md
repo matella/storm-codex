@@ -11,11 +11,13 @@ corpus with incremental refresh + startup warm-up); web `pages/{records,compare,
 
 - Damage over a time window is **not in replays** (end-of-game totals only); the window shows what is
   timestamped and the whole-game teamfight totals, labelled.
-- Measured on a copy of the box DB (3,480 games, release build): warm endpoints 4–130 ms; corpus load 3.3 s at
-  startup (background); server RSS 55 MB after it (11 MB without). App bundle 973 kB br (budget 1 MB: 27 kB left).
+- Measured on a copy of the box DB (3,480 games, release build): warm endpoints 4–100 ms (player insights at the 100 ms API budget); corpus load 3.3 s at
+  startup (background); server RSS 55 MB after it (11 MB without). App bundle 977 kB br (budget 1 MB: 23 kB left).
 - Checked in a browser on the copy: Records, Maps early leads, match fights/window/camps (fight click → window
   in URL), Player Insights, Compare.
 - **Not done**: Windows standalone acceptance (mh-home); deploy (R3, operator).
+- Reviewer pass done (GADS): corpus staleness bug, possible panic on a bad team index, interleaved fights,
+  front-end error/empty states, Records map/hero filters fixed; deviations noted in the spec.
 - Fight rule (≤ 15 s, ≤ 30 map units, ≥ 2 deaths) and camp reasons are heuristics: tune on real games if they
   read wrong.
 

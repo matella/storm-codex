@@ -54,6 +54,21 @@ fn PlayerChat(toon: Signal<String>) -> impl IntoView {
 
 /// Insights tab: nemesis, thrown leads, comebacks, deaths outside fights, best and worst maps and heroes
 /// (spec `docs/specs/2026-11-17-local-insights-design.md`, F7).
+/// Up to three best and three worst, never the same entry in both (a short list is split in two).
+fn best_worst(
+    list: &[storm_web_core::insights::Ranked],
+) -> (
+    Vec<storm_web_core::insights::Ranked>,
+    Vec<storm_web_core::insights::Ranked>,
+) {
+    let n = list.len().min(6);
+    let best = n.div_ceil(2);
+    (
+        list.iter().take(best).cloned().collect(),
+        list.iter().rev().take(n - best).cloned().collect(),
+    )
+}
+
 #[component]
 fn PlayerInsightsTab(toon: Signal<String>) -> impl IntoView {
     use storm_web_core::insights::{pct as ipct, PlayerInsights, Ranked};
@@ -82,10 +97,8 @@ fn PlayerInsightsTab(toon: Signal<String>) -> impl IntoView {
         };
         let map_link: fn(&str) -> String = |m| format!("/matches?map={}", uri_component(m));
         let hero_link: fn(&str) -> String = |h| format!("/hero/{}", uri_component(h));
-        let best_maps: Vec<Ranked> = d.maps.iter().take(3).cloned().collect();
-        let worst_maps: Vec<Ranked> = d.maps.iter().rev().take(3).cloned().collect();
-        let best_heroes: Vec<Ranked> = d.heroes.iter().take(3).cloned().collect();
-        let worst_heroes: Vec<Ranked> = d.heroes.iter().rev().take(3).cloned().collect();
+        let (best_maps, worst_maps) = best_worst(&d.maps);
+        let (best_heroes, worst_heroes) = best_worst(&d.heroes);
         view! {
             {d.small_sample.then(|| view! { <div class="ds-empty">{format!("Small sample: {} games. Read these as hints.", d.games)}</div> })}
             <section class="ds-sec">

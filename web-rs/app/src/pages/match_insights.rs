@@ -85,8 +85,13 @@ pub fn MatchInsightsSections(
     let order: [u8; 2] = if my_team == Some(1) { [1, 0] } else { [0, 1] };
 
     move || {
-        let Some(Ok(d)) = data.get() else {
-            return view! { <section class="ds-sec"><div class="ds-empty">"loading fights…"</div></section> }.into_any();
+        let d = match data.get() {
+            None => return view! { <section class="ds-sec"><div class="ds-empty">"loading fights…"</div></section> }.into_any(),
+            Some(Err(e)) => return view! {
+                <section class="ds-sec"><div class="ds-empty">{format!("Could not read the fights ({e}). ")}
+                    <span class="ds-pill" on:click=move |_| set_window(None, None)>"reset the window"</span></div></section>
+            }.into_any(),
+            Some(Ok(d)) => d,
         };
         let fights = d.fights.clone();
         let won = |t: u8| fights.iter().filter(|f| f.winner == Some(t)).count();

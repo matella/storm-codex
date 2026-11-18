@@ -2,9 +2,11 @@
 //!
 //! Reading a stat out of `match_players.data` detoasts the whole JSON (~8 kB a row): one pass over the box's
 //! 35k rows takes ~1 s, so computing records per request took 12 s. The corpus extracts what those endpoints
-//! need once, keeps it in memory, and catches up with new games incrementally: each request first reads a
-//! cheap version of `matches` (count, max id, sum of parser versions — no JSON). New ids only → load just those
-//! games; anything else (re-process, deletion) → full reload. Nothing is written anywhere.
+//! need once and keeps it in memory. Each request first reads a cheap version of `matches` (count, max id, sum
+//! of parser versions; no JSON). When it changed, the corpus is diffed against `matches` by `(id,
+//! parser_version)`: games gone or re-processed are dropped, missing ones are loaded. Out-of-order ids,
+//! deletions and re-uploads are all handled the same way, and only the changed games are read. Games are
+//! shared (`Arc`) between successive corpora, so a refresh copies pointers, not games. Nothing is written.
 
 use super::logic::{self, Death, EarlyLeads, MatchFacts};
 use chrono::{DateTime, Utc};
@@ -26,7 +28,6 @@ pub struct Version {
 
 #[derive(Debug, Clone)]
 pub struct PlayerRow {
-    pub match_id: i64,
     pub toon: String,
     pub name: Option<String>,
     pub hero: Option<String>,
@@ -49,6 +50,7 @@ pub struct SlimDeath {
 #[derive(Debug, Clone)]
 pub struct Game {
     pub id: i64,
+    pub parser_version: i32,
     pub map: Option<String>,
     pub mode: Option<i32>,
     pub played_at: Option<DateTime<Utc>>,
@@ -57,16 +59,14 @@ pub struct Game {
     pub deaths: Box<[SlimDeath]>,
     /// level lead of team 0: `(start, end, diff)`
     pub level_adv: Box<[(f32, f32, f32)]>,
-    /// indices into `Corpus::players`
-    pub players: Vec<usize>,
+    pub players: Vec<PlayerRow>,
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct Corpus {
     pub version: Version,
-    pub games: HashMap<i64, Game>,
-    pub players: Vec<PlayerRow>,
-    /// interned toons of `SlimDeath`
+    pub games: HashMap<i64, Arc<Game>>,
+    /// interned toons of `SlimDeath` (append-only)
     pub toons: Vec<String>,
     toon_ids: HashMap<String, u32>,
 }
@@ -110,9 +110,17 @@ impl Corpus {
             ..Default::default()
         }
     }
+
+    /// Every player row with its game.
+    pub fn rows(&self) -> impl Iterator<Item = (&PlayerRow, &Game)> {
+        self.games
+            .values()
+            .flat_map(|g| g.players.iter().map(move |p| (p, g.as_ref())))
+    }
 }
 
-fn team(v: Option<i32>) -> Option<u8> {
+/// Team index 0/1, anything else = unknown.
+pub fn team(v: Option<i32>) -> Option<u8> {
     v.and_then(|t| u8::try_from(t).ok()).filter(|t| *t < 2)
 }
 
@@ -145,7 +153,7 @@ type GRow = (
     Option<DateTime<Utc>>,
     Option<i32>,
     Option<i32>,
-    Option<i32>,
+    i32,
     Option<J>,
     Option<J>,
     Option<J>,
@@ -154,25 +162,19 @@ type GRow = (
 /// Games read per round trip: bounds the JSON held in memory while loading. Measured on the box's 3,480 games
 /// (server RSS after the load, 11 MB without the corpus): all at once ~875 MB, 250 → 216 MB, 50 → 76 MB,
 /// 20 → 55 MB, load time ~3.3 s in every case.
-const BATCH: i64 = 20;
+const BATCH: usize = 20;
 
-/// Loads the games with `id > after` into `c`, `BATCH` games at a time.
-async fn load_after(db: &PgPool, c: &mut Corpus, after: i64) -> Result<(), sqlx::Error> {
-    let mut cursor = after;
-    loop {
+/// Loads the games `ids` into `c`, `BATCH` games at a time.
+async fn load(db: &PgPool, c: &mut Corpus, ids: &[i64]) -> Result<(), sqlx::Error> {
+    for chunk in ids.chunks(BATCH) {
         let grows: Vec<GRow> = sqlx::query_as(
-            "SELECT id, map, mode, played_at, winner, first_fort, parser_version,
+            "SELECT id, map, mode, played_at, winner, first_fort, COALESCE(parser_version, 0),
                     data->'takedowns', data->'levelTimes', data->'levelAdvTimeline'
-             FROM matches WHERE id > $1 ORDER BY id LIMIT $2",
+             FROM matches WHERE id = ANY($1)",
         )
-        .bind(cursor)
-        .bind(BATCH)
+        .bind(chunk)
         .fetch_all(db)
         .await?;
-        let Some(last) = grows.last().map(|g| g.0) else {
-            return Ok(());
-        };
-        let ids: Vec<i64> = grows.iter().map(|g| g.0).collect();
         let prows: Vec<PRow> = sqlx::query_as(
             // MATERIALIZED: `gameStats` is cut out of the big `data` once per row; inlined, Postgres would
             // detoast `data` once per stat read (7 s instead of 1.4 s on the box's corpus).
@@ -186,27 +188,22 @@ async fn load_after(db: &PgPool, c: &mut Corpus, after: i64) -> Result<(), sqlx:
              FROM match_players mp JOIN g ON g.id = mp.id
              ORDER BY mp.match_id, mp.team, mp.id",
         )
-        .bind(&ids)
+        .bind(chunk)
         .fetch_all(db)
         .await?;
         add(c, prows, grows);
-        cursor = last;
     }
+    Ok(())
 }
 
 fn add(c: &mut Corpus, prows: Vec<PRow>, grows: Vec<GRow>) {
-    let mut by_match: HashMap<i64, Vec<usize>> = HashMap::new();
-    // a game projected while we were loading may already be here: never load it twice
-    for (match_id, toon, name, hero, t, win, s) in
-        prows.into_iter().filter(|r| !c.games.contains_key(&r.0))
-    {
+    let mut by_match: HashMap<i64, Vec<PlayerRow>> = HashMap::new();
+    for (match_id, toon, name, hero, t, win, s) in prows {
         let mut stats = [None; N_STATS];
         for (i, v) in s.into_iter().take(N_STATS).enumerate() {
             stats[i] = v;
         }
-        by_match.entry(match_id).or_default().push(c.players.len());
-        c.players.push(PlayerRow {
-            match_id,
+        by_match.entry(match_id).or_default().push(PlayerRow {
             toon,
             name,
             hero,
@@ -215,14 +212,11 @@ fn add(c: &mut Corpus, prows: Vec<PRow>, grows: Vec<GRow>) {
             stats,
         });
     }
-    for (id, map, mode, played_at, winner, fort, _pv, tds, lt, adv) in grows {
-        if c.games.contains_key(&id) {
-            continue;
-        }
-        let idx = by_match.remove(&id).unwrap_or_default();
-        let teams: HashMap<String, u8> = idx
+    for (id, map, mode, played_at, winner, fort, parser_version, tds, lt, adv) in grows {
+        let players = by_match.remove(&id).unwrap_or_default();
+        let teams: HashMap<String, u8> = players
             .iter()
-            .filter_map(|&i| Some((c.players[i].toon.clone(), c.players[i].team?)))
+            .filter_map(|p| Some((p.toon.clone(), p.team?)))
             .collect();
         let m = json!({
             "takedowns": tds.unwrap_or(J::Null),
@@ -245,8 +239,9 @@ fn add(c: &mut Corpus, prows: Vec<PRow>, grows: Vec<GRow>) {
             .collect();
         c.games.insert(
             id,
-            Game {
+            Arc::new(Game {
                 id,
+                parser_version,
                 map,
                 mode,
                 played_at,
@@ -258,10 +253,27 @@ fn add(c: &mut Corpus, prows: Vec<PRow>, grows: Vec<GRow>) {
                     .iter()
                     .map(|&(a, b, d)| (a as f32, b as f32, d as f32))
                     .collect(),
-                players: idx,
-            },
+                players,
+            }),
         );
     }
+}
+
+/// What to change in `have` to match `want` (`id → parser_version`): ids to drop (gone or re-processed),
+/// ids to load (missing or re-processed, sorted).
+pub fn diff(have: &HashMap<i64, i32>, want: &HashMap<i64, i32>) -> (Vec<i64>, Vec<i64>) {
+    let gone: Vec<i64> = have
+        .iter()
+        .filter(|(id, pv)| want.get(id) != Some(pv))
+        .map(|(id, _)| *id)
+        .collect();
+    let mut load: Vec<i64> = want
+        .iter()
+        .filter(|(id, pv)| have.get(id) != Some(pv))
+        .map(|(id, _)| *id)
+        .collect();
+    load.sort_unstable();
+    (gone, load)
 }
 
 fn slot() -> &'static Mutex<Arc<Corpus>> {
@@ -276,30 +288,30 @@ pub async fn corpus(db: &PgPool) -> Result<Arc<Corpus>, sqlx::Error> {
     if guard.version == v {
         return Ok(guard.clone());
     }
-    let old = guard.version;
-    let mut next = Corpus::default();
-    let mut incremental = false;
-    if old.count > 0 && v.max_id > old.max_id && v.count > old.count {
-        // only new games? check their count and parser versions add up
-        let (n, pv): (i64, i64) = sqlx::query_as(
-            "SELECT count(*), COALESCE(sum(parser_version), 0)::bigint FROM matches WHERE id > $1",
-        )
-        .bind(old.max_id)
-        .fetch_one(db)
-        .await?;
-        if old.count + n == v.count && old.parser_sum + pv == v.parser_sum {
-            next = Corpus::clone(&guard);
-            load_after(db, &mut next, old.max_id).await?;
-            incremental = true;
-        }
+    // the ids read here are exactly what the new corpus holds, whatever is committed meanwhile
+    let want: HashMap<i64, i32> =
+        sqlx::query_as::<_, (i64, i32)>("SELECT id, COALESCE(parser_version, 0) FROM matches")
+            .fetch_all(db)
+            .await?
+            .into_iter()
+            .collect();
+    let have: HashMap<i64, i32> = guard
+        .games
+        .iter()
+        .map(|(id, g)| (*id, g.parser_version))
+        .collect();
+    let (gone, missing) = diff(&have, &want);
+    let mut next = Corpus::clone(&guard);
+    for id in &gone {
+        next.games.remove(id);
     }
-    if !incremental {
-        load_after(db, &mut next, i64::MIN).await?;
-    }
+    load(db, &mut next, &missing).await?;
+    // a game deleted between the id list and its load is simply absent from `load`'s result
     next.version = v;
     tracing::debug!(
         games = next.games.len(),
-        incremental,
+        dropped = gone.len(),
+        loaded = missing.len(),
         "insights corpus refreshed"
     );
     *guard = Arc::new(next);
@@ -319,4 +331,29 @@ pub fn warm_up(db: PgPool) {
             Err(e) => tracing::warn!("insights corpus warm-up: {e}"),
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn diff_drops_gone_and_reprocessed_games_and_loads_missing_ones() {
+        let have: HashMap<i64, i32> = [(1, 5), (2, 5), (3, 5)].into_iter().collect();
+        // 2 deleted, 3 re-processed, 4 and 9 new (out of order is fine)
+        let want: HashMap<i64, i32> = [(1, 5), (3, 6), (9, 5), (4, 5)].into_iter().collect();
+        let (mut gone, load) = diff(&have, &want);
+        gone.sort_unstable();
+        assert_eq!(gone, vec![2, 3]);
+        assert_eq!(load, vec![3, 4, 9]);
+        assert_eq!(diff(&want, &want), (vec![], vec![]));
+    }
+
+    #[test]
+    fn team_index_is_zero_or_one() {
+        assert_eq!(team(Some(1)), Some(1));
+        assert_eq!(team(Some(2)), None);
+        assert_eq!(team(Some(-1)), None);
+        assert_eq!(team(None), None);
+    }
 }

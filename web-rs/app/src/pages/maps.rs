@@ -19,7 +19,13 @@ fn EarlyLeadsBlock(filter: RwSignal<AggFilter>) -> impl IntoView {
         format!("/api/maps/early-leads?{}", net::agg_params(&filter.get()))
     });
     move || {
-        let d = data.get()?.ok()?;
+        let d = match data.get()? {
+            Ok(d) => d,
+            Err(e) => return Some(view! { <section class="ds-sec"><div class="ds-empty">{format!("Could not load the early leads ({e}).")}</div></section> }.into_any()),
+        };
+        if d.games == 0 {
+            return Some(view! { <section class="ds-sec"><div class="ds-empty">"No game for the early leads."</div></section> }.into_any());
+        }
         let keys: Vec<(String, String)> = d
             .leads
             .iter()
@@ -66,7 +72,7 @@ fn EarlyLeadsBlock(filter: RwSignal<AggFilter>) -> impl IntoView {
                     </table>
                 </div>
             </section>
-        })
+        }.into_any())
     }
 }
 

@@ -51,11 +51,9 @@ Team indices are 0 = blue, 1 = red; times are game seconds.
 
 **Corpus** (`insights/cache.rs`): records, early leads and personal insights read an in-memory extract of every game (per-player stats,
 compact deaths with interned toons, early leads, level lead), not the JSON per request (one pass over `match_players.data` detoasts
-~8 kB a row: 12 s for records on the box's 3,480 games). Each request first reads a version of `matches` (count, max id, sum of
-`parser_version`; no JSON): unchanged → the same corpus; only new ids → those games are loaded and added; anything else
-(re-process, deletion) → full reload. Loaded 20 games per round trip and warmed up in the background at startup
+~8 kB a row: 12 s for records on the box's 3,480 games). Each request first reads a version of `matches` (count, max id, sum of `parser_version`; no JSON): unchanged → the same corpus; otherwise the corpus is diffed against `matches` by `(id, parser_version)`: deleted or re-processed games are dropped, missing ones loaded (out-of-order ids included); games are shared (`Arc`) between refreshes. Loaded 20 games per round trip and warmed up in the background at startup
 (`cache::warm_up`). Measured on the box's data (copy, release build): load 3.3 s, server RSS 55 MB after it (11 MB without);
-then records 30 ms, early leads 6 ms, player insights 80–120 ms, compare 110 ms, match insights 4 ms.
+then records 35 ms, early leads 6 ms, player insights 75–100 ms, compare 12 ms, match insights 4 ms. Compare's player cards also come from the corpus (shared games stay one SQL join, no JSON).
 
 ## Management (`manage.rs`, `admin.rs`) — 🔒 if `ADMIN_TOKEN` is set
 

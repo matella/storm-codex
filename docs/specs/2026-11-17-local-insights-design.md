@@ -114,4 +114,18 @@ F1, F2 → F3, F4 → F5 → F6 → F7, one commit per feature (code + spec docs
   and personal insights read an in-memory corpus refreshed incrementally (`insights/cache.rs`, see
   `docs/spec/05-api.md`). Warm: every endpoint under 130 ms; cold load 3.3 s in the background at startup;
   +44 MB RSS.
+- Corpus refresh: diff of `(id, parser_version)` against `matches` (drops deleted / re-processed games, loads
+  missing ones, out-of-order ids included); games shared with `Arc` between refreshes. Review finding fixed
+  before merge (a game replaced during a load could be counted twice).
+- Fight clustering: a death joins the nearest *open* fight (last death ≤ 15 s ago) within 30 map units, so two
+  fights at once in different lanes stay apart.
+- Deviations from the approved text, by design:
+  - F4 shows takedowns (participation) and deaths per player, not kills and assists apart: the takedown
+    events do not say who landed the killing blow.
+  - F5 order of the reasons is traded → before an objective → after a won fight → quiet; "before an
+    objective" counts an objective event of either team (the camp was taken ahead of the objective, whoever
+    won it).
+  - F7 nemesis has no "most-used hero against them" (the corpus keeps toons only, to save memory).
+- Perf: compare reads the corpus too (110 → 12 ms). Player insights (75–100 ms for 2,684 games) sits at the
+  API p95 < 100 ms contract; recorded in `docs/spec/01-architecture.md` for the operator.
 

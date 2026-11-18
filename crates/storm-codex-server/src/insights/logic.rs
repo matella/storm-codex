@@ -239,22 +239,34 @@ fn count_in(ev: &[TimedTeam], from: f64, to: f64) -> [u32; 2] {
 
 /// Deaths grouped by time and place. Fights need two deaths or more; a lone death is not a fight.
 pub fn team_fights(f: &MatchFacts) -> Vec<Fight> {
+    // every group whose last death is recent enough stays open; a death joins the nearest open group within
+    // the radius, so two fights at once in different lanes stay apart
     let mut groups: Vec<Vec<Death>> = Vec::new();
     for d in &f.deaths {
-        let joins = groups.last().is_some_and(|g| {
-            let last = g.last().map_or(f64::MIN, |x| x.time);
+        let centre = |g: &[Death]| {
             let n = g.len() as f64;
-            let (cx, cy) = (
+            (
                 g.iter().map(|x| x.x).sum::<f64>() / n,
                 g.iter().map(|x| x.y).sum::<f64>() / n,
-            );
-            d.time - last <= FIGHT_GAP_S && (d.x - cx).hypot(d.y - cy) <= FIGHT_RADIUS
-        });
-        match groups.last_mut() {
-            Some(g) if joins => g.push(d.clone()),
-            _ => groups.push(vec![d.clone()]),
+            )
+        };
+        let best = groups
+            .iter()
+            .enumerate()
+            .filter(|(_, g)| g.last().is_some_and(|x| d.time - x.time <= FIGHT_GAP_S))
+            .map(|(i, g)| {
+                let (cx, cy) = centre(g);
+                (i, (d.x - cx).hypot(d.y - cy))
+            })
+            .filter(|(_, dist)| *dist <= FIGHT_RADIUS)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(i, _)| i);
+        match best {
+            Some(i) => groups[i].push(d.clone()),
+            None => groups.push(vec![d.clone()]),
         }
     }
+    groups.sort_by(|a, b| a[0].time.total_cmp(&b[0].time));
     groups
         .into_iter()
         .filter(|g| g.len() >= 2)
@@ -620,6 +632,18 @@ mod tests {
             alone.iter().map(|d| d.victim.as_str()).collect::<Vec<_>>(),
             ["b3", "r1"]
         );
+    }
+
+    #[test]
+    fn two_fights_at_once_in_different_lanes_stay_apart() {
+        let m = json!({"takedowns": [
+            td(10.0, 0.0, 0.0, "b1", &[]), td(11.0, 200.0, 0.0, "r1", &[]),
+            td(12.0, 1.0, 1.0, "b2", &[]), td(13.0, 201.0, 1.0, "r2", &[])
+        ]});
+        let fights = team_fights(&MatchFacts::from_match(&m, &teams()));
+        assert_eq!(fights.len(), 2, "{fights:?}");
+        assert_eq!(fights[0].lost, [2, 0]);
+        assert_eq!(fights[1].lost, [0, 2]);
     }
 
     #[test]

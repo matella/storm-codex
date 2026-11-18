@@ -117,7 +117,8 @@ pub fn ComparePage() -> impl IntoView {
             uri_component(&a),
             uri_component(&b)
         ),
-        _ => String::new(),
+        // nothing picked yet: a cheap 400 from the API (the page shows a prompt, not the error)
+        _ => "/api/compare".to_string(),
     });
     view! {
         <div class="ds-page">
