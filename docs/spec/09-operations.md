@@ -343,10 +343,11 @@ fresh migrated cluster → import.
   stack against binaries the installer may have touched; the next launch starts normally).
   `tauri.conf.json`: `bundle.createUpdaterArtifacts: true`; `plugins.updater.endpoints:
   ["https://github.com/matella/storm-codex/releases/latest/download/latest.json"]`,
-  `windows.installMode: "passive"`, `pubkey` = a **placeholder** until the operator generates
-  the key pair (`cargo tauri signer generate`; the private key and its password are GitHub
-  secrets, never committed; the public key replaces the placeholder; see "Releasing the desktop
-  app"). With the placeholder (or any value that is not base64 of a minisign
+  `windows.installMode: "passive"`, `pubkey` = the operator's minisign public key (key id
+  `D4E8640964B9ACDE`, set 2026-11-18; generated with `cargo tauri signer generate`; the private key
+  and its password are the repository secrets `TAURI_SIGNING_PRIVATE_KEY` /
+  `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, never committed; see "Releasing the desktop app"). Builds
+  made before that date carried a placeholder. With a placeholder (or any value that is not base64 of a minisign
   public key, `pubkey_is_usable`) the shell never checks: `update_status` stays `none`, one log
   line "updates disabled: this build has no updater public key".
 - **Updater manual E2E (two signed builds; done with packaging).** Build N and N+1 with the real
