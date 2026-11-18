@@ -306,6 +306,9 @@ pub struct PatchItem {
     pub hero_count: i64,
     #[serde(default)]
     pub map_count: i64,
+    /// Only community sources (dataset rule): labelled "Community notes", never presented as official.
+    #[serde(default)]
+    pub community_only: bool,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

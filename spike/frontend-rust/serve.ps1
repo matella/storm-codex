@@ -14,7 +14,7 @@ if ($old) {
 $env:BIND_ADDR = "127.0.0.1:$Port"
 $env:WEB_DIR = (Resolve-Path (Join-Path $PSScriptRoot $Dist)).Path
 $env:DATABASE_URL = 'postgres://storm:storm@localhost:5433/storm_codex'
-$env:HOTSPATCHNOTES_URL = 'http://127.0.0.1:1'
+$env:REFDATA_URL = ''
 Start-Process -FilePath "$root/target/debug/storm-codex-server.exe" -WindowStyle Hidden
 Start-Sleep 6
 (Invoke-WebRequest "http://127.0.0.1:$Port/" -UseBasicParsing).StatusCode

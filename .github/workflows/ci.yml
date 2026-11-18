@@ -50,6 +50,18 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: clippy (strict)
         run: cargo clippy --workspace --all-targets -- -D warnings
+      # The data files of the pinned HotsPatchNotes dataset release (desktop/referential-pin.txt): the refdata
+      # full-release tests (counts, corpus talent-hero diff) run on them. The tests check every file against the
+      # release manifest.
+      - name: reference dataset (pinned release)
+        run: |
+          base="$(sed -n 's/^url=\(.*\/\)dataset\.tar\.gz$/\1/p' desktop/referential-pin.txt)"
+          test -n "$base"
+          mkdir -p "$RUNNER_TEMP/dataset"
+          for f in manifest.json game.json enus.json patches.json assets.json; do
+            curl -fsSL --retry 3 -o "$RUNNER_TEMP/dataset/$f" "$base$f"
+          done
+          echo "REFDATA_DATASET_DIR=$RUNNER_TEMP/dataset" >> "$GITHUB_ENV"
       - name: tests (unit + DB integration)
         run: cargo test --workspace
   # Standalone desktop app (Windows): the Tauri shell (desktop/, own Cargo.lock, outside the workspace) and the

@@ -87,6 +87,7 @@ pub fn Patches() -> impl IntoView {
                                         <DateBlock iso=p.live_date.clone() />
                                         <span class="t">{p.patch_name.clone()}</span>
                                         <span class="ds-tag award">{p.patch_type.clone()}</span>
+                                        {p.community_only.then(|| view! { <span class="ds-tag">"Community notes"</span> })}
                                         <span class="c">{patch_counts(&p)}</span>
                                     </div>
                                 }

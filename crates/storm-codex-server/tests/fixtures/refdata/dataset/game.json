@@ -1,0 +1,3376 @@
+{
+ "battlegrounds": {
+  "alterac_pass": {
+   "id": "alterac_pass",
+   "mapId": "AlteracPass",
+   "sourceKey": "Alterac Pass",
+   "structure": {
+    "loadingScreenImage": "storm_ui_homescreenbackground_wcav.png",
+    "mapId": "AlteracPass",
+    "mapLink": "AlteracPass",
+    "mapObjectives": [
+     {
+      "icons": [
+       {
+        "image": "ui_ingame_mapmechanic_loadscreen_wcav_icon1_horde.png",
+        "scaleWidth": false
+       },
+       {
+        "image": "ui_ingame_mapmechanic_loadscreen_wcav_icon1_alliance.png",
+        "scaleWidth": false
+       }
+      ]
+     },
+     {
+      "icons": [
+       {
+        "image": "ui_ingame_mapmechanic_loadscreen_wcav_icon2_alliance.png",
+        "scaleWidth": false
+       },
+       {
+        "image": "ui_ingame_mapmechanic_loadscreen_wcav_icon2_horde.png",
+        "scaleWidth": false
+       }
+      ]
+     },
+     {
+      "icons": [
+       {
+        "image": "ui_ingame_mapmechanic_loadscreen_wcav_icon3_alliance.png",
+        "scaleWidth": false
+       },
+       {
+        "image": "ui_ingame_mapmechanic_loadscreen_wcav_icon3_horde.png",
+        "scaleWidth": false
+       }
+      ]
+     }
+    ],
+    "mapSize": {
+     "x": 256,
+     "y": 216
+    },
+    "normalizedId": "alterac_pass",
+    "replayPreviewImage": "replayspreviewimage_alteracpass.png"
+   }
+  },
+  "garden_of_terror": {
+   "id": "garden_of_terror",
+   "mapId": "HauntedWoods",
+   "sourceKey": "Garden of Terror",
+   "structure": {
+    "loadingScreenImage": "ui_ingame_mapmechanic_loadscreen_gardenofterror.png",
+    "mapId": "HauntedWoods",
+    "mapLink": "GardenOfTerror",
+    "mapObjectives": [
+     {
+      "icons": [
+       {
+        "height": 152,
+        "image": "ui_ingame_mapmechanic_loadscreen_gardenofterror_icon1.png",
+        "scaleWidth": true
+       }
+      ]
+     },
+     {
+      "icons": [
+       {
+        "height": 124,
+        "image": "ui_ingame_mapmechanic_loadscreen_gardenofterror_icon2.png",
+        "scaleWidth": true
+       }
+      ]
+     },
+     {
+      "icons": [
+       {
+        "height": 164,
+        "image": "ui_ingame_mapmechanic_loadscreen_gardenofterror_icon3.png",
+        "scaleWidth": true
+       }
+      ]
+     }
+    ],
+    "mapSize": {
+     "x": 256,
+     "y": 216
+    },
+    "normalizedId": "garden_of_terror",
+    "replayPreviewImage": "replayspreviewimage_gardenofterror.png"
+   }
+  },
+  "silver_city": {
+   "id": "silver_city",
+   "mapId": "SilverCity",
+   "sourceKey": "Silver City",
+   "structure": {
+    "loadingScreenImage": "ui_ingame_simple_loadscreen_battlefieldofeternity.png",
+    "mapId": "SilverCity",
+    "mapLink": "SilverCity",
+    "mapObjectives": [
+     {
+      "icons": [
+       {
+        "image": "ui_ingame_mapmechanic_loadscreen_silvercity_icon1.png",
+        "scaleWidth": false
+       }
+      ]
+     },
+     {
+      "icons": [
+       {
+        "image": "ui_ingame_mapmechanic_loadscreen_silvercity_icon2.png",
+        "scaleWidth": false
+       }
+      ]
+     },
+     {
+      "icons": [
+       {
+        "image": "ui_ingame_mapmechanic_loadscreen_silvercity_icon3.png",
+        "scaleWidth": false
+       }
+      ]
+     }
+    ],
+    "mapSize": {
+     "x": 248,
+     "y": 216
+    },
+    "normalizedId": "silver_city",
+    "replayPreviewImage": "replayspreviewimage_silvercity.png"
+   }
+  }
+ },
+ "heroes": {
+  "Abathur": {
+   "attributeId": "Abat",
+   "hyperlinkId": "Abathur",
+   "id": "Abathur",
+   "structure": {
+    "attributeId": "Abat",
+    "franchise": "Starcraft",
+    "portraits": {
+     "draftScreen": "storm_ui_glues_draft_portrait_abathur.png",
+     "heroSelect": "storm_ui_ingame_heroselect_btn_infestor.png",
+     "leaderboard": "storm_ui_ingame_hero_leaderboard_abathur.png",
+     "loading": "storm_ui_ingame_hero_loadingscreen_abathur.png",
+     "minimap": "storm_ui_minimapicon_heros_infestor.png",
+     "partyFrames": [
+      "storm_ui_ingame_partyframe_abathur.png"
+     ],
+     "partyPanel": "storm_ui_ingame_partypanel_btn_abathur.png",
+     "target": "ui_targetportrait_hero_abathur.png",
+     "targetInfo": "storm_ui_ingame_partyframe_abathur.png"
+    },
+    "talents": {
+     "Level1": [
+      {
+       "abilityId": "AbathurSymbioteSpikeBurst",
+       "abilityType": "W",
+       "buttonId": "AbathurSymbiotePressurizedGlandsTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_abathur_spikeburst.png",
+       "isQuest": false,
+       "linkId": "AbathurMasteryPressurizedGlands|AbathurSymbiotePressurizedGlandsTalent|W|Level1",
+       "sort": 1,
+       "talentId": "AbathurMasteryPressurizedGlands",
+       "tooltipAbilityLinkIds": [
+        "AbathurSymbiote|AbathurSymbiote|Q",
+        "AbathurSymbioteSpikeBurst|AbathurSymbioteSpikeBurst|W"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "AbathurToxicNest",
+       "abilityType": "W",
+       "buttonId": "AbathurToxicNestEnvenomedNestTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_abathur_toxicnest.png",
+       "isQuest": false,
+       "linkId": "AbathurMasteryEnvenomedNestsToxicNest|AbathurToxicNestEnvenomedNestTalent|W|Level1",
+       "sort": 2,
+       "talentId": "AbathurMasteryEnvenomedNestsToxicNest",
+       "tooltipAbilityLinkIds": [
+        "AbathurToxicNest|AbathurToxicNest|W"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "AbathurSymbioteCarapace",
+       "abilityType": "E",
+       "buttonId": "AbathurReinforcedCarapaceTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_abathur_carapace.png",
+       "isQuest": false,
+       "linkId": "AbathurReinforcedCarapace|AbathurReinforcedCarapaceTalent|E|Level1",
+       "sort": 3,
+       "talentId": "AbathurReinforcedCarapace",
+       "tooltipAbilityLinkIds": [
+        "AbathurSymbiote|AbathurSymbiote|Q",
+        "AbathurSymbioteCarapace|AbathurSymbioteCarapace|E"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "AbathurLocustSwarm",
+       "abilityType": "Active",
+       "buttonId": "AbathurLocustSwarm",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_abathur_spawnlocust.png",
+       "isQuest": false,
+       "linkId": "AbathurCombatStyleLocustBrood|AbathurLocustSwarm|Active|Level1",
+       "sort": 4,
+       "talentId": "AbathurCombatStyleLocustBrood",
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level10": [
+      {
+       "abilityId": "AbathurUltimateEvolution",
+       "abilityType": "Heroic",
+       "buttonId": "AbathurUltimateEvolution",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_abathur_ultimateevolution.png",
+       "isQuest": false,
+       "linkId": "AbathurHeroicAbilityUltimateEvolution|AbathurUltimateEvolution|Heroic|Level10",
+       "sort": 1,
+       "talentId": "AbathurHeroicAbilityUltimateEvolution",
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "AbathurEvolveMonstrosity",
+       "abilityType": "Heroic",
+       "buttonId": "AbathurEvolveMonstrosityHotbar",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_abathur_evolvemonstrosity.png",
+       "isQuest": true,
+       "linkId": "AbathurHeroicAbilityEvolveMonstrosity|AbathurEvolveMonstrosityHotbar|Heroic|Level10",
+       "sort": 2,
+       "talentId": "AbathurHeroicAbilityEvolveMonstrosity",
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level13": [
+      {
+       "abilityId": "AbathurSymbioteStab",
+       "abilityType": "Q",
+       "buttonId": "AbathurSymbioteSpatialEfficiencyTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_abathur_stab.png",
+       "isQuest": false,
+       "linkId": "AbathurMasterySpatialEfficiency|AbathurSymbioteSpatialEfficiencyTalent|Q|Level13",
+       "sort": 1,
+       "talentId": "AbathurMasterySpatialEfficiency",
+       "tooltipAbilityLinkIds": [
+        "AbathurSymbiote|AbathurSymbiote|Q",
+        "AbathurSymbioteStab|AbathurSymbioteStab|Q"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "AbathurSymbioteSpikeBurst",
+       "abilityType": "W",
+       "buttonId": "AbathurSymbioteSpikeBurstSomaTransferenceTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_abathur_spikeburst.png",
+       "isQuest": false,
+       "linkId": "AbathurSymbioteSpikeBurstSomaTransference|AbathurSymbioteSpikeBurstSomaTransferenceTalent|W|Level13",
+       "sort": 2,
+       "talentId": "AbathurSymbioteSpikeBurstSomaTransference",
+       "tooltipAbilityLinkIds": [
+        "AbathurSymbiote|AbathurSymbiote|Q",
+        "AbathurSymbioteSpikeBurst|AbathurSymbioteSpikeBurst|W"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Trait",
+       "buttonId": "AbathurLocustStrainBombardStrainTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_abathur_spawnlocust.png",
+       "isQuest": false,
+       "linkId": "AbathurCombatStyleBombardStrain|AbathurLocustStrainBombardStrainTalent|Trait|Level13",
+       "sort": 3,
+       "talentId": "AbathurCombatStyleBombardStrain",
+       "tooltipAbilityLinkIds": [
+        "AbathurSpawnLocusts|AbathurLocustStrain|Trait"
+       ],
+       "upgradesAbilityType": true
+      }
+     ],
+     "Level16": [
+      {
+       "abilityId": "AbathurSymbioteSpikeBurst",
+       "abilityType": "W",
+       "buttonId": "AbathurSymbioteEnvenomedSpikesTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_abathur_spikeburst.png",
+       "isQuest": false,
+       "linkId": "AbathurMasteryEnvenomedSpikes|AbathurSymbioteEnvenomedSpikesTalent|W|Level16",
+       "sort": 1,
+       "talentId": "AbathurMasteryEnvenomedSpikes",
+       "tooltipAbilityLinkIds": [
+        "AbathurSymbiote|AbathurSymbiote|Q",
+        "AbathurSymbioteSpikeBurst|AbathurSymbioteSpikeBurst|W"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "AbathurSymbioteCarapace",
+       "abilityType": "E",
+       "buttonId": "AbathurSymbioteAdrenalineBoostTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_abathur_carapace.png",
+       "isQuest": false,
+       "linkId": "AbathurMasteryAdrenalineBoost|AbathurSymbioteAdrenalineBoostTalent|E|Level16",
+       "sort": 2,
+       "talentId": "AbathurMasteryAdrenalineBoost",
+       "tooltipAbilityLinkIds": [
+        "AbathurSymbiote|AbathurSymbiote|Q",
+        "AbathurSymbioteCarapace|AbathurSymbioteCarapace|E"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "AbathurEvolveMonstrosity",
+       "abilityType": "Heroic",
+       "buttonId": "AbathurVolatileMutationTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_abathur_volatilemutation.png",
+       "isQuest": false,
+       "linkId": "AbathurVolatileMutation|AbathurVolatileMutationTalent|Heroic|Level16",
+       "sort": 3,
+       "talentId": "AbathurVolatileMutation",
+       "tooltipAbilityLinkIds": [
+        "AbathurEvolveMonstrosity|AbathurEvolveMonstrosityHotbar|Heroic",
+        "AbathurUltimateEvolution|AbathurUltimateEvolution|Heroic"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Trait",
+       "buttonId": "AbathurLocustStrainSurvivalInstinctsTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_abathur_spawnlocust.png",
+       "isQuest": false,
+       "linkId": "AbathurCombatStyleSurvivalInstincts|AbathurLocustStrainSurvivalInstinctsTalent|Trait|Level16",
+       "sort": 4,
+       "talentId": "AbathurCombatStyleSurvivalInstincts",
+       "tooltipAbilityLinkIds": [
+        "AbathurSpawnLocusts|AbathurLocustStrain|Trait"
+       ],
+       "upgradesAbilityType": true
+      }
+     ],
+     "Level20": [
+      {
+       "abilityId": "AbathurUltimateEvolution",
+       "abilityType": "Heroic",
+       "buttonId": "AbathurUltimateEvolutionEvolutionaryLinkTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_abathur_ultimateevolution.png",
+       "isQuest": false,
+       "linkId": "AbathurUltimateEvolutionEvolutionaryLink|AbathurUltimateEvolutionEvolutionaryLinkTalent|Heroic|Level20",
+       "prerequisiteTalentIds": [
+        "AbathurHeroicAbilityUltimateEvolution"
+       ],
+       "sort": 1,
+       "talentId": "AbathurUltimateEvolutionEvolutionaryLink",
+       "tooltipAbilityLinkIds": [
+        "AbathurUltimateEvolution|AbathurUltimateEvolution|Heroic"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "AbathurEvolveMonstrosity",
+       "abilityType": "Heroic",
+       "buttonId": "AbathurMonstrosityEvolutionCompleteTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_abathur_evolvemonstrosity.png",
+       "isQuest": false,
+       "linkId": "AbathurMasteryEvolutionComplete|AbathurMonstrosityEvolutionCompleteTalent|Heroic|Level20",
+       "prerequisiteTalentIds": [
+        "AbathurHeroicAbilityEvolveMonstrosity"
+       ],
+       "sort": 2,
+       "talentId": "AbathurMasteryEvolutionComplete",
+       "tooltipAbilityLinkIds": [
+        "AbathurEvolveMonstrosity|AbathurEvolveMonstrosityHotbar|Heroic"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "AbathurSymbiote",
+       "abilityType": "Q",
+       "buttonId": "AbathurSymbioteHivemindTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_abathur_symbiote.png",
+       "isQuest": false,
+       "linkId": "AbathurSymbioteHivemind|AbathurSymbioteHivemindTalent|Q|Level20",
+       "sort": 3,
+       "talentId": "AbathurSymbioteHivemind",
+       "tooltipAbilityLinkIds": [
+        "AbathurSymbiote|AbathurSymbiote|Q"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "AbathurLocustNest",
+       "abilityType": "Active",
+       "buttonId": "AbathurLocustMasterHotbar",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_abathur_locustnest.png",
+       "isQuest": false,
+       "linkId": "AbathurMasteryLocustMaster|AbathurLocustMasterHotbar|Active|Level20",
+       "sort": 4,
+       "talentId": "AbathurMasteryLocustMaster",
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level4": [
+      {
+       "abilityId": "AbathurSymbiote",
+       "abilityType": "Q",
+       "buttonId": "AbathurSymbioteAdrenalOverloadTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_abathur_symbiote.png",
+       "isQuest": false,
+       "linkId": "AbathurSymbioteAdrenalOverload|AbathurSymbioteAdrenalOverloadTalent|Q|Level4",
+       "sort": 1,
+       "talentId": "AbathurSymbioteAdrenalOverload",
+       "tooltipAbilityLinkIds": [
+        "AbathurSymbiote|AbathurSymbiote|Q"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "AbathurSymbioteStab",
+       "abilityType": "Q",
+       "buttonId": "AbathurSymbioteNeedlespineTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_abathur_stab.png",
+       "isQuest": false,
+       "linkId": "AbathurMasteryNeedlespine|AbathurSymbioteNeedlespineTalent|Q|Level4",
+       "sort": 2,
+       "talentId": "AbathurMasteryNeedlespine",
+       "tooltipAbilityLinkIds": [
+        "AbathurSymbiote|AbathurSymbiote|Q",
+        "AbathurSymbioteStab|AbathurSymbioteStab|Q"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "AbathurToxicNest",
+       "abilityType": "W",
+       "buttonId": "AbathurToxicNestProlificDispersalTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_abathur_toxicnest.png",
+       "isQuest": false,
+       "linkId": "AbathurMasteryProlificDispersal|AbathurToxicNestProlificDispersalTalent|W|Level4",
+       "sort": 3,
+       "talentId": "AbathurMasteryProlificDispersal",
+       "tooltipAbilityLinkIds": [
+        "AbathurToxicNest|AbathurToxicNest|W"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "AbathurSymbioteCarapace",
+       "abilityType": "E",
+       "buttonId": "AbathurSlapathur",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_abathur_volatilemutation.png",
+       "isQuest": false,
+       "linkId": "AbathurSlapathur|AbathurSlapathur|E|Level4",
+       "sort": 4,
+       "talentId": "AbathurSlapathur",
+       "upgradesAbilityType": true
+      }
+     ],
+     "Level7": [
+      {
+       "abilityId": "AbathurToxicNest",
+       "abilityType": "W",
+       "buttonId": "AbathurToxicNestVileNestTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_abathur_toxicnest.png",
+       "isQuest": false,
+       "linkId": "AbathurMasteryVileNestsToxicNest|AbathurToxicNestVileNestTalent|W|Level7",
+       "sort": 1,
+       "talentId": "AbathurMasteryVileNestsToxicNest",
+       "tooltipAbilityLinkIds": [
+        "AbathurToxicNest|AbathurToxicNest|W"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "AbathurSymbioteCarapace",
+       "abilityType": "E",
+       "buttonId": "AbathurSymbioteCarapaceNetworkedCarapaceTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_abathur_carapace.png",
+       "isQuest": false,
+       "linkId": "AbathurSymbioteCarapaceNetworkedCarapace|AbathurSymbioteCarapaceNetworkedCarapaceTalent|E|Level7",
+       "sort": 2,
+       "talentId": "AbathurSymbioteCarapaceNetworkedCarapace",
+       "tooltipAbilityLinkIds": [
+        "AbathurSymbiote|AbathurSymbiote|Q",
+        "AbathurSymbioteCarapace|AbathurSymbioteCarapace|E"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "TalentBucketCalldownMule",
+       "abilityType": "Active",
+       "buttonId": "GenericCalldownMule",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_talent_mule.png",
+       "isQuest": false,
+       "linkId": "GenericTalentCalldownMULE|GenericCalldownMule|Active|Level7",
+       "sort": 3,
+       "talentId": "GenericTalentCalldownMULE",
+       "upgradesAbilityType": false
+      }
+     ]
+    }
+   },
+   "unitId": "HeroAbathur"
+  },
+  "Amazon": {
+   "attributeId": "Amaz",
+   "hyperlinkId": "Cassia",
+   "id": "Amazon",
+   "structure": {
+    "attributeId": "Amaz",
+    "franchise": "Diablo",
+    "portraits": {
+     "draftScreen": "storm_ui_glues_draft_portrait_amazon.png",
+     "heroSelect": "storm_ui_ingame_heroselect_btn_d2amazonf.png",
+     "leaderboard": "storm_ui_ingame_hero_leaderboard_d2amazonf.png",
+     "loading": "storm_ui_ingame_hero_loadingscreen_d2amazonf.png",
+     "minimap": "storm_ui_minimapicon_d2amazonf.png",
+     "partyFrames": [
+      "storm_ui_ingame_partyframe_amazon.png"
+     ],
+     "partyPanel": "storm_ui_ingame_partypanel_btn_d2amazonf.png",
+     "target": "ui_targetportrait_hero_d2amazonf.png",
+     "targetInfo": "storm_ui_ingame_partyframe_d2amazonf.png"
+    },
+    "talents": {
+     "Level1": [
+      {
+       "abilityId": "AmazonLightningFury",
+       "abilityType": "Q",
+       "buttonId": "AmazonLightningFuryThunderstroke",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_cassia_lightningfury.png",
+       "isQuest": true,
+       "linkId": "AmazonThunderstroke|AmazonLightningFuryThunderstroke|Q|Level1",
+       "sort": 1,
+       "talentId": "AmazonThunderstroke",
+       "tooltipAbilityLinkIds": [
+        "AmazonLightningFury|AmazonLightningFury|Q"
+       ],
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "AmazonFend",
+       "abilityType": "E",
+       "buttonId": "AmazonFendImpale",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_cassia_fend.png",
+       "isQuest": false,
+       "linkId": "AmazonImpale|AmazonFendImpale|E|Level1",
+       "sort": 2,
+       "talentId": "AmazonImpale",
+       "tooltipAbilityLinkIds": [
+        "AmazonFend|AmazonFend|E"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Passive",
+       "buttonId": "AmazonAvoidanceChargedStrikes",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_cassia_new_chargedstrikes.png",
+       "isQuest": false,
+       "linkId": "AmazonChargedStrikes|AmazonAvoidanceChargedStrikes|Passive|Level1",
+       "sort": 3,
+       "talentId": "AmazonChargedStrikes",
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level10": [
+      {
+       "abilityId": "AmazonBallLightning",
+       "abilityType": "Heroic",
+       "buttonId": "AmazonBallLightning",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_cassia_balllightning.png",
+       "isQuest": false,
+       "linkId": "AmazonBallLightning|AmazonBallLightning|Heroic|Level10",
+       "sort": 1,
+       "talentId": "AmazonBallLightning",
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "AmazonValkyrie",
+       "abilityType": "Heroic",
+       "buttonId": "AmazonValkyrie",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_cassia_valkrie.png",
+       "isQuest": false,
+       "linkId": "AmazonValkyrie|AmazonValkyrie|Heroic|Level10",
+       "sort": 2,
+       "talentId": "AmazonValkyrie",
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level13": [
+      {
+       "abilityId": "AmazonFend",
+       "abilityType": "E",
+       "buttonId": "Amazon-FendWarMatron",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_cassia_fend.png",
+       "isQuest": false,
+       "linkId": "AmazonFendWarMatron|Amazon-FendWarMatron|E|Level13",
+       "sort": 1,
+       "talentId": "AmazonFendWarMatron",
+       "tooltipAbilityLinkIds": [
+        "AmazonFend|AmazonFend|E"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Trait",
+       "buttonId": "AmazonAvoidanceWarTraveler",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_cassia_avoidance_b.png",
+       "isQuest": false,
+       "linkId": "AmazonWarTraveler|AmazonAvoidanceWarTraveler|Trait|Level13",
+       "sort": 2,
+       "talentId": "AmazonWarTraveler",
+       "tooltipAbilityLinkIds": [
+        ":PASSIVE:|AmazonAvoidance|Trait",
+        "AmazonSurgeOfLight|AmazonAvoidance|Trait",
+        "AmazonWarTravelerSummonMount|AmazonWarTravelerSummonMount|Z"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Trait",
+       "buttonId": "AmazonFendGlovesOfAlacrity",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_cassia_new_gloves.png",
+       "isQuest": false,
+       "linkId": "AmazonFendGlovesOfAlacrity|AmazonFendGlovesOfAlacrity|Trait|Level13",
+       "sort": 3,
+       "talentId": "AmazonFendGlovesOfAlacrity",
+       "tooltipAbilityLinkIds": [
+        ":PASSIVE:|AmazonAvoidance|Trait",
+        "AmazonSurgeOfLight|AmazonAvoidance|Trait"
+       ],
+       "upgradesAbilityType": true
+      }
+     ],
+     "Level16": [
+      {
+       "abilityId": "AmazonLightningFury",
+       "abilityType": "Q",
+       "buttonId": "AmazonPowerStrike",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_cassia_combo_q_w.png",
+       "isQuest": false,
+       "linkId": "AmazonPowerStrike|AmazonPowerStrike|Q|Level16",
+       "sort": 1,
+       "talentId": "AmazonPowerStrike",
+       "tooltipAbilityLinkIds": [
+        "AmazonLightningFury|AmazonLightningFury|Q",
+        "AmazonBlindingLight|AmazonBlindingLight|W"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "AmazonLightningFury",
+       "abilityType": "Q",
+       "buttonId": "AmazonFendStaticElectricity",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_cassia_combo_q_e.png",
+       "isQuest": false,
+       "linkId": "AmazonStaticElectricity|AmazonFendStaticElectricity|Q|Level16",
+       "sort": 2,
+       "talentId": "AmazonStaticElectricity",
+       "tooltipAbilityLinkIds": [
+        "AmazonLightningFury|AmazonLightningFury|Q",
+        "AmazonFend|AmazonFend|E"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Passive",
+       "buttonId": "AmazonMartialLaw",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_talent_autoattack_searing.png",
+       "isQuest": false,
+       "linkId": "AmazonMartialLaw|AmazonMartialLaw|Passive|Level16",
+       "sort": 3,
+       "talentId": "AmazonMartialLaw",
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level20": [
+      {
+       "abilityId": "AmazonBallLightning",
+       "abilityType": "Heroic",
+       "buttonId": "AmazonBallLightningInfiniteLightning",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_cassia_balllightning.png",
+       "isQuest": false,
+       "linkId": "AmazonInfiniteLightning|AmazonBallLightningInfiniteLightning|Heroic|Level20",
+       "prerequisiteTalentIds": [
+        "AmazonBallLightning"
+       ],
+       "sort": 1,
+       "talentId": "AmazonInfiniteLightning",
+       "tooltipAbilityLinkIds": [
+        "AmazonBallLightning|AmazonBallLightning|Heroic"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "AmazonValkyrie",
+       "abilityType": "Heroic",
+       "buttonId": "AmazonValkyrieImprisoningLight",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_cassia_valkrie.png",
+       "isQuest": false,
+       "linkId": "AmazonImprisoningLight|AmazonValkyrieImprisoningLight|Heroic|Level20",
+       "prerequisiteTalentIds": [
+        "AmazonValkyrie"
+       ],
+       "sort": 2,
+       "talentId": "AmazonImprisoningLight",
+       "tooltipAbilityLinkIds": [
+        "AmazonValkyrie|AmazonValkyrie|Heroic"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Trait",
+       "buttonId": "AmazonTitansRevenge",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_cassia_avoidance_b.png",
+       "isQuest": false,
+       "linkId": "AmazonTitansRevenge|AmazonTitansRevenge|Trait|Level20",
+       "sort": 3,
+       "talentId": "AmazonTitansRevenge",
+       "tooltipAbilityLinkIds": [
+        ":PASSIVE:|AmazonAvoidance|Trait",
+        "AmazonSurgeOfLight|AmazonAvoidance|Trait"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "AmazonAvoidanceRockstopper",
+       "abilityType": "Active",
+       "buttonId": "AmazonAvoidanceRockstopper",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_cassia_avoidance.png",
+       "isQuest": false,
+       "linkId": "Amazon-AvoidanceRockstopper|AmazonAvoidanceRockstopper|Active|Level20",
+       "sort": 4,
+       "talentId": "Amazon-AvoidanceRockstopper",
+       "tooltipAbilityLinkIds": [
+        ":PASSIVE:|AmazonAvoidance|Trait",
+        "AmazonSurgeOfLight|AmazonAvoidance|Trait"
+       ],
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level4": [
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Trait",
+       "buttonId": "AmazonAvoidancePlateoftheWhale",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_cassia_avoidance_b.png",
+       "isQuest": false,
+       "linkId": "AmazonPlateoftheWhale|AmazonAvoidancePlateoftheWhale|Trait|Level4",
+       "sort": 1,
+       "talentId": "AmazonPlateoftheWhale",
+       "tooltipAbilityLinkIds": [
+        ":PASSIVE:|AmazonAvoidance|Trait",
+        "AmazonSurgeOfLight|AmazonAvoidance|Trait"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Passive",
+       "buttonId": "AmazonRingoftheLeech",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_cassia_ringoftheleech.png",
+       "isQuest": false,
+       "linkId": "AmazonRingoftheLeech|AmazonRingoftheLeech|Passive|Level4",
+       "sort": 2,
+       "talentId": "AmazonRingoftheLeech",
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "AmazonInnerLight",
+       "abilityType": "Active",
+       "buttonId": "AmazonLightningFuryInnerLight",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_cassia_innerlight.png",
+       "isQuest": false,
+       "linkId": "AmazonInnerLight|AmazonLightningFuryInnerLight|Active|Level4",
+       "sort": 3,
+       "talentId": "AmazonInnerLight",
+       "tooltipAbilityLinkIds": [
+        "AmazonLightningFury|AmazonLightningFury|Q"
+       ],
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level7": [
+      {
+       "abilityId": "AmazonLightningFury",
+       "abilityType": "Q",
+       "buttonId": "AmazonFendGroundingRod",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_cassia_combo_q_e.png",
+       "isQuest": false,
+       "linkId": "AmazonFendGroundingRod|AmazonFendGroundingRod|Q|Level7",
+       "sort": 1,
+       "talentId": "AmazonFendGroundingRod",
+       "tooltipAbilityLinkIds": [
+        "AmazonLightningFury|AmazonLightningFury|Q",
+        "AmazonFend|AmazonFend|E"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "AmazonBlindingLight",
+       "abilityType": "W",
+       "buttonId": "AmazonBlindingLightSeraphsHymn",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_cassia_blindinglight.png",
+       "isQuest": false,
+       "linkId": "AmazonSeraphsHymn|AmazonBlindingLightSeraphsHymn|W|Level7",
+       "sort": 2,
+       "talentId": "AmazonSeraphsHymn",
+       "tooltipAbilityLinkIds": [
+        "AmazonBlindingLight|AmazonBlindingLight|W"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "AmazonSurgeOfLight",
+       "abilityType": "Trait",
+       "buttonId": "AmazonAvoidanceSurgeOfLight",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_cassia_avoidance_b.png",
+       "isQuest": false,
+       "linkId": "AmazonSurgeOfLight|AmazonAvoidanceSurgeOfLight|Trait|Level7",
+       "sort": 3,
+       "talentId": "AmazonSurgeOfLight",
+       "tooltipAbilityLinkIds": [
+        ":PASSIVE:|AmazonAvoidance|Trait",
+        "AmazonSurgeOfLight|AmazonAvoidance|Trait"
+       ],
+       "upgradesAbilityType": true
+      }
+     ]
+    }
+   },
+   "unitId": "HeroAmazon"
+  },
+  "Falstad": {
+   "attributeId": "Fals",
+   "hyperlinkId": "Falstad",
+   "id": "Falstad",
+   "structure": {
+    "attributeId": "Fals",
+    "franchise": "Warcraft",
+    "portraits": {
+     "draftScreen": "storm_ui_glues_draft_portrait_falstad.png",
+     "heroSelect": "storm_ui_ingame_heroselect_btn_gryphon_rider.png",
+     "leaderboard": "storm_ui_ingame_hero_leaderboard_falstad.png",
+     "loading": "storm_ui_ingame_hero_loadingscreen_falstad.png",
+     "minimap": "storm_ui_minimapicon_gryphon_rider.png",
+     "partyFrames": [
+      "storm_ui_ingame_partyframe_falstad.png"
+     ],
+     "partyPanel": "storm_ui_ingame_partypanel_btn_falstad.png",
+     "target": "ui_targetportrait_hero_falstad.png",
+     "targetInfo": "storm_ui_ingame_partyframe_falstad.png"
+    },
+    "talents": {
+     "Level1": [
+      {
+       "abilityId": "FalstadHammerang",
+       "abilityType": "Q",
+       "buttonId": "FalstadGatheringStormTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_falstad_hammerang.png",
+       "isQuest": true,
+       "linkId": "FalstadHammerangGatheringStorm|FalstadGatheringStormTalent|Q|Level1",
+       "sort": 1,
+       "talentId": "FalstadHammerangGatheringStorm",
+       "tooltipAbilityLinkIds": [
+        "FalstadHammerang|FalstadHammerang|Q"
+       ],
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "FalstadLightningRod",
+       "abilityType": "W",
+       "buttonId": "FalstadLightningRodDishonorableDischarge",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_falstad_lightningrod.png",
+       "isQuest": true,
+       "linkId": "FalstadLightningRodDishonorableDischarge|FalstadLightningRodDishonorableDischarge|W|Level1",
+       "sort": 2,
+       "talentId": "FalstadLightningRodDishonorableDischarge",
+       "tooltipAbilityLinkIds": [
+        "FalstadLightningRod|FalstadLightningRod|W"
+       ],
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "FalstadFrequentFlyerActive",
+       "abilityType": "Active",
+       "buttonId": "FalstadTailwindFrequentFlyer",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_falstad_tailwind_a.png",
+       "isQuest": true,
+       "linkId": "FalstadTailwindFrequentFlyer|FalstadTailwindFrequentFlyer|Active|Level1",
+       "sort": 3,
+       "talentId": "FalstadTailwindFrequentFlyer",
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level10": [
+      {
+       "abilityId": "FalstadHinterlandBlast",
+       "abilityType": "Heroic",
+       "buttonId": "FalstadHinterlandBlast",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_falstad_hinterlandblast.png",
+       "isQuest": false,
+       "linkId": "FalstadHeroicAbilityHinterlandBlast|FalstadHinterlandBlast|Heroic|Level10",
+       "sort": 1,
+       "talentId": "FalstadHeroicAbilityHinterlandBlast",
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "FalstadMightyGust",
+       "abilityType": "Heroic",
+       "buttonId": "FalstadMightyGust",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_falstad_mightygust.png",
+       "isQuest": false,
+       "linkId": "FalstadHeroicAbilityMightyGust|FalstadMightyGust|Heroic|Level10",
+       "sort": 2,
+       "talentId": "FalstadHeroicAbilityMightyGust",
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level13": [
+      {
+       "abilityId": "FalstadLightningRod",
+       "abilityType": "W",
+       "buttonId": "FalstadChargedUpTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_falstad_lightningrod.png",
+       "isQuest": false,
+       "linkId": "FalstadMasteryLightningRodChargedUp|FalstadChargedUpTalent|W|Level13",
+       "sort": 1,
+       "talentId": "FalstadMasteryLightningRodChargedUp",
+       "tooltipAbilityLinkIds": [
+        "FalstadLightningRod|FalstadLightningRod|W"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Trait",
+       "buttonId": "FalstadFlowRiderTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_falstad_tailwind.png",
+       "isQuest": false,
+       "linkId": "FalstadMasteryBarrelRollFlowRider|FalstadFlowRiderTalent|Trait|Level13",
+       "sort": 2,
+       "talentId": "FalstadMasteryBarrelRollFlowRider",
+       "tooltipAbilityLinkIds": [
+        "FalstadTailwindCooldownDisplay|FalstadTailwind|Trait"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Trait",
+       "buttonId": "FalstadTailwindSustainedWinds",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_falstad_tailwind_a.png",
+       "isQuest": false,
+       "linkId": "FalstadTailwindSustainedWinds|FalstadTailwindSustainedWinds|Trait|Level13",
+       "sort": 3,
+       "talentId": "FalstadTailwindSustainedWinds",
+       "tooltipAbilityLinkIds": [
+        "FalstadTailwindCooldownDisplay|FalstadTailwind|Trait"
+       ],
+       "upgradesAbilityType": true
+      }
+     ],
+     "Level16": [
+      {
+       "abilityId": "FalstadHammerang",
+       "abilityType": "Q",
+       "buttonId": "FalstadHammerangCripplingHammerTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_falstad_hammerang.png",
+       "isQuest": false,
+       "linkId": "FalstadMasteryCripplingHammerHammerang|FalstadHammerangCripplingHammerTalent|Q|Level16",
+       "sort": 1,
+       "talentId": "FalstadMasteryCripplingHammerHammerang",
+       "tooltipAbilityLinkIds": [
+        "FalstadHammerang|FalstadHammerang|Q"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Trait",
+       "buttonId": "FalstadTailwindAerieGustsTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_falstad_tailwind.png",
+       "isQuest": false,
+       "linkId": "FalstadMasteryAerieGustsTailwind|FalstadTailwindAerieGustsTalent|Trait|Level16",
+       "sort": 2,
+       "talentId": "FalstadMasteryAerieGustsTailwind",
+       "tooltipAbilityLinkIds": [
+        "FalstadTailwindCooldownDisplay|FalstadTailwind|Trait"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "FalstadBarrelRoll",
+       "abilityType": "E",
+       "buttonId": "FalstadBarrelRollAfterburnerTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_falstad_barrelroll.png",
+       "isQuest": false,
+       "linkId": "FalstadMasteryAfterburner|FalstadBarrelRollAfterburnerTalent|E|Level16",
+       "sort": 3,
+       "talentId": "FalstadMasteryAfterburner",
+       "tooltipAbilityLinkIds": [
+        "FalstadBarrelRoll|FalstadBarrelRoll|E"
+       ],
+       "upgradesAbilityType": true
+      }
+     ],
+     "Level20": [
+      {
+       "abilityId": "FalstadHinterlandBlast",
+       "abilityType": "Heroic",
+       "buttonId": "FalstadHinterlandBlastCalloftheWildhammerTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_falstad_hinterlandblast.png",
+       "isQuest": false,
+       "linkId": "FalstadMasteryCalloftheWildhammerHinterlandBlast|FalstadHinterlandBlastCalloftheWildhammerTalent|Heroic|Level20",
+       "prerequisiteTalentIds": [
+        "FalstadHeroicAbilityHinterlandBlast"
+       ],
+       "sort": 1,
+       "talentId": "FalstadMasteryCalloftheWildhammerHinterlandBlast",
+       "tooltipAbilityLinkIds": [
+        "FalstadHinterlandBlast|FalstadHinterlandBlast|Heroic"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "FalstadMightyGust",
+       "abilityType": "Heroic",
+       "buttonId": "FalstadWindTunnelTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_falstad_mightygust.png",
+       "isQuest": false,
+       "linkId": "FalstadMasteryMightyGustWindTunnel|FalstadWindTunnelTalent|Heroic|Level20",
+       "prerequisiteTalentIds": [
+        "FalstadHeroicAbilityMightyGust"
+       ],
+       "sort": 2,
+       "talentId": "FalstadMasteryMightyGustWindTunnel",
+       "tooltipAbilityLinkIds": [
+        "FalstadMightyGust|FalstadMightyGust|Heroic"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Passive",
+       "buttonId": "NexusFrenzyTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_talent_autoattack_range.png",
+       "isQuest": false,
+       "linkId": "GenericTalentNexusFrenzy|NexusFrenzyTalent|Passive|Level20",
+       "sort": 3,
+       "talentId": "GenericTalentNexusFrenzy",
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "FalstadFlight",
+       "abilityType": "Z",
+       "buttonId": "FalstadEpicMountTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_falstad_epicmount.png",
+       "isQuest": false,
+       "linkId": "FalstadMasteryFlightEpicMount|FalstadEpicMountTalent|Z|Level20",
+       "sort": 4,
+       "talentId": "FalstadMasteryFlightEpicMount",
+       "tooltipAbilityLinkIds": [
+        "FalstadFlight|FalstadFlight|Z"
+       ],
+       "upgradesAbilityType": true
+      }
+     ],
+     "Level4": [
+      {
+       "abilityId": "FalstadLightningRod",
+       "abilityType": "W",
+       "buttonId": "FalstadStaticShieldTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_falstad_lightningrod.png",
+       "isQuest": false,
+       "linkId": "FalstadMasteryLightningRodStaticShield|FalstadStaticShieldTalent|W|Level4",
+       "sort": 1,
+       "talentId": "FalstadMasteryLightningRodStaticShield",
+       "tooltipAbilityLinkIds": [
+        "FalstadLightningRod|FalstadLightningRod|W"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "FalstadBarrelRoll",
+       "abilityType": "E",
+       "buttonId": "FalstadBarrelRollUpdraftTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_falstad_barrelroll.png",
+       "isQuest": false,
+       "linkId": "FalstadMasteryUpdraftBarrelRoll|FalstadBarrelRollUpdraftTalent|E|Level4",
+       "sort": 2,
+       "talentId": "FalstadMasteryUpdraftBarrelRoll",
+       "tooltipAbilityLinkIds": [
+        "FalstadBarrelRoll|FalstadBarrelRoll|E"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Passive",
+       "buttonId": "FalstadHammerGainsTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_talent_autoattack_heal.png",
+       "isQuest": false,
+       "linkId": "FalstadTalentHammerGains|FalstadHammerGainsTalent|Passive|Level4",
+       "sort": 3,
+       "talentId": "FalstadTalentHammerGains",
+       "tooltipAbilityLinkIds": [
+        "FalstadTailwindCooldownDisplay|FalstadTailwind|Trait"
+       ],
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level7": [
+      {
+       "abilityId": "FalstadHammerang",
+       "abilityType": "Q",
+       "buttonId": "FalstadSecretWeaponTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_falstad_hammerang.png",
+       "isQuest": false,
+       "linkId": "FalstadMasteryHammerangSecretWeapon|FalstadSecretWeaponTalent|Q|Level7",
+       "sort": 1,
+       "talentId": "FalstadMasteryHammerangSecretWeapon",
+       "tooltipAbilityLinkIds": [
+        "FalstadHammerang|FalstadHammerang|Q"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "FalstadHammerang",
+       "abilityType": "Q",
+       "buttonId": "FalstadHammerangBOOMerangTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_falstad_hammerang_a.png",
+       "isQuest": false,
+       "linkId": "FalstadHammerangBOOMerang|FalstadHammerangBOOMerangTalent|Q|Level7",
+       "sort": 2,
+       "talentId": "FalstadHammerangBOOMerang",
+       "tooltipAbilityLinkIds": [
+        "FalstadHammerang|FalstadHammerang|Q"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "FalstadLightningRod",
+       "abilityType": "W",
+       "buttonId": "FalstadThunderstrikesTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_falstad_lightningrod.png",
+       "isQuest": false,
+       "linkId": "FalstadMasteryLightningRodThunderstrikes|FalstadThunderstrikesTalent|W|Level7",
+       "sort": 3,
+       "talentId": "FalstadMasteryLightningRodThunderstrikes",
+       "tooltipAbilityLinkIds": [
+        "FalstadLightningRod|FalstadLightningRod|W"
+       ],
+       "upgradesAbilityType": true
+      }
+     ]
+    }
+   },
+   "unitId": "HeroFalstad"
+  },
+  "Guldan": {
+   "attributeId": "Guld",
+   "hyperlinkId": "Guldan",
+   "id": "Guldan",
+   "structure": {
+    "attributeId": "Guld",
+    "franchise": "Warcraft",
+    "portraits": {
+     "draftScreen": "storm_ui_glues_draft_portrait_guldan.png",
+     "heroSelect": "storm_ui_ingame_heroselect_btn_guldan.png",
+     "leaderboard": "storm_ui_ingame_hero_leaderboard_guldan.png",
+     "loading": "storm_ui_ingame_hero_loadingscreen_guldan.png",
+     "minimap": "storm_ui_minimapicon_guldan.png",
+     "partyFrames": [
+      "storm_ui_ingame_partyframe_guldan.png"
+     ],
+     "partyPanel": "storm_ui_ingame_partypanel_btn_guldan.png",
+     "target": "ui_targetportrait_hero_guldan.png",
+     "targetInfo": "storm_ui_ingame_partyframe_guldan.png"
+    },
+    "talents": {
+     "Level1": [
+      {
+       "abilityId": "GuldanFelFlame",
+       "abilityType": "Q",
+       "buttonId": "GuldanFelFlameTalentPursuitOfFlame",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_guldan_felflame.png",
+       "isQuest": true,
+       "linkId": "GuldanFelFlamePursuitOfFlame|GuldanFelFlameTalentPursuitOfFlame|Q|Level1",
+       "sort": 1,
+       "talentId": "GuldanFelFlamePursuitOfFlame",
+       "tooltipAbilityLinkIds": [
+        "GuldanFelFlame|GuldanFelFlame|Q"
+       ],
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "GuldanDrainLife",
+       "abilityType": "W",
+       "buttonId": "GuldanChaoticEnergy",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_guldan_healthfunnel.png",
+       "isQuest": true,
+       "linkId": "GuldanChaoticEnergy|GuldanChaoticEnergy|W|Level1",
+       "sort": 2,
+       "talentId": "GuldanChaoticEnergy",
+       "tooltipAbilityLinkIds": [
+        "GuldanDrainLife|GuldanDrainLife|W"
+       ],
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "GuldanCorruption",
+       "abilityType": "E",
+       "buttonId": "GuldanCorruptionEchoedCorruption",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_guldan_handofguldan.png",
+       "isQuest": true,
+       "linkId": "GuldanCorruptionEchoedCorruption|GuldanCorruptionEchoedCorruption|E|Level1",
+       "sort": 3,
+       "talentId": "GuldanCorruptionEchoedCorruption",
+       "tooltipAbilityLinkIds": [
+        "GuldanCorruption|GuldanCorruption|E"
+       ],
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level10": [
+      {
+       "abilityId": "GuldanHorrify",
+       "abilityType": "Heroic",
+       "buttonId": "GuldanHorrify",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_guldan_horrify.png",
+       "isQuest": false,
+       "linkId": "GuldanHorrify|GuldanHorrify|Heroic|Level10",
+       "sort": 1,
+       "talentId": "GuldanHorrify",
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "GuldanRainOfDestruction",
+       "abilityType": "Heroic",
+       "buttonId": "GuldanRainOfDestruction",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_guldan_rainoffire.png",
+       "isQuest": false,
+       "linkId": "GuldanRainOfDestruction|GuldanRainOfDestruction|Heroic|Level10",
+       "sort": 2,
+       "talentId": "GuldanRainOfDestruction",
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level13": [
+      {
+       "abilityId": "GuldanFelFlame",
+       "abilityType": "Q",
+       "buttonId": "GuldanFelFlameFelArmor",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_guldan_felflame.png",
+       "isQuest": false,
+       "linkId": "GuldanFelFlameFelArmor|GuldanFelFlameFelArmor|Q|Level13",
+       "sort": 1,
+       "talentId": "GuldanFelFlameFelArmor",
+       "tooltipAbilityLinkIds": [
+        "GuldanFelFlame|GuldanFelFlame|Q"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "GuldanDrainLife",
+       "abilityType": "W",
+       "buttonId": "GuldanDrainLifeHarvestLife",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_guldan_healthfunnel.png",
+       "isQuest": false,
+       "linkId": "GuldanDrainLifeHarvestLife|GuldanDrainLifeHarvestLife|W|Level13",
+       "sort": 2,
+       "talentId": "GuldanDrainLifeHarvestLife",
+       "tooltipAbilityLinkIds": [
+        "GuldanDrainLife|GuldanDrainLife|W"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Passive",
+       "buttonId": "GuldanDarkBargain",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_guldan_darkbargain.png",
+       "isQuest": false,
+       "linkId": "GuldanDarkBargain|GuldanDarkBargain|Passive|Level13",
+       "sort": 3,
+       "talentId": "GuldanDarkBargain",
+       "tooltipAbilityLinkIds": [
+        "GuldanLifeTap|GuldanLifeTap|Trait",
+        "GuldanLifeTapFree|GuldanLifeTapFree|Trait"
+       ],
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "GuldanHealthstone",
+       "abilityType": "Active",
+       "buttonId": "GuldanHealthstone",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_guldan_healthstone.png",
+       "isQuest": false,
+       "linkId": "GuldanHealthstone|GuldanHealthstone|Active|Level13",
+       "sort": 4,
+       "talentId": "GuldanHealthstone",
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level16": [
+      {
+       "abilityId": "GuldanFelFlame",
+       "abilityType": "Q",
+       "buttonId": "GuldanFelFlameRampantHellfire",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_guldan_felflame.png",
+       "isQuest": false,
+       "linkId": "GuldanFelFlameRampantHellfire|GuldanFelFlameRampantHellfire|Q|Level16",
+       "sort": 1,
+       "talentId": "GuldanFelFlameRampantHellfire",
+       "tooltipAbilityLinkIds": [
+        "GuldanFelFlame|GuldanFelFlame|Q"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "GuldanCorruption",
+       "abilityType": "E",
+       "buttonId": "GuldanCorruptionRuinousAffliction",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_guldan_handofguldan.png",
+       "isQuest": false,
+       "linkId": "GuldanCorruptionRuinousAffliction|GuldanCorruptionRuinousAffliction|E|Level16",
+       "sort": 2,
+       "talentId": "GuldanCorruptionRuinousAffliction",
+       "tooltipAbilityLinkIds": [
+        "GuldanCorruption|GuldanCorruption|E"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "GuldanLifeTap",
+       "abilityType": "Trait",
+       "buttonId": "GuldanLifeTapDarknessWithin",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_guldan_lifetap.png",
+       "isQuest": false,
+       "linkId": "GuldanLifeTapDarknessWithin|GuldanLifeTapDarknessWithin|Trait|Level16",
+       "sort": 3,
+       "talentId": "GuldanLifeTapDarknessWithin",
+       "tooltipAbilityLinkIds": [
+        "GuldanLifeTap|GuldanLifeTap|Trait",
+        "GuldanLifeTapFree|GuldanLifeTapFree|Trait"
+       ],
+       "upgradesAbilityType": true
+      }
+     ],
+     "Level20": [
+      {
+       "abilityId": "GuldanHorrify",
+       "abilityType": "Heroic",
+       "buttonId": "GuldanHorrifyHaunt",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_guldan_horrify.png",
+       "isQuest": false,
+       "linkId": "GuldanHorrifyHaunt|GuldanHorrifyHaunt|Heroic|Level20",
+       "prerequisiteTalentIds": [
+        "GuldanHorrify"
+       ],
+       "sort": 1,
+       "talentId": "GuldanHorrifyHaunt",
+       "tooltipAbilityLinkIds": [
+        "GuldanHorrify|GuldanHorrify|Heroic"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "GuldanRainOfDestruction",
+       "abilityType": "Heroic",
+       "buttonId": "GuldanRainOfDestructionDeepImpact",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_guldan_rainoffire.png",
+       "isQuest": false,
+       "linkId": "GuldanRainOfDestructionDeepImpact|GuldanRainOfDestructionDeepImpact|Heroic|Level20",
+       "prerequisiteTalentIds": [
+        "GuldanRainOfDestruction"
+       ],
+       "sort": 2,
+       "talentId": "GuldanRainOfDestructionDeepImpact",
+       "tooltipAbilityLinkIds": [
+        "GuldanRainOfDestruction|GuldanRainOfDestruction|Heroic"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "GuldanDemonicCircleSummon",
+       "abilityType": "Active",
+       "buttonId": "GuldanDemonicCircle",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_guldan_demoniccircle.png",
+       "isQuest": false,
+       "linkId": "GuldanDemonicCircle|GuldanDemonicCircle|Active|Level20",
+       "sort": 3,
+       "talentId": "GuldanDemonicCircle",
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level4": [
+      {
+       "abilityId": "GuldanDrainLife",
+       "abilityType": "W",
+       "buttonId": "GuldanDrainLifeHealthFunnel",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_guldan_healthfunnel.png",
+       "isQuest": false,
+       "linkId": "GuldanDrainLifeHealthFunnel|GuldanDrainLifeHealthFunnel|W|Level4",
+       "sort": 1,
+       "talentId": "GuldanDrainLifeHealthFunnel",
+       "tooltipAbilityLinkIds": [
+        "GuldanDrainLife|GuldanDrainLife|W"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "GuldanLifeTap",
+       "abilityType": "Trait",
+       "buttonId": "GuldanLifeTapImprovedLifeTap",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_guldan_lifetap.png",
+       "isQuest": false,
+       "linkId": "GuldanLifeTapImprovedLifeTap|GuldanLifeTapImprovedLifeTap|Trait|Level4",
+       "sort": 2,
+       "talentId": "GuldanLifeTapImprovedLifeTap",
+       "tooltipAbilityLinkIds": [
+        "GuldanLifeTap|GuldanLifeTap|Trait",
+        "GuldanLifeTapFree|GuldanLifeTapFree|Trait"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "GuldanConsumeSoul",
+       "abilityType": "Active",
+       "buttonId": "GuldanConsumeSoul",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_guldan_darkpact.png",
+       "isQuest": false,
+       "linkId": "GuldanConsumeSoul|GuldanConsumeSoul|Active|Level4",
+       "sort": 3,
+       "talentId": "GuldanConsumeSoul",
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level7": [
+      {
+       "abilityId": "GuldanFelFlame",
+       "abilityType": "Q",
+       "buttonId": "GuldanFelFlameBoundByShadow",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_guldan_felflame.png",
+       "isQuest": false,
+       "linkId": "GuldanFelFlameBoundByShadow|GuldanFelFlameBoundByShadow|Q|Level7",
+       "sort": 1,
+       "talentId": "GuldanFelFlameBoundByShadow",
+       "tooltipAbilityLinkIds": [
+        "GuldanFelFlame|GuldanFelFlame|Q"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "GuldanDrainLife",
+       "abilityType": "W",
+       "buttonId": "GuldanCorruptionCurseOfExhaustion",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_guldan_healthfunnel.png",
+       "isQuest": false,
+       "linkId": "GuldanCorruptionCurseOfExhaustion|GuldanCorruptionCurseOfExhaustion|W|Level7",
+       "sort": 2,
+       "talentId": "GuldanCorruptionCurseOfExhaustion",
+       "tooltipAbilityLinkIds": [
+        "GuldanDrainLife|GuldanDrainLife|W"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Passive",
+       "buttonId": "GuldanLifeTapHungerforPower",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_guldan_hungerforpower.png",
+       "isQuest": false,
+       "linkId": "GuldanLifeTapHungerforPower|GuldanLifeTapHungerforPower|Passive|Level7",
+       "sort": 3,
+       "talentId": "GuldanLifeTapHungerforPower",
+       "tooltipAbilityLinkIds": [
+        "GuldanLifeTap|GuldanLifeTap|Trait",
+        "GuldanLifeTapFree|GuldanLifeTapFree|Trait"
+       ],
+       "upgradesAbilityType": false
+      }
+     ]
+    }
+   },
+   "unitId": "HeroGuldan"
+  },
+  "Kerrigan": {
+   "attributeId": "Kerr",
+   "hyperlinkId": "Kerrigan",
+   "id": "Kerrigan",
+   "structure": {
+    "attributeId": "Kerr",
+    "franchise": "Starcraft",
+    "portraits": {
+     "draftScreen": "storm_ui_glues_draft_portrait_kerrigan.png",
+     "heroSelect": "storm_ui_ingame_heroselect_btn_kerrigan.png",
+     "leaderboard": "storm_ui_ingame_hero_leaderboard_kerrigan.png",
+     "loading": "storm_ui_ingame_hero_loadingscreen_kerrigan.png",
+     "minimap": "storm_ui_minimapicon_kerrigan.png",
+     "partyFrames": [
+      "storm_ui_ingame_partyframe_kerrigan.png"
+     ],
+     "partyPanel": "storm_ui_ingame_partypanel_btn_kerrigan.png",
+     "target": "ui_targetportrait_hero_kerrigan.png",
+     "targetInfo": "storm_ui_ingame_partyframe_kerrigan.png"
+    },
+    "talents": {
+     "Level1": [
+      {
+       "abilityId": "KerriganRavage",
+       "abilityType": "Q",
+       "buttonId": "KerriganRavageSiphoningImpact",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_kerrigan_ravage.png",
+       "isQuest": false,
+       "linkId": "KerriganRavageSiphoningImpact|KerriganRavageSiphoningImpact|Q|Level1",
+       "sort": 1,
+       "talentId": "KerriganRavageSiphoningImpact",
+       "tooltipAbilityLinkIds": [
+        "KerriganRavage|KerriganRavage|Q"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Trait",
+       "buttonId": "KerriganAssimilationMasteryTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_kerrigan_assimilation.png",
+       "isQuest": false,
+       "linkId": "KerriganAssimilationMastery|KerriganAssimilationMasteryTalent|Trait|Level1",
+       "sort": 2,
+       "talentId": "KerriganAssimilationMastery",
+       "tooltipAbilityLinkIds": [
+        ":PASSIVE:|KerriganAssimilation|Trait"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Passive",
+       "buttonId": "KerriganAssimilationFuryOfTheSwarmTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_talent_autoattack_aoe.png",
+       "isQuest": false,
+       "linkId": "KerriganFuryOfTheSwarm|KerriganAssimilationFuryOfTheSwarmTalent|Passive|Level1",
+       "sort": 3,
+       "talentId": "KerriganFuryOfTheSwarm",
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level10": [
+      {
+       "abilityId": "KerriganMaelstrom",
+       "abilityType": "Heroic",
+       "buttonId": "KerriganMaelstrom",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_kerrigan_maelstrom.png",
+       "isQuest": false,
+       "linkId": "KerriganHeroicAbilityMaelstrom|KerriganMaelstrom|Heroic|Level10",
+       "sort": 1,
+       "talentId": "KerriganHeroicAbilityMaelstrom",
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "KerriganSummonUltralisk",
+       "abilityType": "Heroic",
+       "buttonId": "KerriganSummonUltralisk",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_kerrigan_ultralisk.png",
+       "isQuest": false,
+       "linkId": "KerriganHeroicAbilitySummonUltralisk|KerriganSummonUltralisk|Heroic|Level10",
+       "sort": 2,
+       "talentId": "KerriganHeroicAbilitySummonUltralisk",
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level13": [
+      {
+       "abilityId": "KerriganPrimalGrasp",
+       "abilityType": "E",
+       "buttonId": "KerriganPrimalGraspPsionicBarrier",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_kerrigan_primalgrasp.png",
+       "isQuest": false,
+       "linkId": "KerriganPrimalGraspPsionicBarrier|KerriganPrimalGraspPsionicBarrier|E|Level13",
+       "sort": 1,
+       "talentId": "KerriganPrimalGraspPsionicBarrier",
+       "tooltipAbilityLinkIds": [
+        "KerriganPrimalGrasp|KerriganPrimalGrasp|E"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Trait",
+       "buttonId": "KerriganAssimilationVolatilePower",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_kerrigan_assimilation.png",
+       "isQuest": false,
+       "linkId": "KerriganAssimilationVolatilePower|KerriganAssimilationVolatilePower|Trait|Level13",
+       "sort": 2,
+       "talentId": "KerriganAssimilationVolatilePower",
+       "tooltipAbilityLinkIds": [
+        ":PASSIVE:|KerriganAssimilation|Trait"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "KerriganChrysalis",
+       "abilityType": "Active",
+       "buttonId": "KerriganChrysalis",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_kerrigan_chrysalis.png",
+       "isQuest": false,
+       "linkId": "KerriganChrysalis|KerriganChrysalis|Active|Level13",
+       "sort": 3,
+       "talentId": "KerriganChrysalis",
+       "toggleCooldown": 0.5,
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level16": [
+      {
+       "abilityId": "KerriganRavage",
+       "abilityType": "Q",
+       "buttonId": "KerriganRavageMountingPotency",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_kerrigan_ravage.png",
+       "isQuest": false,
+       "linkId": "KerriganRavageMountingPotency|KerriganRavageMountingPotency|Q|Level16",
+       "sort": 1,
+       "talentId": "KerriganRavageMountingPotency",
+       "tooltipAbilityLinkIds": [
+        "KerriganRavage|KerriganRavage|Q"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "KerriganImpalingBlades",
+       "abilityType": "W",
+       "buttonId": "KerriganImpalingBladesPainfulSpikes",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_kerrigan_impalingblades.png",
+       "isQuest": false,
+       "linkId": "KerriganImpalingBladesPainfulSpikes|KerriganImpalingBladesPainfulSpikes|W|Level16",
+       "sort": 2,
+       "talentId": "KerriganImpalingBladesPainfulSpikes",
+       "tooltipAbilityLinkIds": [
+        "KerriganImpalingBlades|KerriganImpalingBlades|W"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "KerriganMaelstrom",
+       "abilityType": "Heroic",
+       "buttonId": "KerriganUnbridledEnergy",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_talent_abilitytalent_damage.png",
+       "isQuest": false,
+       "linkId": "KerriganUnbridledEnergy|KerriganUnbridledEnergy|Heroic|Level16",
+       "sort": 3,
+       "talentId": "KerriganUnbridledEnergy",
+       "tooltipAbilityLinkIds": [
+        "KerriganMaelstrom|KerriganMaelstrom|Heroic",
+        "KerriganSummonUltralisk|KerriganSummonUltralisk|Heroic"
+       ],
+       "upgradesAbilityType": true
+      }
+     ],
+     "Level20": [
+      {
+       "abilityId": "KerriganMaelstrom",
+       "abilityType": "Heroic",
+       "buttonId": "KerriganMaelstromOmegastormTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_kerrigan_maelstrom.png",
+       "isQuest": false,
+       "linkId": "KerriganOmegastormMaelstrom|KerriganMaelstromOmegastormTalent|Heroic|Level20",
+       "prerequisiteTalentIds": [
+        "KerriganHeroicAbilityMaelstrom"
+       ],
+       "sort": 1,
+       "talentId": "KerriganOmegastormMaelstrom",
+       "tooltipAbilityLinkIds": [
+        "KerriganMaelstrom|KerriganMaelstrom|Heroic"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "KerriganSummonUltralisk",
+       "abilityType": "Heroic",
+       "buttonId": "KerriganSummonUltraliskTorrasqueTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_kerrigan_ultralisk.png",
+       "isQuest": false,
+       "linkId": "KerriganTorrasqueSummonUltralisk|KerriganSummonUltraliskTorrasqueTalent|Heroic|Level20",
+       "prerequisiteTalentIds": [
+        "KerriganHeroicAbilitySummonUltralisk"
+       ],
+       "sort": 2,
+       "talentId": "KerriganTorrasqueSummonUltralisk",
+       "tooltipAbilityLinkIds": [
+        "KerriganSummonUltralisk|KerriganSummonUltralisk|Heroic"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Passive",
+       "buttonId": "KerriganAssimilationBlades",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_talent_autoattack_damage.png",
+       "isQuest": false,
+       "linkId": "KerriganAssimilationAssimilationBlades|KerriganAssimilationBlades|Passive|Level20",
+       "sort": 3,
+       "talentId": "KerriganAssimilationAssimilationBlades",
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "KerriganPsionicShift",
+       "abilityType": "Active",
+       "buttonId": "KerriganPsionicShift",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_talent_boltofthestorm.png",
+       "isQuest": false,
+       "linkId": "KerriganPsionicShift|KerriganPsionicShift|Active|Level20",
+       "sort": 4,
+       "talentId": "KerriganPsionicShift",
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level4": [
+      {
+       "abilityId": "KerriganRavage",
+       "abilityType": "Q",
+       "buttonId": "KerriganRavageRavagingFerocity",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_kerrigan_ravage.png",
+       "isQuest": false,
+       "linkId": "KerriganRavageRavagingFerocity|KerriganRavageRavagingFerocity|Q|Level4",
+       "sort": 1,
+       "talentId": "KerriganRavageRavagingFerocity",
+       "tooltipAbilityLinkIds": [
+        "KerriganRavage|KerriganRavage|Q"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "KerriganImpalingBlades",
+       "abilityType": "W",
+       "buttonId": "KerriganImpalingBladesKineticFulmination",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_kerrigan_impalingblades.png",
+       "isQuest": false,
+       "linkId": "KerriganImpalingBladesKineticFulmination|KerriganImpalingBladesKineticFulmination|W|Level4",
+       "sort": 2,
+       "talentId": "KerriganImpalingBladesKineticFulmination",
+       "tooltipAbilityLinkIds": [
+        "KerriganImpalingBlades|KerriganImpalingBlades|W"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "KerriganPrimalGrasp",
+       "abilityType": "E",
+       "buttonId": "KerriganPrimalGraspPsionicPulse",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_kerrigan_primalgrasp.png",
+       "isQuest": false,
+       "linkId": "KerriganPrimalGraspPsionicPulse|KerriganPrimalGraspPsionicPulse|E|Level4",
+       "sort": 3,
+       "talentId": "KerriganPrimalGraspPsionicPulse",
+       "tooltipAbilityLinkIds": [
+        "KerriganPrimalGrasp|KerriganPrimalGrasp|E"
+       ],
+       "upgradesAbilityType": true
+      }
+     ],
+     "Level7": [
+      {
+       "abilityId": "KerriganRavage",
+       "abilityType": "Q",
+       "buttonId": "KerriganRavageQueenOfBlades",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_kerrigan_ravage.png",
+       "isQuest": false,
+       "linkId": "KerriganRavageQueenOfBlades|KerriganRavageQueenOfBlades|Q|Level7",
+       "sort": 1,
+       "talentId": "KerriganRavageQueenOfBlades",
+       "tooltipAbilityLinkIds": [
+        "KerriganRavage|KerriganRavage|Q"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "KerriganRavage",
+       "abilityType": "Q",
+       "buttonId": "KerriganRavageBoundlessFury",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_kerrigan_ravage_b.png",
+       "isQuest": false,
+       "linkId": "KerriganRavageBoundlessFury|KerriganRavageBoundlessFury|Q|Level7",
+       "sort": 2,
+       "talentId": "KerriganRavageBoundlessFury",
+       "tooltipAbilityLinkIds": [
+        "KerriganRavage|KerriganRavage|Q"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Passive",
+       "buttonId": "KerriganBladedMomentum",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_talent_autoattack_cooldown.png",
+       "isQuest": false,
+       "linkId": "KerriganBladedMomentum|KerriganBladedMomentum|Passive|Level7",
+       "sort": 3,
+       "talentId": "KerriganBladedMomentum",
+       "upgradesAbilityType": false
+      }
+     ]
+    }
+   },
+   "unitId": "HeroKerrigan"
+  },
+  "LostVikings": {
+   "attributeId": "Lost",
+   "hyperlinkId": "LostVikings",
+   "id": "LostVikings",
+   "structure": {
+    "attributeId": "Lost",
+    "franchise": "Classic",
+    "portraits": {
+     "draftScreen": "storm_ui_glues_draft_portrait_lostvikings.png",
+     "heroSelect": "storm_ui_ingame_heroselect_btn_lostvikings.png",
+     "leaderboard": "storm_ui_ingame_hero_leaderboard_lostvikings.png",
+     "loading": "storm_ui_ingame_hero_loadingscreen_lostvikings.png",
+     "minimap": "storm_ui_minimapicon_heros_erik.png",
+     "partyFrames": [
+      "storm_ui_ingame_partyframe_lostvikings_baelog.png",
+      "storm_ui_ingame_partyframe_lostvikings_eric.png",
+      "storm_ui_ingame_partyframe_lostvikings_olaf.png"
+     ],
+     "partyPanel": "storm_ui_ingame_partypanel_btn_lostvikings.png",
+     "target": "ui_targetportrait_hero_lostvikings.png",
+     "targetInfo": ""
+    },
+    "talents": {
+     "Level1": [
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Passive",
+       "buttonId": "LostVikingsOlafTheStoutTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_lostvikings_selectolaf.png",
+       "isQuest": false,
+       "linkId": "LostVikingsMasteryOlafTheStout|LostVikingsOlafTheStoutTalent|Passive|Level1",
+       "sort": 1,
+       "talentId": "LostVikingsMasteryOlafTheStout",
+       "tooltipAbilityLinkIds": [
+        ":PASSIVE:|LostVikingSelectOlaf|Active"
+       ],
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Passive",
+       "buttonId": "LostVikingsSpyGamesTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_lostvikings_selecterik.png",
+       "isQuest": false,
+       "linkId": "LostVikingsMasterySpyGames|LostVikingsSpyGamesTalent|Passive|Level1",
+       "sort": 2,
+       "talentId": "LostVikingsMasterySpyGames",
+       "tooltipAbilityLinkIds": [
+        ":PASSIVE:|LostVikingSelectErik|Active"
+       ],
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Passive",
+       "buttonId": "LostVikingsExplosiveAttacksTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_lostvikings_selectbaleog.png",
+       "isQuest": false,
+       "linkId": "LostVikingsMasteryExplosiveAttacks|LostVikingsExplosiveAttacksTalent|Passive|Level1",
+       "sort": 3,
+       "talentId": "LostVikingsMasteryExplosiveAttacks",
+       "tooltipAbilityLinkIds": [
+        ":PASSIVE:|LostVikingSelectBaleog|Active"
+       ],
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "LostVikingsVikingBribery",
+       "abilityType": "E",
+       "buttonId": "LostVikingsVikingBribery",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_talent_bribe.png",
+       "isQuest": false,
+       "linkId": "LostVikingsMasteryVikingBribery|LostVikingsVikingBribery|E|Level1",
+       "sort": 4,
+       "talentId": "LostVikingsMasteryVikingBribery",
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level10": [
+      {
+       "abilityId": "LostVikingsLongboatRaidNewer",
+       "abilityType": "Heroic",
+       "buttonId": "LostVikingsLongboatRaid",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_lostvikings_longboatraid.png",
+       "isQuest": false,
+       "linkId": "LostVikingsHeroicAbilityLongboatRaid|LostVikingsLongboatRaid|Heroic|Level10",
+       "sort": 1,
+       "talentId": "LostVikingsHeroicAbilityLongboatRaid",
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "LostVikingsPlayAgain",
+       "abilityType": "Heroic",
+       "buttonId": "LostVikingsPlayAgain",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_lostvikings_playagain.png",
+       "isQuest": false,
+       "linkId": "LostVikingsHeroicAbilityPlayAgain|LostVikingsPlayAgain|Heroic|Level10",
+       "sort": 2,
+       "talentId": "LostVikingsHeroicAbilityPlayAgain",
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level13": [
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Passive",
+       "buttonId": "LostVikingsHunkaBurningOlafTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_lostvikings_selectolaf.png",
+       "isQuest": false,
+       "linkId": "LostVikingsMasteryHunkaBurningOlaf|LostVikingsHunkaBurningOlafTalent|Passive|Level13",
+       "sort": 1,
+       "talentId": "LostVikingsMasteryHunkaBurningOlaf",
+       "tooltipAbilityLinkIds": [
+        ":PASSIVE:|LostVikingSelectOlaf|Active"
+       ],
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "LostVikingsPressA",
+       "abilityType": "W",
+       "buttonId": "LostVikingsJump",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_lostvikings_jump.png",
+       "isQuest": false,
+       "linkId": "LostVikingsMasteryJump|LostVikingsJump|W|Level13",
+       "sort": 2,
+       "talentId": "LostVikingsMasteryJump",
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Passive",
+       "buttonId": "LostVikingsNordicAttackSquad",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_talent_autoattack_searing.png",
+       "isQuest": false,
+       "linkId": "LostVikingsMasteryNordicAttackSquad|LostVikingsNordicAttackSquad|Passive|Level13",
+       "sort": 3,
+       "talentId": "LostVikingsMasteryNordicAttackSquad",
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level16": [
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Passive",
+       "buttonId": "LostVikingsLargeAndInChargeTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_lostvikings_selectolaf.png",
+       "isQuest": false,
+       "linkId": "LostVikingsMasteryLargeAndInCharge|LostVikingsLargeAndInChargeTalent|Passive|Level16",
+       "sort": 1,
+       "talentId": "LostVikingsMasteryLargeAndInCharge",
+       "tooltipAbilityLinkIds": [
+        ":PASSIVE:|LostVikingSelectOlaf|Active"
+       ],
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Passive",
+       "buttonId": "LostVikingsImpatienceIsAVirtueTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_talent_autoattack_cooldown.png",
+       "isQuest": false,
+       "linkId": "LostVikingsMasteryImpatienceIsAVirtue|LostVikingsImpatienceIsAVirtueTalent|Passive|Level16",
+       "sort": 2,
+       "talentId": "LostVikingsMasteryImpatienceIsAVirtue",
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "LostVikingsGoGoGo",
+       "abilityType": "Z",
+       "buttonId": "LostVikingsGoGoGo64KBMarathonTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_lostvikings_64kbmarathon.png",
+       "isQuest": false,
+       "linkId": "LostVikingsGoGoGo64KBMarathon|LostVikingsGoGoGo64KBMarathonTalent|Z|Level16",
+       "sort": 3,
+       "talentId": "LostVikingsGoGoGo64KBMarathon",
+       "tooltipAbilityLinkIds": [
+        "LostVikingsGoGoGo|LostVikingsGoGoGo|Z"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Passive",
+       "buttonId": "GenericExecutionerTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_talent_autoattack_damage.png",
+       "isQuest": false,
+       "linkId": "HeroGenericExecutionerPassive|GenericExecutionerTalent|Passive|Level16",
+       "sort": 4,
+       "talentId": "HeroGenericExecutionerPassive",
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level20": [
+      {
+       "abilityId": "LostVikingsLongboatRaidNewer",
+       "abilityType": "Heroic",
+       "buttonId": "LostVikingsWereOnABoatTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_lostvikings_longboatraid.png",
+       "isQuest": false,
+       "linkId": "LostVikingsMasteryWereOnABoat|LostVikingsWereOnABoatTalent|Heroic|Level20",
+       "prerequisiteTalentIds": [
+        "LostVikingsHeroicAbilityLongboatRaid"
+       ],
+       "sort": 1,
+       "talentId": "LostVikingsMasteryWereOnABoat",
+       "tooltipAbilityLinkIds": [
+        "LostVikingsLongboatRaidNewer|LostVikingsLongboatRaid|Heroic"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "LostVikingsPlayAgain",
+       "abilityType": "Heroic",
+       "buttonId": "LostVikingsCheckpointReachedTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_lostvikings_playagain.png",
+       "isQuest": false,
+       "linkId": "LostVikingsMasteryCheckpointReached|LostVikingsCheckpointReachedTalent|Heroic|Level20",
+       "prerequisiteTalentIds": [
+        "LostVikingsHeroicAbilityPlayAgain"
+       ],
+       "sort": 2,
+       "talentId": "LostVikingsMasteryCheckpointReached",
+       "tooltipAbilityLinkIds": [
+        "LostVikingsPlayAgain|LostVikingsPlayAgain|Heroic"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Trait",
+       "buttonId": "LostVikingsTheSequelTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_lostvikings_fastrestart.png",
+       "isQuest": false,
+       "linkId": "LostVikingsMasteryTheSequel|LostVikingsTheSequelTalent|Trait|Level20",
+       "sort": 3,
+       "talentId": "LostVikingsMasteryTheSequel",
+       "tooltipAbilityLinkIds": [
+        ":PASSIVE:|LostVikingsVikingHoardTalent|Trait"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Passive",
+       "buttonId": "LostVikingsFuryoftheStormTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_talent_autoattack_damage.png",
+       "isQuest": false,
+       "linkId": "LostVikingsTalentFuryoftheStorm|LostVikingsFuryoftheStormTalent|Passive|Level20",
+       "sort": 4,
+       "talentId": "LostVikingsTalentFuryoftheStorm",
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level4": [
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Passive",
+       "buttonId": "LostVikingsPainDontHurtTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_lostvikings_selectbaleog.png",
+       "isQuest": false,
+       "linkId": "LostVikingsMasteryPainDontHurt|LostVikingsPainDontHurtTalent|Passive|Level4",
+       "sort": 1,
+       "talentId": "LostVikingsMasteryPainDontHurt",
+       "tooltipAbilityLinkIds": [
+        ":PASSIVE:|LostVikingSelectBaleog|Active"
+       ],
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Passive",
+       "buttonId": "LostVikingsErikTheSwiftTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_lostvikings_selecterik.png",
+       "isQuest": false,
+       "linkId": "LostVikingsMasteryErikTheSwift|LostVikingsErikTheSwiftTalent|Passive|Level4",
+       "sort": 2,
+       "talentId": "LostVikingsMasteryErikTheSwift",
+       "tooltipAbilityLinkIds": [
+        ":PASSIVE:|LostVikingSelectErik|Active"
+       ],
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Passive",
+       "buttonId": "LostVikingsItsASabotageTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_lostvikings_selecterik_var1.png",
+       "isQuest": false,
+       "linkId": "LostVikingsMasteryItsASabotage|LostVikingsItsASabotageTalent|Passive|Level4",
+       "sort": 3,
+       "talentId": "LostVikingsMasteryItsASabotage",
+       "tooltipAbilityLinkIds": [
+        ":PASSIVE:|LostVikingSelectErik|Active"
+       ],
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Passive",
+       "buttonId": "GenericMercenaryLordTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_talent_mercenarylord.png",
+       "isQuest": false,
+       "linkId": "GenericTalentMercenaryLord|GenericMercenaryLordTalent|Passive|Level4",
+       "sort": 4,
+       "talentId": "GenericTalentMercenaryLord",
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level7": [
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Passive",
+       "buttonId": "LostVikingsBaleogTheFierceTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_lostvikings_selectbaleog.png",
+       "isQuest": false,
+       "linkId": "LostVikingsMasteryBaleogTheFierce|LostVikingsBaleogTheFierceTalent|Passive|Level7",
+       "sort": 1,
+       "talentId": "LostVikingsMasteryBaleogTheFierce",
+       "tooltipAbilityLinkIds": [
+        ":PASSIVE:|LostVikingSelectBaleog|Active"
+       ],
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "LostVikingsSpinToWin",
+       "abilityType": "Q",
+       "buttonId": "LostVikingsSpinToWin",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_lostvikings_spintowin.png",
+       "isQuest": false,
+       "linkId": "LostVikingsMasterySpinToWin|LostVikingsSpinToWin|Q|Level7",
+       "sort": 2,
+       "talentId": "LostVikingsMasterySpinToWin",
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "LostVikingsNorseForce",
+       "abilityType": "Q",
+       "buttonId": "LostVikingsNorseForce",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_lostvikings_norseforce.png",
+       "isQuest": false,
+       "linkId": "LostVikingsMasteryNorseForce|LostVikingsNorseForce|Q|Level7",
+       "sort": 3,
+       "talentId": "LostVikingsMasteryNorseForce",
+       "upgradesAbilityType": false
+      }
+     ]
+    }
+   },
+   "unitId": "HeroLostVikingsController"
+  },
+  "Lucio": {
+   "attributeId": "Luci",
+   "hyperlinkId": "Lucio",
+   "id": "Lucio",
+   "structure": {
+    "attributeId": "Luci",
+    "franchise": "Overwatch",
+    "portraits": {
+     "draftScreen": "storm_ui_glues_draft_portrait_lucio.png",
+     "heroSelect": "storm_ui_ingame_heroselect_btn_lucio.png",
+     "leaderboard": "storm_ui_ingame_hero_leaderboard_lucio.png",
+     "loading": "storm_ui_ingame_hero_loadingscreen_lucio.png",
+     "minimap": "storm_ui_minimapicon_lucio.png",
+     "partyFrames": [
+      "storm_ui_ingame_partyframe_lucio.png"
+     ],
+     "partyPanel": "storm_ui_ingame_partypanel_btn_lucio.png",
+     "target": "ui_targetportrait_hero_lucio.png",
+     "targetInfo": "storm_ui_ingame_partyframe_lucio.png"
+    },
+    "talents": {
+     "Level1": [
+      {
+       "abilityId": "LucioCrossfade",
+       "abilityType": "W",
+       "buttonId": "LucioCrossfadePartyMix",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_lucio_crossfade_all.png",
+       "isQuest": true,
+       "linkId": "LucioCrossfadePartyMixQuest|LucioCrossfadePartyMix|W|Level1",
+       "sort": 1,
+       "talentId": "LucioCrossfadePartyMixQuest",
+       "tooltipAbilityLinkIds": [
+        "LucioCrossfade|LucioCrossfadeActivateHealingBoost|W",
+        "LucioCrossfade|LucioCrossfadeActivateSpeedBoost|W"
+       ],
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "LucioWallRide",
+       "abilityType": "Z",
+       "buttonId": "LucioWallRideAccelerando",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_lucio_wallride.png",
+       "isQuest": false,
+       "linkId": "LucioWallRideAccelerando|LucioWallRideAccelerando|Z|Level1",
+       "sort": 2,
+       "talentId": "LucioWallRideAccelerando",
+       "tooltipAbilityLinkIds": [
+        "LucioWallRide|LucioWallRide|Z"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "LucioWallRide",
+       "abilityType": "Z",
+       "buttonId": "LucioPassiveSmoothMoves",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_lucio_wallride_a.png",
+       "isQuest": false,
+       "linkId": "LucioPassiveSmoothMoves|LucioPassiveSmoothMoves|Z|Level1",
+       "sort": 3,
+       "talentId": "LucioPassiveSmoothMoves",
+       "tooltipAbilityLinkIds": [
+        "LucioWallRide|LucioWallRide|Z"
+       ],
+       "upgradesAbilityType": true
+      }
+     ],
+     "Level10": [
+      {
+       "abilityId": "LucioSoundBarrier",
+       "abilityType": "Heroic",
+       "buttonId": "LucioSoundBarrier",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_lucio_soundbarrier.png",
+       "isQuest": false,
+       "linkId": "LucioSoundBarrier|LucioSoundBarrier|Heroic|Level10",
+       "sort": 1,
+       "talentId": "LucioSoundBarrier",
+       "toggleCooldown": 0.0625,
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "LucioHighFive",
+       "abilityType": "Heroic",
+       "buttonId": "LucioHighFive",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_lucio_highfive.png",
+       "isQuest": false,
+       "linkId": "LucioHighFive|LucioHighFive|Heroic|Level10",
+       "sort": 2,
+       "talentId": "LucioHighFive",
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level13": [
+      {
+       "abilityId": "LucioCrossfade",
+       "abilityType": "W",
+       "buttonId": "LucioCrossfadeAllTogether",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_lucio_crossfade_all.png",
+       "isQuest": false,
+       "linkId": "LucioCrossfadeAllTogetherTalent|LucioCrossfadeAllTogether|W|Level13",
+       "sort": 1,
+       "talentId": "LucioCrossfadeAllTogetherTalent",
+       "tooltipAbilityLinkIds": [
+        "LucioCrossfade|LucioCrossfadeActivateHealingBoost|W",
+        "LucioCrossfade|LucioCrossfadeActivateSpeedBoost|W"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "LucioPushOff",
+       "abilityType": "Trait",
+       "buttonId": "LucioPushOffHeavyCasters",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_lucio_accelerando.png",
+       "isQuest": false,
+       "linkId": "LucioPushOffHeavyCasters|LucioPushOffHeavyCasters|Trait|Level13",
+       "sort": 2,
+       "talentId": "LucioPushOffHeavyCasters",
+       "tooltipAbilityLinkIds": [
+        "LucioPushOff|LucioPushOff|Trait"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "LucioWallRide",
+       "abilityType": "Z",
+       "buttonId": "LucioWallRideSlip",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_lucio_wallride.png",
+       "isQuest": false,
+       "linkId": "LucioWallRideSlip|LucioWallRideSlip|Z|Level13",
+       "sort": 3,
+       "talentId": "LucioWallRideSlip",
+       "tooltipAbilityLinkIds": [
+        "LucioWallRide|LucioWallRide|Z"
+       ],
+       "upgradesAbilityType": true
+      }
+     ],
+     "Level16": [
+      {
+       "abilityId": "LucioAmpItUp",
+       "abilityType": "E",
+       "buttonId": "LucioAmpItUpRejuvenescencia",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_lucio_ampitup.png",
+       "isQuest": false,
+       "linkId": "LucioAmpItUpRejuvenescencia|LucioAmpItUpRejuvenescencia|E|Level16",
+       "sort": 1,
+       "talentId": "LucioAmpItUpRejuvenescencia",
+       "tooltipAbilityLinkIds": [
+        "LucioAmpItUp|LucioAmpItUp|E"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "LucioAmpItUp",
+       "abilityType": "E",
+       "buttonId": "LucioAmpItUpUpTheFrequency",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_lucio_ampitup_b.png",
+       "isQuest": false,
+       "linkId": "LucioAmpItUpUpTheFrequency|LucioAmpItUpUpTheFrequency|E|Level16",
+       "sort": 2,
+       "talentId": "LucioAmpItUpUpTheFrequency",
+       "tooltipAbilityLinkIds": [
+        "LucioAmpItUp|LucioAmpItUp|E"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "LucioAmpItUp",
+       "abilityType": "E",
+       "buttonId": "LucioAmpItUpUpToEleven",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_lucio_ampitup_a.png",
+       "isQuest": false,
+       "linkId": "LucioAmpItUpUpToEleven|LucioAmpItUpUpToEleven|E|Level16",
+       "sort": 3,
+       "talentId": "LucioAmpItUpUpToEleven",
+       "tooltipAbilityLinkIds": [
+        "LucioAmpItUp|LucioAmpItUp|E"
+       ],
+       "upgradesAbilityType": true
+      }
+     ],
+     "Level20": [
+      {
+       "abilityId": "LucioSoundBarrier",
+       "abilityType": "Heroic",
+       "buttonId": "LucioSoundBarrierBossaNova",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_lucio_soundbarrier.png",
+       "isQuest": false,
+       "linkId": "LucioSoundBarrierBossaNova|LucioSoundBarrierBossaNova|Heroic|Level20",
+       "prerequisiteTalentIds": [
+        "LucioSoundBarrier"
+       ],
+       "sort": 1,
+       "talentId": "LucioSoundBarrierBossaNova",
+       "tooltipAbilityLinkIds": [
+        "LucioSoundBarrier|LucioSoundBarrier|Heroic"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "LucioHighFive",
+       "abilityType": "Heroic",
+       "buttonId": "LucioHighFiveMixingFire",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_lucio_highfive.png",
+       "isQuest": false,
+       "linkId": "LucioCrossfadeMixingFire|LucioHighFiveMixingFire|Heroic|Level20",
+       "prerequisiteTalentIds": [
+        "LucioHighFive"
+       ],
+       "sort": 2,
+       "talentId": "LucioCrossfadeMixingFire",
+       "tooltipAbilityLinkIds": [
+        "LucioHighFive|LucioHighFive|Heroic"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "LucioCrossfade",
+       "abilityType": "W",
+       "buttonId": "LucioPassiveHouseParty",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_lucio_crossfade_all.png",
+       "isQuest": false,
+       "linkId": "LucioPassiveHouseParty|LucioPassiveHouseParty|W|Level20",
+       "sort": 3,
+       "talentId": "LucioPassiveHouseParty",
+       "tooltipAbilityLinkIds": [
+        "LucioCrossfade|LucioCrossfadeActivateHealingBoost|W",
+        "LucioCrossfade|LucioCrossfadeActivateSpeedBoost|W"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "LucioSummerAnthem",
+       "abilityType": "Active",
+       "buttonId": "LucioItemSummerAnthem",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_lucio_crossfade_a.png",
+       "isQuest": false,
+       "linkId": "LucioItemSummerAnthem|LucioItemSummerAnthem|Active|Level20",
+       "sort": 4,
+       "talentId": "LucioItemSummerAnthem",
+       "tooltipAbilityLinkIds": [
+        "LucioCrossfade|LucioCrossfadeActivateHealingBoost|W",
+        "LucioCrossfade|LucioCrossfadeActivateSpeedBoost|W"
+       ],
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level4": [
+      {
+       "abilityId": "LucioSoundwave",
+       "abilityType": "Q",
+       "buttonId": "LucioSoundwaveSubwoofer",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_lucio_soundwave.png",
+       "isQuest": true,
+       "linkId": "LucioSoundwaveSubwoofer|LucioSoundwaveSubwoofer|Q|Level4",
+       "sort": 1,
+       "talentId": "LucioSoundwaveSubwoofer",
+       "tooltipAbilityLinkIds": [
+        "LucioSoundwave|LucioSoundwave|Q"
+       ],
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "LucioSoundwave",
+       "abilityType": "Q",
+       "buttonId": "LucioSoundwaveOffTheWall",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_lucio_soundwave_a.png",
+       "isQuest": false,
+       "linkId": "LucioSoundwaveOffTheWall|LucioSoundwaveOffTheWall|Q|Level4",
+       "sort": 2,
+       "talentId": "LucioSoundwaveOffTheWall",
+       "tooltipAbilityLinkIds": [
+        "LucioSoundwave|LucioSoundwave|Q"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "LucioPushOff",
+       "abilityType": "Trait",
+       "buttonId": "LucioPushOffSupersonic",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_lucio_accelerando.png",
+       "isQuest": false,
+       "linkId": "LucioPushOffSupersonic|LucioPushOffSupersonic|Trait|Level4",
+       "sort": 3,
+       "talentId": "LucioPushOffSupersonic",
+       "tooltipAbilityLinkIds": [
+        "LucioPushOff|LucioPushOff|Trait"
+       ],
+       "upgradesAbilityType": true
+      }
+     ],
+     "Level7": [
+      {
+       "abilityId": "LucioSoundwave",
+       "abilityType": "Q",
+       "buttonId": "LucioSoundwaveGoodVibrations",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_lucio_soundwave.png",
+       "isQuest": false,
+       "linkId": "LucioSoundwaveGoodVibrations|LucioSoundwaveGoodVibrations|Q|Level7",
+       "sort": 1,
+       "talentId": "LucioSoundwaveGoodVibrations",
+       "tooltipAbilityLinkIds": [
+        "LucioSoundwave|LucioSoundwave|Q"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "LucioCrossfade",
+       "abilityType": "W",
+       "buttonId": "LucioReverseAmp",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_lucio_crossfade_all.png",
+       "isQuest": false,
+       "linkId": "LucioReverseAmp|LucioReverseAmp|W|Level7",
+       "sort": 2,
+       "talentId": "LucioReverseAmp",
+       "tooltipAbilityLinkIds": [
+        "LucioCrossfade|LucioCrossfadeActivateHealingBoost|W",
+        "LucioCrossfade|LucioCrossfadeActivateSpeedBoost|W"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "LucioBoombox",
+       "abilityType": "Active",
+       "buttonId": "LucioBoomboxBoombox",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_lucio_fineshrine.png",
+       "isQuest": false,
+       "linkId": "LucioBoombox|LucioBoomboxBoombox|Active|Level7",
+       "sort": 3,
+       "talentId": "LucioBoombox",
+       "upgradesAbilityType": false
+      }
+     ]
+    }
+   },
+   "unitId": "HeroLucio"
+  },
+  "Sylvanas": {
+   "attributeId": "Sylv",
+   "hyperlinkId": "Sylvanas",
+   "id": "Sylvanas",
+   "structure": {
+    "attributeId": "Sylv",
+    "franchise": "Warcraft",
+    "portraits": {
+     "draftScreen": "storm_ui_glues_draft_portrait_sylvanas.png",
+     "heroSelect": "storm_ui_ingame_heroselect_btn_sylvanas.png",
+     "leaderboard": "storm_ui_ingame_hero_leaderboard_sylvanas.png",
+     "loading": "storm_ui_ingame_hero_loadingscreen_sylvanas.png",
+     "minimap": "storm_ui_minimapicon_sylvanas.png",
+     "partyFrames": [
+      "storm_ui_ingame_partyframe_sylvanas.png"
+     ],
+     "partyPanel": "storm_ui_ingame_partypanel_btn_sylvanas.png",
+     "target": "ui_targetportrait_hero_sylvanas.png",
+     "targetInfo": "storm_ui_ingame_partyframe_sylvanas.png"
+    },
+    "talents": {
+     "Level1": [
+      {
+       "abilityId": "SylvanasWitheringFire",
+       "abilityType": "Q",
+       "buttonId": "SylvanasMightOfTheBansheeQueenWitheringFireTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_sylvanas_witheringfire.png",
+       "isQuest": false,
+       "linkId": "SylvanasTalentMightOfTheBansheeQueen|SylvanasMightOfTheBansheeQueenWitheringFireTalent|Q|Level1",
+       "sort": 1,
+       "talentId": "SylvanasTalentMightOfTheBansheeQueen",
+       "tooltipAbilityLinkIds": [
+        "SylvanasWitheringFire|SylvanasWitheringFire|Q"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "SylvanasShadowDagger",
+       "abilityType": "W",
+       "buttonId": "SylvanasUnrelentingTorment",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_sylvanas_shadowdagger.png",
+       "isQuest": false,
+       "linkId": "SylvanasUnrelentingTorment|SylvanasUnrelentingTorment|W|Level1",
+       "sort": 2,
+       "talentId": "SylvanasUnrelentingTorment",
+       "tooltipAbilityLinkIds": [
+        "SylvanasShadowDagger|SylvanasShadowDagger|W"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Trait",
+       "buttonId": "SylvanasBlackArrowsOverwhelmingAfflictionTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_sylvanas_blackarrows.png",
+       "isQuest": false,
+       "linkId": "SylvanasTalentOverwhelmingAffliction|SylvanasBlackArrowsOverwhelmingAfflictionTalent|Trait|Level1",
+       "sort": 3,
+       "talentId": "SylvanasTalentOverwhelmingAffliction",
+       "tooltipAbilityLinkIds": [
+        ":PASSIVE:|SylvanasBlackArrowsPassive|Trait",
+        "SylvanasBlackArrowsActive|SylvanasBlackArrows|Trait"
+       ],
+       "upgradesAbilityType": true
+      }
+     ],
+     "Level10": [
+      {
+       "abilityId": "SylvanasWailingArrow",
+       "abilityType": "Heroic",
+       "buttonId": "SylvanasWailingArrow",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_sylvanas_wailingarrow.png",
+       "isQuest": false,
+       "linkId": "SylvanasHeroicAbilityWailingArrow|SylvanasWailingArrow|Heroic|Level10",
+       "sort": 1,
+       "talentId": "SylvanasHeroicAbilityWailingArrow",
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "SylvanasMindControlMissile",
+       "abilityType": "Heroic",
+       "buttonId": "SylvanasMindControlMissile",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_sylvanas_mindcontrol.png",
+       "isQuest": false,
+       "linkId": "SylvanasMindControl|SylvanasMindControlMissile|Heroic|Level10",
+       "sort": 2,
+       "talentId": "SylvanasMindControl",
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level13": [
+      {
+       "abilityId": "SylvanasShadowDagger",
+       "abilityType": "W",
+       "buttonId": "SylvanasShadowDaggerColdEmbraceTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_sylvanas_shadowdagger.png",
+       "isQuest": false,
+       "linkId": "SylvanasTalentColdEmbrace|SylvanasShadowDaggerColdEmbraceTalent|W|Level13",
+       "sort": 1,
+       "talentId": "SylvanasTalentColdEmbrace",
+       "tooltipAbilityLinkIds": [
+        "SylvanasShadowDagger|SylvanasShadowDagger|W"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "SylvanasHauntingWave",
+       "abilityType": "E",
+       "buttonId": "SylvanasHauntingWaveWindrunnerTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_sylvanas_hauntingwave.png",
+       "isQuest": false,
+       "linkId": "SylvanasTalentWindrunnerHauntingWave|SylvanasHauntingWaveWindrunnerTalent|E|Level13",
+       "sort": 2,
+       "talentId": "SylvanasTalentWindrunnerHauntingWave",
+       "tooltipAbilityLinkIds": [
+        "SylvanasHauntingWave|SylvanasHauntingWave|E",
+        "SylvanasHauntingWaveWindrunnerTalent|SylvanasHauntingWaveFree|E"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Trait",
+       "buttonId": "SylvanasRemorselessTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_sylvanas_blackarrows.png",
+       "isQuest": false,
+       "linkId": "SylvanasTalentRemorseless|SylvanasRemorselessTalent|Trait|Level13",
+       "sort": 3,
+       "talentId": "SylvanasTalentRemorseless",
+       "tooltipAbilityLinkIds": [
+        ":PASSIVE:|SylvanasBlackArrowsPassive|Trait",
+        "SylvanasBlackArrowsActive|SylvanasBlackArrows|Trait"
+       ],
+       "upgradesAbilityType": true
+      }
+     ],
+     "Level16": [
+      {
+       "abilityId": "SylvanasWitheringFire",
+       "abilityType": "Q",
+       "buttonId": "SylvanasWitheringFireEvasiveFireTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_sylvanas_witheringfire.png",
+       "isQuest": false,
+       "linkId": "SylvanasTalentWitheringFireEvasiveFire|SylvanasWitheringFireEvasiveFireTalent|Q|Level16",
+       "sort": 1,
+       "talentId": "SylvanasTalentWitheringFireEvasiveFire",
+       "tooltipAbilityLinkIds": [
+        "SylvanasWitheringFire|SylvanasWitheringFire|Q"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Trait",
+       "buttonId": "SylvanasBlackArrowsLifeDrainTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_sylvanas_blackarrows.png",
+       "isQuest": false,
+       "linkId": "SylvanasTalentLifeDrain|SylvanasBlackArrowsLifeDrainTalent|Trait|Level16",
+       "sort": 2,
+       "talentId": "SylvanasTalentLifeDrain",
+       "tooltipAbilityLinkIds": [
+        ":PASSIVE:|SylvanasBlackArrowsPassive|Trait",
+        "SylvanasBlackArrowsActive|SylvanasBlackArrows|Trait"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "SylvanasWillOfTheForsaken",
+       "abilityType": "Active",
+       "buttonId": "SylvanasWillOfTheForsaken",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_sylvanas_willoftheforsaken.png",
+       "isQuest": false,
+       "linkId": "SylvanasTalentWillOfTheForsaken|SylvanasWillOfTheForsaken|Active|Level16",
+       "sort": 3,
+       "talentId": "SylvanasTalentWillOfTheForsaken",
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level20": [
+      {
+       "abilityId": "SylvanasWailingArrow",
+       "abilityType": "Heroic",
+       "buttonId": "SylvanasWailingArrowDeafeningBlastTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_sylvanas_wailingarrow.png",
+       "isQuest": false,
+       "linkId": "SylvanasWailingArrowDeafeningBlast|SylvanasWailingArrowDeafeningBlastTalent|Heroic|Level20",
+       "prerequisiteTalentIds": [
+        "SylvanasHeroicAbilityWailingArrow"
+       ],
+       "sort": 1,
+       "talentId": "SylvanasWailingArrowDeafeningBlast",
+       "tooltipAbilityLinkIds": [
+        "SylvanasWailingArrow|SylvanasWailingArrow|Heroic"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "SylvanasMindControlMissile",
+       "abilityType": "Heroic",
+       "buttonId": "SylvanasDarkLadysCallMindControlTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_sylvanas_mindcontrol.png",
+       "isQuest": false,
+       "linkId": "SylvanasDarkLadysCall|SylvanasDarkLadysCallMindControlTalent|Heroic|Level20",
+       "prerequisiteTalentIds": [
+        "SylvanasMindControl"
+       ],
+       "sort": 2,
+       "talentId": "SylvanasDarkLadysCall",
+       "tooltipAbilityLinkIds": [
+        "SylvanasMindControlMissile|SylvanasMindControlMissile|Heroic"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "SylvanasWitheringFire",
+       "abilityType": "Q",
+       "buttonId": "SylvanasWitheringFireWitheringBarrage",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_sylvanas_witheringfire.png",
+       "isQuest": false,
+       "linkId": "SylvanasTalentWitheringBarrage|SylvanasWitheringFireWitheringBarrage|Q|Level20",
+       "sort": 3,
+       "talentId": "SylvanasTalentWitheringBarrage",
+       "tooltipAbilityLinkIds": [
+        "SylvanasWitheringFire|SylvanasWitheringFire|Q"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "FlashoftheStorms",
+       "abilityType": "Active",
+       "buttonId": "GenericBoltoftheStormTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_talent_boltofthestorm.png",
+       "isQuest": false,
+       "linkId": "GenericTalentFlashoftheStorms|GenericBoltoftheStormTalent|Active|Level20",
+       "sort": 4,
+       "talentId": "GenericTalentFlashoftheStorms",
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level4": [
+      {
+       "abilityId": "SylvanasShadowDagger",
+       "abilityType": "W",
+       "buttonId": "SylvanasBlackArrowsUnstablePoisonTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_sylvanas_shadowdagger.png",
+       "isQuest": false,
+       "linkId": "SylvanasTalentUnstablePoison|SylvanasBlackArrowsUnstablePoisonTalent|W|Level4",
+       "sort": 1,
+       "talentId": "SylvanasTalentUnstablePoison",
+       "tooltipAbilityLinkIds": [
+        "SylvanasShadowDagger|SylvanasShadowDagger|W"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Trait",
+       "buttonId": "SylvanasMercenaryQueenTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_sylvanas_blackarrows.png",
+       "isQuest": false,
+       "linkId": "SylvanasTalentMercenaryQueen|SylvanasMercenaryQueenTalent|Trait|Level4",
+       "sort": 2,
+       "talentId": "SylvanasTalentMercenaryQueen",
+       "tooltipAbilityLinkIds": [
+        ":PASSIVE:|SylvanasBlackArrowsPassive|Trait",
+        "SylvanasBlackArrowsActive|SylvanasBlackArrows|Trait"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "SylvanasBlackArrowsActive",
+       "abilityType": "Trait",
+       "buttonId": "SylvanasBlackArrowsHauntingArrowsTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_sylvanas_blackarrows_b.png",
+       "isQuest": false,
+       "linkId": "SylvanasHauntingArrows|SylvanasBlackArrowsHauntingArrowsTalent|Trait|Level4",
+       "sort": 3,
+       "talentId": "SylvanasHauntingArrows",
+       "tooltipAbilityLinkIds": [
+        ":PASSIVE:|SylvanasBlackArrowsPassive|Trait",
+        "SylvanasBlackArrowsActive|SylvanasBlackArrows|Trait"
+       ],
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level7": [
+      {
+       "abilityId": "SylvanasWitheringFire",
+       "abilityType": "Q",
+       "buttonId": "SylvanasWitheringFireBarbedShotTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_sylvanas_witheringfire.png",
+       "isQuest": false,
+       "linkId": "SylvanasTalentWitheringFireBarbedShot|SylvanasWitheringFireBarbedShotTalent|Q|Level7",
+       "sort": 1,
+       "talentId": "SylvanasTalentWitheringFireBarbedShot",
+       "tooltipAbilityLinkIds": [
+        "SylvanasWitheringFire|SylvanasWitheringFire|Q"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "SylvanasShadowDagger",
+       "abilityType": "W",
+       "buttonId": "SylvanasShadowDaggerLostSoulTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_sylvanas_shadowdagger.png",
+       "isQuest": false,
+       "linkId": "SylvanasTalentLostSoul|SylvanasShadowDaggerLostSoulTalent|W|Level7",
+       "sort": 2,
+       "talentId": "SylvanasTalentLostSoul",
+       "tooltipAbilityLinkIds": [
+        "SylvanasShadowDagger|SylvanasShadowDagger|W"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "SylvanasHauntingWave",
+       "abilityType": "E",
+       "buttonId": "SylvanasBlackArrowsFesteringWounds",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_sylvanas_hauntingwave.png",
+       "isQuest": false,
+       "linkId": "SylvanasTalentFesteringWounds|SylvanasBlackArrowsFesteringWounds|E|Level7",
+       "sort": 3,
+       "talentId": "SylvanasTalentFesteringWounds",
+       "tooltipAbilityLinkIds": [
+        "SylvanasHauntingWave|SylvanasHauntingWave|E"
+       ],
+       "upgradesAbilityType": true
+      }
+     ]
+    }
+   },
+   "unitId": "HeroSylvanas"
+  },
+  "Thrall": {
+   "attributeId": "Thra",
+   "hyperlinkId": "Thrall",
+   "id": "Thrall",
+   "structure": {
+    "attributeId": "Thra",
+    "franchise": "Warcraft",
+    "portraits": {
+     "draftScreen": "storm_ui_glues_draft_portrait_thrall.png",
+     "heroSelect": "storm_ui_ingame_heroselect_btn_thrall.png",
+     "leaderboard": "storm_ui_ingame_hero_leaderboard_thrall.png",
+     "loading": "storm_ui_ingame_hero_loadingscreen_thrall.png",
+     "minimap": "storm_ui_minimapicon_thrall.png",
+     "partyFrames": [
+      "storm_ui_ingame_partyframe_thrall.png"
+     ],
+     "partyPanel": "storm_ui_ingame_partypanel_btn_thrall.png",
+     "target": "ui_targetportrait_hero_thrall.png",
+     "targetInfo": "storm_ui_ingame_partyframe_thrall.png"
+    },
+    "talents": {
+     "Level1": [
+      {
+       "abilityId": "ThrallChainLightning",
+       "abilityType": "Q",
+       "buttonId": "ThrallEchooftheElements",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_thrall_chainlightning.png",
+       "isQuest": true,
+       "linkId": "ThrallEchooftheElements|ThrallEchooftheElements|Q|Level1",
+       "sort": 1,
+       "talentId": "ThrallEchooftheElements",
+       "tooltipAbilityLinkIds": [
+        "ThrallChainLightning|ThrallChainLightning|Q"
+       ],
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "ThrallChainLightning",
+       "abilityType": "Q",
+       "buttonId": "ThrallCrashLightning",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_thrall_chainlightning_var1.png",
+       "isQuest": true,
+       "linkId": "ThrallCrashLightning|ThrallCrashLightning|Q|Level1",
+       "sort": 2,
+       "talentId": "ThrallCrashLightning",
+       "tooltipAbilityLinkIds": [
+        "ThrallChainLightning|ThrallChainLightning|Q"
+       ],
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "ThrallWindfury",
+       "abilityType": "E",
+       "buttonId": "ThrallMaelstromWeapon",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_thrall_windfury.png",
+       "isQuest": true,
+       "linkId": "ThrallMaelstromWeapon|ThrallMaelstromWeapon|E|Level1",
+       "sort": 3,
+       "talentId": "ThrallMaelstromWeapon",
+       "tooltipAbilityLinkIds": [
+        "ThrallWindfury|Windfury|E"
+       ],
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level10": [
+      {
+       "abilityId": "ThrallSundering",
+       "abilityType": "Heroic",
+       "buttonId": "Sundering",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_thrall_sundering.png",
+       "isQuest": false,
+       "linkId": "ThrallHeroicAbilitySundering|Sundering|Heroic|Level10",
+       "sort": 1,
+       "talentId": "ThrallHeroicAbilitySundering",
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "ThrallEarthquake",
+       "abilityType": "Heroic",
+       "buttonId": "ThrallEarthquake",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_thrall_earthquake.png",
+       "isQuest": false,
+       "linkId": "ThrallHeroicAbilityEarthquake|ThrallEarthquake|Heroic|Level10",
+       "sort": 2,
+       "talentId": "ThrallHeroicAbilityEarthquake",
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level13": [
+      {
+       "abilityId": "ThrallWindfury",
+       "abilityType": "E",
+       "buttonId": "ThrallGraceOfAirTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_thrall_windfury.png",
+       "isQuest": false,
+       "linkId": "ThrallMasteryGraceOfAir|ThrallGraceOfAirTalent|E|Level13",
+       "sort": 1,
+       "talentId": "ThrallMasteryGraceOfAir",
+       "tooltipAbilityLinkIds": [
+        "ThrallWindfury|Windfury|E"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "ThrallFrostwolfsGrace",
+       "abilityType": "Trait",
+       "buttonId": "ThrallFrostwolfResilienceSurgeOfHealing",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_thrall_frostwolfresilience.png",
+       "isQuest": false,
+       "linkId": "ThrallMasteryFrostwolfsGrace|ThrallFrostwolfResilienceSurgeOfHealing|Trait|Level13",
+       "sort": 2,
+       "talentId": "ThrallMasteryFrostwolfsGrace",
+       "tooltipAbilityLinkIds": [
+        ":PASSIVE:|ThrallFrostwolfResilience|Trait",
+        "ThrallFrostwolfsGrace|ThrallFrostwolfResilience|Trait"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "ThrallSpiritShield",
+       "abilityType": "Active",
+       "buttonId": "ThrallSpiritShield",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_talent_spellshield.png",
+       "isQuest": false,
+       "linkId": "ThrallSpiritShield|ThrallSpiritShield|Active|Level13",
+       "sort": 3,
+       "talentId": "ThrallSpiritShield",
+       "toggleCooldown": 0.75,
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level16": [
+      {
+       "abilityId": "ThrallWindfury",
+       "abilityType": "E",
+       "buttonId": "ThrallTempestFuryTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_thrall_windfury.png",
+       "isQuest": false,
+       "linkId": "ThrallMasteryTempestFury|ThrallTempestFuryTalent|E|Level16",
+       "sort": 1,
+       "talentId": "ThrallMasteryTempestFury",
+       "tooltipAbilityLinkIds": [
+        "ThrallWindfury|Windfury|E"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "ThrallChainLightning",
+       "abilityType": "Q",
+       "buttonId": "ThrallThunderstorm",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_thrall_chainlightning.png",
+       "isQuest": true,
+       "linkId": "ThrallThunderstorm|ThrallThunderstorm|Q|Level16",
+       "sort": 2,
+       "talentId": "ThrallThunderstorm",
+       "tooltipAbilityLinkIds": [
+        "ThrallChainLightning|ThrallChainLightning|Q"
+       ],
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "ThrallFeralSpirit",
+       "abilityType": "W",
+       "buttonId": "ThrallAlphaWolf",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_thrall_feralspirit.png",
+       "isQuest": false,
+       "linkId": "ThrallAlphaWolf|ThrallAlphaWolf|W|Level16",
+       "sort": 3,
+       "talentId": "ThrallAlphaWolf",
+       "tooltipAbilityLinkIds": [
+        "ThrallFeralSpirit|ThrallFeralSpirit|W"
+       ],
+       "upgradesAbilityType": true
+      }
+     ],
+     "Level20": [
+      {
+       "abilityId": "ThrallSundering",
+       "abilityType": "Heroic",
+       "buttonId": "ThrallWorldbreakerTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_thrall_sundering.png",
+       "isQuest": false,
+       "linkId": "ThrallMasteryWorldbreaker|ThrallWorldbreakerTalent|Heroic|Level20",
+       "prerequisiteTalentIds": [
+        "ThrallHeroicAbilitySundering"
+       ],
+       "sort": 1,
+       "talentId": "ThrallMasteryWorldbreaker",
+       "tooltipAbilityLinkIds": [
+        "ThrallSundering|Sundering|Heroic"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "ThrallEarthquake",
+       "abilityType": "Heroic",
+       "buttonId": "ThrallEarthenShieldsTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_thrall_earthquake.png",
+       "isQuest": false,
+       "linkId": "ThrallMasteryEarthenShields|ThrallEarthenShieldsTalent|Heroic|Level20",
+       "prerequisiteTalentIds": [
+        "ThrallHeroicAbilityEarthquake"
+       ],
+       "sort": 2,
+       "talentId": "ThrallMasteryEarthenShields",
+       "tooltipAbilityLinkIds": [
+        "ThrallEarthquake|ThrallEarthquake|Heroic"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Passive",
+       "buttonId": "ThrallElementalMomentum",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_talent_autoattack_cooldown.png",
+       "isQuest": false,
+       "linkId": "ThrallElementalMomentum|ThrallElementalMomentum|Passive|Level20",
+       "sort": 3,
+       "talentId": "ThrallElementalMomentum",
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Passive",
+       "buttonId": "NexusBladesTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_talent_autoattack_slow.png",
+       "isQuest": false,
+       "linkId": "GenericTalentNexusBlades|NexusBladesTalent|Passive|Level20",
+       "sort": 4,
+       "talentId": "GenericTalentNexusBlades",
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": "ThrallWindRush",
+       "abilityType": "Active",
+       "buttonId": "ThrallWindRush",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_talent_boltofthestorm.png",
+       "isQuest": false,
+       "linkId": "ThrallWindRush|ThrallWindRush|Active|Level20",
+       "sort": 5,
+       "talentId": "ThrallWindRush",
+       "upgradesAbilityType": false
+      }
+     ],
+     "Level4": [
+      {
+       "abilityId": "ThrallFeralSpirit",
+       "abilityType": "W",
+       "buttonId": "ThrallFeralResilience",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_thrall_feralspirit.png",
+       "isQuest": false,
+       "linkId": "ThrallFeralResilience|ThrallFeralResilience|W|Level4",
+       "sort": 1,
+       "talentId": "ThrallFeralResilience",
+       "tooltipAbilityLinkIds": [
+        "ThrallFeralSpirit|ThrallFeralSpirit|W"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "ThrallFeralSpirit",
+       "abilityType": "W",
+       "buttonId": "ThrallFrostwolfPack",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_thrall_feralspirit_var1.png",
+       "isQuest": true,
+       "linkId": "ThrallFrostwolfPack|ThrallFrostwolfPack|W|Level4",
+       "sort": 2,
+       "talentId": "ThrallFrostwolfPack",
+       "tooltipAbilityLinkIds": [
+        "ThrallFeralSpirit|ThrallFeralSpirit|W"
+       ],
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Trait",
+       "buttonId": "ThrallManaTideTalent",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_thrall_frostwolfresilience.png",
+       "isQuest": false,
+       "linkId": "ThrallMasteryManaTide|ThrallManaTideTalent|Trait|Level4",
+       "sort": 3,
+       "talentId": "ThrallMasteryManaTide",
+       "tooltipAbilityLinkIds": [
+        ":PASSIVE:|ThrallFrostwolfResilience|Trait",
+        "ThrallFrostwolfsGrace|ThrallFrostwolfResilience|Trait"
+       ],
+       "upgradesAbilityType": true
+      }
+     ],
+     "Level7": [
+      {
+       "abilityId": "ThrallChainLightning",
+       "abilityType": "Q",
+       "buttonId": "ThrallRollingThunderTalent",
+       "hasHotkey": true,
+       "icon": "storm_ui_icon_thrall_chainlightning_var2.png",
+       "isQuest": false,
+       "linkId": "ThrallMasteryRollingThunder|ThrallRollingThunderTalent|Q|Level7",
+       "sort": 1,
+       "talentId": "ThrallMasteryRollingThunder",
+       "tooltipAbilityLinkIds": [
+        "ThrallChainLightning|ThrallChainLightning|Q"
+       ],
+       "upgradesAbilityType": true
+      },
+      {
+       "abilityId": "ThrallAncestralWrath",
+       "abilityType": "Active",
+       "buttonId": "ThrallAncestralWrath",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_talent_bloodforblood.png",
+       "isQuest": false,
+       "linkId": "ThrallAncestralWrath|ThrallAncestralWrath|Active|Level7",
+       "sort": 2,
+       "talentId": "ThrallAncestralWrath",
+       "upgradesAbilityType": false
+      },
+      {
+       "abilityId": ":PASSIVE:",
+       "abilityType": "Passive",
+       "buttonId": "ThrallElementalAssault",
+       "hasHotkey": false,
+       "icon": "storm_ui_icon_talent_autoattack_damage.png",
+       "isQuest": false,
+       "linkId": "ThrallElementalAssault|ThrallElementalAssault|Passive|Level7",
+       "sort": 3,
+       "talentId": "ThrallElementalAssault",
+       "upgradesAbilityType": false
+      }
+     ]
+    }
+   },
+   "unitId": "HeroThrall"
+  }
+ },
+ "version": "2.57.0.98348"
+}

@@ -442,30 +442,15 @@ pub async fn list_maps(State(s): State<AppState>, Query(f): Query<MatchFilter>) 
     Ok(Json(v))
 }
 
-/// Best-effort GET proxy to HotsPatchNotes (`hotspatchnotes_url`); `fallback` if unavailable/not
-/// configured. Same mechanism as `now_playing` (ureq + spawn_blocking, never on the HTTP thread).
-async fn hpn_proxy(s: &AppState, path: String, fallback: J) -> Json<J> {
-    let Some(base) = s.cfg.hotspatchnotes_url.clone() else {
-        return Json(fallback);
-    };
-    let url = format!("{}{}", base.trim_end_matches('/'), path);
-    let res = tokio::task::spawn_blocking(move || -> Option<J> {
-        ureq::get(&url).call().ok()?.body_mut().read_json().ok()
-    })
-    .await
-    .ok()
-    .flatten();
-    Json(res.unwrap_or(fallback))
-}
-
-/// GET /api/patches — list of the patch notes from `dim_patches` (owned by storm-codex; populated
-/// at startup by dim::sync_patches). `{items:[…]}` shape (front compat).
+/// GET /api/patches — list of the patch notes from `dim_patches` (owned by storm-codex; written by
+/// the `refdata` adapter). `{items:[…]}` shape (front compat); `channel` and `communityOnly` added.
 pub async fn patches_list(State(s): State<AppState>) -> Json<J> {
     let v: J = sqlx::query_scalar(
         "SELECT jsonb_build_object('items', COALESCE(jsonb_agg(jsonb_build_object(
             'internalId', internal_id, 'patchName', name, 'patchType', type, 'liveDate', live_date,
             'heroCount', hero_count, 'mapCount', map_count,
-            'officialLink', data->>'officialLink', 'hasContent', data->'hasContent'
+            'officialLink', data->>'officialLink', 'hasContent', data->'hasContent',
+            'channel', data->'channel', 'communityOnly', data->'communityOnly'
          ) ORDER BY live_date DESC NULLS LAST), '[]'::jsonb))
          FROM dim_patches",
     )
@@ -475,24 +460,21 @@ pub async fn patches_list(State(s): State<AppState>) -> Json<J> {
     Json(v)
 }
 
-/// GET /api/patches/{id} — detail of a patch (key = `internalId`, not the numeric id). In
-/// bundle mode (snapshot), the detail is stored offline in `dim_patches.data.detail`; otherwise we
-/// proxyfie HotsPatchNotes live.
+/// GET /api/patches/{id} — detail of a patch, stored offline in `dim_patches.data.detail` (old API
+/// shape, rebuilt by `refdata`). `id` is the dataset id (`live:<build>`, `source:…`) or one of its
+/// `aliases` (the old HotsPatchNotes `internalId`): an alias answers with the canonical patch, whose
+/// `internalId` is the dataset id. `null` when unknown.
 pub async fn patch_detail(State(s): State<AppState>, Path(id): Path<String>) -> Json<J> {
-    let stored: Option<J> = sqlx::query_scalar("SELECT data FROM dim_patches WHERE internal_id=$1")
-        .bind(&id)
-        .fetch_optional(&s.db)
-        .await
-        .ok()
-        .flatten();
-    if let Some(detail) = stored
-        .as_ref()
-        .and_then(|d| d.get("detail"))
-        .filter(|v| !v.is_null())
-    {
-        return Json(detail.clone());
-    }
-    hpn_proxy(&s, format!("/api/patches/{id}"), J::Null).await
+    let detail: Option<J> = sqlx::query_scalar(
+        "SELECT data->'detail' FROM dim_patches WHERE internal_id = $1 OR $1 = ANY(aliases)
+         ORDER BY (internal_id = $1) DESC LIMIT 1",
+    )
+    .bind(&id)
+    .fetch_optional(&s.db)
+    .await
+    .ok()
+    .flatten();
+    Json(detail.unwrap_or(J::Null))
 }
 
 #[derive(Deserialize)]
@@ -505,7 +487,8 @@ pub struct HeroChangesFilter {
 }
 
 /// GET /api/hero-changes — global feed of the hero adjustments (all Hero-type sections), most recent
-/// first, filterable by hero / classification / patch + paginated. Feeds the "by hero" view.
+/// first, filterable by hero / classification / patch + paginated. Feeds the "by hero" view. PTR
+/// candidates (`channel = 'ptr'`) are not live changes and stay out of it.
 pub async fn hero_changes(
     State(s): State<AppState>,
     Query(f): Query<HeroChangesFilter>,
@@ -516,7 +499,7 @@ pub async fn hero_changes(
         .hero
         .as_deref()
         .filter(|h| !h.is_empty())
-        .map(crate::dim::hero_key);
+        .map(crate::refdata::hero_key);
     let v: J = sqlx::query_scalar(
         "SELECT COALESCE(jsonb_agg(jsonb_build_object(
             'patchInternalId', patch_internal_id, 'patchName', patch_name, 'patchType', patch_type,
@@ -525,7 +508,8 @@ pub async fn hero_changes(
          ) ORDER BY live_date DESC NULLS LAST, hero_name), '[]'::jsonb)
          FROM (
             SELECT * FROM patch_hero_sections
-            WHERE ($1::text IS NULL OR hero_key = $1)
+            WHERE channel IS DISTINCT FROM 'ptr'
+              AND ($1::text IS NULL OR hero_key = $1)
               AND ($2::text IS NULL OR upper(classification) = upper($2))
               AND ($3::text IS NULL OR patch_internal_id = $3)
             ORDER BY live_date DESC NULLS LAST, hero_name
@@ -559,7 +543,8 @@ pub async fn hero_changes_heroes(
                    (array_agg(classification ORDER BY live_date DESC NULLS LAST))[1] AS latest_class,
                    (array_agg(patch_name    ORDER BY live_date DESC NULLS LAST))[1] AS latest_patch
             FROM patch_hero_sections
-            WHERE ($1::text IS NULL OR upper(classification) = upper($1))
+            WHERE channel IS DISTINCT FROM 'ptr'
+              AND ($1::text IS NULL OR upper(classification) = upper($1))
               AND ($2::text IS NULL OR patch_internal_id = $2)
             GROUP BY hero_name
          ) h",
@@ -573,9 +558,9 @@ pub async fn hero_changes_heroes(
 }
 
 /// GET /api/hero/{hero}/patches — patch note sections concerning this hero (hero → patch direction),
-/// most recent first. Tolerant join through the normalised key (see `dim::hero_key`).
+/// most recent first. Tolerant join through the normalised key (see `refdata::hero_key`).
 pub async fn hero_patches(State(s): State<AppState>, Path(hero): Path<String>) -> Json<J> {
-    let key = crate::dim::hero_key(&hero);
+    let key = crate::refdata::hero_key(&hero);
     let v: J = sqlx::query_scalar(
         "SELECT COALESCE(jsonb_agg(jsonb_build_object(
             'patchInternalId', patch_internal_id, 'patchName', patch_name, 'patchType', patch_type,

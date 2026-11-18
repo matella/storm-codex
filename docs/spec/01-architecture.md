@@ -9,8 +9,8 @@ Gaming PC ──client-rs (Hots-Overlay)──► storm-codex-server (box :5102)
         ┌───────────────┬─────────────────────┼──────────────────┬──────────────┐
         ▼               ▼                     ▼                  ▼              ▼
    Rust SPA        OBS overlays         Jarvis Redis        HotsPatchNotes   raw archive
-   (served by      (/widget /queue      (PUBLISH match      (:5001, source   (.StormReplay,
-    the binary)     /draft/overlay…)     completed)          of dim_*)        source of truth)
+   (served by      (/widget /queue      (PUBLISH match      dataset releases (.StormReplay,
+    the binary)     /draft/overlay…)     completed)          → dim_*)         source of truth)
 ```
 
 A **single binary** (`storm-codex-server`) serves the API, the built front-end and the overlays.
@@ -50,10 +50,12 @@ Design: `docs/specs/2026-11-12-standalone-installer-design.md`.
   (two-level fingerprints, see [04-serveur.md](04-serveur.md)).
 - **Jarvis spine events**: `schema_version`, `correlation_id`/`causation_id`,
   `occurred_at`/`recorded_at`, past-tense `entity.verb` type ([07-evenements.md](07-evenements.md)).
-- **Best-effort for everything peripheral**: Redis outage, HotsPatchNotes missing,
+- **Best-effort for everything peripheral**: Redis outage, HotsPatchNotes release unreachable,
   dead webhook — the upload→parse→projection pipeline must never depend on them.
-- **Single reference source**: heroes/talents/patches come from HotsPatchNotes (or its snapshot),
-  replicated into `dim_*` at startup — no second sync pipeline.
+- **Single reference source**: heroes/talents/maps/patches come from the HotsPatchNotes **dataset**
+  (schema v1, GitHub releases) through the single `refdata` adapter, replicated into `dim_*`. Box:
+  latest validated release, SHA-256 verified, refreshed every 24 h. Standalone: a trimmed snapshot of a
+  pinned release, bundled in the installer. No second sync pipeline (spec 2026-11-15).
 - **`PARSER_VERSION`** (`main.rs`): bump on every projection change; it is what drives
   re-processing.
 

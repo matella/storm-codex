@@ -79,6 +79,10 @@ pub fn map_slug(map: &str) -> String {
         .chars()
         .filter(|c| *c != '\'' && *c != '’')
     {
+        // same kept characters as the dataset's `Battleground.slug` ("Checkpoint: Hanamura")
+        if !c.is_whitespace() && !crate::logic::slug_char(c) {
+            continue;
+        }
         if c.is_whitespace() {
             space = true;
         } else {
@@ -468,6 +472,7 @@ mod tests {
             Some("/images/battlegrounds/garden-of-terror.png")
         );
         assert_eq!(map_slug("Dragon  Shire's"), "dragon-shires");
+        assert_eq!(map_slug("Checkpoint: Hanamura"), "checkpoint-hanamura");
         assert_eq!(map_image(None), None);
     }
 

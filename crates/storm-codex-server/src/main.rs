@@ -1,6 +1,7 @@
 //! `storm-codex-server` — single server (axum + Postgres): upload, parse, projection,
-//! WebSocket, REST. Milestone 3. Config through env (see `.env.example`). Subcommand
-//! `migrate [--to <version>]`: migrations only (`migrate_cmd`).
+//! WebSocket, REST. Milestone 3. Config through env (see `.env.example`). Subcommands
+//! `migrate [--to <version>]`: migrations only (`migrate_cmd`); `refdata trim`: standalone
+//! reference bundle (`refdata::load::trim`).
 
 mod admin;
 mod auth;
@@ -8,7 +9,6 @@ mod azure;
 mod builds;
 mod cast;
 mod config;
-mod dim;
 mod draft;
 mod insights;
 mod jarvis;
@@ -21,6 +21,7 @@ pub mod project;
 mod rank;
 mod raw;
 mod read;
+mod refdata;
 mod replay2d;
 mod scouting;
 mod standalone;
@@ -77,6 +78,10 @@ async fn main() {
 
     // `migrate [--to <version>]`: migrations only, then exit (see `migrate_cmd`).
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // `refdata trim --from <dataset.tar.gz> --out <referential.tar.gz>`: builds the standalone bundle.
+    if args.first().map(String::as_str) == Some("refdata") {
+        std::process::exit(refdata::load::cli(&args[1..]));
+    }
     if args.first().map(String::as_str) == Some("migrate") {
         match migrate_cmd::run(&args[1..]).await {
             Ok(()) => std::process::exit(0),
@@ -181,32 +186,18 @@ async fn run() -> Result<(), String> {
         standalone,
     };
 
-    // Hero/talent/patch reference data + images (best-effort, 24 h refresh; each new patch →
-    // in-app WS notification + optional webhook). Two mutually exclusive sources:
-    //  - REFERENTIAL_URL  : published snapshot (`referential.tar.gz`) → standalone bundle, without live HPN.
-    //  - HOTSPATCHNOTES_URL : live HotsPatchNotes API (maintainer setup).
-    // The snapshot takes precedence when both are set.
-    // Standalone mode: no network and no 24 h refresh loop; the import task (started once the
-    // listener is bound) seeds an empty `dim_heroes` from the bundled snapshot first.
-    if !state.cfg.standalone
-        && (state.cfg.referential_url.is_some() || state.cfg.hotspatchnotes_url.is_some())
-    {
+    // Hero/talent/map/patch reference data + images from the HotsPatchNotes dataset (`refdata`,
+    // spec 2026-11-15): the latest validated release at `REFDATA_URL`, verified, re-checked every
+    // 24 h (a round with an unchanged `datasetVersion` downloads only `manifest.json`). Each new patch
+    // → in-app WS notification + optional webhook. Standalone mode: no network and no refresh loop;
+    // the import task seeds from the bundled trimmed snapshot instead.
+    if let (false, Some(url)) = (state.cfg.standalone, state.cfg.refdata_url.clone()) {
         let st = state.clone();
         tokio::spawn(async move {
+            let src: Arc<dyn refdata::load::Source> = Arc::new(refdata::load::Http::new(&url));
             loop {
-                let new_patches = if let Some(url) = st.cfg.referential_url.clone() {
-                    dim::ingest_snapshot(&st.db, &st.cfg.images_dir, &url).await
-                } else if let Some(url) = st.cfg.hotspatchnotes_url.clone() {
-                    // one-time sync of heroes/talents/images on the 1st round (idempotent afterwards).
-                    dim::sync_heroes(&st.db, &url).await;
-                    dim::sync_talents(&st.db, &url).await;
-                    dim::vendor_images(&st.cfg.images_dir, &url).await;
-                    let np = dim::sync_patches(&st.db, &url).await;
-                    dim::backfill_hero_sections(&st.db, &url).await; // projects the hero sections (live)
-                    np
-                } else {
-                    Vec::new()
-                };
+                let new_patches =
+                    refdata::load::refresh(&st.db, &st.cfg.images_dir, src.clone()).await;
                 for (iid, name) in new_patches {
                     let _ = st.events.send(serde_json::json!({
                         "type": "patch.new", "internalId": iid, "name": name,
@@ -222,8 +213,8 @@ async fn run() -> Result<(), String> {
                         .await;
                     }
                 }
-                // Reference data still empty (source unreachable at startup, e.g. box off):
-                // new attempt in 10 min rather than 24 h.
+                // Reference data still empty (release unreachable at startup): new attempt in
+                // 10 min rather than 24 h.
                 let vide =
                     sqlx::query_scalar::<_, bool>("SELECT NOT EXISTS (SELECT 1 FROM dim_heroes)")
                         .fetch_one(&st.db)
@@ -878,8 +869,7 @@ pub(crate) mod api_tests {
             jarvis_channel: "test".into(),
             azure_push_url: None,
             azure_push_token: None,
-            hotspatchnotes_url: None,
-            referential_url: None,
+            refdata_url: None,
             standalone: false,
             referential_file: None,
             ledger_file: None,

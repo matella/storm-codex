@@ -4,9 +4,9 @@
 #   (installed apps read releases/latest/download/latest.json).
 # - Manual run (workflow_dispatch): same build, published as a **draft** release (never "latest", invisible to
 #   installed apps): the dry run. Delete the draft afterwards.
-# Fails on purpose while desktop/referential-pin.txt or the updater public key are placeholders, or when the signing
-# secret is missing. Tools are pinned: tauri-cli (cargo install --locked --force), Trunk (prebuilt, SHA-256 committed
-# below), the Rust toolchain version; NSIS is downloaded by the Tauri bundler itself.
+# Fails on purpose while the updater public key is a placeholder, when the signing secret is missing, or when the
+# pinned reference dataset (desktop/referential-pin.txt) does not match its SHA-256. Tools are pinned: tauri-cli
+# (cargo install --locked --force), Trunk (prebuilt, SHA-256 committed below), the Rust toolchain version; NSIS is downloaded by the Tauri bundler itself.
 # Supply-chain rules of this job (it holds contents:write and the updater signing key): every action is pinned to a
 # full commit SHA (version in a comment); no build cache is restored (no rust-cache: a restored ~/.cargo/bin or
 # target/ could plant a cargo-tauri or a build output); checkout does not persist the token; event values reach
@@ -60,8 +60,25 @@ jobs:
             throw "plugins.updater.pubkey in desktop/tauri.conf.json is still a placeholder: generate the key pair (cargo tauri signer generate) and commit the public key"
           }
           if (-not $env:TAURI_SIGNING_PRIVATE_KEY) { throw "repository secret TAURI_SIGNING_PRIVATE_KEY is not set" }
-      - name: reference-data snapshot (pinned, SHA-256 checked)
-        run: ./scripts/fetch-referential.ps1
+      # desktop/referential-pin.txt pins a HotsPatchNotes dataset release (dataset.tar.gz + its SHA-256); the
+      # bundled referential.tar.gz is trimmed from it once the server is built (step "reference bundle").
+      - name: reference dataset (pinned, SHA-256 checked)
+        run: |
+          $pin = @{}
+          foreach ($line in Get-Content desktop/referential-pin.txt) {
+            if ($line -match '^\s*([a-z0-9]+)=(.*)$') { $pin[$Matches[1]] = $Matches[2].Trim() }
+          }
+          if (-not $pin.url -or -not $pin.url.StartsWith('https://')) { throw "referential-pin.txt: url must be https" }
+          if ($pin.sha256 -notmatch '^[0-9a-f]{64}$') { throw "referential-pin.txt: sha256 is not 64 lowercase hex characters" }
+          $dir = Join-Path $env:RUNNER_TEMP 'dataset'
+          New-Item -ItemType Directory -Path $dir -Force | Out-Null
+          $file = Join-Path $dir 'dataset.tar.gz'
+          Invoke-WebRequest -Uri $pin.url -OutFile $file -UseBasicParsing
+          $actual = (Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $pin.sha256) { throw "dataset.tar.gz SHA-256 mismatch: expected $($pin.sha256), actual $actual" }
+          # sha256sum format, read by `refdata trim`
+          "$($pin.sha256)  dataset.tar.gz" | Set-Content -LiteralPath "$file.sha256" -NoNewline
+          "DATASET_FILE=$file" >> $env:GITHUB_ENV
       # Also copies the VC++ runtime DLLs the EDB binaries import into postgres/bin (from the runner's Visual Studio
       # redistributable folder) and fails unless every bin/ and lib/ binary finds them there (check-pe-imports.ps1).
       - name: Postgres 17 binaries (pinned, SHA-256 checked) + VC++ runtime (app-local)
@@ -100,6 +117,10 @@ jobs:
         env:
           RUSTFLAGS: "-C target-feature=+crt-static"
         run: cargo build --release --locked -p storm-codex-server
+      - name: reference bundle (refdata trim → target/referential/referential.tar.gz)
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          ./target/release/storm-codex-server.exe refdata trim --from $env:DATASET_FILE --out target/referential/referential.tar.gz
       - name: bundled binaries find their VC++ runtime (server imports none)
         run: |
           ./scripts/check-pe-imports.ps1 -Path target/release/storm-codex-server.exe -List

@@ -29,8 +29,7 @@ fn test_config(dir: &Path) -> Config {
         jarvis_channel: "test".into(),
         azure_push_url: None,
         azure_push_token: None,
-        hotspatchnotes_url: None,
-        referential_url: None,
+        refdata_url: None,
         standalone: true,
         referential_file: None,
         ledger_file: None,
@@ -981,28 +980,6 @@ async fn shutdown_flushes_the_ledger_and_serve_returns() {
 }
 
 /// Writes a snapshot holding `heroes` (names) at `file`, replacing it.
-fn snapshot_with(file: &Path, heroes: &[&str]) {
-    let gz = flate2::write::GzEncoder::new(
-        std::fs::File::create(file).unwrap(),
-        flate2::Compression::fast(),
-    );
-    let mut tar = tar::Builder::new(gz);
-    let body = serde_json::to_string(
-        &heroes
-            .iter()
-            .map(|h| serde_json::json!({"name": h, "role": "Support", "universe": "Nexus"}))
-            .collect::<Vec<_>>(),
-    )
-    .unwrap();
-    let mut h = tar::Header::new_gnu();
-    h.set_size(body.len() as u64);
-    h.set_mode(0o644);
-    h.set_cksum();
-    tar.append_data(&mut h, "heroes.json", body.as_bytes())
-        .unwrap();
-    tar.into_inner().unwrap().finish().unwrap();
-}
-
 async fn hero_exists(state: &AppState, name: &str) -> bool {
     sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM dim_heroes WHERE id = $1)")
         .bind(name)
@@ -1012,7 +989,7 @@ async fn hero_exists(state: &AppState, name: &str) -> bool {
 }
 
 /// An app update ships a newer bundled snapshot: it is ingested although `dim_heroes` is not
-/// empty; the same snapshot is not ingested twice.
+/// empty; the same snapshot is not ingested twice. Own database: the ingest rewrites `dim_*`.
 #[tokio::test]
 async fn a_newer_bundled_snapshot_is_ingested_once() {
     let tmp = tempfile::tempdir().unwrap();
@@ -1023,39 +1000,50 @@ async fn a_newer_bundled_snapshot_is_ingested_once() {
     else {
         return;
     };
-    let tag = uuid::Uuid::new_v4().simple().to_string();
-    let (old, new) = (format!("Old {tag}"), format!("New {tag}"));
+    let Some((db, db_name)) = crate::refdata::tests::isolated_db().await else {
+        return;
+    };
+    state.db = db.clone();
     let file = tmp.path().join("referential.tar.gz");
     let mut cfg = (*state.cfg).clone();
     cfg.referential_file = Some(file.clone());
     cfg.images_dir = tmp.path().join("images");
     state.cfg = Arc::new(cfg);
+    let forget = |state: &AppState| {
+        let db = state.db.clone();
+        async move {
+            sqlx::query("DELETE FROM dim_heroes WHERE id = 'Abathur'")
+                .execute(&db)
+                .await
+                .unwrap();
+        }
+    };
 
-    snapshot_with(&file, &[&old]);
-    orchestrator::seed_reference_data(&state).await;
-    assert!(hero_exists(&state, &old).await, "first snapshot ingested");
-
-    // release N+1: the bundled file changes, dim_heroes is not empty
-    snapshot_with(&file, &[&old, &new]);
-    orchestrator::seed_reference_data(&state).await;
-    assert!(hero_exists(&state, &new).await, "newer snapshot ingested");
-
-    // same snapshot at the next start: not ingested again
-    sqlx::query("DELETE FROM dim_heroes WHERE id = $1")
-        .bind(&new)
-        .execute(&state.db)
-        .await
-        .unwrap();
+    crate::refdata::tests::bundle_with_version(&file, "release-n");
     orchestrator::seed_reference_data(&state).await;
     assert!(
-        !hero_exists(&state, &new).await,
+        hero_exists(&state, "Abathur").await,
+        "first snapshot ingested"
+    );
+    assert!(state.cfg.images_dir.join("heroes/abathur.png").is_file());
+
+    // release N+1: the bundled file changes, dim_heroes is not empty
+    forget(&state).await;
+    crate::refdata::tests::bundle_with_version(&file, "release-n+1");
+    orchestrator::seed_reference_data(&state).await;
+    assert!(
+        hero_exists(&state, "Abathur").await,
+        "newer snapshot ingested"
+    );
+
+    // same snapshot at the next start: not ingested again
+    forget(&state).await;
+    orchestrator::seed_reference_data(&state).await;
+    assert!(
+        !hero_exists(&state, "Abathur").await,
         "unchanged snapshot skipped"
     );
-    sqlx::query("DELETE FROM dim_heroes WHERE id = $1")
-        .bind(&old)
-        .execute(&state.db)
-        .await
-        .unwrap();
+    crate::refdata::tests::drop_db(db, &db_name).await;
 }
 
 /// An update raised `PARSER_VERSION`: the stored replays parsed by the older parser are
