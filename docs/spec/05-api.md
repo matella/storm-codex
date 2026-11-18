@@ -36,6 +36,27 @@ routes marked 🔒 require `Authorization: Bearer` (personal upload token for up
 | `GET /api/now-playing` | Orpheus proxy (music widget) |
 | `GET /api/settings` | application settings (including `operator_names`) |
 
+## Local insights (`insights/`) — spec `docs/specs/2026-11-17-local-insights-design.md`
+
+Read-only, computed from the stored storm-stats JSON; no migration. Pure logic in `insights/logic.rs` (unit tests).
+Team indices are 0 = blue, 1 = red; times are game seconds.
+
+| Route | Role |
+|---|---|
+| `GET /api/matches/{id}/insights?from=&to=` | `{fights, camps, isolated_deaths, window, teamfight_totals}`. **fights**: deaths clustered by time and place (a death joins the fight if ≤ 15 s after its previous death and ≤ 30 map units from its centre; ≥ 2 deaths): `{start, end, lost:[b,r], winner (fewer heroes lost; null = even), deaths:[{time, team, victim, victim_hero, killers}], structures_after / camps_after / objectives_after:[b,r]}` (within 30 s after the fight; a structure counts for the team that destroyed it). **camps**: `{time, team, type, reason}`, `reason` ∈ `traded_for_objective` (enemy objective within ±20 s) / `before_objective` (an objective event within 60 s after) / `after_won_fight` (the team won a fight that ended ≤ 30 s before) / `quiet`. **isolated_deaths**: deaths outside any fight. **window** (only with both `from` and `to`, else `null`; one bound alone = 400 `from_and_to`): `{from, to, xp_from, xp_to, players:[{toon, takedowns, deaths}], teams:[{level_from, level_to, xp, structures, camps, objectives}] ×2}` — events in `(from, to]`; XP from the 60 s samples at or before `from` and at or after `to` (`xp_from`/`xp_to` = the samples used). **No damage per window**: the replay stores damage only as end-of-game totals; `teamfight_totals` gives the whole-game `TeamfightHeroDamage` / `TeamfightDamageTaken` / `TeamfightHealingDone` per player. 404 `not_found` |
+| `GET /api/records?mode=&map=&hero=&mine=&limit=` | `{stats:[{key, label, rows:[{value, toon, name, hero, map, mode, played_at, match_id, mine}]}]}`: top `limit` (5, max 20) single games per stat — kills, takedowns, assists, deaths, hero damage, siege damage, healing, self-healing, damage taken, XP, camps, time CC'ing heroes; zero values never count; ties → most recent first. `mine` = only rows of `operator_names` (each row's `mine` flags them either way) |
+| `GET /api/maps/early-leads?mode=&mine=&account=&from=&to=` | same filters as `/api/maps` (400 `date` on an unreadable date). `{games, leads:[…], maps:[{map, games, leads:[…]}]}`, lead = `{key, label, games, wins, my_games, my_wins}` for `first_blood`, `first_to_10`, `first_fort`, `first_to_20`: in how many games a team got there first and how many of those it won; `my_*` = games where the operator's team got there first. Leads nobody reached are left out |
+| `GET /api/compare?a=<toon>&b=<toon>` | `{a, b, together:{games, wins}, against:{games, a_wins}, shared:[{match_id, map, mode, played_at, together, a_hero, b_hero, a_win, b_win}] (50 most recent)}`; `a`/`b` = `{toon, name, games, wins, kills, deaths, assists (averages), heroes:[{hero, games, wins}] (top 5)}`. 400 `a_and_b` / `same_player` |
+| `GET /api/players/{toon}/insights` | `{games, small_sample (< 20 games), nemesis:[{toon, name, kills, games}] (top 3 accounts by takedown participation on this player's deaths), thrown:{losses, count} (losses after leading by ≥ 2 levels at some point, from `levelAdvTimeline`), comebacks:{wins, count} (wins after trailing by ≥ 2), deaths:{total, isolated}, maps / heroes:[{name, games, wins, pct}] (≥ 10 games, best win rate first)}` |
+
+**Corpus** (`insights/cache.rs`): records, early leads and personal insights read an in-memory extract of every game (per-player stats,
+compact deaths with interned toons, early leads, level lead), not the JSON per request (one pass over `match_players.data` detoasts
+~8 kB a row: 12 s for records on the box's 3,480 games). Each request first reads a version of `matches` (count, max id, sum of
+`parser_version`; no JSON): unchanged → the same corpus; only new ids → those games are loaded and added; anything else
+(re-process, deletion) → full reload. Loaded 20 games per round trip and warmed up in the background at startup
+(`cache::warm_up`). Measured on the box's data (copy, release build): load 3.3 s, server RSS 55 MB after it (11 MB without);
+then records 30 ms, early leads 6 ms, player insights 80–120 ms, compare 110 ms, match insights 4 ms.
+
 ## Management (`manage.rs`, `admin.rs`) — 🔒 if `ADMIN_TOKEN` is set
 
 | Route | Role |

@@ -10,6 +10,7 @@ mod cast;
 mod config;
 mod dim;
 mod draft;
+mod insights;
 mod jarvis;
 mod live;
 mod lobby;
@@ -238,6 +239,7 @@ async fn run() -> Result<(), String> {
         Ok(n) => tracing::info!("{n} pending upload(s) resumed at startup"),
         Err(e) => tracing::error!("resuming the pending uploads: {e}"),
     }
+    insights::cache::warm_up(state.db.clone());
     let bind = state.cfg.bind_addr.clone();
     let standalone_state = state.clone();
     let app = app_router(state);
@@ -377,10 +379,21 @@ fn base_router(state: &AppState) -> Router<AppState> {
         .route("/api/matches/{id}", get(read::get_match))
         .route("/api/matches/{id}/raw", get(raw::get_raw))
         .route("/api/matches/{id}/replay2d", get(replay2d::get_replay2d))
+        .route(
+            "/api/matches/{id}/insights",
+            get(insights::api::match_insights),
+        )
+        .route("/api/records", get(insights::api::records))
+        .route("/api/maps/early-leads", get(insights::api::early_leads))
+        .route("/api/compare", get(insights::api::compare))
         .route("/api/players/search", get(players::api::search))
         .route("/api/players/{toon}", get(read::get_player))
         .route("/api/players/{toon}/identity", get(players::api::identity))
         .route("/api/players/{toon}/chat", get(players::api::chat))
+        .route(
+            "/api/players/{toon}/insights",
+            get(insights::api::player_insights),
+        )
         .route(
             "/api/players/{toon}/links/{other}",
             axum::routing::put(players::api::put_link),

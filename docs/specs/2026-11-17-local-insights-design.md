@@ -1,6 +1,6 @@
 # Local insights: records, early leads, team fights, time windows, camps, head to head, personal insights
 
-Date: 2026-11-17 · Status: **DRAFT, awaiting operator approval** · Issue #34 · Research:
+Date: 2026-11-17 · Status: **APPROVED by the operator on 2026-11-18** · Issue #34 · Research:
 `docs/research/2026-11-17-hotsdash-gap-analysis.md` · Branch `feat/local-insights`
 
 ## Goal
@@ -14,8 +14,9 @@ operator asked. Everything runs the same on the box and in the standalone app.
 - No migration, no new dependency, no network call, no account, no Twitch or Discord.
 - New read endpoints live in the existing axum server, so the standalone app gets them for free.
 - web-rs app stays within its 1 MB brotli budget (`scripts/check-web-rs-size.sh`).
-- Pure logic (clustering, classification, window maths) lives in `web-rs/core` or a server module with
-  unit tests; endpoints get integration tests like the existing read endpoints.
+- Pure logic (clustering, classification, window maths) lives in a server module (`insights/logic.rs`) with
+  unit tests, so the match page and the cross-game insights share one implementation; endpoints get
+  integration tests like the existing read endpoints.
 
 ## Data available (checked on the box DB, 3,480 games)
 
@@ -43,7 +44,7 @@ damage taken, XP contribution, mercenary camps, self-healing, time CC'ing heroes
 "my accounts only" toggle (`operator_names`). Each row: value, player, hero, map, date, link to the match.
 Operator rows highlighted.
 
-### F2 Early leads (block on `/maps`, field `early_leads` in `GET /api/maps`)
+### F2 Early leads (block on `/maps`, `GET /api/maps/early-leads`)
 Win % of the team that got first blood, first to level 10, first fort, first to level 20, over the filtered
 games and per map. Also the operator's own rate when their team got there first. Rows with no data (e.g.
 ARAM forts) are hidden.
@@ -88,8 +89,8 @@ analysis, position heatmaps, personal draft helper, lobby "met before" record, p
 
 ## Contracts touched (Rule 0)
 
-- `docs/spec/05-api.md`: `GET /api/records`, `GET /api/compare`, `GET /api/players/{toon}/insights`,
-  `early_leads` in `GET /api/maps`.
+- `docs/spec/05-api.md`: `GET /api/matches/{id}/insights`, `GET /api/records`, `GET /api/compare`,
+  `GET /api/players/{toon}/insights`, `GET /api/maps/early-leads` (a separate route: `/api/maps` answers an array).
 - `docs/spec/08-frontend.md`: routes `/records`, `/compare`; match page sections F3–F5; Player "Insights"
   tab; Maps early-leads block.
 - No change to `06-modele-donnees.md` (no migration).
@@ -106,3 +107,11 @@ analysis, position heatmaps, personal draft helper, lobby "met before" record, p
 ## Delivery order
 
 F1, F2 → F3, F4 → F5 → F6 → F7, one commit per feature (code + spec docs together), one PR.
+
+## Implementation notes (2026-11-18)
+
+- Per-request scans of `match_players.data` were too slow (records 12 s on 3,480 games), so records, early leads
+  and personal insights read an in-memory corpus refreshed incrementally (`insights/cache.rs`, see
+  `docs/spec/05-api.md`). Warm: every endpoint under 130 ms; cold load 3.3 s in the background at startup;
+  +44 MB RSS.
+
