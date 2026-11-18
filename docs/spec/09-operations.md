@@ -156,8 +156,12 @@ Postgres folder resolves all of its imports. The Tauri shell already links the C
   through its own module path, so a Windows user named in a script outside that code page
   (Cyrillic on a Western Windows) put both the installed binaries and the data root out of reach
   (`initdb` failed: "could not open file …\????…\pg-password", or "invalid binary"). Every path
-  given to a Postgres tool, **the executable included**, goes through `ToolPaths::map`: (1) kept
-  when every character fits the code page (`WideCharToMultiByte`, `WC_NO_BEST_FIT_CHARS`; an
+  given to a Postgres tool, **the executable included**, goes through `ToolPaths::map`. It first
+  drops a Win32 verbatim prefix (`\\?\C:\…` → `C:\…`, `\\?\UNC\srv\share\…` → `\\srv\share\…`):
+  the installed app can get its resource folder in that form, and `initdb` started by it ran
+  `"//?/C:/…/postgres.exe" -V` through the shell, which cannot open it ("program \"postgres\" is
+  needed by initdb but was not found"; first installer, 2026-11-18; IT
+  `verbatim_bin_and_data_paths_work`). Then: (1) kept when every character fits the code page (`WideCharToMultiByte`, `WC_NO_BEST_FIT_CHARS`; an
   ANSI code page of UTF-8 fits everything); (2) else its 8.3 short form (`GetShortPathNameW` of
   the deepest existing ancestor + the missing tail); (3) else (8.3 names disabled on the volume,
   or the folder created while they were) a **directory junction** `%ProgramData%\StormCodex-<user
