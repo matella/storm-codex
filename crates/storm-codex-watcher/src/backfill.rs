@@ -51,6 +51,14 @@ pub struct Progress {
 }
 
 impl Progress {
+    /// Creates a fresh counter before the caller publishes the run.
+    pub fn new(total: usize) -> Self {
+        Self {
+            total: AtomicUsize::new(total),
+            ..Self::default()
+        }
+    }
+
     /// Files to process in this run (replays not yet in the ledger).
     pub fn total(&self) -> usize {
         self.total.load(Ordering::Relaxed)
@@ -102,6 +110,17 @@ enum FileOutcome {
 pub async fn run(dirs: &[PathBuf], uploader: &Uploader, ledger: &mut Ledger, progress: &Progress) {
     let candidates = pending_files(dirs, ledger);
     progress.total.store(candidates.len(), Ordering::Relaxed);
+    run_pending(candidates, uploader, ledger, progress).await;
+}
+
+/// Runs the same batch used for the disk gate. The caller initializes `progress` with its size
+/// before making it visible.
+pub async fn run_pending(
+    candidates: Vec<PathBuf>,
+    uploader: &Uploader,
+    ledger: &mut Ledger,
+    progress: &Progress,
+) {
     tracing::info!(files = candidates.len(), "backfill started");
 
     let mut results = stream::iter(candidates)

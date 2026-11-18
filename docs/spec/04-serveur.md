@@ -93,8 +93,8 @@ once the listener is bound (`/api/health` answers 200 during the whole sequence)
    ledger started (the server dedups re-sent files). Writes are atomic (unique temp file per
    write, synced, renamed); overlapping writes publish in order (sequence number checked under
    a lock: an older snapshot never replaces a newer one); stale temp files are removed on open;
-4. **disk gate** on `ARCHIVE_DIR`, sized on the replays **not yet in the ledger** (what the
-   backfill will send): free space must be ≥ `2 × their size + 1 GiB`
+4. **live watcher** started on the folders before the worker lists the backfill batch, and
+   **disk gate** on `ARCHIVE_DIR`, sized on that same batch of replays **not yet in the ledger**: free space must be ≥ `2 × their size + 1 GiB`
    (`storm_codex_supervisor::required_free_bytes`); otherwise phase `disk-full`: no backfill
    until a rescan passes, but the live watcher still runs (new games keep being imported). When
    the free space cannot be measured (unusual filesystem), a warning is logged and the import is
@@ -106,8 +106,8 @@ once the listener is bound (`/api/health` answers 200 during the whole sequence)
    memory (never logged, never on disk). `/api/upload` keeps its auth contract for everyone.
    One server per database: a second server on the same database would rotate the token.
    Steps 3 or 5 failing → phase `error`;
-6. **live watcher** started on the folders, then the **backfill** (phase `importing`; when it
-   completes, committed projections are reflected in **folder identity**, see below): oldest
+6. **live watcher** started on the folders, then the **backfill** (phase `importing` appears
+   together with the nonzero batch total; committed projections are reflected in **folder identity**): oldest
    first, 4 at a time (at most the CPU count: the server parses one replay per core and
    answers 202 when all are busy, so a parse failure would be recorded as uploaded), through `POST http://<bound address>/api/upload` (the address actually
    bound, so `BIND_ADDR` may use port 0). Replays reported by the watcher meanwhile wait and
@@ -116,7 +116,9 @@ once the listener is bound (`/api/health` answers 200 during the whole sequence)
 
 A rescan or a folder change received during the backfill cancels it (the ledger is flushed) and
 the import restarts. Counts describe the current import run (backfill + live uploads since it
-started) and reset at each rescan; `failed` lists the files that exhausted their retries
+started). An empty scan does not enter `importing`; if the same folders are already `ready`, it
+keeps the settled counters, phase and disk measurements. Otherwise, a successful empty scan
+settles directly into `ready` with zero counters. `failed` lists the files that exhausted their retries
 (retried at the next start), `rejected` the files refused as bad content during the run: a 4xx
 content error, or a `200 {"status": "parse_failed", "error_class": c}` answer (the replay is
 archived but gave no match: too old, unsupported mode, computer players, stats failure...),
@@ -132,8 +134,8 @@ awaited for at most 10 s (then aborted) before the HTTP server drains and `run()
 |---|---|
 | `GET /api/standalone/status` | `{phase, folders, extraFolders, total, done, duplicates, rejected: [{file, reason}], failed: [file], freeBytes, neededBytes, dataDir, version, reprocessTotal, reprocessDone}` — `phase` ∈ `seeding`, `importing`, `ready`, `no-folders`, `disk-full`, `error`; `folders` = effective folders (detected + replay folders found under each extra); `extraFolders` = the extra folders exactly as saved (the raw list `PUT /folders` replaces, loaded from `app_settings` before the server listens — so already right during `seeding` — and updated on each `PUT`; a refused `PUT` (400) changes nothing; `[]` when none) — clients edit this list, never `folders`; `freeBytes`/`neededBytes` `null` before the first disk gate; `dataDir` = parent of `ARCHIVE_DIR`; `version` = server crate version; `reprocessTotal` / `reprocessDone` = background re-process after a parser bump (step 1) |
 | `GET /api/standalone/identity` | `[{folder, toon, name, aliases}]` in effective-folder order. Unresolved folders have `toon: null`, `name: null`, and `aliases: []`. Read-only; never changes manual names. |
-| `PUT /api/standalone/folders` | body `{folders: [path]}` replaces the extra folders (send `extraFolders` ± one path). Each must be an existing plain local directory (no UNC, device or verbatim path; saved entries failing that rule are dropped on load, so a restored backup cannot point the watcher at a share), else **400** `{error: "not an existing folder: …"}`; only directory listings are read. Saved and resolved, then the watcher restarts and a rescan runs; answers the new status |
-| `POST /api/standalone/rescan` | **202**; re-detects the folders (a HotS replay folder created since, e.g. after the first game or for a new account, is picked up and watched), then re-runs the disk gate and the backfill |
+| `PUT /api/standalone/folders` | body `{folders: [path]}` replaces the extra folders (send `extraFolders` ± one path). Each must be an existing plain local directory (no UNC, device or verbatim path; saved entries failing that rule are dropped on load, so a restored backup cannot point the watcher at a share), else **400** `{error: "not an existing folder: …"}`; only directory listings are read. Saved and queued, then the worker applies the resolved folders and runs a scan; answers the current status with the newly saved `extraFolders`, without advancing the phase itself. If the queue is closed, **503** `{error: …}`; the saved list is kept for restart |
+| `POST /api/standalone/rescan` | **202**; re-detects the folders (a HotS replay folder created since, e.g. after the first game or for a new account, is picked up and watched), then checks for pending work. **503** `{error: …}` if the worker queue is closed |
 | `POST /api/standalone/shutdown` | **202**; same graceful shutdown as Ctrl-C (used by the desktop shell before it stops Postgres) |
 
 The routes are unauthenticated (loopback-only server, single user, no `ADMIN_TOKEN`, so the

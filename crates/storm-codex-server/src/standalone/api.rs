@@ -23,7 +23,7 @@ use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use serde::Deserialize;
 
-use super::{resolve_folders, save_extra_folders, Command, Phase};
+use super::{resolve_folders, save_extra_folders, Command};
 use crate::AppState;
 
 pub fn router() -> Router<AppState> {
@@ -180,14 +180,12 @@ async fn put_folders(State(state): State<AppState>, Json(body): Json<FoldersBody
             );
         }
     };
-    st.set_folders(&folders);
-    st.set_phase(if folders.is_empty() {
-        Phase::NoFolders
-    } else {
-        Phase::Importing
-    });
     if !st.send(Command::SetFolders(folders)) {
         tracing::warn!("folders saved, but the import task is not running");
+        return error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "folders saved, but the import worker is not running; restart Storm Codex".into(),
+        );
     }
     Json(st.status()).into_response()
 }
@@ -198,6 +196,10 @@ async fn rescan(State(state): State<AppState>) -> Response {
         Some(st) => {
             if !st.send(Command::Rescan) {
                 tracing::warn!("rescan requested, but the import task is not running");
+                return error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "the import worker is not running".into(),
+                );
             }
             StatusCode::ACCEPTED.into_response()
         }

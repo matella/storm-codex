@@ -13,9 +13,9 @@ use storm_web_core::{
     net,
     route::app_href,
     standalone::{
-        autostart_args, autostart_error, backup_outcome, error_message, extras_with,
-        extras_without, parse_autostart, parse_update_status, poll_ms, redirects_to_welcome,
-        reloads_after, update_failed_message, BackupAction, BackupOutcome, Status, UpdateState,
+        autostart_args, autostart_error, backup_outcome, error_message, extras_with, extras_without,
+        parse_autostart, parse_update_status, poll_ms, redirects_to_welcome, reloads_after,
+        update_failed_message, BackupAction, BackupOutcome, Status, StatusRequests, UpdateState,
         UpdateStatus, GET_AUTOSTART, SET_AUTOSTART,
     },
 };
@@ -31,6 +31,7 @@ const WELCOME_DECIDED_KEY: &str = "standalone_welcome_decided";
 pub struct Standalone {
     pub status: RwSignal<Option<Status>>,
     pub known: RwSignal<bool>,
+    requests: RwSignal<StatusRequests>,
 }
 
 pub fn use_standalone() -> Standalone {
@@ -43,6 +44,7 @@ pub fn provide_standalone() -> Standalone {
     let ctx = Standalone {
         status: RwSignal::new(None),
         known: RwSignal::new(false),
+        requests: RwSignal::new(StatusRequests::default()),
     };
     provide_context(ctx);
     let nav = leptos_router::hooks::use_navigate();
@@ -80,24 +82,29 @@ pub fn use_status_poll(ctx: Standalone) {
         if ctx.status.get_untracked().is_none() {
             return; // box deployment: nothing to poll
         }
+        let Some(request) = ctx.requests.try_update(StatusRequests::begin_poll).flatten() else {
+            net::after_ms(300, move || step(ctx, alive));
+            return;
+        };
         spawn_local(async move {
-            let next = match net::fetch_standalone_status().await {
-                Ok(Some(s)) => {
-                    let ms = poll_ms(s.phase);
-                    if alive.load(Ordering::Relaxed) {
-                        ctx.status.set(Some(s));
-                    }
-                    Some(ms)
-                }
-                Ok(None) => {
-                    ctx.status.set(None);
-                    None
-                }
-                Err(_) => Some(10_000),
-            };
-            if let Some(ms) = next {
-                net::after_ms(ms, move || step(ctx, alive));
+            let response = net::fetch_standalone_status().await;
+            if !alive.load(Ordering::Relaxed) {
+                return;
             }
+            if let Ok(status) = response {
+                if ctx.requests.try_update(|r| r.accept_poll(request)) == Some(true) {
+                    let absent = status.is_none();
+                    ctx.status.set(status);
+                    if absent {
+                        return;
+                    }
+                }
+            }
+            // A rejected reply cannot also change the polling cadence.
+            let next = ctx
+                .status
+                .with_untracked(|s| s.as_ref().map_or(10_000, |s| poll_ms(s.phase)));
+            net::after_ms(next, move || step(ctx, alive));
         });
     }
     let alive = Arc::new(AtomicBool::new(true));
@@ -122,12 +129,11 @@ async fn put_folders(folders: Vec<String>) -> Result<Status, String> {
 pub fn rescan(msg: RwSignal<Option<String>>) {
     spawn_local(async move {
         let m = match net::write("POST", "/api/standalone/rescan", None, None).await {
-            Ok((s, _)) if (200..300).contains(&s) => "✓ rescan started".to_string(),
+            Ok((s, _)) if (200..300).contains(&s) => "✓ rescan queued".to_string(),
             Ok((s, t)) => format!("✗ {}", error_message(s, &t)),
             Err(_) => "✗ network error — server unreachable".to_string(),
         };
-        msg.set(Some(m));
-        net::after_ms(5000, move || msg.set(None));
+        msg.try_set(Some(m));
     });
 }
 
@@ -139,7 +145,7 @@ pub fn FolderEditor() -> impl IntoView {
     let ctx = use_standalone();
     let path = RwSignal::new(String::new());
     let error = RwSignal::new(None::<String>);
-    let busy = RwSignal::new(false);
+    let busy = Memo::new(move |_| ctx.requests.with(StatusRequests::saving));
     // memos: the rows are rebuilt only when a list changes, not at every poll
     let scanned = Memo::new(move |_| {
         ctx.status
@@ -153,19 +159,23 @@ pub fn FolderEditor() -> impl IntoView {
         })
     });
     let save = move |next: Vec<String>, clear_input: bool| {
-        busy.set(true);
+        if ctx.requests.try_update(StatusRequests::begin_save) != Some(true) {
+            return;
+        }
         spawn_local(async move {
             match put_folders(next).await {
                 Ok(s) => {
-                    ctx.status.set(Some(s));
-                    error.set(None);
+                    ctx.status.try_set(Some(s));
+                    error.try_set(None);
                     if clear_input {
-                        path.set(String::new());
+                        path.try_set(String::new());
                     }
                 }
-                Err(e) => error.set(Some(e)),
+                Err(e) => {
+                    error.try_set(Some(e));
+                }
             }
-            busy.set(false);
+            ctx.requests.update(StatusRequests::finish_save);
         });
     };
     let add = move || {

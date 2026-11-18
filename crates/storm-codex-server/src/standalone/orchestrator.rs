@@ -1,9 +1,9 @@
 //! The single task that owns the upload ledger in standalone mode.
 //!
 //! Sequence: seed the reference data → detect the folders (HotS folders + saved extras) →
-//! open the ledger → disk gate (sized on the replays the ledger does not have yet) → upload
-//! token → live watcher → backfill → loop on live watcher events and HTTP commands. The watcher
-//! starts right before the backfill; the replays it reports meanwhile wait in its channel and
+//! open the ledger → live watcher → list the batch and check disk space → upload token →
+//! backfill → loop on live watcher events and HTTP commands. The watcher starts before listing
+//! the batch; the replays it reports meanwhile wait in its channel and
 //! are handled once the backfill is over (the ledger check skips those the backfill already
 //! sent). When the disk gate blocks the backfill, the watcher still runs: new games keep being
 //! imported. A command received during the backfill cancels it (the ledger is flushed on drop)
@@ -163,8 +163,8 @@ impl Orchestrator {
     async fn import(&mut self) -> Flow {
         let st = self.st.clone();
         loop {
-            self.st.set_folders(&self.folders);
             if self.folders.is_empty() {
+                self.st.set_folders(&self.folders);
                 self.watch = None;
                 self.st.set_phase(Phase::NoFolders);
                 return Flow::Continue;
@@ -172,11 +172,21 @@ impl Orchestrator {
             if let Err(e) = self.open_ledger().await {
                 return self.fail(&e);
             }
-            let bytes = match self.pending_bytes().await {
-                Ok(bytes) => bytes,
+            // Watch before taking the batch snapshot so arrivals after it are not lost.
+            if self.watch.is_none() {
+                self.restart_watch();
+            }
+            let (candidates, bytes) = match self.pending_batch().await {
+                Ok(batch) => batch,
                 Err(e) => return self.fail(&e),
             };
-            let blocked = match self.st.disk_gate(&self.app.cfg.archive_dir, bytes) {
+            let keep_ready = candidates.is_empty() && self.st.ready_for(&self.folders);
+            self.st.set_folders(&self.folders);
+            let blocked = match if keep_ready {
+                Ok(())
+            } else {
+                self.st.disk_gate(&self.app.cfg.archive_dir, bytes)
+            } {
                 Ok(()) => false,
                 Err(DiskError::Insufficient { free, needed }) => {
                     tracing::warn!(free, needed, "not enough free disk space: backfill blocked");
@@ -191,28 +201,35 @@ impl Orchestrator {
             if let Err(e) = self.provision_uploader().await {
                 return self.fail(&e);
             }
-            self.restart_watch();
             if blocked {
                 // New games stay small: the live watcher keeps importing them.
                 self.st.set_phase(Phase::DiskFull);
                 return Flow::Continue;
             }
 
-            let progress = Arc::new(Progress::default());
-            self.st.start_run(progress.clone());
-            self.st.set_phase(Phase::Importing);
-            let (Some(uploader), Some(ledger)) = (self.uploader.as_ref(), self.ledger.as_mut())
-            else {
-                return self.fail("import state missing");
-            };
-            let interrupted = tokio::select! {
-                () = backfill::run(&self.folders, uploader, ledger, &progress) => None,
-                command = self.commands.recv() => Some(command),
-                () = st.stopping() => Some(None),
+            let empty = candidates.is_empty();
+            let interrupted = if empty {
+                None
+            } else {
+                let (Some(uploader), Some(ledger)) = (self.uploader.as_ref(), self.ledger.as_mut())
+                else {
+                    return self.fail("import state missing");
+                };
+                let progress = Arc::new(Progress::new(candidates.len()));
+                self.st.start_run(progress.clone());
+                tokio::select! {
+                    () = backfill::run_pending(candidates, uploader, ledger, &progress) => None,
+                    command = self.commands.recv() => Some(command),
+                    () = st.stopping() => Some(None),
+                }
             };
             match interrupted {
                 None => {
-                    self.st.set_phase(Phase::Ready);
+                    if empty && !keep_ready {
+                        self.st.finish_empty_run();
+                    } else {
+                        self.st.set_phase(Phase::Ready);
+                    }
                     return Flow::Continue;
                 }
                 Some(None) => return Flow::Stop,
@@ -245,21 +262,22 @@ impl Orchestrator {
         Ok(())
     }
 
-    /// Size of the replays the backfill would send (those the ledger does not have yet).
-    async fn pending_bytes(&mut self) -> Result<u64, String> {
+    /// Candidate list and disk budget from the same off-runtime scan.
+    async fn pending_batch(&mut self) -> Result<(Vec<PathBuf>, u64), String> {
         let Some(ledger) = self.ledger.take() else {
             return Err("upload ledger not open".into());
         };
         let dirs = self.folders.clone();
-        let (ledger, bytes) = tokio::task::spawn_blocking(move || {
-            let bytes = replay_bytes(&backfill::pending_files(&dirs, &ledger));
-            (ledger, bytes)
+        let (ledger, candidates, bytes) = tokio::task::spawn_blocking(move || {
+            let candidates = backfill::pending_files(&dirs, &ledger);
+            let bytes = replay_bytes(&candidates);
+            (ledger, candidates, bytes)
         })
         .await
         // The ledger is lost with the panicked task: reopened from disk at the next import.
         .map_err(|e| format!("sizing the replay folders failed: {e}"))?;
         self.ledger = Some(ledger);
-        Ok(bytes)
+        Ok((candidates, bytes))
     }
 
     /// Provisions the upload token once (retried at the next import when it failed).

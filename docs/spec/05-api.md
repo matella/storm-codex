@@ -208,6 +208,8 @@ status change → WS `live.updated` (signal only).
 
 `GET /api/standalone/status`, `GET /api/standalone/identity`, `PUT /api/standalone/folders`, `POST /api/standalone/rescan`,
 `POST /api/standalone/shutdown`: 404 when the server is not in standalone mode.
+Rescan returns 202 only when queued; rescan and folder save return 503 if the import worker
+cannot accept the command. A folder list already persisted before that failure is used on restart.
 In standalone mode **every** route of this page (and the pages, images and `/ws`) accepts only
 a loopback `Host` (other hosts 403) and refuses any request, `GET` and the `/ws` upgrade
 included, whose `Origin` is present and is not the app's own (`http://` + loopback name + bound

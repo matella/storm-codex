@@ -88,7 +88,10 @@ fn Body() -> impl IntoView {
                 <div class="sa-row" style="margin-top: 16px">
                     <span class="mono">{move || space().unwrap_or_default()}</span>
                     <button class="ds-btn" on:click=move |_| rescan(msg)>"Rescan now"</button>
-                    {move || msg.get().map(|m| view! { <span class="sa-ok">{m}</span> })}
+                    {move || msg.get().map(|m| {
+                        let class = if m.starts_with('✓') { "sa-ok" } else { "sa-err" };
+                        view! { <span class=class>{m}</span> }
+                    })}
                 </div>
             </Show>
         </div>
@@ -158,12 +161,14 @@ pub fn Welcome() -> impl IntoView {
                 <div class="ds-subtitle" style="cursor: default">"Your replays are imported from this PC. You can browse the app while it runs."</div>
             </header>
             <section class="ds-sec" style="margin-top: 34px">
-                {move || match (ctx.known.get(), present.get()) {
-                    (false, _) => view! { <div class="sa-none">"Loading…"</div> }.into_any(),
-                    (true, false) => view! { <div class="sa-none">"The import screen is only available in the Storm Codex desktop app."</div> }.into_any(),
-                    (true, true) => view! { <Body /> }.into_any(),
-                }}
+                <Show when=move || !ctx.known.get()>
+                    <div class="sa-none">"Loading…"</div>
+                </Show>
+                <Show when=move || ctx.known.get() && !present.get()>
+                    <div class="sa-none">"The import screen is only available in the Storm Codex desktop app."</div>
+                </Show>
                 <Show when=move || present.get()>
+                    <Body />
                     <Identity />
                 </Show>
                 <Show when=move || no_folders.get()>

@@ -264,6 +264,11 @@ impl StandaloneState {
         lock(&self.view).phase = phase;
     }
 
+    fn ready_for(&self, folders: &[PathBuf]) -> bool {
+        let view = lock(&self.view);
+        view.phase == Phase::Ready && view.folders == folders
+    }
+
     pub(crate) fn set_folders(&self, folders: &[PathBuf]) {
         lock(&self.view).folders = folders.to_vec();
     }
@@ -287,8 +292,18 @@ impl StandaloneState {
 
     /// Starts a new backfill run: its progress replaces the previous one, live counts reset.
     pub(crate) fn start_run(&self, progress: Arc<Progress>) {
+        let mut view = lock(&self.view);
         *lock(&self.progress) = progress;
         *lock(&self.live) = LiveCounters::default();
+        view.phase = Phase::Importing;
+    }
+
+    /// Settles a new empty scan without exposing an importing phase.
+    fn finish_empty_run(&self) {
+        let mut view = lock(&self.view);
+        *lock(&self.progress) = Arc::new(Progress::default());
+        *lock(&self.live) = LiveCounters::default();
+        view.phase = Phase::Ready;
     }
 
     /// Counts the outcome of a replay uploaded by the live watcher.

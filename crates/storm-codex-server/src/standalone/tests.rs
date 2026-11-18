@@ -225,7 +225,8 @@ async fn status_counts_follow_progress() {
     let base = stub_upload_server().await;
     let uploader = Uploader::new(base).with_backoff_unit(Duration::from_millis(1));
     let mut ledger = Ledger::open(&tmp.path().join("uploaded.json")).unwrap();
-    let progress = Arc::new(Progress::default());
+    let candidates = backfill::pending_files(&[replays], &ledger);
+    let progress = Arc::new(Progress::new(candidates.len()));
 
     let cfg = test_config(tmp.path());
     let st = StandaloneState::new(&cfg);
@@ -233,7 +234,11 @@ async fn status_counts_follow_progress() {
     let state = lazy_state(tmp.path(), Some(st));
     let app = app(&state);
 
-    backfill::run(&[replays], &uploader, &mut ledger, &progress).await;
+    let initial = get_status(&app).await;
+    assert_eq!(initial["phase"], "importing");
+    assert_eq!(initial["total"], 4);
+    assert_eq!(initial["done"], 0);
+    backfill::run_pending(candidates, &uploader, &mut ledger, &progress).await;
     let v = get_status(&app).await;
     assert_eq!(v["total"], 4);
     assert_eq!(v["done"], 4);
@@ -293,6 +298,23 @@ async fn rescan_is_accepted_and_queued() {
     .await;
     assert_eq!(code, StatusCode::ACCEPTED);
     assert!(matches!(commands.try_recv(), Ok(Command::Rescan)));
+}
+
+#[tokio::test]
+async fn rescan_fails_when_the_worker_queue_is_closed() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = test_config(tmp.path());
+    let state = lazy_state(tmp.path(), Some(StandaloneState::new(&cfg)));
+    drop(state.standalone.as_ref().unwrap().take_commands().unwrap());
+    let app = app(&state);
+    let (code, v) = send(
+        &app,
+        Request::post("/api/standalone/rescan")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(code, StatusCode::SERVICE_UNAVAILABLE, "{v}");
 }
 
 #[tokio::test]
@@ -608,20 +630,28 @@ async fn put_folders_persists_and_returns_status() {
     let extra_str = extra.to_string_lossy().to_string();
     let (code, v) = send(&app, put_folders(&[&extra_str])).await;
     assert_eq!(code, StatusCode::OK, "{v}");
-    // the saved list as sent (the parent), next to its expansion in `folders`
+    assert_eq!(v["phase"], "seeding", "the worker has not started: {v}");
+    // The save publishes the raw list, not a new worker state.
     assert_eq!(v["extraFolders"], serde_json::json!([extra_str]));
     let after = get_status(&app).await;
     assert_eq!(after["extraFolders"], serde_json::json!([extra_str]));
     // the parent is resolved to the folder that holds replays
-    let resolved = extra.join("old").to_string_lossy().to_string();
-    assert_eq!(v["folders"], serde_json::json!([resolved]));
+    assert_eq!(v["folders"], serde_json::json!([]));
+    let Ok(Command::SetFolders(folders)) = commands.try_recv() else {
+        panic!("no folder command queued");
+    };
+    assert_eq!(folders, [extra.join("old")]);
     let saved: serde_json::Value =
         sqlx::query_scalar("SELECT value FROM app_settings WHERE key = 'standalone_extra_folders'")
             .fetch_one(&state.db)
             .await
             .unwrap();
     assert_eq!(saved, serde_json::json!([extra_str]));
-    assert!(matches!(commands.try_recv(), Ok(Command::SetFolders(_))));
+    drop(commands);
+    let (code, unavailable) = send(&app, put_folders(&[])).await;
+    assert_eq!(code, StatusCode::SERVICE_UNAVAILABLE, "{unavailable}");
+    assert_eq!(get_status(&app).await["phase"], "seeding");
+    assert_eq!(saved_extras(&state.db).await, Some(serde_json::json!([])));
     sqlx::query("DELETE FROM app_settings WHERE key = 'standalone_extra_folders'")
         .execute(&state.db)
         .await
@@ -661,14 +691,15 @@ async fn put_folders_saves_only_the_sent_extras_not_the_detected_folders() {
         return;
     };
     clear_saved_extras(&state.db).await;
-    let _commands = state.standalone.as_ref().unwrap().take_commands().unwrap();
+    let mut commands = state.standalone.as_ref().unwrap().take_commands().unwrap();
     let app = app(&state);
     let extra_str = extra.to_string_lossy().to_string();
     let (code, v) = send(&app, put_folders(&[&extra_str])).await;
     assert_eq!(code, StatusCode::OK, "{v}");
-    let detected_str = detected.to_string_lossy().to_string();
-    let resolved = extra.join("old").to_string_lossy().to_string();
-    assert_eq!(v["folders"], serde_json::json!([detected_str, resolved]));
+    let Ok(Command::SetFolders(folders)) = commands.try_recv() else {
+        panic!("no folder command queued");
+    };
+    assert_eq!(folders, [detected, extra.join("old")]);
     assert_eq!(v["extraFolders"], serde_json::json!([extra_str]));
     assert_eq!(
         saved_extras(&state.db).await,
@@ -817,6 +848,44 @@ async fn end_to_end_import_then_live_watch() {
     let v = wait_status(&app, 30, |v| v["done"] == 2).await;
     assert_eq!(v["phase"], "ready");
     assert_eq!(v["failed"], serde_json::json!([]), "{v}");
+}
+
+#[tokio::test]
+async fn empty_rescan_keeps_settled_progress() {
+    let tmp = tempfile::tempdir().unwrap();
+    let replays = tmp.path().join("replays");
+    fake_replays(&replays, 1);
+    let (detected, mut detections) = tokio::sync::mpsc::unbounded_channel();
+    let Some((state, _settings)) = db_state(tmp.path(), move |c| {
+        StandaloneState::new(c)
+            .with_detector(move || {
+                detected.send(()).unwrap();
+                vec![replays.clone()]
+            })
+            .with_free_space(|_| Ok(u64::MAX))
+    })
+    .await
+    else {
+        return;
+    };
+    let app = app(&state);
+    let _server = start_server(&state).await;
+    let before = wait_status(&app, 30, |v| v["phase"] == "ready").await;
+    assert_eq!(before["total"], 1);
+    assert_eq!(before["done"], 1);
+    assert_eq!(detections.try_recv(), Ok(())); // startup
+                                               // When the second rescan starts detecting, the first one has finished on the worker.
+    for _ in 0..2 {
+        let rescan = Request::post("/api/standalone/rescan")
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(send(&app, rescan).await.0, StatusCode::ACCEPTED);
+        tokio::time::timeout(Duration::from_secs(10), detections.recv())
+            .await
+            .unwrap()
+            .unwrap();
+    }
+    assert_eq!(get_status(&app).await, before);
 }
 
 /// Serves the app (standalone import task included) on an ephemeral port until shutdown.

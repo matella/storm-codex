@@ -119,7 +119,8 @@ deserialisation, `progress_percent`, `phase_message`, `redirects_to_welcome`, `p
   (redirected, or already `ready`): the user can leave the page and is never sent back.
 - **Nav.** An "Import" tab after the regular tabs while the phase is not `ready` (from the last status read).
 - **`/welcome`.** Progress bar (`progress_percent(done, total)`), `phase_message` text, tiles imported `done/total`, already known
-  (duplicates), rejected, failed; collapsible lists of rejected replays (file — reason) and failed uploads. `no-folders` and
+  (duplicates), rejected, failed; collapsible lists of rejected replays (file — reason) and failed uploads. The progress panel stays
+  mounted across status updates, preserving the bar animation and expanded lists. `no-folders` and
   `disk-full` are states, not errors: `no-folders` shows the folder editor ("No replays found: add a folder…"), `disk-full`
   shows free vs needed space in human units (`human_bytes`, binary multiples labelled KB/MB/GB) and a "Rescan now" button;
   `error` shows a clear message in the error colour. While the server re-processes the stored replays after an update
@@ -134,12 +135,15 @@ deserialisation, `progress_percent`, `phase_message`, `redirects_to_welcome`, `p
   saved entries that may have come from a previous version. The archive, match detail, and session
   use verified handles through renames; account selectors display the latest name and filter by handle.
 - **Polling** (`use_status_poll`): only while `/welcome` or the "This PC" section is mounted, every 1 s while the phase is
-  `seeding`/`importing`, every 10 s otherwise; stops when the page is left (`on_cleanup` flag) and for good on a 404.
+  `seeding`/`importing`, every 10 s otherwise; stops when the page is left (`on_cleanup` flag) and for good on a current 404.
+  Replies older than a newer accepted poll, from a departed page, or from before a folder save are ignored.
+  Folder saves are serialized within the tab and suspend polling until the save reply is handled.
 - **Settings "This PC"** (last numbered section of `/admin`, standalone only): **Scanned folders** (`status.folders`, read-only:
   found automatically or under an extra folder) and **Your extra folders** (`status.extraFolders`) with **Remove** and **Add
   folder** (typed path; the `PUT /api/standalone/folders` body is `extraFolders` plus/minus that path only — `extras_with` /
   `extras_without` —, never the scanned list; the server's 400 message is shown inline; a status without `extraFolders` (older
-  server) reads as no extras), **Rescan now** (`POST /api/standalone/rescan`), data location (`dataDir`), app version
+  server) reads as no extras), **Rescan now** (`POST /api/standalone/rescan`, confirms queueing, shows worker failures inline),
+  data location (`dataDir`), app version
   (`version`), the sentence "Nothing leaves this PC except the update check.", and the OBS browser-source URLs built from
   `location.origin` + `route::app_href` (never a fixed port). No native folder picker yet (needs the shell IPC).
 - **Startup** (block of "This PC", rendered only inside the desktop shell, like Backup): a **Start with Windows** checkbox.
