@@ -3,8 +3,9 @@
 ## hotsdash.com gap analysis (2026-11-17), issue #34, research only
 
 `docs/research/2026-11-17-hotsdash-gap-analysis.md`: 22 gaps rated by data, effort and value, plus a
-recommended order (quick wins, coaching, streaming). No spec or code yet. **Awaiting operator choice** of
-the first batch, and decisions on parsing hearths and on Twitch/Discord integrations.
+recommended order (quick wins, coaching, streaming). Operator: local only, no Twitch/Discord. Branch
+`feat/local-insights`: spec `docs/specs/2026-11-17-local-insights-design.md` (F1–F7) **awaiting approval**; no code yet.
+Finding: damage over a time window is not in replays (end-of-game totals only).
 
 ## Standalone Windows installer (2026-11-14), branch `feat/standalone-installer` (not merged, not released)
 
