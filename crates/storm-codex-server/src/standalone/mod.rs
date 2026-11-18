@@ -7,7 +7,10 @@
 //! [`Command`]s to the orchestrator; it never touches the ledger.
 
 pub mod api;
+mod identity;
 mod orchestrator;
+
+pub(crate) use identity::operator_toons;
 pub(crate) mod token;
 
 #[cfg(test)]
@@ -135,8 +138,7 @@ pub struct StandaloneState {
     token_name: String,
     /// Background re-process after a parser bump: (total, done).
     reprocess: Mutex<(usize, usize)>,
-    /// Database-wide upkeep of the import task (re-process after an update, operator names
-    /// detection). Off only in tests that share one database.
+    /// Database-wide re-process after an update. Off only in tests that share one database.
     upkeep: bool,
 }
 

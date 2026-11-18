@@ -282,13 +282,14 @@ pub async fn trends(State(s): State<AppState>) -> Result<Json<J>, (StatusCode, J
             FROM matches m
             LEFT JOIN LATERAL (
                 SELECT p.win FROM match_players p
-                WHERE p.match_id = m.id AND lower(p.name) IN (SELECT name FROM ops)
+                WHERE p.match_id = m.id AND (lower(p.name) IN (SELECT name FROM ops) OR p.toon_handle = ANY($1::text[]))
                 LIMIT 1
             ) mp ON true
             WHERE m.build IS NOT NULL
             GROUP BY m.build
          ) t",
     )
+    .bind(crate::standalone::operator_toons(&s))
     .fetch_one(&s.db)
     .await
     .map_err(db_err)?;

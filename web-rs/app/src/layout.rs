@@ -38,10 +38,10 @@ fn bump(s: RwSignal<u32>) {
 pub fn Layout() -> impl IntoView {
     provide_talents();
     provide_dim(); // reference data (universe rings)
-    provide_operator(); // operator names (operator perspective everywhere)
 
     // desktop app: import status (404 on the box: nothing shown), first-load redirect to /welcome
     let standalone = provide_standalone();
+    provide_operator(standalone);
     let importing = move || {
         standalone
             .status

@@ -276,6 +276,7 @@ pub fn ThisPc(num: Signal<u32>) -> impl IntoView {
                 <div class="ds-panel">
                     <div class="ds-label">"Replay folders"</div>
                     <FolderEditor />
+                    <crate::ui::FolderIdentities />
                     <div class="sa-row" style="margin-top: 14px">
                         <button class="ds-btn" on:click=move |_| rescan(msg)>"Rescan now"</button>
                         {move || msg.get().map(|m| {

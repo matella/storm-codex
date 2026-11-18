@@ -25,7 +25,9 @@ use storm_web_core::{
 use crate::{
     matchui::{AwardTag, ModeTag},
     pages::match_insights::{MatchInsightsSections, Who},
-    ui::{fetch, map_art, use_operator, use_talents, Link, Portrait, SecHead, Tone},
+    ui::{
+        fetch, map_art, use_operator, use_owner_toons, use_talents, Link, Portrait, SecHead, Tone,
+    },
 };
 
 fn pill(on: bool) -> &'static str {
@@ -416,6 +418,7 @@ pub fn MatchDetail() -> impl IntoView {
     let adv = RwSignal::new(false);
     let replay = RwSignal::new(false);
     let operator = use_operator();
+    let toons = use_owner_toons();
     let talents = use_talents();
     let attrs = fetch::<HashMap<String, String>>(|| "/api/dim/hero-attributes".to_string());
     let data = fetch::<Value>(move || {
@@ -428,9 +431,11 @@ pub fn MatchDetail() -> impl IntoView {
         match data.get() {
         None => view! { <div class="ds-page"><div class="ds-empty" style="margin-top: 24px">"loading…"</div></div> }.into_any(),
         Some(Ok(d)) if d.is_object() => {
-            let names: Vec<String> = operator.get_untracked().iter().map(|n| n.to_lowercase()).collect();
+            let names: Vec<String> = operator.get().iter().map(|n| n.to_lowercase()).collect();
             let players: Vec<Value> = get(&d, "players").as_object().map(|o| o.values().cloned().collect()).unwrap_or_default();
-            let me = players.iter().find(|p| names.contains(&text(get(p, "name")).unwrap_or("").to_lowercase()));
+            let handles = toons.get();
+            let me = players.iter().find(|p| text(get(p, "ToonHandle")).is_some_and(|t| handles.iter().any(|known| known == t)))
+                .or_else(|| players.iter().find(|p| names.contains(&text(get(p, "name")).unwrap_or("").to_lowercase())));
             let ctx = Arc::new(Ctx {
                 m: get(&d, "match").clone(),
                 by_toon: get(&d, "players").clone(),

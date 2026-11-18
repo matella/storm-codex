@@ -29,6 +29,7 @@ use crate::AppState;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/standalone/status", get(status))
+        .route("/api/standalone/identity", get(identity))
         .route("/api/standalone/folders", put(put_folders))
         .route("/api/standalone/rescan", post(rescan))
         .route("/api/standalone/shutdown", post(shutdown))
@@ -109,6 +110,23 @@ async fn status(State(state): State<AppState>) -> Response {
     match state.standalone {
         Some(st) => Json(st.status()).into_response(),
         None => not_found(),
+    }
+}
+
+/// GET /api/standalone/identity — current projection for the effective replay folders.
+async fn identity(State(state): State<AppState>) -> Response {
+    let Some(st) = &state.standalone else {
+        return not_found();
+    };
+    match super::identity::folder_identities(&state.db, st).await {
+        Ok(owners) => Json(owners).into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, "reading replay folder identity");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "could not read replay folder identity".into(),
+            )
+        }
     }
 }
 

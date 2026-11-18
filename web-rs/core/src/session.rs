@@ -9,6 +9,7 @@ use serde::Deserialize;
 #[derive(Clone, Debug, Default, PartialEq, Deserialize)]
 #[serde(default)]
 pub struct MatchPlayer {
+    pub toon: Option<String>,
     pub name: Option<String>,
     pub hero: Option<String>,
     pub team: Option<i64>,
@@ -436,6 +437,7 @@ mod tests {
 
     fn p(name: &str, team: i64, hero: &str, k: u32, td: u32, d: u32) -> MatchPlayer {
         MatchPlayer {
+            toon: None,
             name: Some(name.into()),
             hero: Some(hero.into()),
             team: Some(team),

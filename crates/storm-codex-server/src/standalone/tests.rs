@@ -1096,32 +1096,6 @@ async fn outdated_replays_are_reprocessed_with_progress() {
     assert_eq!(status.reprocess_done, status.reprocess_total, "{status:?}");
 }
 
-#[test]
-fn only_the_seeded_operator_name_is_replaced() {
-    use orchestrator::detected_names;
-    let me = || Some("Me".to_string());
-    assert_eq!(
-        detected_names(&["matella".into()], me()),
-        Some(vec!["Me".into()])
-    );
-    assert_eq!(detected_names(&[], me()), Some(vec!["Me".into()]));
-    assert_eq!(
-        detected_names(&["Mine".into()], me()),
-        None,
-        "user's names kept"
-    );
-    assert_eq!(
-        detected_names(&["matella".into(), "Alt".into()], me()),
-        None
-    );
-    assert_eq!(
-        detected_names(&["matella".into()], None),
-        None,
-        "nothing imported"
-    );
-    assert_eq!(detected_names(&["matella".into()], Some(" ".into())), None);
-}
-
 async fn setting(state: &AppState, key: &str) -> Option<serde_json::Value> {
     sqlx::query_scalar("SELECT value FROM app_settings WHERE key = $1")
         .bind(key)
@@ -1149,78 +1123,188 @@ async fn put_setting(state: &AppState, key: &str, value: Option<serde_json::Valu
     };
 }
 
-/// A fresh install carries the box operator's name (migration 0003): after the first import it
-/// becomes the most frequent player, once; names the user set are never replaced.
+/// A completed game arrives after Ready in an actual HotS directory. The fixture is
+/// decoded here only to identify the owner and expected fingerprint, not projected by the test.
 #[tokio::test]
-async fn operator_names_are_detected_once_after_the_import() {
-    let tmp = tempfile::tempdir().unwrap();
-    let Some((state, _settings)) = db_state(tmp.path(), |c| {
-        StandaloneState::new(c).with_detector(Vec::new)
-    })
-    .await
-    else {
+async fn folder_identity_follows_completed_live_replay_and_restart() {
+    use crate::players::testutil::{insert_match, row};
+    use chrono::{TimeZone, Utc};
+    use serde_json::json;
+
+    let Some((db, db_name)) = crate::refdata::tests::isolated_db().await else {
         return;
     };
-    let saved = (
-        setting(&state, "operator_names").await,
-        setting(&state, "operator_names_detected").await,
-    );
-    let top: Option<String> = sqlx::query_scalar(
-        "SELECT name FROM match_players WHERE name IS NOT NULL AND name <> ''
-         GROUP BY name ORDER BY count(DISTINCT match_id) DESC, name LIMIT 1",
-    )
-    .fetch_optional(&state.db)
-    .await
-    .unwrap();
-
-    // user's own names: kept, marked as done
-    put_setting(&state, "operator_names_detected", None).await;
-    put_setting(&state, "operator_names", Some(serde_json::json!(["Mine"]))).await;
-    orchestrator::detect_operator_names(&state).await;
-    let mine = setting(&state, "operator_names").await;
-    let marked = setting(&state, "operator_names_detected").await.is_some();
-
-    // the migration seed: replaced by the most frequent player (when any game exists)
-    put_setting(&state, "operator_names_detected", None).await;
-    put_setting(
-        &state,
-        "operator_names",
-        Some(serde_json::json!(["matella"])),
-    )
-    .await;
-    orchestrator::detect_operator_names(&state).await;
-    let detected = setting(&state, "operator_names").await;
-    // once: a later edit back to the seed is not replaced again
-    put_setting(
-        &state,
-        "operator_names",
-        Some(serde_json::json!(["matella"])),
-    )
-    .await;
-    orchestrator::detect_operator_names(&state).await;
-    let again = setting(&state, "operator_names").await;
-
-    put_setting(&state, "operator_names", saved.0).await;
-    put_setting(&state, "operator_names_detected", saved.1).await;
-    assert_eq!(mine, Some(serde_json::json!(["Mine"])));
-    assert!(marked);
-    match top {
-        Some(top) => {
-            assert_eq!(detected, Some(serde_json::json!([top])));
-            assert_eq!(again, Some(serde_json::json!(["matella"])));
-        }
-        None => assert_eq!(detected, Some(serde_json::json!(["matella"]))),
+    let tmp = tempfile::tempdir().unwrap();
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../storm-replay/tests/data/2026-05-27 22.37.45 Industrial District.StormReplay");
+    let out = storm_stats::process_replay(&fixture, "live.StormReplay");
+    let fingerprint = crate::upload::game_fingerprint(&out).unwrap();
+    let (owner, player) = out.players.as_ref().unwrap().iter().next().unwrap();
+    let latest = player["name"].as_str().unwrap();
+    let second = "2-Hero-1-999999999";
+    let docs = tmp.path().join("Documents");
+    let folder = |toon: &str| {
+        docs.join("Heroes of the Storm/Accounts/123")
+            .join(toon)
+            .join("Replays/Multiplayer")
+    };
+    let live_folder = folder(owner);
+    let second_folder = folder(second);
+    let flat = tmp.path().join("flat");
+    for dir in [&live_folder, &second_folder, &flat] {
+        std::fs::create_dir_all(dir).unwrap();
     }
-}
+    let mut cfg = test_config(tmp.path());
+    cfg.archive_dir = tmp.path().join("archive");
+    std::fs::create_dir_all(&cfg.archive_dir).unwrap();
+    let make_state = || {
+        let docs = docs.clone();
+        let mut state = crate::test_app_state(cfg.clone(), db.clone());
+        state.standalone = Some(Arc::new(
+            StandaloneState::new(&cfg)
+                .with_detector(move || storm_codex_watcher::detector::detect_replay_dirs_in(&docs))
+                .with_free_space(|_| Ok(u64::MAX)),
+        ));
+        state
+    };
+    let state = make_state();
+    let t = |year| Some(Utc.with_ymd_and_hms(year, 1, 1, 0, 0, 0).unwrap());
+    let teammate = "2-Hero-1-999999998";
+    insert_match(
+        &db,
+        t(2020),
+        &[
+            row(owner, "OldAlias", 0, "OldHero"),
+            row(teammate, "Frequent", 0, "Tank"),
+        ],
+    )
+    .await;
+    insert_match(
+        &db,
+        t(2022),
+        &[
+            row(second, "Second", 0, "SecondHero"),
+            row(teammate, "Frequent", 0, "Tank"),
+        ],
+    )
+    .await;
+    insert_match(
+        &db,
+        t(2021),
+        &[
+            row(second, "PreviousSecond", 0, "SecondHero"),
+            row(teammate, "Frequent", 0, "Tank"),
+        ],
+    )
+    .await;
+    insert_match(&db, t(2030), &[row(second, " \t", 0, "SecondHero")]).await;
+    insert_match(&db, t(2022), &[row(second, "Z-Tie", 0, "SecondHero")]).await;
+    insert_match(&db, t(2021), &[row(teammate, "OldAlias", 0, "WrongHero")]).await;
+    put_setting(&state, "operator_names", Some(json!(["Manual"]))).await;
+    put_setting(&state, "standalone_extra_folders", Some(json!([flat]))).await;
+    let router = app(&state);
+    let server = start_server(&state).await;
+    wait_status(&router, 30, |v| v["phase"] == "ready").await;
 
-#[cfg(windows)]
-#[test]
-fn only_plain_local_folders_are_accepted() {
-    use super::is_plain_local_folder as ok;
-    use std::path::Path;
-    assert!(ok(Path::new(r"C:\Users\me\Replays")));
-    assert!(!ok(Path::new(r"\server\share\Replays")));
-    assert!(!ok(Path::new(r"\?\UNC\server\share")));
-    assert!(!ok(Path::new(r"\.\pipe\x")));
-    assert!(!ok(Path::new(r"relative\dir")));
+    async fn identities(router: &Router) -> serde_json::Value {
+        let (code, value) = send(
+            router,
+            Request::get("/api/standalone/identity")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK);
+        value
+    }
+    let lookup = |value: serde_json::Value, dir: &Path| -> serde_json::Value {
+        value
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|v| v["folder"] == dir.to_string_lossy().as_ref())
+            .unwrap()
+            .clone()
+    };
+    let before = identities(&router).await;
+    assert_eq!(lookup(before.clone(), &live_folder)["name"], "OldAlias");
+    assert_eq!(lookup(before.clone(), &second_folder)["name"], "Second");
+    assert_eq!(
+        lookup(before, &flat),
+        json!({"folder": flat, "toon": null, "name": null, "aliases": []})
+    );
+
+    std::fs::copy(&fixture, live_folder.join("live.StormReplay")).unwrap();
+    wait_status(&router, 30, |v| v["done"] == 1).await;
+    let visible = tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            let owner = lookup(identities(&router).await, &live_folder);
+            if owner["name"] == latest {
+                break owner;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .expect("the live replay changes visible identity");
+    assert_eq!(visible["aliases"], json!([latest, "OldAlias"]));
+    assert_eq!(visible["toon"], owner.as_str());
+    let match_id: i64 = sqlx::query_scalar("SELECT id FROM matches WHERE fingerprint = $1")
+        .bind(&fingerprint)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    let (code, projected) = send(
+        &router,
+        Request::get(format!("/api/matches/{match_id}"))
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK);
+    assert_eq!(projected["players"][owner]["name"], latest);
+    assert_eq!(
+        setting(&state, "operator_names").await,
+        Some(json!(["Manual"]))
+    );
+    for query in ["mine=true".to_string(), format!("account=toon:{owner}")] {
+        let (code, heroes) = send(
+            &router,
+            Request::get(format!("/api/heroes?{query}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK, "{heroes}");
+        let heroes = heroes.as_array().unwrap();
+        assert!(heroes.iter().any(|v| v["hero"] == "OldHero"));
+        assert!(!heroes.iter().any(|v| v["hero"] == "WrongHero"));
+    }
+
+    {
+        let (code, _) = send(
+            &router,
+            Request::post("/api/standalone/shutdown")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(code, StatusCode::ACCEPTED);
+        server.await.unwrap().unwrap();
+    }
+    let restarted = make_state();
+    let router = app(&restarted);
+    let server = start_server(&restarted).await;
+    let settled = wait_status(&router, 30, |v| v["phase"] == "ready").await;
+    assert_eq!(settled["total"], 0, "ledger already contains the replay");
+    assert_eq!(lookup(identities(&router).await, &live_folder), visible);
+    send(
+        &router,
+        Request::post("/api/standalone/shutdown")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    server.await.unwrap().unwrap();
+    crate::refdata::tests::drop_db(db, &db_name).await;
 }

@@ -80,22 +80,98 @@ pub fn use_interval(ms: u32, f: impl Fn() + Clone + 'static) {
     tick(ms, alive, f);
 }
 
-/// Operator names (`app_settings.operator_names`), shared by every page; empty until loaded.
+/// Manual settings and verified folder identities have independent lifecycles: polling the
+/// latter never writes the former (including while an editor has a draft).
 #[derive(Clone, Copy)]
-pub struct Operator(pub RwSignal<Vec<String>>);
+struct Operator {
+    manual: RwSignal<Vec<String>>,
+    folders: RwSignal<Vec<storm_web_core::standalone::FolderIdentity>>,
+    toons: Memo<Vec<String>>,
+}
 
-pub fn provide_operator() {
-    let names = RwSignal::new(Vec::<String>::new());
-    provide_context(Operator(names));
+pub fn provide_operator(standalone: crate::standalone::Standalone) {
+    let manual = RwSignal::new(Vec::<String>::new());
+    let folders = RwSignal::new(Vec::<storm_web_core::standalone::FolderIdentity>::new());
+    let toons = Memo::new(move |_| {
+        folders.with(|folders| {
+            let mut toons: Vec<_> = folders.iter().filter_map(|f| f.toon.clone()).collect();
+            toons.sort_unstable();
+            toons.dedup();
+            toons
+        })
+    });
+    provide_context(Operator {
+        manual,
+        folders,
+        toons,
+    });
     spawn_local(async move {
         if let Ok(s) = net::fetch_settings().await {
-            names.set(s.operator_names);
+            manual.set(s.operator_names);
         }
     });
+    let present = Memo::new(move |_| standalone.status.with(Option::is_some));
+    let pending = RwSignal::new(false);
+    let refresh = move || {
+        if !present.get_untracked() || pending.get_untracked() {
+            return;
+        }
+        pending.set(true);
+        spawn_local(async move {
+            if let Ok(next) = net::get_json::<Vec<storm_web_core::standalone::FolderIdentity>>(
+                "/api/standalone/identity",
+            )
+            .await
+            {
+                if folders.with_untracked(|current| *current != next) {
+                    folders.set(next);
+                }
+            }
+            pending.set(false);
+        });
+    };
+    Effect::new(move |_| {
+        present.track();
+        refresh();
+    });
+    use_interval(3_000, refresh);
 }
 
 pub fn use_operator() -> RwSignal<Vec<String>> {
-    expect_context::<Operator>().0
+    expect_context::<Operator>().manual
+}
+
+pub fn use_owner_toons() -> Memo<Vec<String>> {
+    expect_context::<Operator>().toons
+}
+
+pub fn use_account_options() -> Memo<Vec<(String, String)>> {
+    let op = expect_context::<Operator>();
+    Memo::new(move |_| {
+        op.manual.with(|manual| {
+            op.folders
+                .with(|folders| storm_web_core::standalone::account_options(manual, folders))
+        })
+    })
+}
+
+#[component]
+pub fn FolderIdentities() -> impl IntoView {
+    let folders = expect_context::<Operator>().folders;
+    view! {
+        <div class="sa-sub">"Automatically detected by replay folder"</div>
+        {move || folders.with(|folders| {
+            if folders.is_empty() {
+                return view! { <div class="sa-none">"No folder identities available yet."</div> }.into_any();
+            }
+            folders.iter().map(|f| view! {
+                <div class="sa-folder">
+                    <span class="mono">{f.folder.clone()}</span>
+                    <span>{f.name.clone().unwrap_or_else(|| "Owner not detected".into())}</span>
+                </div>
+            }).collect_view().into_any()
+        })}
+    }
 }
 
 /// Portrait tone: the ring and the slash of a ban (`Tone` in ds/index.tsx).
@@ -280,7 +356,7 @@ pub fn AggFilterBar(
     value: RwSignal<AggFilter>,
     #[prop(default = "Mine only")] mine_label: &'static str,
 ) -> impl IntoView {
-    let accounts = use_operator();
+    let accounts = use_account_options();
     view! {
         <div class="ds-filterbar">
             {MODES
@@ -299,8 +375,8 @@ pub fn AggFilterBar(
                         value.update(|f| f.account = (!v.is_empty()).then_some(v));
                     }>
                         <option value="" selected=move || value.with(|v| v.account.is_none())>"All my accounts"</option>
-                        {list.into_iter().map(|a| {
-                            let (a1, a2) = (a.clone(), a.clone());
+                        {list.into_iter().map(|(a1, a)| {
+                            let a2 = a1.clone();
                             view! { <option value=a1 selected=move || value.with(|v| v.account.as_deref() == Some(a2.as_str()))>{a}</option> }
                         }).collect_view()}
                     </select>

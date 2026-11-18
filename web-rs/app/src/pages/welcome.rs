@@ -13,7 +13,7 @@ use storm_web_core::{
 
 use crate::{
     standalone::{rescan, use_standalone, use_status_poll, FolderEditor, CSS},
-    ui::{use_operator, Link},
+    ui::{use_operator, FolderIdentities, Link},
 };
 
 const PAGE_CSS: &str = r#"
@@ -95,33 +95,24 @@ fn Body() -> impl IntoView {
     }
 }
 
-/// "Your in-game names": the names that make "me" on every stats page (`app_settings.operator_names`). The server
-/// fills them once with the most frequent player when the first import is done; the field re-reads them at each phase
-/// change until the user edits it, then saves through `PUT /api/admin/settings` (open in the desktop app).
+/// Manual names are independent of the read-only folder detections, even while a draft is dirty.
 #[component]
 fn Identity() -> impl IntoView {
     let operator = use_operator();
-    let status = use_standalone().status;
     let typed = RwSignal::new(None::<String>);
     let msg = RwSignal::new(None::<String>);
-    let phase = Memo::new(move |_| status.with(|s| s.as_ref().map(|s| s.phase)));
-    Effect::new(move |_| {
-        phase.track();
-        spawn_local(async move {
-            if let Ok(s) = net::fetch_settings().await {
-                operator.set(s.operator_names);
-            }
-        });
-    });
     let value = move || typed.get().unwrap_or_else(|| names_text(&operator.get()));
     let save = move || {
+        let draft = typed.get_untracked();
         let names = parse_names(&value());
         let body = serde_json::json!({ "operator_names": names }).to_string();
         spawn_local(async move {
             let m = match net::write("PUT", "/api/admin/settings", Some(body), None).await {
                 Ok((s, _)) if (200..300).contains(&s) => {
                     operator.set(names);
-                    typed.set(None);
+                    if typed.get_untracked() == draft {
+                        typed.set(None);
+                    }
                     "✓ Saved.".to_string()
                 }
                 Ok((s, _)) => format!("Could not save (HTTP {s})."),
@@ -132,8 +123,9 @@ fn Identity() -> impl IntoView {
     };
     view! {
         <div class="ds-panel" style="margin-top: 14px">
-            <div class="ds-label">"Your in-game names"</div>
-            <p class="sa-none" style="margin: 0 0 10px">"Every stats page is shown from your side. Filled in from your games once they are imported; add your other accounts, separated by commas."</p>
+            <FolderIdentities />
+            <div class="ds-label" style="margin-top: 14px">"Manual in-game names"</div>
+            <p class="sa-none" style="margin: 0 0 10px">"Add names for accounts that cannot be detected, separated by commas. Existing saved names may come from an older version; remove any you don’t use."</p>
             <div class="sa-row">
                 <input class="ds-input" style="min-width: 260px" placeholder="Name, other account"
                     prop:value=value on:input=move |ev| typed.set(Some(event_target_value(&ev))) />

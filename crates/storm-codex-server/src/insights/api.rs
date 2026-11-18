@@ -139,12 +139,21 @@ async fn operator_names(db: &sqlx::PgPool) -> Result<Vec<String>, sqlx::Error> {
     Ok(v)
 }
 
-fn is_op(ops: &[String], name: Option<&str>) -> bool {
-    name.is_some_and(|n| ops.contains(&n.to_lowercase()))
+fn is_op(ops: &[String], toons: &[String], p: &cache::PlayerRow) -> bool {
+    toons.contains(&p.toon)
+        || p.name
+            .as_deref()
+            .is_some_and(|n| ops.contains(&n.to_lowercase()))
 }
 
 /// Top `limit` rows per stat over `corpus`, best first (ties: most recent game first). Zero values never count.
-pub fn top_records(corpus: &Corpus, ops: &[String], q: &RecordsQuery, limit: usize) -> Vec<J> {
+pub fn top_records(
+    corpus: &Corpus,
+    ops: &[String],
+    toons: &[String],
+    q: &RecordsQuery,
+    limit: usize,
+) -> Vec<J> {
     let keep: Vec<(&cache::PlayerRow, &cache::Game)> = corpus
         .rows()
         .filter(|(_, g)| q.mode.is_none_or(|m| g.mode == Some(m)))
@@ -154,7 +163,7 @@ pub fn top_records(corpus: &Corpus, ops: &[String], q: &RecordsQuery, limit: usi
                 .as_deref()
                 .is_none_or(|h| p.hero.as_deref() == Some(h))
         })
-        .filter(|(p, _)| !q.mine || is_op(ops, p.name.as_deref()))
+        .filter(|(p, _)| !q.mine || is_op(ops, toons, p))
         .collect();
     RECORD_STATS
         .iter()
@@ -172,7 +181,7 @@ pub fn top_records(corpus: &Corpus, ops: &[String], q: &RecordsQuery, limit: usi
                     json!({
                         "value": v, "toon": p.toon, "name": p.name, "hero": p.hero, "map": g.map,
                         "mode": g.mode, "played_at": g.played_at, "match_id": g.id,
-                        "mine": is_op(ops, p.name.as_deref()),
+                        "mine": is_op(ops, toons, p),
                     })
                 })
                 .collect();
@@ -186,8 +195,9 @@ pub async fn records(State(s): State<AppState>, Query(q): Query<RecordsQuery>) -
     let limit = q.limit.unwrap_or(5).clamp(1, 20) as usize;
     let corpus = cache::corpus(&s.db).await.map_err(db_err)?;
     let ops = operator_names(&s.db).await.map_err(db_err)?;
+    let toons = crate::standalone::operator_toons(&s);
     Ok(Json(
-        json!({ "stats": top_records(&corpus, &ops, &q, limit) }),
+        json!({ "stats": top_records(&corpus, &ops, &toons, &q, limit) }),
     ))
 }
 
@@ -277,6 +287,7 @@ pub async fn early_leads(State(s): State<AppState>, Query(q): Query<AggQuery>) -
     let (from, to) = (date(&q.from)?, date(&q.to)?);
     let corpus = cache::corpus(&s.db).await.map_err(db_err)?;
     let ops = operator_names(&s.db).await.map_err(db_err)?;
+    let toons = crate::standalone::operator_toons(&s);
     let account = q.account.as_deref().map(str::to_lowercase);
     let restrict = q.mine || account.is_some();
     let games: Vec<LeadGame> = corpus
@@ -290,8 +301,13 @@ pub async fn early_leads(State(s): State<AppState>, Query(q): Query<AggQuery>) -
             let me = g.players.iter().find(|p| {
                 let n = p.name.as_deref().map(str::to_lowercase);
                 match &account {
-                    Some(a) => n.as_deref() == Some(a.as_str()),
-                    None => n.is_some_and(|n| ops.contains(&n)),
+                    Some(a) => {
+                        n.as_deref() == Some(a.as_str())
+                            || (toons.contains(&p.toon)
+                                && q.account.as_deref().and_then(|a| a.strip_prefix("toon:"))
+                                    == Some(p.toon.as_str()))
+                    }
+                    None => is_op(&ops, &toons, p),
                 }
             });
             if restrict && me.is_none() {

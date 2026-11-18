@@ -16,7 +16,7 @@ use storm_web_core::{
 use crate::{
     layout::LiveBus,
     matchui::{ModeTag, SearchSelect},
-    ui::{fetch, map_art, use_operator, Portrait, Tone},
+    ui::{fetch, map_art, use_account_options, use_operator, use_owner_toons, Portrait, Tone},
 };
 
 fn pill(on: bool) -> &'static str {
@@ -31,7 +31,9 @@ const LIMIT: &str = "200";
 
 #[component]
 pub fn Matches() -> impl IntoView {
-    let accounts = use_operator();
+    let manual = use_operator();
+    let toons = use_owner_toons();
+    let accounts = use_account_options();
     let nav = StoredValue::new_local(use_navigate());
     let loc = use_location();
     let bus = expect_context::<LiveBus>();
@@ -80,6 +82,7 @@ pub fn Matches() -> impl IntoView {
     };
     let data = fetch::<Vec<MatchSummary>>(move || {
         bus.matches.track();
+        toons.track();
         let f = filter.get();
         let (a, b) = bounds(&f);
         format!(
@@ -130,8 +133,9 @@ pub fn Matches() -> impl IntoView {
                             return "loading…".into_any();
                         }
                         let l = list();
-                        let names = accounts.get();
-                        let known: Vec<bool> = l.iter().filter_map(|m| own_player(m, &names).and_then(|p| p.win)).collect();
+                        let names = manual.get();
+                        let handles = toons.get();
+                        let known: Vec<bool> = l.iter().filter_map(|m| own_player(m, &names, &handles).and_then(|p| p.win)).collect();
                         let w = known.iter().filter(|x| **x).count();
                         view! {
                             {format!("{} game{}{}", l.len(), if l.len() == 1 { "" } else { "s" }, if l.len() == 200 { " (latest 200)" } else { "" })}
@@ -175,11 +179,11 @@ pub fn Matches() -> impl IntoView {
                             let set = move |k: &'static str, v: String| set_param_url.with_value(|f| f(k, v));
                             move || {
                                 let list = accounts.get();
-                                                                (list.len() > 1).then(|| view! {
+                                (list.len() > 1).then(|| view! {
                                     <select class="ds-input" on:change=move |e| set("account", event_target_value(&e))>
                                         <option value="" selected=move || filter.with(|f| f.account.is_empty())>"All my accounts"</option>
-                                        {list.into_iter().map(|a| {
-                                            let (a1, a2) = (a.clone(), a.clone());
+                                        {list.into_iter().map(|(a1, a)| {
+                                            let a2 = a1.clone();
                                             view! { <option value=a1 selected=move || filter.with(|f| f.account == a2)>{a}</option> }
                                         }).collect_view()}
                                     </select>
@@ -210,9 +214,10 @@ pub fn Matches() -> impl IntoView {
                 {move || (data.get().is_some() && list().is_empty()).then(|| view! { <div class="ds-empty">"No match for this filter."</div> })}
                 <div class="ds-mlist">
                     {move || {
-                        let names = accounts.get();
+                        let names = manual.get();
+                        let handles = toons.get();
                         list().into_iter().map(|m| {
-                            let own = own_player(&m, &names);
+                            let own = own_player(&m, &names, &handles);
                             let (hero, win, award) = (
                                 own.and_then(|p| p.hero.clone()),
                                 own.and_then(|p| p.win),

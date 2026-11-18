@@ -57,7 +57,7 @@ async fn resoudre_tout(
 /// favourite heroes, from the operator's point of view. Each requested `toon_handle` gets an entry,
 /// even at zero: a known player never crossed with the operator has a real zero, which
 /// differs from an unknown player (never in the map, so `history: None` on the caller's side).
-async fn historiques(db: &PgPool, toons: &[String]) -> HashMap<String, J> {
+async fn historiques(db: &PgPool, toons: &[String], owner_toons: &[String]) -> HashMap<String, J> {
     if toons.is_empty() {
         return HashMap::new();
     }
@@ -77,7 +77,7 @@ async fn historiques(db: &PgPool, toons: &[String]) -> HashMap<String, J> {
             -- cross this player in this match, on which side; not: which of my rows.
             SELECT DISTINCT ON (mp.match_id) mp.match_id, mp.team
             FROM match_players mp
-            WHERE lower(mp.name) IN (SELECT name FROM moi)
+            WHERE lower(mp.name) IN (SELECT name FROM moi) OR mp.toon_handle = ANY($2::text[])
             ORDER BY mp.match_id
          ),
          cibles AS (
@@ -122,6 +122,7 @@ async fn historiques(db: &PgPool, toons: &[String]) -> HashMap<String, J> {
          GROUP BY cibles.toon_handle",
     )
     .bind(toons)
+    .bind(owner_toons)
     .fetch_all(db)
     .await
     {
@@ -136,7 +137,12 @@ async fn historiques(db: &PgPool, toons: &[String]) -> HashMap<String, J> {
 
 /// Operator stats on this hero, this map, and the pair. `hero` can be `None` as long as
 /// the operator has not entered it: the map stats then stay computable.
-async fn stats_operateur(db: &PgPool, hero: Option<&str>, map: Option<&str>) -> Option<J> {
+async fn stats_operateur(
+    db: &PgPool,
+    hero: Option<&str>,
+    map: Option<&str>,
+    owner_toons: &[String],
+) -> Option<J> {
     match sqlx::query_scalar(
         "WITH moi AS (
             SELECT lower(jsonb_array_elements_text(value)) AS name
@@ -145,7 +151,7 @@ async fn stats_operateur(db: &PgPool, hero: Option<&str>, map: Option<&str>) -> 
          miennes AS (
             SELECT mp.hero, mp.win, m.map
             FROM match_players mp JOIN matches m ON m.id = mp.match_id
-            WHERE lower(mp.name) IN (SELECT name FROM moi)
+            WHERE lower(mp.name) IN (SELECT name FROM moi) OR mp.toon_handle = ANY($3::text[])
          )
          SELECT jsonb_build_object(
             'hero_games',     (SELECT count(*) FROM miennes WHERE hero = $1),
@@ -157,6 +163,7 @@ async fn stats_operateur(db: &PgPool, hero: Option<&str>, map: Option<&str>) -> 
     )
     .bind(hero)
     .bind(map)
+    .bind(owner_toons)
     .fetch_optional(db)
     .await
     {
@@ -195,7 +202,7 @@ async fn build_du_heros(db: &PgPool, hero: &str) -> Option<J> {
 /// Fills the state with everything the archive knows. Best-effort: a failing query leaves the
 /// field at `None` (with a `warn` trace) rather than failing the ingestion — a half
 /// enriched lobby is better than an empty page.
-pub async fn enrich(db: &PgPool, state: &mut LobbyState) {
+pub async fn enrich(db: &PgPool, state: &mut LobbyState, owner_toons: &[String]) {
     let noms_operateur: Vec<String> = sqlx::query_scalar(
         "SELECT lower(jsonb_array_elements_text(value)) FROM app_settings WHERE key = 'operator_names'",
     )
@@ -218,14 +225,21 @@ pub async fn enrich(db: &PgPool, state: &mut LobbyState) {
         p.toon_handle = toon;
     }
 
-    // The operator: the first player of the lobby whose name is in `operator_names` (the plan
-    // said "the last one"; the first one is kept, without consequence: a legitimate lobby never
-    // contains two accounts of the operator, so `position()` finds at most a single
-    // match anyway).
+    // Prefer the verified handle of a resolved lobby player, then a manual name.
     state.me = state
         .players
         .iter()
-        .position(|p| noms_operateur.iter().any(|n| n == &p.name.to_lowercase()));
+        .position(|p| {
+            p.toon_handle
+                .as_ref()
+                .is_some_and(|t| owner_toons.contains(t))
+        })
+        .or_else(|| {
+            state
+                .players
+                .iter()
+                .position(|p| noms_operateur.iter().any(|n| n == &p.name.to_lowercase()))
+        });
 
     // History: one query for all the resolved toon_handles (not one per player),
     // excluding the operator themself — otherwise the "together" formula counts their own
@@ -238,14 +252,11 @@ pub async fn enrich(db: &PgPool, state: &mut LobbyState) {
         .filter(|(i, _)| Some(*i) != state.me)
         .filter_map(|(_, p)| p.toon_handle.clone())
         .collect();
-    // `operator_names` not configured: `state.me` is always `None` above, so "with/against
-    // me" makes no sense. Does not call `historiques` in that case — a `games_with: 0` returned
-    // for everyone would be a false zero indistinguishable from a real zero, exactly what
-    // the header of this module promises to avoid.
-    let historiques_par_toon = if noms_operateur.is_empty() {
+    // With no configured identity, a games_with: 0 for everyone would be a false zero.
+    let historiques_par_toon = if noms_operateur.is_empty() && owner_toons.is_empty() {
         HashMap::new()
     } else {
-        historiques(db, &toons_connus).await
+        historiques(db, &toons_connus, owner_toons).await
     };
     for (i, p) in state.players.iter_mut().enumerate() {
         p.history = if Some(i) == state.me {
@@ -257,7 +268,8 @@ pub async fn enrich(db: &PgPool, state: &mut LobbyState) {
         };
     }
 
-    state.me_stats = stats_operateur(db, state.hero.as_deref(), state.map.as_deref()).await;
+    state.me_stats =
+        stats_operateur(db, state.hero.as_deref(), state.map.as_deref(), owner_toons).await;
     state.build = match state.hero.as_deref() {
         Some(h) => build_du_heros(db, h).await,
         None => None,

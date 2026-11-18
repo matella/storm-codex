@@ -24,6 +24,32 @@ pub struct Rejected {
     pub reason: String,
 }
 
+/// Read-only identity from the replay projection; unknown folders have neither name nor toon.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct FolderIdentity {
+    pub folder: String,
+    pub toon: Option<String>,
+    pub name: Option<String>,
+    pub aliases: Vec<String>,
+}
+
+/// One choice per verified toon, plus the manual names (which keep name-based matching).
+pub fn account_options(manual: &[String], folders: &[FolderIdentity]) -> Vec<(String, String)> {
+    let mut options: Vec<_> = manual
+        .iter()
+        .map(|name| (name.clone(), name.clone()))
+        .collect();
+    let mut seen = std::collections::HashSet::new();
+    for folder in folders {
+        if let (Some(toon), Some(name)) = (&folder.toon, &folder.name) {
+            if seen.insert(toon) {
+                options.push((format!("toon:{toon}"), format!("{name} ({toon})")));
+            }
+        }
+    }
+    options
+}
+
 /// Body of `GET /api/standalone/status` (camelCase on the wire, see docs/spec/04-serveur.md).
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -646,5 +672,29 @@ mod tests {
         assert_eq!(p("null"), UpdateStatus::default());
         assert_eq!(p(r#""ready""#), UpdateStatus::default());
         assert_eq!(p(r#"{"state":1,"version":2}"#), UpdateStatus::default());
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+
+    #[test]
+    fn account_options_keep_manual_names_and_show_only_latest_labels_for_verified_toons() {
+        let folders: Vec<FolderIdentity> = serde_json::from_value(serde_json::json!([
+            {"folder":"primary","toon":"2-Hero-1-10","name":"New","aliases":["New","Old"]},
+            {"folder":"backup","toon":"2-Hero-1-10","name":"New","aliases":["New","Old"]},
+            {"folder":"flat","toon":null,"name":null,"aliases":[]},
+            {"folder":"alt","toon":"1-Hero-1-99","name":"New","aliases":["New"]}
+        ]))
+        .unwrap();
+        assert_eq!(
+            account_options(&["Manual".into()], &folders),
+            [
+                ("Manual".into(), "Manual".into()),
+                ("toon:2-Hero-1-10".into(), "New (2-Hero-1-10)".into()),
+                ("toon:1-Hero-1-99".into(), "New (1-Hero-1-99)".into()),
+            ]
+        );
     }
 }

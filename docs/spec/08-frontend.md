@@ -99,14 +99,14 @@ Status: the six OBS sources are built and checked in the browser against React o
 DOM identical for ticker, widget with and without MVP, queue with mixed modes / awards / two operator accounts / a streak and
 the music card, now playing default / `?mini` / `?reveal`, draft overlay with a skin, cast overlay; the reveal hold of about 2.6 s
 observed). **Real-OBS check pending for each source (operator).** JetBrains Mono (400/600 in `sources`, 700 in `overlay`, latin subset, `fonts/` next to each bundle) is self-hosted, so no OBS source needs Google Fonts for it; the overlay still loads Cinzel and Oswald from Google Fonts, exactly like the React overlay. The app bundle is below.
-Contract: **OBS bundles stay <= 300 kB gzip; the app bundle stays <= 1 MB brotli** (911 kB on 2026-11-11, 937 kB on 2026-11-13 with the standalone screens, 943 kB on 2026-11-14 with the startup toggle, 977 kB on 2026-11-18 with the local insights pages; the server negotiates brotli; `SIZE_CODEC=br` in the script) (`scripts/check-web-rs-size.sh`, enforced in CI; `overlay` 229 kB and `sources`
+Contract: **OBS bundles stay <= 300 kB gzip; the app bundle stays <= 1 MB brotli** (911 kB on 2026-11-11, 937 kB on 2026-11-13 with the standalone screens, 943 kB on 2026-11-14 with the startup toggle, 977 kB on 2026-11-18 with the local insights pages, 982 kB with standalone folder identity; the server negotiates brotli; `SIZE_CODEC=br` in the script) (`scripts/check-web-rs-size.sh`, enforced in CI; `overlay` 229 kB and `sources`
 191 kB on 2026-11-11). Putting the session and music sources in the overlay bundle gave 314 kB (the view machinery is linked once per
 bundle), hence two bundles: an OBS source only loads the bundle of its family. One bundle per page family: the sanitiser
 (`ammonia`, about 300 kB) must never be linked into an OBS bundle.
 
 ## Standalone (desktop) mode
 
-Contract with the server: `GET /api/standalone/status`, `PUT /api/standalone/folders`, `POST /api/standalone/rescan`
+Contract with the server: `GET /api/standalone/status`, `GET /api/standalone/identity`, `PUT /api/standalone/folders`, `POST /api/standalone/rescan`
 (`04-serveur.md`, "Standalone import"). Types and pure helpers in `web-rs/core/src/standalone.rs` (native tests: `Status`
 deserialisation, `progress_percent`, `phase_message`, `redirects_to_welcome`, `poll_ms`, `human_bytes`, folder list add/remove,
 `error_message`, `parse_update_status`, `BackupAction`, `backup_outcome`, `reloads_after`, `reprocess_message`,
@@ -124,12 +124,15 @@ deserialisation, `progress_percent`, `phase_message`, `redirects_to_welcome`, `p
   shows free vs needed space in human units (`human_bytes`, binary multiples labelled KB/MB/GB) and a "Rescan now" button;
   `error` shows a clear message in the error colour. While the server re-processes the stored replays after an update
   (`reprocessDone < reprocessTotal`), a second line says "Updating your stats for this version: N of M replays. Pages may
-  show older numbers until then." (`reprocess_message`; absent fields from older servers read as 0). A **Your in-game
-  names** field (the standalone replacement of the box onboarding's step 1, which is not shown in the desktop app):
-  comma-separated, prefilled from `GET /api/settings` (re-read at each phase change, so the names the server detects
-  after the first import appear; the typed value wins once edited), saved with `PUT /api/admin/settings`
-  `{operator_names}` (`parse_names`: trimmed, empties and duplicates dropped) and pushed to the shared operator
-  context. "Continue to the app" and "Settings" links.
+  show older numbers until then." (`reprocess_message`; absent fields from older servers read as 0).
+  "Continue to the app" and "Settings" links.
+- **Identity.** Welcome and Admin → This PC show the latest verified name per replay folder in a
+  read-only list, or "Owner not detected". The layout fetches identity after standalone discovery
+  and polls every 3 s across routes, with at most one identity request in flight. Box mode never
+  requests it. Welcome and Admin still edit only comma-separated manual `operator_names` via
+  `PUT /api/admin/settings`; identity updates never replace a draft or a saved manual name. Check old
+  saved entries that may have come from a previous version. The archive, match detail, and session
+  use verified handles through renames; account selectors display the latest name and filter by handle.
 - **Polling** (`use_status_poll`): only while `/welcome` or the "This PC" section is mounted, every 1 s while the phase is
   `seeding`/`importing`, every 10 s otherwise; stops when the page is left (`on_cleanup` flag) and for good on a 404.
 - **Settings "This PC"** (last numbered section of `/admin`, standalone only): **Scanned folders** (`status.folders`, read-only:

@@ -133,7 +133,7 @@ pub async fn ingest(
         }
     }
 
-    crate::lobby::enrich::enrich(&s.db, &mut state).await;
+    crate::lobby::enrich::enrich(&s.db, &mut state, &crate::standalone::operator_toons(&s)).await;
     if let Err(e) = store::save(&s.db, &state).await {
         tracing::error!("lobby save: {e}");
     }
@@ -256,7 +256,7 @@ where
         );
     };
     f(st);
-    crate::lobby::enrich::enrich(&s.db, st).await;
+    crate::lobby::enrich::enrich(&s.db, st, &crate::standalone::operator_toons(&s)).await;
     if let Err(e) = store::save(&s.db, st).await {
         tracing::error!("lobby save: {e}");
     }
