@@ -2186,6 +2186,7 @@ dependencies = [
  "http-body-util",
  "rand 0.8.8",
  "redis",
+ "regex",
  "rust_xlsxwriter",
  "serde",
  "serde_json",

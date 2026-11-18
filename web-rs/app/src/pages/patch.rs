@@ -56,7 +56,7 @@ pub fn Patch() -> impl IntoView {
             view! {
                 <div class="ds-page">
                     <header class="ds-cover" style="margin-top: 18px">
-                        <div class="ds-kicker">{format!("{} · {}", d.patch_type, net::fmt_time(d.live_date.as_deref()))}</div>
+                        <div class="ds-kicker">{format!("{} · {}{}", d.patch_type, net::fmt_time(d.live_date.as_deref()), if d.community_only { " · Community notes" } else { "" })}</div>
                         <h1 class="ds-title" style="cursor: default; font-size: clamp(40px, 6vw, 80px)">{d.patch_name.clone()}</h1>
                         <div class="ds-cover-foot">
                             <Link to="/patches" class="ds-btn">"‹ All patches"</Link>

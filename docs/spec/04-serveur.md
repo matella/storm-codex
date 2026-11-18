@@ -48,6 +48,12 @@ POST /api/upload(-raw)  [personal Bearer token]
   error). Messages go to stderr; `DATABASE_URL` (it holds a password) is never printed. Used by the desktop shell's
   backup import (`09-operations.md`, "Untrusted dump: data only"): first `--to N` on the staging database, then
   without a target once the rows are restored.
+- **`refdata trim` subcommand** (`refdata/load.rs`): `storm-codex-server refdata trim --from <dataset.tar.gz>
+  --out <referential.tar.gz>` checks the release tarball against `<from>.sha256` (sha256sum format), refuses a
+  schema other than v1 or a file that does not match its manifest SHA-256, and writes the standalone bundle: the
+  manifest, `game.json`, `patches.json`, `assets.json`, `locales/enus.json` and the hero/map images the app uses
+  (no talent icons, no other locale). Prints the dataset version, file count, size and SHA-256. Exit codes:
+  **0** written; **2** usage; **1** any refusal or I/O error. Run by the desktop release workflow (`09-operations.md`).
 - **Compression**: `CompressionLayer` (gzip / brotli depending on `Accept-Encoding`) on all
   responses; the default predicate skips small responses, images and streams.
 - **SPA HTTP cache**: `/assets/*` (names fingerprinted by Vite) as
@@ -202,31 +208,75 @@ facts under the report's row lock (`SELECT … FOR UPDATE`) on every mutation. H
   retry on deadlock 40P01/40001, `players` UPSERT OUTSIDE the transaction so as not to serialise
   the backfill).
 
-## Reference data (`dim.rs`) — two mutually exclusive sources
+## Reference data (`refdata/`) — one adapter, the HotsPatchNotes dataset
 
-Background task at startup then every 24 h, **best-effort**; as long as `dim_heroes` is
-empty (source unreachable at startup, e.g. box switched off), retry every **10 min**.
-Failed writes are logged (`warn`):
-- `REFERENTIAL_URL` (**takes priority**): published `referential.tar.gz` snapshot → self-contained
-  bundle without live HotsPatchNotes (`dim::ingest_snapshot`).
-- `HOTSPATCHNOTES_URL`: live API (maintainer setup) → `sync_heroes`, `sync_talents`,
-  `vendor_images` (portraits/maps copied into `IMAGES_DIR`, served on `/images`),
-  `sync_patches`, `backfill_hero_sections`.
-- **Standalone mode** (`STANDALONE=1`, installer bundle): no network. When `REFERENTIAL_FILE` is
-  set, its SHA-256 is compared with `app_settings.reference_snapshot_sha256` (a JSON string) at
-  each start; when `dim_heroes` is empty or the hashes differ (an app update ships a newer
-  snapshot), the on-disk snapshot is ingested, as the first step of the standalone import task
-  (phase `seeding`, see "Standalone import" below) (`dim::ingest_snapshot_file`, same upsert
-  ingest path as `ingest_snapshot`, one scratch dir per call), and the hash is saved only after
-  a successful ingest (an unreadable or corrupt file is retried at the next start). Heroes no
-  longer in the snapshot are kept;
-  the 24 h refresh loop is not started. `Config::validate()` (run right after `from_env()`)
-  rejects a non-loopback `BIND_ADDR` in this mode ("standalone mode requires a loopback BIND_ADDR"):
-  the IP must be exactly `127.0.0.1` or `::1`, the addresses the Host guard accepts (another
-  127/8 address would make every in-process upload a 403).
+Spec `docs/specs/2026-11-15-reference-dataset-adapter-design.md`. HotsPatchNotes publishes a
+**versioned dataset** (schema v1) as GitHub releases (`data-<sha256 of dataset.tar.gz>`); its old
+HTTP API is gone. `refdata::build` (pure, no I/O) turns the dataset's `manifest.json`, `game.json`,
+`locales/enus.json`, `patches.json` and `assets.json` into the rows of `dim_heroes`, `dim_talents`,
+`dim_patches` (+ `aliases`) and `patch_hero_sections`, plus the images to copy. `refdata::load::store`
+writes them in **one transaction** (full refresh; a dataset row that disappears is removed) and
+records `app_settings.refdata_dataset_version`.
 
-Each **new patch** detected → WS event `patch.new` + optional outgoing webhook
-(`PATCH_WEBHOOK_URL`, Discord-compatible format).
+- **Join keys.** Hero: the parser name (`dim_heroes.id` = `name`), via the dataset `attributeId`
+  → `storm_stats::constants::hero_attribute()`; fallback the English name, then the dataset key.
+  Talent: `tree_id` = the dataset `talentId` (= the parser's `TierNChoice`); name/description from
+  `enus.talents[linkId]`, tier from the `LevelN` key, `type` = `abilityType`.
+- **Front values kept.** Universe: `Starcraft` → `StarCraft`, `Classic` → `Nexus`. Patch type
+  labels of the old API: `live` → `Patch Notes`, `balance` → `Balance Update`, `hotfix` →
+  `Hotfix Patch`, `ptr` → `PTR`. Hero icon `/images/heroes/<slug>.png`, slug = English name,
+  accents folded, lowercase alphanumeric (the old file names). Map art
+  `/images/battlegrounds/<slug>.png` from `structure.loadingScreenImage` (the release's
+  `Battleground.slug`, the same rule as the front's `map_slug`; see Images below).
+- **Images (D3).** The square `heroSelect` icon when the dataset bundles it, else the loading
+  portrait. A file already in `IMAGES_DIR` is never overwritten, so the square icons vendored by
+  the old API stay on the box; new heroes and fresh installs get the portrait. Destinations are
+  built from dataset names, so each path segment must be a plain file name (ASCII alphanumerics,
+  `-`, `_`, `.`, `(`, `)`; not `.`/`..`), otherwise the image is skipped with a warning
+  (`refdata::safe_image_dest`). A map image is named from the release's `Battleground.slug`
+  (lowercase, apostrophes dropped, whitespace → `-`, only `[a-z0-9-_.()]` kept: "Checkpoint:
+  Hanamura" → `checkpoint-hanamura`); a release without `slug` gets the same rule from
+  `refdata::map_slug`, and the front's `map_slug` (`web-rs/core`) applies it too.
+- **Patch detail.** Rebuilt in the old API shape and stored in `dim_patches.data.detail`:
+  `sectionType` = `Hero` (section `heroId`), `Battleground` (`battlegroundId`) or `General`;
+  `anchor` = section `id`; `tableOfContents` from `heading`/`level`; `content` = the article HTML
+  with each section `id` set on its heading (matched by position from the end; rebuilt from the
+  sections when they do not line up). `classification` / `shortSummary` (gone from the dataset)
+  come from `refdata::classify`, a port of the old `PatchClassifier.cs`, run on each section's
+  `text`. Counts: `heroCount`/`mapCount` = distinct heroes/maps of the sections;
+  `officialLink` = first `official` source (else `officialMirror`/`officialArchive`);
+  `hasContent` = `availability == "available"`; `communityOnly` = only `community` sources;
+  `metadataOnly` patches keep the dataset `reason` in the detail.
+- **Hero sections.** One `patch_hero_sections` row per section with a `heroId` of available
+  English content, `hero_name` = the parser name, `channel` = `live`/`ptr`.
+
+**Box** (`REFDATA_URL`, default
+`https://github.com/matella/HeroesOfTheStormPatchNotes/releases/latest/download/`; empty =
+no refresh). Background task at startup then every 24 h, **best-effort**; while `dim_heroes` is
+empty, retry every **10 min**. Each round (`refdata::load::refresh`):
+1. download `manifest.json`; refuse a `schemaVersion` other than 1 (logged, previous data kept);
+2. stop when `datasetVersion` equals `app_settings.refdata_dataset_version` (the round downloaded
+   only the manifest);
+3. else download `game.json`, `enus.json`, `patches.json`, `assets.json`, check each against the
+   manifest SHA-256 (any mismatch refuses the round before a write), build and store;
+4. when some image is missing from `IMAGES_DIR`, download `dataset.tar.gz`, check it against
+   `dataset.tar.gz.sha256`, and copy the missing images (each checked against `assets.json`).
+
+**Standalone mode** (`STANDALONE=1`, installer bundle): no network. When `REFERENTIAL_FILE` is
+set (the trimmed bundle built by `storm-codex-server refdata trim`, see `09-operations.md`), its
+SHA-256 is compared with `app_settings.reference_snapshot_sha256` (a JSON string) at each start;
+when `dim_heroes` is empty or the hashes differ (an app update ships a newer bundle), the bundle is
+ingested as the first step of the standalone import task (phase `seeding`, see "Standalone import"
+below) by `refdata::load::ingest_bundle` — same manifest/schema/SHA-256 checks and the same writer
+as the box — and the hash is saved only after a successful ingest (an unreadable, corrupt or
+tampered file is retried at the next start). The 24 h refresh loop is not started.
+`Config::validate()` (run right after `from_env()`) rejects a non-loopback `BIND_ADDR` in this mode
+("standalone mode requires a loopback BIND_ADDR"): the IP must be exactly `127.0.0.1` or `::1`, the
+addresses the Host guard accepts (another 127/8 address would make every in-process upload a 403).
+
+Each **new patch** detected (a dataset id not in `dim_patches`; none on the first seed, when the
+table is empty) → WS event `patch.new` + optional outgoing webhook (`PATCH_WEBHOOK_URL`,
+Discord-compatible format); `internalId` is the dataset id.
 
 ## Draft simulator (`draft/`)
 
@@ -296,9 +346,9 @@ Design: `docs/specs/2026-10-24-feed-live-en-partie-design.md`.
 | `WEB_DIR` | empty = API only | built front-end (`web-rs/dist`: `overlay/`, `sources/`, `app/`, one Trunk output each) served by the binary. Every page answers at `/`, after the API routes: `/cast/overlay` and `/draft/overlay` get `overlay/index.html`; `/ticker`, `/now-playing`, `/widget` and `/queue` get `sources/index.html`; everything else `app/index.html` (`no-cache`, read at each request). The bundles' files are under `/v2/<bundle>/` (fingerprinted, cached for a year; a missing file-like path answers 404, never an HTML page); `/v2/...` pages still work. The Docker image sets `/app/web` |
 | `IMAGES_DIR` | `./.images` | vendored images, served on `/images` |
 | `REDIS_URL` / `JARVIS_CHANNEL` | empty = no emission / `jarvis:events` (box production: `storm-codex:match_completed`) | Jarvis events |
-| `HOTSPATCHNOTES_URL` / `REFERENTIAL_URL` | empty | reference data (see above) |
+| `REFDATA_URL` | the producer's `releases/latest/download/`; empty = off | reference dataset release (box; see above) |
 | `STANDALONE` | empty = off | `1` = standalone (installer) mode: loopback-only `BIND_ADDR` (checked at startup), no reference-data network refresh |
-| `REFERENTIAL_FILE` | empty | bundled `referential.tar.gz` that seeds an empty `dim_heroes` in standalone mode |
+| `REFERENTIAL_FILE` | empty | bundled trimmed `referential.tar.gz` (`refdata trim`) that seeds the reference data in standalone mode |
 | `LEDGER_FILE` | `<ARCHIVE_DIR>/../uploaded.json` | standalone only: upload ledger of the in-process watcher (the desktop shell passes `<data>/uploaded.json`) |
 | `ORPHEUS_URL` | empty | music proxy for `/api/now-playing` |
 | `PATCH_WEBHOOK_URL` | empty | outgoing new-patch notification |

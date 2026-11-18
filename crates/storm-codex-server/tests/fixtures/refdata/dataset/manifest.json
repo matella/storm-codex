@@ -1,0 +1,37 @@
+{
+ "counts": {
+  "battlegrounds": 3,
+  "heroes": 9,
+  "metadataOnlyPatches": 1
+ },
+ "datasetVersion": "bf6c543f34733ad61811f6b4dc635908892e2949b9284f683e577cd3d4c9c0c9",
+ "files": {
+  "assets.json": "59bb4d63d0c3f79e32733d63eacb2dcaf32e85f170dd6e416c67d4a9a1e0a537",
+  "game.json": "da2ba60b8fc92408c3c1cbb34d95ccd9386f0c419d5885cdd0b4693416debf11",
+  "images/abilitytalents/hud_btn_bg_ability_cancel.png": "5a00e00bdb3cd84d96296c04edf560b22e208bd6bf9431a0270a6527f54af713",
+  "images/abilitytalents/storm_ui_ingame_heroselect_btn_lostvikings.png": "4ccf9ab9899bae8b457e8490e5dc09dacb21fa1e2a0c3ca832cb8ae83a70a443",
+  "images/heroportraits/storm_ui_ingame_hero_loadingscreen_abathur.png": "004b3e702d44e2fda7694a85c7820a6e6a98638287ae4c249880b3280a2ed181",
+  "images/heroportraits/storm_ui_ingame_hero_loadingscreen_d2amazonf.png": "2492ba3eea5d6f20c2c7be724f2ad1ebc94068e001469de866dfcd55ea497a28",
+  "images/heroportraits/storm_ui_ingame_hero_loadingscreen_falstad.png": "38c166eb88bc06260a9139f41246c89fc245bd3f5d241f7aa4f481b57db815e1",
+  "images/heroportraits/storm_ui_ingame_hero_loadingscreen_guldan.png": "f5af4e7a4074bb955d0530e90b76eb4317cffbcbce7dbb352c940adfff343e3d",
+  "images/heroportraits/storm_ui_ingame_hero_loadingscreen_kerrigan.png": "61ca37a4da4dfd5f7a8143e0a7d35e439d7638102dea7d6e79bd2ef608092b28",
+  "images/heroportraits/storm_ui_ingame_hero_loadingscreen_lostvikings.png": "98d8ee2c1b0dc66cbf2d8f15c2d9bac80901234c6c561aee3f1a7b7ed98519be",
+  "images/heroportraits/storm_ui_ingame_hero_loadingscreen_lucio.png": "4b1fbd918416177813ba57410f28bdaaffc203409dfa584b24c7423e5d353f81",
+  "images/heroportraits/storm_ui_ingame_hero_loadingscreen_sylvanas.png": "4d29e6febd1385a69a242dfa5309d8e15b22920219f4c8831eadd8ba0ae610cc",
+  "images/heroportraits/storm_ui_ingame_hero_loadingscreen_thrall.png": "244abe77e22a09b2959eb26def608efa62e21eb26bdb5f66fd69c43348aa5cba",
+  "images/loadingscreens/storm_ui_homescreenbackground_wcav.png": "e326576c40582d8edf7e9c2a4522f91f7fe51c5b5f6425a2eddb0a6632886df0",
+  "images/loadingscreens/ui_ingame_mapmechanic_loadscreen_gardenofterror.png": "84a600c86165aa56413eeeb770a3ecea053e13e1c40b8ecbeb7ca0246c1cf981",
+  "images/loadingscreens/ui_ingame_simple_loadscreen_battlefieldofeternity.png": "8ed379a25928b63b4622f30cacaeeef4beb75c3d6c45422ef5dd57a74d37402d",
+  "locales/enus.json": "49eccedb51d5fa7d7e3bc32f07310fabdfe0f0168061610c1e666a844e01a4e8",
+  "patches.json": "be5d48c8af9038ef64bc7d04a44e80ebc18b782eaa2f0b9b102f10a0f852ee0a"
+ },
+ "gameVersion": "2.57.0.98348",
+ "locales": [
+  "enus"
+ ],
+ "missingTranslations": {
+  "enus": 0
+ },
+ "schemaVersion": 1,
+ "sources": {}
+}

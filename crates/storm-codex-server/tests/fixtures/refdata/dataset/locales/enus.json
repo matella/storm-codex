@@ -1,0 +1,3381 @@
+{
+ "battlegrounds": {
+  "alterac_pass": {
+   "name": {
+    "html": "Alterac Pass",
+    "text": "Alterac Pass"
+   }
+  },
+  "garden_of_terror": {
+   "name": {
+    "html": "Garden of Terror",
+    "text": "Garden of Terror"
+   }
+  },
+  "silver_city": {
+   "name": {
+    "html": "Silver City",
+    "text": "Silver City"
+   }
+  }
+ },
+ "heroes": {
+  "Abathur": {
+   "description": {
+    "html": "A unique Hero that can manipulate the battle from anywhere on the map.",
+    "text": "A unique Hero that can manipulate the battle from anywhere on the map."
+   },
+   "difficulty": {
+    "html": "Very Hard",
+    "text": "Very Hard"
+   },
+   "expandedRole": {
+    "html": "Support",
+    "text": "Support"
+   },
+   "infoText": {
+    "html": "Abathur, the Evolution Master of Kerrigan's Swarm, works ceaselessly to improve the zerg from the genetic level up. His hate for chaos and imperfection almost rivals his hatred of pronouns.",
+    "text": "Abathur, the Evolution Master of Kerrigan's Swarm, works ceaselessly to improve the zerg from the genetic level up. His hate for chaos and imperfection almost rivals his hatred of pronouns."
+   },
+   "lifeType": {
+    "html": "Health",
+    "text": "Health"
+   },
+   "name": {
+    "html": "Abathur",
+    "text": "Abathur"
+   },
+   "roles": [
+    {
+     "html": "Specialist",
+     "text": "Specialist"
+    }
+   ],
+   "searchText": {
+    "html": "Abathur Zerg Swarm HotS Heart of the Swarm StarCraft II 2 SC2 Star2 Starcraft2 SC slug Double Soak",
+    "text": "Abathur Zerg Swarm HotS Heart of the Swarm StarCraft II 2 SC2 Star2 Starcraft2 SC slug Double Soak"
+   },
+   "title": {
+    "html": "Evolution Master",
+    "text": "Evolution Master"
+   }
+  },
+  "Amazon": {
+   "description": {
+    "html": "An Assassin who specializes against Physical Attackers.",
+    "text": "An Assassin who specializes against Physical Attackers."
+   },
+   "difficulty": {
+    "html": "Medium",
+    "text": "Medium"
+   },
+   "energyType": {
+    "html": "Mana",
+    "text": "Mana"
+   },
+   "expandedRole": {
+    "html": "Ranged Assassin",
+    "text": "Ranged Assassin"
+   },
+   "infoText": {
+    "html": "After shattering the Worldstone, the young Amazon Cassia had changed. She had seen hatred, terror, and destruction firsthand. If the Askari were to survive the coming darkness, they needed an army. She would begin their training immediately.",
+    "text": "After shattering the Worldstone, the young Amazon Cassia had changed. She had seen hatred, terror, and destruction firsthand. If the Askari were to survive the coming darkness, they needed an army. She would begin their training immediately."
+   },
+   "lifeType": {
+    "html": "Health",
+    "text": "Health"
+   },
+   "name": {
+    "html": "Cassia",
+    "text": "Cassia"
+   },
+   "roles": [
+    {
+     "html": "Assassin",
+     "text": "Assassin"
+    }
+   ],
+   "searchText": {
+    "html": "Casia Amazon Javazon D2 Diablo 2 II Diablo2 Human Stun Blind Burst Marksman",
+    "text": "Casia Amazon Javazon D2 Diablo 2 II Diablo2 Human Stun Blind Burst Marksman"
+   },
+   "title": {
+    "html": "Amazon Warmatron",
+    "text": "Amazon Warmatron"
+   }
+  },
+  "Falstad": {
+   "description": {
+    "html": "An Assassin that can fly large distances, excelling on large battlegrounds.",
+    "text": "An Assassin that can fly large distances, excelling on large battlegrounds."
+   },
+   "difficulty": {
+    "html": "Medium",
+    "text": "Medium"
+   },
+   "energyType": {
+    "html": "Mana",
+    "text": "Mana"
+   },
+   "expandedRole": {
+    "html": "Ranged Assassin",
+    "text": "Ranged Assassin"
+   },
+   "infoText": {
+    "html": "Falstad is the High Thane of the Wildhammer Clan and a founding member of the Council of Three Hammers that presides over Ironforge. Despite speculation, Falstad has never been dead and anyone who claims such is a liar.",
+    "text": "Falstad is the High Thane of the Wildhammer Clan and a founding member of the Council of Three Hammers that presides over Ironforge. Despite speculation, Falstad has never been dead and anyone who claims such is a liar."
+   },
+   "lifeType": {
+    "html": "Health",
+    "text": "Health"
+   },
+   "name": {
+    "html": "Falstad",
+    "text": "Falstad"
+   },
+   "roles": [
+    {
+     "html": "Assassin",
+     "text": "Assassin"
+    }
+   ],
+   "searchText": {
+    "html": "Falstad Gryphonrider Wildhammer Dwarf Alliance WoW World of Warcraft Cataclysm BFA Battle for Azeroth Slow Displace Global Mobile Mobility Escape",
+    "text": "Falstad Gryphonrider Wildhammer Dwarf Alliance WoW World of Warcraft Cataclysm BFA Battle for Azeroth Slow Displace Global Mobile Mobility Escape"
+   },
+   "title": {
+    "html": "Wildhammer Thane",
+    "text": "Wildhammer Thane"
+   }
+  },
+  "Guldan": {
+   "description": {
+    "html": "A sustained damage Mage who uses his health as fuel but can steal life from his enemies.",
+    "text": "A sustained damage Mage who uses his health as fuel but can steal life from his enemies."
+   },
+   "difficulty": {
+    "html": "Medium",
+    "text": "Medium"
+   },
+   "energyType": {
+    "html": "Mana",
+    "text": "Mana"
+   },
+   "expandedRole": {
+    "html": "Ranged Assassin",
+    "text": "Ranged Assassin"
+   },
+   "infoText": {
+    "html": "Abandoning the ways of shamanism, Gul'dan entered a pact with the demon lord Kil'jaeden and betrayed his people in exchange for limitless power. With the orcish Horde under his master's thrall, both Draenor and Azeroth nearly fell into his grasp.",
+    "text": "Abandoning the ways of shamanism, Gul'dan entered a pact with the demon lord Kil'jaeden and betrayed his people in exchange for limitless power. With the orcish Horde under his master's thrall, both Draenor and Azeroth nearly fell into his grasp."
+   },
+   "lifeType": {
+    "html": "Health",
+    "text": "Health"
+   },
+   "name": {
+    "html": "Gul'dan",
+    "text": "Gul'dan"
+   },
+   "roles": [
+    {
+     "html": "Assassin",
+     "text": "Assassin"
+    }
+   ],
+   "searchText": {
+    "html": "Guldan Orc Mage Warlock War1 1 I War2 War3 WC1 WC2 WC3 Warcraft1 Warcraft2 Warcraft3 Warcraft 2 Tides of Darkness ToD II 2 III 3 Reign of Chaos RoC WoW World of Warcraft Burning Crusade BC Warlords of Draenor WoD Legion Horde Hearthstone HS Displace Sustain Clear Artillery",
+    "text": "Guldan Orc Mage Warlock War1 1 I War2 War3 WC1 WC2 WC3 Warcraft1 Warcraft2 Warcraft3 Warcraft 2 Tides of Darkness ToD II 2 III 3 Reign of Chaos RoC WoW World of Warcraft Burning Crusade BC Warlords of Draenor WoD Legion Horde Hearthstone HS Displace Sustain Clear Artillery"
+   },
+   "title": {
+    "html": "Darkness Incarnate",
+    "text": "Darkness Incarnate"
+   }
+  },
+  "Kerrigan": {
+   "description": {
+    "html": "A combo Assassin who goes all in, diving into the enemy team.",
+    "text": "A combo Assassin who goes all in, diving into the enemy team."
+   },
+   "difficulty": {
+    "html": "Very Hard",
+    "text": "Very Hard"
+   },
+   "energyType": {
+    "html": "Mana",
+    "text": "Mana"
+   },
+   "expandedRole": {
+    "html": "Melee Assassin",
+    "text": "Melee Assassin"
+   },
+   "infoText": {
+    "html": "Once a terran ghost with formidable psionic abilities, Sarah Kerrigan was betrayed by her allies and transformed into the Queen of Blades. Now freed of the dark one's corruption, Kerrigan faces a threat that could destroy the galaxy itself.",
+    "text": "Once a terran ghost with formidable psionic abilities, Sarah Kerrigan was betrayed by her allies and transformed into the Queen of Blades. Now freed of the dark one's corruption, Kerrigan faces a threat that could destroy the galaxy itself."
+   },
+   "lifeType": {
+    "html": "Health",
+    "text": "Health"
+   },
+   "name": {
+    "html": "Kerrigan",
+    "text": "Kerrigan"
+   },
+   "roles": [
+    {
+     "html": "Assassin",
+     "text": "Assassin"
+    }
+   ],
+   "searchText": {
+    "html": "Kerrigan Karrigan Kerigan Sarah Swarm Queen Blades Zerg HotS Heart of the Swarm StarCraft II 2 SC2 Brood War BW LotV Legacy Void Wings Liberty WoL SC 1 SC1 Star2 Starcraft2 Stun Initiation Displace Ganker Shields Dive Escape Burst Roam Infested",
+    "text": "Kerrigan Karrigan Kerigan Sarah Swarm Queen Blades Zerg HotS Heart of the Swarm StarCraft II 2 SC2 Brood War BW LotV Legacy Void Wings Liberty WoL SC 1 SC1 Star2 Starcraft2 Stun Initiation Displace Ganker Shields Dive Escape Burst Roam Infested"
+   },
+   "title": {
+    "html": "Queen of Blades",
+    "text": "Queen of Blades"
+   }
+  },
+  "LostVikings": {
+   "description": {
+    "html": "Three Heroes in one! Can gather experience from multiple locations.",
+    "text": "Three Heroes in one! Can gather experience from multiple locations."
+   },
+   "difficulty": {
+    "html": "Very Hard",
+    "text": "Very Hard"
+   },
+   "expandedRole": {
+    "html": "Support",
+    "text": "Support"
+   },
+   "infoText": {
+    "html": "The Lost Vikings are back! While they briefly considered retirement after defeating the emperor Tomator, there were only so many polar bears they could wrestle before falling into a Nexus portal seemed like a solid life decision. ",
+    "text": "The Lost Vikings are back! While they briefly considered retirement after defeating the emperor Tomator, there were only so many polar bears they could wrestle before falling into a Nexus portal seemed like a solid life decision."
+   },
+   "lifeType": {
+    "html": "Health",
+    "text": "Health"
+   },
+   "name": {
+    "html": "The Lost Vikings",
+    "text": "The Lost Vikings"
+   },
+   "roles": [
+    {
+     "html": "Specialist",
+     "text": "Specialist"
+    }
+   ],
+   "searchText": {
+    "html": "The Lost Vikings TLV LV TheLostVikings Olaf Eric Baleog 2 LV2 Classic Slow Camps Double Soak",
+    "text": "The Lost Vikings TLV LV TheLostVikings Olaf Eric Baleog 2 LV2 Classic Slow Camps Double Soak"
+   },
+   "sortName": {
+    "html": "Lost Vikings",
+    "text": "Lost Vikings"
+   },
+   "title": {
+    "html": "Triple Trouble",
+    "text": "Triple Trouble"
+   }
+  },
+  "Lucio": {
+   "description": {
+    "html": "A sustained Healer who gives his team mobility and peels enemies off allies.",
+    "text": "A sustained Healer who gives his team mobility and peels enemies off allies."
+   },
+   "difficulty": {
+    "html": "Medium",
+    "text": "Medium"
+   },
+   "energyType": {
+    "html": "Mana",
+    "text": "Mana"
+   },
+   "expandedRole": {
+    "html": "Healer",
+    "text": "Healer"
+   },
+   "infoText": {
+    "html": "From the streets of Rio to the clubs on King's Row, Lúcio's beats bring the party to life, and drive the people to action. Now he's on tour in the Nexus, ready to break it down, and to continue fighting for what's right.",
+    "text": "From the streets of Rio to the clubs on King's Row, Lúcio's beats bring the party to life, and drive the people to action. Now he's on tour in the Nexus, ready to break it down, and to continue fighting for what's right."
+   },
+   "lifeType": {
+    "html": "Health",
+    "text": "Health"
+   },
+   "name": {
+    "html": "Lúcio",
+    "text": "Lúcio"
+   },
+   "roles": [
+    {
+     "html": "Support",
+     "text": "Support"
+    }
+   ],
+   "searchText": {
+    "html": "Lucio Human Overwatch OW Displace Mobile Mobility Sustain Shields Healer",
+    "text": "Lucio Human Overwatch OW Displace Mobile Mobility Sustain Shields Healer"
+   },
+   "title": {
+    "html": "Freedom Fighting DJ",
+    "text": "Freedom Fighting DJ"
+   }
+  },
+  "Sylvanas": {
+   "description": {
+    "html": "An Assassin who can possess enemy minions",
+    "text": "An Assassin who can possess enemy minions"
+   },
+   "difficulty": {
+    "html": "Hard",
+    "text": "Hard"
+   },
+   "energyType": {
+    "html": "Mana",
+    "text": "Mana"
+   },
+   "expandedRole": {
+    "html": "Ranged Assassin",
+    "text": "Ranged Assassin"
+   },
+   "infoText": {
+    "html": "Sylvanas Windrunner was not always the Dark Lady of the Forsaken. In another life, she was the Ranger-General of Silvermoon. But that was before the Death Knight Arthas slew her and her people and raised her as the first Banshee.",
+    "text": "Sylvanas Windrunner was not always the Dark Lady of the Forsaken. In another life, she was the Ranger-General of Silvermoon. But that was before the Death Knight Arthas slew her and her people and raised her as the first Banshee."
+   },
+   "lifeType": {
+    "html": "Health",
+    "text": "Health"
+   },
+   "name": {
+    "html": "Sylvanas",
+    "text": "Sylvanas"
+   },
+   "roles": [
+    {
+     "html": "Specialist",
+     "text": "Specialist"
+    }
+   ],
+   "searchText": {
+    "html": "Sylvanas Windrunner Queen Forsaken Undead Elf Horde WoW World of Warcraft War3 WC3 Warcraft3 3 III Reign of Chaos RoC Frozen Throne FT Cataclysm Warlords Draenor WoD Legion warchief BFA Battle for Azeroth Push Siege Silence Displace Dive Escape Marksman",
+    "text": "Sylvanas Windrunner Queen Forsaken Undead Elf Horde WoW World of Warcraft War3 WC3 Warcraft3 3 III Reign of Chaos RoC Frozen Throne FT Cataclysm Warlords Draenor WoD Legion warchief BFA Battle for Azeroth Push Siege Silence Displace Dive Escape Marksman"
+   },
+   "title": {
+    "html": "The Banshee Queen",
+    "text": "The Banshee Queen"
+   }
+  },
+  "Thrall": {
+   "description": {
+    "html": "A Bruiser who can hold his own in a lane of battle.",
+    "text": "A Bruiser who can hold his own in a lane of battle."
+   },
+   "difficulty": {
+    "html": "Medium",
+    "text": "Medium"
+   },
+   "energyType": {
+    "html": "Mana",
+    "text": "Mana"
+   },
+   "expandedRole": {
+    "html": "Bruiser",
+    "text": "Bruiser"
+   },
+   "infoText": {
+    "html": "As a child, Thrall served the cruel Aedelas Blackmoore as a slave. After gaining his freedom, he guided the liberated orcs to a land of their own and worked to recover their ancient traditions. Now and forever he is the Warchief of the Horde.",
+    "text": "As a child, Thrall served the cruel Aedelas Blackmoore as a slave. After gaining his freedom, he guided the liberated orcs to a land of their own and worked to recover their ancient traditions. Now and forever he is the Warchief of the Horde."
+   },
+   "lifeType": {
+    "html": "Health",
+    "text": "Health"
+   },
+   "name": {
+    "html": "Thrall",
+    "text": "Thrall"
+   },
+   "roles": [
+    {
+     "html": "Assassin",
+     "text": "Assassin"
+    }
+   ],
+   "searchText": {
+    "html": "Thrall Trall Go'el Goel Warchief Shaman Orc Horde WoW World of Warcraft War3 WC3 Warcraft3 III 3 Reign of Chaos RoC Frozen Throne FT Burning Crusade BC Wrath Lich King WotLK Cataclysm Mists of Pandaria MoP Legion Hearthstone HS Earth Stun Slow Displace Root CC Sustain Offlaner",
+    "text": "Thrall Trall Go'el Goel Warchief Shaman Orc Horde WoW World of Warcraft War3 WC3 Warcraft3 III 3 Reign of Chaos RoC Frozen Throne FT Burning Crusade BC Wrath Lich King WotLK Cataclysm Mists of Pandaria MoP Legion Hearthstone HS Earth Stun Slow Displace Root CC Sustain Offlaner"
+   },
+   "title": {
+    "html": "Warchief of the Horde",
+    "text": "Warchief of the Horde"
+   }
+  }
+ },
+ "locale": "enus",
+ "missing": [],
+ "talents": {
+  "AbathurCombatStyleBombardStrain|AbathurLocustStrainBombardStrainTalent|Trait|Level13": {
+   "fullText": {
+    "html": "Locust's Basic Attacks become a long-range siege attack and they now lose health 40% more slowly.",
+    "text": "Locust's Basic Attacks become a long-range siege attack and they now lose health 40% more slowly."
+   },
+   "name": {
+    "html": "Bombard Strain",
+    "text": "Bombard Strain"
+   },
+   "shortText": {
+    "html": "Locusts gain a ranged attack, increased duration",
+    "text": "Locusts gain a ranged attack, increased duration"
+   }
+  },
+  "AbathurCombatStyleLocustBrood|AbathurLocustSwarm|Active|Level1": {
+   "cooldownText": {
+    "html": "Cooldown: 75 seconds",
+    "text": "Cooldown: 75 seconds"
+   },
+   "fullText": {
+    "html": "Activate to spawn 3 Locusts at a nearby location.",
+    "text": "Activate to spawn 3 Locusts at a nearby location."
+   },
+   "name": {
+    "html": "Locust Brood",
+    "text": "Locust Brood"
+   },
+   "shortText": {
+    "html": "Spawn a group of Locusts",
+    "text": "Spawn a group of Locusts"
+   }
+  },
+  "AbathurCombatStyleSurvivalInstincts|AbathurLocustStrainSurvivalInstinctsTalent|Trait|Level16": {
+   "fullText": {
+    "html": "Reduce damage taken by Locusts from non-Heroes by 50% and increase their damage by 60%.",
+    "text": "Reduce damage taken by Locusts from non-Heroes by 50% and increase their damage by 60%."
+   },
+   "name": {
+    "html": "Survival Instincts",
+    "text": "Survival Instincts"
+   },
+   "shortText": {
+    "html": "Increases Locust Health and damage",
+    "text": "Increases Locust Health and damage"
+   }
+  },
+  "AbathurHeroicAbilityEvolveMonstrosity|AbathurEvolveMonstrosityHotbar|Heroic|Level10": {
+   "cooldownText": {
+    "html": "Cooldown: 90 seconds",
+    "text": "Cooldown: 90 seconds"
+   },
+   "fullText": {
+    "html": "Turn an allied Minion or Locust into a Monstrosity. When enemy Minions near the Monstrosity die, it gains 2% Health and 2% Basic Attack damage, stacking up to 40 times. The Monstrosity can be healed by Carapace and has the ability to Burrow to a visible location every 80 seconds.<br><br>Using Symbiote on the Monstrosity allows Abathur to control it, in addition to Symbiote's normal benefits. This Ability can be reactivated to automatically cast Symbiote on his Monstrosity.",
+    "text": "Turn an allied Minion or Locust into a Monstrosity. When enemy Minions near the Monstrosity die, it gains 2% Health and 2% Basic Attack damage, stacking up to 40 times. The Monstrosity can be healed by Carapace and has the ability to Burrow to a visible location every 80 seconds. Using Symbiote on the Monstrosity allows Abathur to control it, in addition to Symbiote's normal benefits. This Ability can be reactivated to automatically cast Symbiote on his Monstrosity."
+   },
+   "name": {
+    "html": "Evolve Monstrosity",
+    "text": "Evolve Monstrosity"
+   },
+   "shortText": {
+    "html": "Minion or Locust becomes a powerful Monstrosity",
+    "text": "Minion or Locust becomes a powerful Monstrosity"
+   }
+  },
+  "AbathurHeroicAbilityUltimateEvolution|AbathurUltimateEvolution|Heroic|Level10": {
+   "cooldownText": {
+    "html": "Cooldown: 70 seconds",
+    "text": "Cooldown: 70 seconds"
+   },
+   "fullText": {
+    "html": "Clone target allied Hero and control it for 20 seconds. Abathur has perfected the clone, granting it 20% Spell Power, 20% bonus Attack Damage, and 10% bonus Movement Speed. Cannot use their Heroic Ability.",
+    "text": "Clone target allied Hero and control it for 20 seconds. Abathur has perfected the clone, granting it 20% Spell Power, 20% bonus Attack Damage, and 10% bonus Movement Speed. Cannot use their Heroic Ability."
+   },
+   "name": {
+    "html": "Ultimate Evolution",
+    "text": "Ultimate Evolution"
+   },
+   "shortText": {
+    "html": "Clone target allied Hero and control it",
+    "text": "Clone target allied Hero and control it"
+   }
+  },
+  "AbathurMasteryAdrenalineBoost|AbathurSymbioteAdrenalineBoostTalent|E|Level16": {
+   "fullText": {
+    "html": "Symbiote's Carapace increases the Movement Speed of the target by 40% for 3.5 seconds.",
+    "text": "Symbiote's Carapace increases the Movement Speed of the target by 40% for 3.5 seconds."
+   },
+   "name": {
+    "html": "Adrenaline Boost",
+    "text": "Adrenaline Boost"
+   },
+   "shortText": {
+    "html": "Carapace increases Move Speed",
+    "text": "Carapace increases Move Speed"
+   }
+  },
+  "AbathurMasteryEnvenomedNestsToxicNest|AbathurToxicNestEnvenomedNestTalent|W|Level1": {
+   "fullText": {
+    "html": "Toxic Nests deal 75% more damage over 3 seconds and reduce the Armor of enemy Heroes hit by 15 for 4 seconds.",
+    "text": "Toxic Nests deal 75% more damage over 3 seconds and reduce the Armor of enemy Heroes hit by 15 for 4 seconds."
+   },
+   "name": {
+    "html": "Envenomed Nest",
+    "text": "Envenomed Nest"
+   },
+   "shortText": {
+    "html": "Toxic Nests deal more damage, reduce Armor",
+    "text": "Toxic Nests deal more damage, reduce Armor"
+   }
+  },
+  "AbathurMasteryEnvenomedSpikes|AbathurSymbioteEnvenomedSpikesTalent|W|Level16": {
+   "fullText": {
+    "html": "Abathur's Symbiote's Spike Burst also Slows enemy Movement Speed by 40% for 2 seconds.",
+    "text": "Abathur's Symbiote's Spike Burst also Slows enemy Movement Speed by 40% for 2 seconds."
+   },
+   "name": {
+    "html": "Envenomed Spikes",
+    "text": "Envenomed Spikes"
+   },
+   "shortText": {
+    "html": "Spike Burst Slows Move Speed",
+    "text": "Spike Burst Slows Move Speed"
+   }
+  },
+  "AbathurMasteryEvolutionComplete|AbathurMonstrosityEvolutionCompleteTalent|Heroic|Level20": {
+   "fullText": {
+    "html": "Increase Monstrosity's Basic Attack damage by 100%.",
+    "text": "Increase Monstrosity's Basic Attack damage by 100%."
+   },
+   "name": {
+    "html": "Evolution Complete",
+    "text": "Evolution Complete"
+   },
+   "shortText": {
+    "html": "Monstrosity gains Attack Damage",
+    "text": "Monstrosity gains Attack Damage"
+   }
+  },
+  "AbathurMasteryLocustMaster|AbathurLocustMasterHotbar|Active|Level20": {
+   "cooldownText": {
+    "html": "Cooldown: 45 seconds",
+    "text": "Cooldown: 45 seconds"
+   },
+   "fullText": {
+    "html": "Activate to create a nest that periodically spawns Locusts. Only one Locust Nest can be active at a time.",
+    "text": "Activate to create a nest that periodically spawns Locusts. Only one Locust Nest can be active at a time."
+   },
+   "name": {
+    "html": "Locust Nest",
+    "text": "Locust Nest"
+   },
+   "shortText": {
+    "html": "Create Locust Nests",
+    "text": "Create Locust Nests"
+   }
+  },
+  "AbathurMasteryNeedlespine|AbathurSymbioteNeedlespineTalent|Q|Level4": {
+   "fullText": {
+    "html": "Increases the damage and range of Symbiote's Stab by 20%.",
+    "text": "Increases the damage and range of Symbiote's Stab by 20%."
+   },
+   "name": {
+    "html": "Needlespine",
+    "text": "Needlespine"
+   },
+   "shortText": {
+    "html": "Increases Stab damage and range",
+    "text": "Increases Stab damage and range"
+   }
+  },
+  "AbathurMasteryPressurizedGlands|AbathurSymbiotePressurizedGlandsTalent|W|Level1": {
+   "fullText": {
+    "html": "Increases the range of Symbiote's Spike Burst by 25% and decreases the cooldown by 1 second.",
+    "text": "Increases the range of Symbiote's Spike Burst by 25% and decreases the cooldown by 1 second."
+   },
+   "name": {
+    "html": "Pressurized Glands",
+    "text": "Pressurized Glands"
+   },
+   "shortText": {
+    "html": "Increases Spike Burst range and decreases cooldown",
+    "text": "Increases Spike Burst range and decreases cooldown"
+   }
+  },
+  "AbathurMasteryProlificDispersal|AbathurToxicNestProlificDispersalTalent|W|Level4": {
+   "fullText": {
+    "html": "Increase the duration of Toxic Nests by 45 seconds, reduce its cooldown by 2 seconds, and add 2 additional charges.",
+    "text": "Increase the duration of Toxic Nests by 45 seconds, reduce its cooldown by 2 seconds, and add 2 additional charges."
+   },
+   "name": {
+    "html": "Prolific Dispersal",
+    "text": "Prolific Dispersal"
+   },
+   "shortText": {
+    "html": "Increases Toxic Nest charges, duration",
+    "text": "Increases Toxic Nest charges, duration"
+   }
+  },
+  "AbathurMasterySpatialEfficiency|AbathurSymbioteSpatialEfficiencyTalent|Q|Level13": {
+   "fullText": {
+    "html": "Symbiote's Stab gains 1 additional charge and its cooldown is reduced by .5 seconds.",
+    "text": "Symbiote's Stab gains 1 additional charge and its cooldown is reduced by .5 seconds."
+   },
+   "name": {
+    "html": "Spatial Efficiency",
+    "text": "Spatial Efficiency"
+   },
+   "shortText": {
+    "html": "Stab gains an additional charge",
+    "text": "Stab gains an additional charge"
+   }
+  },
+  "AbathurMasteryVileNestsToxicNest|AbathurToxicNestVileNestTalent|W|Level7": {
+   "fullText": {
+    "html": "Toxic Nests Slow enemy Movement Speed by 40% for 2.5 seconds.",
+    "text": "Toxic Nests Slow enemy Movement Speed by 40% for 2.5 seconds."
+   },
+   "name": {
+    "html": "Vile Nest",
+    "text": "Vile Nest"
+   },
+   "shortText": {
+    "html": "Toxic Nests slow Move Speed",
+    "text": "Toxic Nests slow Move Speed"
+   }
+  },
+  "AbathurReinforcedCarapace|AbathurReinforcedCarapaceTalent|E|Level1": {
+   "fullText": {
+    "html": "Increase the Shield amount of Carapace by 40%.",
+    "text": "Increase the Shield amount of Carapace by 40%."
+   },
+   "name": {
+    "html": "Reinforced Carapace",
+    "text": "Reinforced Carapace"
+   },
+   "shortText": {
+    "html": "Increase Carapace Shield",
+    "text": "Increase Carapace Shield"
+   }
+  },
+  "AbathurSlapathur|AbathurSlapathur|E|Level4": {
+   "fullText": {
+    "html": "Abathur’s Basic Attacks deal 350% additional damage and Stun non-Elite enemies and disable Structures for 1.5 seconds.<br><br>The same Hero or Structure can only be Stunned or disabled once every 6 seconds.",
+    "text": "Abathur’s Basic Attacks deal 350% additional damage and Stun non-Elite enemies and disable Structures for 1.5 seconds. The same Hero or Structure can only be Stunned or disabled once every 6 seconds."
+   },
+   "name": {
+    "html": "Slapathur",
+    "text": "Slapathur"
+   },
+   "shortText": {
+    "html": "Basic attacks Stun, deal bonus damage",
+    "text": "Basic attacks Stun, deal bonus damage"
+   }
+  },
+  "AbathurSymbioteAdrenalOverload|AbathurSymbioteAdrenalOverloadTalent|Q|Level4": {
+   "fullText": {
+    "html": "Heroic Symbiote hosts gain 25% increased Attack Speed.",
+    "text": "Heroic Symbiote hosts gain 25% increased Attack Speed."
+   },
+   "name": {
+    "html": "Adrenal Overload",
+    "text": "Adrenal Overload"
+   },
+   "shortText": {
+    "html": "Symbiote host gains Attack Speed",
+    "text": "Symbiote host gains Attack Speed"
+   }
+  },
+  "AbathurSymbioteCarapaceNetworkedCarapace|AbathurSymbioteCarapaceNetworkedCarapaceTalent|E|Level7": {
+   "fullText": {
+    "html": "Using Symbiote's Carapace also applies an untalented Carapace Shield to all nearby allied Heroes, Minions, and Mercenaries.",
+    "text": "Using Symbiote's Carapace also applies an untalented Carapace Shield to all nearby allied Heroes, Minions, and Mercenaries."
+   },
+   "name": {
+    "html": "Networked Carapace",
+    "text": "Networked Carapace"
+   },
+   "shortText": {
+    "html": "Carapace Shields all nearby allies",
+    "text": "Carapace Shields all nearby allies"
+   }
+  },
+  "AbathurSymbioteHivemind|AbathurSymbioteHivemindTalent|Q|Level20": {
+   "fullText": {
+    "html": "Symbiote creates an additional Symbiote on a nearby allied Hero.  This Symbiote mimics the commands of the first, but does half damage and Shielding.",
+    "text": "Symbiote creates an additional Symbiote on a nearby allied Hero. This Symbiote mimics the commands of the first, but does half damage and Shielding."
+   },
+   "name": {
+    "html": "Hivemind",
+    "text": "Hivemind"
+   },
+   "shortText": {
+    "html": "Symbiote two targets",
+    "text": "Symbiote two targets"
+   }
+  },
+  "AbathurSymbioteSpikeBurstSomaTransference|AbathurSymbioteSpikeBurstSomaTransferenceTalent|W|Level13": {
+   "fullText": {
+    "html": "Symbiote's Spike Burst heals the host for 64~~0.04~~ Health per enemy Hero hit.",
+    "text": "Symbiote's Spike Burst heals the host for 64~~0.04~~ Health per enemy Hero hit."
+   },
+   "name": {
+    "html": "Soma Transference",
+    "text": "Soma Transference"
+   },
+   "shortText": {
+    "html": "Spike Burst heals for each Hero hit",
+    "text": "Spike Burst heals for each Hero hit"
+   }
+  },
+  "AbathurUltimateEvolutionEvolutionaryLink|AbathurUltimateEvolutionEvolutionaryLinkTalent|Heroic|Level20": {
+   "fullText": {
+    "html": "Increase the duration of Ultimate Evolution by 50%. As long as the Ultimate Evolution is alive, the original target of the clone gains a Shield equal to 35% of their maximum Health. Refreshes every 5 seconds.",
+    "text": "Increase the duration of Ultimate Evolution by 50%. As long as the Ultimate Evolution is alive, the original target of the clone gains a Shield equal to 35% of their maximum Health. Refreshes every 5 seconds."
+   },
+   "name": {
+    "html": "Evolutionary Link",
+    "text": "Evolutionary Link"
+   },
+   "shortText": {
+    "html": "Ultimate Evolution target gets a Shield",
+    "text": "Ultimate Evolution target gets a Shield"
+   }
+  },
+  "AbathurVolatileMutation|AbathurVolatileMutationTalent|Heroic|Level16": {
+   "fullText": {
+    "html": "Ultimate Evolution clones and Monstrosities deal 137~~0.04~~ damage to nearby enemies every 3 seconds and when they die. Enemy Heroes hit heal the clone or Monstrosity for 100% of the damage dealt.",
+    "text": "Ultimate Evolution clones and Monstrosities deal 137~~0.04~~ damage to nearby enemies every 3 seconds and when they die. Enemy Heroes hit heal the clone or Monstrosity for 100% of the damage dealt."
+   },
+   "name": {
+    "html": "Volatile Mutation",
+    "text": "Volatile Mutation"
+   },
+   "shortText": {
+    "html": "Heroic summons radiate damage",
+    "text": "Heroic summons radiate damage"
+   }
+  },
+  "Amazon-AvoidanceRockstopper|AmazonAvoidanceRockstopper|Active|Level20": {
+   "cooldownText": {
+    "html": "Cooldown: 30 seconds",
+    "text": "Cooldown: 30 seconds"
+   },
+   "fullText": {
+    "html": "Activate to fully charge Avoidance and increase its Armor value to 60 for 4 seconds.  <br><br>Losing Avoidance removes this bonus.",
+    "text": "Activate to fully charge Avoidance and increase its Armor value to 60 for 4 seconds. Losing Avoidance removes this bonus."
+   },
+   "name": {
+    "html": "Rockstopper",
+    "text": "Rockstopper"
+   },
+   "shortText": {
+    "html": "Instantly charge and empower Avoidance",
+    "text": "Instantly charge and empower Avoidance"
+   }
+  },
+  "AmazonBallLightning|AmazonBallLightning|Heroic|Level10": {
+   "cooldownText": {
+    "html": "Cooldown: 60 seconds",
+    "text": "Cooldown: 60 seconds"
+   },
+   "energyText": {
+    "html": "<span>Mana: 60</span>",
+    "text": "Mana: 60"
+   },
+   "fullText": {
+    "html": "Throw a ball of lightning at an enemy Hero that bounces up to 6 times between nearby enemy Heroes and Cassia, dealing 180~~0.04~~ damage to enemies hit.",
+    "text": "Throw a ball of lightning at an enemy Hero that bounces up to 6 times between nearby enemy Heroes and Cassia, dealing 180~~0.04~~ damage to enemies hit."
+   },
+   "name": {
+    "html": "Ball Lightning",
+    "text": "Ball Lightning"
+   },
+   "shortText": {
+    "html": "Throw a bouncing lightning ball",
+    "text": "Throw a bouncing lightning ball"
+   }
+  },
+  "AmazonChargedStrikes|AmazonAvoidanceChargedStrikes|Passive|Level1": {
+   "fullText": {
+    "html": "Gain 15% Attack Speed. Every 3rd Basic Attack deals 20% bonus damage and bounces to nearby enemy Heroes.",
+    "text": "Gain 15% Attack Speed. Every 3rd Basic Attack deals 20% bonus damage and bounces to nearby enemy Heroes."
+   },
+   "name": {
+    "html": "Charged Strikes",
+    "text": "Charged Strikes"
+   },
+   "shortText": {
+    "html": "Gain Attack Speed, bounce damage",
+    "text": "Gain Attack Speed, bounce damage"
+   }
+  },
+  "AmazonFendGlovesOfAlacrity|AmazonFendGlovesOfAlacrity|Trait|Level13": {
+   "fullText": {
+    "html": "Gain 1 Basic Attack range. While Avoidance is fully charged, gain an additional 1 Basic Attack range.",
+    "text": "Gain 1 Basic Attack range. While Avoidance is fully charged, gain an additional 1 Basic Attack range."
+   },
+   "name": {
+    "html": "Gloves Of Alacrity",
+    "text": "Gloves Of Alacrity"
+   },
+   "shortText": {
+    "html": "Increase Attack Range",
+    "text": "Increase Attack Range"
+   }
+  },
+  "AmazonFendGroundingRod|AmazonFendGroundingRod|Q|Level7": {
+   "fullText": {
+    "html": "Enemies hit by Lightning Fury or Fend are Slowed by 20% for 2 seconds.",
+    "text": "Enemies hit by Lightning Fury or Fend are Slowed by 20% for 2 seconds."
+   },
+   "name": {
+    "html": "Grounding Rod",
+    "text": "Grounding Rod"
+   },
+   "shortText": {
+    "html": "Lightning Fury and Fend Slow enemies",
+    "text": "Lightning Fury and Fend Slow enemies"
+   }
+  },
+  "AmazonFendWarMatron|Amazon-FendWarMatron|E|Level13": {
+   "fullText": {
+    "html": "Cassia becomes Protected while Channeling Fend and for an additional 1 second if the Channel is completed.",
+    "text": "Cassia becomes Protected while Channeling Fend and for an additional 1 second if the Channel is completed."
+   },
+   "name": {
+    "html": "War Matron",
+    "text": "War Matron"
+   },
+   "shortText": {
+    "html": "Fend grants Protected",
+    "text": "Fend grants Protected"
+   }
+  },
+  "AmazonImpale|AmazonFendImpale|E|Level1": {
+   "fullText": {
+    "html": "Increase Fend's cast range and radius by 25%. It deals an additional 70% damage to enemies below 50% Health.",
+    "text": "Increase Fend's cast range and radius by 25%. It deals an additional 70% damage to enemies below 50% Health."
+   },
+   "name": {
+    "html": "Impale",
+    "text": "Impale"
+   },
+   "shortText": {
+    "html": "Increase Fend range and damage",
+    "text": "Increase Fend range and damage"
+   }
+  },
+  "AmazonImprisoningLight|AmazonValkyrieImprisoningLight|Heroic|Level20": {
+   "fullText": {
+    "html": "Upon impaling an enemy Hero, they are Blinded for 5 seconds and Cassia's Valkyrie creates a wave of light that deals 200~~0.04~~ damage to nearby enemies. This wave Silences and Roots them for 3 seconds.",
+    "text": "Upon impaling an enemy Hero, they are Blinded for 5 seconds and Cassia's Valkyrie creates a wave of light that deals 200~~0.04~~ damage to nearby enemies. This wave Silences and Roots them for 3 seconds."
+   },
+   "name": {
+    "html": "Imprisoning Light",
+    "text": "Imprisoning Light"
+   },
+   "shortText": {
+    "html": "Valkyrie Roots and Silences enemies",
+    "text": "Valkyrie Roots and Silences enemies"
+   }
+  },
+  "AmazonInfiniteLightning|AmazonBallLightningInfiniteLightning|Heroic|Level20": {
+   "fullText": {
+    "html": "Ball Lightning can now bounce indefinitely. Every bounce reduces its cooldown by 4 seconds.",
+    "text": "Ball Lightning can now bounce indefinitely. Every bounce reduces its cooldown by 4 seconds."
+   },
+   "name": {
+    "html": "Infinite Lightning",
+    "text": "Infinite Lightning"
+   },
+   "shortText": {
+    "html": "Ball Lightning bounces indefinitely",
+    "text": "Ball Lightning bounces indefinitely"
+   }
+  },
+  "AmazonInnerLight|AmazonLightningFuryInnerLight|Active|Level4": {
+   "cooldownText": {
+    "html": "Cooldown: 70 seconds",
+    "text": "Cooldown: 70 seconds"
+   },
+   "fullText": {
+    "html": "Activate to heal for 25% of your maximum Health over 5 seconds. Enemy Heroes hit with Lightning Fury lower the cooldown of this ability by 10 seconds.",
+    "text": "Activate to heal for 25% of your maximum Health over 5 seconds. Enemy Heroes hit with Lightning Fury lower the cooldown of this ability by 10 seconds."
+   },
+   "name": {
+    "html": "Inner Light",
+    "text": "Inner Light"
+   },
+   "shortText": {
+    "html": "Activate to heal",
+    "text": "Activate to heal"
+   }
+  },
+  "AmazonMartialLaw|AmazonMartialLaw|Passive|Level16": {
+   "fullText": {
+    "html": "Basic Attacks against enemy Heroes deal bonus damage equal to 1% of their maximum Health. Increase this to 3% if they are Stunned, Rooted, Slowed, or Blinded.",
+    "text": "Basic Attacks against enemy Heroes deal bonus damage equal to 1% of their maximum Health. Increase this to 3% if they are Stunned, Rooted, Slowed, or Blinded."
+   },
+   "name": {
+    "html": "Martial Law",
+    "text": "Martial Law"
+   },
+   "shortText": {
+    "html": "Disabled Heroes take additional damage",
+    "text": "Disabled Heroes take additional damage"
+   }
+  },
+  "AmazonPlateoftheWhale|AmazonAvoidancePlateoftheWhale|Trait|Level4": {
+   "fullText": {
+    "html": "Regenerate 6~~0.04~~ Health per second while Avoidance is active. If fully charged, gain an additional 12~~0.04~~ Health per second.",
+    "text": "Regenerate 6~~0.04~~ Health per second while Avoidance is active. If fully charged, gain an additional 12~~0.04~~ Health per second."
+   },
+   "name": {
+    "html": "Plate of the Whale",
+    "text": "Plate of the Whale"
+   },
+   "shortText": {
+    "html": "Avoidance regenerates Health",
+    "text": "Avoidance regenerates Health"
+   }
+  },
+  "AmazonPowerStrike|AmazonPowerStrike|Q|Level16": {
+   "fullText": {
+    "html": "Lightning Fury pierces but only splits on Heroes. Enemy Heroes hit reduce its cooldown by 1 second and become marked for 15 seconds. Upon reaching 3 marks, remove them and cast a Blinding Light at their feet.",
+    "text": "Lightning Fury pierces but only splits on Heroes. Enemy Heroes hit reduce its cooldown by 1 second and become marked for 15 seconds. Upon reaching 3 marks, remove them and cast a Blinding Light at their feet."
+   },
+   "name": {
+    "html": "Power Strike",
+    "text": "Power Strike"
+   },
+   "shortText": {
+    "html": "Lightning Fury pierces and casts Blinding Light",
+    "text": "Lightning Fury pierces and casts Blinding Light"
+   }
+  },
+  "AmazonRingoftheLeech|AmazonRingoftheLeech|Passive|Level4": {
+   "fullText": {
+    "html": "Basic Attacks against your primary target heal for 20% of their damage. If an enemy is Blinded, this also affects Lightning Fury and Fend.",
+    "text": "Basic Attacks against your primary target heal for 20% of their damage. If an enemy is Blinded, this also affects Lightning Fury and Fend."
+   },
+   "name": {
+    "html": "Ring of the Leech",
+    "text": "Ring of the Leech"
+   },
+   "shortText": {
+    "html": "Basic Attacks heal",
+    "text": "Basic Attacks heal"
+   }
+  },
+  "AmazonSeraphsHymn|AmazonBlindingLightSeraphsHymn|W|Level7": {
+   "fullText": {
+    "html": "Basic Attacks against your primary enemy Hero grant 10 Mana and reduce the cooldown of Blinding Light by 2 seconds.<br><br>Passive: Increase the passive damage bonus of Blinding Light from 15% to 30%.",
+    "text": "Basic Attacks against your primary enemy Hero grant 10 Mana and reduce the cooldown of Blinding Light by 2 seconds. Passive: Increase the passive damage bonus of Blinding Light from 15% to 30%."
+   },
+   "name": {
+    "html": "Seraph's Hymn",
+    "text": "Seraph's Hymn"
+   },
+   "shortText": {
+    "html": "Empower Basic Attacks, Blinding Light",
+    "text": "Empower Basic Attacks, Blinding Light"
+   }
+  },
+  "AmazonStaticElectricity|AmazonFendStaticElectricity|Q|Level16": {
+   "fullText": {
+    "html": "Gain 2 additional charges of Lightning Fury. Fend's impact launches a lightning bolt towards each nearby enemy Hero.",
+    "text": "Gain 2 additional charges of Lightning Fury. Fend's impact launches a lightning bolt towards each nearby enemy Hero."
+   },
+   "name": {
+    "html": "Static Electricity",
+    "text": "Static Electricity"
+   },
+   "shortText": {
+    "html": "Fend releases Lightning Fury bolts",
+    "text": "Fend releases Lightning Fury bolts"
+   }
+  },
+  "AmazonSurgeOfLight|AmazonAvoidanceSurgeOfLight|Trait|Level7": {
+   "fullText": {
+    "html": "After taking 650~~0.04~~ damage with Avoidance active, Cassia can activate Avoidance to deal 220~~0.04~~ damage to enemies around her.",
+    "text": "After taking 650~~0.04~~ damage with Avoidance active, Cassia can activate Avoidance to deal 220~~0.04~~ damage to enemies around her."
+   },
+   "name": {
+    "html": "Surge of Light",
+    "text": "Surge of Light"
+   },
+   "shortText": {
+    "html": "Activate Avoidance to deal damage",
+    "text": "Activate Avoidance to deal damage"
+   }
+  },
+  "AmazonThunderstroke|AmazonLightningFuryThunderstroke|Q|Level1": {
+   "fullText": {
+    "html": "Increase the damage of Lightning Fury by 20.<br><br><img width=\"20\" height=\"22\">Quest: Lightning Fury's damage is increased by 1.5 every time it hits a Hero.",
+    "text": "Increase the damage of Lightning Fury by 20. Quest: Lightning Fury's damage is increased by 1.5 every time it hits a Hero."
+   },
+   "name": {
+    "html": "Thunderstroke",
+    "text": "Thunderstroke"
+   },
+   "shortText": {
+    "html": "Quest: Increase Lightning Fury damage",
+    "text": "Quest: Increase Lightning Fury damage"
+   }
+  },
+  "AmazonTitansRevenge|AmazonTitansRevenge|Trait|Level20": {
+   "fullText": {
+    "html": "Cassia's Basic Attacks now ignore Armor and while Avoidance is fully charged, they deal an additional 20% bonus damage.",
+    "text": "Cassia's Basic Attacks now ignore Armor and while Avoidance is fully charged, they deal an additional 20% bonus damage."
+   },
+   "name": {
+    "html": "Titan's Revenge",
+    "text": "Titan's Revenge"
+   },
+   "shortText": {
+    "html": "Basic Attacks ignore Armor",
+    "text": "Basic Attacks ignore Armor"
+   }
+  },
+  "AmazonValkyrie|AmazonValkyrie|Heroic|Level10": {
+   "cooldownText": {
+    "html": "Cooldown: 60 seconds",
+    "text": "Cooldown: 60 seconds"
+   },
+   "energyText": {
+    "html": "<span>Mana: 60</span>",
+    "text": "Mana: 60"
+   },
+   "fullText": {
+    "html": "Summon a Valkyrie that rushes to Cassia after 0.75 seconds, pulling the first enemy Hero hit, dealing 225~~0.04~~ damage and Stunning them for 0.5 seconds at the end of her path. The Valkyrie knocks back all other enemy Heroes in her way.",
+    "text": "Summon a Valkyrie that rushes to Cassia after 0.75 seconds, pulling the first enemy Hero hit, dealing 225~~0.04~~ damage and Stunning them for 0.5 seconds at the end of her path. The Valkyrie knocks back all other enemy Heroes in her way."
+   },
+   "name": {
+    "html": "Valkyrie",
+    "text": "Valkyrie"
+   },
+   "shortText": {
+    "html": "Summon a Valkyrie to impale enemies",
+    "text": "Summon a Valkyrie to impale enemies"
+   }
+  },
+  "AmazonWarTraveler|AmazonAvoidanceWarTraveler|Trait|Level13": {
+   "fullText": {
+    "html": "Gain 5% Movement Speed. While Avoidance is fully charged, gain an additional 10% Movement Speed and Mounting is instant.",
+    "text": "Gain 5% Movement Speed. While Avoidance is fully charged, gain an additional 10% Movement Speed and Mounting is instant."
+   },
+   "name": {
+    "html": "War Traveler",
+    "text": "War Traveler"
+   },
+   "shortText": {
+    "html": "Increase Movement Speed, instant Mount",
+    "text": "Increase Movement Speed, instant Mount"
+   }
+  },
+  "FalstadHammerangBOOMerang|FalstadHammerangBOOMerangTalent|Q|Level7": {
+   "fullText": {
+    "html": "Hammerang's explosion deals 100% additional damage, and hitting enemy Heroes reduces their Spell Armor by 15 for 3 seconds.",
+    "text": "Hammerang's explosion deals 100% additional damage, and hitting enemy Heroes reduces their Spell Armor by 15 for 3 seconds."
+   },
+   "name": {
+    "html": "BOOMerang",
+    "text": "BOOMerang"
+   },
+   "shortText": {
+    "html": "Increase Hammerang's explosion damage",
+    "text": "Increase Hammerang's explosion damage"
+   }
+  },
+  "FalstadHammerangGatheringStorm|FalstadGatheringStormTalent|Q|Level1": {
+   "fullText": {
+    "html": "<img width=\"20\" height=\"22\">Quest: Hit enemy Heroes with Hammerang. Restore 6 Mana for each Hero hit. Upon dying, Lose 8 stacks.<br><br><img width=\"20\" height=\"22\">Reward: After hitting 30 Heroes, Hammerang permanently deals 30% more damage.<br><br><img width=\"20\" height=\"22\">Reward: After hitting 80 Heroes, Hammerang permanently deals an additional 50% damage.<br><br><img width=\"20\" height=\"22\">Mythic Reward: After hitting 150 Heroes, Hammerang permanently deals an additional 70% damage.",
+    "text": "Quest: Hit enemy Heroes with Hammerang. Restore 6 Mana for each Hero hit. Upon dying, Lose 8 stacks. Reward: After hitting 30 Heroes, Hammerang permanently deals 30% more damage. Reward: After hitting 80 Heroes, Hammerang permanently deals an additional 50% damage. Mythic Reward: After hitting 150 Heroes, Hammerang permanently deals an additional 70% damage."
+   },
+   "name": {
+    "html": "Gathering Storm",
+    "text": "Gathering Storm"
+   },
+   "shortText": {
+    "html": "Quest: Increase Hammerang damage",
+    "text": "Quest: Increase Hammerang damage"
+   }
+  },
+  "FalstadHeroicAbilityHinterlandBlast|FalstadHinterlandBlast|Heroic|Level10": {
+   "cooldownText": {
+    "html": "Cooldown: 120 seconds",
+    "text": "Cooldown: 120 seconds"
+   },
+   "energyText": {
+    "html": "<span>Mana: 80</span>",
+    "text": "Mana: 80"
+   },
+   "fullText": {
+    "html": "After 1 second, deal 475~~0.0475~~ damage to enemies within a long line. The cooldown is reduced by 30 seconds for every enemy Hero hit.",
+    "text": "After 1 second, deal 475~~0.0475~~ damage to enemies within a long line. The cooldown is reduced by 30 seconds for every enemy Hero hit."
+   },
+   "name": {
+    "html": "Hinterland Blast",
+    "text": "Hinterland Blast"
+   },
+   "shortText": {
+    "html": "Long range damage beam",
+    "text": "Long range damage beam"
+   }
+  },
+  "FalstadHeroicAbilityMightyGust|FalstadMightyGust|Heroic|Level10": {
+   "cooldownText": {
+    "html": "Cooldown: 60 seconds",
+    "text": "Cooldown: 60 seconds"
+   },
+   "energyText": {
+    "html": "<span>Mana: 70</span>",
+    "text": "Mana: 70"
+   },
+   "fullText": {
+    "html": "Push enemies away, and Slow them by 40%, decaying over 4 seconds.",
+    "text": "Push enemies away, and Slow them by 40%, decaying over 4 seconds."
+   },
+   "name": {
+    "html": "Mighty Gust",
+    "text": "Mighty Gust"
+   },
+   "shortText": {
+    "html": "Push away enemies and slow them",
+    "text": "Push away enemies and slow them"
+   }
+  },
+  "FalstadLightningRodDishonorableDischarge|FalstadLightningRodDishonorableDischarge|W|Level1": {
+   "fullText": {
+    "html": "<img width=\"20\" height=\"22\">Quest: Each Lightning Rod strike upon a Hero after the 3rd generates 1 stack. If a Hero dies under its effect, generate 2 stacks.<br><br><img width=\"20\" height=\"22\">Reward: After 20 stacks, its damage is increased by 30%.<br><br><img width=\"20\" height=\"22\">Reward: After 45 stacks, its cooldown is reduced by 2 seconds and its damage is increased by an additional 75%.<br><br><img width=\"20\" height=\"22\">Mythic Reward: After 75 stacks, its number of strikes is increased by 2 and the final strike Stuns for 1.25 seconds.",
+    "text": "Quest: Each Lightning Rod strike upon a Hero after the 3rd generates 1 stack. If a Hero dies under its effect, generate 2 stacks. Reward: After 20 stacks, its damage is increased by 30%. Reward: After 45 stacks, its cooldown is reduced by 2 seconds and its damage is increased by an additional 75%. Mythic Reward: After 75 stacks, its number of strikes is increased by 2 and the final strike Stuns for 1.25 seconds."
+   },
+   "name": {
+    "html": "Dishonorable Discharge",
+    "text": "Dishonorable Discharge"
+   },
+   "shortText": {
+    "html": "Quest: Increase Lightning Rod damage, strikes",
+    "text": "Quest: Increase Lightning Rod damage, strikes"
+   }
+  },
+  "FalstadMasteryAerieGustsTailwind|FalstadTailwindAerieGustsTalent|Trait|Level16": {
+   "fullText": {
+    "html": "Reduces the activation time for Tailwind from 5 to 3 seconds, and increases the Movement Speed bonus from 15% to 25%.",
+    "text": "Reduces the activation time for Tailwind from 5 to 3 seconds, and increases the Movement Speed bonus from 15% to 25%."
+   },
+   "name": {
+    "html": "Aerie Gusts",
+    "text": "Aerie Gusts"
+   },
+   "shortText": {
+    "html": "Reduce Tailwind delay, increase Move Speed",
+    "text": "Reduce Tailwind delay, increase Move Speed"
+   }
+  },
+  "FalstadMasteryAfterburner|FalstadBarrelRollAfterburnerTalent|E|Level16": {
+   "fullText": {
+    "html": "Barrel Roll increases Movement Speed by 60%, decaying over 3 seconds.",
+    "text": "Barrel Roll increases Movement Speed by 60%, decaying over 3 seconds."
+   },
+   "name": {
+    "html": "Afterburner",
+    "text": "Afterburner"
+   },
+   "shortText": {
+    "html": "Barrel Roll increases Move Speed",
+    "text": "Barrel Roll increases Move Speed"
+   }
+  },
+  "FalstadMasteryBarrelRollFlowRider|FalstadFlowRiderTalent|Trait|Level13": {
+   "fullText": {
+    "html": "While Tailwind is active, Falstad's Basic Abilities recharge 100% faster.",
+    "text": "While Tailwind is active, Falstad's Basic Abilities recharge 100% faster."
+   },
+   "name": {
+    "html": "Flow Rider",
+    "text": "Flow Rider"
+   },
+   "shortText": {
+    "html": "Tailwind recharges Basic Abilities faster",
+    "text": "Tailwind recharges Basic Abilities faster"
+   }
+  },
+  "FalstadMasteryCalloftheWildhammerHinterlandBlast|FalstadHinterlandBlastCalloftheWildhammerTalent|Heroic|Level20": {
+   "fullText": {
+    "html": "Hinterland Blast has double the range and deals 25% more damage.",
+    "text": "Hinterland Blast has double the range and deals 25% more damage."
+   },
+   "name": {
+    "html": "Call of the Wildhammer",
+    "text": "Call of the Wildhammer"
+   },
+   "shortText": {
+    "html": "Increases Hinterland Blast range and damage",
+    "text": "Increases Hinterland Blast range and damage"
+   }
+  },
+  "FalstadMasteryCripplingHammerHammerang|FalstadHammerangCripplingHammerTalent|Q|Level16": {
+   "fullText": {
+    "html": "Increase Hammerang's Slow from 25% to 50%, and Hammerang's explosion also Slows.",
+    "text": "Increase Hammerang's Slow from 25% to 50%, and Hammerang's explosion also Slows."
+   },
+   "name": {
+    "html": "Crippling Hammer",
+    "text": "Crippling Hammer"
+   },
+   "shortText": {
+    "html": "Increases Hammerang Slow, explosion Slows",
+    "text": "Increases Hammerang Slow, explosion Slows"
+   }
+  },
+  "FalstadMasteryFlightEpicMount|FalstadEpicMountTalent|Z|Level20": {
+   "fullText": {
+    "html": "Reduce the cooldown of Flight by 50 seconds, reduce the cast time before flying to 0.5 seconds, and increase the speed by 50%.",
+    "text": "Reduce the cooldown of Flight by 50 seconds, reduce the cast time before flying to 0.5 seconds, and increase the speed by 50%."
+   },
+   "name": {
+    "html": "Epic Mount",
+    "text": "Epic Mount"
+   },
+   "shortText": {
+    "html": "Reduces Flight cooldown and delay",
+    "text": "Reduces Flight cooldown and delay"
+   }
+  },
+  "FalstadMasteryHammerangSecretWeapon|FalstadSecretWeaponTalent|Q|Level7": {
+   "fullText": {
+    "html": "Increases Hammerang's range by 30% and Basic Attacks deal 75% bonus damage while Hammerang is in flight.",
+    "text": "Increases Hammerang's range by 30% and Basic Attacks deal 75% bonus damage while Hammerang is in flight."
+   },
+   "name": {
+    "html": "Secret Weapon",
+    "text": "Secret Weapon"
+   },
+   "shortText": {
+    "html": "Increases Hammerang range, Basic Attack damage",
+    "text": "Increases Hammerang range, Basic Attack damage"
+   }
+  },
+  "FalstadMasteryLightningRodChargedUp|FalstadChargedUpTalent|W|Level13": {
+   "fullText": {
+    "html": "Increases Lightning Rod range by 25%. Hero Takedowns reset Lightning Rod's cooldown.",
+    "text": "Increases Lightning Rod range by 25%. Hero Takedowns reset Lightning Rod's cooldown."
+   },
+   "name": {
+    "html": "Charged Up",
+    "text": "Charged Up"
+   },
+   "shortText": {
+    "html": "Increases Lightning Rod range, resets on takedown",
+    "text": "Increases Lightning Rod range, resets on takedown"
+   }
+  },
+  "FalstadMasteryLightningRodStaticShield|FalstadStaticShieldTalent|W|Level4": {
+   "fullText": {
+    "html": "Lightning Rod strikes grant a Shield equal to 4% of Falstad's maximum Health, up to 28%, for 4 seconds.",
+    "text": "Lightning Rod strikes grant a Shield equal to 4% of Falstad's maximum Health, up to 28%, for 4 seconds."
+   },
+   "name": {
+    "html": "Static Shield",
+    "text": "Static Shield"
+   },
+   "shortText": {
+    "html": "Lightning Rod strikes grants Shields",
+    "text": "Lightning Rod strikes grants Shields"
+   }
+  },
+  "FalstadMasteryLightningRodThunderstrikes|FalstadThunderstrikesTalent|W|Level7": {
+   "fullText": {
+    "html": "Lightning Rod deals 25% more damage each subsequent strike.",
+    "text": "Lightning Rod deals 25% more damage each subsequent strike."
+   },
+   "name": {
+    "html": "Thunderstrikes",
+    "text": "Thunderstrikes"
+   },
+   "shortText": {
+    "html": "Lightning Rod deals increasing damage",
+    "text": "Lightning Rod deals increasing damage"
+   }
+  },
+  "FalstadMasteryMightyGustWindTunnel|FalstadWindTunnelTalent|Heroic|Level20": {
+   "fullText": {
+    "html": "Mighty Gust creates a wind tunnel for 4 seconds. Enemies caught in the tunnel will periodically be pushed back.",
+    "text": "Mighty Gust creates a wind tunnel for 4 seconds. Enemies caught in the tunnel will periodically be pushed back."
+   },
+   "name": {
+    "html": "Wind Tunnel",
+    "text": "Wind Tunnel"
+   },
+   "shortText": {
+    "html": "Mighty Gust constantly knocks back",
+    "text": "Mighty Gust constantly knocks back"
+   }
+  },
+  "FalstadMasteryUpdraftBarrelRoll|FalstadBarrelRollUpdraftTalent|E|Level4": {
+   "fullText": {
+    "html": "Increases Barrel Roll's range by 40% and Shield amount by 70%, and its Shield now lasts indefinitely.",
+    "text": "Increases Barrel Roll's range by 40% and Shield amount by 70%, and its Shield now lasts indefinitely."
+   },
+   "name": {
+    "html": "Updraft",
+    "text": "Updraft"
+   },
+   "shortText": {
+    "html": "Increases Barrel Roll range, Shield",
+    "text": "Increases Barrel Roll range, Shield"
+   }
+  },
+  "FalstadTailwindFrequentFlyer|FalstadTailwindFrequentFlyer|Active|Level1": {
+   "cooldownText": {
+    "html": "Cooldown: 60 seconds",
+    "text": "Cooldown: 60 seconds"
+   },
+   "fullText": {
+    "html": "Activate Frequent Flyer to gain 25% Attack Speed and Tailwind for 4 seconds.<br><br><img width=\"20\" height=\"22\">Quest: Minion kills grant 1 stack. Hero Takedowns grant 5 stacks.<br><br><img width=\"20\" height=\"22\">Reward: After 60 stacks, gain 20 Attack Damage.<br><br><img width=\"20\" height=\"22\">Reward: After 150 stacks, gain 50 additional Attack Damage.<br><br><img width=\"20\" height=\"22\">Mythic Reward: After 300 stacks, gain 125 additional Attack Damage.",
+    "text": "Activate Frequent Flyer to gain 25% Attack Speed and Tailwind for 4 seconds. Quest: Minion kills grant 1 stack. Hero Takedowns grant 5 stacks. Reward: After 60 stacks, gain 20 Attack Damage. Reward: After 150 stacks, gain 50 additional Attack Damage. Mythic Reward: After 300 stacks, gain 125 additional Attack Damage."
+   },
+   "name": {
+    "html": "Frequent Flyer",
+    "text": "Frequent Flyer"
+   },
+   "shortText": {
+    "html": "Activate to gain Attack Speed, Tailwind<br>Quest: Killing enemies grants Basic Attack Damage",
+    "text": "Activate to gain Attack Speed, Tailwind Quest: Killing enemies grants Basic Attack Damage"
+   }
+  },
+  "FalstadTailwindSustainedWinds|FalstadTailwindSustainedWinds|Trait|Level13": {
+   "fullText": {
+    "html": "Basic Attacks against enemy Heroes deal bonus damage equal to 1.5% of the Hero's maximum Health, increased to 2% while Tailwind is active.",
+    "text": "Basic Attacks against enemy Heroes deal bonus damage equal to 1.5% of the Hero's maximum Health, increased to 2% while Tailwind is active."
+   },
+   "name": {
+    "html": "Sustained Winds",
+    "text": "Sustained Winds"
+   },
+   "shortText": {
+    "html": "Increase Basic Attacks against Heroes",
+    "text": "Increase Basic Attacks against Heroes"
+   }
+  },
+  "FalstadTalentHammerGains|FalstadHammerGainsTalent|Passive|Level4": {
+   "fullText": {
+    "html": "Basic Attacks heal for 20% of the damage dealt to the primary target.",
+    "text": "Basic Attacks heal for 20% of the damage dealt to the primary target."
+   },
+   "name": {
+    "html": "Hammer Gains",
+    "text": "Hammer Gains"
+   },
+   "shortText": {
+    "html": "Basic Attacks heal",
+    "text": "Basic Attacks heal"
+   }
+  },
+  "GenericTalentCalldownMULE|GenericCalldownMule|Active|Level7": {
+   "cooldownText": {
+    "html": "Cooldown: 60 seconds",
+    "text": "Cooldown: 60 seconds"
+   },
+   "fullText": {
+    "html": "Activate to calldown a Mule that repairs Structures, one at a time, near target point for 40 seconds, healing for 90 Health every 1 second. ",
+    "text": "Activate to calldown a Mule that repairs Structures, one at a time, near target point for 40 seconds, healing for 90 Health every 1 second."
+   },
+   "name": {
+    "html": "Calldown: MULE",
+    "text": "Calldown: MULE"
+   },
+   "shortText": {
+    "html": "Activate to heal Structures",
+    "text": "Activate to heal Structures"
+   }
+  },
+  "GenericTalentFlashoftheStorms|GenericBoltoftheStormTalent|Active|Level20": {
+   "cooldownText": {
+    "html": "Cooldown: 70 seconds",
+    "text": "Cooldown: 70 seconds"
+   },
+   "fullText": {
+    "html": "Activate to teleport to a nearby location.",
+    "text": "Activate to teleport to a nearby location."
+   },
+   "name": {
+    "html": "Bolt of the Storm",
+    "text": "Bolt of the Storm"
+   },
+   "shortText": {
+    "html": "Activate to teleport a short distance",
+    "text": "Activate to teleport a short distance"
+   }
+  },
+  "GenericTalentMercenaryLord|GenericMercenaryLordTalent|Passive|Level4": {
+   "fullText": {
+    "html": "Friendly non-Boss Mercenaries near your Hero deal 50% more damage. Gain 50 Armor against Minions and Mercenaries, reducing the damage taken by 50%.",
+    "text": "Friendly non-Boss Mercenaries near your Hero deal 50% more damage. Gain 50 Armor against Minions and Mercenaries, reducing the damage taken by 50%."
+   },
+   "name": {
+    "html": "Mercenary Lord",
+    "text": "Mercenary Lord"
+   },
+   "shortText": {
+    "html": "Empower nearby Mercenaries",
+    "text": "Empower nearby Mercenaries"
+   }
+  },
+  "GenericTalentNexusBlades|NexusBladesTalent|Passive|Level20": {
+   "fullText": {
+    "html": "Basic Attacks deal 20% more damage and Slow enemy Movement Speed by 20% for 1 second.",
+    "text": "Basic Attacks deal 20% more damage and Slow enemy Movement Speed by 20% for 1 second."
+   },
+   "name": {
+    "html": "Nexus Blades",
+    "text": "Nexus Blades"
+   },
+   "shortText": {
+    "html": "Basic Attacks deal more damage and Slow",
+    "text": "Basic Attacks deal more damage and Slow"
+   }
+  },
+  "GenericTalentNexusFrenzy|NexusFrenzyTalent|Passive|Level20": {
+   "fullText": {
+    "html": "Increases Attack Speed by 20% and Attack Range by 1.1.",
+    "text": "Increases Attack Speed by 20% and Attack Range by 1.1."
+   },
+   "name": {
+    "html": "Nexus Frenzy",
+    "text": "Nexus Frenzy"
+   },
+   "shortText": {
+    "html": "Increases Attack Speed and Range",
+    "text": "Increases Attack Speed and Range"
+   }
+  },
+  "GuldanChaoticEnergy|GuldanChaoticEnergy|W|Level1": {
+   "fullText": {
+    "html": "Increases the cast range of Drain Life by 25%, and Regen Globes heal for 50% more.<br><br><img width=\"20\" height=\"22\">Quest: Gather 15 Regen Globes.<br><br><img width=\"20\" height=\"22\">Reward: Basic Ability Mana costs are permanently reduced by 20.",
+    "text": "Increases the cast range of Drain Life by 25%, and Regen Globes heal for 50% more. Quest: Gather 15 Regen Globes. Reward: Basic Ability Mana costs are permanently reduced by 20."
+   },
+   "name": {
+    "html": "Chaotic Energy",
+    "text": "Chaotic Energy"
+   },
+   "shortText": {
+    "html": "Quest: Gather Regen Globes to reduce Mana costs",
+    "text": "Quest: Gather Regen Globes to reduce Mana costs"
+   }
+  },
+  "GuldanConsumeSoul|GuldanConsumeSoul|Active|Level4": {
+   "cooldownText": {
+    "html": "Charge Cooldown: 25 seconds",
+    "text": "Charge Cooldown: 25 seconds"
+   },
+   "fullText": {
+    "html": "Instantly kill an enemy Minion and heal for 365~~0.04~~ Health.<br><br>Stores up to 3 charges.",
+    "text": "Instantly kill an enemy Minion and heal for 365~~0.04~~ Health. Stores up to 3 charges."
+   },
+   "name": {
+    "html": "Consume Soul",
+    "text": "Consume Soul"
+   },
+   "shortText": {
+    "html": "Instantly kill an enemy Minion to heal",
+    "text": "Instantly kill an enemy Minion to heal"
+   }
+  },
+  "GuldanCorruptionCurseOfExhaustion|GuldanCorruptionCurseOfExhaustion|W|Level7": {
+   "fullText": {
+    "html": "Drain Life deals 50% more damage and Slows the target's Movement Speed by 40%.",
+    "text": "Drain Life deals 50% more damage and Slows the target's Movement Speed by 40%."
+   },
+   "name": {
+    "html": "Curse of Exhaustion",
+    "text": "Curse of Exhaustion"
+   },
+   "shortText": {
+    "html": "Drain Life deals more damage, Slows",
+    "text": "Drain Life deals more damage, Slows"
+   }
+  },
+  "GuldanCorruptionEchoedCorruption|GuldanCorruptionEchoedCorruption|E|Level1": {
+   "fullText": {
+    "html": "<img width=\"20\" height=\"22\">Quest: Hit enemy Heroes with Corruption.<br><br><img width=\"20\" height=\"22\">Reward: After hitting 40 heroes, Corruption gains new functionality. After the third strike, Corruption strikes 3 times in the opposite direction.<br><br><img width=\"20\" height=\"22\">Mythic Reward: After 85 hits, Corruption heals for 100% of the damage dealt.",
+    "text": "Quest: Hit enemy Heroes with Corruption. Reward: After hitting 40 heroes, Corruption gains new functionality. After the third strike, Corruption strikes 3 times in the opposite direction. Mythic Reward: After 85 hits, Corruption heals for 100% of the damage dealt."
+   },
+   "name": {
+    "html": "Echoed Corruption",
+    "text": "Echoed Corruption"
+   },
+   "shortText": {
+    "html": "Quest: Hit enemy Heroes to upgrade Corruption.",
+    "text": "Quest: Hit enemy Heroes to upgrade Corruption."
+   }
+  },
+  "GuldanCorruptionRuinousAffliction|GuldanCorruptionRuinousAffliction|E|Level16": {
+   "fullText": {
+    "html": "Corruption deals an additional 70~~0.04~~ damage on impact. If the enemy is hit by all three strikes, the third strike deals 242~~0.04~~ damage.",
+    "text": "Corruption deals an additional 70~~0.04~~ damage on impact. If the enemy is hit by all three strikes, the third strike deals 242~~0.04~~ damage."
+   },
+   "name": {
+    "html": "Ruinous Affliction",
+    "text": "Ruinous Affliction"
+   },
+   "shortText": {
+    "html": "Corruption deals bonus damage",
+    "text": "Corruption deals bonus damage"
+   }
+  },
+  "GuldanDarkBargain|GuldanDarkBargain|Passive|Level13": {
+   "fullText": {
+    "html": "Gul'dan's maximum Health is permanently increased by 40% but his respawn time is increased by 10 seconds.",
+    "text": "Gul'dan's maximum Health is permanently increased by 40% but his respawn time is increased by 10 seconds."
+   },
+   "name": {
+    "html": "Dark Bargain",
+    "text": "Dark Bargain"
+   },
+   "shortText": {
+    "html": "Increase Health, respawn time",
+    "text": "Increase Health, respawn time"
+   }
+  },
+  "GuldanDemonicCircle|GuldanDemonicCircle|Active|Level20": {
+   "cooldownText": {
+    "html": "Cooldown: 60 seconds",
+    "text": "Cooldown: 60 seconds"
+   },
+   "fullText": {
+    "html": "Summon a Demonic Circle at Gul'dan's location. Activate to teleport Gul'dan to the Demonic Circle.",
+    "text": "Summon a Demonic Circle at Gul'dan's location. Activate to teleport Gul'dan to the Demonic Circle."
+   },
+   "name": {
+    "html": "Demonic Circle",
+    "text": "Demonic Circle"
+   },
+   "shortText": {
+    "html": "Summon a Demonic Circle that Gul'dan can teleport to",
+    "text": "Summon a Demonic Circle that Gul'dan can teleport to"
+   }
+  },
+  "GuldanDrainLifeHarvestLife|GuldanDrainLifeHarvestLife|W|Level13": {
+   "fullText": {
+    "html": "Drain Life heals for 75% more Health when used on Heroes.",
+    "text": "Drain Life heals for 75% more Health when used on Heroes."
+   },
+   "name": {
+    "html": "Harvest Life",
+    "text": "Harvest Life"
+   },
+   "shortText": {
+    "html": "Increases healing from Drain Life",
+    "text": "Increases healing from Drain Life"
+   }
+  },
+  "GuldanDrainLifeHealthFunnel|GuldanDrainLifeHealthFunnel|W|Level4": {
+   "fullText": {
+    "html": "Drain Life's cooldown recharges 100% faster while it is channeling. If an enemy dies while under the effect of Drain Life, the cooldown is instantly refreshed.",
+    "text": "Drain Life's cooldown recharges 100% faster while it is channeling. If an enemy dies while under the effect of Drain Life, the cooldown is instantly refreshed."
+   },
+   "name": {
+    "html": "Health Funnel",
+    "text": "Health Funnel"
+   },
+   "shortText": {
+    "html": "Reduces Drain Life's cooldown",
+    "text": "Reduces Drain Life's cooldown"
+   }
+  },
+  "GuldanFelFlameBoundByShadow|GuldanFelFlameBoundByShadow|Q|Level7": {
+   "fullText": {
+    "html": "Each enemy Hero hit with Fel Flame reduces the cooldown of Corruption by 1.75 seconds.",
+    "text": "Each enemy Hero hit with Fel Flame reduces the cooldown of Corruption by 1.75 seconds."
+   },
+   "name": {
+    "html": "Bound by Shadow",
+    "text": "Bound by Shadow"
+   },
+   "shortText": {
+    "html": "Fel Flame hits reduce the cooldown of Corruption",
+    "text": "Fel Flame hits reduce the cooldown of Corruption"
+   }
+  },
+  "GuldanFelFlameFelArmor|GuldanFelFlameFelArmor|Q|Level13": {
+   "fullText": {
+    "html": "Hitting an enemy Hero with Fel Flame grants 50 Spell Armor for 2.5 seconds, reducing Ability Damage taken by 50%. ",
+    "text": "Hitting an enemy Hero with Fel Flame grants 50 Spell Armor for 2.5 seconds, reducing Ability Damage taken by 50%."
+   },
+   "name": {
+    "html": "Fel Armor",
+    "text": "Fel Armor"
+   },
+   "shortText": {
+    "html": "Fel Flame grants Spell Armor",
+    "text": "Fel Flame grants Spell Armor"
+   }
+  },
+  "GuldanFelFlamePursuitOfFlame|GuldanFelFlameTalentPursuitOfFlame|Q|Level1": {
+   "fullText": {
+    "html": "<img width=\"20\" height=\"22\">Quest: Hit 30 enemy Heroes with Fel Flame without dying.<br><br><img width=\"20\" height=\"22\">Reward: Permanently increase Fel Flame's area by 33%.",
+    "text": "Quest: Hit 30 enemy Heroes with Fel Flame without dying. Reward: Permanently increase Fel Flame's area by 33%."
+   },
+   "name": {
+    "html": "Pursuit of Flame",
+    "text": "Pursuit of Flame"
+   },
+   "shortText": {
+    "html": "Quest: Hit 30 Heroes to increase area",
+    "text": "Quest: Hit 30 Heroes to increase area"
+   }
+  },
+  "GuldanFelFlameRampantHellfire|GuldanFelFlameRampantHellfire|Q|Level16": {
+   "fullText": {
+    "html": "Fel Flame's damage is increased by 12% for 5 seconds when hitting an enemy Hero. This can stack up to 5 times.",
+    "text": "Fel Flame's damage is increased by 12% for 5 seconds when hitting an enemy Hero. This can stack up to 5 times."
+   },
+   "name": {
+    "html": "Rampant Hellfire",
+    "text": "Rampant Hellfire"
+   },
+   "shortText": {
+    "html": "Increases Fel Flame's damage",
+    "text": "Increases Fel Flame's damage"
+   }
+  },
+  "GuldanHealthstone|GuldanHealthstone|Active|Level13": {
+   "cooldownText": {
+    "html": "Cooldown: 45 seconds",
+    "text": "Cooldown: 45 seconds"
+   },
+   "fullText": {
+    "html": "Activate to heal for 25% of Gul'dan's maximum Health.",
+    "text": "Activate to heal for 25% of Gul'dan's maximum Health."
+   },
+   "name": {
+    "html": "Healthstone",
+    "text": "Healthstone"
+   },
+   "shortText": {
+    "html": "Activate to heal",
+    "text": "Activate to heal"
+   }
+  },
+  "GuldanHorrifyHaunt|GuldanHorrifyHaunt|Heroic|Level20": {
+   "fullText": {
+    "html": "Increases the duration of Horrify by 1 second, and while Feared, enemies lose 20 Armor, causing them to take 20% increased damage.",
+    "text": "Increases the duration of Horrify by 1 second, and while Feared, enemies lose 20 Armor, causing them to take 20% increased damage."
+   },
+   "name": {
+    "html": "Haunt",
+    "text": "Haunt"
+   },
+   "shortText": {
+    "html": "Increases Horrify duration, lower enemies' Armor",
+    "text": "Increases Horrify duration, lower enemies' Armor"
+   }
+  },
+  "GuldanHorrify|GuldanHorrify|Heroic|Level10": {
+   "cooldownText": {
+    "html": "Cooldown: 80 seconds",
+    "text": "Cooldown: 80 seconds"
+   },
+   "energyText": {
+    "html": "<span>Mana: 90</span>",
+    "text": "Mana: 90"
+   },
+   "fullText": {
+    "html": "After 0.5 seconds, deal 120~~0.04~~ damage to enemy Heroes in an area and Fear them for 2 seconds. While Feared, Heroes are Silenced and are forced to run away from Horrify's center.",
+    "text": "After 0.5 seconds, deal 120~~0.04~~ damage to enemy Heroes in an area and Fear them for 2 seconds. While Feared, Heroes are Silenced and are forced to run away from Horrify's center."
+   },
+   "name": {
+    "html": "Horrify",
+    "text": "Horrify"
+   },
+   "shortText": {
+    "html": "Deals damage and Fears Heroes",
+    "text": "Deals damage and Fears Heroes"
+   }
+  },
+  "GuldanLifeTapDarknessWithin|GuldanLifeTapDarknessWithin|Trait|Level16": {
+   "fullText": {
+    "html": "Dealing 600~~0.04~~ damage to enemy Heroes causes the next cast of Life Tap to cost no Health and grant Gul'dan 25% Spell Power for 5 seconds.",
+    "text": "Dealing 600~~0.04~~ damage to enemy Heroes causes the next cast of Life Tap to cost no Health and grant Gul'dan 25% Spell Power for 5 seconds."
+   },
+   "name": {
+    "html": "Darkness Within",
+    "text": "Darkness Within"
+   },
+   "shortText": {
+    "html": "Life Tap to gain Damage",
+    "text": "Life Tap to gain Damage"
+   }
+  },
+  "GuldanLifeTapHungerforPower|GuldanLifeTapHungerforPower|Passive|Level7": {
+   "fullText": {
+    "html": "Increases Spell Power by 15% but reduces healing received from allies by 25%.",
+    "text": "Increases Spell Power by 15% but reduces healing received from allies by 25%."
+   },
+   "name": {
+    "html": "Hunger for Power",
+    "text": "Hunger for Power"
+   },
+   "shortText": {
+    "html": "Gain Spell Power but reduce healing received",
+    "text": "Gain Spell Power but reduce healing received"
+   }
+  },
+  "GuldanLifeTapImprovedLifeTap|GuldanLifeTapImprovedLifeTap|Trait|Level4": {
+   "fullText": {
+    "html": "Increase the Mana restored by Life Tap to 40%.",
+    "text": "Increase the Mana restored by Life Tap to 40%."
+   },
+   "name": {
+    "html": "Improved Life Tap",
+    "text": "Improved Life Tap"
+   },
+   "shortText": {
+    "html": "Life Tap restores more Mana",
+    "text": "Life Tap restores more Mana"
+   }
+  },
+  "GuldanRainOfDestructionDeepImpact|GuldanRainOfDestructionDeepImpact|Heroic|Level20": {
+   "fullText": {
+    "html": "Rain of Destruction Slows enemies Movement Speed by 90% for 0.5 seconds.",
+    "text": "Rain of Destruction Slows enemies Movement Speed by 90% for 0.5 seconds."
+   },
+   "name": {
+    "html": "Deep Impact",
+    "text": "Deep Impact"
+   },
+   "shortText": {
+    "html": "Rain of Destruction slows enemy Movement Speed",
+    "text": "Rain of Destruction slows enemy Movement Speed"
+   }
+  },
+  "GuldanRainOfDestruction|GuldanRainOfDestruction|Heroic|Level10": {
+   "cooldownText": {
+    "html": "Cooldown: 70 seconds",
+    "text": "Cooldown: 70 seconds"
+   },
+   "energyText": {
+    "html": "<span>Mana: 80</span>",
+    "text": "Mana: 80"
+   },
+   "fullText": {
+    "html": "After 1.5 seconds, summon a rain of meteors in an area for 7 seconds. Each meteor deals 165~~0.04~~ damage in a small area.",
+    "text": "After 1.5 seconds, summon a rain of meteors in an area for 7 seconds. Each meteor deals 165~~0.04~~ damage in a small area."
+   },
+   "name": {
+    "html": "Rain of Destruction",
+    "text": "Rain of Destruction"
+   },
+   "shortText": {
+    "html": "Summon a rain of meteors in an area",
+    "text": "Summon a rain of meteors in an area"
+   }
+  },
+  "HeroGenericExecutionerPassive|GenericExecutionerTalent|Passive|Level16": {
+   "fullText": {
+    "html": "Attacking a Hero that is Slowed, Rooted, or Stunned increases your Basic Attack damage by 30% for 3 seconds.",
+    "text": "Attacking a Hero that is Slowed, Rooted, or Stunned increases your Basic Attack damage by 30% for 3 seconds."
+   },
+   "name": {
+    "html": "Executioner",
+    "text": "Executioner"
+   },
+   "shortText": {
+    "html": "Attacking disabled Heroes increases damage",
+    "text": "Attacking disabled Heroes increases damage"
+   }
+  },
+  "KerriganAssimilationAssimilationBlades|KerriganAssimilationBlades|Passive|Level20": {
+   "fullText": {
+    "html": "Damaging an enemy increases Basic Attack damage by 2% for 5 seconds, up to 40%.",
+    "text": "Damaging an enemy increases Basic Attack damage by 2% for 5 seconds, up to 40%."
+   },
+   "name": {
+    "html": "Assimilation Blades",
+    "text": "Assimilation Blades"
+   },
+   "shortText": {
+    "html": "Damaging enemies increases Attack Damage",
+    "text": "Damaging enemies increases Attack Damage"
+   }
+  },
+  "KerriganAssimilationMastery|KerriganAssimilationMasteryTalent|Trait|Level1": {
+   "fullText": {
+    "html": "Regeneration Globe healing grants 50~~0.04~~ points of Assimilation Shields per second while active. While Assimilation is active, Kerrigan's Health and Mana regeneration is increased by 150%.",
+    "text": "Regeneration Globe healing grants 50~~0.04~~ points of Assimilation Shields per second while active. While Assimilation is active, Kerrigan's Health and Mana regeneration is increased by 150%."
+   },
+   "name": {
+    "html": "Assimilation Mastery",
+    "text": "Assimilation Mastery"
+   },
+   "shortText": {
+    "html": "Globes grant Shields, Assimilation increases regen",
+    "text": "Globes grant Shields, Assimilation increases regen"
+   }
+  },
+  "KerriganAssimilationVolatilePower|KerriganAssimilationVolatilePower|Trait|Level13": {
+   "fullText": {
+    "html": "Increase the amount of Assimilation Shields granted from damage dealt by 10%, but reduce duration of Assimilation by 3 seconds.",
+    "text": "Increase the amount of Assimilation Shields granted from damage dealt by 10%, but reduce duration of Assimilation by 3 seconds."
+   },
+   "name": {
+    "html": "Volatile Power",
+    "text": "Volatile Power"
+   },
+   "shortText": {
+    "html": "Increase Assimilation gain, reduce duration",
+    "text": "Increase Assimilation gain, reduce duration"
+   }
+  },
+  "KerriganBladedMomentum|KerriganBladedMomentum|Passive|Level7": {
+   "fullText": {
+    "html": "Basic Attacks against enemy Heroes reduce the cooldown of Kerrigan's Basic Abilities by 0.75 seconds.",
+    "text": "Basic Attacks against enemy Heroes reduce the cooldown of Kerrigan's Basic Abilities by 0.75 seconds."
+   },
+   "name": {
+    "html": "Bladed Momentum",
+    "text": "Bladed Momentum"
+   },
+   "shortText": {
+    "html": "Attacking Heroes reduces Ability cooldowns",
+    "text": "Attacking Heroes reduces Ability cooldowns"
+   }
+  },
+  "KerriganChrysalis|KerriganChrysalis|Active|Level13": {
+   "cooldownText": {
+    "html": "Cooldown: 90 seconds",
+    "text": "Cooldown: 90 seconds"
+   },
+   "fullText": {
+    "html": "Activate to place Kerrigan in a Chrysalis with 650~~0.04~~ Health for 5 seconds. While inside, Kerrigan regenerates 4% of her maximum Health per second.<br><br>Enemies can destroy the Chrysalis to end its effects early.",
+    "text": "Activate to place Kerrigan in a Chrysalis with 650~~0.04~~ Health for 5 seconds. While inside, Kerrigan regenerates 4% of her maximum Health per second. Enemies can destroy the Chrysalis to end its effects early."
+   },
+   "name": {
+    "html": "Chrysalis",
+    "text": "Chrysalis"
+   },
+   "shortText": {
+    "html": "Activate to enter Stasis and heal",
+    "text": "Activate to enter Stasis and heal"
+   }
+  },
+  "KerriganFuryOfTheSwarm|KerriganAssimilationFuryOfTheSwarmTalent|Passive|Level1": {
+   "fullText": {
+    "html": "After casting Ravage, Kerrigan's next Basic Attack within 3 seconds splashes for 100% damage around the target.",
+    "text": "After casting Ravage, Kerrigan's next Basic Attack within 3 seconds splashes for 100% damage around the target."
+   },
+   "name": {
+    "html": "Fury of the Swarm",
+    "text": "Fury of the Swarm"
+   },
+   "shortText": {
+    "html": "Ravage causes Basic Attacks to splash",
+    "text": "Ravage causes Basic Attacks to splash"
+   }
+  },
+  "KerriganHeroicAbilityMaelstrom|KerriganMaelstrom|Heroic|Level10": {
+   "cooldownText": {
+    "html": "Cooldown: 90 seconds",
+    "text": "Cooldown: 90 seconds"
+   },
+   "energyText": {
+    "html": "<span>Mana: 80</span>",
+    "text": "Mana: 80"
+   },
+   "fullText": {
+    "html": "Deals 74~~0.04~~ damage per second to nearby enemies. Lasts for 7 seconds.",
+    "text": "Deals 74~~0.04~~ damage per second to nearby enemies. Lasts for 7 seconds."
+   },
+   "name": {
+    "html": "Maelstrom",
+    "text": "Maelstrom"
+   },
+   "shortText": {
+    "html": "Persistently damage nearby enemies",
+    "text": "Persistently damage nearby enemies"
+   }
+  },
+  "KerriganHeroicAbilitySummonUltralisk|KerriganSummonUltralisk|Heroic|Level10": {
+   "cooldownText": {
+    "html": "Cooldown: 80 seconds",
+    "text": "Cooldown: 80 seconds"
+   },
+   "energyText": {
+    "html": "<span>Mana: 75</span>",
+    "text": "Mana: 75"
+   },
+   "fullText": {
+    "html": "After 0.5 seconds, summon an Ultralisk that rushes forward upon spawning, dealing 225~~0.04~~ damage to the first enemy Hero hit and Stunning them for 0.5 seconds.<br><br>The Ultralisk's Basic Attacks deal 50% of their damage in an area around their target. Reactivate to retarget the Ultralisk.",
+    "text": "After 0.5 seconds, summon an Ultralisk that rushes forward upon spawning, dealing 225~~0.04~~ damage to the first enemy Hero hit and Stunning them for 0.5 seconds. The Ultralisk's Basic Attacks deal 50% of their damage in an area around their target. Reactivate to retarget the Ultralisk."
+   },
+   "name": {
+    "html": "Summon Ultralisk",
+    "text": "Summon Ultralisk"
+   },
+   "shortText": {
+    "html": "Summon a commandable Ultralisk",
+    "text": "Summon a commandable Ultralisk"
+   }
+  },
+  "KerriganImpalingBladesKineticFulmination|KerriganImpalingBladesKineticFulmination|W|Level4": {
+   "fullText": {
+    "html": "Damaging an enemy increases the damage of Kerrigan's next Impaling Blades within 10 seconds by 10%, up to 100%.",
+    "text": "Damaging an enemy increases the damage of Kerrigan's next Impaling Blades within 10 seconds by 10%, up to 100%."
+   },
+   "name": {
+    "html": "Kinetic Fulmination",
+    "text": "Kinetic Fulmination"
+   },
+   "shortText": {
+    "html": "Damage dealt increases Impaling Blades damage",
+    "text": "Damage dealt increases Impaling Blades damage"
+   }
+  },
+  "KerriganImpalingBladesPainfulSpikes|KerriganImpalingBladesPainfulSpikes|W|Level16": {
+   "fullText": {
+    "html": "Enemies hit by Impaling Blades take an additional 60~~0.04~~ damage the next 6 times Kerrigan damages them within 5 seconds.",
+    "text": "Enemies hit by Impaling Blades take an additional 60~~0.04~~ damage the next 6 times Kerrigan damages them within 5 seconds."
+   },
+   "name": {
+    "html": "Painful Spikes",
+    "text": "Painful Spikes"
+   },
+   "shortText": {
+    "html": "Impaling Blades grants bonus damage",
+    "text": "Impaling Blades grants bonus damage"
+   }
+  },
+  "KerriganOmegastormMaelstrom|KerriganMaelstromOmegastormTalent|Heroic|Level20": {
+   "fullText": {
+    "html": "Maelstrom's duration is increased by 0.4 seconds every time it damages a Hero.",
+    "text": "Maelstrom's duration is increased by 0.4 seconds every time it damages a Hero."
+   },
+   "name": {
+    "html": "Omegastorm",
+    "text": "Omegastorm"
+   },
+   "shortText": {
+    "html": "Damaging enemies increases Maelstrom duration",
+    "text": "Damaging enemies increases Maelstrom duration"
+   }
+  },
+  "KerriganPrimalGraspPsionicBarrier|KerriganPrimalGraspPsionicBarrier|E|Level13": {
+   "fullText": {
+    "html": "Each enemy Hero hit by Primal Grasp grants 20 Spell Armor and 4% Movement Speed for 4 seconds, stacking up to 20% Movement Speed.",
+    "text": "Each enemy Hero hit by Primal Grasp grants 20 Spell Armor and 4% Movement Speed for 4 seconds, stacking up to 20% Movement Speed."
+   },
+   "name": {
+    "html": "Psionic Barrier",
+    "text": "Psionic Barrier"
+   },
+   "shortText": {
+    "html": "Primal Grasp grants Spell Armor, Move Speed",
+    "text": "Primal Grasp grants Spell Armor, Move Speed"
+   }
+  },
+  "KerriganPrimalGraspPsionicPulse|KerriganPrimalGraspPsionicPulse|E|Level4": {
+   "fullText": {
+    "html": "Primal Grasp explodes a second time 2 seconds after its first explosion.",
+    "text": "Primal Grasp explodes a second time 2 seconds after its first explosion."
+   },
+   "name": {
+    "html": "Psionic Pulse",
+    "text": "Psionic Pulse"
+   },
+   "shortText": {
+    "html": "Primal Grasp explodes twice",
+    "text": "Primal Grasp explodes twice"
+   }
+  },
+  "KerriganPsionicShift|KerriganPsionicShift|Active|Level20": {
+   "cooldownText": {
+    "html": "Cooldown: 70 seconds",
+    "text": "Cooldown: 70 seconds"
+   },
+   "fullText": {
+    "html": "Activate to teleport to a nearby location, dealing 50~~0.04~~ damage to nearby enemies. Generates 300% increased Assimilation Shields from the damage dealt.",
+    "text": "Activate to teleport to a nearby location, dealing 50~~0.04~~ damage to nearby enemies. Generates 300% increased Assimilation Shields from the damage dealt."
+   },
+   "name": {
+    "html": "Psionic Shift",
+    "text": "Psionic Shift"
+   },
+   "shortText": {
+    "html": "Activate to teleport a short distance, deal damage",
+    "text": "Activate to teleport a short distance, deal damage"
+   }
+  },
+  "KerriganRavageBoundlessFury|KerriganRavageBoundlessFury|Q|Level7": {
+   "fullText": {
+    "html": "Hitting an enemy Hero with Ravage grants a charge of Ravage. Can only occur once every 12 seconds per Hero.",
+    "text": "Hitting an enemy Hero with Ravage grants a charge of Ravage. Can only occur once every 12 seconds per Hero."
+   },
+   "name": {
+    "html": "Boundless Fury",
+    "text": "Boundless Fury"
+   },
+   "shortText": {
+    "html": "Ravage can grant a charge of Ravage",
+    "text": "Ravage can grant a charge of Ravage"
+   }
+  },
+  "KerriganRavageMountingPotency|KerriganRavageMountingPotency|Q|Level16": {
+   "fullText": {
+    "html": "Ravage grants 5% Spell Power for 5 seconds, up to 40%.",
+    "text": "Ravage grants 5% Spell Power for 5 seconds, up to 40%."
+   },
+   "name": {
+    "html": "Mounting Potency",
+    "text": "Mounting Potency"
+   },
+   "shortText": {
+    "html": "Ravage grants Spell Power",
+    "text": "Ravage grants Spell Power"
+   }
+  },
+  "KerriganRavageQueenOfBlades|KerriganRavageQueenOfBlades|Q|Level7": {
+   "fullText": {
+    "html": "Reduce the cooldown of Ravage by 4 seconds and increase its damage to Minions and Mercenaries by 100%.",
+    "text": "Reduce the cooldown of Ravage by 4 seconds and increase its damage to Minions and Mercenaries by 100%."
+   },
+   "name": {
+    "html": "Queen of Blades",
+    "text": "Queen of Blades"
+   },
+   "shortText": {
+    "html": "Ravage deals bonus damage to Minions, Mercs",
+    "text": "Ravage deals bonus damage to Minions, Mercs"
+   }
+  },
+  "KerriganRavageRavagingFerocity|KerriganRavageRavagingFerocity|Q|Level4": {
+   "fullText": {
+    "html": "Ravage grants Kerrigan 25% Attack Speed for 3 seconds.",
+    "text": "Ravage grants Kerrigan 25% Attack Speed for 3 seconds."
+   },
+   "name": {
+    "html": "Ravaging Ferocity",
+    "text": "Ravaging Ferocity"
+   },
+   "shortText": {
+    "html": "Ravage grants Attack Speed",
+    "text": "Ravage grants Attack Speed"
+   }
+  },
+  "KerriganRavageSiphoningImpact|KerriganRavageSiphoningImpact|Q|Level1": {
+   "fullText": {
+    "html": "Hitting an enemy Hero with Ravage grants 100~~0.04~~ points of Assimilation Shields.",
+    "text": "Hitting an enemy Hero with Ravage grants 100~~0.04~~ points of Assimilation Shields."
+   },
+   "name": {
+    "html": "Siphoning Impact",
+    "text": "Siphoning Impact"
+   },
+   "shortText": {
+    "html": "Ravage grants Assimilation Shields",
+    "text": "Ravage grants Assimilation Shields"
+   }
+  },
+  "KerriganTorrasqueSummonUltralisk|KerriganSummonUltraliskTorrasqueTalent|Heroic|Level20": {
+   "fullText": {
+    "html": "Increase the Health and Basic Attack damage of the Ultralisk by 20%. The Ultralisk morphs into an egg when it dies. If the egg isn't killed within 4 seconds, a new Ultralisk is born.",
+    "text": "Increase the Health and Basic Attack damage of the Ultralisk by 20%. The Ultralisk morphs into an egg when it dies. If the egg isn't killed within 4 seconds, a new Ultralisk is born."
+   },
+   "name": {
+    "html": "Torrasque",
+    "text": "Torrasque"
+   },
+   "shortText": {
+    "html": "Ultralisk spawns a new Ultralisk on death",
+    "text": "Ultralisk spawns a new Ultralisk on death"
+   }
+  },
+  "KerriganUnbridledEnergy|KerriganUnbridledEnergy|Heroic|Level16": {
+   "fullText": {
+    "html": "Damaging a Hero with a Heroic Ability grants 35% Spell Power for 4 seconds.",
+    "text": "Damaging a Hero with a Heroic Ability grants 35% Spell Power for 4 seconds."
+   },
+   "name": {
+    "html": "Unbridled Energy",
+    "text": "Unbridled Energy"
+   },
+   "shortText": {
+    "html": "Heroic Ability damage grants Spell Power",
+    "text": "Heroic Ability damage grants Spell Power"
+   }
+  },
+  "LostVikingsGoGoGo64KBMarathon|LostVikingsGoGoGo64KBMarathonTalent|Z|Level16": {
+   "fullText": {
+    "html": "Activating Go Go Go! grants an additional 40% Movement Speed and breaks the Vikings out of Roots and Slows.",
+    "text": "Activating Go Go Go! grants an additional 40% Movement Speed and breaks the Vikings out of Roots and Slows."
+   },
+   "name": {
+    "html": "64 KB Marathon",
+    "text": "64 KB Marathon"
+   },
+   "shortText": {
+    "html": "Run faster and break Slows and Roots",
+    "text": "Run faster and break Slows and Roots"
+   }
+  },
+  "LostVikingsHeroicAbilityLongboatRaid|LostVikingsLongboatRaid|Heroic|Level10": {
+   "cooldownText": {
+    "html": "Cooldown: 90 seconds",
+    "text": "Cooldown: 90 seconds"
+   },
+   "fullText": {
+    "html": "Hop into an Unstoppable Longboat that fires at nearby enemies for 128~~0.04~~ damage per second and can fire a mortar that deals 228~~0.04~~ damage in an area.  The boat has increased Health for each Viking inside. If the boat is destroyed by enemies, all Vikings are Stunned for 1 second. Lasts 15 seconds.<br><br>Requires all surviving Vikings to be nearby.",
+    "text": "Hop into an Unstoppable Longboat that fires at nearby enemies for 128~~0.04~~ damage per second and can fire a mortar that deals 228~~0.04~~ damage in an area. The boat has increased Health for each Viking inside. If the boat is destroyed by enemies, all Vikings are Stunned for 1 second. Lasts 15 seconds. Requires all surviving Vikings to be nearby."
+   },
+   "name": {
+    "html": "Longboat Raid!",
+    "text": "Longboat Raid!"
+   },
+   "shortText": {
+    "html": "Load into a Longboat to attack enemies",
+    "text": "Load into a Longboat to attack enemies"
+   }
+  },
+  "LostVikingsHeroicAbilityPlayAgain|LostVikingsPlayAgain|Heroic|Level10": {
+   "cooldownText": {
+    "html": "Cooldown: 100 seconds",
+    "text": "Cooldown: 100 seconds"
+   },
+   "fullText": {
+    "html": "Summon, fully heal, and revive all Lost Vikings at target location after a Viking channels for 2 seconds. <br><br>Only one Viking may attempt to summon at a time.",
+    "text": "Summon, fully heal, and revive all Lost Vikings at target location after a Viking channels for 2 seconds. Only one Viking may attempt to summon at a time."
+   },
+   "name": {
+    "html": "Play Again!",
+    "text": "Play Again!"
+   },
+   "shortText": {
+    "html": "Revive and summon Vikings",
+    "text": "Revive and summon Vikings"
+   }
+  },
+  "LostVikingsMasteryBaleogTheFierce|LostVikingsBaleogTheFierceTalent|Passive|Level7": {
+   "fullText": {
+    "html": "Increase Baleog's attack range by 2.5. While near Olaf and Erik, he becomes inspired by the power of teamwork and his Attack Speed is increased by 50%.",
+    "text": "Increase Baleog's attack range by 2.5. While near Olaf and Erik, he becomes inspired by the power of teamwork and his Attack Speed is increased by 50%."
+   },
+   "name": {
+    "html": "Baleog the Fierce",
+    "text": "Baleog the Fierce"
+   },
+   "shortText": {
+    "html": "Baleog gains Attack Speed, Range",
+    "text": "Baleog gains Attack Speed, Range"
+   }
+  },
+  "LostVikingsMasteryCheckpointReached|LostVikingsCheckpointReachedTalent|Heroic|Level20": {
+   "fullText": {
+    "html": "10 seconds after using Play Again!, any dead Vikings are revived and summoned again, and all are healed to full. ",
+    "text": "10 seconds after using Play Again!, any dead Vikings are revived and summoned again, and all are healed to full."
+   },
+   "name": {
+    "html": "Checkpoint Reached",
+    "text": "Checkpoint Reached"
+   },
+   "shortText": {
+    "html": "Additional revive and heal",
+    "text": "Additional revive and heal"
+   }
+  },
+  "LostVikingsMasteryErikTheSwift|LostVikingsErikTheSwiftTalent|Passive|Level4": {
+   "fullText": {
+    "html": "Permanently increases Erik's base Movement Speed by 10%, and as long as Erik is moving he heals 34~~0.04~~ Health per second.",
+    "text": "Permanently increases Erik's base Movement Speed by 10%, and as long as Erik is moving he heals 34~~0.04~~ Health per second."
+   },
+   "name": {
+    "html": "Erik the Swift",
+    "text": "Erik the Swift"
+   },
+   "shortText": {
+    "html": "Increases Erik's Move Speed and heal while running",
+    "text": "Increases Erik's Move Speed and heal while running"
+   }
+  },
+  "LostVikingsMasteryExplosiveAttacks|LostVikingsExplosiveAttacksTalent|Passive|Level1": {
+   "fullText": {
+    "html": "Baleog's Basic Attack splash damage against non-Heroes is no longer reduced by 50%.",
+    "text": "Baleog's Basic Attack splash damage against non-Heroes is no longer reduced by 50%."
+   },
+   "name": {
+    "html": "Explosive Attacks",
+    "text": "Explosive Attacks"
+   },
+   "shortText": {
+    "html": "Increases Baleog splash to non-Heroic enemies",
+    "text": "Increases Baleog splash to non-Heroic enemies"
+   }
+  },
+  "LostVikingsMasteryHunkaBurningOlaf|LostVikingsHunkaBurningOlafTalent|Passive|Level13": {
+   "fullText": {
+    "html": "Olaf deals 34~~0.04~~ damage every second to nearby enemies.",
+    "text": "Olaf deals 34~~0.04~~ damage every second to nearby enemies."
+   },
+   "name": {
+    "html": "Hunka' Burning Olaf",
+    "text": "Hunka' Burning Olaf"
+   },
+   "shortText": {
+    "html": "Olaf deals damage to nearby enemies",
+    "text": "Olaf deals damage to nearby enemies"
+   }
+  },
+  "LostVikingsMasteryImpatienceIsAVirtue|LostVikingsImpatienceIsAVirtueTalent|Passive|Level16": {
+   "fullText": {
+    "html": "Enemies damaged by a Viking's Basic Attack reduce the cooldown of all Viking Abilities by 0.3125 seconds.",
+    "text": "Enemies damaged by a Viking's Basic Attack reduce the cooldown of all Viking Abilities by 0.3125 seconds."
+   },
+   "name": {
+    "html": "Impatience Is a Virtue",
+    "text": "Impatience Is a Virtue"
+   },
+   "shortText": {
+    "html": "Vikings' attacks reduce cooldowns of all Vikings",
+    "text": "Vikings' attacks reduce cooldowns of all Vikings"
+   }
+  },
+  "LostVikingsMasteryItsASabotage|LostVikingsItsASabotageTalent|Passive|Level4": {
+   "fullText": {
+    "html": "Erik's Basic Attacks against Structures light them on fire for 3 seconds, causing 225~~0.04~~ damage.",
+    "text": "Erik's Basic Attacks against Structures light them on fire for 3 seconds, causing 225~~0.04~~ damage."
+   },
+   "name": {
+    "html": "It's a Sabotage!",
+    "text": "It's a Sabotage!"
+   },
+   "shortText": {
+    "html": "Erik's attacks stronger against Structures",
+    "text": "Erik's attacks stronger against Structures"
+   }
+  },
+  "LostVikingsMasteryJump|LostVikingsJump|W|Level13": {
+   "cooldownText": {
+    "html": "Cooldown: 30 seconds",
+    "text": "Cooldown: 30 seconds"
+   },
+   "fullText": {
+    "html": "Makes all Vikings Invulnerable and able to pass over enemies for 1.5 seconds.",
+    "text": "Makes all Vikings Invulnerable and able to pass over enemies for 1.5 seconds."
+   },
+   "name": {
+    "html": "Jump!",
+    "text": "Jump!"
+   },
+   "shortText": {
+    "html": "Grants temporary Invulnerability",
+    "text": "Grants temporary Invulnerability"
+   }
+  },
+  "LostVikingsMasteryLargeAndInCharge|LostVikingsLargeAndInChargeTalent|Passive|Level16": {
+   "fullText": {
+    "html": "When Olaf charges enemies, they are stunned for 1 second.",
+    "text": "When Olaf charges enemies, they are stunned for 1 second."
+   },
+   "name": {
+    "html": "Large and In Charge",
+    "text": "Large and In Charge"
+   },
+   "shortText": {
+    "html": "Charge stuns enemies",
+    "text": "Charge stuns enemies"
+   }
+  },
+  "LostVikingsMasteryNordicAttackSquad|LostVikingsNordicAttackSquad|Passive|Level13": {
+   "fullText": {
+    "html": "While Olaf, Baleog, and Erik are near each of the other two Vikings, their Basic Attacks deal bonus damage equal to 1.25% maximum Health to enemy Heroes.",
+    "text": "While Olaf, Baleog, and Erik are near each of the other two Vikings, their Basic Attacks deal bonus damage equal to 1.25% maximum Health to enemy Heroes."
+   },
+   "name": {
+    "html": "Nordic Attack Squad",
+    "text": "Nordic Attack Squad"
+   },
+   "shortText": {
+    "html": "Vikings deal bonus damage when together",
+    "text": "Vikings deal bonus damage when together"
+   }
+  },
+  "LostVikingsMasteryNorseForce|LostVikingsNorseForce|Q|Level7": {
+   "cooldownText": {
+    "html": "Cooldown: 15 seconds",
+    "text": "Cooldown: 15 seconds"
+   },
+   "fullText": {
+    "html": "All Vikings gain a 140~~0.04~~ to 308~~0.04~~ point Shield, increasing in strength for each Viking alive. Lasts 4 seconds.",
+    "text": "All Vikings gain a 140~~0.04~~ to 308~~0.04~~ point Shield, increasing in strength for each Viking alive. Lasts 4 seconds."
+   },
+   "name": {
+    "html": "Norse Force!",
+    "text": "Norse Force!"
+   },
+   "shortText": {
+    "html": "All Vikings gain a Shield",
+    "text": "All Vikings gain a Shield"
+   }
+  },
+  "LostVikingsMasteryOlafTheStout|LostVikingsOlafTheStoutTalent|Passive|Level1": {
+   "fullText": {
+    "html": "Passive: Olaf gains 20% bonus maximum Health.<br><br>Every 5 seconds, Olaf gains 75 Physical Armor against the next enemy Hero Basic Attack, reducing the damage taken by 75%.<br><br>Stores up to 2 charges.",
+    "text": "Passive: Olaf gains 20% bonus maximum Health. Every 5 seconds, Olaf gains 75 Physical Armor against the next enemy Hero Basic Attack, reducing the damage taken by 75%. Stores up to 2 charges."
+   },
+   "name": {
+    "html": "Olaf the Stout",
+    "text": "Olaf the Stout"
+   },
+   "shortText": {
+    "html": "Olaf gains Health, Physical Armor",
+    "text": "Olaf gains Health, Physical Armor"
+   }
+  },
+  "LostVikingsMasteryPainDontHurt|LostVikingsPainDontHurtTalent|Passive|Level4": {
+   "fullText": {
+    "html": "Baleog's Basic Attacks and splash damage heal for 20% of the damage dealt. Healing is doubled against Heroes.",
+    "text": "Baleog's Basic Attacks and splash damage heal for 20% of the damage dealt. Healing is doubled against Heroes."
+   },
+   "name": {
+    "html": "Pain Don't Hurt",
+    "text": "Pain Don't Hurt"
+   },
+   "shortText": {
+    "html": "Baleog's attacks heal himself",
+    "text": "Baleog's attacks heal himself"
+   }
+  },
+  "LostVikingsMasterySpinToWin|LostVikingsSpinToWin|Q|Level7": {
+   "cooldownText": {
+    "html": "Cooldown: 10 seconds",
+    "text": "Cooldown: 10 seconds"
+   },
+   "fullText": {
+    "html": "Activate to have each Viking deal 85~~0.04~~ damage to nearby enemies.  Deals 100% bonus damage to enemy Heroes.",
+    "text": "Activate to have each Viking deal 85~~0.04~~ damage to nearby enemies. Deals 100% bonus damage to enemy Heroes."
+   },
+   "name": {
+    "html": "Spin To Win!",
+    "text": "Spin To Win!"
+   },
+   "shortText": {
+    "html": "Deals damage around each Viking",
+    "text": "Deals damage around each Viking"
+   }
+  },
+  "LostVikingsMasterySpyGames|LostVikingsSpyGamesTalent|Passive|Level1": {
+   "fullText": {
+    "html": "After standing still for 3 seconds, Erik gains Stealth and his Sight Radius is increased by 75%. The Stealth persists for 3 seconds after moving and once removed, Erik gains 75% bonus Basic Attack damage for 6 seconds.",
+    "text": "After standing still for 3 seconds, Erik gains Stealth and his Sight Radius is increased by 75%. The Stealth persists for 3 seconds after moving and once removed, Erik gains 75% bonus Basic Attack damage for 6 seconds."
+   },
+   "name": {
+    "html": "Spy Games",
+    "text": "Spy Games"
+   },
+   "shortText": {
+    "html": "Erik gains Stealth and increases vision if stationary",
+    "text": "Erik gains Stealth and increases vision if stationary"
+   }
+  },
+  "LostVikingsMasteryTheSequel|LostVikingsTheSequelTalent|Trait|Level20": {
+   "fullText": {
+    "html": "Reduces the Lost Vikings's death timer by 50%.",
+    "text": "Reduces the Lost Vikings's death timer by 50%."
+   },
+   "name": {
+    "html": "The Sequel!",
+    "text": "The Sequel!"
+   },
+   "shortText": {
+    "html": "Reduces death timer for all Vikings",
+    "text": "Reduces death timer for all Vikings"
+   }
+  },
+  "LostVikingsMasteryVikingBribery|LostVikingsVikingBribery|E|Level1": {
+   "fullText": {
+    "html": "Enemy Minions or captured Mercenaries killed near The Lost Vikings grant stacks of Bribe. Use 40 stacks to bribe target Mercenary, instantly defeating them. Does not work on Elite Mercenaries. Maximum stacks available: 200.",
+    "text": "Enemy Minions or captured Mercenaries killed near The Lost Vikings grant stacks of Bribe. Use 40 stacks to bribe target Mercenary, instantly defeating them. Does not work on Elite Mercenaries. Maximum stacks available: 200."
+   },
+   "name": {
+    "html": "Viking Bribery",
+    "text": "Viking Bribery"
+   },
+   "shortText": {
+    "html": "Kill Minions to bribe a Mercenary",
+    "text": "Kill Minions to bribe a Mercenary"
+   }
+  },
+  "LostVikingsMasteryWereOnABoat|LostVikingsWereOnABoatTalent|Heroic|Level20": {
+   "fullText": {
+    "html": "The Longboat can attack two targets at once and the range of its Mortar is increased by 100%. Reduce Longboat Raid!'s cooldown by 30 seconds.",
+    "text": "The Longboat can attack two targets at once and the range of its Mortar is increased by 100%. Reduce Longboat Raid!'s cooldown by 30 seconds."
+   },
+   "name": {
+    "html": "Ragnarok 'n' Roll!",
+    "text": "Ragnarok 'n' Roll!"
+   },
+   "shortText": {
+    "html": "Increased combat prowess",
+    "text": "Increased combat prowess"
+   }
+  },
+  "LostVikingsTalentFuryoftheStorm|LostVikingsFuryoftheStormTalent|Passive|Level20": {
+   "fullText": {
+    "html": "Every 5 seconds, the next Basic Attack will deal an additional 41~~0.04~~ damage to the target, and 105~~0.04~~ damage to all nearby Minions, Mercenaries and Monsters. Each Viking has their own cooldown.",
+    "text": "Every 5 seconds, the next Basic Attack will deal an additional 41~~0.04~~ damage to the target, and 105~~0.04~~ damage to all nearby Minions, Mercenaries and Monsters. Each Viking has their own cooldown."
+   },
+   "name": {
+    "html": "Fury of the Storm",
+    "text": "Fury of the Storm"
+   },
+   "shortText": {
+    "html": "Basic Attacks chain to non-Heroes",
+    "text": "Basic Attacks chain to non-Heroes"
+   }
+  },
+  "LucioAmpItUpRejuvenescencia|LucioAmpItUpRejuvenescencia|E|Level16": {
+   "fullText": {
+    "html": "While Amp It Up is active, Crossfade's Healing Boost heals for an additional 2.5% of the target's maximum Health each second.",
+    "text": "While Amp It Up is active, Crossfade's Healing Boost heals for an additional 2.5% of the target's maximum Health each second."
+   },
+   "name": {
+    "html": "Rejuvenescência",
+    "text": "Rejuvenescência"
+   },
+   "shortText": {
+    "html": "Healing Boost heals percent Health",
+    "text": "Healing Boost heals percent Health"
+   }
+  },
+  "LucioAmpItUpUpTheFrequency|LucioAmpItUpUpTheFrequency|E|Level16": {
+   "fullText": {
+    "html": "Hitting enemy Heroes with Basic Attacks reduces the cooldown of Amp It Up by 0.3 seconds.<br><br>Passive: Wall Ride increases Basic Attack range by 2.2. ",
+    "text": "Hitting enemy Heroes with Basic Attacks reduces the cooldown of Amp It Up by 0.3 seconds. Passive: Wall Ride increases Basic Attack range by 2.2."
+   },
+   "name": {
+    "html": "Up the Frequency",
+    "text": "Up the Frequency"
+   },
+   "shortText": {
+    "html": "Basic Attacks reduce Amp It Up cooldown",
+    "text": "Basic Attacks reduce Amp It Up cooldown"
+   }
+  },
+  "LucioAmpItUpUpToEleven|LucioAmpItUpUpToEleven|E|Level16": {
+   "fullText": {
+    "html": "Hitting an enemy Hero with Soundwave or Push Off increases the duration of Amp It Up.<br><br>Soundwave grants 0.5 seconds and Push Off grants 1 second. If Amp It Up is not active, these bonuses are granted to its next activation, up to 3 seconds.<br><br>Passive: Increase the duration of Amp It Up by 1 second.",
+    "text": "Hitting an enemy Hero with Soundwave or Push Off increases the duration of Amp It Up. Soundwave grants 0.5 seconds and Push Off grants 1 second. If Amp It Up is not active, these bonuses are granted to its next activation, up to 3 seconds. Passive: Increase the duration of Amp It Up by 1 second."
+   },
+   "name": {
+    "html": "Up To Eleven",
+    "text": "Up To Eleven"
+   },
+   "shortText": {
+    "html": "Increase Amp It Up duration",
+    "text": "Increase Amp It Up duration"
+   }
+  },
+  "LucioBoombox|LucioBoomboxBoombox|Active|Level7": {
+   "cooldownText": {
+    "html": "Cooldown: 20 seconds",
+    "text": "Cooldown: 20 seconds"
+   },
+   "fullText": {
+    "html": "Place a boombox that plays Lúcio's active Crossfade track. Its volume adjusts with Amp It Up. Allied Heroes near the boombox gain 5 Armor.<br><br>Crossfade tracks from Lúcio and the Boombox do not stack.",
+    "text": "Place a boombox that plays Lúcio's active Crossfade track. Its volume adjusts with Amp It Up. Allied Heroes near the boombox gain 5 Armor. Crossfade tracks from Lúcio and the Boombox do not stack."
+   },
+   "name": {
+    "html": "Boombox",
+    "text": "Boombox"
+   },
+   "shortText": {
+    "html": "Drop a boombox that plays Crossfade",
+    "text": "Drop a boombox that plays Crossfade"
+   }
+  },
+  "LucioCrossfadeAllTogetherTalent|LucioCrossfadeAllTogether|W|Level13": {
+   "fullText": {
+    "html": "For each ally affected by Crossfade, Lúcio gains 5% Movement Speed that stacks with other bonuses.",
+    "text": "For each ally affected by Crossfade, Lúcio gains 5% Movement Speed that stacks with other bonuses."
+   },
+   "name": {
+    "html": "All Together",
+    "text": "All Together"
+   },
+   "shortText": {
+    "html": "Gain Move Speed from nearby allies",
+    "text": "Gain Move Speed from nearby allies"
+   }
+  },
+  "LucioCrossfadeMixingFire|LucioHighFiveMixingFire|Heroic|Level20": {
+   "fullText": {
+    "html": "High Five can now be cast on enemy Heroes, dealing 160~~0.04~~ damage and reducing all healing received by 50% for 3 seconds.<br><br>Passive: Reduce the cost and cooldown of High Five by 30%.",
+    "text": "High Five can now be cast on enemy Heroes, dealing 160~~0.04~~ damage and reducing all healing received by 50% for 3 seconds. Passive: Reduce the cost and cooldown of High Five by 30%."
+   },
+   "name": {
+    "html": "Mixing Fire",
+    "text": "Mixing Fire"
+   },
+   "shortText": {
+    "html": "High Five damages enemies, reduces their healing",
+    "text": "High Five damages enemies, reduces their healing"
+   }
+  },
+  "LucioCrossfadePartyMixQuest|LucioCrossfadePartyMix|W|Level1": {
+   "fullText": {
+    "html": "<img width=\"20\" height=\"22\">Quest: Play Lúcio's Crossfade tracks to nearby allies. Multiple allies provide additional time.<br><br><img width=\"20\" height=\"22\">Reward: For every 1 Minute played, permanently increase Lúcio's maximum Mana by 10. <br><img width=\"20\" height=\"22\">Reward: Once you have played for 8 minutes or more, permanently increase Crossfade's radius by 20%.",
+    "text": "Quest: Play Lúcio's Crossfade tracks to nearby allies. Multiple allies provide additional time. Reward: For every 1 Minute played, permanently increase Lúcio's maximum Mana by 10. Reward: Once you have played for 8 minutes or more, permanently increase Crossfade's radius by 20%."
+   },
+   "name": {
+    "html": "Party Mix",
+    "text": "Party Mix"
+   },
+   "shortText": {
+    "html": "Quest: Increase Crossfade radius, max Mana",
+    "text": "Quest: Increase Crossfade radius, max Mana"
+   }
+  },
+  "LucioHighFive|LucioHighFive|Heroic|Level10": {
+   "cooldownText": {
+    "html": "Cooldown: 25 seconds per ally",
+    "text": "Cooldown: 25 seconds per ally"
+   },
+   "energyText": {
+    "html": "<span>Mana: 30</span>",
+    "text": "Mana: 30"
+   },
+   "fullText": {
+    "html": "Quickly skate to an allied Hero. Upon arrival the ally is healed for 230~~0.04~~, Lúcio is healed for 80~~0.04~~, and both gain Unstoppable for 1 second.",
+    "text": "Quickly skate to an allied Hero. Upon arrival the ally is healed for 230~~0.04~~, Lúcio is healed for 80~~0.04~~, and both gain Unstoppable for 1 second."
+   },
+   "name": {
+    "html": "High Five",
+    "text": "High Five"
+   },
+   "shortText": {
+    "html": "Skate to allies, healing and granting Unstoppable",
+    "text": "Skate to allies, healing and granting Unstoppable"
+   }
+  },
+  "LucioItemSummerAnthem|LucioItemSummerAnthem|Active|Level20": {
+   "cooldownText": {
+    "html": "Cooldown: 60 seconds",
+    "text": "Cooldown: 60 seconds"
+   },
+   "fullText": {
+    "html": "Activate for allies affected by Crossfade to become Unkillable for 1.5 seconds.",
+    "text": "Activate for allies affected by Crossfade to become Unkillable for 1.5 seconds."
+   },
+   "name": {
+    "html": "Summer Anthem",
+    "text": "Summer Anthem"
+   },
+   "shortText": {
+    "html": "Activate for Crossfade to grant Unkillable",
+    "text": "Activate for Crossfade to grant Unkillable"
+   }
+  },
+  "LucioPassiveHouseParty|LucioPassiveHouseParty|W|Level20": {
+   "fullText": {
+    "html": "For each ally affected by Crossfade, Lúcio gains 8% increased healing.",
+    "text": "For each ally affected by Crossfade, Lúcio gains 8% increased healing."
+   },
+   "name": {
+    "html": "House Party",
+    "text": "House Party"
+   },
+   "shortText": {
+    "html": "Gain increased healing from nearby allies",
+    "text": "Gain increased healing from nearby allies"
+   }
+  },
+  "LucioPassiveSmoothMoves|LucioPassiveSmoothMoves|Z|Level1": {
+   "fullText": {
+    "html": "While Wall Ride is active, Basic Attacks heal for 30% of the damage dealt and restore 0.5 Mana.<br><br>Passive: Increase Wall Ride duration by 1 second.",
+    "text": "While Wall Ride is active, Basic Attacks heal for 30% of the damage dealt and restore 0.5 Mana. Passive: Increase Wall Ride duration by 1 second."
+   },
+   "name": {
+    "html": "Smooth Moves",
+    "text": "Smooth Moves"
+   },
+   "shortText": {
+    "html": "Wall Ride Basic Attacks heal",
+    "text": "Wall Ride Basic Attacks heal"
+   }
+  },
+  "LucioPushOffHeavyCasters|LucioPushOffHeavyCasters|Trait|Level13": {
+   "fullText": {
+    "html": "Push Off no longer Slows the first Hero hit, and instead Stuns them for 0.5 seconds.",
+    "text": "Push Off no longer Slows the first Hero hit, and instead Stuns them for 0.5 seconds."
+   },
+   "name": {
+    "html": "Heavy Casters",
+    "text": "Heavy Casters"
+   },
+   "shortText": {
+    "html": "Push Off Stuns the first Hero hit",
+    "text": "Push Off Stuns the first Hero hit"
+   }
+  },
+  "LucioPushOffSupersonic|LucioPushOffSupersonic|Trait|Level4": {
+   "fullText": {
+    "html": "While Wall Ride is active, Push Off's cooldown recharges 100% faster.",
+    "text": "While Wall Ride is active, Push Off's cooldown recharges 100% faster."
+   },
+   "name": {
+    "html": "Supersonic",
+    "text": "Supersonic"
+   },
+   "shortText": {
+    "html": "Wall Ride recharges Push Off cooldown",
+    "text": "Wall Ride recharges Push Off cooldown"
+   }
+  },
+  "LucioReverseAmp|LucioReverseAmp|W|Level7": {
+   "fullText": {
+    "html": "Blast Lúcio's active Crossfade track at enemy Heroes. While Amp It Up is active, Healing Boost deals 50~~0.04~~ damage per second and Speed Boost Slows by 20%.<br><br>This ability is unaffected by Crossfade talents.",
+    "text": "Blast Lúcio's active Crossfade track at enemy Heroes. While Amp It Up is active, Healing Boost deals 50~~0.04~~ damage per second and Speed Boost Slows by 20%. This ability is unaffected by Crossfade talents."
+   },
+   "name": {
+    "html": "Reverse Amp",
+    "text": "Reverse Amp"
+   },
+   "shortText": {
+    "html": "Amp It Up blasts Crossfade at enemy Heroes",
+    "text": "Amp It Up blasts Crossfade at enemy Heroes"
+   }
+  },
+  "LucioSoundBarrierBossaNova|LucioSoundBarrierBossaNova|Heroic|Level20": {
+   "fullText": {
+    "html": "Reduce the cooldown of Sound Barrier to 30 seconds, but the Shield now decays over 4 seconds.",
+    "text": "Reduce the cooldown of Sound Barrier to 30 seconds, but the Shield now decays over 4 seconds."
+   },
+   "name": {
+    "html": "Bossa Nova",
+    "text": "Bossa Nova"
+   },
+   "shortText": {
+    "html": "Reduce Sound Barrier's cooldown, duration",
+    "text": "Reduce Sound Barrier's cooldown, duration"
+   }
+  },
+  "LucioSoundBarrier|LucioSoundBarrier|Heroic|Level10": {
+   "cooldownText": {
+    "html": "Cooldown: 80 seconds",
+    "text": "Cooldown: 80 seconds"
+   },
+   "energyText": {
+    "html": "<span>Mana: 100</span>",
+    "text": "Mana: 100"
+   },
+   "fullText": {
+    "html": "After 1 second, Lúcio and nearby allied Heroes gain a 1296~~0.04~~ point Shield that rapidly decays over 6 seconds.",
+    "text": "After 1 second, Lúcio and nearby allied Heroes gain a 1296~~0.04~~ point Shield that rapidly decays over 6 seconds."
+   },
+   "name": {
+    "html": "Sound Barrier",
+    "text": "Sound Barrier"
+   },
+   "shortText": {
+    "html": "Shield nearby allies",
+    "text": "Shield nearby allies"
+   }
+  },
+  "LucioSoundwaveGoodVibrations|LucioSoundwaveGoodVibrations|Q|Level7": {
+   "fullText": {
+    "html": "Hitting an enemy with Soundwave grants Lúcio a 38~~0.04~~ Shield for 8 seconds. Hitting enemy Heroes grants 3 times this amount.",
+    "text": "Hitting an enemy with Soundwave grants Lúcio a 38~~0.04~~ Shield for 8 seconds. Hitting enemy Heroes grants 3 times this amount."
+   },
+   "name": {
+    "html": "Good Vibrations",
+    "text": "Good Vibrations"
+   },
+   "shortText": {
+    "html": "Soundwave grants Shield",
+    "text": "Soundwave grants Shield"
+   }
+  },
+  "LucioSoundwaveOffTheWall|LucioSoundwaveOffTheWall|Q|Level4": {
+   "fullText": {
+    "html": "Hitting an enemy with Soundwave while Wall Ride is active sets its cooldown to 5 seconds and refunds 15 Mana.",
+    "text": "Hitting an enemy with Soundwave while Wall Ride is active sets its cooldown to 5 seconds and refunds 15 Mana."
+   },
+   "name": {
+    "html": "Off the Wall",
+    "text": "Off the Wall"
+   },
+   "shortText": {
+    "html": "Wall Ride Soundwave hits reduce cooldown",
+    "text": "Wall Ride Soundwave hits reduce cooldown"
+   }
+  },
+  "LucioSoundwaveSubwoofer|LucioSoundwaveSubwoofer|Q|Level4": {
+   "fullText": {
+    "html": "Enemies within the first half of Soundwave's range are knocked back 75% further.<br><br><img width=\"20\" height=\"22\">Quest: Hit 3 enemy Heroes with a single Soundwave.<br><br><img width=\"20\" height=\"22\">Reward: Increase Soundwave's arc by 50% and its range by 20%.",
+    "text": "Enemies within the first half of Soundwave's range are knocked back 75% further. Quest: Hit 3 enemy Heroes with a single Soundwave. Reward: Increase Soundwave's arc by 50% and its range by 20%."
+   },
+   "name": {
+    "html": "Subwoofer",
+    "text": "Subwoofer"
+   },
+   "shortText": {
+    "html": "Quest: Empower Soundwave",
+    "text": "Quest: Empower Soundwave"
+   }
+  },
+  "LucioWallRideAccelerando|LucioWallRideAccelerando|Z|Level1": {
+   "fullText": {
+    "html": "Wall Ride's Movement Speed bonus gradually increases to 40% over 6 seconds while Lúcio maintains its effect.",
+    "text": "Wall Ride's Movement Speed bonus gradually increases to 40% over 6 seconds while Lúcio maintains its effect."
+   },
+   "name": {
+    "html": "Accelerando",
+    "text": "Accelerando"
+   },
+   "shortText": {
+    "html": "Wall Ride gradually increases Move Speed",
+    "text": "Wall Ride gradually increases Move Speed"
+   }
+  },
+  "LucioWallRideSlip|LucioWallRideSlip|Z|Level13": {
+   "fullText": {
+    "html": "While Wall Ride is active, passing near an enemy Hero increases its Movement Speed bonus to 40%, and grants 15 Armor, for 1 second.",
+    "text": "While Wall Ride is active, passing near an enemy Hero increases its Movement Speed bonus to 40%, and grants 15 Armor, for 1 second."
+   },
+   "name": {
+    "html": "Slip",
+    "text": "Slip"
+   },
+   "shortText": {
+    "html": "Gain Armor, Move Speed during Wall Ride",
+    "text": "Gain Armor, Move Speed during Wall Ride"
+   }
+  },
+  "SylvanasDarkLadysCall|SylvanasDarkLadysCallMindControlTalent|Heroic|Level20": {
+   "fullText": {
+    "html": "Heroes hit by Mind Control have their vision radius greatly reduced for 5 seconds. Mind Control's cooldown is reduced by 25 seconds.",
+    "text": "Heroes hit by Mind Control have their vision radius greatly reduced for 5 seconds. Mind Control's cooldown is reduced by 25 seconds."
+   },
+   "name": {
+    "html": "Dark Lady's Call",
+    "text": "Dark Lady's Call"
+   },
+   "shortText": {
+    "html": "Mind Control reduces enemy vision",
+    "text": "Mind Control reduces enemy vision"
+   }
+  },
+  "SylvanasHauntingArrows|SylvanasBlackArrowsHauntingArrowsTalent|Trait|Level4": {
+   "cooldownText": {
+    "html": "Cooldown: 90 seconds",
+    "text": "Cooldown: 90 seconds"
+   },
+   "fullText": {
+    "html": "Black Arrows can now be activated to cause all Basic Attacks and Abilities to Stun Minions and Structures for 3 seconds. Lasts for 10 seconds. Basic Attacks against Structures reduce this cooldown by 3 seconds.",
+    "text": "Black Arrows can now be activated to cause all Basic Attacks and Abilities to Stun Minions and Structures for 3 seconds. Lasts for 10 seconds. Basic Attacks against Structures reduce this cooldown by 3 seconds."
+   },
+   "name": {
+    "html": "Haunting Arrows",
+    "text": "Haunting Arrows"
+   },
+   "shortText": {
+    "html": "Activate Black Arrows to disable enemies",
+    "text": "Activate Black Arrows to disable enemies"
+   }
+  },
+  "SylvanasHeroicAbilityWailingArrow|SylvanasWailingArrow|Heroic|Level10": {
+   "cooldownText": {
+    "html": "Cooldown: 90 seconds",
+    "text": "Cooldown: 90 seconds"
+   },
+   "energyText": {
+    "html": "<span>Mana: 100</span>",
+    "text": "Mana: 100"
+   },
+   "fullText": {
+    "html": "Shoot an arrow that can be reactivated to deal 228~~0.04~~ damage and Silence enemies in an area for 2.5 seconds. The arrow detonates automatically if it reaches maximum range.",
+    "text": "Shoot an arrow that can be reactivated to deal 228~~0.04~~ damage and Silence enemies in an area for 2.5 seconds. The arrow detonates automatically if it reaches maximum range."
+   },
+   "name": {
+    "html": "Wailing Arrow",
+    "text": "Wailing Arrow"
+   },
+   "shortText": {
+    "html": "Fire arrow that damages and Silences",
+    "text": "Fire arrow that damages and Silences"
+   }
+  },
+  "SylvanasMindControl|SylvanasMindControlMissile|Heroic|Level10": {
+   "cooldownText": {
+    "html": "Cooldown: 40 seconds",
+    "text": "Cooldown: 40 seconds"
+   },
+   "energyText": {
+    "html": "<span>Mana: 50</span>",
+    "text": "Mana: 50"
+   },
+   "fullText": {
+    "html": "After 0.25 seconds, fire a missile that Mind Controls the first enemy Hero hit. Heroes hit are Silenced, Slowed by 30%, have 3 stacks of Black Arrows applied to them, and are forced to walk towards Sylvanas for 1.75 seconds. ",
+    "text": "After 0.25 seconds, fire a missile that Mind Controls the first enemy Hero hit. Heroes hit are Silenced, Slowed by 30%, have 3 stacks of Black Arrows applied to them, and are forced to walk towards Sylvanas for 1.75 seconds."
+   },
+   "name": {
+    "html": "Mind Control",
+    "text": "Mind Control"
+   },
+   "shortText": {
+    "html": "Force an enemy Hero to walk towards Sylvanas",
+    "text": "Force an enemy Hero to walk towards Sylvanas"
+   }
+  },
+  "SylvanasTalentColdEmbrace|SylvanasShadowDaggerColdEmbraceTalent|W|Level13": {
+   "fullText": {
+    "html": "Shadow Dagger reduces the Armor of the initial target by 25 and any enemy it spreads to by 10 for 2.5 seconds.",
+    "text": "Shadow Dagger reduces the Armor of the initial target by 25 and any enemy it spreads to by 10 for 2.5 seconds."
+   },
+   "name": {
+    "html": "Cold Embrace",
+    "text": "Cold Embrace"
+   },
+   "shortText": {
+    "html": "Shadow Dagger lowers Armor",
+    "text": "Shadow Dagger lowers Armor"
+   }
+  },
+  "SylvanasTalentFesteringWounds|SylvanasBlackArrowsFesteringWounds|E|Level7": {
+   "fullText": {
+    "html": "Increase Haunting Wave's damage by 15%. Haunting Wave applies 3 stacks of Black Arrows.",
+    "text": "Increase Haunting Wave's damage by 15%. Haunting Wave applies 3 stacks of Black Arrows."
+   },
+   "name": {
+    "html": "Festering Wounds",
+    "text": "Festering Wounds"
+   },
+   "shortText": {
+    "html": "Haunting Wave applies Black Arrows",
+    "text": "Haunting Wave applies Black Arrows"
+   }
+  },
+  "SylvanasTalentLifeDrain|SylvanasBlackArrowsLifeDrainTalent|Trait|Level16": {
+   "fullText": {
+    "html": "Heal for 15% of damage dealt by Sylvanas to enemies with 3 stacks of Black Arrows. Healing is doubled against Heroes.",
+    "text": "Heal for 15% of damage dealt by Sylvanas to enemies with 3 stacks of Black Arrows. Healing is doubled against Heroes."
+   },
+   "name": {
+    "html": "Life Drain",
+    "text": "Life Drain"
+   },
+   "shortText": {
+    "html": "Sylvanas heals for damage dealt",
+    "text": "Sylvanas heals for damage dealt"
+   }
+  },
+  "SylvanasTalentLostSoul|SylvanasShadowDaggerLostSoulTalent|W|Level7": {
+   "fullText": {
+    "html": "Basic Attacks against Heroes and Structures with 3 stacks of Black Arrows reduce the cooldown of Shadow Dagger by 0.75 seconds, doubled against Heroes.",
+    "text": "Basic Attacks against Heroes and Structures with 3 stacks of Black Arrows reduce the cooldown of Shadow Dagger by 0.75 seconds, doubled against Heroes."
+   },
+   "name": {
+    "html": "Lost Soul",
+    "text": "Lost Soul"
+   },
+   "shortText": {
+    "html": "Basic Attacks reduce Shadow Dagger cooldown",
+    "text": "Basic Attacks reduce Shadow Dagger cooldown"
+   }
+  },
+  "SylvanasTalentMercenaryQueen|SylvanasMercenaryQueenTalent|Trait|Level4": {
+   "fullText": {
+    "html": "Friendly non-Elite Mercenaries near Sylvanas deal 60% more damage. <br><br>Sylvanas's Basic Attacks Stun and instantly apply 3 stacks of Black Arrows to neutral Mercenaries.  Sylvanas deals 30% additional damage to Mercenaries with 3 stacks of Black Arrows.",
+    "text": "Friendly non-Elite Mercenaries near Sylvanas deal 60% more damage. Sylvanas's Basic Attacks Stun and instantly apply 3 stacks of Black Arrows to neutral Mercenaries. Sylvanas deals 30% additional damage to Mercenaries with 3 stacks of Black Arrows."
+   },
+   "name": {
+    "html": "Mercenary Queen",
+    "text": "Mercenary Queen"
+   },
+   "shortText": {
+    "html": "Stun neutral, and empower allied Mercenaries",
+    "text": "Stun neutral, and empower allied Mercenaries"
+   }
+  },
+  "SylvanasTalentMightOfTheBansheeQueen|SylvanasMightOfTheBansheeQueenWitheringFireTalent|Q|Level1": {
+   "fullText": {
+    "html": "Hitting an enemy Hero with Withering Fire increases Sylvanas's Attack Speed and Spell Power by 5% for 6 seconds, stacking up to 5 times.",
+    "text": "Hitting an enemy Hero with Withering Fire increases Sylvanas's Attack Speed and Spell Power by 5% for 6 seconds, stacking up to 5 times."
+   },
+   "name": {
+    "html": "Might of the Banshee Queen",
+    "text": "Might of the Banshee Queen"
+   },
+   "shortText": {
+    "html": "Withering Fire grants Attack Speed, Spell Power",
+    "text": "Withering Fire grants Attack Speed, Spell Power"
+   }
+  },
+  "SylvanasTalentOverwhelmingAffliction|SylvanasBlackArrowsOverwhelmingAfflictionTalent|Trait|Level1": {
+   "fullText": {
+    "html": "Enemy Heroes with 3 stacks of Black Arrows are Slowed by 15%. Sylvanas's Basic Attacks against Slowed enemy Heroes deal 1% of their maximum Health as damage.",
+    "text": "Enemy Heroes with 3 stacks of Black Arrows are Slowed by 15%. Sylvanas's Basic Attacks against Slowed enemy Heroes deal 1% of their maximum Health as damage."
+   },
+   "name": {
+    "html": "Overwhelming Affliction",
+    "text": "Overwhelming Affliction"
+   },
+   "shortText": {
+    "html": "Black Arrows Slow, bonus damage to Heroes",
+    "text": "Black Arrows Slow, bonus damage to Heroes"
+   }
+  },
+  "SylvanasTalentRemorseless|SylvanasRemorselessTalent|Trait|Level13": {
+   "fullText": {
+    "html": "Sylvanas's Basic Attacks against enemy Heroes with 3 stacks of Black Arrows shoot an untalented shot of Withering Fire. This shot of Withering Fire applies Black Arrows.<br><br> Increase Sylvanas's Basic Attack range by 1.",
+    "text": "Sylvanas's Basic Attacks against enemy Heroes with 3 stacks of Black Arrows shoot an untalented shot of Withering Fire. This shot of Withering Fire applies Black Arrows. Increase Sylvanas's Basic Attack range by 1."
+   },
+   "name": {
+    "html": "Remorseless",
+    "text": "Remorseless"
+   },
+   "shortText": {
+    "html": "Basic Attacks cast Withering Fire",
+    "text": "Basic Attacks cast Withering Fire"
+   }
+  },
+  "SylvanasTalentUnstablePoison|SylvanasBlackArrowsUnstablePoisonTalent|W|Level4": {
+   "fullText": {
+    "html": "Minions that die under the effects of Shadow Dagger or Sylvanas's Traits explode, dealing 150~~0.04~~ damage to nearby Minions, Mercenaries, and Summons.",
+    "text": "Minions that die under the effects of Shadow Dagger or Sylvanas's Traits explode, dealing 150~~0.04~~ damage to nearby Minions, Mercenaries, and Summons."
+   },
+   "name": {
+    "html": "Unstable Poison",
+    "text": "Unstable Poison"
+   },
+   "shortText": {
+    "html": "Enemy Minions can explode on death",
+    "text": "Enemy Minions can explode on death"
+   }
+  },
+  "SylvanasTalentWillOfTheForsaken|SylvanasWillOfTheForsaken|Active|Level16": {
+   "cooldownText": {
+    "html": "Cooldown: 60 seconds",
+    "text": "Cooldown: 60 seconds"
+   },
+   "fullText": {
+    "html": "Activate to become Unstoppable and gain 40% Movement Speed for 3 seconds.",
+    "text": "Activate to become Unstoppable and gain 40% Movement Speed for 3 seconds."
+   },
+   "name": {
+    "html": "Will of the Forsaken",
+    "text": "Will of the Forsaken"
+   },
+   "shortText": {
+    "html": "Activate to gain Unstoppable and Move Speed",
+    "text": "Activate to gain Unstoppable and Move Speed"
+   }
+  },
+  "SylvanasTalentWindrunnerHauntingWave|SylvanasHauntingWaveWindrunnerTalent|E|Level13": {
+   "fullText": {
+    "html": "Haunting Wave can be cast a second time for free within 4 seconds after teleporting. Teleporting with Haunting Wave resets the cooldown of Withering Fire.",
+    "text": "Haunting Wave can be cast a second time for free within 4 seconds after teleporting. Teleporting with Haunting Wave resets the cooldown of Withering Fire."
+   },
+   "name": {
+    "html": "Windrunner",
+    "text": "Windrunner"
+   },
+   "shortText": {
+    "html": "Haunting Wave casts twice, resets Withering Fire",
+    "text": "Haunting Wave casts twice, resets Withering Fire"
+   }
+  },
+  "SylvanasTalentWitheringBarrage|SylvanasWitheringFireWitheringBarrage|Q|Level20": {
+   "fullText": {
+    "html": "Withering Fire applies Black Arrows, and Heroes hit by Withering Fire reduce its cooldown by 0.75 seconds.",
+    "text": "Withering Fire applies Black Arrows, and Heroes hit by Withering Fire reduce its cooldown by 0.75 seconds."
+   },
+   "name": {
+    "html": "Withering Barrage",
+    "text": "Withering Barrage"
+   },
+   "shortText": {
+    "html": "Withering Fire applies Black Arrows",
+    "text": "Withering Fire applies Black Arrows"
+   }
+  },
+  "SylvanasTalentWitheringFireBarbedShot|SylvanasWitheringFireBarbedShotTalent|Q|Level7": {
+   "fullText": {
+    "html": "Hitting the same enemy with 5 shots of Withering Fire causes the 5th shot to deal 400% bonus damage.",
+    "text": "Hitting the same enemy with 5 shots of Withering Fire causes the 5th shot to deal 400% bonus damage."
+   },
+   "name": {
+    "html": "Barbed Shot",
+    "text": "Barbed Shot"
+   },
+   "shortText": {
+    "html": "Withering Fire deals bonus damage",
+    "text": "Withering Fire deals bonus damage"
+   }
+  },
+  "SylvanasTalentWitheringFireEvasiveFire|SylvanasWitheringFireEvasiveFireTalent|Q|Level16": {
+   "fullText": {
+    "html": "Hitting an enemy with Withering Fire grants 6% Movement Speed for 2 seconds, up to 30%. Basic Attacks refresh this duration.",
+    "text": "Hitting an enemy with Withering Fire grants 6% Movement Speed for 2 seconds, up to 30%. Basic Attacks refresh this duration."
+   },
+   "name": {
+    "html": "Evasive Fire",
+    "text": "Evasive Fire"
+   },
+   "shortText": {
+    "html": "Withering Fire grants Move Speed",
+    "text": "Withering Fire grants Move Speed"
+   }
+  },
+  "SylvanasUnrelentingTorment|SylvanasUnrelentingTorment|W|Level1": {
+   "fullText": {
+    "html": "Increase the damage of Shadow Dagger by 20% and increase its duration by 1 second.",
+    "text": "Increase the damage of Shadow Dagger by 20% and increase its duration by 1 second."
+   },
+   "name": {
+    "html": "Unrelenting Torment",
+    "text": "Unrelenting Torment"
+   },
+   "shortText": {
+    "html": "Increase Shadow Dagger damage and duration",
+    "text": "Increase Shadow Dagger damage and duration"
+   }
+  },
+  "SylvanasWailingArrowDeafeningBlast|SylvanasWailingArrowDeafeningBlastTalent|Heroic|Level20": {
+   "fullText": {
+    "html": "Enemies at the center of Wailing Arrow's explosion take 50% more damage and are Silenced for twice as long.",
+    "text": "Enemies at the center of Wailing Arrow's explosion take 50% more damage and are Silenced for twice as long."
+   },
+   "name": {
+    "html": "Deafening Blast",
+    "text": "Deafening Blast"
+   },
+   "shortText": {
+    "html": "Increases power of Wailing Arrow center",
+    "text": "Increases power of Wailing Arrow center"
+   }
+  },
+  "ThrallAlphaWolf|ThrallAlphaWolf|W|Level16": {
+   "fullText": {
+    "html": "For 3 seconds after a Hero is hit by Feral Spirit, Thrall's Basic Attacks against them deal an additional 3% of the target's maximum Health as damage.<br><br>Passive: Increase the duration of Feral Spirit's Root to 1.5 seconds.",
+    "text": "For 3 seconds after a Hero is hit by Feral Spirit, Thrall's Basic Attacks against them deal an additional 3% of the target's maximum Health as damage. Passive: Increase the duration of Feral Spirit's Root to 1.5 seconds."
+   },
+   "name": {
+    "html": "Alpha Wolf",
+    "text": "Alpha Wolf"
+   },
+   "shortText": {
+    "html": "Feral Spirit has longer Root, empowers Attacks",
+    "text": "Feral Spirit has longer Root, empowers Attacks"
+   }
+  },
+  "ThrallAncestralWrath|ThrallAncestralWrath|Active|Level7": {
+   "fullText": {
+    "html": "Activate to consume 8 stacks of Ancestral Wrath, damaging a target enemy Hero for 15% of their maximum Health over 3 seconds, and healing Thrall for 150% of the damage dealt.<br><br>Gain 1 stack of Ancestral Wrath every time Frostwolf Resilience activates.",
+    "text": "Activate to consume 8 stacks of Ancestral Wrath, damaging a target enemy Hero for 15% of their maximum Health over 3 seconds, and healing Thrall for 150% of the damage dealt. Gain 1 stack of Ancestral Wrath every time Frostwolf Resilience activates."
+   },
+   "name": {
+    "html": "Ancestral Wrath",
+    "text": "Ancestral Wrath"
+   },
+   "shortText": {
+    "html": "Activate to damage and steal Health from a Hero",
+    "text": "Activate to damage and steal Health from a Hero"
+   }
+  },
+  "ThrallCrashLightning|ThrallCrashLightning|Q|Level1": {
+   "fullText": {
+    "html": "<img width=\"20\" height=\"22\">Quest: Hit at least 2 Heroes with a single use of Chain Lightning. Upon dying, lose 4 stacks. Gained rewards cannot be lost.<br><br><img width=\"20\" height=\"22\">Reward: After hitting multiple Heroes 15 times, Chain Lightning deals 270 additional damage on its bounces after the initial strike.<br><br><img width=\"20\" height=\"22\">Mythic Reward: After hitting multiple Heroes 30 times, Chain Lightning deals 325 additional damage on its bounces, and prioritizes bouncing to enemy Heroes.",
+    "text": "Quest: Hit at least 2 Heroes with a single use of Chain Lightning. Upon dying, lose 4 stacks. Gained rewards cannot be lost. Reward: After hitting multiple Heroes 15 times, Chain Lightning deals 270 additional damage on its bounces after the initial strike. Mythic Reward: After hitting multiple Heroes 30 times, Chain Lightning deals 325 additional damage on its bounces, and prioritizes bouncing to enemy Heroes."
+   },
+   "name": {
+    "html": "Crash Lightning",
+    "text": "Crash Lightning"
+   },
+   "shortText": {
+    "html": "Quest: Multiple Hero hits empower Chain Lightning",
+    "text": "Quest: Multiple Hero hits empower Chain Lightning"
+   }
+  },
+  "ThrallEchooftheElements|ThrallEchooftheElements|Q|Level1": {
+   "fullText": {
+    "html": "<img width=\"20\" height=\"22\">Quest: Kill Minions or Heroes within 2 seconds of hitting them with Chain Lightning.<br><br><img width=\"20\" height=\"22\">Reward: After killing 20 enemies, reduce the Mana cost of Chain Lightning from 40 to 20.<br><br><img width=\"20\" height=\"22\">Reward: After killing 50 enemies, Chain Lightning gains an extra charge.<br><br><img width=\"20\" height=\"22\">Mythic Reward: After killing 125 enemies, Chain Lightning can now strike the same target multiple times, and also strikes 1 additional target per bounce.",
+    "text": "Quest: Kill Minions or Heroes within 2 seconds of hitting them with Chain Lightning. Reward: After killing 20 enemies, reduce the Mana cost of Chain Lightning from 40 to 20. Reward: After killing 50 enemies, Chain Lightning gains an extra charge. Mythic Reward: After killing 125 enemies, Chain Lightning can now strike the same target multiple times, and also strikes 1 additional target per bounce."
+   },
+   "name": {
+    "html": "Echo of the Elements",
+    "text": "Echo of the Elements"
+   },
+   "shortText": {
+    "html": "Quest: Killing enemies grant chain lightning charges, forks",
+    "text": "Quest: Killing enemies grant chain lightning charges, forks"
+   }
+  },
+  "ThrallElementalAssault|ThrallElementalAssault|Passive|Level7": {
+   "fullText": {
+    "html": "After using an Ability, Thrall's next Basic Attack within 4 seconds deals 45% more damage.",
+    "text": "After using an Ability, Thrall's next Basic Attack within 4 seconds deals 45% more damage."
+   },
+   "name": {
+    "html": "Elemental Assault",
+    "text": "Elemental Assault"
+   },
+   "shortText": {
+    "html": "Abilities increase Basic Attack damage",
+    "text": "Abilities increase Basic Attack damage"
+   }
+  },
+  "ThrallElementalMomentum|ThrallElementalMomentum|Passive|Level20": {
+   "fullText": {
+    "html": "Basic Attacks reduce Thrall's Basic and Heroic Ability cooldowns by 0.25 seconds, tripled against Heroes.",
+    "text": "Basic Attacks reduce Thrall's Basic and Heroic Ability cooldowns by 0.25 seconds, tripled against Heroes."
+   },
+   "name": {
+    "html": "Elemental Momentum",
+    "text": "Elemental Momentum"
+   },
+   "shortText": {
+    "html": "Basic Attacks reduce Ability cooldowns",
+    "text": "Basic Attacks reduce Ability cooldowns"
+   }
+  },
+  "ThrallFeralResilience|ThrallFeralResilience|W|Level4": {
+   "fullText": {
+    "html": "Heroes damaged by Feral Spirit grant 4 stacks of Frostwolf Resilience and 2 stacks of Feral Resilience, granting 75 Physical Armor against the next incoming Hero Basic Attack.<br><br>Stacks are consumed on the next cast of Feral Spirit.",
+    "text": "Heroes damaged by Feral Spirit grant 4 stacks of Frostwolf Resilience and 2 stacks of Feral Resilience, granting 75 Physical Armor against the next incoming Hero Basic Attack. Stacks are consumed on the next cast of Feral Spirit."
+   },
+   "name": {
+    "html": "Feral Resilience",
+    "text": "Feral Resilience"
+   },
+   "shortText": {
+    "html": "Feral Spirit grants Physical Armor, Frostwolf Resilience",
+    "text": "Feral Spirit grants Physical Armor, Frostwolf Resilience"
+   }
+  },
+  "ThrallFrostwolfPack|ThrallFrostwolfPack|W|Level4": {
+   "fullText": {
+    "html": "<img width=\"20\" height=\"22\">Quest: Hit 6 Heroes with Feral Spirit. Progress is lost on death and when Thrall fails to hit a Hero.<br><br><img width=\"20\" height=\"22\">Reward: Reduce the cooldown and Mana cost of Feral Spirit by 50%.",
+    "text": "Quest: Hit 6 Heroes with Feral Spirit. Progress is lost on death and when Thrall fails to hit a Hero. Reward: Reduce the cooldown and Mana cost of Feral Spirit by 50%."
+   },
+   "name": {
+    "html": "Frostwolf Pack",
+    "text": "Frostwolf Pack"
+   },
+   "shortText": {
+    "html": "Quest: Reduce Feral Spirit cooldown, cost",
+    "text": "Quest: Reduce Feral Spirit cooldown, cost"
+   }
+  },
+  "ThrallHeroicAbilityEarthquake|ThrallEarthquake|Heroic|Level10": {
+   "cooldownText": {
+    "html": "Cooldown: 100 seconds",
+    "text": "Cooldown: 100 seconds"
+   },
+   "energyText": {
+    "html": "<span>Mana: 90</span>",
+    "text": "Mana: 90"
+   },
+   "fullText": {
+    "html": "After 0.5 seconds, summon a massive Earthquake that pulses every 4 seconds. Each pulse lasts 2 seconds, Slowing all enemies in the area by 50%, and deals 50~~0.04~~ damage to enemy Heroes. Does 3 pulses.",
+    "text": "After 0.5 seconds, summon a massive Earthquake that pulses every 4 seconds. Each pulse lasts 2 seconds, Slowing all enemies in the area by 50%, and deals 50~~0.04~~ damage to enemy Heroes. Does 3 pulses."
+   },
+   "name": {
+    "html": "Earthquake",
+    "text": "Earthquake"
+   },
+   "shortText": {
+    "html": "Slows enemies in a massive area",
+    "text": "Slows enemies in a massive area"
+   }
+  },
+  "ThrallHeroicAbilitySundering|Sundering|Heroic|Level10": {
+   "cooldownText": {
+    "html": "Cooldown: 70 seconds",
+    "text": "Cooldown: 70 seconds"
+   },
+   "energyText": {
+    "html": "<span>Mana: 75</span>",
+    "text": "Mana: 75"
+   },
+   "fullText": {
+    "html": "After 0.5 seconds, sunder the earth in a long line, dealing 290~~0.04~~ damage and shoving enemies to the side, Stunning them for 1 second.",
+    "text": "After 0.5 seconds, sunder the earth in a long line, dealing 290~~0.04~~ damage and shoving enemies to the side, Stunning them for 1 second."
+   },
+   "name": {
+    "html": "Sundering",
+    "text": "Sundering"
+   },
+   "shortText": {
+    "html": "Damages, pushes, and Stuns enemies in a line",
+    "text": "Damages, pushes, and Stuns enemies in a line"
+   }
+  },
+  "ThrallMaelstromWeapon|ThrallMaelstromWeapon|E|Level1": {
+   "fullText": {
+    "html": "<img width=\"20\" height=\"22\">Quest: Basic Attack Heroes while Windfury's Movement Speed bonus is active.<br><br><img width=\"20\" height=\"22\">Reward: After hitting 25 Heroes, increase the Movement Speed bonus of Windfury to 40% and Thrall's Basic Attacks deal 40 additional damage.<br><br><img width=\"20\" height=\"22\">Reward: After hitting 55 Heroes, Thrall permanently gains 15% increased Movement Speed and his Basic Attacks gain an additional 75 damage.<br><br><img width=\"20\" height=\"22\">Mythic Reward: After hitting 100 Heroes, Frostwolf Resilience healing restores 200% more Health.",
+    "text": "Quest: Basic Attack Heroes while Windfury's Movement Speed bonus is active. Reward: After hitting 25 Heroes, increase the Movement Speed bonus of Windfury to 40% and Thrall's Basic Attacks deal 40 additional damage. Reward: After hitting 55 Heroes, Thrall permanently gains 15% increased Movement Speed and his Basic Attacks gain an additional 75 damage. Mythic Reward: After hitting 100 Heroes, Frostwolf Resilience healing restores 200% more Health."
+   },
+   "name": {
+    "html": "Maelstrom Weapon",
+    "text": "Maelstrom Weapon"
+   },
+   "shortText": {
+    "html": "Quest:  Windfury attacks increase Move Speed",
+    "text": "Quest: Windfury attacks increase Move Speed"
+   }
+  },
+  "ThrallMasteryEarthenShields|ThrallEarthenShieldsTalent|Heroic|Level20": {
+   "fullText": {
+    "html": "Allies within the Earthquake area gain a Shield equal to 15% of their maximum Health each pulse. This shield lasts 4 seconds.",
+    "text": "Allies within the Earthquake area gain a Shield equal to 15% of their maximum Health each pulse. This shield lasts 4 seconds."
+   },
+   "name": {
+    "html": "Earthen Shields",
+    "text": "Earthen Shields"
+   },
+   "shortText": {
+    "html": "Grants allies Shields in area",
+    "text": "Grants allies Shields in area"
+   }
+  },
+  "ThrallMasteryFrostwolfsGrace|ThrallFrostwolfResilienceSurgeOfHealing|Trait|Level13": {
+   "cooldownText": {
+    "html": "Cooldown: 15 seconds",
+    "text": "Cooldown: 15 seconds"
+   },
+   "fullText": {
+    "html": "Frostwolf Resilience can be activated to instantly heal. This healing is increased by up to 100% based on Thrall's missing health.",
+    "text": "Frostwolf Resilience can be activated to instantly heal. This healing is increased by up to 100% based on Thrall's missing health."
+   },
+   "name": {
+    "html": "Frostwolf's Grace",
+    "text": "Frostwolf's Grace"
+   },
+   "shortText": {
+    "html": "Activate Frostwolf Resilience to instantly heal",
+    "text": "Activate Frostwolf Resilience to instantly heal"
+   }
+  },
+  "ThrallMasteryGraceOfAir|ThrallGraceOfAirTalent|E|Level13": {
+   "fullText": {
+    "html": "Windfury attacks grant twice as many stacks of Frostwolf Resilience.",
+    "text": "Windfury attacks grant twice as many stacks of Frostwolf Resilience."
+   },
+   "name": {
+    "html": "Grace Of Air",
+    "text": "Grace Of Air"
+   },
+   "shortText": {
+    "html": "Windfury grants double Frostwolf Resilience",
+    "text": "Windfury grants double Frostwolf Resilience"
+   }
+  },
+  "ThrallMasteryManaTide|ThrallManaTideTalent|Trait|Level4": {
+   "fullText": {
+    "html": "Frostwolf Resilience restores 15 Mana and reduces Basic Ability cooldowns by 0.5 seconds.",
+    "text": "Frostwolf Resilience restores 15 Mana and reduces Basic Ability cooldowns by 0.5 seconds."
+   },
+   "name": {
+    "html": "Mana Tide",
+    "text": "Mana Tide"
+   },
+   "shortText": {
+    "html": "Frostwolf Resilience restores Mana, lowers cooldowns",
+    "text": "Frostwolf Resilience restores Mana, lowers cooldowns"
+   }
+  },
+  "ThrallMasteryRollingThunder|ThrallRollingThunderTalent|Q|Level7": {
+   "fullText": {
+    "html": "Passive: Chain Lightning bounces an additional time.<br><br>For 8 seconds after hitting an enemy with Chain Lightning, Thrall's next Basic Attack against them grants a stack of Frostwolf Resilience. If the target is an enemy Hero, then he also deals damage to them equal to 3% of their maximum Health and healing for the same amount.<br>",
+    "text": "Passive: Chain Lightning bounces an additional time. For 8 seconds after hitting an enemy with Chain Lightning, Thrall's next Basic Attack against them grants a stack of Frostwolf Resilience. If the target is an enemy Hero, then he also deals damage to them equal to 3% of their maximum Health and healing for the same amount."
+   },
+   "name": {
+    "html": "Rolling Thunder",
+    "text": "Rolling Thunder"
+   },
+   "shortText": {
+    "html": "Chain Lightning empowers Basic Attacks, extra bounce",
+    "text": "Chain Lightning empowers Basic Attacks, extra bounce"
+   }
+  },
+  "ThrallMasteryTempestFury|ThrallTempestFuryTalent|E|Level16": {
+   "fullText": {
+    "html": "The final strike of Windfury hits 3 times for 75% normal damage. These hits do not provide quest progress.",
+    "text": "The final strike of Windfury hits 3 times for 75% normal damage. These hits do not provide quest progress."
+   },
+   "name": {
+    "html": "Tempest Fury",
+    "text": "Tempest Fury"
+   },
+   "shortText": {
+    "html": "Windfury's final strike hits 3 times",
+    "text": "Windfury's final strike hits 3 times"
+   }
+  },
+  "ThrallMasteryWorldbreaker|ThrallWorldbreakerTalent|Heroic|Level20": {
+   "fullText": {
+    "html": "Lower the cooldown of Sundering by 40 seconds. After Sundering impacts, it leaves behind an impassable rift, blocking unit movement for 3 seconds.",
+    "text": "Lower the cooldown of Sundering by 40 seconds. After Sundering impacts, it leaves behind an impassable rift, blocking unit movement for 3 seconds."
+   },
+   "name": {
+    "html": "Worldbreaker",
+    "text": "Worldbreaker"
+   },
+   "shortText": {
+    "html": "Sundering creates impassable terrain",
+    "text": "Sundering creates impassable terrain"
+   }
+  },
+  "ThrallSpiritShield|ThrallSpiritShield|Active|Level13": {
+   "cooldownText": {
+    "html": "Cooldown: 45 seconds",
+    "text": "Cooldown: 45 seconds"
+   },
+   "fullText": {
+    "html": "Every 45 seconds, gain 70 Spell Armor against the next enemy Ability and subsequent Abilities for 4 seconds. Frostwolf Resilience reduces this cooldown by 10 seconds.<br><br>Can be toggled to allow or prevent this talent from triggering automatically.",
+    "text": "Every 45 seconds, gain 70 Spell Armor against the next enemy Ability and subsequent Abilities for 4 seconds. Frostwolf Resilience reduces this cooldown by 10 seconds. Can be toggled to allow or prevent this talent from triggering automatically."
+   },
+   "name": {
+    "html": "Spirit Shield",
+    "text": "Spirit Shield"
+   },
+   "shortText": {
+    "html": "Periodically gain temporary Spell Armor",
+    "text": "Periodically gain temporary Spell Armor"
+   }
+  },
+  "ThrallThunderstorm|ThrallThunderstorm|Q|Level16": {
+   "fullText": {
+    "html": "Chain Lightning Slows the primary target by 8% for 2 seconds when used on Heroes.<br><br><img width=\"20\" height=\"22\">Quest: Targeting a Hero directly with Chain Lightning increases this Slow by 8%, up to an additional 40%.<br><br><img width=\"20\" height=\"22\">Reward: While at a 40% bonus, Chain Lightning's damage is increased by 30%.<br><br>Bonuses are reset if Chain Lightning is used on the same Hero it was last used on, or if Thrall dies.",
+    "text": "Chain Lightning Slows the primary target by 8% for 2 seconds when used on Heroes. Quest: Targeting a Hero directly with Chain Lightning increases this Slow by 8%, up to an additional 40%. Reward: While at a 40% bonus, Chain Lightning's damage is increased by 30%. Bonuses are reset if Chain Lightning is used on the same Hero it was last used on, or if Thrall dies."
+   },
+   "name": {
+    "html": "Thunderstorm",
+    "text": "Thunderstorm"
+   },
+   "shortText": {
+    "html": "Quest: Hit Heroes to make Chain Lightning Slow",
+    "text": "Quest: Hit Heroes to make Chain Lightning Slow"
+   }
+  },
+  "ThrallWindRush|ThrallWindRush|Active|Level20": {
+   "cooldownText": {
+    "html": "Cooldown: 90 seconds",
+    "text": "Cooldown: 90 seconds"
+   },
+   "fullText": {
+    "html": "Activate to immediately teleport to a target location and gain Windfury.",
+    "text": "Activate to immediately teleport to a target location and gain Windfury."
+   },
+   "name": {
+    "html": "Wind Rush",
+    "text": "Wind Rush"
+   },
+   "shortText": {
+    "html": "Activate to teleport and gain Windfury",
+    "text": "Activate to teleport and gain Windfury"
+   }
+  }
+ },
+ "version": "2.57.0.98348"
+}

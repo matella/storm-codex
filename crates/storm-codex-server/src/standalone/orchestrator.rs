@@ -534,7 +534,7 @@ pub(super) async fn seed_reference_data(app: &AppState) {
         "reference data: ingesting the bundled snapshot {}",
         &hash[..12]
     );
-    if crate::dim::ingest_snapshot_file(&app.db, &app.cfg.images_dir, &file)
+    if crate::refdata::load::ingest_bundle(&app.db, &app.cfg.images_dir, &file)
         .await
         .is_err()
     {

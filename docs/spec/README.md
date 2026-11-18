@@ -54,6 +54,6 @@ behaviour, and to **update in the same commit** as the change.
 | `tools/` | `protocol_gen.py` (protocol tables), `crosscheck_streams.py` (decoding parity), `parity-harness/` (stats parity vs hots-parser) | tooling — required for evidence |
 | `corpus/` | real test replays (`spike50` bench, `stats` parity) — **not committed** (gitignored, NAS/box) | local data |
 | `spike/` | milestone 0 (go/no-go decoding spike, .NET/Python benches) | archive — do not touch |
-| `scripts/` | `backup.sh` (pg_dump + retention), `check-migrations.sh`, `check-web-rs-size.sh`, desktop release inputs `fetch-postgres.ps1`, `make-referential.sh`, `fetch-referential.ps1` | active |
+| `scripts/` | `backup.sh` (pg_dump + retention), `check-migrations.sh`, `check-web-rs-size.sh`, desktop release input `fetch-postgres.ps1` (the reference bundle is built by `storm-codex-server refdata trim`) | active |
 | `.github/workflows/` | `ci.yml` (clippy + Rust/web tests, service Postgres, `desktop` job, then the Docker image → ghcr.io on `main`) · `release-desktop.yml` (signed Windows installer on a `desktop-v*` tag or a draft dry run) | active |
 | `docs/` | see documentation map above | — |

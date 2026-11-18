@@ -1,5 +1,5 @@
 # storm-codex production deployment (box). Dedicated Postgres + the server (front-end included).
-# Non-invasive deployment: new ports, reads HotsPatchNotes read-only, DOES NOT TOUCH the
+# Non-invasive deployment: new ports, reads the HotsPatchNotes dataset releases, DOES NOT TOUCH the
 # Jarvis Redis or the overlay while `REDIS_URL`/`AZURE_*` are not set (push = opt-in,
 # best-effort, absent = no emission). The actual switchover (see runbook) sets these variables.
 #
@@ -50,8 +50,9 @@ services:
       DATABASE_URL: postgres://storm:${POSTGRES_PASSWORD:-storm}@storm-codex-pg:5432/storm_codex
       # empty/absent = open mode (local self-hosting); set = admin auth by Bearer.
       ADMIN_TOKEN: ${ADMIN_TOKEN:-}
-      # hero/talent reference data (read-only) — HotsPatchNotes on the box host
-      HOTSPATCHNOTES_URL: ${HOTSPATCHNOTES_URL:-http://host.docker.internal:5001}
+      # hero/talent/map/patch reference data: HotsPatchNotes dataset releases (schema v1), verified, every 24 h.
+      # Default = the producer's latest release; empty = no refresh.
+      REFDATA_URL: ${REFDATA_URL:-https://github.com/matella/HeroesOfTheStormPatchNotes/releases/latest/download/}
       # opt-in push (empty at initial deployment; set at switchover)
       REDIS_URL: ${REDIS_URL:-}
       JARVIS_CHANNEL: ${JARVIS_CHANNEL:-storm-codex:match_completed}
