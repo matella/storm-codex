@@ -164,7 +164,9 @@ deserialisation, `progress_percent`, `phase_message`, `redirects_to_welcome`, `p
   Cached data remains usable if checking fails or downloads are turned off. When no dataset is cached, empty Patch Notes
   explains the first online download and links to settings; replay browsing is not gated on reference sync.
 - **Reference activation.** The layout tracks the active dataset's opaque string `revision`, not its version label, sync phase
-  or a new-patch event. A changed revision re-reads hero and already requested talent dimensions, mounted Patch Notes,
+  or a new-patch event. Reads key on `ReferenceSync::refresh` (`core::standalone::RevisionWatch`), which changes only when the
+  revision differs between two known statuses: the first status poll after load does not re-read pages fetched before it,
+  while a first download after a known empty status does. A changed revision re-reads hero and already requested talent dimensions, mounted Patch Notes,
   patch detail, hero patch history, the active Hero Changes view and patch choices, active player search roles, and Draft's
   hero role choices. Because activation repairs hero attribution in place, it also re-reads mounted repair-sensitive views:
   match detail and scoreboard, the 2D replay model and match data, hero attributes, Heroes, Hero detail, Matches (list and

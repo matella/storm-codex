@@ -3,7 +3,7 @@
 use leptos::{prelude::*, task::spawn_local};
 use storm_web_core::{
     net::{self, REFERENCE_PATH},
-    standalone::{error_message, ReferencePhase, ReferenceStatus, StatusRequests},
+    standalone::{error_message, ReferencePhase, ReferenceStatus, RevisionWatch, StatusRequests},
 };
 
 use crate::standalone::Standalone;
@@ -11,7 +11,10 @@ use crate::standalone::Standalone;
 #[derive(Clone, Copy)]
 pub struct ReferenceSync {
     pub status: RwSignal<Option<ReferenceStatus>>,
+    /// Active revision, for portrait URLs. Reads that follow activation track `refresh` instead.
     pub revision: Memo<Option<String>>,
+    /// Changes only when the active revision changes after the first known status (`RevisionWatch`).
+    pub refresh: Memo<u64>,
     requests: RwSignal<StatusRequests>,
     message: RwSignal<Option<Result<&'static str, String>>>,
 }
@@ -22,6 +25,13 @@ pub fn use_reference() -> ReferenceSync {
 
 pub fn provide_reference(standalone: Standalone) {
     let status = RwSignal::new(None::<ReferenceStatus>);
+    let watch = Memo::new(move |prev: Option<&RevisionWatch>| {
+        status.with(|s| {
+            prev.cloned()
+                .unwrap_or_default()
+                .observe(s.as_ref().map(ReferenceStatus::active_revision))
+        })
+    });
     let sync = ReferenceSync {
         status,
         revision: Memo::new(move |_| {
@@ -31,6 +41,7 @@ pub fn provide_reference(standalone: Standalone) {
                     .map(str::to_owned)
             })
         }),
+        refresh: Memo::new(move |_| watch.with(|w| w.generation)),
         requests: RwSignal::new(StatusRequests::default()),
         message: RwSignal::new(None),
     };

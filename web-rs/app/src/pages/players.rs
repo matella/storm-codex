@@ -128,12 +128,12 @@ pub fn Players() -> impl IntoView {
     // the last answer stays on screen while the next one loads
     let hits = RwSignal::new(None::<Vec<PlayerHit>>);
     let failed = RwSignal::new(false);
-    let revision = crate::reference::use_reference().revision;
+    let refresh = crate::reference::use_reference().refresh;
     let search = LocalResource::new(move || {
         let t = term.get();
         let enabled = t.chars().count() >= MIN_CHARS;
         if enabled {
-            revision.track();
+            refresh.track();
         }
         async move {
             if enabled {

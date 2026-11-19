@@ -343,7 +343,10 @@ once instead.
   insights corpus when it changes a match. The 2D replay disk cache stores only replay-derived
   geometry and the playerId → toon mapping; player name/hero/team/win are read from
   `match_players` on every request, so a cache entry warmed before the repair (even across a
-  restart) serves the repaired hero.
+  restart) serves the repaired hero. The entry (`{id}-replay2d-v{VIEWER_VERSION}-split.json`) is
+  the toons JSON line followed by the model's serialised bytes; a hit splices the fresh `players`
+  array into those bytes without parsing the model. A model that cannot be serialised as a JSON
+  object without a `players` key returns 500 and is not cached.
 
 `Config::validate()` (run right after `from_env()`) rejects a non-loopback `BIND_ADDR` in this mode
 ("standalone mode requires a loopback BIND_ADDR"): the IP must be exactly `127.0.0.1` or `::1`, the

@@ -41,11 +41,11 @@ pub fn provide_talents() {
         started: RwSignal::new(false),
     };
     provide_context(t);
-    let revision = crate::reference::use_reference().revision;
+    let refresh = crate::reference::use_reference().refresh;
     let data = LocalResource::new(move || {
         let started = t.started.get();
         if started {
-            revision.track();
+            refresh.track();
         }
         async move {
             if started {
@@ -369,12 +369,13 @@ pub fn fetch<T: DeserializeOwned + 'static>(
 
 /// Re-read an active view after a standalone activation without remounting the page: reference dimensions, and
 /// reads whose hero attribution a reference activation can repair in place (match detail, 2D replay, aggregates).
+/// Keyed on `ReferenceSync::refresh`, so the first status poll does not read the page a second time.
 pub fn fetch_reference<T: DeserializeOwned + 'static>(
     url: impl Fn() -> String + 'static,
 ) -> LocalResource<Result<T, String>> {
-    let revision = crate::reference::use_reference().revision;
+    let refresh = crate::reference::use_reference().refresh;
     fetch(move || {
-        revision.track();
+        refresh.track();
         url()
     })
 }

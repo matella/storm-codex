@@ -63,12 +63,12 @@ pub fn HeroChanges() -> impl IntoView {
     let patches = fetch_reference::<PatchList>(|| "/api/patches".to_string());
     let hero_options = Signal::derive(move || dim.with(|d| d.names()));
 
-    let revision = crate::reference::use_reference().revision;
+    let refresh = crate::reference::use_reference().refresh;
     // one request per view: the other one waits until it is shown
     let heroes = LocalResource::new(move || {
         let on = !timeline.get();
         if on {
-            revision.track();
+            refresh.track();
         }
         let url = format!(
             "/api/hero-changes/heroes?{}",
@@ -89,7 +89,7 @@ pub fn HeroChanges() -> impl IntoView {
     let feed = LocalResource::new(move || {
         let on = timeline.get();
         if on {
-            revision.track();
+            refresh.track();
         }
         let url = format!(
             "/api/hero-changes?{}",
