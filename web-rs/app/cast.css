@@ -101,7 +101,8 @@
 .draftc .fld{display:flex;flex-direction:column;gap:5px}
 .draftc .fld>label{font:600 10px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--kicker)}
 .draftc select,.draftc input[type=text]{background:var(--panel-2);border:1px solid var(--line-2);border-radius:8px;padding:7px 10px;color:var(--text);font:500 13px var(--body)}
-.draftc select:focus,.draftc input[type=text]:focus{outline:none;border-color:var(--accent)}
+.draftc select:focus,.draftc input[type=text]:focus{border-color:var(--accent)}
+.draftc select:focus-visible,.draftc input[type=text]:focus-visible{outline:2px solid var(--accent-2);outline-offset:2px}
 .draftc .seg{display:flex;border:1px solid var(--line-2);border-radius:8px;overflow:hidden}
 .draftc .seg button{background:var(--panel-2);border:none;padding:7px 13px;color:var(--muted-2);cursor:pointer;font:600 11px var(--mono);letter-spacing:.06em}
 .draftc .seg button:hover{color:var(--text)}
@@ -150,7 +151,8 @@
 .draftc .slot .hero.none{color:var(--kicker);font:500 12px var(--mono);text-transform:none}
 .draftc .slot.cur .hero.none{color:var(--gold)}
 .draftc .slot .pl{width:100%;background:transparent;border:none;border-bottom:1px solid var(--line);border-radius:0;padding:2px 0;font:12px var(--body);color:var(--text-2)}
-.draftc .slot .pl:focus{outline:none;border-bottom-color:var(--accent)}
+.draftc .slot .pl:focus{border-bottom-color:var(--accent)}
+.draftc .slot .pl:focus-visible{outline:2px solid var(--accent-2);outline-offset:1px}
 .draftc .picker{background:var(--panel);border:1px solid var(--line-2);border-radius:16px;padding:14px}
 .draftc .ptop{display:flex;gap:8px;margin-bottom:10px}
 .draftc .ptop>input{flex:1}

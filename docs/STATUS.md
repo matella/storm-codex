@@ -47,6 +47,49 @@ a regression test with a real TCP fake server returning a 3xx `Location` to a no
 non-allowlisted host, proving `Ureq::fetch` refuses it instead of chasing it. 12 `patchimg` unit
 tests pass (was 11).
 
+## Web-audit fixes — App slice (2026-11-19), branch `fix/web-audit-app`, not merged, not pushed
+
+Approved scope: `docs/specs/2026-11-19-web-audit-fixes.md` ("App slice"), from `docs/research/2026-11-19-modern-web-guidance-audit.md`.
+Keyboard (A1/A7/A8: real `<button>`/`<a>` for clickable spans/divs, `aria-pressed`, `aria-label`/`aria-current`
+nav, skip link), focus/titles (A5/A6: one global `:focus-visible` ring, per-route `document.title`, focus to the
+page heading), dark platform UI (A3/A12: `color-scheme: dark`, themed scrollbars), dialogs (A4: Onboarding/What's
+new/scouting import as `<dialog>` + `showModal()`), contrast (A2: `--kicker` raised to 4.75:1+ on `--panel-2`),
+loading (A9/A11/A15/A16/A22/A23: eager `Portrait` + `fetchpriority` on the Heroes wall's first row, font preload,
+`Inter`→`var(--body)` fallback fix, fixed-background pseudo-element, `content-visibility` on sections, `--i`
+custom-property stagger, head metadata), polish (A14/A18/A19/A20: wider reduced-motion scope, `text-wrap`
+balance/pretty, forced-colors title fallback, empty `alt` on captioned portraits), view transitions (A21:
+capture-phase click listener wraps internal navigation in `document.startViewTransition` when supported and
+motion isn't reduced, pure progressive enhancement, feature-detected via `js_sys::Reflect` since the pinned
+`web-sys` has no typed binding yet).
+
+Implemented across `ds.css`/`theme.css`/`cast.css`/`index.html`, `core/src/route.rs` (new `page_title`, tested),
+`app/src/{layout,ui}.rs` and the pages named in the audit (`patches`, `records`, `hero_changes`, `heroes`,
+`matches`, `player`, `match_detail`, `match_insights`, `scouting`, `scouting_report`). Scoped out, documented in
+the spec's "App implementation notes": eager/captioned portraits only on the Heroes wall (not every cover/avatar
+call site); the Cast control room and Live page (not in the axe gate list) untouched.
+
+- Checks (Docker `storm-dev:latest`, no DB needed — no server/migration change): `cargo fmt --all -- --check`,
+  `cargo clippy --locked --target wasm32-unknown-unknown --workspace -- -D warnings`, `cargo clippy --locked
+  --all-targets -- -D warnings` (native `core`), `cargo test --locked` (181 passed), `trunk build --release`
+  for `overlay`/`sources`/`app`, and `cargo clippy --locked --workspace --all-targets -- -D warnings` on the
+  main server workspace (untouched, still green). App bundle **1,046,738 bytes Brotli** (budget 1.25 MB;
+  overlay 217,943 bytes gzip, sources 181,362 bytes gzip, both unchanged).
+- Browser-checked in headless Chromium against the built `app` bundle served standalone (no backend, so
+  pages render their loading/empty states): `color-scheme` computes `dark`; Onboarding opens via native
+  `showModal()`, Esc closes it and native `showModal()`/focus-return place focus on the page `<h1>`;
+  `document.title` is per-route; skip link/help button/nav landmarks present. **0 axe (4.9.1) serious/critical
+  violations** on Session, Matches, Match (`/match/1`, not-found state), Heroes, Maps, Records, Patch notes,
+  Scouting, Admin. A `.pill`-button contrast regression (WhatsNew "got it") and an onboarding-link
+  `link-in-text-block` violation were caught by this review pass and fixed before the final check.
+- **Not verified**: real-data pages (needs a running server + DB copy), Lighthouse accessibility scores, a
+  full keyboard Tab-order walk per page, and any performance regression measurement. Windows WebView2 and
+  real-OBS acceptance are out of scope for this web-only commit.
+- Reviewed by the author against the diff (no separate reviewer subagent available in this session); findings
+  (the `.pill` background reset, the onboarding link contrast, and several gate-page span/div conversions
+  missed on the first pass — `match_detail.rs`, `scouting.rs`) were fixed before the final verification round
+  above.
+- Committed locally on `fix/web-audit-app`; **not pushed, no PR** — operator review requested before push.
+
 ## Dependabot alert #1 (glib unsoundness), branch `fix/glib-advisory` (2026-11-19)
 
 Investigated GHSA-wrw7-89jp-8q8g / RUSTSEC-2024-0429 (`glib` 0.18.5, medium, transitive via

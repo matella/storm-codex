@@ -1,5 +1,8 @@
 /* Design system Nexus Codex — tokens de la maquette validée (2026-06-12-storm-codex-mockup.html) */
 :root {
+  /* A3 (web-audit App slice): dark platform UI so browser-drawn chrome (scrollbars, selects,
+     date inputs, autofill) matches the app instead of defaulting to light. */
+  color-scheme: dark;
   --bg: #06070b;
   --surface: #0e1016;
   --surface-2: #13141d;
@@ -9,7 +12,9 @@
   --text-2: #cfd3e0;
   --muted: #9aa0b4;
   --muted-2: #8d93a8;
-  --kicker: #5d6275;
+  /* A2: raised from #5d6275 (3.0:1 on --panel-2) to >=4.5:1 on --panel-2/--panel/--bg, verified
+     (docs/specs/2026-11-19-web-audit-fixes.md). --kicker still doubles as a border/rule colour. */
+  --kicker: #7b8197;
   --accent: #7f77dd;
   --win: #5dcaa5;
   --loss: #e24b4a;
@@ -41,7 +46,9 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: Inter, -apple-system, "Segoe UI", Roboto, sans-serif; /* inchangé : sources OBS */
+  /* A11: was "Inter", never bundled by the app (silent fallback to Segoe UI); the app's own body
+     font is already self-hosted (--body). OBS sources keep their own stylesheets, untouched. */
+  font-family: var(--body), -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 13px;
 }
 a { color: inherit; text-decoration: none; }
@@ -80,12 +87,13 @@ a { color: inherit; text-decoration: none; }
 .b-live { background: #16202c; color: var(--tm-blue); }
 .b-mvp { background: #2b2416; color: #fac775; }
 
-.pill { font-size: 11px; color: var(--muted-2); border: 1px solid var(--hairline-strong); border-radius: 12px; padding: 3px 10px; cursor: pointer; user-select: none; }
+.pill { font-size: 11px; color: var(--muted-2); background: none; border: 1px solid var(--hairline-strong); border-radius: 12px; padding: 3px 10px; cursor: pointer; user-select: none; font-family: inherit; }
 .pill.on { color: var(--surface); background: var(--accent); border-color: var(--accent); }
 .filter-select { font-size: 11px; color: var(--muted-2); background: var(--surface);
   border: 1px solid var(--hairline-strong); border-radius: 12px; padding: 3px 8px;
   font-family: inherit; cursor: pointer; }
-.filter-select:focus { outline: none; border-color: var(--accent); color: var(--text); }
+.filter-select:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.filter-select:focus { border-color: var(--accent); color: var(--text); }
 
 /* avatar à anneau d'univers */
 .av { border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; flex-shrink: 0; }
@@ -107,7 +115,7 @@ tbody tr.link:hover { background: var(--surface-2); }
 .gauge { height: 5px; background: var(--hairline); border-radius: 3px; overflow: hidden; }
 .gauge > div { height: 5px; border-radius: 3px; background: var(--accent); }
 
-h1 { font-size: 18px; font-weight: 500; margin: 18px 0 4px; }
+h1 { font-size: 18px; font-weight: 500; margin: 18px 0 4px; text-wrap: balance; }
 h2 { font-size: 14px; font-weight: 500; margin: 0; }
 .note { font-size: 12px; color: var(--muted); }
 .empty { padding: 28px 18px; color: var(--muted-2); font-size: 12px; text-align: center; }

@@ -2,7 +2,6 @@
 //! Port of `web/src/pages/Heroes.tsx`.
 
 use leptos::prelude::*;
-use leptos_router::hooks::use_navigate;
 use storm_web_core::{
     aggregates::{
         agg_to_search, bar_class, hero_pct, hero_roles, hero_rows, tone, AggFilter, HeroSort,
@@ -12,7 +11,7 @@ use storm_web_core::{
     route::uri_component,
 };
 
-use crate::ui::{fetch_operator_stats, use_dim, AggFilterBar, Portrait};
+use crate::ui::{fetch_operator_stats, use_dim, AggFilterBar, Link, Portrait};
 
 fn pill(on: bool) -> &'static str {
     if on {
@@ -27,7 +26,6 @@ pub fn Heroes() -> impl IntoView {
     let sort = RwSignal::new(HeroSort::Games);
     let role = RwSignal::new(String::new());
     let filter = RwSignal::new(AggFilter::default());
-    let nav = use_navigate();
     let dim = use_dim();
     let data = fetch_operator_stats::<Vec<HeroStat>>(move || {
         format!("/api/heroes?{}", net::agg_params(&filter.get()))
@@ -52,16 +50,16 @@ pub fn Heroes() -> impl IntoView {
                 <AggFilterBar value=filter mine_label="My heroes" />
                 <div class="ds-filterbar" style="margin-top: 10px">
                     <span class="ds-label" style="margin: 0">"Sort"</span>
-                    <span class=move || pill(sort.get() == HeroSort::Games) on:click=move |_| sort.set(HeroSort::Games)>"Most played"</span>
-                    <span class=move || pill(sort.get() == HeroSort::WinRate) on:click=move |_| sort.set(HeroSort::WinRate)>"Win rate"</span>
+                    <button type="button" class=move || pill(sort.get() == HeroSort::Games) on:click=move |_| sort.set(HeroSort::Games)>"Most played"</button>
+                    <button type="button" class=move || pill(sort.get() == HeroSort::WinRate) on:click=move |_| sort.set(HeroSort::WinRate)>"Win rate"</button>
                     {move || (!roles().is_empty()).then(|| view! { <span class="ds-sep"></span> })}
                     {move || (!roles().is_empty()).then(|| view! {
-                        <span class=move || pill(role.with(String::is_empty)) on:click=move |_| role.set(String::new())>"All roles"</span>
+                        <button type="button" class=move || pill(role.with(String::is_empty)) on:click=move |_| role.set(String::new())>"All roles"</button>
                     })}
                     {move || roles().into_iter().map(|r| {
                         let r2 = r.clone();
                         let r3 = r.clone();
-                        view! { <span class=move || pill(role.with(|c| *c == r2)) on:click=move |_| role.set(r3.clone())>{r}</span> }
+                        view! { <button type="button" class=move || pill(role.with(|c| *c == r2)) on:click=move |_| role.set(r3.clone())>{r}</button> }
                     }).collect_view()}
                 </div>
             </header>
@@ -72,32 +70,24 @@ pub fn Heroes() -> impl IntoView {
                     Some(Err(_)) => ().into_any(),
                     Some(Ok(d)) => {
                         let rows = dim.with(|dm| hero_rows(&d, dm, &role.get(), sort.get()));
-                        let nav = nav.clone();
                         view! {
                             {d.is_empty().then(|| view! { <div class="ds-empty">"No hero for this filter."</div> })}
                             <div class="ds-herowall">
-                                {rows.into_iter().map(|h| {
+                                {rows.into_iter().enumerate().map(|(i, h)| {
                                     let p = hero_pct(&h);
                                     let cls = tone(p);
-                                    let go = {
-                                        let nav = nav.clone();
-                                        let name = h.hero.clone();
-                                        move || {
-                                            let q = agg_to_search(&filter.get_untracked());
-                                            let q = if q.is_empty() { String::new() } else { format!("?{q}") };
-                                            nav(&format!("/hero/{}{q}", uri_component(&name)), Default::default());
-                                        }
-                                    };
-                                    let go2 = go.clone();
+                                    let name = h.hero.clone();
+                                    let q = agg_to_search(&filter.get());
+                                    let q = if q.is_empty() { String::new() } else { format!("?{q}") };
+                                    let href = format!("/hero/{}{q}", uri_component(&name));
                                     view! {
-                                        <div class="ds-htile" role="link" tabindex="0" on:click=move |_| go()
-                                            on:keydown=move |e| if e.key() == "Enter" { go2() }>
-                                            <Portrait hero=h.hero.clone() size=64 />
+                                        <Link to=href class="ds-htile">
+                                            <Portrait hero=h.hero.clone() size=64 eager=i < 8 captioned=true />
                                             <strong>{h.hero.clone()}</strong>
                                             <span class=format!("wr {cls}")>{p}<i>"%"</i></span>
                                             <i class=bar_class(cls)><b style=format!("width: {p}%")></b></i>
                                             <em>{format!("{}/{} games", h.wins, h.games)}</em>
-                                        </div>
+                                        </Link>
                                     }
                                 }).collect_view()}
                             </div>

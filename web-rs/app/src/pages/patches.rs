@@ -2,7 +2,6 @@
 //! client. Port of `web/src/pages/Patches.tsx` and `DateBlock` of `components/ds/patch.tsx`.
 
 use leptos::prelude::*;
-use leptos_router::hooks::use_navigate;
 use storm_web_core::{
     aggregates::{patch_counts, patch_types, PatchList},
     net,
@@ -36,7 +35,6 @@ fn pill(on: bool) -> &'static str {
 
 #[component]
 pub fn Patches() -> impl IntoView {
-    let nav = use_navigate();
     let kind = RwSignal::new(String::new());
     let reference = crate::reference::use_reference();
     let bus = expect_context::<LiveBus>();
@@ -66,10 +64,10 @@ pub fn Patches() -> impl IntoView {
                     {move || format!("Official HotS patch notes — {} patches. Open one for details, or browse the changes hero by hero.", items().len())}
                 </div>
                 <div class="ds-filterbar">
-                    <span class=move || pill(kind.with(String::is_empty)) on:click=move |_| kind.set(String::new())>"All"</span>
+                    <button type="button" class=move || pill(kind.with(String::is_empty)) on:click=move |_| kind.set(String::new())>"All"</button>
                     {move || patch_types(&items()).into_iter().map(|t| {
                         let (t2, t3) = (t.clone(), t.clone());
-                        view! { <span class=move || pill(kind.with(|k| *k == t2)) on:click=move |_| kind.set(t3.clone())>{t}</span> }
+                        view! { <button type="button" class=move || pill(kind.with(|k| *k == t2)) on:click=move |_| kind.set(t3.clone())>{t}</button> }
                     }).collect_view()}
                     <Link to="/hero-changes" class="ds-btn primary" style="margin-left: auto">"Changes by hero ›"</Link>
                 </div>
@@ -80,7 +78,6 @@ pub fn Patches() -> impl IntoView {
                     let loading = data.get().is_none();
                     let k = kind.get();
                     let rows: Vec<_> = items().into_iter().filter(|p| k.is_empty() || p.patch_type == k).collect();
-                    let nav = nav.clone();
                     view! {
                         {loading.then(|| view! { <div class="ds-empty">"loading…"</div> })}
                         {(!loading && rows.is_empty()).then(|| match first_download().filter(|_| items().is_empty()) {
@@ -89,20 +86,15 @@ pub fn Patches() -> impl IntoView {
                         })}
                         <div class="ds-plist">
                             {rows.into_iter().map(|p| {
-                                let go = {
-                                    let nav = nav.clone();
-                                    let id = p.internal_id.clone();
-                                    move || nav(&format!("/patch/{}", uri_component(&id)), Default::default())
-                                };
-                                let go2 = go.clone();
+                                let href = format!("/patch/{}", uri_component(&p.internal_id));
                                 view! {
-                                    <div class="ds-prow" role="link" tabindex="0" on:click=move |_| go() on:keydown=move |e| if e.key() == "Enter" { go2() }>
+                                    <Link to=href class="ds-prow">
                                         <DateBlock iso=p.live_date.clone() />
                                         <span class="t">{p.patch_name.clone()}</span>
                                         <span class="ds-tag award">{p.patch_type.clone()}</span>
                                         {p.community_only.then(|| view! { <span class="ds-tag">"Community notes"</span> })}
                                         <span class="c">{patch_counts(&p)}</span>
-                                    </div>
+                                    </Link>
                                 }
                             }).collect_view()}
                         </div>

@@ -121,16 +121,16 @@ pub fn HeroChanges() -> impl IntoView {
                 <h1 class="ds-title" style="cursor: default">"Hero changes"</h1>
                 <div class="ds-subtitle" style="cursor: default">"Open a hero for their full patch history — “Timeline” lists every change chronologically."</div>
                 <div class="ds-filterbar">
-                    <span class=move || pill(!timeline.get()) on:click=move |_| timeline.set(false)>"By hero"</span>
-                    <span class=move || pill(timeline.get()) on:click=move |_| timeline.set(true)>"Timeline"</span>
+                    <button type="button" class=move || pill(!timeline.get()) on:click=move |_| timeline.set(false)>"By hero"</button>
+                    <button type="button" class=move || pill(timeline.get()) on:click=move |_| timeline.set(true)>"Timeline"</button>
                     <span class="ds-sep"></span>
                     <SearchSelect options=hero_options value=hero.into() on_change=move |v| { hero.set(v); reset(); } placeholder="hero…" style="width: 160px" id="hc-heroes" />
                     <span class="ds-sep"></span>
-                    <span class=move || pill(klass.with(String::is_empty)) on:click=move |_| { klass.set(String::new()); reset(); }>"All"</span>
+                    <button type="button" class=move || pill(klass.with(String::is_empty)) on:click=move |_| { klass.set(String::new()); reset(); }>"All"</button>
                     {CLASSES.iter().map(|c| view! {
-                        <span class=move || pill(klass.with(|k| k == c)) on:click=move |_| { klass.set(c.to_string()); reset(); }>{*c}</span>
+                        <button type="button" class=move || pill(klass.with(|k| k == c)) on:click=move |_| { klass.set(c.to_string()); reset(); }>{*c}</button>
                     }).collect_view()}
-                    <select class="ds-input" on:change=move |e| { patch.set(event_target_value(&e)); reset(); }>
+                    <select class="ds-input" aria-label="Patch" on:change=move |e| { patch.set(event_target_value(&e)); reset(); }>
                         <option value="" selected=move || patch.with(String::is_empty)>"All patches"</option>
                         {move || patches.get().and_then(Result::ok).map(|l| l.items).unwrap_or_default().into_iter().map(|p| {
                             let id = p.internal_id.clone();
@@ -192,7 +192,7 @@ pub fn HeroChanges() -> impl IntoView {
                         {(rows.is_some() && list.is_empty()).then(|| view! { <div class="ds-empty">"No hero change for this filter."</div> })}
                         <PatchEntries list=list with_hero=true />
                         {more.then(|| view! {
-                            <div style="text-align: center; margin-top: 14px"><span class="ds-pill" on:click=move |_| limit.update(|l| *l += PAGE)>"Load more"</span></div>
+                            <div style="text-align: center; margin-top: 14px"><button type="button" class="ds-pill" on:click=move |_| limit.update(|l| *l += PAGE)>"Load more"</button></div>
                         })}
                     }.into_any()
                 }}

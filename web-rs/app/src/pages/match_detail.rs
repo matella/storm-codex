@@ -235,8 +235,8 @@ fn ChatLog(m: Arc<Value>, players: Arc<Value>, n: u32) -> impl IntoView {
             <div class="ds-panel flush">
                 <div class="ds-panel-hd ds-pills">
                     <span class="ds-pill on">{format!("{chat} messages")}</span>
-                    <span class=move || pill(show_pings.get()) on:click=move |_| show_pings.update(|p| *p = !*p)>{format!("pings ({ping})")}</span>
-                    <span class=move || pill(show_announces.get()) on:click=move |_| show_announces.update(|p| *p = !*p)>{format!("callouts ({announce})")}</span>
+                    <button type="button" class=move || pill(show_pings.get()) aria-pressed=move || show_pings.get().to_string() on:click=move |_| show_pings.update(|p| *p = !*p)>{format!("pings ({ping})")}</button>
+                    <button type="button" class=move || pill(show_announces.get()) aria-pressed=move || show_announces.get().to_string() on:click=move |_| show_announces.update(|p| *p = !*p)>{format!("callouts ({announce})")}</button>
                 </div>
                 {move || {
                     let (pings, announces) = (show_pings.get(), show_announces.get());
@@ -610,8 +610,8 @@ fn header_and_tabs(
             </header>
 
             <div class="ds-tabs">
-                <span class=move || pill(!replay.get()) on:click=move |_| replay.set(false)>"Score"</span>
-                <span class=move || pill(replay.get()) on:click=move |_| replay.set(true)>"Replay 2D"</span>
+                <button type="button" class=move || pill(!replay.get()) on:click=move |_| replay.set(false)>"Score"</button>
+                <button type="button" class=move || pill(replay.get()) on:click=move |_| replay.set(true)>"Replay 2D"</button>
                 <SaveCard ctx=card_ctx />
                 <a class="ds-pill" href=raw_href target="_blank" rel="noreferrer">"raw dump ›"</a>
             </div>
@@ -805,7 +805,7 @@ fn score_tab(
         {draft}
         <section class="ds-sec">
             <SecHead num=board_n title="Scoreboard">
-                <span class=move || pill(adv.get()) on:click=move |_| adv.update(|a| *a = !*a)>{move || if adv.get() { "− basic stats" } else { "+ advanced stats" }}</span>
+                <button type="button" class=move || pill(adv.get()) on:click=move |_| adv.update(|a| *a = !*a)>{move || if adv.get() { "− basic stats" } else { "+ advanced stats" }}</button>
             </SecHead>
             {tables}
         </section>

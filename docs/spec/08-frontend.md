@@ -8,6 +8,83 @@ design (spec `docs/specs/2026-09-27-design-dossier-app-design.md`): tokens in `w
 Mono, `unicode-range`) — no Google Fonts request from the app. The `body` keeps its original font: OBS sources do not change.
 UI language: **English**.
 
+## Web-audit App slice (2026-11-19, branch `fix/web-audit-app`)
+
+Spec `docs/specs/2026-11-19-web-audit-fixes.md` ("App slice"), approved. Fixes A1–A23 scoped to the web app
+(platform fixes — precompressed bundles, fonts, OBS, privacy headers — are a sibling branch `fix/web-audit-platform`).
+
+- **Keyboard (A1/A7/A8).** Click targets that were `<span>`/`<div>` with `on:click` only are now native
+  `<button type="button">` (toggle pills, the `?` help button, rename titles, scouting roster/game-log actions,
+  match tabs, the fight-row expander kept as `<tr tabindex="0" role="button">` since a table row can't become a
+  `<button>`) or real `<a href>` rows (`ui::Link`, patches list, hero wall, matches list, player's recent games).
+  Button-style classes (`ds-btn`, `ds-pill`, `.pill`, `ds-help`) get an `appearance: none` / `background` reset so
+  the native button box doesn't show through (`.pill` previously relied on `<span>` having no UA background —
+  without the reset the converted "got it"/"New report" buttons failed axe `color-contrast`, caught and fixed in
+  review). `aria-pressed` on the shared `AggFilterBar` and match-detail toggle pills; `AggFilterBar`/Heroes/Hero
+  changes/Patches/Records pills converted. The `/records` battleground `<select>` and the hero-changes patch
+  `<select>` get `aria-label`.
+- **Focus and titles (A5/A6).** One global `:where(a,button,[tabindex],summary,input,select,textarea):focus-visible`
+  ring in `ds.css` replaces the scattered `outline:none` rules (`ds.css`, `theme.css`, `cast.css`). `core::route::page_title`
+  (tested) maps the app path to a label; `Layout` sets `document.title` to `"<label> · Storm Codex"` on every
+  route change and focuses the page's `<h1>`/`.ds-title` (`tabindex="-1"` added if missing). A skip link
+  (`.ds-skip`, visible only on focus) jumps to `<main id="main" tabindex="-1">`. Nav gets `aria-label="Main"` and
+  `aria-current="page"` on the active tab.
+- **Dark platform UI (A3/A12).** `:root{color-scheme:dark}` + `<meta name="color-scheme" content="dark">` (so the
+  pre-WASM blank frame and WebView2 chrome — scrollbars, selects, date inputs, autofill — render dark); thin
+  themed scrollbars (`scrollbar-width:thin; scrollbar-color:...`) replace `scrollbar-width:none` on `.ds-nav`/`.ds-topnav`.
+- **Contrast (A2).** `--kicker` raised from `#5d6275` (3.0:1 on `--panel-2`) to `#7b8197` (4.75:1 on `--panel-2`,
+  4.95:1 on `--panel`, 5.21:1 on `--bg`; verified against the WCAG relative-luminance formula) — kept as one token
+  since it also colours rules/borders, per the spec's "whichever keeps the hierarchy" choice.
+- **Dialogs (A4).** Onboarding, What's new and the scouting import modal are `<dialog>` + `showModal()`/`close()`
+  (`NodeRef<html::Dialog>`, Esc and focus return are native dialog behaviour; a click on the dialog element itself,
+  not a descendant, is treated as a backdrop click and closes it). `::backdrop` replaces the rgba overlay div.
+- **Loading (A9/A11/A15/A16/A22/A23).** `Portrait` gained `eager` (`loading="eager" fetchpriority="high"` vs
+  `loading="lazy"`) and `captioned` (`alt=""` when the hero name is already printed next to the portrait) props;
+  applied to the Heroes wall's first 8 tiles (first visible row). `index.html` preloads the three above-the-fold
+  font files and adds `theme-color`/`color-scheme`/`description` meta. `body`'s never-bundled `Inter` fallback
+  replaced by `var(--body)` (Figtree, already self-hosted). `.ds-app`'s fixed radial-gradient background moved
+  from `background-attachment:fixed` to a `position:fixed` `::before` pseudo-element (paints once instead of on
+  every scroll). `.ds-sec{content-visibility:auto; contain-intrinsic-size:auto 600px}`. The cover stagger keeps
+  its `:nth-child` selectors (`sibling-index()` isn't Baseline yet) but now sets a `--i` custom property per child
+  and computes `animation-delay: calc(var(--i) * .06s)` from it.
+- **Polish (A14/A18/A19/A20).** `prefers-reduced-motion` scope widened from `.ds-page` to `.ds-app`.
+  `text-wrap: balance` on titles/headings, `text-wrap: pretty` on prose/quote/overview blocks. `.ds-title`'s
+  gradient-clipped text falls back to `CanvasText` under `forced-colors: active`. `captioned` portraits (above).
+- **View transitions (A21).** `Layout` installs one capture-phase `click` listener on the app root (ahead of the
+  router's own delegated click handling) that, only when `document.startViewTransition` is a function (feature-
+  detected via `js_sys::Reflect`; the pinned `web-sys` has no typed binding for this newly-available API yet) and
+  `prefers-reduced-motion` is not `reduce`, intercepts an internal `<a href>` click and performs the navigation
+  inside `startViewTransition`'s callback; unsupported browsers and the reduced-motion case fall through to the
+  router's normal click handling, unchanged.
+
+### Verified
+
+Docker `storm-dev:latest`, no DB needed (no server/migration changes): `cargo fmt --all -- --check`,
+`cargo clippy --locked --target wasm32-unknown-unknown --workspace -- -D warnings`, `cargo clippy --locked
+--all-targets -- -D warnings` (native, `core`), `cargo test --locked` (181 native tests, up from before by the new
+`page_title` test), `trunk build --release` for `overlay`/`sources`/`app`, and `cargo clippy --locked --workspace
+--all-targets -- -D warnings` on the main server workspace (untouched by this branch, still green). App bundle
+1,046,738 bytes Brotli (budget 1.25 MB; overlay/sources unchanged at 217,943/181,362 bytes gzip).
+
+Browser-checked in Chromium (axe-core 4.9.1 + manual keyboard/JS probes) against the built `app` bundle served
+standalone (no backend — pages render their loading/empty states): `color-scheme` computes to `dark`; the
+Onboarding dialog opens via native `showModal()`, Esc closes it and moves focus to the page `<h1>`; `document.title`
+is per-route ("Matches · Storm Codex" etc.); skip link is a real `<a>`, help button a real `<button>`, nav has
+`aria-label`/`aria-current`; `theme-color`/`color-scheme` meta and the three font preloads are present. **0
+axe serious/critical violations** on Session, Matches, Match (`/match/1`, not-found state), Heroes, Maps, Records,
+Patch notes, Scouting, Admin (an initial `.pill`-button contrast regression on the WhatsNew "got it" button and an
+onboarding-link `link-in-text-block` violation were caught by this pass and fixed, see above).
+
+**Not verified** (no backend in this pass, no browser Lighthouse run, no cross-browser/WebView2 check): axe/keyboard
+probes against pages with real data (Match with a real id, Scouting report detail, the roster/game-log rows, the
+import dialog, the eager-loaded hero portraits' actual `loading`/`fetchpriority` attributes on real icons), a full
+keyboard Tab-order walk per page, Lighthouse accessibility scores, and any performance regression measurement.
+`eager`/`captioned` were only wired into the Heroes wall and not retroactively into every other portrait call site
+(player/match/hero cover portraits, `Avatar`, scoreboard rows) — a reasonable next slice, not done here to stay
+surgical. Windows WebView2 and real-OBS acceptance are out of scope for this web-only commit.
+
+
+
 ## Routes (source of truth: `web-rs/app/src/main.rs` and `web-rs/core/src/route.rs`)
 
 > The behaviour descriptions in this section and in the other tables were written against the React app and are reproduced by the
@@ -108,7 +185,7 @@ licenses. Cinzel and Oswald are from Fontsource 5.3.0. No font CDN is used. Both
 declare `lang="en"` and fall back to system fonts. The active draft slot pulses by animating only
 the opacity of a separate glow; the now-playing equaliser bars use a `--i` stagger without changing
 the reveal morph. Existing operator-supplied media URLs are unaffected.
-Contract: **OBS bundles stay <= 300 kB gzip; the app bundle stays <= 1.25 MB brotli** (cap raised from 1 MB by the operator on 2026-11-19, with 995,946 bytes used, to make room for the approved session review, match card and replay search; 911 kB on 2026-11-11, 937 kB on 2026-11-13 with the standalone screens, 943 kB on 2026-11-14 with the startup toggle, 977 kB on 2026-11-18 with the local insights pages, 982 kB with standalone folder identity, 994,513 bytes with standalone reference sync, 994,763 bytes with repair-sensitive refetches, 1,007,131 bytes with the match card after integrating desktop update notes, 1,009,761 bytes with replay search, 1,016,321 bytes with the session review after integrating desktop update notes, 1,016,390 bytes on the branch merging the web-audit platform fixes with the session review, 1,027,189 bytes with both the match card and the session review integrated together, 1,026,938 bytes with the match card, session review and web-audit platform fixes all merged together on `fix/web-audit-platform`, 1,030,208 bytes on `feat/replay-search` after merging `origin/main` and reducing the Matches page size from 200 to 100 rows (operator decision, 2026-11-19), **1,041,779 bytes after merging `origin/main` (web-audit platform fixes #61, match card #59, session review #60) into `feat/replay-search`** (overlay 217,951 bytes gzip, sources 181,343 bytes gzip); the server negotiates brotli; `SIZE_CODEC=br` in the script) (`scripts/check-web-rs-size.sh`, enforced in CI; `overlay` 229 kB and `sources`
+Contract: **OBS bundles stay <= 300 kB gzip; the app bundle stays <= 1.25 MB brotli** (cap raised from 1 MB by the operator on 2026-11-19, with 995,946 bytes used, to make room for the approved session review, match card and replay search; 911 kB on 2026-11-11, 937 kB on 2026-11-13 with the standalone screens, 943 kB on 2026-11-14 with the startup toggle, 977 kB on 2026-11-18 with the local insights pages, 982 kB with standalone folder identity, 994,513 bytes with standalone reference sync, 994,763 bytes with repair-sensitive refetches, 1,007,131 bytes with the match card after integrating desktop update notes, 1,009,761 bytes with replay search, 1,016,321 bytes with the session review after integrating desktop update notes, 1,016,390 bytes on the branch merging the web-audit platform fixes with the session review, 1,027,189 bytes with both the match card and the session review integrated together, 1,026,938 bytes with the match card, session review and web-audit platform fixes all merged together on `fix/web-audit-platform`, 1,030,208 bytes on `feat/replay-search` after merging `origin/main` and reducing the Matches page size from 200 to 100 rows (operator decision, 2026-11-19), **1,041,779 bytes after merging `origin/main` (web-audit platform fixes #61, match card #59, session review #60) into `feat/replay-search`** (overlay 217,951 bytes gzip, sources 181,343 bytes gzip); **1,046,738 bytes on `fix/web-audit-app` (web-audit App slice, this branch)** (overlay 217,943 bytes gzip, sources 181,362 bytes gzip, both unchanged); the server negotiates brotli; `SIZE_CODEC=br` in the script) (`scripts/check-web-rs-size.sh`, enforced in CI; `overlay` 229 kB and `sources`
 191 kB on 2026-11-11). Putting the session and music sources in the overlay bundle gave 314 kB (the view machinery is linked once per
 bundle), hence two bundles: an OBS source only loads the bundle of its family. Patch-note HTML is sanitised
 in an inert template; images have `referrerpolicy="no-referrer"` and `loading="lazy"` set before insertion,
