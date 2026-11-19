@@ -34,6 +34,8 @@ pub struct PlayerRow {
     pub team: Option<u8>,
     pub win: bool,
     pub stats: [Option<f64>; N_STATS],
+    /// first end-of-game award, an index into `Corpus::awards`
+    pub award: Option<u16>,
 }
 
 /// A death, compact: toons are indices into `Corpus::toons` (full `MatchFacts` cost ~10× the memory).
@@ -55,6 +57,8 @@ pub struct Game {
     pub mode: Option<i32>,
     pub played_at: Option<DateTime<Utc>>,
     pub winner: Option<u8>,
+    /// seconds
+    pub length: Option<f64>,
     pub leads: EarlyLeads,
     pub deaths: Box<[SlimDeath]>,
     /// level lead of team 0: `(start, end, diff)`
@@ -69,6 +73,8 @@ pub struct Corpus {
     /// interned toons of `SlimDeath` (append-only)
     pub toons: Vec<String>,
     toon_ids: HashMap<String, u32>,
+    /// interned award ids of `PlayerRow::award` (append-only, a few dozen)
+    pub awards: Vec<String>,
 }
 
 impl Corpus {
@@ -80,6 +86,22 @@ impl Corpus {
         self.toons.push(toon.to_string());
         self.toon_ids.insert(toon.to_string(), i);
         i
+    }
+
+    fn intern_award(&mut self, award: &str) -> Option<u16> {
+        if let Some(i) = self.awards.iter().position(|a| a == award) {
+            return u16::try_from(i).ok();
+        }
+        let i = u16::try_from(self.awards.len()).ok()?;
+        self.awards.push(award.to_string());
+        Some(i)
+    }
+
+    /// The raw award id of a row (`EndOfMatchAwardMVPBoolean`…).
+    pub fn award(&self, p: &PlayerRow) -> Option<&str> {
+        p.award
+            .and_then(|i| self.awards.get(usize::from(i)))
+            .map(String::as_str)
     }
 
     fn toon(&self, i: u32) -> String {
@@ -145,6 +167,7 @@ type PRow = (
     Option<i32>,
     Option<bool>,
     Vec<Option<f64>>,
+    Option<String>,
 );
 type GRow = (
     i64,
@@ -154,6 +177,7 @@ type GRow = (
     Option<i32>,
     Option<i32>,
     i32,
+    Option<f64>,
     Option<J>,
     Option<J>,
     Option<J>,
@@ -168,7 +192,7 @@ const BATCH: usize = 20;
 async fn load(db: &PgPool, c: &mut Corpus, ids: &[i64]) -> Result<(), sqlx::Error> {
     for chunk in ids.chunks(BATCH) {
         let grows: Vec<GRow> = sqlx::query_as(
-            "SELECT id, map, mode, played_at, winner, first_fort, COALESCE(parser_version, 0),
+            "SELECT id, map, mode, played_at, winner, first_fort, COALESCE(parser_version, 0), length,
                     data->'takedowns', data->'levelTimes', data->'levelAdvTimeline'
              FROM matches WHERE id = ANY($1)",
         )
@@ -184,7 +208,8 @@ async fn load(db: &PgPool, c: &mut Corpus, ids: &[i64]) -> Result<(), sqlx::Erro
                     ARRAY[mp.kills::float8, mp.takedowns::float8, (gs->>'Assists')::float8, mp.deaths::float8,
                           mp.hero_damage::float8, (gs->>'SiegeDamage')::float8, mp.healing::float8,
                           (gs->>'SelfHealing')::float8, (gs->>'DamageTaken')::float8, mp.experience::float8,
-                          (gs->>'MercCampCaptures')::float8, (gs->>'TimeCCdEnemyHeroes')::float8]
+                          (gs->>'MercCampCaptures')::float8, (gs->>'TimeCCdEnemyHeroes')::float8],
+                    gs #>> '{awards,0}'
              FROM match_players mp JOIN g ON g.id = mp.id
              ORDER BY mp.match_id, mp.team, mp.id",
         )
@@ -198,7 +223,7 @@ async fn load(db: &PgPool, c: &mut Corpus, ids: &[i64]) -> Result<(), sqlx::Erro
 
 fn add(c: &mut Corpus, prows: Vec<PRow>, grows: Vec<GRow>) {
     let mut by_match: HashMap<i64, Vec<PlayerRow>> = HashMap::new();
-    for (match_id, toon, name, hero, t, win, s) in prows {
+    for (match_id, toon, name, hero, t, win, s, award) in prows {
         let mut stats = [None; N_STATS];
         for (i, v) in s.into_iter().take(N_STATS).enumerate() {
             stats[i] = v;
@@ -210,9 +235,10 @@ fn add(c: &mut Corpus, prows: Vec<PRow>, grows: Vec<GRow>) {
             team: team(t),
             win: win.unwrap_or(false),
             stats,
+            award: award.as_deref().and_then(|a| c.intern_award(a)),
         });
     }
-    for (id, map, mode, played_at, winner, fort, parser_version, tds, lt, adv) in grows {
+    for (id, map, mode, played_at, winner, fort, parser_version, length, tds, lt, adv) in grows {
         let players = by_match.remove(&id).unwrap_or_default();
         let teams: HashMap<String, u8> = players
             .iter()
@@ -246,6 +272,7 @@ fn add(c: &mut Corpus, prows: Vec<PRow>, grows: Vec<GRow>) {
                 mode,
                 played_at,
                 winner: team(winner),
+                length,
                 leads: logic::early_leads(&facts, team(fort)),
                 deaths,
                 level_adv: facts

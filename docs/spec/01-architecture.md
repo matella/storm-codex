@@ -73,6 +73,7 @@ Design: `docs/specs/2026-11-12-standalone-installer-design.md`.
 | 3-year archive backfill (~2,800) | < 5 min | 1.8 min (same) |
 | Local insights (`/api/records`, `/api/maps/early-leads`, `/api/matches/{id}/insights`, `/api/compare`) | API p95 < 100 ms | warm: 35 / 6 / 4 / 12 ms (copy of the box DB, 3,480 games, release, 2026-11-18) |
 | Local insights: `/api/players/{toon}/insights` | API p95 < 100 ms — **at the limit, operator to accept or ask for more work** | 75–100 ms (same setup; account with 2,684 games) |
+| Session review (`/api/sessions`, `/api/sessions/{id}`) | API p95 < 100 ms (spec target < 20 ms) | warm, sequential loopback: list p50 6.4 / p95 6.7 ms (300 requests, `limit` 20 and 100); review p50 6.4 / p95 6.7 ms (300 requests over the 100 latest sessions, up to 19 games each) (copy of the box DB, 3,492 games, release, 2026-11-19; idle, not during import) |
 | Insights corpus (in memory) | load in the background at startup; RAM documented | 3.3 s load, +44 MB RSS for 3,480 games (~13 kB/game) (same setup) |
 
 Any PR that puts a budget at risk re-measures it (benches: `storm-stats-dump --bench`,

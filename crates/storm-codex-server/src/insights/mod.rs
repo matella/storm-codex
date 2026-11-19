@@ -2,3 +2,4 @@
 pub mod api;
 pub mod cache;
 pub mod logic;
+pub mod session;
