@@ -124,4 +124,5 @@ The open questions were resolved as follows:
   pre-load state; while rendering it is disabled and reads "Saving…". Once the browser download is triggered,
   it says "Download started", not that the PNG was saved; setup failures are surfaced instead.
 - Desktop `save_card` fallback: not built; acceptance item 15 in `docs/standalone-acceptance.md` decides it.
-- App bundle: 1,006,511 bytes Brotli (+10,727 vs 995,784), over the current 1,000,000 cap: needs PR #53 (1.25 MB).
+- App bundle: 1,007,131 bytes Brotli after merging the desktop update notes, under the 1,250,000-byte cap.
+  Before integration: 1,006,511 bytes (+10,727 vs 995,784).

@@ -322,11 +322,13 @@ pub enum UpdateState {
     Ready,
 }
 
-/// Answer of the `update_status` Tauri command: `{state: "none"|"downloading"|"ready", version: string|null}`.
+/// Answer of the `update_status` Tauri command: `{state: "none"|"downloading"|"ready", version: string|null,
+/// notes?: string|null}` (`notes`, plain-text release notes, is absent from older shells).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct UpdateStatus {
     pub state: UpdateState,
     pub version: Option<String>,
+    pub notes: Option<String>,
 }
 
 /// Reads an `update_status` answer defensively: anything unexpected (other shape, unknown state) means "no update".
@@ -336,13 +338,29 @@ pub fn parse_update_status(v: &Value) -> UpdateStatus {
         Some("ready") => UpdateState::Ready,
         _ => UpdateState::None,
     };
-    let version = v
-        .get("version")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string);
-    UpdateStatus { state, version }
+    let text = |key: &str| {
+        v.get(key)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    };
+    UpdateStatus {
+        state,
+        version: text("version"),
+        notes: text("notes"),
+    }
+}
+
+/// GitHub release page of a desktop version (`desktop-vX.Y.Z`); `None` unless the version is a plain
+/// `X.Y.Z[-pre][+build]`-like string (it comes from the update manifest and ends up in a link).
+pub fn release_page_url(version: &str) -> Option<String> {
+    let ok = !version.is_empty()
+        && version.starts_with(|c: char| c.is_ascii_digit())
+        && version
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '+'));
+    ok.then(|| format!("https://github.com/matella/storm-codex/releases/tag/desktop-v{version}"))
 }
 
 /// In-game names typed as one comma-separated field: trimmed, empty entries dropped, duplicates removed (first kept),
@@ -832,8 +850,27 @@ mod tests {
             p(r#"{"state":"ready","version":"1.2.0"}"#),
             UpdateStatus {
                 state: UpdateState::Ready,
-                version: Some("1.2.0".into())
+                version: Some("1.2.0".into()),
+                notes: None
             }
+        );
+        assert_eq!(
+            p(r#"{"state":"ready","version":"1.2.0","notes":"  New:\n- Faster\n+ 2 more (see the release page).\n"}"#)
+                .notes
+                .as_deref(),
+            Some("New:\n- Faster\n+ 2 more (see the release page).")
+        );
+        assert_eq!(
+            p(r#"{"state":"ready","version":"1.2.0","notes":null}"#).notes,
+            None
+        );
+        assert_eq!(
+            p(r#"{"state":"ready","version":"1.2.0","notes":"  "}"#).notes,
+            None
+        );
+        assert_eq!(
+            p(r#"{"state":"ready","version":"1.2.0","notes":["x"]}"#).notes,
+            None
         );
         assert_eq!(
             p(r#"{"state":"downloading","version":null}"#).state,
@@ -848,6 +885,20 @@ mod tests {
         assert_eq!(p("null"), UpdateStatus::default());
         assert_eq!(p(r#""ready""#), UpdateStatus::default());
         assert_eq!(p(r#"{"state":1,"version":2}"#), UpdateStatus::default());
+    }
+
+    #[test]
+    fn release_page_url_only_for_plain_versions() {
+        assert_eq!(
+            release_page_url("1.2.0").as_deref(),
+            Some("https://github.com/matella/storm-codex/releases/tag/desktop-v1.2.0")
+        );
+        assert!(release_page_url("1.2.0-rc.1").is_some());
+        assert_eq!(release_page_url(""), None);
+        assert_eq!(release_page_url("v1.2.0"), None);
+        assert_eq!(release_page_url("1.2.0/../../x"), None);
+        assert_eq!(release_page_url("1.2.0?a=b"), None);
+        assert_eq!(release_page_url("1.2 .0"), None);
     }
 }
 

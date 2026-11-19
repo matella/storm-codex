@@ -99,7 +99,7 @@ Status: the six OBS sources are built and checked in the browser against React o
 DOM identical for ticker, widget with and without MVP, queue with mixed modes / awards / two operator accounts / a streak and
 the music card, now playing default / `?mini` / `?reveal`, draft overlay with a skin, cast overlay; the reveal hold of about 2.6 s
 observed). **Real-OBS check pending for each source (operator).** JetBrains Mono (400/600 in `sources`, 700 in `overlay`, latin subset, `fonts/` next to each bundle) is self-hosted, so no OBS source needs Google Fonts for it; the overlay still loads Cinzel and Oswald from Google Fonts, exactly like the React overlay. The app bundle is below.
-Contract: **OBS bundles stay <= 300 kB gzip; the app bundle stays <= 1.25 MB brotli** (cap raised from 1 MB by the operator on 2026-11-19, with 995,946 bytes used, to make room for the approved session review, match card and replay search; 911 kB on 2026-11-11, 937 kB on 2026-11-13 with the standalone screens, 943 kB on 2026-11-14 with the startup toggle, 977 kB on 2026-11-18 with the local insights pages, 982 kB with standalone folder identity, 994,513 bytes with standalone reference sync, 994,763 bytes with repair-sensitive refetches, 1,006,511 bytes with the match card; the server negotiates brotli; `SIZE_CODEC=br` in the script) (`scripts/check-web-rs-size.sh`, enforced in CI; `overlay` 229 kB and `sources`
+Contract: **OBS bundles stay <= 300 kB gzip; the app bundle stays <= 1.25 MB brotli** (cap raised from 1 MB by the operator on 2026-11-19, with 995,946 bytes used, to make room for the approved session review, match card and replay search; 911 kB on 2026-11-11, 937 kB on 2026-11-13 with the standalone screens, 943 kB on 2026-11-14 with the startup toggle, 977 kB on 2026-11-18 with the local insights pages, 982 kB with standalone folder identity, 994,513 bytes with standalone reference sync, 994,763 bytes with repair-sensitive refetches, 1,007,131 bytes with the match card after integrating desktop update notes; the server negotiates brotli; `SIZE_CODEC=br` in the script) (`scripts/check-web-rs-size.sh`, enforced in CI; `overlay` 229 kB and `sources`
 191 kB on 2026-11-11). Putting the session and music sources in the overlay bundle gave 314 kB (the view machinery is linked once per
 bundle), hence two bundles: an OBS source only loads the bundle of its family. One bundle per page family: the sanitiser
 (`ammonia`, about 300 kB) must never be linked into an OBS bundle.
@@ -197,8 +197,14 @@ deserialisation, `progress_percent`, `phase_message`, `redirects_to_welcome`, `p
   mode (the `?` button still opens it).
 - **Update banner** (`UpdateBanner`, under the top bar). Contract with the desktop shell: when `window.__TAURI__.core.invoke` exists
   (read defensively with `Reflect`, never panics), the app calls the Tauri command `update_status` at startup and every 60 s; it
-  answers `{state: "none" | "downloading" | "ready", version: string | null}` (`parse_update_status`: any other shape or state =
-  `none`). On `ready` the banner shows the version and a **Restart to update** button that calls `invoke('install_update')`.
+  answers `{state: "none" | "downloading" | "ready", version: string | null, notes: string | null}` (`parse_update_status`: any
+  other shape or state = `none`; `notes` is optional, absent from older shells, and a blank or non-string value counts as none).
+  On `ready` the banner shows the version and a **Restart to update** button that calls `invoke('install_update')`. With notes,
+  a **What's new** toggle (collapsed by default, `aria-expanded`) shows them under the banner as a plain text node
+  (`white-space: pre-line`, never parsed as HTML). With a version, a **Release page ↗** link (`target=_blank`, which the shell
+  opens in the system browser) points to `https://github.com/matella/storm-codex/releases/tag/desktop-v<version>`
+  (`release_page_url`: only for versions made of ASCII letters, digits, `.`, `-`, `+` and starting with a digit; otherwise no
+  link).
   The button is disabled while the call runs (one call per click sequence; it stays disabled on success, the shell restarts
   the app). A rejected call (or a missing shell) shows "Update failed: <reason>" inline (`update_failed_message`; the reason
   is the rejection string, an `Error`'s `message`, or the value as JSON) and re-enables the button. A call resolving with

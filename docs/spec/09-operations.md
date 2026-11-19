@@ -360,8 +360,9 @@ fresh migrated cluster → import.
   memory (the installer's size, tens of MB, held until install or exit: accepted; streaming it
   to a file is deferred); then `ready` and the tray item **Restart to update** is enabled. A check or download
   failure returns to `none` with one log line and is retried at the next tick. `update_status`
-  answers `{state: "none"|"downloading"|"ready", version}` (camelCase JSON, the web banner's
-  contract in `08-frontend.md`). `install_update` (banner or tray item, same path) is refused
+  answers `{state: "none"|"downloading"|"ready", version, notes}` (camelCase JSON, the web banner's
+  contract in `08-frontend.md`; `notes` is the manifest's `notes` as `Update::body`, trimmed, `null` when
+  missing or blank). `install_update` (banner or tray item, same path) is refused
   with a clear message unless `ready`, and a second install while one runs is refused; otherwise:
   stop the stack (`Lifecycle::stop`, `Full` budget: server then Postgres, waiting for an export
   or import in progress), `Update::install(bytes)` (NSIS `passive` mode: progress bar, no
@@ -671,9 +672,8 @@ appear without their PR number). Outputs:
 - latest.json `notes`: plain text, at most 8 entries and 600 characters (`New:`/`Fixed:`/`Faster:` headers,
   `- ` items, no links, `+ N more (see the release page).`); "Maintenance release (no user-facing changes)." when
   nothing is kept.
-The shell does not show `notes` today: `UpdateStatus` (`desktop/src/updater.rs`) carries only state and version,
-and the web banner says "Storm Codex X.Y.Z is ready to install." Showing them needs the shell to forward
-`Update::body` in `update_status` and the banner to render it as plain text (white-space: pre-line). A missing
+The shell forwards `notes` (`Update::body`) in `update_status`; the web update banner shows them behind a "What's new"
+toggle as plain text (white-space: pre-line) next to a link to the release page (`08-frontend.md`). A missing
 previous tag in the clone fails the run rather than producing wrong notes. Local preview:
 `gh api --paginate repos/matella/storm-codex/releases --jq '.[] | {tag_name, draft, prerelease}' > /tmp/rel.jsonl`
 then `python3 scripts/release-notes.py --repo matella/storm-codex --version X.Y.Z --releases /tmp/rel.jsonl`.

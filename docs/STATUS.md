@@ -7,16 +7,29 @@ toggle (off by default, remembered). The 1200×675 PNG is drawn client-side on a
 layout + tests, `app/card.rs` thin canvas code) from the match detail, insights fights, minimap and portraits,
 then saved through `<a download>`. No API change, no new crate (one `web-sys` feature, `TextMetrics`).
 
-Docker checks (web-rs fmt, clippy native + wasm, test, trunk build app) green; app bundle **1,006,511 bytes**
-Brotli: needs the 1.25 MB cap of PR #53 before CI passes. Browser check on a committed-replay fixture (win,
-names on/off, missing minimap, missing portrait): render+download about 200 ms. **Not done**: box DB games
+Earlier Chromium check on a committed-replay fixture (win, names on/off, missing minimap, missing portrait):
+render+download about 200 ms. **Not done**: box DB games
 (loss, no operator account), installed WebView2 download on MH-Home (acceptance item 15; decides the
 `save_card` fallback).
 
 Review fixes: the keyboard-operable privacy switch invalidates a named export before download;
-unknown results no longer claim a winner, and download setup failures are reported. Chromium
-verified cancellation with PNG encoding held, setup failure, and an actual 1200×675 PNG download.
-Installed WebView2 item 15 is still pending; no native fallback was added.
+unknown results no longer claim a winner, and download setup failures are reported.
+
+Merged `origin/main` (`b89c12d`). Linux PostgreSQL 17 workspace tests: 513 passed, 10 ignored; web tests:
+167 passed, including 14 card tests. Release app: **1,007,131 bytes Brotli** (cap 1,250,000). On the integrated
+release bundle, Chromium saved an actual 1200×675 PNG with names off, canceled a held named export after the
+keyboard toggle went off and back on, and surfaced an injected download setup failure. The fixture used a
+committed replay with no operator configured and no artwork. Installed WebView2 item 15 still needs a real
+file-save check; no native fallback was added.
+
+## Release notes in the desktop update banner (2026-11-19), branch `feat/update-notes`
+
+The shell forwards latest.json `notes` (`Update::body`, trimmed, `null` when blank) in `update_status`; the web update
+banner shows them behind a collapsed "What's new" toggle as plain text (`white-space: pre-line`) plus a "Release page ↗"
+link to `desktop-vX.Y.Z` (opened in the system browser by the shell's `target=_blank` handling). Older shells without
+`notes` keep the previous banner. Checked in Docker: web-rs fmt, clippy native + wasm32, tests, app bundle size;
+desktop `cargo fmt --check` and the `updater.rs` state-machine tests in an isolated crate (no GLib in `storm-dev`).
+**Not done**: full desktop clippy/tests (Windows CI `desktop` job), seeing the banner with real notes in an installed build.
 
 ## CI action pins and desktop release notes (2026-11-19), branch `ci/pin-actions-release-notes`
 
