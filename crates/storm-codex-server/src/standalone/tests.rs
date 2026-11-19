@@ -324,6 +324,25 @@ async fn put_folders_rejects_what_is_not_a_directory() {
 }
 
 #[tokio::test]
+async fn put_folders_bounds_the_list_and_the_body() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = test_config(tmp.path());
+    let state = lazy_state(tmp.path(), Some(StandaloneState::new(&cfg)));
+    let app = app(&state);
+    let dir = tmp.path().to_string_lossy().into_owned();
+    let many = vec![dir.as_str(); 65];
+    let (code, v) = send(&app, put_folders(&many)).await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+    assert!(
+        v["error"].as_str().unwrap().contains("too many folders"),
+        "{v}"
+    );
+    let huge = "x".repeat(65 * 1024);
+    let (code, _) = send(&app, put_folders(&[&huge])).await;
+    assert_eq!(code, StatusCode::PAYLOAD_TOO_LARGE);
+}
+
+#[tokio::test]
 async fn rescan_is_accepted_and_queued() {
     let tmp = tempfile::tempdir().unwrap();
     let cfg = test_config(tmp.path());
