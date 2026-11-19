@@ -590,3 +590,93 @@ async fn disabling_during_a_manual_download_keeps_the_active_generation() {
     worker.await.unwrap();
     drop_db(db, &name).await;
 }
+
+/// Checksum-consistent but incomplete releases, and archives over a resource budget, are refused
+/// before activation: staging is removed and the working generation keeps serving.
+#[tokio::test]
+async fn incomplete_or_oversized_updates_keep_the_active_generation() {
+    use crate::refdata::tests::rewrite_listed;
+    let Some((db, name)) = isolated_db().await else {
+        return;
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = fixture_dir_copy(tmp.path());
+    let app = setup(&db, tmp.path(), Vec::new());
+    let st = app.standalone.as_ref().unwrap();
+    st.reference.load(&db).await;
+    let router = crate::app_router(app.clone());
+    set_version(&dir, "one", 1);
+    round(&app, &st.reference, Arc::new(DirSource::new(dir.clone())))
+        .await
+        .unwrap();
+    let initial = get_json(&router, STATUS).await;
+    let image = call(&router, "GET", IMAGE, Body::empty()).await.1;
+    let root = asset_root(&app);
+    assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+    async fn kept(router: &Router, db: &PgPool, root: &Path, initial: &Value, image: &[u8]) {
+        assert_eq!(&get_json(router, STATUS).await, initial);
+        assert_eq!(call(router, "GET", IMAGE, Body::empty()).await.1, image);
+        assert_eq!(load::last_version(db).await.as_deref(), Some("one"));
+        assert_eq!(fs::read_dir(root).unwrap().count(), 1, "staging is removed");
+    }
+
+    set_version(&dir, "two", 1);
+    let good_assets = fs::read(dir.join("assets.json")).unwrap();
+    let mut assets: Value = serde_json::from_slice(&good_assets).unwrap();
+    assets
+        .as_object_mut()
+        .unwrap()
+        .remove("heroportraits/storm_ui_ingame_hero_loadingscreen_abathur.png");
+    rewrite_listed(&dir, "assets.json", &serde_json::to_vec(&assets).unwrap());
+    let got = round(&app, &st.reference, Arc::new(DirSource::new(dir.clone()))).await;
+    assert!(
+        matches!(got, Err(SyncError::Data(RefdataError::Shape(_)))),
+        "{got:?}"
+    );
+    kept(&router, &db, &root, &initial, &image).await;
+    rewrite_listed(&dir, "assets.json", &good_assets);
+
+    let good_patches = fs::read(dir.join("patches.json")).unwrap();
+    rewrite_listed(&dir, "patches.json", b"[]");
+    let got = round(&app, &st.reference, Arc::new(DirSource::new(dir.clone()))).await;
+    assert!(
+        matches!(got, Err(SyncError::Data(RefdataError::Shape(_)))),
+        "{got:?}"
+    );
+    kept(&router, &db, &root, &initial, &image).await;
+    rewrite_listed(&dir, "patches.json", &good_patches);
+
+    let open = load::Limits {
+        archive_bytes: u64::MAX,
+        expanded_bytes: u64::MAX,
+        image_bytes: u64::MAX,
+    };
+    for limits in [
+        load::Limits {
+            archive_bytes: 64,
+            ..open
+        },
+        load::Limits {
+            expanded_bytes: 2048,
+            ..open
+        },
+        load::Limits {
+            image_bytes: 8,
+            ..open
+        },
+    ] {
+        let src = Arc::new(DirSource::new(dir.clone()).with_limits(limits));
+        let got = round(&app, &st.reference, src).await;
+        assert!(
+            matches!(got, Err(SyncError::Data(RefdataError::Budget { .. }))),
+            "{limits:?}: {got:?}"
+        );
+        kept(&router, &db, &root, &initial, &image).await;
+    }
+
+    round(&app, &st.reference, Arc::new(DirSource::new(dir)))
+        .await
+        .unwrap();
+    assert_eq!(get_json(&router, STATUS).await["version"], "two");
+    drop_db(db, &name).await;
+}

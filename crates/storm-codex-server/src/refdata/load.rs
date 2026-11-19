@@ -6,15 +6,18 @@
 //!   missing from `images_dir` come from `dataset.tar.gz` (checked against `dataset.tar.gz.sha256`).
 //! - **Standalone** stages the feed or a legacy trimmed bundle ([`trim`]) via `standalone`.
 //!
-//! Any refusal (schema, hash, shape) happens before the transaction: the previous data is kept.
+//! Any refusal (schema, hash, shape, resource budget) happens before the transaction: the previous
+//! data is kept. Archive downloads and decompression are bounded by [`Limits`].
 
 use super::{
     build, parse_manifest, sha256_hex, Dataset, ImageCopy, Manifest, RefdataError, Rows, DATA_FILES,
 };
 use sqlx::{PgPool, Postgres, Transaction};
-use std::collections::{BTreeSet, HashMap};
+use std::cell::Cell;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::io::Read;
 use std::path::Path;
+use std::rc::Rc;
 use std::sync::Arc;
 
 /// `app_settings` key holding the `datasetVersion` last ingested.
@@ -27,18 +30,44 @@ pub const DEFAULT_URL: &str =
 /// Largest data file accepted from the network (patches.json is ~19 MB in schema v1).
 const MAX_FILE: u64 = 256 * 1024 * 1024;
 
+/// Resource budget for one `dataset.tar.gz` (spec 04-serveur, "Reference data"). The defaults are
+/// several times the pinned release (`desktop/referential-pin.txt`, `data-d6776d73…`): 100,024,455
+/// compressed bytes, 158,981,122 bytes once decompressed (1,346 files), largest image 5,393,600 bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Limits {
+    /// Bytes downloaded for the archive itself.
+    pub archive_bytes: u64,
+    /// Bytes coming out of the gzip decoder (tar headers and every entry, kept or not).
+    pub expanded_bytes: u64,
+    /// Bytes of one image entry (data files keep the `MAX_FILE` cap).
+    pub image_bytes: u64,
+}
+
+impl Limits {
+    pub const DEFAULT: Limits = Limits {
+        archive_bytes: 512 * 1024 * 1024,
+        expanded_bytes: 1024 * 1024 * 1024,
+        image_bytes: 32 * 1024 * 1024,
+    };
+}
+
 /// Where a release's files come from (an HTTP download base in production, memory in tests).
 pub trait Source: Send + Sync {
     /// The bytes of release asset `name` (e.g. `manifest.json`, `enus.json`).
     fn get(&self, name: &str) -> Result<Vec<u8>, RefdataError>;
     /// Streams release asset `name` into `file`.
     fn download(&self, name: &str, file: &Path) -> Result<(), RefdataError>;
+    /// Budget applied to this source's `dataset.tar.gz` (tests inject small ones).
+    fn limits(&self) -> Limits {
+        Limits::DEFAULT
+    }
 }
 
 /// A release download base (`…/releases/latest/download/` or `…/releases/download/<tag>/`).
 pub struct Http {
     base: String,
     agent: ureq::Agent,
+    limits: Limits,
 }
 
 impl Http {
@@ -46,6 +75,7 @@ impl Http {
         Http {
             base: format!("{}/", base.trim_end_matches('/')),
             agent: ureq::Agent::new_with_defaults(),
+            limits: Limits::DEFAULT,
         }
     }
 
@@ -56,7 +86,14 @@ impl Http {
         Self {
             base: DEFAULT_URL.into(),
             agent: ureq::Agent::new_with_config(config),
+            limits: Limits::DEFAULT,
         }
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_limits(mut self, limits: Limits) -> Self {
+        self.limits = limits;
+        self
     }
 }
 
@@ -81,11 +118,20 @@ impl Source for Http {
             .get(&url)
             .call()
             .map_err(|e| RefdataError::Io(format!("{url}: {e}")))?;
-        let mut reader = res.into_body().into_reader();
+        let limit = self.limits.archive_bytes;
+        // One byte past the budget is enough to refuse; the transfer stops there.
+        let mut reader = res.into_body().into_reader().take(limit.saturating_add(1));
         let mut out = std::fs::File::create(file).map_err(|e| io_err(file, e))?;
-        std::io::copy(&mut reader, &mut out)
+        let n = std::io::copy(&mut reader, &mut out)
             .map_err(|e| RefdataError::Io(format!("{url}: {e}")))?;
+        if n > limit {
+            return Err(RefdataError::Budget { what: url, limit });
+        }
         Ok(())
+    }
+
+    fn limits(&self) -> Limits {
+        self.limits
     }
 }
 
@@ -186,11 +232,20 @@ pub(super) fn fetch_images_via(
     file: &Path,
 ) -> Result<u32, RefdataError> {
     let result = (|| {
+        let limits = src.limits();
         src.download("dataset.tar.gz", file)?;
+        // Any source is held to the compressed budget, not only the HTTP one that streams it.
+        let size = std::fs::metadata(file).map_err(|e| io_err(file, e))?.len();
+        if size > limits.archive_bytes {
+            return Err(RefdataError::Budget {
+                what: "dataset.tar.gz".into(),
+                limit: limits.archive_bytes,
+            });
+        }
         let expected = parse_sha256_file(&src.get("dataset.tar.gz.sha256")?)?;
         check_file_hash(file, &expected)?;
         let gz = std::fs::File::open(file).map_err(|e| io_err(file, e))?;
-        copy_images(gz, images, dir)
+        copy_images(gz, images, dir, &limits)
     })();
     let _ = std::fs::remove_file(file);
     result
@@ -237,55 +292,135 @@ pub fn check_file_hash(file: &Path, expected: &str) -> Result<(), RefdataError> 
     Ok(())
 }
 
-/// Copies the `images` found in a gzipped tarball into `dir`, each checked against its `assets.json`
-/// SHA-256; files already in `dir` are kept (D3: the square icons vendored by the old API stay).
-fn copy_images(gz: impl Read, images: &[ImageCopy], dir: &Path) -> Result<u32, RefdataError> {
-    let mut wanted: HashMap<&str, Vec<&ImageCopy>> = HashMap::new();
-    for i in images {
-        wanted.entry(i.source.as_str()).or_default().push(i);
+/// Fails the read once more than `left` bytes have come out of the gzip decoder. `over` records it,
+/// because the tar reader wraps the read error.
+struct Expansion<R> {
+    inner: R,
+    left: u64,
+    over: Rc<Cell<bool>>,
+}
+
+impl<R: Read> Read for Expansion<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        match self.left.checked_sub(n as u64) {
+            Some(left) => {
+                self.left = left;
+                Ok(n)
+            }
+            None => {
+                self.over.set(true);
+                Err(std::io::Error::other("expansion budget exceeded"))
+            }
+        }
     }
-    let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(gz));
-    let mut copied = 0;
-    for entry in archive
-        .entries()
-        .map_err(|e| RefdataError::Io(e.to_string()))?
-    {
-        let mut entry = entry.map_err(|e| RefdataError::Io(e.to_string()))?;
+}
+
+/// Visits the regular files of a gzipped tarball within `expanded_bytes` of decompressed output.
+/// `cap(path)` is the largest size accepted for an entry to read (`None` = skip it unread); an
+/// entry over its cap is refused before it is buffered.
+fn each_entry(
+    gz: impl Read,
+    expanded_bytes: u64,
+    cap: impl Fn(&str) -> Option<u64>,
+    mut visit: impl FnMut(String, Vec<u8>) -> Result<(), RefdataError>,
+) -> Result<(), RefdataError> {
+    let over = Rc::new(Cell::new(false));
+    let mut archive = tar::Archive::new(Expansion {
+        inner: flate2::read::GzDecoder::new(gz),
+        left: expanded_bytes,
+        over: over.clone(),
+    });
+    let fail = |e: std::io::Error, path: &str| {
+        if over.get() {
+            RefdataError::Budget {
+                what: "expanded dataset archive".into(),
+                limit: expanded_bytes,
+            }
+        } else if path.is_empty() {
+            RefdataError::Io(e.to_string())
+        } else {
+            RefdataError::Io(format!("{path}: {e}"))
+        }
+    };
+    for entry in archive.entries().map_err(|e| fail(e, ""))? {
+        let mut entry = entry.map_err(|e| fail(e, ""))?;
         if !entry.header().entry_type().is_file() {
             continue;
         }
         let path = entry
             .path()
-            .map_err(|e| RefdataError::Io(e.to_string()))?
+            .map_err(|e| fail(e, ""))?
             .to_string_lossy()
             .trim_start_matches("./")
             .to_string();
-        let Some(targets) = wanted.get(path.as_str()) else {
+        let Some(limit) = cap(&path) else {
             continue;
         };
-        let mut bytes = Vec::new();
-        entry
-            .read_to_end(&mut bytes)
-            .map_err(|e| RefdataError::Io(format!("{path}: {e}")))?;
-        let actual = sha256_hex(&bytes);
-        for img in targets {
-            if actual != img.sha256 {
-                return Err(RefdataError::Hash {
-                    path: path.clone(),
-                    expected: img.sha256.clone(),
-                    actual: actual.clone(),
-                });
-            }
-            let dest = dir.join(&img.dest);
-            if dest.exists() {
-                continue;
-            }
-            if let Some(parent) = dest.parent() {
-                std::fs::create_dir_all(parent).map_err(|e| io_err(parent, e))?;
-            }
-            std::fs::write(&dest, &bytes).map_err(|e| io_err(&dest, e))?;
-            copied += 1;
+        if entry.size() > limit {
+            return Err(RefdataError::Budget { what: path, limit });
         }
+        let mut bytes = Vec::new();
+        (&mut entry)
+            .take(limit.saturating_add(1))
+            .read_to_end(&mut bytes)
+            .map_err(|e| fail(e, &path))?;
+        if bytes.len() as u64 > limit {
+            return Err(RefdataError::Budget { what: path, limit });
+        }
+        visit(path, bytes)?;
+    }
+    Ok(())
+}
+
+/// Copies the `images` found in a gzipped tarball into `dir`, each checked against its `assets.json`
+/// SHA-256; files already in `dir` are kept (D3: the square icons vendored by the old API stay).
+/// An image the archive does not hold is an error: a generation is complete or not staged at all.
+fn copy_images(
+    gz: impl Read,
+    images: &[ImageCopy],
+    dir: &Path,
+    limits: &Limits,
+) -> Result<u32, RefdataError> {
+    let mut wanted: HashMap<&str, Vec<&ImageCopy>> = HashMap::new();
+    for i in images {
+        wanted.entry(i.source.as_str()).or_default().push(i);
+    }
+    let mut found = HashSet::new();
+    let mut copied = 0;
+    each_entry(
+        gz,
+        limits.expanded_bytes,
+        |path| wanted.contains_key(path).then_some(limits.image_bytes),
+        |path, bytes| {
+            let targets = wanted.get(path.as_str()).map_or(&[][..], Vec::as_slice);
+            let actual = sha256_hex(&bytes);
+            for img in targets {
+                if actual != img.sha256 {
+                    return Err(RefdataError::Hash {
+                        path: path.clone(),
+                        expected: img.sha256.clone(),
+                        actual: actual.clone(),
+                    });
+                }
+                let dest = dir.join(&img.dest);
+                if dest.exists() {
+                    continue;
+                }
+                if let Some(parent) = dest.parent() {
+                    std::fs::create_dir_all(parent).map_err(|e| io_err(parent, e))?;
+                }
+                std::fs::write(&dest, &bytes).map_err(|e| io_err(&dest, e))?;
+                copied += 1;
+            }
+            found.insert(path);
+            Ok(())
+        },
+    )?;
+    if let Some(missing) = wanted.keys().find(|p| !found.contains(**p)) {
+        return Err(RefdataError::Io(format!(
+            "{missing} missing from the archive"
+        )));
     }
     Ok(copied)
 }
@@ -433,36 +568,29 @@ pub(super) async fn write_rows(
     Ok(if was_empty { Vec::new() } else { new })
 }
 
-/// Reads every entry of a gzipped tarball into memory (`path → bytes`), keeping only `keep(path)`.
+/// Reads every entry of a gzipped tarball into memory (`path → bytes`), keeping only `keep(path)`,
+/// within `limits` (data files are capped at `MAX_FILE`, other entries at `image_bytes`).
 fn read_tar(
     gz: impl Read,
     keep: impl Fn(&str) -> bool,
+    limits: &Limits,
 ) -> Result<HashMap<String, Vec<u8>>, RefdataError> {
-    let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(gz));
     let mut out = HashMap::new();
-    for entry in archive
-        .entries()
-        .map_err(|e| RefdataError::Io(e.to_string()))?
-    {
-        let mut entry = entry.map_err(|e| RefdataError::Io(e.to_string()))?;
-        if !entry.header().entry_type().is_file() {
-            continue;
-        }
-        let path = entry
-            .path()
-            .map_err(|e| RefdataError::Io(e.to_string()))?
-            .to_string_lossy()
-            .trim_start_matches("./")
-            .to_string();
-        if !keep(&path) {
-            continue;
-        }
-        let mut bytes = Vec::new();
-        entry
-            .read_to_end(&mut bytes)
-            .map_err(|e| RefdataError::Io(format!("{path}: {e}")))?;
-        out.insert(path, bytes);
-    }
+    each_entry(
+        gz,
+        limits.expanded_bytes,
+        |path| {
+            keep(path).then_some(if is_data_file(path) {
+                MAX_FILE
+            } else {
+                limits.image_bytes
+            })
+        },
+        |path, bytes| {
+            out.insert(path, bytes);
+            Ok(())
+        },
+    )?;
     Ok(out)
 }
 
@@ -488,10 +616,10 @@ fn dataset_from(files: &HashMap<String, Vec<u8>>) -> Result<Dataset, RefdataErro
 /// Stage a legacy trimmed snapshot with the same adapter and image verifier as the feed.
 pub(super) fn stage_bundle(file: &Path, dir: &Path) -> Result<(Rows, Manifest), RefdataError> {
     let open = || std::fs::File::open(file).map_err(|e| io_err(file, e));
-    let files = read_tar(open()?, is_data_file)?;
+    let files = read_tar(open()?, is_data_file, &Limits::DEFAULT)?;
     let ds = dataset_from(&files)?;
     let rows = build(&ds)?;
-    copy_images(open()?, &rows.images, dir)?;
+    copy_images(open()?, &rows.images, dir, &Limits::DEFAULT)?;
     Ok((rows, ds.manifest))
 }
 
@@ -517,11 +645,11 @@ pub fn trim(from: &Path, out: &Path) -> Result<Trimmed, RefdataError> {
     check_file_hash(from, &expected)?;
 
     let open = || std::fs::File::open(from).map_err(|e| io_err(from, e));
-    let data = read_tar(open()?, is_data_file)?;
+    let data = read_tar(open()?, is_data_file, &Limits::DEFAULT)?;
     let ds = dataset_from(&data)?;
     let rows = build(&ds)?;
     let images: BTreeSet<&str> = rows.images.iter().map(|i| i.source.as_str()).collect();
-    let mut kept = read_tar(open()?, |p| images.contains(p))?;
+    let mut kept = read_tar(open()?, |p| images.contains(p), &Limits::DEFAULT)?;
     for (path, bytes) in &kept {
         ds.manifest.verify(path, bytes)?;
     }

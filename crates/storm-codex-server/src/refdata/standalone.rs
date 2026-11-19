@@ -512,6 +512,10 @@ impl load::Source for EnabledSource {
         self.check()?;
         self.source.download(name, file)
     }
+
+    fn limits(&self) -> load::Limits {
+        self.source.limits()
+    }
 }
 
 async fn round(
@@ -545,15 +549,9 @@ async fn round(
                 }
                 let ds = Dataset::from_files(manifest, |path| src.get(load::asset_name(path)))?;
                 let rows = super::build(&ds)?;
+                // `build` refuses a release without artwork, so the archive is always staged.
                 stage(&root, None, |dir| {
-                    if !rows.images.is_empty() {
-                        load::fetch_images_via(
-                            &src,
-                            &rows.images,
-                            dir,
-                            &dir.join("dataset.tar.gz"),
-                        )?;
-                    }
+                    load::fetch_images_via(&src, &rows.images, dir, &dir.join("dataset.tar.gz"))?;
                     Ok((rows, ds.manifest))
                 })
                 .map(Some)

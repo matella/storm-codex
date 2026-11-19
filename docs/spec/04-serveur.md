@@ -262,6 +262,23 @@ records `app_settings.refdata_dataset_version`.
   `metadataOnly` patches keep the dataset `reason` in the detail.
 - **Hero sections.** One `patch_hero_sections` row per section with a `heroId` of available
   English content, `hero_name` = the parser name, `channel` = `live`/`ptr`.
+- **Completeness.** Matching checksums do not make a release complete. `refdata::build` refuses
+  (before any write or staging) a release whose required catalogs are empty (`game.json`
+  heroes/battlegrounds, `enus.json` heroes/talents/battlegrounds, `assets.json`, `patches.json`, or
+  no talent or artwork at all), an `assets.json` record without a path or SHA-256, and a declared
+  hero portrait or map `loadingScreenImage` with no asset record. Documented exceptions: a hero's
+  `heroSelect` icon may be absent when its `loading` portrait resolves (D3; the trimmed test fixture
+  relies on it), a hero or map that declares no artwork gets none, and a map without an English name
+  is skipped. Copying from `dataset.tar.gz` fails when a listed image is not in the archive, so a
+  generation is never staged with only the images that survived. The pinned release
+  (`desktop/referential-pin.txt`) resolves all 91 hero and 35 map artworks.
+- **Archive budget** (`refdata::load::Limits::DEFAULT`, box and standalone). `dataset.tar.gz` may
+  be at most **512 MiB** downloaded (the HTTP stream stops one byte past it), **1 GiB** once
+  decompressed (counted at the gzip decoder, skipped entries included), and **32 MiB** per image
+  entry (refused from the tar header before it is buffered; data files keep the 256 MiB cap). The
+  pinned release is 100,024,455 B compressed, 158,981,122 B expanded, largest image 5,393,600 B. A
+  breach refuses the round: the download is deleted, standalone staging is removed and the active
+  generation stays.
 
 **Box** (`REFDATA_URL`, default
 `https://github.com/matella/HeroesOfTheStormPatchNotes/releases/latest/download/`; empty =

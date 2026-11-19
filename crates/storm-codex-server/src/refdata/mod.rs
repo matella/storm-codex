@@ -50,6 +50,8 @@ pub enum RefdataError {
     Shape(String),
     #[error("{0}")]
     Io(String),
+    #[error("{what}: exceeds the {limit}-byte budget")]
+    Budget { what: String, limit: u64 },
 }
 
 /// What the adapter needs from `manifest.json`.
@@ -340,26 +342,55 @@ pub fn build(ds: &Dataset) -> Result<Rows, RefdataError> {
         .assets
         .as_object()
         .ok_or_else(|| RefdataError::Shape("assets.json is not an object".into()))?;
+    // Required catalogs: a checksum-valid release that lost one of them is incomplete, not "no data".
+    for (name, len) in [
+        ("game.json heroes", game_heroes.len()),
+        ("game.json battlegrounds", game_maps.len()),
+        ("enus.json heroes", enus_heroes.len()),
+        ("enus.json talents", enus_talents.len()),
+        ("enus.json battlegrounds", enus_maps.len()),
+        ("assets.json", assets.len()),
+    ] {
+        required(name, len)?;
+    }
     // file name → (tarball path, sha256), to find a portrait or a loading screen by its file name.
-    let by_file: HashMap<&str, (&str, &str)> = assets
-        .iter()
-        .filter_map(|(k, a)| {
-            let path = a.get("path")?.as_str()?;
-            let sha = a.get("sha256")?.as_str()?;
-            Some((k.rsplit('/').next().unwrap_or(k), (path, sha)))
-        })
-        .collect();
-    let image = |file: Option<&str>, dest: String| -> Option<ImageCopy> {
+    // A malformed asset record is refused rather than skipped: it would silently drop artwork.
+    let mut by_file: HashMap<&str, (&str, &str)> = HashMap::new();
+    for (k, a) in assets {
+        let path = a.get("path").and_then(J::as_str);
+        let sha = a
+            .get("sha256")
+            .and_then(J::as_str)
+            .filter(|s| s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit()));
+        let (Some(path), Some(sha)) = (path, sha) else {
+            return Err(RefdataError::Shape(format!(
+                "assets.json: record `{k}` has no path or SHA-256"
+            )));
+        };
+        by_file.insert(k.rsplit('/').next().unwrap_or(k), (path, sha));
+    }
+    // Every artwork reference the release declares must resolve to an asset record. Documented
+    // exceptions (spec 04-serveur, "Reference data"): a hero's `heroSelect` icon may be absent when
+    // its `loading` portrait resolves (D3 fallback; the trimmed committed fixture relies on it), a
+    // hero or map that declares no artwork gets none, and a map without an English name is skipped.
+    let image = |files: &[&str], dest: String| -> Result<Option<ImageCopy>, RefdataError> {
+        if files.is_empty() {
+            return Ok(None);
+        }
         if !safe_image_dest(&dest) {
             tracing::warn!("reference data: image destination {dest:?} refused (unsafe path)");
-            return None;
+            return Ok(None);
         }
-        let (path, sha) = by_file.get(file?)?;
-        Some(ImageCopy {
+        let (path, sha) = files.iter().find_map(|f| by_file.get(f)).ok_or_else(|| {
+            RefdataError::Shape(format!(
+                "{dest}: artwork {files:?} missing from assets.json"
+            ))
+        })?;
+        Ok(Some(ImageCopy {
             source: (*path).to_string(),
             sha256: sha.to_ascii_lowercase(),
             dest,
-        })
+        }))
     };
     let attr = storm_stats::constants::hero_attribute();
 
@@ -385,13 +416,11 @@ pub fn build(ds: &Dataset) -> Result<Rows, RefdataError> {
         let slug = hero_slug(english.as_deref().unwrap_or(key));
         let portraits = s.get("portraits");
         // D3: the square `heroSelect` icon when the dataset bundles it, else the loading portrait.
-        let portrait = ["heroSelect", "loading"].iter().find_map(|p| {
-            image(
-                portraits.and_then(|v| v.get(*p)).and_then(J::as_str),
-                format!("heroes/{slug}.png"),
-            )
-        });
-        if let Some(p) = portrait {
+        let declared: Vec<&str> = ["heroSelect", "loading"]
+            .iter()
+            .filter_map(|p| portraits.and_then(|v| v.get(*p)).and_then(J::as_str))
+            .collect();
+        if let Some(p) = image(&declared, format!("heroes/{slug}.png"))? {
             images.insert(p);
         }
         let role = loc
@@ -465,7 +494,8 @@ pub fn build(ds: &Dataset) -> Result<Rows, RefdataError> {
             .get("slug")
             .and_then(J::as_str)
             .map_or_else(|| map_slug(&name), str::to_string);
-        if let Some(img) = image(art, format!("battlegrounds/{slug}.png")) {
+        let art: Vec<&str> = art.into_iter().collect();
+        if let Some(img) = image(&art, format!("battlegrounds/{slug}.png"))? {
             images.insert(img);
         }
     }
@@ -474,6 +504,9 @@ pub fn build(ds: &Dataset) -> Result<Rows, RefdataError> {
         .patches
         .as_array()
         .ok_or_else(|| RefdataError::Shape("patches.json is not an array".into()))?;
+    required("patches.json", list.len())?;
+    required("talents", talents.len())?;
+    required("artwork", images.len())?;
     let mut patches = Vec::new();
     let mut sections = Vec::new();
     for p in list {
@@ -490,6 +523,15 @@ pub fn build(ds: &Dataset) -> Result<Rows, RefdataError> {
         sections,
         images: images.into_iter().collect(),
     })
+}
+
+fn required(name: &str, len: usize) -> Result<(), RefdataError> {
+    if len == 0 {
+        return Err(RefdataError::Shape(format!(
+            "{name}: required catalog is empty"
+        )));
+    }
+    Ok(())
 }
 
 /// One dataset patch → its `dim_patches` row (with the detail in the old API shape) and its hero sections.
