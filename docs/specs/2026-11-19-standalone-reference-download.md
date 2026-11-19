@@ -24,3 +24,8 @@ Standalone-only `GET /api/standalone/reference` returns `{enabled, phase, versio
 1. With a clean Windows profile and network unavailable, install (with the supported WebView2 prerequisite), import a real replay and browse it without waiting for reference sync.
 2. Restore connectivity: activation fills reference-dependent views without an app restart. Inject a newer fixture dataset, and verify unchanged, rejected and interrupted refreshes, last-good retention, and restart/offline behavior. Check upgrade and restore from 0.1.1.
 3. Compare the official NSIS build against the 0.1.1 draft; record installer bytes, first-sync transfer, and startup/import timings. No release publication or modification of the existing app updater is part of this design.
+
+## Implementation notes
+
+- `artwork` at startup comes from a presence check (each listed image is a non-empty file) so the server binds without hashing every image; the worker hashes them in the background before its first check and corrects the flag. Every later check that finds the active version re-verifies the files and updates `artwork` (spec 04-serveur, "Standalone mode").
+- A release refused for its content (budget, shape, SHA-256) is remembered in memory only, by `datasetVersion`: later checks stop after `manifest.json` while it names that version and report `phase: error`. A new version or a restart clears it; persisting it was not needed to stop repeated full downloads.

@@ -815,3 +815,319 @@ async fn reenabling_during_a_download_never_revives_the_cancelled_round() {
     worker.await.unwrap();
     drop_db(db, &name).await;
 }
+
+fn managed_image(app: &AppState, revision: &Value) -> PathBuf {
+    asset_root(app)
+        .join(revision.as_str().unwrap())
+        .join("heroes/abathur.png")
+}
+
+fn corrupt(file: &Path) {
+    let mut bytes = fs::read(file).unwrap();
+    bytes[0] ^= 0xff;
+    fs::write(file, bytes).unwrap();
+}
+
+fn count(src: &DirSource, name: &str) -> usize {
+    src.asked().iter().filter(|n| *n == name).count()
+}
+
+/// Startup does not hash the artwork before the server binds: it reports presence only. The
+/// worker hashes it in the background, corrects the flag, and its first round reuses that hash.
+#[tokio::test]
+async fn startup_reports_artwork_presence_then_the_worker_hashes_it() {
+    let Some((db, name)) = isolated_db().await else {
+        return;
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = fixture_dir_copy(tmp.path());
+    set_version(&dir, "one", 1);
+    let app = setup(&db, tmp.path(), Vec::new());
+    let st = app.standalone.as_ref().unwrap();
+    round(&app, &st.reference, Arc::new(DirSource::new(dir.clone())))
+        .await
+        .unwrap();
+    let revision = get_json(&crate::app_router(app.clone()), STATUS).await["revision"].clone();
+    // Same size, different content: only a hash can tell.
+    corrupt(&managed_image(&app, &revision));
+
+    let restarted = setup(&db, tmp.path(), Vec::new());
+    let st = restarted.standalone.as_ref().unwrap();
+    st.reference.load(&db).await;
+    let router = crate::app_router(restarted.clone());
+    let started = get_json(&router, STATUS).await;
+    assert_eq!(started["version"], "one");
+    assert_eq!(started["revision"], revision);
+    assert_eq!(started["artwork"], true, "startup checks presence only");
+    let offline = Arc::new(Offline::default());
+    let worker = tokio::spawn(run(
+        restarted.clone(),
+        offline,
+        [Duration::from_millis(15); 3],
+    ));
+    let hashed = wait_for(&router, STATUS, |v| v["artwork"] == false).await;
+    assert_eq!(hashed["revision"], revision);
+    wait_for(&router, STATUS, |v| v["phase"] == "error").await;
+    st.stop_import();
+    worker.await.unwrap();
+
+    // Online, the first round takes the background result and restages the same version.
+    let again = setup(&db, tmp.path(), Vec::new());
+    let st = again.standalone.as_ref().unwrap();
+    st.reference.load(&db).await;
+    let router = crate::app_router(again.clone());
+    let src = Arc::new(DirSource::new(dir));
+    let worker = tokio::spawn(run(again.clone(), src.clone(), RETRIES));
+    let recovered = wait_for(&router, STATUS, |v| {
+        v["phase"] == "ready" && v["revision"] != revision
+    })
+    .await;
+    assert_eq!(recovered["version"], "one");
+    assert_eq!(recovered["artwork"], true);
+    assert_eq!(count(&src, "dataset.tar.gz"), 1);
+    st.stop_import();
+    worker.await.unwrap();
+    drop_db(db, &name).await;
+}
+
+/// A check that finds the active version re-verifies its files and publishes the result, so the
+/// flag recovers without a new activation (and drops when verification fails).
+#[tokio::test]
+async fn artwork_follows_each_check_of_the_active_version() {
+    let Some((db, name)) = isolated_db().await else {
+        return;
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let restart = || {
+        let app = setup(&db, tmp.path(), Vec::new());
+        let router = crate::app_router(app.clone());
+        (app, router)
+    };
+    let hide = |file: &Path| {
+        let away = file.with_extension("away");
+        fs::rename(file, &away).unwrap();
+        away
+    };
+
+    // Legacy bundle: the same bundle again finds the files back.
+    let (app, router) = restart();
+    let bundle_file = tmp.path().join("legacy.tar.gz");
+    bundle_with_version(&bundle_file, "old");
+    let state = &app.standalone.as_ref().unwrap().reference;
+    bundle(&app, state, &bundle_file).await.unwrap();
+    let bundled = get_json(&router, STATUS).await;
+    assert_eq!(bundled["artwork"], true);
+    let file = managed_image(&app, &bundled["revision"]);
+    let away = hide(&file);
+    let (app, router) = restart();
+    let state = &app.standalone.as_ref().unwrap().reference;
+    state.load(&db).await;
+    assert_eq!(get_json(&router, STATUS).await["artwork"], false);
+    fs::rename(&away, &file).unwrap();
+    bundle(&app, state, &bundle_file).await.unwrap();
+    assert_eq!(get_json(&router, STATUS).await, bundled);
+
+    // Network: an unchanged manifest finds the files back.
+    let dir = fixture_dir_copy(tmp.path());
+    set_version(&dir, "one", 1);
+    round(&app, state, Arc::new(DirSource::new(dir.clone())))
+        .await
+        .unwrap();
+    let network = get_json(&router, STATUS).await;
+    assert_eq!(network["version"], "one");
+    let file = managed_image(&app, &network["revision"]);
+    let away = hide(&file);
+    let (app, router) = restart();
+    let state = &app.standalone.as_ref().unwrap().reference;
+    state.load(&db).await;
+    assert_eq!(get_json(&router, STATUS).await["artwork"], false);
+    fs::rename(&away, &file).unwrap();
+    let unchanged = Arc::new(DirSource::new(dir.clone()));
+    round(&app, state, unchanged.clone()).await.unwrap();
+    assert_eq!(unchanged.asked(), ["manifest.json"]);
+    assert_eq!(get_json(&router, STATUS).await, network);
+
+    // Verification fails and restaging is refused: the flag drops, the generation stays.
+    corrupt(&file);
+    let small = load::Limits {
+        archive_bytes: 64,
+        ..load::Limits::DEFAULT
+    };
+    let got = round(
+        &app,
+        state,
+        Arc::new(DirSource::new(dir).with_limits(small)),
+    )
+    .await;
+    assert!(
+        matches!(got, Err(SyncError::Data(RefdataError::Budget { .. }))),
+        "{got:?}"
+    );
+    let failed = get_json(&router, STATUS).await;
+    assert_eq!(failed["artwork"], false);
+    assert_eq!(failed["revision"], network["revision"]);
+    drop_db(db, &name).await;
+}
+
+/// Whatever error an interrupted transfer surfaces, a round cut short by a preference change is
+/// cancelled and one cut short by shutdown is stopped; neither is a failed check.
+#[tokio::test]
+async fn interrupted_rounds_are_cancelled_not_failed() {
+    struct HeldManifest {
+        started: Notify,
+        release: Mutex<std::sync::mpsc::Receiver<()>>,
+    }
+    impl load::Source for HeldManifest {
+        fn get(&self, _: &str) -> Result<Vec<u8>, RefdataError> {
+            self.started.notify_one();
+            self.release
+                .lock()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(15))
+                .unwrap();
+            Err(RefdataError::Io("connection reset".into()))
+        }
+        fn download(&self, _: &str, _: &Path) -> Result<(), RefdataError> {
+            panic!("the manifest never arrives")
+        }
+    }
+    let Some((db, name)) = isolated_db().await else {
+        return;
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let app = setup(&db, tmp.path(), Vec::new());
+    let st = app.standalone.as_ref().unwrap();
+    st.reference.load(&db).await;
+    let router = crate::app_router(app.clone());
+    let (release, ready) = std::sync::mpsc::channel();
+    let source = Arc::new(HeldManifest {
+        started: Notify::new(),
+        release: Mutex::new(ready),
+    });
+    let spawn_round = || {
+        let (app, source) = (app.clone(), source.clone());
+        tokio::spawn(async move {
+            let st = app.standalone.clone().unwrap();
+            round(&app, &st.reference, source).await
+        })
+    };
+    let pref = |enabled: bool| Body::from(json!({ "enabled": enabled }).to_string());
+
+    let task = spawn_round();
+    tokio::time::timeout(Duration::from_secs(10), source.started.notified())
+        .await
+        .unwrap();
+    assert_eq!(
+        call(&router, "PUT", STATUS, pref(false)).await.0,
+        StatusCode::OK
+    );
+    release.send(()).unwrap();
+    let got = task.await.unwrap();
+    assert!(matches!(got, Err(SyncError::Superseded)), "{got:?}");
+
+    assert_eq!(
+        call(&router, "PUT", STATUS, pref(true)).await.0,
+        StatusCode::OK
+    );
+    let task = spawn_round();
+    tokio::time::timeout(Duration::from_secs(10), source.started.notified())
+        .await
+        .unwrap();
+    st.stop_import();
+    release.send(()).unwrap();
+    let got = task.await.unwrap();
+    assert!(matches!(got, Err(SyncError::Stopped)), "{got:?}");
+    assert_ne!(get_json(&router, STATUS).await["phase"], "error");
+    drop_db(db, &name).await;
+}
+
+/// A release refused for its content is not downloaded again while the manifest names it: later
+/// checks read only the manifest and report an error. A newer version is tried.
+#[tokio::test]
+async fn a_refused_release_is_not_downloaded_again_until_a_new_version() {
+    let Some((db, name)) = isolated_db().await else {
+        return;
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = fixture_dir_copy(tmp.path());
+    let app = setup(&db, tmp.path(), Vec::new());
+    let st = app.standalone.as_ref().unwrap();
+    st.reference.load(&db).await;
+    let router = crate::app_router(app.clone());
+    set_version(&dir, "one", 1);
+    round(&app, &st.reference, Arc::new(DirSource::new(dir.clone())))
+        .await
+        .unwrap();
+    let initial = get_json(&router, STATUS).await;
+
+    set_version(&dir, "two", 1);
+    let small = load::Limits {
+        archive_bytes: 64,
+        ..load::Limits::DEFAULT
+    };
+    let src = Arc::new(DirSource::new(dir.clone()).with_limits(small));
+    let worker = tokio::spawn(run(
+        app.clone(),
+        src.clone(),
+        [Duration::from_millis(15); 3],
+    ));
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while count(&src, "manifest.json") < 4 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(
+        count(&src, "manifest.json"),
+        4,
+        "three short retries, then daily"
+    );
+    assert_eq!(
+        count(&src, "dataset.tar.gz"),
+        1,
+        "the archive is fetched once"
+    );
+    assert_eq!(count(&src, "patches.json"), 1, "so are the data files");
+    let refused = get_json(&router, STATUS).await;
+    assert_eq!(refused["phase"], "error");
+    assert_eq!(refused["version"], "one");
+    assert_eq!(refused["revision"], initial["revision"]);
+    assert_eq!(refused["artwork"], true);
+
+    set_version(&dir, "three", 1);
+    assert_eq!(
+        call(&router, "POST", REFRESH, Body::empty()).await.0,
+        StatusCode::ACCEPTED
+    );
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while count(&src, "dataset.tar.gz") < 2 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("a new version is tried");
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(count(&src, "dataset.tar.gz"), 2, "and refused once");
+    assert!(count(&src, "manifest.json") > 4);
+    assert_eq!(get_json(&router, STATUS).await["phase"], "error");
+    st.stop_import();
+    worker.await.unwrap();
+    drop_db(db, &name).await;
+}
+
+#[test]
+fn legacy_bundle_hash_is_streamed_within_the_archive_budget() {
+    let tmp = tempfile::tempdir().unwrap();
+    let file = tmp.path().join("bundle.tar.gz");
+    fs::write(&file, vec![7u8; 4096]).unwrap();
+    assert_eq!(
+        load::file_sha256(&file, 4096).unwrap(),
+        super::super::sha256_hex(&[7u8; 4096])
+    );
+    assert!(matches!(
+        load::file_sha256(&file, 4095),
+        Err(RefdataError::Budget { limit: 4095, .. })
+    ));
+}

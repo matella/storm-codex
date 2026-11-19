@@ -270,7 +270,10 @@ records `app_settings.refdata_dataset_version`.
   `heroSelect` icon may be absent when its `loading` portrait resolves (D3; the trimmed test fixture
   relies on it), a hero or map that declares no artwork gets none, and a map without an English name
   is skipped. Copying from `dataset.tar.gz` fails when a listed image is not in the archive, so a
-  generation is never staged with only the images that survived. The pinned release
+  generation is never staged with only the images that survived. This applies to the box refresh
+  too: a box round whose archive lacks a listed image copies the images found before the error
+  and logs "images not copied". The rows stay ingested, so the version counts as current: the
+  missing images are only retried with the next `datasetVersion`. The pinned release
   (`desktop/referential-pin.txt`) resolves all 91 hero and 35 map artworks.
 - **Archive budget** (`refdata::load::Limits::DEFAULT`, box and standalone). `dataset.tar.gz` may
   be at most **512 MiB** downloaded (the HTTP stream stops one byte past it), **1 GiB** once
@@ -278,7 +281,9 @@ records `app_settings.refdata_dataset_version`.
   entry (refused from the tar header before it is buffered; data files keep the 256 MiB cap). The
   pinned release is 100,024,455 B compressed, 158,981,122 B expanded, largest image 5,393,600 B. A
   breach refuses the round: the download is deleted, standalone staging is removed and the active
-  generation stays.
+  generation stays. The legacy `REFERENTIAL_FILE` bundle is hashed by streaming and refused over
+  512 MiB. The local tar readers used for that bundle and `refdata trim` buffer the kept entries
+  at once, so their memory is bounded by the 1 GiB expansion budget, not by one entry.
 
 **Box** (`REFDATA_URL`, default
 `https://github.com/matella/HeroesOfTheStormPatchNotes/releases/latest/download/`; empty =
@@ -315,9 +320,20 @@ once instead.
   even with network sync disabled. A changed bundle is accepted until a network generation is
   active; then a legacy resource cannot downgrade it. A restore with missing images keeps its
   rows: the next successful check restages even the same version and publishes a new revision.
-  Startup verifies the active generation's files locally (no network, whatever the preference) and
+  Startup checks the active generation's files locally (no network, whatever the preference) and
   reports the result as the status `artwork` flag, so cached rows with missing artwork are not
-  presented as available offline.
+  presented as available offline. Before the server binds, this check is cheap: every listed image
+  must be a non-empty file. The worker then hashes every image in the background before its first
+  bundle or network check and corrects `artwork`; that first check reuses this result instead of
+  hashing again. Every later check that finds the active version (network manifest or same legacy
+  bundle) re-verifies the files and sets `artwork` to the result, so it returns to true once the
+  files are back without a new activation.
+- A release refused for its content (resource budget, shape or SHA-256 mismatch) is remembered in
+  memory by `datasetVersion`. While `manifest.json` still names it, later checks fetch only the
+  manifest and report `phase: error`, instead of downloading the data files and archive again. A
+  new version clears it, and so does a restart (the first check after it retries the release once).
+- A check interrupted by shutdown exits quietly, and one cut short by a preference change counts as
+  cancelled, whatever error the interruption caused; neither is reported as a failed check.
   Cached rows remain readable during a check or failure.
 - Activation repairs hero attribution of already projected replays in bounded batches, using stored
   talent IDs and the live correction rule. It updates the promoted hero and affected player/match

@@ -268,20 +268,45 @@ pub fn parse_sha256_file(bytes: &[u8]) -> Result<String, RefdataError> {
     }
 }
 
-/// Streams `file` through SHA-256 and compares with `expected`.
-pub fn check_file_hash(file: &Path, expected: &str) -> Result<(), RefdataError> {
+/// Streams `reader` (the contents of `file`) through SHA-256; returns the hex digest and byte count.
+fn stream_sha256(file: &Path, mut reader: impl Read) -> Result<(String, u64), RefdataError> {
     use sha2::{Digest, Sha256};
-    let mut f = std::fs::File::open(file).map_err(|e| io_err(file, e))?;
     let mut h = Sha256::new();
     let mut buf = vec![0u8; 1 << 16];
+    let mut total = 0u64;
     loop {
-        let n = f.read(&mut buf).map_err(|e| io_err(file, e))?;
+        let n = reader.read(&mut buf).map_err(|e| io_err(file, e))?;
         if n == 0 {
             break;
         }
         h.update(&buf[..n]);
+        total += n as u64;
     }
-    let actual = hex::encode(h.finalize());
+    Ok((hex::encode(h.finalize()), total))
+}
+
+/// SHA-256 of `file`, streamed. A file over `limit` bytes is refused (checked against its size
+/// first, and while reading in case it grows).
+pub(super) fn file_sha256(file: &Path, limit: u64) -> Result<String, RefdataError> {
+    let f = std::fs::File::open(file).map_err(|e| io_err(file, e))?;
+    let too_big = || RefdataError::Budget {
+        what: file.display().to_string(),
+        limit,
+    };
+    if f.metadata().map_err(|e| io_err(file, e))?.len() > limit {
+        return Err(too_big());
+    }
+    let (hash, n) = stream_sha256(file, f.take(limit.saturating_add(1)))?;
+    if n > limit {
+        return Err(too_big());
+    }
+    Ok(hash)
+}
+
+/// Streams `file` through SHA-256 and compares with `expected`.
+pub fn check_file_hash(file: &Path, expected: &str) -> Result<(), RefdataError> {
+    let f = std::fs::File::open(file).map_err(|e| io_err(file, e))?;
+    let (actual, _) = stream_sha256(file, f)?;
     if actual != expected {
         return Err(RefdataError::Hash {
             path: file.display().to_string(),
@@ -570,6 +595,11 @@ pub(super) async fn write_rows(
 
 /// Reads every entry of a gzipped tarball into memory (`path → bytes`), keeping only `keep(path)`,
 /// within `limits` (data files are capped at `MAX_FILE`, other entries at `image_bytes`).
+///
+/// Memory bound: everything kept is buffered at once, so peak memory can reach
+/// `limits.expanded_bytes` (1 GiB by default), not just one entry. Callers pass narrow `keep`
+/// filters (the data files, or only the listed images) on trusted local inputs: the desktop bundle
+/// or the `refdata trim` CLI input checked against its `.sha256`.
 fn read_tar(
     gz: impl Read,
     keep: impl Fn(&str) -> bool,
@@ -649,6 +679,8 @@ pub fn trim(from: &Path, out: &Path) -> Result<Trimmed, RefdataError> {
     let ds = dataset_from(&data)?;
     let rows = build(&ds)?;
     let images: BTreeSet<&str> = rows.images.iter().map(|i| i.source.as_str()).collect();
+    // Holds every listed image in memory until the bundle is written (bounded by
+    // `expanded_bytes`, see `read_tar`); fine for a build-time tool on the pinned release.
     let mut kept = read_tar(open()?, |p| images.contains(p), &Limits::DEFAULT)?;
     for (path, bytes) in &kept {
         ds.manifest.verify(path, bytes)?;

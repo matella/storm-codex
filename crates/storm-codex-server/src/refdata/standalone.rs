@@ -71,6 +71,17 @@ impl Active {
                 .iter()
                 .all(|(path, sha)| load::check_file_hash(&dir.join(path), sha).is_ok())
     }
+
+    /// Cheap startup check (no hashing): every listed image is a non-empty file. The worker
+    /// runs [`Active::complete`] in the background before its first check relies on it.
+    fn present(&self, root: &Path) -> bool {
+        let dir = self.dir(root);
+        !self.images.is_empty()
+            && self
+                .images
+                .keys()
+                .all(|path| fs::metadata(dir.join(path)).is_ok_and(|m| m.is_file() && m.len() > 0))
+    }
 }
 
 struct View {
@@ -80,6 +91,9 @@ struct View {
     /// Bumped on every preference change. A network round may only fetch or activate
     /// while the epoch it started with is still current, even if sync was re-enabled since.
     epoch: u64,
+    /// The worker's background hash of the active generation at startup (revision, complete).
+    /// The first network round takes it instead of hashing the same files again.
+    checked: Option<(String, bool)>,
 }
 
 impl View {
@@ -110,6 +124,7 @@ impl ReferenceState {
                 settings_loaded: false,
                 active: None,
                 epoch: 0,
+                checked: None,
             }),
             control: tokio::sync::Mutex::new(()),
             check: Notify::new(),
@@ -119,6 +134,14 @@ impl ReferenceState {
 
     fn view(&self) -> std::sync::MutexGuard<'_, View> {
         self.view.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Publishes a full local check of generation `revision`, if it is still the active one.
+    fn set_artwork(&self, revision: &str, complete: bool) {
+        let mut view = self.view();
+        if view.active.as_ref().is_some_and(|a| a.revision == revision) {
+            view.status.artwork = complete;
+        }
     }
 
     pub(crate) async fn load(&self, db: &PgPool) {
@@ -147,11 +170,12 @@ impl ReferenceState {
                     && Uuid::parse_str(&a.revision).is_ok_and(|id| id.to_string() == a.revision)
                     && a.images.keys().all(|path| safe_image_dest(path))
             });
-        // A restored DB can name a generation whose files were not restored with it.
+        // A restored DB can name a generation whose files were not restored with it. Startup
+        // only checks presence; hashing every image would delay the server bind.
         let artwork = match &active {
             Some(active) => {
                 let (active, root) = (active.clone(), self.assets.clone());
-                tokio::task::spawn_blocking(move || active.complete(&root))
+                tokio::task::spawn_blocking(move || active.present(&root))
                     .await
                     .unwrap_or(false)
             }
@@ -337,12 +361,25 @@ async fn run(app: AppState, src: Arc<dyn load::Source>, retries: [Duration; 3]) 
             let root = asset_root(&app);
             let _ = tokio::task::spawn_blocking(move || prune(&root, keep.as_deref())).await;
         }
+        // Startup only checked that the files exist; hash them before anything relies on it.
+        let active = state.view().active.clone();
+        if let Some(active) = active {
+            let (generation, root) = (active.clone(), asset_root(&app));
+            let complete = tokio::task::spawn_blocking(move || generation.complete(&root))
+                .await
+                .unwrap_or(false);
+            state.set_artwork(&active.revision, complete);
+            state.view().checked = Some((active.revision.clone(), complete));
+        }
         if let Some(file) = &app.cfg.referential_file {
             if let Err(e) = bundle(&app, state, file).await {
                 tracing::warn!("reference sync: legacy bundle refused ({e})");
             }
         }
         let mut failures = 0;
+        // In memory only: a release refused for its content (budget, shape, hash) is not
+        // downloaded again while the manifest still names it. A restart or a new version clears it.
+        let mut refused: Option<String> = None;
         loop {
             let enabled = {
                 let mut view = state.view();
@@ -356,14 +393,30 @@ async fn run(app: AppState, src: Arc<dyn load::Source>, retries: [Duration; 3]) 
                 state.check.notified().await;
                 continue;
             }
-            let delay = match round(&app, state, src.clone()).await {
+            let (version, result) = round_with(&app, state, src.clone(), refused.as_deref()).await;
+            if version.is_some() && version != refused {
+                refused = None;
+            }
+            let delay = match result {
                 Ok(()) => {
                     failures = 0;
                     DAILY
                 }
                 // A preference change cancelled it; the check that change queued runs next.
                 Err(SyncError::Superseded) => DAILY,
+                // The app is quitting: not a failure.
+                Err(SyncError::Stopped) => return,
                 Err(e) => {
+                    if matches!(
+                        e,
+                        SyncError::Data(
+                            RefdataError::Budget { .. }
+                                | RefdataError::Shape(_)
+                                | RefdataError::Hash { .. }
+                        )
+                    ) {
+                        refused = version;
+                    }
                     tracing::warn!("reference sync: check failed ({e})");
                     let mut view = state.view();
                     if view.status.enabled {
@@ -412,6 +465,10 @@ enum SyncError {
     DownloadWorkerStart(#[source] std::io::Error),
     #[error("reference check cancelled by a preference change")]
     Superseded,
+    #[error("reference check cancelled by shutdown")]
+    Stopped,
+    #[error("dataset {0} was refused earlier; waiting for a newer release")]
+    Refused(String),
 }
 
 struct Prepared {
@@ -497,26 +554,41 @@ fn stage(
 }
 
 async fn bundle(app: &AppState, state: &ReferenceState, file: &Path) -> Result<(), SyncError> {
-    let active = state.view().active.clone();
+    let (active, checked) = {
+        let view = state.view();
+        (view.active.clone(), view.checked.clone())
+    };
     // An older desktop resource must never replace a managed network generation.
     if active.as_ref().is_some_and(|a| a.bundle_hash.is_none()) {
         return Ok(());
     }
     let file = file.to_owned();
     let root = asset_root(app);
-    let staged = tokio::task::spawn_blocking(move || {
-        let bytes = fs::read(&file).map_err(|e| load::io_err(&file, e))?;
-        let hash = super::sha256_hex(&bytes);
-        if active
+    let revision = active.as_ref().map(|a| a.revision.clone());
+    let (verified, staged) = tokio::task::spawn_blocking(move || {
+        let hash = match load::file_sha256(&file, load::Limits::DEFAULT.archive_bytes) {
+            Ok(hash) => hash,
+            Err(e) => return (None, Err(e)),
+        };
+        // Same bundle as the active generation: only its local files need checking.
+        let verified = active
             .as_ref()
-            .is_some_and(|a| a.bundle_hash.as_ref() == Some(&hash) && a.complete(&root))
-        {
-            return Ok(None);
+            .filter(|a| a.bundle_hash.as_ref() == Some(&hash))
+            .map(|a| match &checked {
+                Some((rev, complete)) if *rev == a.revision => *complete,
+                _ => a.complete(&root),
+            });
+        if verified == Some(true) {
+            return (verified, Ok(None));
         }
-        stage(&root, Some(hash), |dir| load::stage_bundle(&file, dir)).map(Some)
+        let staged = stage(&root, Some(hash), |dir| load::stage_bundle(&file, dir)).map(Some);
+        (verified, staged)
     })
-    .await??;
-    if let Some(prepared) = staged {
+    .await?;
+    if let (Some(revision), Some(complete)) = (&revision, verified) {
+        state.set_artwork(revision, complete);
+    }
+    if let Some(prepared) = staged? {
         activate(app, state, prepared, None).await?;
     }
     Ok(())
@@ -554,61 +626,128 @@ impl load::Source for EnabledSource {
     }
 }
 
+/// One check without refusal memory (the worker uses [`round_with`]).
+#[cfg(test)]
 async fn round(
     app: &AppState,
     state: &ReferenceState,
     src: Arc<dyn load::Source>,
 ) -> Result<(), SyncError> {
+    round_with(app, state, src, None).await.1
+}
+
+/// What the download thread hands back.
+struct Outcome {
+    /// `datasetVersion` of the manifest, once read.
+    version: Option<String>,
+    /// Full local check of the active generation, when the manifest names its version.
+    verified: Option<bool>,
+    result: Result<Option<Prepared>, SyncError>,
+}
+
+/// One network check. Returns the manifest's `datasetVersion` (once read) so the worker can
+/// remember a refused release; when the manifest still names `refused`, the round stops there.
+async fn round_with(
+    app: &AppState,
+    state: &ReferenceState,
+    src: Arc<dyn load::Source>,
+    refused: Option<&str>,
+) -> (Option<String>, Result<(), SyncError>) {
     use load::Source;
     let Some(st) = &app.standalone else {
-        return Ok(());
+        return (None, Ok(()));
     };
-    let epoch = state.view().epoch;
+    let (epoch, active, checked) = {
+        let mut view = state.view();
+        let active = view.active.clone();
+        let checked = view
+            .checked
+            .take()
+            .filter(|(rev, _)| active.as_ref().is_some_and(|a| a.revision == *rev))
+            .map(|(_, complete)| complete);
+        (view.epoch, active, checked)
+    };
     let src = EnabledSource {
         st: st.clone(),
         source: src,
         epoch,
     };
-    let active = state.view().active.clone();
+    let refused = refused.map(str::to_owned);
     let root = asset_root(app);
+    let generation = active.clone();
     // The blocking HTTP client can be in a socket read when the app quits. This thread
     // owns staging only (never the DB), so runtime shutdown need not wait for that read.
     let (send, recv) = tokio::sync::oneshot::channel();
-    std::thread::Builder::new()
+    let spawned = std::thread::Builder::new()
         .name("reference-download".into())
         .spawn(move || {
-            let prepare = || {
+            let (mut version, mut verified) = (None, None);
+            let result = (|| -> Result<Option<Prepared>, SyncError> {
                 let manifest = parse_manifest(&src.get("manifest.json")?)?;
-                if active
+                version = Some(manifest.dataset_version.clone());
+                if let Some(a) = generation
                     .as_ref()
-                    .is_some_and(|a| a.version == manifest.dataset_version && a.complete(&root))
+                    .filter(|a| a.version == manifest.dataset_version)
                 {
-                    return Ok(None);
+                    let complete = checked.unwrap_or_else(|| a.complete(&root));
+                    verified = Some(complete);
+                    if complete {
+                        return Ok(None);
+                    }
+                }
+                if refused.as_deref() == Some(manifest.dataset_version.as_str()) {
+                    return Err(SyncError::Refused(manifest.dataset_version));
                 }
                 let ds = Dataset::from_files(manifest, |path| src.get(load::asset_name(path)))?;
                 let rows = super::build(&ds)?;
                 // `build` refuses a release without artwork, so the archive is always staged.
-                stage(&root, None, |dir| {
+                let prepared = stage(&root, None, |dir| {
                     load::fetch_images_via(&src, &rows.images, dir, &dir.join("dataset.tar.gz"))?;
                     Ok((rows, ds.manifest))
-                })
-                .map(Some)
-            };
-            let _ = send.send(prepare());
-        })
-        .map_err(SyncError::DownloadWorkerStart)?;
-    let staged = match recv.await.map_err(|_| SyncError::DownloadWorkerClosed)? {
-        Ok(staged) => staged,
-        Err(_) if state.view().epoch != epoch => return Err(SyncError::Superseded),
-        Err(e) => return Err(e.into()),
+                })?;
+                Ok(Some(prepared))
+            })();
+            let _ = send.send(Outcome {
+                version,
+                verified,
+                result,
+            });
+        });
+    let outcome = match spawned {
+        Ok(_) => recv.await.unwrap_or(Outcome {
+            version: None,
+            verified: None,
+            result: Err(SyncError::DownloadWorkerClosed),
+        }),
+        Err(e) => Outcome {
+            version: None,
+            verified: None,
+            result: Err(SyncError::DownloadWorkerStart(e)),
+        },
     };
-    if let Some(prepared) = staged {
-        activate(app, state, prepared, Some(epoch)).await?;
-    } else {
-        let mut view = state.view();
-        view.status.phase = idle(&view.status);
+    if let (Some(active), Some(complete)) = (&active, outcome.verified) {
+        state.set_artwork(&active.revision, complete);
     }
-    Ok(())
+    let result = match outcome.result {
+        Ok(Some(prepared)) => activate(app, state, prepared, Some(epoch)).await,
+        Ok(None) => {
+            let mut view = state.view();
+            view.status.phase = idle(&view.status);
+            Ok(())
+        }
+        Err(e) => Err(e),
+    };
+    // A round cut short by shutdown or a preference change failed because it was cancelled.
+    let result = result.map_err(|e| {
+        if st.stop_requested() {
+            SyncError::Stopped
+        } else if !state.view().current(epoch) {
+            SyncError::Superseded
+        } else {
+            e
+        }
+    });
+    (outcome.version, result)
 }
 
 async fn activate(
