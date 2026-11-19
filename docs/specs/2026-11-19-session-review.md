@@ -99,3 +99,34 @@ The open questions were resolved as follows:
 1. Baseline = last 90 days before the session, all modes — or same modes as the session only?
 2. Best/worst game = "most stats above my hero average" (proposed) — or simply highest / lowest KDA ratio?
 3. Keep the 3 h gap between game starts, or make it a setting (e.g. 2–6 h)?
+
+## Implementation notes (2026-11-19, branch `feat/session-review`)
+
+Deviations and readings of the spec, for the operator to confirm:
+
+- **Best / worst score** follows the operator decision, not the earlier "above minus below" draft: score = number of
+  the 7 stats **better** than the game's baseline average (same hero with ≥ 5 baseline games, else overall); best =
+  highest score, worst = lowest, ties by KDA ratio ((K + A) / max(D, 1)) with no "win first" step. **Deaths count as
+  better when below the average** (more deaths "above average" would otherwise rank as good); the UI colours deaths
+  the same way.
+- **Baseline modes**: the baseline (overall, per hero, per map) only counts the game modes played in the session.
+  The response adds `baseline.modes` (not in the drafted shape) so the page can say which modes it compares.
+- **`end`** = last game start + its length (so `end − start = span_s`); the list uses the same `end`.
+- **Assists** = takedowns − kills (as every page shows them), the stored `Assists` stat only when one is missing.
+- **Corpus**: it now also keeps each game's `length` and each row's first award (interned, 2 bytes per row), so the
+  handler reads only the corpus and `operator_names`. Estimated +0.3 MB on 3,492 games; RSS not re-measured.
+- **`account`**: a name of `operator_names` (case-insensitive) or `toon:<handle>` of a verified standalone folder;
+  anything else is 400 `account` (the archive's `/api/matches` returns an empty list instead).
+- **UI**: the cover is built from the review (no client-side session split any more); the title is "Tonight" for the
+  latest session played today, "Last session" for the latest, "Session" for an older one; the stat-delta block
+  shows the **mean per-game delta** over the session; an unknown `?s=` shows "Session not found". Section numbers:
+  01 Review, 02 games, 03 Your form.
+- **Endpoint tests** use synthetic games inserted into the shared test DB (a unique operator name appended to
+  `operator_names`) rather than the committed replays: three replays cannot form sessions with a baseline, and the
+  corpus is a process-wide cache, so isolated test databases cannot be used for it.
+- **Measured** (copy of the box DB, 3,492 games, release, warm, sequential loopback, idle): list p50 6.4 / p95 6.7 ms,
+  review p50 6.4 / p95 6.7 ms (300 requests each). Not measured during an import.
+- **Bundle**: app 1,014,081 bytes Brotli (+18,297 vs 995,784; +18,135 vs the base commit built in the same container, 995,946; the spec estimated +10–15 kB). Over the current
+  1,000,000 cap: needs the 1,250,000 cap of PR #53 before merge.
+- Two real sessions cross-checked against SQL on the box DB copy (record, K/D/A sums, time played, baseline games,
+  wins and averages): identical.

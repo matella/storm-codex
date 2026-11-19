@@ -1,5 +1,15 @@
 # STATUS — read first, update last
 
+## Session review (2026-11-19), branch `feat/session-review`
+
+Approved spec: `docs/specs/2026-11-19-session-review.md` (operator decisions: baseline = modes played in the
+session, best/worst = most stats above the hero average with KDA ties, fixed 3 h gap). New `GET /api/sessions` and
+`GET /api/sessions/{id}` on the insights corpus (pure logic `insights/session.rs`); the Session page reads them
+(`?s=<id>`, previous / next links, new Review section; "Your form" unchanged). Measured on a copy of the box DB
+(3,492 games): p95 6.7 ms for both endpoints. App bundle **1,014,081 bytes Brotli**: over the 1 MB cap, **needs PR
+#53** (cap 1.25 MB) merged first. Deviations listed in the spec's implementation notes (deaths count as better when
+lower; `baseline.modes` added). **Not done**: reviewer pass, installed standalone check, perf during an import.
+
 ## CI action pins and desktop release notes (2026-11-19), branch `ci/pin-actions-release-notes`
 
 Every action in `ci.yml` is now pinned to a full commit SHA (version in a comment, Dependabot `github-actions`

@@ -383,6 +383,8 @@ fn base_router(state: &AppState) -> Router<AppState> {
         .route("/api/records", get(insights::api::records))
         .route("/api/maps/early-leads", get(insights::api::early_leads))
         .route("/api/compare", get(insights::api::compare))
+        .route("/api/sessions", get(insights::api::sessions))
+        .route("/api/sessions/{id}", get(insights::api::session_review))
         .route("/api/players/search", get(players::api::search))
         .route("/api/players/{toon}", get(read::get_player))
         .route("/api/players/{toon}/identity", get(players::api::identity))

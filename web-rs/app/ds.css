@@ -357,6 +357,12 @@
 .ds-hrow em { font: 11px var(--mono); color: var(--muted-2); font-style: normal; text-align: right; }
 .ds-modrow { display: grid; grid-template-columns: 110px 1fr 100px; gap: 12px; align-items: center; padding: 5px 0; }
 .ds-modrow em { font: 11px var(--mono); color: var(--muted-2); font-style: normal; text-align: right; }
+.ds-sess-nav { color: inherit; text-decoration: none; margin: 0 12px; opacity: .8; } .ds-sess-nav:hover { opacity: 1; text-decoration: underline; }
+.ds-deltas { display: flex; flex-wrap: wrap; gap: 10px 28px; margin-top: 10px; }
+.ds-deltas em { display: block; font: 11px var(--mono); color: var(--muted-2); font-style: normal; }
+.ds-delta { font: 800 22px/1.1 var(--display); color: var(--muted-2); } .ds-delta.up { color: var(--win); } .ds-delta.down { color: var(--loss-soft); }
+.ds-revrow { display: grid; grid-template-columns: minmax(0, 1fr) 48px 210px; gap: 12px; align-items: center; padding: 5px 0; font-size: 13px; }
+.ds-revrow em { font: 11px var(--mono); color: var(--muted-2); font-style: normal; text-align: right; }
 /* liste de parties (Matches) */
 .ds-mlist { display: grid; gap: 6px; }
 .ds-mrow { position: relative; display: grid; grid-template-columns: 88px 56px 44px minmax(0, 1fr) auto auto; gap: 14px; align-items: center;
