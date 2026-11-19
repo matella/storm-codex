@@ -325,13 +325,19 @@ once instead.
   presented as available offline. Before the server binds, this check is cheap: every listed image
   must be a non-empty file. The worker then hashes every image in the background before its first
   bundle or network check and corrects `artwork`; that first check reuses this result instead of
-  hashing again. Every later check that finds the active version (network manifest or same legacy
+  hashing again when it is less than 5 minutes old (sync may be enabled long after startup). The
+  background hash stops between images when the app is quitting. Every later check that finds the active version (network manifest or same legacy
   bundle) re-verifies the files and sets `artwork` to the result, so it returns to true once the
   files are back without a new activation.
-- A release refused for its content (resource budget, shape or SHA-256 mismatch) is remembered in
-  memory by `datasetVersion`. While `manifest.json` still names it, later checks fetch only the
-  manifest and report `phase: error`, instead of downloading the data files and archive again. A
-  new version clears it, and so does a restart (the first check after it retries the release once).
+- A release refused for its content is remembered in memory by `datasetVersion`: at the first
+  resource-budget or shape failure, but only after two consecutive SHA-256 mismatches on the same
+  version (a single mismatch may be a corrupted transfer; the next check downloads it again). While
+  `manifest.json` still names it, later automatic checks fetch only the manifest and report
+  `phase: error`, instead of downloading the data files and archive again; the first such check
+  logs a warning, later ones log at debug. A new version clears it, so does a restart (the first
+  check after it retries the release once), and so does the user's Retry
+  (`POST /api/standalone/reference/refresh`), which downloads the release once more. Automatic
+  checks (schedule, failure retries, enabling) keep it.
 - A check interrupted by shutdown exits quietly, and one cut short by a preference change counts as
   cancelled, whatever error the interruption caused; neither is reported as a failed check.
   Cached rows remain readable during a check or failure.
@@ -343,9 +349,12 @@ once instead.
   insights corpus when it changes a match. The 2D replay disk cache stores only replay-derived
   geometry and the playerId → toon mapping; player name/hero/team/win are read from
   `match_players` on every request, so a cache entry warmed before the repair (even across a
-  restart) serves the repaired hero. The entry (`{id}-replay2d-v{VIEWER_VERSION}-split.json`) is
-  the toons JSON line followed by the model's serialised bytes; a hit splices the fresh `players`
-  array into those bytes without parsing the model. A model that cannot be serialised as a JSON
+  restart) serves the repaired hero. The entry (`{id}-replay2d-v{VIEWER_VERSION}-split2.json`) is
+  the toons JSON line, the model's byte length as a decimal line, then the model's serialised
+  bytes; a hit splices the fresh `players` array into those bytes without parsing the model. It is
+  written to a unique temporary file in the cache directory and renamed into place, so readers
+  never see a partial entry; a malformed header or a model whose length differs from the header
+  is a miss (decoded again), as are entries of the older `-split` layout. A model that cannot be serialised as a JSON
   object without a `players` key returns 500 and is not cached.
 
 `Config::validate()` (run right after `from_env()`) rejects a non-loopback `BIND_ADDR` in this mode

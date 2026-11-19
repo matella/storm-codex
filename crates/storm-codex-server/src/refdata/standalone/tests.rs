@@ -1117,6 +1117,193 @@ async fn a_refused_release_is_not_downloaded_again_until_a_new_version() {
     drop_db(db, &name).await;
 }
 
+/// Waits until `src` was asked for `name` at least `n` times, then lets the worker settle.
+async fn asked_at_least(src: &DirSource, name: &str, n: usize) {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while count(src, name) < n {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("{name} asked {} times, expected {n}", count(src, name)));
+    tokio::time::sleep(Duration::from_millis(150)).await;
+}
+
+/// The user's Retry forgets a refused release and downloads it once more; the automatic retries
+/// that follow its failure keep the memory again.
+#[tokio::test]
+async fn retry_downloads_a_refused_release_once_more() {
+    let Some((db, name)) = isolated_db().await else {
+        return;
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = fixture_dir_copy(tmp.path());
+    set_version(&dir, "two", 1);
+    let app = setup(&db, tmp.path(), Vec::new());
+    let st = app.standalone.as_ref().unwrap();
+    st.reference.load(&db).await;
+    let router = crate::app_router(app.clone());
+    let small = load::Limits {
+        archive_bytes: 64,
+        ..load::Limits::DEFAULT
+    };
+    let src = Arc::new(DirSource::new(dir).with_limits(small));
+    let worker = tokio::spawn(run(
+        app.clone(),
+        src.clone(),
+        [Duration::from_millis(15); 3],
+    ));
+    asked_at_least(&src, "manifest.json", 4).await;
+    assert_eq!(count(&src, "manifest.json"), 4);
+    assert_eq!(
+        count(&src, "dataset.tar.gz"),
+        1,
+        "refused at the first check"
+    );
+
+    assert_eq!(
+        call(&router, "POST", REFRESH, Body::empty()).await.0,
+        StatusCode::ACCEPTED
+    );
+    asked_at_least(&src, "manifest.json", 8).await;
+    assert_eq!(count(&src, "dataset.tar.gz"), 2, "Retry downloads it once");
+    assert_eq!(
+        count(&src, "manifest.json"),
+        8,
+        "then three short automatic retries that keep the memory"
+    );
+    assert_eq!(get_json(&router, STATUS).await["phase"], "error");
+    st.stop_import();
+    worker.await.unwrap();
+    drop_db(db, &name).await;
+}
+
+/// A source whose first `bad` archive downloads arrive corrupted (as a broken transfer would).
+struct CorruptArchive {
+    inner: DirSource,
+    bad: AtomicUsize,
+}
+
+impl load::Source for CorruptArchive {
+    fn get(&self, name: &str) -> Result<Vec<u8>, RefdataError> {
+        self.inner.get(name)
+    }
+    fn download(&self, name: &str, file: &Path) -> Result<(), RefdataError> {
+        self.inner.download(name, file)?;
+        if name == "dataset.tar.gz"
+            && self
+                .bad
+                .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+                .is_ok()
+        {
+            corrupt(file);
+        }
+        Ok(())
+    }
+    fn limits(&self) -> load::Limits {
+        self.inner.limits()
+    }
+}
+
+async fn hash_failures(bad: usize) -> (Value, usize, usize) {
+    let Some((db, name)) = isolated_db().await else {
+        return (Value::Null, 0, 0);
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = fixture_dir_copy(tmp.path());
+    set_version(&dir, "one", 1);
+    let app = setup(&db, tmp.path(), Vec::new());
+    let st = app.standalone.as_ref().unwrap();
+    st.reference.load(&db).await;
+    let router = crate::app_router(app.clone());
+    let src = Arc::new(CorruptArchive {
+        inner: DirSource::new(dir),
+        bad: AtomicUsize::new(bad),
+    });
+    let worker = tokio::spawn(run(
+        app.clone(),
+        src.clone(),
+        [Duration::from_millis(15); 3],
+    ));
+    let status = if bad == 1 {
+        wait_for(&router, STATUS, |v| v["phase"] == "ready").await;
+        asked_at_least(&src.inner, "manifest.json", 2).await;
+        get_json(&router, STATUS).await
+    } else {
+        asked_at_least(&src.inner, "manifest.json", 4).await;
+        get_json(&router, STATUS).await
+    };
+    let counts = (
+        count(&src.inner, "manifest.json"),
+        count(&src.inner, "dataset.tar.gz"),
+    );
+    st.stop_import();
+    worker.await.unwrap();
+    drop_db(db, &name).await;
+    (status, counts.0, counts.1)
+}
+
+/// One corrupted transfer is not the release's fault: the next check downloads and activates it.
+#[tokio::test]
+async fn a_single_hash_failure_is_retried_and_activates() {
+    let (status, manifests, archives) = hash_failures(1).await;
+    if status.is_null() {
+        return;
+    }
+    assert_eq!(status["phase"], "ready", "{status}");
+    assert_eq!(status["version"], "one");
+    assert_eq!(status["artwork"], true);
+    assert_eq!((manifests, archives), (2, 2));
+}
+
+/// Two consecutive hash failures on the same version refuse it: later automatic checks read
+/// only the manifest.
+#[tokio::test]
+async fn two_hash_failures_refuse_the_release() {
+    let (status, manifests, archives) = hash_failures(usize::MAX).await;
+    if status.is_null() {
+        return;
+    }
+    assert_eq!(status["phase"], "error", "{status}");
+    assert_eq!(status["version"], Value::Null);
+    assert_eq!(
+        (manifests, archives),
+        (4, 2),
+        "three short retries, the last two stopped by the memory"
+    );
+}
+
+/// The startup hash stops between images once the app is quitting, and a stale one is not reused.
+#[test]
+fn startup_hash_stops_when_asked_and_expires() {
+    let tmp = tempfile::tempdir().unwrap();
+    let active = Active {
+        version: "one".into(),
+        revision: Uuid::new_v4().to_string(),
+        images: [("heroes/a.png".to_string(), "00".repeat(32))].into(),
+        bundle_hash: None,
+    };
+    fs::create_dir_all(active.dir(tmp.path()).join("heroes")).unwrap();
+    assert_eq!(active.complete_unless(tmp.path(), || true), None);
+    assert_eq!(active.complete_unless(tmp.path(), || false), Some(false));
+    let rev = active.revision.clone();
+    let now = Instant::now();
+    assert_eq!(
+        View::fresh_check(Some((rev.clone(), true, now)), &rev),
+        Some(true)
+    );
+    assert_eq!(
+        View::fresh_check(Some((rev.clone(), true, now)), "other"),
+        None
+    );
+    if let Some(old) = now.checked_sub(CHECKED_FOR + Duration::from_secs(1)) {
+        assert_eq!(
+            View::fresh_check(Some((rev.clone(), true, old)), &rev),
+            None
+        );
+    }
+}
+
 #[test]
 fn legacy_bundle_hash_is_streamed_within_the_archive_budget() {
     let tmp = tempfile::tempdir().unwrap();

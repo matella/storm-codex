@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::Notify;
 use tower_http::services::ServeFile;
 use uuid::Uuid;
@@ -23,6 +23,9 @@ use uuid::Uuid;
 const ENABLED: &str = "standalone_reference_enabled";
 const ACTIVE: &str = "standalone_reference_active";
 const DAILY: Duration = Duration::from_secs(24 * 3600);
+/// The startup hash of the active generation stands in for the first network check's own hash
+/// only while it is this recent (sync can be off at startup and turned on much later).
+const CHECKED_FOR: Duration = Duration::from_secs(5 * 60);
 const RETRIES: [Duration; 3] = [
     Duration::from_secs(60),
     Duration::from_secs(5 * 60),
@@ -64,12 +67,24 @@ impl Active {
     }
 
     fn complete(&self, root: &Path) -> bool {
+        self.complete_unless(root, || false) == Some(true)
+    }
+
+    /// [`Active::complete`], giving up (`None`) as soon as `stop` returns true between images.
+    fn complete_unless(&self, root: &Path, stop: impl Fn() -> bool) -> Option<bool> {
         let dir = self.dir(root);
-        dir.is_dir()
-            && self
-                .images
-                .iter()
-                .all(|(path, sha)| load::check_file_hash(&dir.join(path), sha).is_ok())
+        if !dir.is_dir() {
+            return Some(false);
+        }
+        for (path, sha) in &self.images {
+            if stop() {
+                return None;
+            }
+            if load::check_file_hash(&dir.join(path), sha).is_err() {
+                return Some(false);
+            }
+        }
+        Some(true)
     }
 
     /// Cheap startup check (no hashing): every listed image is a non-empty file. The worker
@@ -91,14 +106,25 @@ struct View {
     /// Bumped on every preference change. A network round may only fetch or activate
     /// while the epoch it started with is still current, even if sync was re-enabled since.
     epoch: u64,
-    /// The worker's background hash of the active generation at startup (revision, complete).
-    /// The first network round takes it instead of hashing the same files again.
-    checked: Option<(String, bool)>,
+    /// The worker's background hash of the active generation at startup (revision, complete,
+    /// when). The first network round takes it instead of hashing the same files again, unless it
+    /// is older than [`CHECKED_FOR`].
+    checked: Option<(String, bool, Instant)>,
+    /// Set by Retry (`POST …/refresh`); the worker consumes it before its next round and forgets
+    /// a refused release, so a user retry downloads it once more. Automatic checks never set it.
+    retry: bool,
 }
 
 impl View {
     fn current(&self, epoch: u64) -> bool {
         self.status.enabled && self.epoch == epoch
+    }
+
+    /// The startup hash of `revision`, if it is still recent enough to stand in for a new one.
+    fn fresh_check(checked: Option<(String, bool, Instant)>, revision: &str) -> Option<bool> {
+        checked
+            .filter(|(rev, _, at)| rev == revision && at.elapsed() < CHECKED_FOR)
+            .map(|(_, complete, _)| complete)
     }
 }
 
@@ -125,6 +151,7 @@ impl ReferenceState {
                 active: None,
                 epoch: 0,
                 checked: None,
+                retry: false,
             }),
             control: tokio::sync::Mutex::new(()),
             check: Notify::new(),
@@ -263,10 +290,11 @@ async fn refresh(State(app): State<AppState>) -> Response {
     let Some(st) = &app.standalone else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    let view = st.reference.view();
+    let mut view = st.reference.view();
     if !view.status.enabled {
         return error(StatusCode::CONFLICT, "reference sync is disabled".into());
     }
+    view.retry = true;
     st.reference.check.notify_one();
     StatusCode::ACCEPTED.into_response()
 }
@@ -362,14 +390,24 @@ async fn run(app: AppState, src: Arc<dyn load::Source>, retries: [Duration; 3]) 
             let _ = tokio::task::spawn_blocking(move || prune(&root, keep.as_deref())).await;
         }
         // Startup only checked that the files exist; hash them before anything relies on it.
+        // Quitting stops the hash between images rather than waiting for every file.
         let active = state.view().active.clone();
         if let Some(active) = active {
-            let (generation, root) = (active.clone(), asset_root(&app));
-            let complete = tokio::task::spawn_blocking(move || generation.complete(&root))
-                .await
-                .unwrap_or(false);
+            let (generation, root, quit) = (active.clone(), asset_root(&app), st.clone());
+            let hashed = tokio::task::spawn_blocking(move || {
+                generation.complete_unless(&root, || quit.stop_requested())
+            })
+            .await;
+            let complete = match hashed {
+                Ok(Some(complete)) => complete,
+                Ok(None) => return,
+                Err(e) => {
+                    tracing::warn!("reference sync: artwork check failed ({e})");
+                    false
+                }
+            };
             state.set_artwork(&active.revision, complete);
-            state.view().checked = Some((active.revision.clone(), complete));
+            state.view().checked = Some((active.revision.clone(), complete, Instant::now()));
         }
         if let Some(file) = &app.cfg.referential_file {
             if let Err(e) = bundle(&app, state, file).await {
@@ -378,11 +416,21 @@ async fn run(app: AppState, src: Arc<dyn load::Source>, retries: [Duration; 3]) 
         }
         let mut failures = 0;
         // In memory only: a release refused for its content (budget, shape, hash) is not
-        // downloaded again while the manifest still names it. A restart or a new version clears it.
+        // downloaded again while the manifest still names it. A restart, a new version or the
+        // user's Retry clears it; automatic checks keep it.
         let mut refused: Option<String> = None;
+        // A first hash mismatch may be transfer corruption, not the release: only a second
+        // consecutive one on the same version refuses it.
+        let mut hash_failed: Option<String> = None;
+        // The first check stopped by `refused` warns; repeats log at debug.
+        let mut refused_warned = false;
         loop {
             let enabled = {
                 let mut view = state.view();
+                if std::mem::take(&mut view.retry) {
+                    refused = None;
+                    hash_failed = None;
+                }
                 if view.status.enabled {
                     view.status.phase = Phase::Syncing;
                 }
@@ -397,6 +445,16 @@ async fn run(app: AppState, src: Arc<dyn load::Source>, retries: [Duration; 3]) 
             if version.is_some() && version != refused {
                 refused = None;
             }
+            if refused.is_none() {
+                refused_warned = false;
+            }
+            // Anything but another hash mismatch of the same version breaks the sequence; a
+            // cancelled round is not a check.
+            let hash_mismatch = matches!(result, Err(SyncError::Data(RefdataError::Hash { .. })));
+            let cancelled = matches!(result, Err(SyncError::Superseded | SyncError::Stopped));
+            if !hash_mismatch && !cancelled {
+                hash_failed = None;
+            }
             let delay = match result {
                 Ok(()) => {
                     failures = 0;
@@ -407,17 +465,26 @@ async fn run(app: AppState, src: Arc<dyn load::Source>, retries: [Duration; 3]) 
                 // The app is quitting: not a failure.
                 Err(SyncError::Stopped) => return,
                 Err(e) => {
-                    if matches!(
-                        e,
-                        SyncError::Data(
-                            RefdataError::Budget { .. }
-                                | RefdataError::Shape(_)
-                                | RefdataError::Hash { .. }
-                        )
-                    ) {
-                        refused = version;
+                    match &e {
+                        SyncError::Data(RefdataError::Budget { .. } | RefdataError::Shape(_)) => {
+                            refused = version;
+                        }
+                        SyncError::Data(RefdataError::Hash { .. }) => {
+                            if version.is_some() && hash_failed == version {
+                                refused = version;
+                                hash_failed = None;
+                            } else {
+                                hash_failed = version;
+                            }
+                        }
+                        _ => {}
                     }
-                    tracing::warn!("reference sync: check failed ({e})");
+                    if matches!(e, SyncError::Refused(_)) && refused_warned {
+                        tracing::debug!("reference sync: check failed ({e})");
+                    } else {
+                        refused_warned |= matches!(e, SyncError::Refused(_));
+                        tracing::warn!("reference sync: check failed ({e})");
+                    }
                     let mut view = state.view();
                     if view.status.enabled {
                         view.status.phase = Phase::Error;
@@ -574,10 +641,7 @@ async fn bundle(app: &AppState, state: &ReferenceState, file: &Path) -> Result<(
         let verified = active
             .as_ref()
             .filter(|a| a.bundle_hash.as_ref() == Some(&hash))
-            .map(|a| match &checked {
-                Some((rev, complete)) if *rev == a.revision => *complete,
-                _ => a.complete(&root),
-            });
+            .map(|a| View::fresh_check(checked, &a.revision).unwrap_or_else(|| a.complete(&root)));
         if verified == Some(true) {
             return (verified, Ok(None));
         }
@@ -663,8 +727,8 @@ async fn round_with(
         let checked = view
             .checked
             .take()
-            .filter(|(rev, _)| active.as_ref().is_some_and(|a| a.revision == *rev))
-            .map(|(_, complete)| complete);
+            .zip(active.as_ref())
+            .and_then(|(checked, a)| View::fresh_check(Some(checked), &a.revision));
         (view.epoch, active, checked)
     };
     let src = EnabledSource {

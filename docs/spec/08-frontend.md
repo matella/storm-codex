@@ -166,7 +166,8 @@ deserialisation, `progress_percent`, `phase_message`, `redirects_to_welcome`, `p
 - **Reference activation.** The layout tracks the active dataset's opaque string `revision`, not its version label, sync phase
   or a new-patch event. Reads key on `ReferenceSync::refresh` (`core::standalone::RevisionWatch`), which changes only when the
   revision differs between two known statuses: the first status poll after load does not re-read pages fetched before it,
-  while a first download after a known empty status does. A changed revision re-reads hero and already requested talent dimensions, mounted Patch Notes,
+  while a first download after a known empty status does. Known window: an activation that lands between a page's first
+  fetch and the first status poll is not refetched (that poll is the first known revision); the next activation or reload is. A changed revision re-reads hero and already requested talent dimensions, mounted Patch Notes,
   patch detail, hero patch history, the active Hero Changes view and patch choices, active player search roles, and Draft's
   hero role choices. Because activation repairs hero attribution in place, it also re-reads mounted repair-sensitive views:
   match detail and scoreboard, the 2D replay model and match data, hero attributes, Heroes, Hero detail, Matches (list and

@@ -9,11 +9,12 @@ the last good generation. Replays import and stay browsable before the first syn
 hero attribution in place (projected matches and cached 2D replays; scouting summaries are not
 repaired, see spec notes). This PC shows sync status, an automatic-download toggle and retry.
 
-Two review rounds fixed: stale 2D cache after repair, incomplete or oversized releases (completeness
+Three review rounds fixed: stale 2D cache after repair, incomplete or oversized releases (completeness
 checks; caps 512 MiB download / 1 GiB expanded / 32 MiB per image), off/on during a download (epoch),
 `artwork` derived from local files (presence at startup, background hash), refused releases not
-re-downloaded, cancelled rounds not counted as failures, 2D cache hits served without parsing the model
-(p50 ~8 ms → ~0.14 ms on fixture models), and no double fetch on first load.
+re-downloaded (Retry clears that memory; a SHA-256 mismatch counts after two in a row), atomic 2D cache
+entries with a length header, cancelled rounds not counted as failures, 2D cache hits served without parsing the model
+(p50 about 8 ms → 0.14 ms on fixture models: 6–8.4 ms before, 0.11–0.14 ms after), and no double fetch on first load.
 
 Docker checks on the integrated branch: see the PR. App bundle ~996 kB Brotli (cap 1,000,000, ~4 kB
 left). **Not done**: browser check of the refetch, Windows draft build, installer size comparison,
