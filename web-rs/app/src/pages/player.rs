@@ -222,6 +222,8 @@ pub fn Player() -> impl IntoView {
                             <a class=move || if insights_tab() { Some("map") } else { None } href="?tab=insights" on:click=move |e| { e.prevent_default(); go(ins_link.clone(), false) }>"Insights"</a>
                             <a class=move || if identity_tab() { Some("map") } else { None } href="?tab=identity" on:click=move |e| { e.prevent_default(); go(ip.clone(), false) }>"Identity"</a>
                             <Link to=cmp_link>"Compare ›"</Link>
+                            <Link to=format!("/matches?with={}", uri_component(&tk))>"Games with ›"</Link>
+                            <Link to=format!("/matches?against={}", uri_component(&tk))>"Games against ›"</Link>
                         </nav>
                         {move || if identity_tab() {
                             view! { <PlayerIdentity toon=toon data=identity /> }.into_any()

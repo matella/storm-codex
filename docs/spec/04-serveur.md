@@ -221,6 +221,20 @@ facts under the report's row lock (`SELECT … FOR UPDATE`) on every mutation. H
 `dim_heroes.data->>'expandedRole'` (the parser's `gameStats.Role` is 0 in custom games).
 `POST /api/admin/reprocess` also re-parses stale `scouting_games` and then recomputes.
 
+## Archive reads (`read.rs`, `read/filter.rs`)
+
+`GET /api/matches` and `/api/matches.csv` build their SQL with `sqlx::QueryBuilder`: constant fragments
+only, every user value bound. `read/filter.rs` parses and validates the replay search parameters (spec
+`docs/specs/2026-11-19-replay-search.md`; unit-tested) and appends their conditions. One `FROM`/`WHERE`
+builder serves the JSON page and the CSV. The JSON list uses one SQL statement: materialize matching IDs
+and sort keys once, then count and page that set in the same snapshot.
+The operator perspective row is joined only when a filter reads it, as one `DISTINCT ON (match_id)` pass
+over the perspective rows (no JSON read); the page is chosen on match IDs first, then only its rows are
+expanded (players JSON, per-row perspective lookup), so a deep `offset` does not expand skipped rows.
+Postgres aggregates JSON records and the handler relays that JSON text without a second serialization.
+The MVP filter is an `EXISTS` on the same `(match_id, toon_handle)` row, served by the partial index of
+migration 0018.
+
 ## Fingerprints (two-level dedup)
 
 - `uploads.fingerprint` = SHA-256 of the **file content** — fast pre-parse dedup.

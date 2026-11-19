@@ -30,6 +30,28 @@ pub async fn get_json<T: serde::de::DeserializeOwned>(path: &str) -> Result<T, S
     r.json::<T>().await.map_err(|e| e.to_string())
 }
 
+/// `GET path` decoded as JSON, with the `X-Total-Count` header (`GET /api/matches`). A rejected request yields the
+/// server's `{"error": "<code>"}` code when there is one, else `path → status`.
+pub async fn get_json_counted<T: serde::de::DeserializeOwned>(
+    path: &str,
+) -> Result<(T, Option<u64>), String> {
+    let r = Request::get(path).send().await.map_err(|e| e.to_string())?;
+    if !r.ok() {
+        let fallback = format!("{path} → {}", r.status());
+        return Err(r
+            .json::<serde_json::Value>()
+            .await
+            .ok()
+            .and_then(|v| v.get("error")?.as_str().map(str::to_owned))
+            .unwrap_or(fallback));
+    }
+    let total = r
+        .headers()
+        .get("x-total-count")
+        .and_then(|v| v.parse().ok());
+    Ok((r.json::<T>().await.map_err(|e| e.to_string())?, total))
+}
+
 /// `GET path` where `204 No Content` means "nothing" (`None`), as `fetchLive` does.
 pub async fn get_json_opt<T: serde::de::DeserializeOwned>(path: &str) -> Result<Option<T>, String> {
     get_json_with_missing(path, 204).await

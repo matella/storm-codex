@@ -1,14 +1,19 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::{
-    api_tests::{call, call_raw, test_state},
+    api_tests::{app, call, call_raw, test_state},
     players::testutil::{insert_match, row},
     refdata::tests::{drop_db, isolated_db},
     standalone::StandaloneState,
 };
-use axum::http::StatusCode;
+use axum::{
+    body::Body,
+    http::{Request, StatusCode},
+};
+use http_body_util::BodyExt;
 use serde_json::json;
 use std::{path::PathBuf, sync::Arc};
+use tower::util::ServiceExt;
 
 #[tokio::test]
 async fn matches_and_csv_share_one_perspective_for_opposing_accounts() {
@@ -107,6 +112,312 @@ async fn matches_and_csv_share_one_perspective_for_opposing_accounts() {
         .unwrap();
     let (_, list) = call(&state, "GET", "/api/matches", None).await;
     assert_eq!(list[0].get("perspective_toon"), Some(&json!(null)));
+    drop(state);
+    drop_db(db, &db_name).await;
+}
+
+/// `GET path` → (status, `X-Total-Count`, JSON body).
+async fn get_counted(
+    state: &crate::AppState,
+    path: &str,
+) -> (StatusCode, Option<i64>, serde_json::Value) {
+    let resp = app(state)
+        .oneshot(Request::get(path).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let status = resp.status();
+    let total = resp
+        .headers()
+        .get("x-total-count")
+        .map(|v| v.to_str().unwrap().parse().unwrap());
+    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    (
+        status,
+        total,
+        serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null),
+    )
+}
+
+/// Ids of the CSV export for the same query (first column, header skipped).
+async fn csv_ids(state: &crate::AppState, query: &str) -> Vec<i64> {
+    let (status, bytes) = call_raw(
+        state,
+        "GET",
+        &format!("/api/matches.csv?{query}"),
+        None,
+        vec![],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{query}");
+    String::from_utf8(bytes)
+        .unwrap()
+        .lines()
+        .skip(1)
+        .map(|l| l.split(',').next().unwrap().parse().unwrap())
+        .collect()
+}
+
+#[tokio::test]
+async fn replay_search_filters_on_the_perspective_row() {
+    let Some(mut state) = test_state(None).await else {
+        return;
+    };
+    let (db, db_name) = isolated_db().await.unwrap();
+    state.db = db.clone();
+    sqlx::query("UPDATE app_settings SET value = $1 WHERE key = 'operator_names'")
+        .bind(json!(["Me"]))
+        .execute(&db)
+        .await
+        .unwrap();
+    let (me, friend, foe) = ("1-Hero-1-10", "1-Hero-1-11", "1-Hero-1-12");
+    let at = |h: u32| {
+        chrono::DateTime::parse_from_rfc3339(&format!("2026-11-0{h}T12:00:00Z"))
+            .unwrap()
+            .with_timezone(&chrono::Utc)
+    };
+    // m1 (newest): Jaina with Friend against Foe on Braxis, 9 deaths, 3 kills, 10 takedowns, 800 s.
+    let m1 = insert_match(
+        &db,
+        Some(at(3)),
+        &[
+            row(me, "Me", 0, "Jaina"),
+            row(friend, "Friend", 0, "Valla"),
+            row(foe, "Foe", 1, "Muradin"),
+        ],
+    )
+    .await;
+    // m2: Valla against Friend with Foe, 8 deaths, 1,200 s.
+    let m2 = insert_match(
+        &db,
+        Some(at(2)),
+        &[
+            row(friend, "Friend", 0, "Jaina"),
+            row(me, "Me", 1, "Valla"),
+            row(foe, "Foe", 1, "Muradin"),
+        ],
+    )
+    .await;
+    // m3 (oldest): without the operator.
+    let m3 = insert_match(
+        &db,
+        Some(at(1)),
+        &[
+            row(friend, "Friend", 0, "Jaina"),
+            row(foe, "Foe", 1, "Valla"),
+        ],
+    )
+    .await;
+    for (id, map, len, deaths, kills, takedowns, apm) in [
+        (m1, "Braxis Holdout", 800.0, 9, 3, 10, 150.0),
+        (m2, "Braxis Holdout", 1200.0, 8, 5, 6, 90.0),
+        (m3, "Cursed Hollow", 900.0, 1, 1, 1, 100.0),
+    ] {
+        sqlx::query("UPDATE matches SET map = $2, length = $3 WHERE id = $1")
+            .bind(id)
+            .bind(map)
+            .bind(len)
+            .execute(&db)
+            .await
+            .unwrap();
+        sqlx::query(
+            "UPDATE match_players SET deaths = $3, kills = $4, takedowns = $5, apm = $6,
+                    hero_damage = 50000, healing = 0, experience = 20000
+             WHERE match_id = $1 AND toon_handle = $2",
+        )
+        .bind(id)
+        .bind(me)
+        .bind(deaths)
+        .bind(kills)
+        .bind(takedowns)
+        .bind(apm)
+        .execute(&db)
+        .await
+        .unwrap();
+    }
+
+    for (query, expected) in [
+        ("", vec![m1, m2, m3]),
+        ("my_hero=Jaina", vec![m1]),
+        ("hero=Jaina", vec![m1, m2, m3]),
+        ("with=1-Hero-1-11", vec![m1]),
+        ("against=1-Hero-1-11", vec![m2]),
+        ("with=1-Hero-1-12", vec![m2]),
+        ("against=1-Hero-1-12", vec![m1]),
+        ("with=1-Hero-1-10", vec![]),
+        ("with=1-Hero-1-11&against=1-Hero-1-12", vec![m1]),
+        ("map=Braxis+Holdout&min_deaths=9", vec![m1]),
+        ("max_deaths=8", vec![m2]),
+        ("min_deaths=8&max_deaths=8", vec![m2]),
+        ("min_assists=7", vec![m1]),
+        ("max_assists=1", vec![m2]),
+        ("min_kills=5&min_takedowns=6", vec![m2]),
+        ("min_apm=150", vec![m1]),
+        (
+            "min_hero_damage=50000&max_healing=0&min_xp=20000",
+            vec![m1, m2],
+        ),
+        ("min_len=15", vec![m2, m3]),
+        ("max_len=15", vec![m1, m3]),
+        ("min_len=15&max_len=15.5", vec![m3]),
+        (
+            "map=Braxis+Holdout&min_deaths=9&with=1-Hero-1-11&result=win",
+            vec![m1],
+        ),
+        ("min_deaths=9&result=loss", vec![]),
+        ("player=1-Hero-1-10&min_len=14", vec![m2]),
+        ("min_kills=", vec![m1, m2, m3]),
+    ] {
+        let (status, total, list) = get_counted(&state, &format!("/api/matches?{query}")).await;
+        assert_eq!(status, StatusCode::OK, "{query}");
+        let ids: Vec<i64> = list
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m["id"].as_i64().unwrap())
+            .collect();
+        assert_eq!(ids, expected, "{query}");
+        assert_eq!(total, Some(expected.len() as i64), "{query}");
+        assert_eq!(csv_ids(&state, query).await, expected, "csv {query}");
+    }
+
+    // Paging: the total ignores limit/offset, both list and CSV page the same way.
+    let (_, total, list) = get_counted(&state, "/api/matches?limit=1&offset=1").await;
+    assert_eq!(total, Some(3));
+    assert_eq!(list.as_array().unwrap().len(), 1);
+    assert_eq!(list[0]["id"], m2);
+    assert_eq!(csv_ids(&state, "limit=1&offset=1").await, vec![m2]);
+    let (_, total, list) = get_counted(&state, "/api/matches?offset=5").await;
+    assert_eq!((total, list), (Some(3), json!([])));
+    let (_, _, list) = get_counted(&state, "/api/matches?limit=0&offset=-4").await;
+    assert_eq!(
+        list.as_array().unwrap().len(),
+        1,
+        "limit and offset are clamped"
+    );
+
+    // Invalid parameters name themselves, including unknown and repeated blank bounds.
+    for (query, param) in [
+        ("min_siege=1", "min_siege"),
+        ("max_siege=%20", "max_siege"),
+        ("min_kills=1&min%5Fkills=2", "min_kills"),
+        ("max_deaths=&max_deaths=2", "max_deaths"),
+        ("min_len=5&min_len=", "min_len"),
+        ("max_len=&max_len=", "max_len"),
+        ("max_deaths=many", "max_deaths"),
+        ("min_len=inf", "min_len"),
+        ("with=1-Hero-1-11&against=1-Hero-1-11", "against"),
+    ] {
+        let (status, _, body) = get_counted(&state, &format!("/api/matches?{query}")).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{query}");
+        assert_eq!(
+            body,
+            json!({"error": "bad_filter", "param": param}),
+            "{query}"
+        );
+        let (status, csv_body) =
+            call(&state, "GET", &format!("/api/matches.csv?{query}"), None).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "csv {query}");
+        assert_eq!(csv_body, body, "csv {query}");
+    }
+
+    // Without a configured operator, perspective filters need an explicit account.
+    sqlx::query("DELETE FROM app_settings WHERE key = 'operator_names'")
+        .execute(&db)
+        .await
+        .unwrap();
+    for query in ["my_hero=Jaina", "with=1-Hero-1-11", "min_deaths=1"] {
+        let (status, _, body) = get_counted(&state, &format!("/api/matches?{query}")).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{query}");
+        assert_eq!(body, json!({"error": "perspective_required"}), "{query}");
+    }
+    let (status, total, _) = get_counted(&state, "/api/matches?min_len=15").await;
+    assert_eq!((status, total), (StatusCode::OK, Some(2)));
+    let (status, total, list) = get_counted(&state, "/api/matches?account=me&my_hero=Valla").await;
+    assert_eq!((status, total), (StatusCode::OK, Some(1)));
+    assert_eq!(list[0]["id"], m2);
+    drop(state);
+    drop_db(db, &db_name).await;
+}
+
+#[tokio::test]
+async fn page_and_count_use_the_same_snapshot_during_import() {
+    use std::time::Duration;
+
+    let Some(mut state) = test_state(None).await else {
+        return;
+    };
+    let (db, db_name) = isolated_db().await.unwrap();
+    // A one-connection read pool forces two separate statements to take snapshots in order.
+    state.db = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect_with((*db.connect_options()).clone())
+        .await
+        .unwrap();
+    let old = insert_match(&db, None, &[row("1-Hero-1-1", "Me", 0, "Jaina")]).await;
+    sqlx::query("UPDATE matches SET length = 900 WHERE id = $1")
+        .bind(old)
+        .execute(&db)
+        .await
+        .unwrap();
+    // Pause the reader at player expansion after it has chosen the page and taken its snapshot.
+    sqlx::raw_sql(
+        "ALTER TABLE match_players RENAME TO fixture_players;
+         CREATE FUNCTION wait_for_fixture_import() RETURNS boolean LANGUAGE plpgsql VOLATILE AS $$
+         BEGIN PERFORM pg_advisory_xact_lock(31415); RETURN true; END; $$;
+         CREATE VIEW match_players AS SELECT * FROM fixture_players WHERE wait_for_fixture_import();",
+    )
+    .execute(&db)
+    .await
+    .unwrap();
+    let mut writer = db.begin().await.unwrap();
+    sqlx::query("SELECT pg_advisory_xact_lock(31415)")
+        .execute(&mut *writer)
+        .await
+        .unwrap();
+    let request = tokio::spawn(async move {
+        let response = get_counted(&state, "/api/matches?limit=1&min_len=0").await;
+        (state, response)
+    });
+    let waiting = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory'
+                   AND NOT granted AND objid = 31415
+                   AND database = (SELECT oid FROM pg_database WHERE datname = current_database()))",
+            )
+            .fetch_one(&mut *writer)
+            .await
+            .unwrap();
+            if waiting {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    assert!(
+        waiting.is_ok(),
+        "page expansion should reach the import barrier"
+    );
+    let imported: i64 = sqlx::query_scalar(
+        "INSERT INTO matches (fingerprint, parser_version, map, length, played_at, data)
+         VALUES ('concurrent-import', 1, 'Braxis Holdout', 900, now(), '{}') RETURNING id",
+    )
+    .fetch_one(&mut *writer)
+    .await
+    .unwrap();
+    writer.commit().await.unwrap();
+    let (state, (status, total, page)) = request.await.unwrap();
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(page[0]["id"], old);
+    assert_eq!(
+        total,
+        Some(1),
+        "the in-flight page must not count the import"
+    );
+    let (status, total, page) = get_counted(&state, "/api/matches?limit=1&min_len=0").await;
+    assert_eq!((status, total), (StatusCode::OK, Some(2)));
+    assert_eq!(page[0]["id"], imported);
     drop(state);
     drop_db(db, &db_name).await;
 }

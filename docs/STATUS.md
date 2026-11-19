@@ -1,5 +1,78 @@
 # STATUS — read first, update last
 
+## Second merge of `origin/main` into `feat/replay-search` (2026-11-19)
+
+Merged `origin/main` (`733fd1d`, web-audit platform fixes #61, on top of the already-integrated match
+card #59 and session review #60) as a true merge commit (head `a449a78`), resolving conflicts only in
+`docs/STATUS.md` and `docs/spec/08-frontend.md` (both append-style; kept every dated section and the
+`/match/:id` row's superset of fields — APM column, Save as image card, raw dump link — plus this
+branch's own `/matches` filter row). Folded the bundle-size history into one ordered list and replaced
+the "rebuild pending" placeholder with the real post-merge number.
+
+Docker checks on the merged tree (`storm-dev:latest`, throwaway PostgreSQL 17 on 55451, dedicated
+target volume `storm-dev-target-replay-search`): fmt, strict Clippy (native workspace, `-D warnings`)
+passed; 537 workspace tests passed (0 failed, 3 ignored); web-rs fmt/clippy native + wasm32 passed;
+180 web-rs tests passed; all three Trunk release builds passed their size budgets (overlay 217,951
+bytes gzip, sources 181,343 bytes gzip, **app 1,041,779 bytes Brotli**, cap 1,250,000); `actionlint`
+clean on the full workflow set. (A workspace-wide `cargo clippy --target wasm32-unknown-unknown` over
+the *server* crates fails on `mio`/`tokio` — those crates are never built for wasm32 in CI; only
+`web-rs`'s own wasm32 clippy, which passed, is the real CI gate.) Not run: real OBS, Windows installer,
+box DB validation, independent review, deploy. Pushed to `origin/feat/replay-search`; PR #58 not
+marked ready.
+
+## Replay search (2026-11-19), branch `feat/replay-search`
+
+Approved spec: `docs/specs/2026-11-19-replay-search.md` (operator decisions: typed stat columns only, total in
+`X-Total-Count`, the UI hero filter means "my hero"). `GET /api/matches` and `/api/matches.csv` gain `my_hero`,
+`with`/`against`, `min_`/`max_<stat>` (kills, deaths, takedowns, assists, hero damage, healing, XP, APM) and
+`min_len`/`max_len`, validated in `read/filter.rs` (400 `bad_filter` / `perspective_required`), built with
+`QueryBuilder` binds only. Matches has a "More filters" panel with removable chips, "N games" from the header and
+"Load more" by 100 (operator decision, 2026-11-19: 100-row pages, p95 <= 65 ms accepted, worst measured 61 ms);
+Player and Compare link to `/matches?with=` / `?against=`. Migration **0018** adds a partial
+MVP index (the existing MVP filter measured 157 ms).
+
+Measured on a synthetic 3,500-game archive with real storm-stats JSON (not the box DB copy): 200-game pages
+82–96 ms p95 with any filters (before: ~100 ms unfiltered, 157 ms MVP, 1.1 s at `offset=3000`), `limit=50` 21 ms.
+**Operator decision (2026-11-19): 100-row pages, p95 <= 65 ms accepted, worst measured 61 ms** (100-row page, all
+typed bounds) — this closed the open 50 ms target question; reading each player's award from the JSON remains the
+floor, but the smaller page keeps it within budget. Shared host: a busy rerun reached 121 ms. App bundle
+1,030,208 bytes Brotli after merging `origin/main` (2026-11-19, re-measured with the 100-row page): needs PR #53's
+1.25 MB cap. Docker checks passed (fmt, clippy, 516 workspace tests with
+PostgreSQL 17, web fmt/clippy native+wasm32, 154 web tests, trunk release build + size check at 1.25 MB). Browser
+check on the synthetic archive: Braxis example, with picker, stat switch, chip removal, Load more, back button,
+perspective error. Not pushed.
+
+### Paging and parsing follow-up (2026-11-19)
+
+The archive now uses one database snapshot for page + count. The UI discards stale responses on filter,
+import, reference-revision or operator changes, advances by server rows rather than unique displayed IDs,
+and offers retry/reload recovery. JSON and CSV reject repeated and unknown bound keys, including blank ones.
+No migration changed. The **200-row contract is unchanged; <50 ms p95 remains open**: warm release HTTP p95
+70.3 ms unfiltered, 75.3 ms teammate + death bound, 79.7 ms all typed bounds on the 3,500-game synthetic
+fixture. Query variants and diagnostics are in the dated spec; the box DB was not used.
+
+Passed on throwaway PostgreSQL 17/55520: 520 workspace tests (serial, 10 ignored), strict Clippy and fmt;
+158 web tests, native/wasm Clippy and fmt, all three Trunk release builds and size gates (app 1,010,441 bytes
+Brotli). A parallel workspace run hit an intermittent insights-corpus assertion; an earlier parallel run and
+the fresh-DB serial run passed. Chromium verified native keyboard controls, stale responses across an injected
+import event and filter change, same-offset retry and zero-progress reload. Real OBS, Windows installer,
+box DB validation and an independent review were not run. No push or deployment.
+
+**Operator decision (2026-11-19): 100-row pages, p95 <= 65 ms accepted, worst measured 61 ms** (100-row page, all
+typed bounds, synthetic 3,500-game fixture); closes the formerly open 50 ms target. The UI page size (`LIMIT` in
+`web-rs/app/src/pages/matches.rs`, "Load more") is now 100, not 200. No longer an open blocker.
+
+## Merge of `origin/main` into `feat/replay-search` (2026-11-19)
+
+Merged `origin/main` as a merge commit (session review, update-notes, CI action pins, standalone reference data
+downloads, download page; conflicts only in this file and `08-frontend.md`, resolved keeping both sides).
+Docker checks on the merged tree (`storm-dev:latest`, throwaway PostgreSQL 17, dedicated target dir): fmt,
+clippy (native, `-D warnings`) passed; 433 workspace tests passed (3 ignored; an initial parallel run hit
+`PoolTimedOut` under default Postgres `max_connections` and a shared host — a rerun with a higher connection
+limit passed cleanly, confirming contention rather than a regression); web-rs fmt/clippy native + wasm32 passed;
+165 web tests passed; all three Trunk release builds passed their size budgets (overlay 217,601 bytes gzip,
+sources 181,309 bytes gzip, **app 1,030,208 bytes Brotli**, cap 1,250,000). Not run: real OBS, Windows installer,
+box DB validation, independent review, deploy.
 ## Three-way merge: web-audit platform + match card + session review (2026-11-19), branch `fix/web-audit-platform`
 
 Merged `origin/main` (`17e82fc`, shareable match card #59) on top of the earlier `ad3da36` (session review)
