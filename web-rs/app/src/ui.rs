@@ -1,4 +1,4 @@
-//! Shared pieces of the app: reference data and settings loaded once, and the `ds` components used by several
+//! Shared pieces of the app: reference data and settings, and the `ds` components used by several
 //! pages (`components/ds/index.tsx`).
 
 use leptos::{prelude::*, task::spawn_local};
@@ -11,14 +11,14 @@ use storm_web_core::{
     route::app_href,
 };
 
-/// Loads the hero reference data once and shares it (`useDimHeroes` in the React layout).
+/// Shares hero reference data and keeps the last good map while a refreshed copy loads.
 pub fn provide_dim() {
     let dim = RwSignal::new(Dim::default());
     provide_context(dim);
-    spawn_local(async move {
-        if let Ok(m) =
-            net::get_json::<std::collections::HashMap<String, DimHero>>("/api/dim/heroes").await
-        {
+    let data =
+        fetch_reference::<std::collections::HashMap<String, DimHero>>(|| "/api/dim/heroes".into());
+    Effect::new(move |_| {
+        if let Some(Ok(m)) = data.get() {
             dim.set(Dim::new(m));
         }
     });
@@ -28,8 +28,7 @@ pub fn use_dim() -> RwSignal<Dim> {
     expect_context::<RwSignal<Dim>>()
 }
 
-/// Talent reference data (`GET /api/dim/talents`, about 240 kB): loaded the first time a page asks for it, then kept
-/// (`useDimTalents` with an infinite stale time).
+/// Talent reference data (`GET /api/dim/talents`, about 240 kB): loaded lazily, then shared across pages.
 #[derive(Clone, Copy)]
 struct Talents {
     map: RwSignal<std::collections::HashMap<String, DimTalent>>,
@@ -37,9 +36,29 @@ struct Talents {
 }
 
 pub fn provide_talents() {
-    provide_context(Talents {
+    let t = Talents {
         map: RwSignal::new(Default::default()),
         started: RwSignal::new(false),
+    };
+    provide_context(t);
+    let revision = crate::reference::use_reference().revision;
+    let data = LocalResource::new(move || {
+        let started = t.started.get();
+        if started {
+            revision.track();
+        }
+        async move {
+            if started {
+                net::get_json("/api/dim/talents").await.ok()
+            } else {
+                None
+            }
+        }
+    });
+    Effect::new(move |_| {
+        if let Some(Some(m)) = data.get() {
+            t.map.set(m);
+        }
     });
 }
 
@@ -48,14 +67,6 @@ pub fn use_talents() -> RwSignal<std::collections::HashMap<String, DimTalent>> {
     let t = expect_context::<Talents>();
     if !t.started.get_untracked() {
         t.started.set(true);
-        spawn_local(async move {
-            if let Ok(m) =
-                net::get_json::<std::collections::HashMap<String, DimTalent>>("/api/dim/talents")
-                    .await
-            {
-                t.map.set(m);
-            }
-        });
     }
     t.map
 }
@@ -229,6 +240,17 @@ pub fn initials(h: &str) -> String {
     }
 }
 
+/// Revision-keyed portrait URLs retry an earlier missing image and bypass a cached old one.
+fn portrait_src(path: &str, revision: Option<&str>) -> String {
+    match revision.filter(|_| path.starts_with("/images/heroes/")) {
+        Some(revision) => format!(
+            "{path}?ref={}",
+            storm_web_core::route::uri_component(revision)
+        ),
+        None => path.to_owned(),
+    }
+}
+
 /// Hero portrait with the ring of its universe; initials when there is no icon or it fails to load.
 #[component]
 pub fn Portrait(
@@ -238,9 +260,15 @@ pub fn Portrait(
     #[prop(optional)] class: &'static str,
 ) -> impl IntoView {
     let dim = use_dim();
-    let broken = RwSignal::new(false);
+    let broken = RwSignal::new(None::<String>);
+    let revision = crate::reference::use_reference().revision;
     let h = hero.clone();
-    let icon = move || dim.with(|d| d.icon(&h).map(str::to_string));
+    let icon = move || {
+        dim.with(|d| {
+            d.icon(&h)
+                .map(|p| revision.with(|r| portrait_src(p, r.as_deref())))
+        })
+    };
     let h2 = hero.clone();
     let ring = move || dim.with(|d| d.ring(Some(&h2)));
     let style = move || format!("--s: {size}px; --ring: {}", ring());
@@ -249,8 +277,8 @@ pub fn Portrait(
     view! {
         <span class=format!("ds-pt ds-pt-{}{}{class}", tone.class(), if class.is_empty() { "" } else { " " }) style=style title=title>
             {move || match icon() {
-                Some(src) if !broken.get() => view! {
-                    <img src=src alt=alt.clone() loading="lazy" on:error=move |_| broken.set(true) />
+                Some(src) if !broken.with(|b| b.as_ref() == Some(&src)) => view! {
+                    <img src=src.clone() alt=alt.clone() loading="lazy" on:error=move |_| broken.set(Some(src.clone())) />
                 }.into_any(),
                 _ => view! { <span class="ds-ini">{ini.clone()}</span> }.into_any(),
             }}
@@ -263,20 +291,27 @@ pub fn Portrait(
 #[component]
 pub fn Avatar(hero: Option<String>, #[prop(default = 24)] size: u32) -> impl IntoView {
     let dim = use_dim();
-    let broken = RwSignal::new(false);
+    let broken = RwSignal::new(None::<String>);
+    let revision = crate::reference::use_reference().revision;
     let h = hero.clone();
     let ring = Signal::derive(move || dim.with(|d| d.ring_var(h.as_deref())));
     let border =
         Signal::derive(move || format!("{}px solid {}", (size as f64 / 16.0).max(1.5), ring.get()));
     let h = hero.clone();
-    let icon = move || dim.with(|d| h.as_deref().and_then(|x| d.icon(x)).map(str::to_string));
+    let icon = move || {
+        dim.with(|d| {
+            h.as_deref()
+                .and_then(|x| d.icon(x))
+                .map(|p| revision.with(|r| portrait_src(p, r.as_deref())))
+        })
+    };
     let title = hero.clone().unwrap_or_default();
     let ini = initials(hero.as_deref().unwrap_or(""));
     let alt = title.clone();
     view! {
         {move || match icon() {
-            Some(src) if !broken.get() => view! {
-                <img src=src alt=alt.clone() title=hero.clone() loading="lazy" on:error=move |_| broken.set(true)
+            Some(src) if !broken.with(|b| b.as_ref() == Some(&src)) => view! {
+                <img src=src.clone() alt=alt.clone() title=hero.clone() loading="lazy" on:error=move |_| broken.set(Some(src.clone()))
                     style=move || format!("width: {size}px; height: {size}px; border-radius: 50%; object-fit: cover; border: {}; background: #181a22; flex-shrink: 0", border.get()) />
             }.into_any(),
             _ => view! {
@@ -329,6 +364,17 @@ pub fn fetch<T: DeserializeOwned + 'static>(
     LocalResource::new(move || {
         let u = url();
         async move { net::get_json::<T>(&u).await }
+    })
+}
+
+/// Re-read an active view after a standalone activation without remounting the page.
+pub fn fetch_reference<T: DeserializeOwned + 'static>(
+    url: impl Fn() -> String + 'static,
+) -> LocalResource<Result<T, String>> {
+    let revision = crate::reference::use_reference().revision;
+    fetch(move || {
+        revision.track();
+        url()
     })
 }
 

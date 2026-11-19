@@ -19,7 +19,10 @@ use storm_web_core::{
 
 use crate::{
     patchui::PatchEntries,
-    ui::{fetch, map_art, use_dim, use_talents, AggFilterBar, Link, Portrait, SecHead},
+    ui::{
+        fetch, fetch_reference, map_art, use_dim, use_talents, AggFilterBar, Link, Portrait,
+        SecHead,
+    },
 };
 
 /// Talent build (`TierNChoice` → tree id) as steps in level order. Names come from the reference data once loaded.
@@ -51,7 +54,7 @@ fn BuildSteps(
 /// Hero to patch: the adjustments of this hero across the patch notes, newest first.
 #[component]
 fn HeroPatches(hero: Signal<String>, num: Signal<u32>) -> impl IntoView {
-    let data = fetch::<Vec<HeroPatchSection>>(move || {
+    let data = fetch_reference::<Vec<HeroPatchSection>>(move || {
         format!("/api/hero/{}/patches", uri_component(&hero.get()))
     });
     move || {

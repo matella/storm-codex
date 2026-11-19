@@ -90,7 +90,32 @@ pub struct Status {
     pub reprocess_done: u64,
 }
 
-/// Shared ordering of status polls and folder edits within a tab.
+/// Standalone reference sync is independent of replay import and the app updater.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReferencePhase {
+    Waiting,
+    Syncing,
+    Ready,
+    Error,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize)]
+pub struct ReferenceStatus {
+    pub enabled: bool,
+    pub phase: ReferencePhase,
+    pub version: Option<String>,
+    pub revision: String,
+}
+
+impl ReferenceStatus {
+    /// Even a disabled, syncing or failed check can have an active dataset.
+    pub fn active_revision(&self) -> Option<&str> {
+        self.version.as_ref().map(|_| self.revision.as_str())
+    }
+}
+
+/// Shared ordering of status polls and settings writes within a tab.
 #[derive(Default)]
 pub struct StatusRequests {
     issued: u64,
@@ -410,6 +435,28 @@ pub fn reloads_after(action: BackupAction, outcome: &BackupOutcome) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reference_revision_is_opaque_and_absent_until_activation() {
+        let waiting: ReferenceStatus = serde_json::from_str(
+            r#"{"enabled":true,"phase":"waiting","version":null,"revision":"empty:0"}"#,
+        )
+        .unwrap();
+        assert_eq!(waiting.active_revision(), None);
+
+        let cached: ReferenceStatus = serde_json::from_str(
+            r#"{"enabled":false,"phase":"error","version":"data-123","revision":"restored:abc"}"#,
+        )
+        .unwrap();
+        assert_eq!(cached.active_revision(), Some("restored:abc"));
+        assert!(!cached.enabled);
+        assert_eq!(cached.phase, ReferencePhase::Error);
+
+        assert!(serde_json::from_str::<ReferenceStatus>(
+            r#"{"enabled":true,"phase":"ready","version":"data-123","revision":7}"#,
+        )
+        .is_err());
+    }
 
     /// Shape of the server's `Status` (crates/storm-codex-server/src/standalone/mod.rs), as serialised.
     const FIXTURE: &str = r#"{

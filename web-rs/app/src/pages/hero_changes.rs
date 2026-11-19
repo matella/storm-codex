@@ -14,7 +14,7 @@ use storm_web_core::{
 use crate::{
     matchui::SearchSelect,
     patchui::PatchEntries,
-    ui::{fetch, use_dim, Link, Portrait},
+    ui::{fetch_reference, use_dim, Link, Portrait},
 };
 
 fn pill(on: bool) -> &'static str {
@@ -28,7 +28,7 @@ fn pill(on: bool) -> &'static str {
 /// Whole history of a hero (mounted when the row is first opened).
 #[component]
 fn HeroHistory(hero: String) -> impl IntoView {
-    let data = fetch::<Vec<HeroPatchSection>>(move || {
+    let data = fetch_reference::<Vec<HeroPatchSection>>(move || {
         format!("/api/hero/{}/patches", uri_component(&hero))
     });
     move || match data.get() {
@@ -60,12 +60,16 @@ pub fn HeroChanges() -> impl IntoView {
     let patch = RwSignal::new(String::new());
     let limit = RwSignal::new(PAGE);
     let opened = RwSignal::new(HashSet::<String>::new());
-    let patches = fetch::<PatchList>(|| "/api/patches".to_string());
+    let patches = fetch_reference::<PatchList>(|| "/api/patches".to_string());
     let hero_options = Signal::derive(move || dim.with(|d| d.names()));
 
+    let revision = crate::reference::use_reference().revision;
     // one request per view: the other one waits until it is shown
     let heroes = LocalResource::new(move || {
         let on = !timeline.get();
+        if on {
+            revision.track();
+        }
         let url = format!(
             "/api/hero-changes/heroes?{}",
             query(&[("class", klass.get()), ("patch", patch.get())])
@@ -84,6 +88,9 @@ pub fn HeroChanges() -> impl IntoView {
     });
     let feed = LocalResource::new(move || {
         let on = timeline.get();
+        if on {
+            revision.track();
+        }
         let url = format!(
             "/api/hero-changes?{}",
             query(&[

@@ -249,7 +249,7 @@ fn Console(
         })
     });
     // roles in the order the server lists the heroes (the tab order of React)
-    let ordered = fetch::<Value>(|| "/api/dim/heroes".to_string());
+    let ordered = crate::ui::fetch_reference::<Value>(|| "/api/dim/heroes".to_string());
     let roles = Memo::new(move |_| {
         let mut all = vec![ALL.to_string()];
         let from_server: Vec<String> = match ordered.get() {

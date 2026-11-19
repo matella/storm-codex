@@ -1,7 +1,7 @@
 //! Players: search by current name, old name or fragment (`?q=` in the URL).
 //! Port of `web/src/pages/Players.tsx`.
 
-use leptos::{prelude::*, task::spawn_local};
+use leptos::prelude::*;
 use leptos_router::{
     hooks::{use_location, use_navigate},
     NavigateOptions,
@@ -128,26 +128,34 @@ pub fn Players() -> impl IntoView {
     // the last answer stays on screen while the next one loads
     let hits = RwSignal::new(None::<Vec<PlayerHit>>);
     let failed = RwSignal::new(false);
-    Effect::new(move |_| {
+    let revision = crate::reference::use_reference().revision;
+    let search = LocalResource::new(move || {
         let t = term.get();
-        if t.chars().count() < MIN_CHARS {
-            return;
+        let enabled = t.chars().count() >= MIN_CHARS;
+        if enabled {
+            revision.track();
         }
-        spawn_local(async move {
-            match net::get_json::<PlayerSearch>(&format!(
-                "/api/players/search?q={}",
-                uri_component(&t)
-            ))
-            .await
-            {
-                Ok(r) if term.get_untracked() == t => {
-                    failed.set(false);
-                    hits.set(Some(r.hits));
-                }
-                Err(_) if term.get_untracked() == t => failed.set(true),
-                _ => {}
+        async move {
+            if enabled {
+                Some(
+                    net::get_json::<PlayerSearch>(&format!(
+                        "/api/players/search?q={}",
+                        uri_component(&t)
+                    ))
+                    .await,
+                )
+            } else {
+                None
             }
-        });
+        }
+    });
+    Effect::new(move |_| match search.get().flatten() {
+        Some(Ok(r)) => {
+            failed.set(false);
+            hits.set(Some(r.hits));
+        }
+        Some(Err(_)) => failed.set(true),
+        None => {}
     });
     view! {
         <div class="ds-page">

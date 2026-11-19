@@ -11,7 +11,7 @@ use storm_web_core::{
 
 use crate::{
     layout::LiveBus,
-    ui::{fetch, Link},
+    ui::{fetch_reference, Link},
 };
 
 /// Date block `20 / Apr 2026` of a patch row.
@@ -38,14 +38,24 @@ fn pill(on: bool) -> &'static str {
 pub fn Patches() -> impl IntoView {
     let nav = use_navigate();
     let kind = RwSignal::new(String::new());
+    let reference = crate::reference::use_reference();
     let bus = expect_context::<LiveBus>();
-    let data = fetch::<PatchList>(move || {
+    let data = fetch_reference::<PatchList>(move || {
         bus.patches.track(); // a new patch re-reads the list
         "/api/patches".to_string()
     });
     let items = move || match data.get() {
         Some(Ok(l)) => l.items,
         _ => Vec::new(),
+    };
+    let first_download = move || {
+        reference.status.with(|s| {
+        s.as_ref().filter(|s| s.version.is_none()).map(|s| if s.enabled {
+            "Patch notes are not cached yet. They’ll appear after the first online reference download. You can still browse your replays."
+        } else {
+            "Patch notes are not cached and reference downloads are off. You can still browse your replays."
+        })
+    })
     };
     view! {
         <div class="ds-page">
@@ -73,7 +83,10 @@ pub fn Patches() -> impl IntoView {
                     let nav = nav.clone();
                     view! {
                         {loading.then(|| view! { <div class="ds-empty">"loading…"</div> })}
-                        {(!loading && rows.is_empty()).then(|| view! { <div class="ds-empty">"No patch notes (referential unavailable?)."</div> })}
+                        {(!loading && rows.is_empty()).then(|| match first_download().filter(|_| items().is_empty()) {
+                            Some(text) => view! { <div class="ds-empty">{text} " " <Link to="/admin">"Open This PC settings"</Link></div> }.into_any(),
+                            None => view! { <div class="ds-empty">"No patch notes (referential unavailable?)."</div> }.into_any(),
+                        })}
                         <div class="ds-plist">
                             {rows.into_iter().map(|p| {
                                 let go = {

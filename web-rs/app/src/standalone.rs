@@ -300,6 +300,7 @@ pub fn ThisPc(num: Signal<u32>) -> impl IntoView {
                     </div>
                     <Autostart />
                     <Backup />
+                    <crate::reference::ReferenceControls />
                     <div class="ds-label" style="margin-top: 18px">"About"</div>
                     <div class="sa-kv">
                         <span>"Data location"</span>
@@ -307,7 +308,7 @@ pub fn ThisPc(num: Signal<u32>) -> impl IntoView {
                         <span>"App version"</span>
                         <span class="mono">{move || ctx.status.with(|s| s.as_ref().map(|s| s.version.clone()).unwrap_or_default())}</span>
                     </div>
-                    <p class="sa-privacy">"Nothing leaves this PC except the update check."</p>
+                    <p class="sa-privacy">"Replays and stats stay on this PC. Update checks and optional game reference downloads use the internet."</p>
                     <div class="ds-label" style="margin-top: 18px">"OBS browser sources"</div>
                     <div class="sa-kv">
                         {obs_urls().into_iter().map(|(label, url)| view! {
