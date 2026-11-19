@@ -106,13 +106,14 @@ once the listener is bound (`/api/health` answers 200 during the whole sequence)
    memory (never logged, never on disk). `/api/upload` keeps its auth contract for everyone.
    One server per database: a second server on the same database would rotate the token.
    Steps 3 or 5 failing → phase `error`;
-6. **live watcher** started on the folders, then the **backfill** (phase `importing` appears
+6. **backfill** (phase `importing` appears
    together with the nonzero batch total; committed projections are reflected in **folder identity**): oldest
    first, 4 at a time (at most the CPU count: the server parses one replay per core and
    answers 202 when all are busy, so a parse failure would be recorded as uploaded), through `POST http://<bound address>/api/upload` (the address actually
-   bound, so `BIND_ADDR` may use port 0). Replays reported by the watcher meanwhile wait and
-   are handled afterwards; then phase `ready`: each new replay is uploaded unless the ledger
-   already has it, and its outcome is recorded (write-through).
+   bound, so `BIND_ADDR` may use port 0). Replays reported by the watcher meanwhile wait.
+   In the live loop (normally phase `ready`), queued paths outside the current effective folders
+   are discarded. Each remaining replay is uploaded unless the ledger already has it, and its
+   outcome is recorded (write-through).
 
 A rescan or a folder change received during the backfill cancels it (the ledger is flushed) and
 the import restarts. Counts describe the current import run (backfill + live uploads since it
@@ -124,6 +125,10 @@ content error, or a `200 {"status": "parse_failed", "error_class": c}` answer (t
 archived but gave no match: too old, unsupported mode, computer players, stats failure...),
 listed with reason `not imported: c` and recorded in the ledger as rejected (never re-sent: the
 server keeps the archived copy, and `POST /api/admin/reprocess` re-parses `parse_failed` uploads).
+
+Overlapping folder saves resolve their folder lists before persisting them. Persistence,
+publication to `extraFolders`, and queueing are serialized so the worker applies changes in
+the order they were saved.
 
 **Shutdown** (Ctrl-C, SIGTERM or `POST /api/standalone/shutdown`): the import task is told to
 stop first, while the server still answers: in-flight uploads are abandoned (not recorded, the

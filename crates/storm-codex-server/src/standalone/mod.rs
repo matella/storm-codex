@@ -121,6 +121,8 @@ type Detector = Arc<dyn Fn() -> Vec<PathBuf> + Send + Sync>;
 pub struct StandaloneState {
     data_dir: PathBuf,
     view: Mutex<View>,
+    /// Serializes folder saves through persistence, status publication and enqueueing.
+    folder_save: tokio::sync::Mutex<()>,
     /// Counters of the current backfill run (replaced at each run).
     progress: Mutex<Arc<Progress>>,
     live: Mutex<LiveCounters>,
@@ -154,6 +156,7 @@ impl StandaloneState {
                 free_bytes: None,
                 needed_bytes: None,
             }),
+            folder_save: tokio::sync::Mutex::new(()),
             progress: Mutex::new(Arc::new(Progress::default())),
             live: Mutex::new(LiveCounters::default()),
             commands,

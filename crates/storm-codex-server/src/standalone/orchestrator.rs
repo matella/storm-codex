@@ -306,9 +306,22 @@ impl Orchestrator {
         }
     }
 
-    /// Uploads a replay reported by the watcher unless the ledger already has it. Abandoned
+    /// Uploads a replay from the current folders unless the ledger already has it. Abandoned
     /// (not recorded, retried at the next start) when a stop is requested meanwhile.
     async fn handle_live(&mut self, path: &Path) {
+        // Replacing the watcher does not remove events it has already queued.
+        if !self.folders.iter().any(|folder| {
+            if path.starts_with(folder) {
+                return true;
+            }
+            // notify's FSEvents backend canonicalizes roots before watching them.
+            cfg!(target_os = "macos")
+                && folder
+                    .canonicalize()
+                    .is_ok_and(|root| path.starts_with(root))
+        }) {
+            return;
+        }
         let name = path
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -471,5 +484,62 @@ pub(super) async fn seed_reference_data(app: &AppState) {
     .await
     {
         tracing::warn!("reference data: could not record the snapshot hash ({e})");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+    use axum::{http::StatusCode, routing::post, Router};
+
+    #[tokio::test]
+    async fn queued_events_only_upload_from_active_folders() {
+        let tmp = tempfile::tempdir().unwrap();
+        let kept = tmp.path().join("replays");
+        let removed = tmp.path().join("replays-old");
+        let stale = removed.join("removed.StormReplay");
+        let live = kept.join("nested/kept.StormReplay");
+        for path in [&stale, &live] {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, b"replay").unwrap();
+        }
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let router = Router::new().route("/api/upload", post(|| async { StatusCode::OK }));
+            axum::serve(listener, router).await.unwrap();
+        });
+        let app = super::super::tests::lazy_state(tmp.path(), None);
+        let st = Arc::new(StandaloneState::new(&app.cfg));
+        let ledger_path = app.cfg.ledger_path();
+        let (events_tx, events_rx) = mpsc::unbounded_channel();
+        let mut worker = Orchestrator {
+            app,
+            st: st.clone(),
+            uploader: Some(Uploader::new(base_url.clone())),
+            base_url,
+            ledger: Some(Ledger::open(&ledger_path).unwrap()),
+            ledger_path,
+            folders: vec![kept.clone(), removed],
+            watch: None,
+            events_tx,
+            events_rx,
+            commands: st.take_commands().unwrap(),
+        };
+        worker.events_tx.send(stale).unwrap();
+        worker.events_tx.send(live).unwrap();
+        worker.apply(Command::SetFolders(vec![kept])).await;
+        while let Ok(path) = worker.events_rx.try_recv() {
+            worker.handle_live(&path).await;
+        }
+        server.abort();
+
+        let ledger = worker.ledger.unwrap();
+        assert!(!ledger.contains("removed.StormReplay"));
+        assert!(ledger.contains("kept.StormReplay"));
+        assert_eq!(st.status().done, 1);
     }
 }

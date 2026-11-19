@@ -157,14 +157,6 @@ async fn put_folders(State(state): State<AppState>, Json(body): Json<FoldersBody
         .iter()
         .map(|p| p.to_string_lossy().into_owned())
         .collect();
-    if let Err(e) = save_extra_folders(&state.db, &saved).await {
-        tracing::error!(error = %e, "saving the replay folders");
-        return error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "could not save the folders".into(),
-        );
-    }
-    st.set_extra_folders(&saved);
     let resolver = st.clone();
     let folders = match tokio::task::spawn_blocking(move || {
         resolve_folders(resolver.detect(), &extras)
@@ -180,6 +172,17 @@ async fn put_folders(State(state): State<AppState>, Json(body): Json<FoldersBody
             );
         }
     };
+    // Resolve before saving so a slow scan cannot enqueue an older save after a newer one.
+    // Keep persistence, status publication and command ordering under the same lock.
+    let _save = st.folder_save.lock().await;
+    if let Err(e) = save_extra_folders(&state.db, &saved).await {
+        tracing::error!(error = %e, "saving the replay folders");
+        return error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "could not save the folders".into(),
+        );
+    }
+    st.set_extra_folders(&saved);
     if !st.send(Command::SetFolders(folders)) {
         tracing::warn!("folders saved, but the import task is not running");
         return error(

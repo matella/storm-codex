@@ -42,7 +42,7 @@ fn test_config(dir: &Path) -> Config {
 
 /// App state whose pool never reaches a database (unroutable port, 1 s acquire timeout):
 /// enough for the routes and orchestrator steps that do not need Postgres.
-fn lazy_state(dir: &Path, standalone: Option<StandaloneState>) -> AppState {
+pub(super) fn lazy_state(dir: &Path, standalone: Option<StandaloneState>) -> AppState {
     let cfg = test_config(dir);
     std::fs::create_dir_all(&cfg.archive_dir).unwrap();
     let db = sqlx::postgres::PgPoolOptions::new()
@@ -110,6 +110,19 @@ fn put_folders(folders: &[&str]) -> Request<Body> {
             serde_json::json!({ "folders": folders }).to_string(),
         ))
         .unwrap()
+}
+
+#[cfg(windows)]
+#[test]
+fn only_plain_local_folders_are_accepted() {
+    use super::is_plain_local_folder as ok;
+
+    assert!(ok(Path::new(r"C:\Users\me\Replays")));
+    assert!(!ok(Path::new(r"\\server\share\Replays")));
+    assert!(!ok(Path::new(r"\\?\UNC\server\share")));
+    assert!(!ok(Path::new(r"\\?\C:\Users\me\Replays")));
+    assert!(!ok(Path::new(r"\\.\pipe\x")));
+    assert!(!ok(Path::new(r"relative\dir")));
 }
 
 /// A replay file whose mtime is old enough for the backfill (> 2 s).
@@ -656,6 +669,62 @@ async fn put_folders_persists_and_returns_status() {
         .execute(&state.db)
         .await
         .unwrap();
+}
+
+#[tokio::test]
+async fn overlapping_folder_saves_queue_the_last_persisted_list_last() {
+    let tmp = tempfile::tempdir().unwrap();
+    let first = tmp.path().join("first");
+    std::fs::create_dir(&first).unwrap();
+    let first_str = first.to_str().unwrap();
+    let (resolving, started) = tokio::sync::oneshot::channel();
+    let (release, blocked) = std::sync::mpsc::channel();
+    let first_scan = Mutex::new(Some((resolving, blocked)));
+
+    let Some((state, _settings)) = db_state(tmp.path(), move |c| {
+        StandaloneState::new(c).with_detector(move || {
+            let gate = first_scan.lock().unwrap().take();
+            if let Some((resolving, blocked)) = gate {
+                resolving.send(()).unwrap();
+                blocked.recv_timeout(Duration::from_secs(20)).unwrap();
+            }
+            Vec::new()
+        })
+    })
+    .await
+    else {
+        return;
+    };
+    let mut commands = state.standalone.as_ref().unwrap().take_commands().unwrap();
+    let app = app(&state);
+    let slow = tokio::spawn({
+        let app = app.clone();
+        let req = put_folders(&[first_str]);
+        async move { send(&app, req).await }
+    });
+    tokio::time::timeout(Duration::from_secs(10), started)
+        .await
+        .unwrap()
+        .unwrap();
+    // The second request clears the folders while the first one's scan is held.
+    let fast = tokio::time::timeout(Duration::from_secs(10), send(&app, put_folders(&[]))).await;
+    release.send(()).unwrap();
+    let (slow_code, _) = slow.await.unwrap();
+    let (fast_code, fast_status) = fast.unwrap();
+    let saved = saved_extras(&state.db).await.unwrap();
+    clear_saved_extras(&state.db).await;
+    assert_eq!(slow_code, StatusCode::OK);
+    assert_eq!(fast_code, StatusCode::OK);
+    assert_eq!(fast_status["extraFolders"], serde_json::json!([]));
+    assert_eq!(get_status(&app).await["extraFolders"], saved);
+    let queued: Vec<_> = std::iter::from_fn(|| match commands.try_recv() {
+        Ok(Command::SetFolders(folders)) => Some(folders),
+        Ok(other) => panic!("unexpected command: {other:?}"),
+        Err(_) => None,
+    })
+    .collect();
+    assert_eq!(queued.len(), 2);
+    assert_eq!(serde_json::json!(queued.last().unwrap()), saved);
 }
 
 async fn saved_extras(db: &sqlx::PgPool) -> Option<serde_json::Value> {
