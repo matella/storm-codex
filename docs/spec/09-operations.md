@@ -102,6 +102,8 @@ setting: Pages source **GitHub Actions** (no `gh-pages` branch).
 - **Content**: `site/index.html` + `site/style.css`, static, no JavaScript, no web fonts, no analytics, strict CSP.
   `scripts/build-pages.py` fills the `{{DOWNLOAD}}` block from `GET /repos/{repo}/releases/latest` (GitHub never
   returns a draft or a prerelease there) and copies `desktop/icons/128x128.png` as `icon.png`.
+  The page exposes banner, main and content-info landmarks, prioritizes the logo and keeps the download
+  button text at WCAG AA contrast in default and hover/focus states.
 - **Stable release rule**: tag `desktop-vX.Y.Z` and exactly one asset `StormCodex_X.Y.Z_x64-setup.exe` with an
   `https://github.com/` URL. Then the page shows a **Download for Windows (x64)** button linking that asset (the
   installer is never copied to Pages), with version, date, size and release-notes link. Otherwise it says no
