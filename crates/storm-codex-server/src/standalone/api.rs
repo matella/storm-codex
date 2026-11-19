@@ -156,7 +156,7 @@ async fn put_folders(State(state): State<AppState>, Json(body): Json<FoldersBody
             format!("too many folders (at most {MAX_EXTRA_FOLDERS})"),
         );
     }
-    let mut extras = Vec::with_capacity(body.folders.len());
+    let mut extras = Vec::new(); // at most MAX_EXTRA_FOLDERS entries (checked above)
     for folder in &body.folders {
         let path = PathBuf::from(folder.trim());
         if folder.trim().is_empty() || !super::is_plain_local_folder(&path) || !path.is_dir() {
