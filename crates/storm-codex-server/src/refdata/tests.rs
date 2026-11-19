@@ -708,12 +708,27 @@ async fn a_refused_round_keeps_the_previous_data() {
     // a tampered release is refused: nothing written
     let mut bad = DirSource::new(dir.clone());
     bad.tamper = Some("game.json");
-    assert!(load::refresh(&db, &images, Arc::new(bad)).await.is_empty());
+    assert!(load::refresh(
+        &db,
+        &images,
+        Arc::new(bad),
+        8 * 1024 * 1024,
+        200 * 1024 * 1024
+    )
+    .await
+    .is_empty());
     assert_eq!(count(&db, "dim_heroes").await, 0);
 
     // a good release is ingested, images come from the verified tarball
     let src = Arc::new(DirSource::new(dir.clone()));
-    load::refresh(&db, &images, src.clone()).await;
+    load::refresh(
+        &db,
+        &images,
+        src.clone(),
+        8 * 1024 * 1024,
+        200 * 1024 * 1024,
+    )
+    .await;
     assert_eq!(count(&db, "dim_heroes").await, 9);
     assert!(images.join("heroes/abathur.png").is_file());
     assert!(images.join("battlegrounds/silver-city.png").is_file());
@@ -721,7 +736,14 @@ async fn a_refused_round_keeps_the_previous_data() {
 
     // the next round with the same datasetVersion asks only for the manifest
     let again = Arc::new(DirSource::new(dir.clone()));
-    load::refresh(&db, &images, again.clone()).await;
+    load::refresh(
+        &db,
+        &images,
+        again.clone(),
+        8 * 1024 * 1024,
+        200 * 1024 * 1024,
+    )
+    .await;
     assert_eq!(again.asked(), ["manifest.json"]);
 
     // a schema v2 manifest is refused: the data stays
@@ -731,7 +753,7 @@ async fn a_refused_round_keeps_the_previous_data() {
     m["datasetVersion"] = J::from("next");
     std::fs::write(dir.join("manifest.json"), serde_json::to_vec(&m).unwrap()).unwrap();
     let v2 = Arc::new(DirSource::new(dir));
-    load::refresh(&db, &images, v2.clone()).await;
+    load::refresh(&db, &images, v2.clone(), 8 * 1024 * 1024, 200 * 1024 * 1024).await;
     assert_eq!(v2.asked(), ["manifest.json"]);
     assert_eq!(count(&db, "dim_heroes").await, 9);
     assert_eq!(count(&db, "dim_patches").await, 5);
@@ -1105,4 +1127,50 @@ fn the_http_download_stops_at_the_archive_budget() {
     );
     assert!(std::fs::metadata(&file).unwrap().len() <= 1001);
     server.join().unwrap();
+}
+
+/// A patch whose section HTML and article both embed a `bnetcmsus-a.akamaihd.net` image ends up
+/// stored with only local `patch-images/…` paths — the P1 fix (spec 2026-11-19-patch-image-proxy):
+/// nothing in `patch_hero_sections.content` nor `dim_patches.data.detail.content` ever embeds the
+/// original Blizzard CDN URL, and the image is queued once for `load::refresh` to fetch.
+#[test]
+fn patch_image_proxy_rewrites_blizzard_cdn_images_in_both_the_article_and_its_sections() {
+    let img = "https://bnetcmsus-a.akamaihd.net/cms/gallery/x/foo.jpg";
+    let patch = json!({
+        "id": "patch-with-image",
+        "name": "Patch With Image",
+        "channel": "live",
+        "availability": "available",
+        "contents": {
+            "enus": {
+                "html": format!("<h2>Abathur</h2><p><img src=\"{img}\"></p>"),
+                "sections": [{
+                    "id": "abathur",
+                    "heading": "Abathur",
+                    "level": 2,
+                    "heroId": "Abathur",
+                    "text": "Fixed a bug.",
+                    "html": format!("<p>Fixed a bug. <img src=\"{img}\"></p>"),
+                }],
+            },
+        },
+    });
+    let canonical: HashMap<&str, String> = [("Abathur", "Abathur".to_string())].into();
+    let (row, sections, images) = build_patch(&patch, &canonical).unwrap();
+
+    // Same URL appears once in the section HTML and once in the article; `build_patch` does not
+    // dedupe within one patch (that happens in `build()`'s BTreeSet across the whole dataset) —
+    // both occurrences agree on the same local `dest`.
+    assert_eq!(images.len(), 2, "{images:?}");
+    assert!(images.iter().all(|i| i.url == img));
+    assert_eq!(images[0].dest, images[1].dest);
+    assert!(images[0].dest.starts_with("patch-images/"));
+
+    let article = row.data["detail"]["content"].as_str().unwrap();
+    assert!(!article.contains("bnetcmsus-a.akamaihd.net"), "{article}");
+    assert!(article.contains("/images/patch-images/"), "{article}");
+
+    assert_eq!(sections.len(), 1);
+    assert!(!sections[0].content.contains("bnetcmsus-a.akamaihd.net"));
+    assert!(sections[0].content.contains("/images/patch-images/"));
 }

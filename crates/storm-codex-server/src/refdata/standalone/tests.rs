@@ -756,6 +756,8 @@ async fn legacy_bundle_ingests_once_per_version_and_cannot_downgrade_a_network_g
         &db,
         &app.cfg.images_dir,
         Arc::new(DirSource::new(legacy_dir)),
+        8 * 1024 * 1024,
+        200 * 1024 * 1024,
     )
     .await;
     st.reference.load(&db).await;

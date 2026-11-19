@@ -1,5 +1,39 @@
 # STATUS — read first, update last
 
+## Patch-note image proxy/cache (2026-11-19), branch `fix/web-audit-image-proxy`
+
+Approved scope: `docs/specs/2026-11-19-patch-image-proxy.md` (addendum to the web-audit-fixes spec,
+reversing its "proxying remote patch-note images" out-of-scope line for P1(a) — the rest of that spec
+is unchanged, merged in `fix/web-audit-platform`). Patch-note HTML can embed `<img src>` pointing at
+Blizzard's CDN (`bnetcmsus-a.akamaihd.net`): `refdata::patchimg::rewrite` (new, pure, unit-tested) runs
+inside `build_patch` and replaces any such `src` with a local `/images/patch-images/<hash>.<ext>` path
+**before** the HTML is stored in Postgres, in both box and standalone mode — nothing stored ever embeds
+a live third-party URL again. Only the box (`refdata::load::refresh`) actually fetches the referenced
+images (`patchimg::fetch_missing`: size cap, content-type allowlist, atomic write), capped and
+LRU-evicted (`PATCH_IMAGE_MAX_FILE_BYTES`, `PATCH_IMAGE_CACHE_MAX_BYTES`); standalone's bundle ingestion
+stays 100% network-free, so a patch image never fetched by the box before the bundle was trimmed is
+simply missing offline (broken `<img>`, no request attempted) — strictly better than the previous leak.
+No new route: `patch-images/` is a subfolder of `IMAGES_DIR`, already served by the existing `/images`
+`ServeDir`. Server-side only; no `web-rs` file touched (a local path already passes
+`sanitize.rs::url_safe` unchanged), so this cannot conflict with the separately-scoped App-slice
+audit-fix branch. Contracts updated: `docs/spec/04-serveur.md` ("Patch-note image proxy/cache", config
+table), `docs/spec/01-architecture.md` (invariants).
+
+Self-reviewed (`[Reviewer]`, no subagent dispatch available in this session): checked the host
+allowlist against userinfo/subdomain bypass tricks (exact-match only, safe), size/content-type
+enforcement order, atomic temp+rename writes, cross-patch dedup before fetch (no duplicate-fetch race),
+and attribute-order robustness of the `<img>` regex — added a test for the last one
+(`src_is_found_regardless_of_attribute_order`). No blockers found.
+
+Verified in `storm-dev:latest` with a throwaway PostgreSQL 17 (`scripts/full-check.sh`, port 55462):
+`cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` passed; new
+module unit tests (11) and the new `refdata::tests::patch_image_proxy_rewrites_blizzard_cdn_images_in_both_the_article_and_its_sections`
+integration test pass; full workspace test suite green; `web-rs` fmt/clippy/wasm/tests unaffected
+(no `web-rs` file touched) and release bundle sizes unchanged, within budget. **Not done**: real-network
+acceptance against the live `bnetcmsus-a.akamaihd.net` CDN (only a fake `ImageFetcher` was exercised);
+carrying the patch-image cache into the standalone installer's trimmed bundle (noted out of scope in
+the spec). Committed locally on `fix/web-audit-image-proxy`; not pushed, no PR opened (operator decision).
+
 ## Second merge of `origin/main` into `feat/replay-search` (2026-11-19)
 
 Merged `origin/main` (`733fd1d`, web-audit platform fixes #61, on top of the already-integrated match

@@ -163,6 +163,8 @@ pub async fn refresh(
     db: &PgPool,
     images_dir: &Path,
     src: Arc<dyn Source>,
+    patch_image_max_file_bytes: u64,
+    patch_image_cache_max_bytes: u64,
 ) -> Vec<(String, String)> {
     let last = last_version(db).await;
     let prepared = tokio::task::spawn_blocking({
@@ -211,6 +213,31 @@ pub async fn refresh(
             Ok(Ok(n)) => tracing::info!("reference data: {n} image(s) copied"),
             Ok(Err(e)) => tracing::warn!("reference data: images not copied ({e})"),
             Err(e) => tracing::warn!("reference data: images not copied ({e})"),
+        }
+    }
+    if !rows.patch_images.is_empty() {
+        let dir = images_dir.to_path_buf();
+        let refs = rows.patch_images.clone();
+        let report = tokio::task::spawn_blocking(move || {
+            let fetcher = super::patchimg::Ureq;
+            super::patchimg::fetch_missing(&dir, &fetcher, &refs, patch_image_max_file_bytes)
+        })
+        .await;
+        match report {
+            Ok(r) => {
+                tracing::info!(
+                    "reference data: {} patch image(s) fetched, {} already cached, {} failed",
+                    r.fetched,
+                    r.already_present,
+                    r.failed
+                );
+                crate::raw::enforce_lru(
+                    &images_dir.join("patch-images"),
+                    patch_image_cache_max_bytes,
+                )
+                .await;
+            }
+            Err(e) => tracing::warn!("reference data: patch images not fetched ({e})"),
         }
     }
     new
