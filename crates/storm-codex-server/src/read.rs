@@ -64,47 +64,52 @@ pub async fn list_matches(
     let limit = f.limit.unwrap_or(50).clamp(1, 200);
     let offset = f.offset.unwrap_or(0).max(0);
     let toons = operator_toons(&s);
-    // The page is chosen first (ids only), then only its rows are expanded: deep offsets stay cheap.
+    // One statement gives the count and page the same snapshot, including for an empty page.
+    // Materialize only the matching IDs and sort keys; expand players only after LIMIT/OFFSET.
     let mut list = QueryBuilder::<Postgres>::new(
         "WITH ops AS (
             SELECT lower(jsonb_array_elements_text(value)) AS name
             FROM app_settings WHERE key = 'operator_names'
-         )
-         SELECT COALESCE(jsonb_agg(t ORDER BY t.played_at DESC NULLS LAST, t.id DESC), '[]'::jsonb)
+         ), matched AS MATERIALIZED (SELECT m.id, m.played_at",
+    );
+    push_archive_from(&mut list, &f, &search, &toons);
+    list.push(
+        "), page AS (
+           SELECT id FROM matched ORDER BY played_at DESC NULLS LAST, id DESC LIMIT ",
+    )
+    .push_bind(limit)
+    .push(" OFFSET ")
+    .push_bind(offset)
+    .push(
+        ")
+         SELECT (SELECT count(*) FROM matched),
+                COALESCE(json_agg(t ORDER BY t.played_at DESC NULLS LAST, t.id DESC), '[]')::text
          FROM (
            SELECT m.id, m.map, m.mode, m.played_at, m.length, m.winner, m.build,
              me.toon_handle AS perspective_toon,
-             (SELECT jsonb_agg(jsonb_build_object(
-                 'toon', mp.toon_handle, 'name', mp.name, 'hero', mp.hero,
-                 'team', mp.team, 'win', mp.win,
-                 'kills', mp.kills, 'deaths', mp.deaths, 'takedowns', mp.takedowns,
-                 'award', mp.data #>> '{gameStats,awards,0}')
-                 ORDER BY mp.team, mp.id)
+             (SELECT json_agg((SELECT player FROM (SELECT
+                 mp.toon_handle AS toon, mp.name, mp.hero, mp.team, mp.win,
+                 mp.kills, mp.deaths, mp.takedowns, mp.data #>> '{gameStats,awards,0}' AS award
+               ) player) ORDER BY mp.team, mp.id)
               FROM match_players mp WHERE mp.match_id = m.id) AS players
-           FROM (SELECT m.id",
+           FROM page JOIN matches m ON m.id = page.id",
     );
-    push_archive_from(&mut list, &f, &search, &toons);
-    list.push(" ORDER BY m.played_at DESC NULLS LAST, m.id DESC LIMIT ")
-        .push_bind(limit)
-        .push(" OFFSET ")
-        .push_bind(offset)
-        .push(") page JOIN matches m ON m.id = page.id");
     push_me_join(&mut list, f.account.as_deref(), &toons, true);
     list.push(") t");
-    let mut count = QueryBuilder::<Postgres>::new(
-        "WITH ops AS (
-            SELECT lower(jsonb_array_elements_text(value)) AS name
-            FROM app_settings WHERE key = 'operator_names'
-         )
-         SELECT count(*)",
-    );
-    push_archive_from(&mut count, &f, &search, &toons);
-    let (v, total): (J, i64) = tokio::try_join!(
-        list.build_query_scalar().fetch_one(&s.db),
-        count.build_query_scalar().fetch_one(&s.db),
+    // The database already serialized the JSON; relay it without rebuilding a serde_json::Value.
+    let (total, body): (i64, String) = list
+        .build_query_as()
+        .fetch_one(&s.db)
+        .await
+        .map_err(db_err)?;
+    Ok((
+        [
+            (TOTAL_COUNT, total.to_string()),
+            ("content-type", "application/json".to_string()),
+        ],
+        body,
     )
-    .map_err(db_err)?;
-    Ok(([(TOTAL_COUNT, total.to_string())], Json(v)).into_response())
+        .into_response())
 }
 
 /// Response header of `/api/matches` with the number of games matching the filters.

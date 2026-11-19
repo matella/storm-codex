@@ -19,6 +19,22 @@ PostgreSQL 17, web fmt/clippy native+wasm32, 154 web tests, trunk release build 
 check on the synthetic archive: Braxis example, with picker, stat switch, chip removal, Load more, back button,
 perspective error. Not pushed.
 
+### Paging and parsing follow-up (2026-11-19)
+
+The archive now uses one database snapshot for page + count. The UI discards stale responses on filter,
+import, reference-revision or operator changes, advances by server rows rather than unique displayed IDs,
+and offers retry/reload recovery. JSON and CSV reject repeated and unknown bound keys, including blank ones.
+No migration changed. The **200-row contract is unchanged; <50 ms p95 remains open**: warm release HTTP p95
+70.3 ms unfiltered, 75.3 ms teammate + death bound, 79.7 ms all typed bounds on the 3,500-game synthetic
+fixture. Query variants and diagnostics are in the dated spec; the box DB was not used.
+
+Passed on throwaway PostgreSQL 17/55520: 520 workspace tests (serial, 10 ignored), strict Clippy and fmt;
+158 web tests, native/wasm Clippy and fmt, all three Trunk release builds and size gates (app 1,010,441 bytes
+Brotli). A parallel workspace run hit an intermittent insights-corpus assertion; an earlier parallel run and
+the fresh-DB serial run passed. Chromium verified native keyboard controls, stale responses across an injected
+import event and filter change, same-offset retry and zero-progress reload. Real OBS, Windows installer,
+box DB validation and an independent review were not run. No push or deployment.
+
 ## CI action pins and desktop release notes (2026-11-19), branch `ci/pin-actions-release-notes`
 
 Every action in `ci.yml` is now pinned to a full commit SHA (version in a comment, Dependabot `github-actions`

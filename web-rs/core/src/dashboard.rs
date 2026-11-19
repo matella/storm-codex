@@ -1,6 +1,8 @@
 //! Session and Matches pages: the operator's games, the last session, form and tallies, and the URL-driven filter of
 //! the archive. Port of `session.ts` (page logic) and the filter code of `Matches.tsx`.
 
+pub mod paging;
+
 use crate::{
     aggregates::form_encode,
     route::{query_pairs, query_value},

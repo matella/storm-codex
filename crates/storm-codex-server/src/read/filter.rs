@@ -4,6 +4,7 @@
 //! fragments they add to the archive query. Every value is bound; only constant fragments are pushed.
 
 use sqlx::{Postgres, QueryBuilder};
+use std::collections::HashSet;
 
 /// Rejected filter parameter (the name is returned to the client as `param`).
 #[derive(Debug, PartialEq, thiserror::Error)]
@@ -82,29 +83,41 @@ fn number(key: &str, value: &str, cap: f64) -> Result<f64, BadFilter> {
 }
 
 /// Parses the replay search parameters out of the raw query pairs; other parameters are ignored
-/// (they belong to `MatchFilter`). Empty values count as absent; unknown `min_*` / `max_*` names
-/// are rejected, not ignored.
+/// (they belong to `MatchFilter`). Known bounds may be blank, but must not be repeated.
 pub fn parse(pairs: &[(String, String)]) -> Result<Search, BadFilter> {
     let mut s = Search::default();
+    let mut bounds = HashSet::new();
     for (key, value) in pairs {
-        if value.trim().is_empty() {
-            continue;
-        }
-        let text = || Some(value.trim().to_string());
+        let value = value.trim();
         match key.as_str() {
-            "my_hero" => s.my_hero = text(),
-            "with" => s.with = text(),
-            "against" => s.against = text(),
-            "min_len" => s.min_len_s = Some(number(key, value, LEN_CAP_MIN)? * 60.0),
-            "max_len" => s.max_len_s = Some(number(key, value, LEN_CAP_MIN)? * 60.0),
+            "my_hero" | "with" | "against" if value.is_empty() => continue,
+            "my_hero" => s.my_hero = Some(value.to_string()),
+            "with" => s.with = Some(value.to_string()),
+            "against" => s.against = Some(value.to_string()),
             _ => {
-                let (min, stat) = match (key.strip_prefix("min_"), key.strip_prefix("max_")) {
-                    (Some(stat), _) => (true, stat),
-                    (None, Some(stat)) => (false, stat),
+                let (min, name) = match (key.strip_prefix("min_"), key.strip_prefix("max_")) {
+                    (Some(name), _) => (true, name),
+                    (None, Some(name)) => (false, name),
                     (None, None) => continue,
                 };
-                let stat = Stat::parse(stat).ok_or_else(|| BadFilter(key.clone()))?;
-                s.stats.push((stat, min, number(key, value, STAT_CAP)?));
+                if !bounds.insert(key) {
+                    return Err(BadFilter(key.clone()));
+                }
+                if name == "len" {
+                    if !value.is_empty() {
+                        let bound = if min {
+                            &mut s.min_len_s
+                        } else {
+                            &mut s.max_len_s
+                        };
+                        *bound = Some(number(key, value, LEN_CAP_MIN)? * 60.0);
+                    }
+                } else {
+                    let stat = Stat::parse(name).ok_or_else(|| BadFilter(key.clone()))?;
+                    if !value.is_empty() {
+                        s.stats.push((stat, min, number(key, value, STAT_CAP)?));
+                    }
+                }
             }
         }
     }

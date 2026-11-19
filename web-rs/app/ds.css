@@ -95,7 +95,8 @@
 .ds-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .ds-chip { display: inline-flex; align-items: center; gap: 7px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 30px; padding: 3px 10px 3px 3px; font-size: 12px; }
 .ds-chip.text { padding: 4px 10px; }
-.ds-chip b { font: 600 11px var(--mono); color: var(--accent-2); }
+.ds-chip b, .ds-chip button { font: 600 11px var(--mono); color: var(--accent-2); }
+.ds-chip button { cursor: pointer; background: none; border: 0; padding: 2px 4px; }
 .ds-chip em { font-style: normal; color: var(--muted-2); font-size: 11px; }
 .ds-none { color: var(--kicker); }
 

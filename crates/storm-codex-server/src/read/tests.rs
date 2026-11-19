@@ -295,9 +295,14 @@ async fn replay_search_filters_on_the_perspective_row() {
         "limit and offset are clamped"
     );
 
-    // Invalid parameters name themselves; unknown stats are rejected.
+    // Invalid parameters name themselves, including unknown and repeated blank bounds.
     for (query, param) in [
         ("min_siege=1", "min_siege"),
+        ("max_siege=%20", "max_siege"),
+        ("min_kills=1&min%5Fkills=2", "min_kills"),
+        ("max_deaths=&max_deaths=2", "max_deaths"),
+        ("min_len=5&min_len=", "min_len"),
+        ("max_len=&max_len=", "max_len"),
         ("max_deaths=many", "max_deaths"),
         ("min_len=inf", "min_len"),
         ("with=1-Hero-1-11&against=1-Hero-1-11", "against"),
@@ -309,15 +314,10 @@ async fn replay_search_filters_on_the_perspective_row() {
             json!({"error": "bad_filter", "param": param}),
             "{query}"
         );
-        let (status, _) = call_raw(
-            &state,
-            "GET",
-            &format!("/api/matches.csv?{query}"),
-            None,
-            vec![],
-        )
-        .await;
+        let (status, csv_body) =
+            call(&state, "GET", &format!("/api/matches.csv?{query}"), None).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "csv {query}");
+        assert_eq!(csv_body, body, "csv {query}");
     }
 
     // Without a configured operator, perspective filters need an explicit account.
@@ -335,6 +335,89 @@ async fn replay_search_filters_on_the_perspective_row() {
     let (status, total, list) = get_counted(&state, "/api/matches?account=me&my_hero=Valla").await;
     assert_eq!((status, total), (StatusCode::OK, Some(1)));
     assert_eq!(list[0]["id"], m2);
+    drop(state);
+    drop_db(db, &db_name).await;
+}
+
+#[tokio::test]
+async fn page_and_count_use_the_same_snapshot_during_import() {
+    use std::time::Duration;
+
+    let Some(mut state) = test_state(None).await else {
+        return;
+    };
+    let (db, db_name) = isolated_db().await.unwrap();
+    // A one-connection read pool forces two separate statements to take snapshots in order.
+    state.db = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect_with((*db.connect_options()).clone())
+        .await
+        .unwrap();
+    let old = insert_match(&db, None, &[row("1-Hero-1-1", "Me", 0, "Jaina")]).await;
+    sqlx::query("UPDATE matches SET length = 900 WHERE id = $1")
+        .bind(old)
+        .execute(&db)
+        .await
+        .unwrap();
+    // Pause the reader at player expansion after it has chosen the page and taken its snapshot.
+    sqlx::raw_sql(
+        "ALTER TABLE match_players RENAME TO fixture_players;
+         CREATE FUNCTION wait_for_fixture_import() RETURNS boolean LANGUAGE plpgsql VOLATILE AS $$
+         BEGIN PERFORM pg_advisory_xact_lock(31415); RETURN true; END; $$;
+         CREATE VIEW match_players AS SELECT * FROM fixture_players WHERE wait_for_fixture_import();",
+    )
+    .execute(&db)
+    .await
+    .unwrap();
+    let mut writer = db.begin().await.unwrap();
+    sqlx::query("SELECT pg_advisory_xact_lock(31415)")
+        .execute(&mut *writer)
+        .await
+        .unwrap();
+    let request = tokio::spawn(async move {
+        let response = get_counted(&state, "/api/matches?limit=1&min_len=0").await;
+        (state, response)
+    });
+    let waiting = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory'
+                   AND NOT granted AND objid = 31415
+                   AND database = (SELECT oid FROM pg_database WHERE datname = current_database()))",
+            )
+            .fetch_one(&mut *writer)
+            .await
+            .unwrap();
+            if waiting {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    assert!(
+        waiting.is_ok(),
+        "page expansion should reach the import barrier"
+    );
+    let imported: i64 = sqlx::query_scalar(
+        "INSERT INTO matches (fingerprint, parser_version, map, length, played_at, data)
+         VALUES ('concurrent-import', 1, 'Braxis Holdout', 900, now(), '{}') RETURNING id",
+    )
+    .fetch_one(&mut *writer)
+    .await
+    .unwrap();
+    writer.commit().await.unwrap();
+    let (state, (status, total, page)) = request.await.unwrap();
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(page[0]["id"], old);
+    assert_eq!(
+        total,
+        Some(1),
+        "the in-flight page must not count the import"
+    );
+    let (status, total, page) = get_counted(&state, "/api/matches?limit=1&min_len=0").await;
+    assert_eq!((status, total), (StatusCode::OK, Some(2)));
+    assert_eq!(page[0]["id"], imported);
     drop(state);
     drop_db(db, &db_name).await;
 }

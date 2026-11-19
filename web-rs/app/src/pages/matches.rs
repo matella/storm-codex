@@ -8,7 +8,11 @@ use leptos_router::{
 };
 use storm_web_core::{
     aggregates::{has_map_art, HeroStat, MapStat, MODES},
-    dashboard::{archive_player, set_params, MatchFilter, SEARCH_STATS},
+    dashboard::{
+        archive_player,
+        paging::{ArchivePages, PageIssue},
+        set_params, MatchFilter, SEARCH_STATS,
+    },
     net,
     session::{award_label, fmt_dur, MatchSummary},
 };
@@ -17,8 +21,7 @@ use crate::{
     matchui::{ModeTag, SearchSelect},
     pages::compare::Picker,
     ui::{
-        fetch, fetch_operator_stats_counted, fetch_reference, map_art, use_account_options,
-        Portrait, Tone,
+        archive_generation, fetch, fetch_reference, map_art, use_account_options, Portrait, Tone,
     },
 };
 
@@ -85,32 +88,62 @@ pub fn Matches() -> impl IntoView {
                 .flatten(),
         )
     };
-    let page_url = move |offset: usize| {
+    let retry_generation = RwSignal::new(0u64);
+    let generation = archive_generation(move || {
+        retry_generation.track();
         let f = filter.get();
         let (a, b) = bounds(&f);
-        let offset = offset.to_string();
         format!(
             "/api/matches?{}",
-            f.api_query(
-                a.as_deref(),
-                b.as_deref(),
-                &[("limit", LIMIT), ("offset", offset.as_str())]
-            )
+            f.api_query(a.as_deref(), b.as_deref(), &[("limit", LIMIT)])
         )
-    };
-    let data = fetch_operator_stats_counted::<Vec<MatchSummary>>(move || page_url(0));
-    // "Load more": later pages, dropped whenever the first page is read again (filters, new match, settings).
-    let more = RwSignal::new(Vec::<MatchSummary>::new());
-    let more_busy = RwSignal::new(false);
-    let epoch = StoredValue::new(0u32);
-    Effect::new(move |_| {
-        data.track();
-        epoch.update_value(|e| *e += 1);
-        more.set(Vec::new());
-        more_busy.set(false);
     });
-    let base = move || data.get().and_then(Result::ok);
-    let total = move || base().and_then(|(_, t)| t);
+    let paging = RwSignal::new(ArchivePages::default());
+    let request_page = move |(epoch, url): (u64, String)| {
+        let request = paging
+            .try_update(|p| (p.generation == epoch).then(|| p.start()).flatten())
+            .flatten();
+        if let Some(request) = request {
+            let url = format!("{url}&offset={}", request.offset);
+            spawn_local(async move {
+                let result = net::get_json_counted::<Vec<MatchSummary>>(&url)
+                    .await
+                    .and_then(|(rows, total)| {
+                        total
+                            .map(|total| (rows, total))
+                            .ok_or_else(|| "Missing match count".to_string())
+                    });
+                // Compare the live generation, not just the last completed page or scheduled reset.
+                if generation.try_with_untracked(|(current, _)| *current == epoch) == Some(true) {
+                    paging.update(|p| p.finish(epoch, request, result));
+                }
+            });
+        }
+    };
+    Effect::new(move |_| {
+        let key = generation.get();
+        paging.set(ArchivePages::new(key.0));
+        request_page(key);
+    });
+    let current = move || generation.with(|(epoch, _)| paging.with(|p| p.generation == *epoch));
+    let total = move || current().then(|| paging.with(|p| p.total)).flatten();
+    let issue = move || {
+        current()
+            .then(|| paging.with(|p| p.issue.clone()))
+            .flatten()
+    };
+    let loading = move || total().is_none() && issue().is_none();
+    let list = move || {
+        if current() {
+            paging.with(|p| p.rows.clone())
+        } else {
+            Vec::new()
+        }
+    };
+    let load_more = move || request_page(generation.get_untracked());
+    let has_more = move || current() && paging.with(ArchivePages::has_more);
+    let more_busy = move || current() && paging.with(ArchivePages::busy);
+    let reload = move || retry_generation.update(|n| *n += 1);
     let maps = fetch::<Vec<MapStat>>(|| "/api/maps".to_string());
     let heroes = fetch_reference::<Vec<HeroStat>>(|| "/api/heroes".to_string());
     let map_options = Signal::derive(move || {
@@ -136,31 +169,6 @@ pub fn Matches() -> impl IntoView {
         v
     });
     let active = move || !search().trim_start_matches('?').is_empty();
-    let list = move || {
-        let mut l = base().map(|(l, _)| l).unwrap_or_default();
-        let mut seen: std::collections::HashSet<i64> = l.iter().map(|m| m.id).collect();
-        l.extend(more.get().into_iter().filter(|m| seen.insert(m.id)));
-        l
-    };
-    let load_more = move || {
-        if more_busy.get_untracked() {
-            return;
-        }
-        let url = untrack(|| page_url(list().len()));
-        let e = epoch.get_value();
-        more_busy.set(true);
-        spawn_local(async move {
-            let page = net::get_json::<Vec<MatchSummary>>(&url).await;
-            if epoch.get_value() == e {
-                if let Ok(page) = page {
-                    more.update(|m| m.extend(page));
-                }
-                more_busy.set(false);
-            }
-        });
-    };
-    let has_more = move || total().is_some_and(|t| (list().len() as u64) < t);
-    let error = move || data.get().and_then(Result::err);
     // display name of a toon in the loaded games (the URL only carries the toon)
     let toon_name = move |toon: &str| {
         list()
@@ -192,7 +200,7 @@ pub fn Matches() -> impl IntoView {
                 <h1 class="ds-title" style="cursor: default">"Matches"</h1>
                 <div class="ds-subtitle" style="cursor: default">
                     {move || {
-                        if data.get().is_none() {
+                        if loading() {
                             return "loading…".into_any();
                         }
                         let l = list();
@@ -318,9 +326,9 @@ pub fn Matches() -> impl IntoView {
                         (!c.is_empty()).then(|| view! {
                             <div class="ds-chips">
                                 {c.into_iter().map(|(k, label)| view! {
-                                    <span class="ds-chip text">{label}" "
-                                        <b role="button" tabindex="0" title="remove" style="cursor: pointer"
-                                            on:click=move |_| set_param_url.with_value(|f| f(&k, String::new()))>"✕"</b>
+                                    <span class="ds-chip text">{label.clone()}" "
+                                        <button type="button" aria-label=format!("Remove {label}")
+                                            on:click=move |_| set_param_url.with_value(|f| f(&k, String::new()))>"✕"</button>
                                     </span>
                                 }).collect_view()}
                             </div>
@@ -330,13 +338,8 @@ pub fn Matches() -> impl IntoView {
             </header>
 
             <section class="ds-sec" style="margin-top: 26px">
-                {move || data.get().is_none().then(|| view! { <div class="ds-empty">"loading…"</div> })}
-                {move || error().map(|e| view! { <div class="ds-empty">{match e.as_str() {
-                    "perspective_required" => "These filters apply to your own games: set your in-game name first (Admin → My identity).".to_string(),
-                    "bad_filter" => "A filter value is not valid.".to_string(),
-                    _ => format!("Could not load the matches ({e})."),
-                }}</div> })}
-                {move || (base().is_some() && list().is_empty()).then(|| view! { <div class="ds-empty">"No match for this filter."</div> })}
+                {move || loading().then(|| view! { <div class="ds-empty">"loading…"</div> })}
+                {move || (total() == Some(0) && issue().is_none()).then(|| view! { <div class="ds-empty">"No match for this filter."</div> })}
                 <div class="ds-mlist">
                     {move || {
                         list().into_iter().map(|m| {
@@ -371,11 +374,26 @@ pub fn Matches() -> impl IntoView {
                         }).collect_view()
                     }}
                 </div>
-                <Show when=has_more>
+                {move || issue().map(|issue| {
+                    let (message, action, restart) = match issue {
+                        PageIssue::Failed(e) => (match e.as_str() {
+                            "perspective_required" => "These filters apply to your own games: set your in-game name first (Admin → My identity).".to_string(),
+                            "bad_filter" => "A filter value is not valid.".to_string(),
+                            _ => format!("Could not load the matches ({e})."),
+                        }, "Retry", false),
+                        PageIssue::NoProgress { .. } => ("This page did not add any matches.".to_string(), "Reload results", true),
+                    };
+                    view! {
+                        <div class="ds-empty" role="status">{message} " "
+                            <button type="button" class="ds-btn" on:click=move |_| if restart { reload() } else { load_more() }>{action}</button>
+                        </div>
+                    }
+                })}
+                <Show when=move || has_more() && !matches!(issue(), Some(PageIssue::Failed(_)))>
                     <div style="display: flex; justify-content: center; margin-top: 14px">
-                        <span class="ds-btn" role="button" tabindex="0" on:click=move |_| load_more()>
-                            {move || if more_busy.get() { "loading…" } else { "Load more" }}
-                        </span>
+                        <button type="button" class="ds-btn" disabled=more_busy on:click=move |_| load_more()>
+                            {move || if more_busy() { "loading…" } else { "Load more" }}
+                        </button>
                     </div>
                 </Show>
             </section>

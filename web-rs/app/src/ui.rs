@@ -395,21 +395,18 @@ pub fn fetch_operator_stats<T: DeserializeOwned + 'static>(
     })
 }
 
-/// [`fetch_operator_stats`] for a list read that also returns its `X-Total-Count` header (the Matches archive).
-/// Same tracking: reference revision, live matches, operator settings and verified toons.
-pub fn fetch_operator_stats_counted<T: DeserializeOwned + 'static>(
-    url: impl Fn() -> String + 'static,
-) -> LocalResource<Result<(T, Option<u64>), String>> {
+/// Snapshot the archive URL and revision together, before any async read. A generation also changes
+/// when a refresh keeps the same URL (import, reference activation or operator settings).
+pub fn archive_generation(url: impl Fn() -> String + Send + Sync + 'static) -> Memo<(u64, String)> {
     let op = expect_context::<Operator>();
     let matches = expect_context::<crate::layout::LiveBus>().matches;
     let refresh = crate::reference::use_reference().refresh;
-    LocalResource::new(move || {
+    Memo::new(move |previous: Option<&(u64, String)>| {
         refresh.track();
         matches.track();
         op.manual.track();
         op.toons.track();
-        let u = url();
-        async move { net::get_json_counted::<T>(&u).await }
+        (previous.map_or(1, |(n, _)| n + 1), url())
     })
 }
 

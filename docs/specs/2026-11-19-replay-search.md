@@ -138,3 +138,25 @@ The open questions were resolved as follows:
   p95 up to 121 ms unfiltered and 98–114 ms with filters. A quiet-host run on the box DB copy is still needed.
 - **Bundle.** App 1,009,761 bytes Brotli (+13,977 vs 995,784): above the current 1 MB cap, within the 1.25 MB cap of
   PR #53 (must merge first).
+
+### Paging and validation follow-up
+
+- Page and count now use one snapshot and one materialized set of filtered IDs; empty and out-of-range pages
+  still include the count. The UI keys paging to filters, live imports, reference revisions and operator changes.
+  It ignores stale successes and errors, counts consumed server rows independently of visible IDs, and can retry
+  a failed offset or reload after no progress. Offset paging does not freeze the archive across HTTP requests.
+- JSON and CSV reject repeated bounds and unknown `min_*`/`max_*` keys even when blank. A single blank known
+  bound is still absent. Chips and Load more are native buttons.
+
+The **200-row / <50 ms p95 contract is unchanged and the target remains open**. See the current latency
+measurement in `docs/spec/01-architecture.md`. In an interleaved `psql` probe on the same synthetic archive,
+materializing the count with JSONB was ~79 ms p95 for the first page (old page query alone ~77 ms); expanding
+into JSON via `json_build_object` was ~65 ms, direct JSON record aggregation ~63 ms, and set-based player
+aggregation ~63 ms. The direct record shape ships; its HTTP endpoint also avoids a Rust JSON round trip.
+A second paired SQL-only probe measured 63.2 ms with the awards and 8.5 ms with `NULL::text AS award` (20 warm
+samples each). The latter is a diagnostic, not a candidate response. No migration was added or edited.
+
+Next decision: retain 200 and explicitly accept the measured latency, or approve a separate change to measure
+materializing awards while preserving the 200-row response. Reducing the page size also changes the approved
+contract and would require approval and a new worst-case measurement (as a diagnostic, 100 rows measured
+44.1 ms for teammate + death bound and 47.9 ms for all typed bounds). A box DB copy was not used in this run.
