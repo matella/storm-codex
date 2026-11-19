@@ -1,5 +1,33 @@
 # STATUS — read first, update last
 
+## Dependabot alert #1 (glib unsoundness), branch `fix/glib-advisory` (2026-11-19)
+
+Investigated GHSA-wrw7-89jp-8q8g / RUSTSEC-2024-0429 (`glib` 0.18.5, medium, transitive via
+`tauri`→`wry`→`gtk`/`webkit2gtk` in `desktop/Cargo.lock`, Linux only). **Blocked upstream, no
+action taken** — full writeup in `docs/research/2026-11-19-glib-dependabot-alert.md`.
+
+- Latest Tauri 2.x (`tauri` 2.12.7, `wry` 0.57.3 as of today) still hard-pins
+  `webkit2gtk = "=2.0.2"` / `gtk = "0.18"` in `wry`'s own `Cargo.toml`, which resolves `glib`
+  0.18.5. Confirmed empirically: `cargo update` in `desktop/` (inside `storm-dev:latest`,
+  `storm-cargo-registry` volume) bumped `tauri`/`wry` patch versions but left `glib` and
+  `webkit2gtk` unchanged; reverted (`git checkout -- Cargo.lock`), not committed.
+- `tauri-apps/tauri#12048` (the upstream tracking issue) was closed "not planned": gtk3-rs is
+  EOL, and `webkit2gtk-rs` (Tauri's fork) would need a GTK4-era rewrite to move past glib 0.18.
+- `cargo audit` (0.23.0, `storm-cargo-bin` volume) against the unmodified lockfile reproduces
+  the alert directly: `glib 0.18.5`, `RUSTSEC-2024-0429`, "Upgrade to >=0.20.0" with no
+  resolvable fix today.
+- A `webkit2gtk` 3.0.0 crate requiring `glib ^0.22` was published on crates.io today, but no
+  `wry`/`tauri` release depends on it yet — noted as a trigger to re-check, not something
+  consumable now.
+- Not vendor-patched, downgraded, or feature-dropped to dodge the check (explicitly out of
+  scope). No dependency, lockfile, or source change committed. No build/test suite run was
+  needed since nothing changed; `cargo update`/`cargo audit` were the only commands run,
+  both reverted/read-only.
+- Operator decision needed: accept the alert as open-and-tracked (re-check on each Tauri
+  Dependabot PR) until `wry` ships a `webkit2gtk-rs`/gtk-rs bump, or consider the Linux
+  webview backend's exposure acceptable to dismiss for now. No code or dependency changes
+  pending either way.
+
 ## Second merge of `origin/main` into `feat/replay-search` (2026-11-19)
 
 Merged `origin/main` (`733fd1d`, web-audit platform fixes #61, on top of the already-integrated match
