@@ -15,7 +15,7 @@
 
 use std::path::PathBuf;
 
-use axum::extract::{Request, State};
+use axum::extract::{DefaultBodyLimit, Request, State};
 use axum::http::{header, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
@@ -30,7 +30,10 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/standalone/status", get(status))
         .route("/api/standalone/identity", get(identity))
-        .route("/api/standalone/folders", put(put_folders))
+        .route(
+            "/api/standalone/folders",
+            put(put_folders).layer(DefaultBodyLimit::max(FOLDERS_BODY_LIMIT)),
+        )
         .route("/api/standalone/rescan", post(rescan))
         .route("/api/standalone/shutdown", post(shutdown))
 }
@@ -130,6 +133,11 @@ async fn identity(State(state): State<AppState>) -> Response {
     }
 }
 
+/// Body limit of `PUT /api/standalone/folders` (the app-wide 64 MB limit is sized for replays).
+const FOLDERS_BODY_LIMIT: usize = 64 * 1024;
+/// Most extra replay folders a player can save; a real install has a handful.
+const MAX_EXTRA_FOLDERS: usize = 64;
+
 #[derive(Deserialize)]
 struct FoldersBody {
     folders: Vec<String>,
@@ -142,7 +150,13 @@ async fn put_folders(State(state): State<AppState>, Json(body): Json<FoldersBody
     let Some(st) = state.standalone.clone() else {
         return not_found();
     };
-    let mut extras = Vec::with_capacity(body.folders.len());
+    if body.folders.len() > MAX_EXTRA_FOLDERS {
+        return error(
+            StatusCode::BAD_REQUEST,
+            format!("too many folders (at most {MAX_EXTRA_FOLDERS})"),
+        );
+    }
+    let mut extras = Vec::new(); // at most MAX_EXTRA_FOLDERS entries (checked above)
     for folder in &body.folders {
         let path = PathBuf::from(folder.trim());
         if folder.trim().is_empty() || !super::is_plain_local_folder(&path) || !path.is_dir() {

@@ -34,7 +34,9 @@ before/after on the 114 replays of the local corpus, and the parity diff green a
 Any change to `src/process/` reruns the diff before merging. Run `diff.py` with the
 **absolute path** of the corpus if the `.ref/` references were produced that way (otherwise only
 `match.filename` differs). Last run: 2026-11-07, 114/114 (`diff.py` finds the
-`storm-stats-dump` binary on Linux as on Windows).
+`storm-stats-dump` binary on Linux as on Windows). Setup and run: `tools/parity-harness/README.md`
+(`npm ci` with install scripts; heroprotocol's protocol tables come from `Blizzard/heroprotocol` at a
+pinned commit, fetched with git by `vendor/download-github-repo`).
 
 ## Accepted divergences (the ONLY ones — any new divergence is documented here + tolerances.json)
 

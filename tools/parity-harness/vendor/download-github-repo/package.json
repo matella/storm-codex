@@ -1,0 +1,8 @@
+{
+  "name": "download-github-repo",
+  "version": "0.1.4-storm-codex.1",
+  "description": "Drop-in replacement used by heroprotocol's postinstall: fetches Blizzard/heroprotocol at a pinned commit with git instead of downloading and extracting a zip (removes download/decompress/got).",
+  "main": "index.js",
+  "license": "MIT",
+  "private": true
+}

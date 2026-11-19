@@ -36,13 +36,14 @@ pub async fn get_raw(
     Path(id): Path<i64>,
     Query(q): Query<RawQuery>,
 ) -> Response {
-    if !STREAMS.contains(&q.stream.as_str()) {
+    // The cache file name only ever embeds the allow-listed constant, never the query string.
+    let Some(stream) = STREAMS.iter().copied().find(|s| *s == q.stream) else {
         return (
             StatusCode::BAD_REQUEST,
             format!("stream inconnu : {}", q.stream),
         )
             .into_response();
-    }
+    };
     // archived file of an upload that produced this match
     let archived: Option<String> = sqlx::query_scalar(
         "SELECT archived_path FROM uploads WHERE match_id = $1 AND status = 'parsed'
@@ -61,7 +62,7 @@ pub async fn get_raw(
             .into_response();
     };
 
-    let cache = s.cfg.raw_cache_dir.join(format!("{id}-{}.json", q.stream));
+    let cache = s.cfg.raw_cache_dir.join(format!("{id}-{stream}.json"));
     // hit: we touch the file (LRU by access mtime) and serve it
     if let Ok(bytes) = tokio::fs::read(&cache).await {
         let _ = filetime_now(&cache);
@@ -69,8 +70,7 @@ pub async fn get_raw(
     }
 
     // miss: decoding on the fly (CPU) off the runtime thread
-    let stream = q.stream.clone();
-    let decoded = tokio::task::spawn_blocking(move || decode_stream(&file, &stream)).await;
+    let decoded = tokio::task::spawn_blocking(move || decode_stream(&file, stream)).await;
     let json = match decoded {
         Ok(Ok(v)) => v,
         Ok(Err(e)) => {
