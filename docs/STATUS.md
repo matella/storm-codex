@@ -24,6 +24,25 @@ to the full body; Range always wins). Rechecked on the merged tree (origin/main'
 integrated locally): server fmt, strict Clippy and 517 workspace tests passed (10 ignored, throwaway
 Postgres 17); web-rs and packaging not reverified by this review pass (no web-rs or desktop changes).
 
+## Session review (2026-11-19), branch `feat/session-review`
+
+Approved spec: `docs/specs/2026-11-19-session-review.md` (operator decisions: baseline = modes played in the
+session, best/worst = most stats above the hero average with KDA ties, fixed 3 h gap). New `GET /api/sessions` and
+`GET /api/sessions/{id}` on the insights corpus (pure logic `insights/session.rs`); the Session page reads them
+(`?s=<id>`, previous / next links, new Review section; "Your form" unchanged). Measured on a copy of the box DB
+(3,492 games): p95 6.7 ms for both endpoints. Deviations are listed in the spec's implementation notes
+(deaths count as better when lower; `baseline.modes` added).
+
+Review fixes: rank only games with comparable data, using the rounded deltas returned to the page.
+Transport and server errors no longer look like empty or missing sessions. Verified with the
+server workspace tests on throwaway PostgreSQL and Chromium against controlled HTTP responses.
+
+Merged `origin/main` (`b89c12d`). The incremental corpus test now checks owned IDs and player rows, not
+global growth. Deleting two fixtures while inserting one reproduced the old assertion failure; the corrected
+test and 15 parallel insights-suite runs passed. Linux PostgreSQL 17 workspace tests: 526 passed, 10 ignored;
+web tests: 159 passed. Release app: **1,016,321 bytes Brotli** (cap 1,250,000). Installed standalone acceptance
+and API latency during an import remain pending.
+
 ## Release notes in the desktop update banner (2026-11-19), branch `feat/update-notes`
 
 The shell forwards latest.json `notes` (`Update::body`, trimmed, `null` when blank) in `update_status`; the web update

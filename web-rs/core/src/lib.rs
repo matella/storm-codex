@@ -18,6 +18,7 @@ pub mod patchnotes;
 pub mod players;
 pub mod replay2d;
 pub mod reportexport;
+pub mod review;
 pub mod route;
 pub mod sanitize;
 pub mod scenes;

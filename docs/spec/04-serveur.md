@@ -36,7 +36,8 @@ POST /api/upload(-raw)  [personal Bearer token]
 ## Process lifecycle (`main.rs`)
 
 - **Insights corpus warm-up** (`insights::cache::warm_up`): spawned at startup, loads the in-memory corpus of the
-  local insights in the background (see `05-api.md`, "Local insights"); failures are logged, never fatal.
+  local insights in the background (see `05-api.md`, "Local insights"; it also serves the session review `/api/sessions`);
+  failures are logged, never fatal.
 
 - **Graceful shutdown**: Ctrl-C or SIGTERM (`docker stop`) — or, in standalone mode,
   `POST /api/standalone/shutdown` → the server stops accepting connections
