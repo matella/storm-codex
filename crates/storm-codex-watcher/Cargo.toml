@@ -8,7 +8,7 @@ description = "Replay folder detection, upload ledger, backfill and live watch f
 
 [dependencies]
 # Documents known folder (follows OneDrive relocation on Windows).
-dirs = "6"
+dirs = "7"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 notify = "8"
 serde = { version = "1", features = ["derive"] }
