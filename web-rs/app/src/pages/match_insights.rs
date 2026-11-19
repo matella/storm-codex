@@ -122,7 +122,9 @@ pub fn MatchInsightsSections(
                 view! { <Portrait hero=h size=22 /> }
             }).collect_view();
             view! {
-                <tr style="cursor: pointer" on:click=move |_| set_window(Some(a - 2.0), Some(b + 2.0)) title="Show this fight in the time window">
+                <tr style="cursor: pointer" tabindex="0" role="button" aria-label="Show this fight in the time window"
+                    on:click=move |_| set_window(Some(a - 2.0), Some(b + 2.0))
+                    on:keydown=move |e| if e.key() == "Enter" || e.key() == " " { e.prevent_default(); set_window(Some(a - 2.0), Some(b + 2.0)) }>
                     <td class="ds-num">{format!("{}–{}", clock(a), clock(b))}</td>
                     <td class="ds-num">{f.lost[order[0] as usize]}</td>
                     <td class="ds-num">{f.lost[order[1] as usize]}</td>

@@ -2,6 +2,9 @@
    Classes globales préfixées ds- ; tokens (couleurs, polices) dans theme.css. Né des pages Scouting,
    partagé par toute l'app. L'export HTML de scouting (reportHtml.ts) garde sa propre feuille. */
 .ds-page { font: 14px/1.55 var(--body); color: var(--text); padding-bottom: 40px; }
+/* A5: one consistent ring for every focusable control (buttons, links, tabindex, <summary>); replaces
+   bare outline:none rules scattered across theme.css/ds.css/cast.css. */
+:where(a, button, [tabindex], summary, input, select, textarea):focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
 .ds-crumb { font: 600 11px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--kicker); margin: 18px 0 10px; }
 .ds-crumb a { color: var(--accent-2); text-decoration: none; }
 
@@ -16,12 +19,18 @@
 .ds-kicker { font: 600 11px var(--mono); letter-spacing: .2em; text-transform: uppercase; color: var(--accent-2); display: flex; align-items: center; gap: 10px; }
 .ds-kicker::before { content: ""; width: 28px; height: 2px; background: var(--accent); }
 .ds-title { font: 900 clamp(48px, 8vw, 104px)/.86 var(--display); text-transform: uppercase; letter-spacing: .01em; margin: 22px 0 8px;
-  background: linear-gradient(180deg, #fff 30%, #b9b4ee); -webkit-background-clip: text; background-clip: text; color: transparent; cursor: text; }
+  background: linear-gradient(180deg, #fff 30%, #b9b4ee); -webkit-background-clip: text; background-clip: text; color: transparent; cursor: text; text-wrap: balance; }
+/* A1: rename titles/subtitles are real <button>s now; this reset keeps the look of the plain text they wrap. */
+.ds-rename-btn { appearance: none; background: inherit; border: 0; padding: 0; margin: 0; font: inherit; color: inherit; text-align: inherit;
+  cursor: pointer; display: inline; -webkit-background-clip: inherit; background-clip: inherit; }
+/* A19: gradient text (background-clip:text) disappears under forced colours (Windows High Contrast). */
+@media (forced-colors: active) { .ds-title { color: CanvasText; background: none; } }
 .ds-subtitle { font: 500 16px var(--body); color: var(--text-2); cursor: text; }
 .ds-subtitle .edit { font: 600 10px var(--mono); color: var(--kicker); margin-left: 8px; letter-spacing: .1em; }
 .ds-edit { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 6px; }
 .ds-input { background: var(--panel-2); border: 1px solid var(--line-2); color: var(--text); border-radius: 8px; padding: 8px 12px; font: 500 14px var(--body); }
-.ds-input:focus { outline: none; border-color: var(--accent); }
+.ds-input:focus { border-color: var(--accent); }
+.ds-input:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
 .ds-input.big { font: 800 28px var(--display); text-transform: uppercase; flex: 2; min-width: 240px; }
 .ds-statline { display: flex; flex-wrap: wrap; gap: 12px; margin: 26px 0 22px; align-items: stretch; }
 .ds-stat { background: rgba(13,15,22,.72); border: 1px solid var(--line-2); border-radius: 12px; padding: 12px 18px; min-width: 140px; backdrop-filter: blur(4px); }
@@ -50,6 +59,8 @@
 .ds-actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 6px; }
 .ds-btn { font: 600 11px var(--mono); letter-spacing: .06em; color: var(--text-2); background: var(--panel-2); border: 1px solid var(--line-2);
   border-radius: 8px; padding: 7px 12px; cursor: pointer; text-decoration: none; user-select: none; transition: border-color .15s, color .15s, background .15s; white-space: nowrap; }
+/* A1: real <button>s for former clickable spans keep this look (font/appearance reset for the native button box). */
+button.ds-btn, button.ds-pill, button.ds-help { appearance: none; font-family: inherit; text-align: inherit; }
 .ds-btn:hover { border-color: var(--accent); color: var(--text); }
 .ds-btn.primary { background: var(--accent); border-color: var(--accent); color: #0b0c12; }
 .ds-btn.primary:hover { background: var(--accent-2); border-color: var(--accent-2); }
@@ -59,7 +70,7 @@
 .ds-btn[aria-disabled="true"] { opacity: .5; cursor: default; }
 
 /* ── navigation de sections ── */
-.ds-nav { position: sticky; top: var(--topbar-h, 52px); z-index: 5; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 14px 0 0; padding: 10px 0;
+.ds-nav { position: sticky; top: var(--topbar-h, 52px); z-index: 5; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; margin: 14px 0 0; padding: 10px 0;
   background: linear-gradient(180deg, var(--bg) 70%, transparent); }
 .ds-nav a { font: 600 11px var(--mono); color: var(--muted-2); text-decoration: none; padding: 4px 10px; border: 1px solid var(--line-2); border-radius: 20px; white-space: nowrap; }
 .ds-nav a:hover { color: var(--text); border-color: var(--accent); }
@@ -80,14 +91,14 @@
 .ds-pt-them { box-shadow: 0 0 0 2px var(--them), 0 0 16px rgba(240,163,94,.35); }
 
 /* ── sections ── */
-.ds-sec { margin: 50px 0 0; scroll-margin-top: 100px; }
+.ds-sec { margin: 50px 0 0; scroll-margin-top: 100px; content-visibility: auto; contain-intrinsic-size: auto 600px; }
 .ds-sec-hd { display: flex; align-items: baseline; gap: 14px; margin-bottom: 18px; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
 .ds-sec-hd .num { font: 600 12px var(--mono); color: var(--accent); }
-.ds-sec-hd h2 { font: 800 34px/1 var(--display); text-transform: uppercase; letter-spacing: .04em; }
+.ds-sec-hd h2 { font: 800 34px/1 var(--display); text-transform: uppercase; letter-spacing: .04em; text-wrap: balance; }
 .ds-sec-hd small { margin-left: auto; font: 11px var(--mono); color: var(--muted-2); text-align: right; }
 .ds-sec-hd .lg-hot { color: var(--win); font-weight: 600; }
 .ds-identity { display: grid; grid-template-columns: 1.1fr 1fr; gap: 24px; }
-.ds-quote { margin: 0; font: 500 19px/1.6 var(--body); color: var(--text); border-left: 3px solid var(--accent); padding: 4px 0 4px 22px; white-space: pre-wrap; }
+.ds-quote { margin: 0; font: 500 19px/1.6 var(--body); color: var(--text); border-left: 3px solid var(--accent); padding: 4px 0 4px 22px; white-space: pre-wrap; text-wrap: pretty; }
 .ds-quote.muted { color: var(--muted-2); }
 .ds-tally { margin-top: 12px; font: 11px var(--mono); color: var(--kicker); padding-left: 25px; }
 .ds-tells { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -121,7 +132,7 @@
   clip-path: polygon(38% 0, 100% 0, 100% 100%, 24% 100%); opacity: .75; }
 .ds-mboard-hd::after { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg, var(--panel) 30%, rgba(13,15,22,.55) 60%, rgba(13,15,22,.15)), linear-gradient(0deg, var(--panel), transparent 55%); }
 .ds-idx { font: 600 11px var(--mono); letter-spacing: .2em; color: var(--accent-2); }
-.ds-mboard h3 { font: 900 clamp(38px, 6vw, 60px)/.9 var(--display); text-transform: uppercase; margin: 6px 0 10px; letter-spacing: .01em; }
+.ds-mboard h3 { font: 900 clamp(38px, 6vw, 60px)/.9 var(--display); text-transform: uppercase; margin: 6px 0 10px; letter-spacing: .01em; text-wrap: balance; }
 .ds-mboard-rec { display: flex; align-items: center; gap: 12px; font: 600 13px var(--mono); }
 .ds-mboard-rec .rec { font: 800 24px var(--display); }
 .ds-mboard-rec .rec.none { font: 500 12px var(--mono); color: var(--muted-2); }
@@ -131,7 +142,7 @@
 .ds-meter i { width: 22px; height: 8px; border-radius: 2px; background: var(--line-2); }
 .ds-meter i.on { background: var(--gold); }
 .ds-meter em { font: 600 10px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--gold); margin-left: 6px; font-style: normal; }
-.ds-overview { margin: 18px 24px 0; font: 500 15px/1.6 var(--body); color: var(--text); }
+.ds-overview { margin: 18px 24px 0; font: 500 15px/1.6 var(--body); color: var(--text); text-wrap: pretty; }
 .ds-overview + .ds-ev { margin: 6px 24px 0; }
 .ds-board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); margin-top: 18px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .ds-board.two { grid-template-columns: repeat(2, 1fr); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; margin-top: 0; }
@@ -211,7 +222,8 @@
 .ds-gl.w .ds-gl-meta strong { color: var(--win); } .ds-gl.l .ds-gl-meta strong { color: var(--loss-soft); }
 .ds-gl-meta span { display: block; font: 700 14px var(--body); margin-top: 4px; }
 .ds-gl-meta em { display: block; font: 11px var(--mono); color: var(--muted-2); font-style: normal; margin-top: 2px; }
-.ds-gl-side { border: 1px solid transparent; border-radius: 10px; padding: 8px; cursor: pointer; transition: border-color .15s, background .15s; }
+.ds-gl-side { border: 1px solid transparent; border-radius: 10px; padding: 0; transition: border-color .15s, background .15s; }
+.ds-gl-side-btn { display: block; width: 100%; padding: 8px; background: none; border: 0; font: inherit; color: inherit; text-align: inherit; cursor: pointer; }
 .ds-gl-side:hover { border-color: var(--line-2); }
 .ds-gl-side.target { border-color: var(--accent); background: rgba(127,119,221,.07); }
 .ds-gl-side .ds-label { display: flex; justify-content: space-between; }
@@ -237,8 +249,11 @@
 .ds-roster-hd .ds-actions { margin-left: auto; }
 
 /* fenêtre d'import */
-.ds-modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.65); z-index: 50; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(3px); }
-.ds-modal { width: min(760px, 92vw); max-height: 86vh; overflow: auto; background: var(--panel); border: 1px solid var(--line-2); border-radius: 16px; padding: 22px; }
+/* A4: <dialog> + showModal() replaces the plain overlay div (Esc, focus containment/return, ::backdrop). */
+dialog.ds-modal { width: min(760px, 92vw); max-height: 86vh; overflow: auto; background: var(--panel); border: 1px solid var(--line-2); border-radius: 16px; padding: 22px;
+  color: inherit; margin: auto; }
+dialog.ds-modal::backdrop { background: rgba(0,0,0,.65); backdrop-filter: blur(3px); }
+.sa-dialog::backdrop { background: rgba(0,0,0,.55); }
 .ds-modal h2 { font: 800 28px var(--display); text-transform: uppercase; letter-spacing: .04em; }
 .ds-modal textarea { width: 100%; font: 11px var(--mono); resize: vertical; }
 .ds-modal .res { font: 11px var(--mono); }
@@ -246,11 +261,14 @@
 .ds-empty { padding: 28px; text-align: center; color: var(--muted-2); background: var(--panel); border: 1px dashed var(--line-2); border-radius: 14px; }
 
 /* mouvement */
+/* A22: stagger expressed through a custom property (set per nth-child below) instead of hardcoded
+   per-child delays, so a future sibling-index() upgrade only needs to redefine --i. */
 @keyframes ds-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
-.ds-cover > * { animation: ds-rise .7s cubic-bezier(.2,.8,.2,1) both; }
-.ds-cover > *:nth-child(2) { animation-delay: .06s; } .ds-cover > *:nth-child(3) { animation-delay: .12s; }
-.ds-cover > *:nth-child(4) { animation-delay: .18s; } .ds-cover > *:nth-child(5) { animation-delay: .24s; } .ds-cover > *:nth-child(6) { animation-delay: .3s; }
-@media (prefers-reduced-motion: reduce) { .ds-page *, .ds-page *::before { animation: none !important; transition: none !important; } }
+.ds-cover > * { animation: ds-rise .7s cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(var(--i, 0) * .06s); }
+.ds-cover > *:nth-child(1) { --i: 0; } .ds-cover > *:nth-child(2) { --i: 1; } .ds-cover > *:nth-child(3) { --i: 2; }
+.ds-cover > *:nth-child(4) { --i: 3; } .ds-cover > *:nth-child(5) { --i: 4; } .ds-cover > *:nth-child(6) { --i: 5; }
+/* A14: was scoped to .ds-page only; widen to the whole app chrome (hover transforms, cast room). */
+@media (prefers-reduced-motion: reduce) { .ds-app *, .ds-app *::before { animation: none !important; transition: none !important; } }
 
 /* responsive */
 @media (max-width: 860px) {
@@ -278,20 +296,26 @@
 @media (max-width: 860px) { .ds-rcard { flex-direction: column; align-items: flex-start; } .ds-rcard-side { align-items: flex-start; } }
 
 /* ── chrome de l'app (Layout) ── */
-.ds-app { --topbar-h: 52px; min-height: 100vh; font-family: var(--body); color: var(--text);
-  background-image: radial-gradient(1200px 600px at 85% -10%, rgba(127,119,221,.12), transparent 60%), radial-gradient(900px 500px at -10% 30%, rgba(93,202,165,.035), transparent 60%);
-  background-attachment: fixed; }
+/* A15: the two radial gradients used to be painted on .ds-app directly with background-attachment:
+   fixed, forcing a repaint on every scroll in Chromium. A fixed ::before pseudo-element paints once. */
+.ds-app { --topbar-h: 52px; min-height: 100vh; font-family: var(--body); color: var(--text); position: relative; isolation: isolate; }
+.ds-app::before { content: ""; position: fixed; inset: 0; z-index: -1;
+  background-image: radial-gradient(1200px 600px at 85% -10%, rgba(127,119,221,.12), transparent 60%), radial-gradient(900px 500px at -10% 30%, rgba(93,202,165,.035), transparent 60%); }
+/* A7: skip link, visible only once focused (keyboard users jump past the 14-link nav). */
+.ds-skip { position: absolute; left: -9999px; top: 0; z-index: 100; padding: 8px 16px; background: var(--accent); color: #0b0c12;
+  font: 600 12px var(--mono); border-radius: 0 0 8px 0; text-decoration: none; }
+.ds-skip:focus { left: 0; }
 .ds-top { position: sticky; top: 0; z-index: 20; height: var(--topbar-h); display: flex; align-items: center; gap: 26px; padding: 0 28px;
   background: rgba(6,7,11,.86); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
 .ds-brand { font: 800 17px var(--display); letter-spacing: .16em; color: var(--text); text-decoration: none; white-space: nowrap; }
 .ds-brand b { color: var(--accent-2); font-weight: 800; }
-.ds-topnav { display: flex; gap: 18px; overflow-x: auto; scrollbar-width: none; height: 100%; align-items: stretch; }
+.ds-topnav { display: flex; gap: 18px; overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; height: 100%; align-items: stretch; }
 .ds-topnav a { display: flex; align-items: center; gap: 5px; font: 600 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted-2);
   text-decoration: none; border-bottom: 2px solid transparent; white-space: nowrap; }
 .ds-topnav a:hover { color: var(--text); }
 .ds-topnav a.on { color: var(--text); border-bottom-color: var(--accent); }
 .ds-topnav .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-2); box-shadow: 0 0 8px var(--accent-2); }
-.ds-help { margin-left: auto; width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid var(--line-2); border-radius: 50%;
+.ds-help { margin-left: auto; width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid var(--line-2); border-radius: 50%; background: none;
   font: 600 11px var(--mono); color: var(--muted-2); cursor: pointer; flex-shrink: 0; }
 .ds-help:hover { color: var(--text); border-color: var(--accent); }
 .ds-live { display: flex; gap: 6px; align-items: center; font: 600 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--win); white-space: nowrap; }
@@ -574,7 +598,7 @@ svg.ds-lvl { width: 100%; height: 160px; display: block; }
 .ds-toc a { color: var(--text-2); text-decoration: none; } .ds-toc a:hover { color: var(--text); }
 .ds-toc .it { display: flex; align-items: center; gap: 6px; margin: 4px 0; line-height: 1.3; }
 .ds-toc .it.sec a { color: var(--accent-2); font-weight: 600; }
-.ds-prose { background: var(--panel); border: 1px solid var(--line-2); border-radius: 16px; padding: 22px 28px; font-size: 14px; line-height: 1.6; color: var(--text-2); min-width: 0; }
+.ds-prose { background: var(--panel); border: 1px solid var(--line-2); border-radius: 16px; padding: 22px 28px; font-size: 14px; line-height: 1.6; color: var(--text-2); min-width: 0; text-wrap: pretty; }
 .ds-prose h1, .ds-prose h2, .ds-prose h3, .ds-prose h4, .ds-prose h5 { font-family: var(--display); text-transform: uppercase; letter-spacing: .03em; color: var(--text);
   scroll-margin-top: calc(var(--topbar-h, 52px) + 20px); }
 .ds-prose h1, .ds-prose h2 { font-size: 30px; font-weight: 800; margin: 28px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }

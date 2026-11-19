@@ -248,6 +248,37 @@ pub fn tab_active(pathname: &str, to: &str) -> bool {
     p == to || p.strip_prefix(to).is_some_and(|r| r.starts_with('/'))
 }
 
+/// A6: per-route `document.title` (was always "Storm Codex"). Matches a top-bar tab first (longest
+/// prefix wins, so `/match/:id` under `/matches` still resolves to its own label below), then a few
+/// sub-routes that have no tab of their own.
+pub fn page_title(pathname: &str) -> &'static str {
+    let p = pathname.trim_end_matches('/');
+    if p.is_empty() {
+        return "Session";
+    }
+    for (prefix, title) in [
+        ("/match/", "Match"),
+        ("/player/", "Player"),
+        ("/hero/", "Hero"),
+        ("/patch/", "Patch"),
+        ("/scouting/", "Scouting report"),
+    ] {
+        if p.starts_with(prefix) {
+            return title;
+        }
+    }
+    match p {
+        "/compare" => return "Compare",
+        "/welcome" => return "Setup",
+        _ => {}
+    }
+    TABS.iter()
+        .filter(|(to, _)| *to != "/" && (p == *to || p.starts_with(&format!("{to}/"))))
+        .max_by_key(|(to, _)| to.len())
+        .map(|(_, label)| *label)
+        .unwrap_or("Storm Codex")
+}
+
 /// Old pages absorbed by the cast control room (`legacyRoutes.ts`): path -> destination.
 pub const LEGACY_REDIRECTS: [(&str, &str); 2] = [
     ("/draft", "/cast?scene=draft"),
@@ -348,6 +379,22 @@ mod tests {
         assert!(!tab_active("/match/12", "/matches"));
         assert!(tab_active("/scouting/7", "/scouting"));
         assert!(!tab_active("/scoutingx", "/scouting"));
+    }
+
+    #[test]
+    fn page_titles_cover_tabs_and_sub_routes() {
+        assert_eq!(page_title("/"), "Session");
+        assert_eq!(page_title("/matches"), "Matches");
+        assert_eq!(page_title("/matches/"), "Matches");
+        assert_eq!(page_title("/match/2746"), "Match");
+        assert_eq!(page_title("/player/matella#1234"), "Player");
+        assert_eq!(page_title("/hero/Li-Ming"), "Hero");
+        assert_eq!(page_title("/patch/abc"), "Patch");
+        assert_eq!(page_title("/scouting/3"), "Scouting report");
+        assert_eq!(page_title("/scouting"), "Scouting");
+        assert_eq!(page_title("/compare"), "Compare");
+        assert_eq!(page_title("/welcome"), "Setup");
+        assert_eq!(page_title("/unknown"), "Storm Codex");
     }
 
     #[test]

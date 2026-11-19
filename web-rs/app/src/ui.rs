@@ -252,12 +252,17 @@ pub(crate) fn portrait_src(path: &str, revision: Option<&str>) -> String {
 }
 
 /// Hero portrait with the ring of its universe; initials when there is no icon or it fails to load.
+/// A9/A20: `eager` loads the above-the-fold cover/first-row portraits immediately with `fetchpriority="high"`
+/// (the rest stay `loading="lazy"`); `captioned` marks the portrait decorative (`alt=""`) when the hero name is
+/// already printed next to it, avoiding redundant alt text for screen readers.
 #[component]
 pub fn Portrait(
     #[prop(into)] hero: String,
     #[prop(default = 40)] size: u32,
     #[prop(default = Tone::Plain)] tone: Tone,
     #[prop(optional)] class: &'static str,
+    #[prop(default = false)] eager: bool,
+    #[prop(default = false)] captioned: bool,
 ) -> impl IntoView {
     let dim = use_dim();
     let broken = RwSignal::new(None::<String>);
@@ -273,12 +278,14 @@ pub fn Portrait(
     let ring = move || dim.with(|d| d.ring(Some(&h2)));
     let style = move || format!("--s: {size}px; --ring: {}", ring());
     let ini = initials(&hero);
-    let (title, alt) = (hero.clone(), hero);
+    let (title, alt) = (hero.clone(), if captioned { String::new() } else { hero });
+    let loading = if eager { "eager" } else { "lazy" };
+    let fetchpriority = if eager { "high" } else { "auto" };
     view! {
         <span class=format!("ds-pt ds-pt-{}{}{class}", tone.class(), if class.is_empty() { "" } else { " " }) style=style title=title>
             {move || match icon() {
                 Some(src) if !broken.with(|b| b.as_ref() == Some(&src)) => view! {
-                    <img src=src.clone() alt=alt.clone() loading="lazy" on:error=move |_| broken.set(Some(src.clone())) />
+                    <img src=src.clone() alt=alt.clone() loading=loading fetchpriority=fetchpriority on:error=move |_| broken.set(Some(src.clone())) />
                 }.into_any(),
                 _ => view! { <span class="ds-ini">{ini.clone()}</span> }.into_any(),
             }}
@@ -449,11 +456,11 @@ pub fn AggFilterBar(
             {MODES
                 .iter()
                 .map(|&(label, m)| view! {
-                    <span class=move || pill_class(value.with(|v| v.mode == m)) on:click=move |_| value.update(|v| v.mode = m)>{label}</span>
+                    <button type="button" class=move || pill_class(value.with(|v| v.mode == m)) aria-pressed=move || value.with(|v| v.mode == m).to_string() on:click=move |_| value.update(|v| v.mode = m)>{label}</button>
                 })
                 .collect_view()}
             <span class="ds-sep"></span>
-            <span class=move || pill_class(value.with(|v| v.mine)) on:click=move |_| value.update(|v| v.mine = !v.mine)>{mine_label}</span>
+            <button type="button" class=move || pill_class(value.with(|v| v.mine)) aria-pressed=move || value.with(|v| v.mine).to_string() on:click=move |_| value.update(|v| v.mine = !v.mine)>{mine_label}</button>
             {move || {
                 let list = accounts.get();
                 (list.len() > 1).then(|| view! {
@@ -476,7 +483,7 @@ pub fn AggFilterBar(
                 prop:value=move || value.with(|v| v.to.clone().unwrap_or_default())
                 on:input=move |e| { let v = event_target_value(&e); value.update(|f| f.to = (!v.is_empty()).then_some(v)); } /></label>
             <Show when=move || value.with(|v| v.is_active())>
-                <span class="ds-pill" on:click=move |_| value.set(AggFilter::default())>"✕ reset"</span>
+                <button type="button" class="ds-pill" on:click=move |_| value.set(AggFilter::default())>"✕ reset"</button>
             </Show>
         </div>
     }

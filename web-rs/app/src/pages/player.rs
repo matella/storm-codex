@@ -273,11 +273,8 @@ pub fn Player() -> impl IntoView {
                                             let style = if has_map_art(&map) { map_art(&map) } else { String::new() };
                                             let won = g.win == Some(true);
                                             let id = g.match_id;
-                                            let go_match = move || go(format!("/match/{id}"), false);
-                                            let go_match2 = go_match;
                                             view! {
-                                                <div class=format!("ds-mrow {}", if won { "w" } else { "l" }) style=style on:click=move |_| go_match()
-                                                    role="link" tabindex="0" on:keydown=move |e| if e.key() == "Enter" { go_match2() }>
+                                                <Link to=format!("/match/{id}") class=format!("ds-mrow {}", if won { "w" } else { "l" }) style=style>
                                                     <span class="when">{net::fmt_time(g.played_at.as_deref())}</span>
                                                     <span><ModeTag mode=g.mode short=true /></span>
                                                     {match g.hero.clone() { Some(h) => view! { <Portrait hero=h size=40 tone=if won { Tone::Pick } else { Tone::Loss } /> }.into_any(), None => view! { <span></span> }.into_any() }}
@@ -289,7 +286,7 @@ pub fn Player() -> impl IntoView {
                                                         {aw.filter(|a| a.mvp).map(|_| view! { <span class="ds-tag mvp">"👑 MVP"</span> })}
                                                     </span>
                                                     <span class="len">"›"</span>
-                                                </div>
+                                                </Link>
                                             }
                                         }).collect_view()}
                                     </div>

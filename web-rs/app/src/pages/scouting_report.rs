@@ -265,15 +265,15 @@ fn Cover(r: Signal<Report>, on_patch: Callback<Value>, children: Children) -> im
                             on:input=move |e| target.set(event_target_value(&e)) on:keydown=keys />
                         <input class="ds-input" style="flex: 2; min-width: 220px" placeholder="report title" prop:value=move || title.get()
                             on:input=move |e| title.set(event_target_value(&e)) on:keydown=keys />
-                        <span class="ds-btn primary" on:click=move |_| save()>"Save"</span>
-                        <span class="ds-btn" on:click=move |_| editing.set(false)>"Cancel"</span>
+                        <button type="button" class="ds-btn primary" on:click=move |_| save()>"Save"</button>
+                        <button type="button" class="ds-btn" on:click=move |_| editing.set(false)>"Cancel"</button>
                     </div>
                 }.into_any()
             } else {
                 let rep = r.get();
                 view! {
-                    <h1 class="ds-title" title="Click to rename" on:click=move |_| start()>{rep.target_name.clone().unwrap_or_else(|| "Unnamed team".to_string())}</h1>
-                    <div class="ds-subtitle" title="Click to rename" on:click=move |_| start()>{rep.title.clone()}<span class="edit">"✎ RENAME"</span></div>
+                    <h1 class="ds-title"><button type="button" class="ds-rename-btn" title="Click to rename" on:click=move |_| start()>{rep.target_name.clone().unwrap_or_else(|| "Unnamed team".to_string())}</button></h1>
+                    <div class="ds-subtitle"><button type="button" class="ds-rename-btn" title="Click to rename" on:click=move |_| start()>{rep.title.clone()}<span class="edit">"✎ RENAME"</span></button></div>
                 }.into_any()
             }}
             {move || {
@@ -711,7 +711,8 @@ fn GameLine(
         };
         let g2 = g.clone();
         view! {
-            <div class=if is_target { "ds-gl-side target" } else { "ds-gl-side" } title="Set as the scouted team" on:click=move |_| on_side.run((g2.clone(), Some(s)))>
+            <div class=if is_target { "ds-gl-side target" } else { "ds-gl-side" }>
+            <button type="button" class="ds-gl-side-btn" title="Set as the scouted team" on:click=move |_| on_side.run((g2.clone(), Some(s)))>
                 <span class="ds-label"><span>{label}</span></span>
                 <div class="ds-gl-picks">
                     {heroes.into_iter().map(|(h, who)| view! { <span><Portrait hero=h size=30 /><em>{who}</em></span> }).collect_view()}
@@ -719,6 +720,7 @@ fn GameLine(
                 {(!bans.is_empty()).then(|| view! {
                     <div class="ds-gl-bans"><span class="ds-label">"bans"</span>{bans.into_iter().map(|b| view! { <Portrait hero=b size=22 tone=Tone::Ban /> }).collect_view()}</div>
                 })}
+            </button>
             </div>
         }
     };
@@ -745,8 +747,8 @@ fn GameLine(
                     view! { <span class="ds-src missing">"team not found"</span> }.into_any()
                 }}
                 <span style="display: flex; gap: 6px">
-                    {manual.then(|| view! { <span class="ds-btn small" title="Back to automatic detection" on:click=move |_| on_side.run((g_auto.clone(), None))>"auto"</span> })}
-                    <span class="ds-btn small danger" title="Remove from the report" on:click=move |_| on_delete.run(g_del.clone())>"remove"</span>
+                    {manual.then(|| view! { <button type="button" class="ds-btn small" title="Back to automatic detection" on:click=move |_| on_side.run((g_auto.clone(), None))>"auto"</button> })}
+                    <button type="button" class="ds-btn small danger" title="Remove from the report" on:click=move |_| on_delete.run(g_del.clone())>"remove"</button>
                 </span>
             </div>
         </div>
@@ -988,9 +990,9 @@ fn Roster(r: Signal<Report>, num: Signal<u32>, on_patch: Callback<Value>) -> imp
             <div class="ds-roster-hd">
                 <span>"A game counts when 3+ roster players are on one side, otherwise the anchor's side (⚓)."</span>
                 <span class="ds-actions">
-                    {(!roster_auto).then(|| view! { <span class="ds-btn" on:click=move |_| on_patch.run(serde_json::json!({ "roster": [] }))>"Back to auto"</span> })}
-                    <span class=move || if dirty.get() { "ds-btn primary" } else { "ds-btn" } aria-disabled=move || (!dirty.get()).to_string()
-                        on:click=move |_| if dirty.get() { on_patch.run(serde_json::json!({ "roster": roster.get_untracked(), "anchors": anchors.get_untracked() })) }>"Save roster"</span>
+                    {(!roster_auto).then(|| view! { <button type="button" class="ds-btn" on:click=move |_| on_patch.run(serde_json::json!({ "roster": [] }))>"Back to auto"</button> })}
+                    <button type="button" class=move || if dirty.get() { "ds-btn primary" } else { "ds-btn" } aria-disabled=move || (!dirty.get()).to_string()
+                        on:click=move |_| if dirty.get() { on_patch.run(serde_json::json!({ "roster": roster.get_untracked(), "anchors": anchors.get_untracked() })) }>"Save roster"</button>
                 </span>
             </div>
             {empty.then(|| view! { <div class="ds-empty">"Add replays first."</div> })}
@@ -1022,6 +1024,15 @@ fn ImportModal(r: Signal<Report>, on_close: Callback<()>, on_done: Callback<()>)
     let text = RwSignal::new(String::new());
     let result = RwSignal::new(None::<(bool, Vec<String>)>);
     let busy = RwSignal::new(false);
+    // A4: real <dialog> + showModal() (Esc, focus containment and return, ::backdrop) instead of a
+    // plain overlay div. The component only exists in the DOM while import_open is true, so it opens
+    // itself as soon as it mounts.
+    let dialog_ref = NodeRef::<html::Dialog>::new();
+    Effect::new(move |_| {
+        if let Some(d) = dialog_ref.get() {
+            let _ = d.show_modal();
+        }
+    });
     let submit = move || {
         let body = text.get_untracked();
         if body.trim().is_empty() {
@@ -1094,14 +1105,13 @@ fn ImportModal(r: Signal<Report>, on_close: Callback<()>, on_done: Callback<()>)
         });
     };
     view! {
-        <div class="ds-modal-bg" on:click=move |e| {
+        <dialog node_ref=dialog_ref class="ds-modal" on:close=move |_| on_close.run(()) on:click=move |e| {
             let t: web_sys::Element = event_target(&e);
-            if t.class_list().contains("ds-modal-bg") { on_close.run(()); }
+            if dialog_ref.get().is_some_and(|d| t == **d) { on_close.run(()); }
         }>
-            <div class="ds-modal">
                 <div style="display: flex; align-items: center; margin-bottom: 12px">
                     <h2>"Import analysis"</h2>
-                    <span class="ds-btn" style="margin-left: auto" on:click=move |_| on_close.run(())>"Close"</span>
+                    <button type="button" class="ds-btn" style="margin-left: auto" on:click=move |_| on_close.run(())>"Close"</button>
                 </div>
                 <div style="display: flex; flex-direction: column; gap: 10px">
                     <span class="muted" style="font-size: 13px">
@@ -1117,16 +1127,15 @@ fn ImportModal(r: Signal<Report>, on_close: Callback<()>, on_done: Callback<()>)
                                 spawn_local(async move { if let Ok(t) = net::read_file_text(&f).await { text.set(t); } });
                             }
                         } />
-                        <span class="ds-btn primary" style="margin-left: auto" aria-disabled=move || busy.get().to_string()
-                            on:click=move |_| if !busy.get_untracked() { submit() }>{move || if busy.get() { "Importing…" } else { "Import" }}</span>
+                        <button type="button" class="ds-btn primary" style="margin-left: auto" aria-disabled=move || busy.get().to_string()
+                            on:click=move |_| if !busy.get_untracked() { submit() }>{move || if busy.get() { "Importing…" } else { "Import" }}</button>
                     </div>
                     {move || result.get().map(|(ok, lines)| lines.into_iter().enumerate().map(|(i, l)| {
                         let color = if ok && i == 0 { "color: var(--win)" } else if ok { "color: var(--muted-2)" } else { "color: var(--loss-soft)" };
                         view! { <div class="res" style=color>{l}</div> }
                     }).collect_view())}
                 </div>
-            </div>
-        </div>
+        </dialog>
     }
 }
 
@@ -1293,12 +1302,12 @@ pub fn ScoutingReport() -> impl IntoView {
                                     rep.analysis_imported_at.as_deref().map(|d| format!(" · plan imported {}{}", day(Some(d)), rep.analysis_model.as_deref().map(|m| format!(" ({m})")).unwrap_or_default())).unwrap_or_default()) }}
                             </span>
                             <span class="ds-actions">
-                                <span class="ds-btn" title="Copy the LLM pack (Markdown) to the clipboard" on:click=move |_| copy_pack()>"Copy pack"</span>
+                                <button type="button" class="ds-btn" title="Copy the LLM pack (Markdown) to the clipboard" on:click=move |_| copy_pack()>"Copy pack"</button>
                                 <a class="ds-btn" href=move || format!("/api/scouting/{}/pack.md", r.get().id) download>".md"</a>
                                 <a class="ds-btn" href=move || format!("/api/scouting/{}/pack.xlsx", r.get().id) download>".xlsx"</a>
-                                <span class="ds-btn" on:click=move |_| import_open.set(true)>"Import analysis"</span>
-                                <span class="ds-btn primary" aria-disabled="false" title="Save a self-contained, shareable HTML report for your teammates" on:click=move |_| export_html()>"Export HTML"</span>
-                                <span class="ds-btn danger" title="Delete this report" on:click=move |_| remove()>"Delete"</span>
+                                <button type="button" class="ds-btn" on:click=move |_| import_open.set(true)>"Import analysis"</button>
+                                <button type="button" class="ds-btn primary" aria-disabled="false" title="Save a self-contained, shareable HTML report for your teammates" on:click=move |_| export_html()>"Export HTML"</button>
+                                <button type="button" class="ds-btn danger" title="Delete this report" on:click=move |_| remove()>"Delete"</button>
                             </span>
                         </div>
                     </Cover>
