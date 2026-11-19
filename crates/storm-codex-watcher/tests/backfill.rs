@@ -135,7 +135,7 @@ async fn backfill_continues_after_rejected_file() {
     let a = tempfile::tempdir().expect("tempdir");
     let b = tempfile::tempdir().expect("tempdir");
     let state = tempfile::tempdir().expect("tempdir");
-    // The corrupt replay is the oldest, so it is among the first sent.
+    // The corrupt replay is the oldest, so it is queued first.
     write_replay(a.path(), "bad-corrupt.StormReplay", secs(1000));
     for i in 0..6u64 {
         let dir = if i % 2 == 0 { a.path() } else { b.path() };
@@ -143,15 +143,25 @@ async fn backfill_continues_after_rejected_file() {
     }
 
     let mut ledger = Ledger::open(&state.path().join("uploaded.json")).expect("ledger");
+    let dirs = [a.path().to_path_buf(), b.path().to_path_buf()];
+    // Oldest first across folders. Asserted on the queue, not on request arrival: with uploads in
+    // flight concurrently (and file reads on the blocking pool) arrival order is not guaranteed.
+    let queued: Vec<String> = backfill::pending_files(&dirs, &ledger)
+        .iter()
+        .map(|p| {
+            p.file_name()
+                .expect("file name")
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    let mut expected = vec!["bad-corrupt.StormReplay".to_string()];
+    expected.extend((0..6).map(|i| format!("good-{i}.StormReplay")));
+    assert_eq!(queued, expected);
+
     let uploader = Uploader::new(server.base("mixed")).with_backoff_unit(FAST);
     let progress = Progress::default();
-    backfill::run(
-        &[a.path().to_path_buf(), b.path().to_path_buf()],
-        &uploader,
-        &mut ledger,
-        &progress,
-    )
-    .await;
+    backfill::run(&dirs, &uploader, &mut ledger, &progress).await;
 
     assert_eq!(progress.total(), 7);
     assert_eq!(progress.done(), 7);
@@ -162,12 +172,6 @@ async fn backfill_continues_after_rejected_file() {
     for i in 0..6 {
         assert!(ledger.contains(&format!("good-{i}.StormReplay")));
     }
-    // Oldest first: with 4 in flight, the oldest file is among the first 4 requests.
-    let first_four = &sent[..4];
-    assert!(
-        first_four.iter().any(|n| n == "bad-corrupt.StormReplay"),
-        "order: {sent:?}"
-    );
     assert!(ledger.contains("bad-corrupt.StormReplay"));
 }
 
