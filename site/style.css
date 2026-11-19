@@ -1,0 +1,42 @@
+/* Nexus Codex palette (web-rs/app/theme.css). System fonts only: no third-party requests. */
+:root {
+  --bg: #06070b;
+  --surface: #0e1016;
+  --line: #1f2231;
+  --text: #e8eaf2;
+  --text-2: #cfd3e0;
+  --muted: #9aa0b4;
+  --kicker: #8d93a8;
+  --accent: #7f77dd;
+  --accent-2: #afa9ec;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); }
+body {
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: radial-gradient(60rem 30rem at 50% -10rem, #1a1838 0%, var(--bg) 70%) no-repeat, var(--bg);
+}
+main { max-width: 60rem; margin: 0 auto; padding: 4rem 1.25rem 2rem; }
+header { text-align: center; }
+.logo { display: block; margin: 0 auto 1rem; border-radius: 20px; }
+.kicker { margin: 0; color: var(--kicker); font-size: .8rem; letter-spacing: .14em; text-transform: uppercase; }
+h1 { margin: .25rem 0 .75rem; font-size: clamp(2.2rem, 7vw, 3.4rem); letter-spacing: -.02em; }
+.lead { max-width: 36rem; margin: 0 auto; color: var(--text-2); font-size: 1.1rem; }
+a { color: var(--accent-2); }
+.cta { margin: 2.5rem 0 3.5rem; text-align: center; }
+.download {
+  display: inline-block; padding: .9rem 1.8rem; border-radius: 10px;
+  background: var(--accent); color: #fff; font-weight: 600; font-size: 1.1rem; text-decoration: none;
+  box-shadow: 0 8px 30px rgba(127, 119, 221, .35);
+}
+.download:hover, .download:focus-visible { background: #8f88e6; }
+.download:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 3px; }
+.status { margin: 0 0 .4rem; font-size: 1.1rem; font-weight: 600; }
+.meta { margin: .8rem 0 0; color: var(--muted); font-size: .92rem; }
+.features { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 1rem; }
+.features div { padding: 1.25rem; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+h2 { margin: 0 0 .4rem; font-size: 1.05rem; }
+.features p { margin: 0; color: var(--muted); }
+footer { margin-top: 3.5rem; text-align: center; color: var(--muted); font-size: .9rem; }
+.fine { color: var(--kicker); font-size: .8rem; }

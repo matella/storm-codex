@@ -39,10 +39,11 @@ rebuild the bundles with `trunk build --release` if `web-rs/` changed.
 ## CI — `ci.yml` (checks, tests, audit, then image publication) and `release-desktop.yml`
 
 `release-desktop.yml` builds and publishes the desktop installer on a `desktop-v*` tag: see "Releasing the desktop
-app" below. Everything else is `ci.yml`.
+app" below. `pages.yml` deploys the download page: see "Download page (GitHub Pages)" below. Everything else is `ci.yml`.
 
 **Jobs** (push to `main`, `v*` tags, PRs, manual run):
-- `checks`: `cargo fmt --all -- --check`; **frozen migrations** (`scripts/check-migrations.sh`):
+- `checks`: `cargo fmt --all -- --check`; the download page generator's unit tests
+  (`scripts/test_build_pages.py`); **frozen migrations** (`scripts/check-migrations.sh`):
   rejects any change, deletion or rename of a migration already present in the comparison base
   (the target branch for a PR, the previous commit for a push). sqlx checks the
   checksum of every applied migration: rewriting one makes startup fail
@@ -82,6 +83,28 @@ a specific version with `:sha-…`) instead of a local build — the box's curre
 Dependabot checks active Cargo workspaces, GitHub Actions, Docker and the npm parity harness weekly. Review its PRs normally; do not auto-merge them or bypass CI. Leave archived spikes out of routine updates. Keep the RustSec audit in CI and preserve full-commit SHA pins in the signing workflow. Review manually pinned tools, binary checksums and reference snapshots separately; a Dependabot PR does not update those as a unit.
 
 GitHub private vulnerability reports, dependency and secret alerts, and CodeQL findings are triaged by the maintainer. Do not paste sensitive findings or secrets into public work items. Use [SECURITY.md](../../SECURITY.md) for disclosure.
+
+## Download page (GitHub Pages)
+
+`https://matella.github.io/storm-codex/` (spec `docs/specs/2026-11-19-github-pages-download.md`). Repository
+setting: Pages source **GitHub Actions** (no `gh-pages` branch).
+
+- **Content**: `site/index.html` + `site/style.css`, static, no JavaScript, no web fonts, no analytics, strict CSP.
+  `scripts/build-pages.py` fills the `{{DOWNLOAD}}` block from `GET /repos/{repo}/releases/latest` (GitHub never
+  returns a draft or a prerelease there) and copies `desktop/icons/128x128.png` as `icon.png`.
+- **Stable release rule**: tag `desktop-vX.Y.Z` and exactly one asset `StormCodex_X.Y.Z_x64-setup.exe` with an
+  `https://github.com/` URL. Then the page shows a **Download for Windows (x64)** button linking that asset (the
+  installer is never copied to Pages), with version, date, size and release-notes link. Otherwise it says no
+  stable installer is published and shows no button. An API error other than 404 fails the run: the deployed page
+  stays as it was.
+- **Updates, no manual edit**: `pages.yml` runs on site changes pushed to `main`, after every successful
+  `release-desktop` run (`workflow_run`: the release is created with `GITHUB_TOKEN`, which emits no `release`
+  event), on manual release changes (`release` events) and manually (Actions → `pages` → Run workflow). It always
+  renders `main`. Dry runs (drafts) redeploy the same page.
+- **Local preview**: `python3 scripts/build-pages.py --repo matella/storm-codex --out /tmp/site`
+  (`--release-json FILE` renders a saved API response), then open `/tmp/site/index.html`.
+- **Checks after a change**: the run's summary prints what was offered; open the page at desktop and mobile widths
+  and follow the button (it must resolve to the installer).
 
 ## Docker image (`Dockerfile`)
 

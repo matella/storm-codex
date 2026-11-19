@@ -20,6 +20,14 @@ Docker checks on the integrated branch: see the PR. App bundle ~996 kB Brotli (c
 left). **Not done**: browser check of the refetch, Windows draft build, installer size comparison,
 clean offline install and 0.1.1 upgrade on MH-Home (needs the machine online).
 
+## Download page (2026-11-19), issue #39, branch `feat/pages-download`
+
+Approved spec: `docs/specs/2026-11-19-github-pages-download.md`. Static page in `site/`, rendered by
+`scripts/build-pages.py` from the latest stable release and deployed by `pages.yml` to
+`https://matella.github.io/storm-codex/`. Only drafts exist today, so the page shows "no stable installer yet";
+the stable path is covered by unit tests and a fixture render (desktop and mobile layouts checked locally). The
+first real stable release must refresh the page by itself: check it then.
+
 ## Standalone identity and import polish (2026-11-18), branch `fix/standalone-identity-import`
 
 Approved scope: `docs/specs/2026-11-18-standalone-identity-import-polish.md`. My Identity shows the latest known name for each standard replay folder by ToonHandle and replay time; manual names remain separate. Verified handles keep older matches attributable after a rename. A flat folder without a verifiable handle does not guess its owner. Import publishes initialized counters, preserves the settled status on no-op rescans, and ignores stale poll responses.
