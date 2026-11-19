@@ -80,6 +80,16 @@ fn strings(v: &J) -> Vec<String> {
 /// Recomputes the target sides and facts of a report; increments `facts_version`. Idempotent as to the
 /// content. The `FOR UPDATE` lock serialises the concurrent recomputes of the same report.
 pub async fn recompute(db: &sqlx::PgPool, report_id: i64) -> Result<(), sqlx::Error> {
+    recompute_facts(db, report_id, true).await.map(|_| ())
+}
+
+/// `recompute`, except that with `always = false` an unchanged snapshot is not written, so
+/// `facts_version` (and an imported analysis's freshness) stays as it is. Returns `true` if written.
+async fn recompute_facts(
+    db: &sqlx::PgPool,
+    report_id: i64,
+    always: bool,
+) -> Result<bool, sqlx::Error> {
     let roles = load_roles(db).await;
     let mut tx = db.begin().await?;
     let Some((roster, anchors)): Option<(J, J)> =
@@ -88,7 +98,7 @@ pub async fn recompute(db: &sqlx::PgPool, report_id: i64) -> Result<(), sqlx::Er
             .fetch_optional(&mut *tx)
             .await?
     else {
-        return Ok(());
+        return Ok(false);
     };
     let (roster, anchors) = (strings(&roster), strings(&anchors));
     let rows: Vec<(i64, J, Option<i32>, Option<String>)> = sqlx::query_as(
@@ -154,15 +164,132 @@ pub async fn recompute(db: &sqlx::PgPool, report_id: i64) -> Result<(), sqlx::Er
         "roster": effective,
         "roster_auto": roster.is_empty(),
     });
-    sqlx::query(
+    // compared as jsonb, so the spelling of numbers after a round trip is not a change
+    let written = sqlx::query(
         "UPDATE scouting_reports SET facts = $2, facts_version = facts_version + 1, updated_at = now()
-         WHERE id = $1",
+         WHERE id = $1 AND ($3 OR facts IS DISTINCT FROM $2)",
     )
     .bind(report_id)
     .bind(snapshot)
+    .bind(always)
     .execute(&mut *tx)
-    .await?;
-    tx.commit().await
+    .await?
+    .rows_affected()
+        > 0;
+    tx.commit().await?;
+    Ok(written)
+}
+
+// ── reference activation (standalone) ────────────────────────────────────────
+
+/// Applies the projection's talent-based hero correction (`project::hero_corrections`) to a parsed
+/// scouting replay, in its `data` and its summary. The table's write lock comes first, so a
+/// reference activation either sees this row in its repair or commits its lookup before it is read.
+async fn correct_heroes(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    out: &mut storm_stats::Output,
+    sum: &mut GameSummary,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("LOCK TABLE scouting_games IN ROW EXCLUSIVE MODE")
+        .execute(&mut **tx)
+        .await?;
+    let (Some(m), Some(players)) = (out.match_.as_mut(), out.players.as_mut()) else {
+        return Ok(());
+    };
+    let lut = crate::project::talent_lookup(tx, players).await;
+    let fix = crate::project::hero_corrections(players, &lut);
+    crate::project::apply_hero_corrections(m, players, &fix);
+    summary::apply_hero_corrections(sum, &fix);
+    Ok(())
+}
+
+/// Re-applies the hero correction to the stored scouting replays (`data` and `summary`) inside the
+/// activation transaction, which has written the new lookup. Keyset batches bound the working set;
+/// a repaired row no longer differs from its talents, so a second run changes nothing. Returns the
+/// number of repaired replays. The facts are refreshed after commit (`refresh_reference_facts`).
+pub(crate) async fn repair_reference_heroes(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+) -> Result<usize, sqlx::Error> {
+    sqlx::query("LOCK TABLE scouting_games IN SHARE ROW EXCLUSIVE MODE")
+        .execute(&mut **tx)
+        .await?;
+    let lut = crate::project::reference_lut(tx).await?;
+    if lut.is_empty() {
+        return Ok(0);
+    }
+    let mut after = 0_i64;
+    let mut repaired = 0;
+    loop {
+        let rows: Vec<(i64, J, J)> = sqlx::query_as(
+            "SELECT id, summary, data FROM scouting_games WHERE id > $1 ORDER BY id LIMIT 32",
+        )
+        .bind(after)
+        .fetch_all(&mut **tx)
+        .await?;
+        let Some((last, _, _)) = rows.last() else {
+            return Ok(repaired);
+        };
+        after = *last;
+        for (id, sum, mut data) in rows {
+            let Some(players) = data.get("players").and_then(J::as_object) else {
+                continue;
+            };
+            let fix = crate::project::hero_corrections(players, &lut);
+            if fix.is_empty() {
+                continue;
+            }
+            let Ok(mut sum) = serde_json::from_value::<GameSummary>(sum) else {
+                continue;
+            };
+            let mut players = players.clone();
+            let mut match_ = data
+                .get("match")
+                .and_then(J::as_object)
+                .cloned()
+                .unwrap_or_default();
+            crate::project::apply_hero_corrections(&mut match_, &mut players, &fix);
+            summary::apply_hero_corrections(&mut sum, &fix);
+            let Ok(sum) = serde_json::to_value(&sum) else {
+                continue;
+            };
+            data["players"] = J::Object(players);
+            if data.get("match").is_some() {
+                data["match"] = J::Object(match_);
+            }
+            sqlx::query("UPDATE scouting_games SET summary = $2, data = $3 WHERE id = $1")
+                .bind(id)
+                .bind(sum)
+                .bind(&data)
+                .execute(&mut **tx)
+                .await?;
+            repaired += 1;
+        }
+    }
+}
+
+/// After a reference activation: recomputes every report's facts (repaired heroes, hero roles from
+/// the new `dim_heroes`). A report whose facts are unchanged keeps its `facts_version`. Errors are
+/// logged; the next activation or mutation of the report recomputes again. Returns the reports changed.
+pub(crate) async fn refresh_reference_facts(db: &sqlx::PgPool) -> usize {
+    let ids: Vec<i64> = match sqlx::query_scalar("SELECT id FROM scouting_reports ORDER BY id")
+        .fetch_all(db)
+        .await
+    {
+        Ok(ids) => ids,
+        Err(e) => {
+            tracing::error!("scouting facts refresh: {e}");
+            return 0;
+        }
+    };
+    let mut changed = 0;
+    for id in ids {
+        match recompute_facts(db, id, false).await {
+            Ok(true) => changed += 1,
+            Ok(false) => {}
+            Err(e) => tracing::error!("scouting facts refresh {id}: {e}"),
+        }
+    }
+    changed
 }
 
 // ── rapports ─────────────────────────────────────────────────────────────────
@@ -411,7 +538,7 @@ pub async fn add_replay(
         return Err(err(StatusCode::INTERNAL_SERVER_ERROR, "io"));
     }
     let filename = crate::upload::filename(&headers);
-    let (out, sum, fp) = match parse(
+    let (mut out, mut sum, fp) = match parse(
         &s,
         path.clone(),
         filename
@@ -427,6 +554,10 @@ pub async fn add_replay(
             ))
         }
     };
+    let mut tx = s.db.begin().await.map_err(db_err)?;
+    correct_heroes(&mut tx, &mut out, &mut sum)
+        .await
+        .map_err(db_err)?;
     let gid: Option<i64> = sqlx::query_scalar(
         "INSERT INTO scouting_games (report_id, fingerprint, file_sha256, archived_path, filename,
             played_at, map, build, summary, data, parser_version)
@@ -444,9 +575,10 @@ pub async fn add_replay(
     .bind(serde_json::to_value(&sum).unwrap_or(J::Null))
     .bind(out.to_json())
     .bind(PARSER_VERSION)
-    .fetch_optional(&s.db)
+    .fetch_optional(&mut *tx)
     .await
     .map_err(db_err)?;
+    tx.commit().await.map_err(db_err)?;
     let Some(gid) = gid else {
         // same game, different file (re-export): duplicate in the game sense
         return Ok(Json(serde_json::json!({ "status": "duplicate" })));
@@ -692,17 +824,22 @@ pub async fn reprocess_stale(s: &AppState) -> usize {
         let p = s.cfg.archived_file(&path);
         let name = name.unwrap_or_else(|| p.to_string_lossy().into_owned());
         match parse(s, p, name).await {
-            Ok((out, sum, _)) => {
-                match sqlx::query(
-                    "UPDATE scouting_games SET summary = $2, data = $3, parser_version = $4 WHERE id = $1",
-                )
-                .bind(gid)
-                .bind(serde_json::to_value(&sum).unwrap_or(J::Null))
-                .bind(out.to_json())
-                .bind(PARSER_VERSION)
-                .execute(&s.db)
-                .await
-                {
+            Ok((mut out, mut sum, _)) => {
+                let written = async {
+                    let mut tx = s.db.begin().await?;
+                    correct_heroes(&mut tx, &mut out, &mut sum).await?;
+                    sqlx::query(
+                        "UPDATE scouting_games SET summary = $2, data = $3, parser_version = $4 WHERE id = $1",
+                    )
+                    .bind(gid)
+                    .bind(serde_json::to_value(&sum).unwrap_or(J::Null))
+                    .bind(out.to_json())
+                    .bind(PARSER_VERSION)
+                    .execute(&mut *tx)
+                    .await?;
+                    tx.commit().await
+                };
+                match written.await {
                     Ok(_) => {
                         reports.insert(rid);
                     }

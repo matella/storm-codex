@@ -194,40 +194,8 @@ async fn first_offline_replay_stays_browsable_and_is_corrected_in_place() {
 
     let feed = fixture_dir_copy(tmp.path());
     let source = Arc::new(DirSource::new(feed.clone()));
-    let dataset = load::prepare(source.as_ref(), None).unwrap().unwrap();
-    let rows = super::super::build(&dataset).unwrap();
-    let lut = rows
-        .talents
-        .into_iter()
-        .map(|t| (t.tree_id, t.hero_id))
-        .collect();
     let players = before["players"].as_object().unwrap();
-    let corrections = crate::project::hero_corrections(players, &lut);
-    if corrections.is_empty() {
-        // The committed replay is real; the trimmed fixture may not cover a bad
-        // attribution. Inject a fixture mapping for the actual talent IDs to exercise it.
-        let p = players
-            .values()
-            .find(|p| {
-                p["hero"] != "Abathur" && p["talents"].as_object().is_some_and(|o| !o.is_empty())
-            })
-            .unwrap();
-        let mut game = dataset.game;
-        game["heroes"]["Abathur"]["structure"]["talents"]["Level20"] = Value::Array(
-            p["talents"]
-                .as_object()
-                .unwrap()
-                .values()
-                .map(|id| json!({"talentId": id}))
-                .collect(),
-        );
-        let bytes = serde_json::to_vec(&game).unwrap();
-        fs::write(feed.join("game.json"), &bytes).unwrap();
-        let manifest = feed.join("manifest.json");
-        let mut doc: Value = serde_json::from_slice(&fs::read(&manifest).unwrap()).unwrap();
-        doc["files"]["game.json"] = json!(super::super::sha256_hex(&bytes));
-        fs::write(manifest, serde_json::to_vec(&doc).unwrap()).unwrap();
-    }
+    ensure_hero_repair(&feed, players);
     round(&app, &st.reference, source.clone()).await.unwrap();
     let after = get_json(&router, &path).await;
     let status = get_json(&router, STATUS).await;
@@ -288,6 +256,176 @@ async fn first_offline_replay_stays_browsable_and_is_corrected_in_place() {
     st.stop_import();
     importer.await.unwrap();
     server.abort();
+    drop_db(db, &db_name).await;
+}
+
+/// Talent corrections the fixture feed in `feed` gives `players`. The committed replay is real and the
+/// trimmed fixture may not cover a bad attribution: if it gives none, map one player's actual talent
+/// IDs to Abathur in the feed, so activation has a hero to repair.
+fn ensure_hero_repair(
+    feed: &Path,
+    players: &serde_json::Map<String, Value>,
+) -> std::collections::HashMap<String, String> {
+    let corrections = || {
+        let dataset = load::prepare(&DirSource::new(feed.to_path_buf()), None)
+            .unwrap()
+            .unwrap();
+        let rows = super::super::build(&dataset).unwrap();
+        let lut = rows
+            .talents
+            .into_iter()
+            .map(|t| (t.tree_id, t.hero_id))
+            .collect();
+        (crate::project::hero_corrections(players, &lut), dataset)
+    };
+    let (found, dataset) = corrections();
+    if !found.is_empty() {
+        return found;
+    }
+    let p = players
+        .values()
+        .find(|p| p["hero"] != "Abathur" && p["talents"].as_object().is_some_and(|o| !o.is_empty()))
+        .unwrap();
+    let mut game = dataset.game;
+    game["heroes"]["Abathur"]["structure"]["talents"]["Level20"] = Value::Array(
+        p["talents"]
+            .as_object()
+            .unwrap()
+            .values()
+            .map(|id| json!({"talentId": id}))
+            .collect(),
+    );
+    let bytes = serde_json::to_vec(&game).unwrap();
+    fs::write(feed.join("game.json"), &bytes).unwrap();
+    let manifest = feed.join("manifest.json");
+    let mut doc: Value = serde_json::from_slice(&fs::read(&manifest).unwrap()).unwrap();
+    doc["files"]["game.json"] = json!(super::super::sha256_hex(&bytes));
+    fs::write(manifest, serde_json::to_vec(&doc).unwrap()).unwrap();
+    let (found, _) = corrections();
+    assert!(!found.is_empty(), "fixture must exercise hero repair");
+    found
+}
+
+/// A scouting replay added before any reference data keeps the parser's heroes; activation repairs
+/// its stored summary and data, then the report's facts, and a replay added afterwards is corrected
+/// on insert. A later activation that changes nothing leaves the report untouched.
+#[tokio::test]
+async fn activation_repairs_scouting_heroes_and_facts() {
+    let Some((db, db_name)) = isolated_db().await else {
+        return;
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let app = setup(&db, tmp.path(), Vec::new());
+    let st = app.standalone.as_ref().unwrap();
+    st.reference.load(&db).await;
+    let router = crate::app_router(app.clone());
+    let replay = fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../storm-stats/tests/data/silver-city-aram.StormReplay"),
+    )
+    .unwrap();
+    let report = |title: &str| {
+        let router = router.clone();
+        let (body, bytes) = (format!(r#"{{"title":"{title}"}}"#), replay.clone());
+        async move {
+            let (code, created) = call(&router, "POST", "/api/scouting", Body::from(body)).await;
+            assert_eq!(code, StatusCode::CREATED);
+            let id = serde_json::from_slice::<Value>(&created).unwrap()["id"]
+                .as_i64()
+                .unwrap();
+            let path = format!("/api/scouting/{id}");
+            let (code, added) = call(
+                &router,
+                "POST",
+                &format!("{path}/replays"),
+                Body::from(bytes),
+            )
+            .await;
+            assert_eq!(code, StatusCode::OK);
+            let added: Value = serde_json::from_slice(&added).unwrap();
+            assert_eq!(added["status"], "added", "{added}");
+            path
+        }
+    };
+    let heroes = |report: &Value| -> std::collections::HashMap<String, Value> {
+        report["games"][0]["teams"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|t| t.as_array().unwrap())
+            .map(|p| (p["toon"].as_str().unwrap().to_owned(), p["hero"].clone()))
+            .collect()
+    };
+    let offline = report("offline").await;
+    let data: Value = sqlx::query_scalar("SELECT data FROM scouting_games")
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    let feed = fixture_dir_copy(tmp.path());
+    let fix = ensure_hero_repair(&feed, data["players"].as_object().unwrap());
+    let source = Arc::new(DirSource::new(feed.clone()));
+    // Scout the side of a repaired player, so the facts name its hero (a lone game has no side).
+    let toon = fix.keys().next().unwrap();
+    let gid = get_json(&router, &offline).await["games"][0]["gid"].clone();
+    let side = json!({ "target_team": data["players"][toon]["team"] }).to_string();
+    let (code, _) = call(
+        &router,
+        "PATCH",
+        &format!("{offline}/replays/{gid}"),
+        Body::from(side),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK);
+    let before = get_json(&router, &offline).await;
+    assert!(!before["games"][0]["target_team"].is_null());
+    for (toon, hero) in &fix {
+        assert_ne!(
+            heroes(&before)[toon],
+            json!(hero),
+            "imported with the parser's hero"
+        );
+    }
+
+    round(&app, &st.reference, source.clone()).await.unwrap();
+    let after = get_json(&router, &offline).await;
+    let repaired = heroes(&after);
+    for (toon, hero) in heroes(&before) {
+        let expected = fix.get(&toon).map_or(hero, |h| json!(h));
+        assert_eq!(repaired[&toon], expected, "{toon}");
+    }
+    let data: Value = sqlx::query_scalar("SELECT data FROM scouting_games")
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    for (toon, hero) in &fix {
+        let player = &data["players"][toon];
+        assert_eq!(player["hero"], json!(hero));
+        assert_eq!(player["heroCorrectedFrom"], heroes(&before)[toon]);
+    }
+    assert_eq!(
+        after["facts_version"].as_i64().unwrap(),
+        before["facts_version"].as_i64().unwrap() + 1,
+        "facts recomputed from the repaired summary"
+    );
+    let facts = after["snapshot"]["facts"].to_string();
+    let hero = &fix[toon];
+    assert!(
+        facts.contains(&format!("\"{hero}\"")),
+        "facts name {hero}: {facts}"
+    );
+
+    // Added after activation: corrected on insert, same heroes as the repaired copy.
+    let online = report("online").await;
+    assert_eq!(heroes(&get_json(&router, &online).await), repaired);
+
+    set_version(&feed, "another-revision", 1);
+    round(&app, &st.reference, source).await.unwrap();
+    let again = get_json(&router, &offline).await;
+    assert_eq!(
+        again["facts_version"], after["facts_version"],
+        "unchanged facts keep their version"
+    );
+    assert!(again == after, "repair is idempotent");
     drop_db(db, &db_name).await;
 }
 

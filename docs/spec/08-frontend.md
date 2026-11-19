@@ -171,8 +171,10 @@ deserialisation, `progress_percent`, `phase_message`, `redirects_to_welcome`, `p
   patch detail, hero patch history, the active Hero Changes view and patch choices, active player search roles, and Draft's
   hero role choices. Because activation repairs hero attribution in place, it also re-reads mounted repair-sensitive views:
   match detail and scoreboard, the 2D replay model and match data, hero attributes, Heroes, Hero detail, Matches (list and
-  hero filter), Maps, Records, Session, Player summary and insights, Compare, Synergies and match insights (every
-  `fetch_operator_stats` read plus the explicit `fetch_reference` reads). A 2D replay remounts its viewer on that refetch
+  hero filter), Maps, Records, Session, Player summary and insights, Compare, Synergies, match insights and the
+  Scouting report (its stored heroes and facts are repaired too) (every `fetch_operator_stats` read plus the explicit
+  `fetch_reference` reads). The Scouting report keeps showing the last loaded report during that refetch; its roster
+  editor is re-created only when the facts actually changed. A 2D replay remounts its viewer on that refetch
   (playback position resets). On the box the revision is never set, so these reads issue no reference request.
   Download status alone does not refetch these views, remount the page, or write import status, settings,
   or draft state. App portraits use the revision in their local image URL so an earlier missing or stale icon can be retried.

@@ -207,7 +207,10 @@ on this projection.
 
 A path **separate** from the upload pipeline: `POST /api/scouting/{id}/replays` archives into
 `ARCHIVE_DIR/scouting/<sha256>.StormReplay`, parses on the same pool (`parse_sem`), summarises
-(`summary.rs`) and inserts into `scouting_games` — never into `uploads`/`matches`. Pure core
+(`summary.rs`) and inserts into `scouting_games` — never into `uploads`/`matches`. Before the insert
+(and the re-parse update) it applies the projection's talent-based hero correction from `dim_talents`
+to `data` and the summary players, after `LOCK TABLE scouting_games IN ROW EXCLUSIVE MODE`, so a
+standalone reference activation either repairs the row or commits its lookup first. Pure core
 unit-tested (`summary`, `side`, `facts`, `pack`, `xlsx`, `analysis`); `api.rs` recomputes the
 facts under the report's row lock (`SELECT … FOR UPDATE`) on every mutation. Hero roles:
 `dim_heroes.data->>'expandedRole'` (the parser's `gameStats.Role` is 0 in custom games).
@@ -346,7 +349,12 @@ once instead.
   JSON (including takedowns), retaining original hero provenance and match/upload IDs. It does not
   re-decode or re-upload replays. Only the local activation transaction fences projection writes;
   neither network I/O nor staging holds that fence. Repair is idempotent and invalidates the
-  insights corpus when it changes a match. The 2D replay disk cache stores only replay-derived
+  insights corpus when it changes a match. The same transaction repairs scouting replays
+  (`scouting::api::repair_reference_heroes`, fence `LOCK TABLE scouting_games IN SHARE ROW EXCLUSIVE
+  MODE`): `scouting_games.data` players/takedowns and `summary` players by toon (draft picks and bans
+  are untouched). After commit and before the new revision is published, every report's facts are
+  recomputed (repaired heroes, roles from the new `dim_heroes`); `facts_version` only moves for a
+  report whose facts changed (jsonb comparison), so an imported analysis is not marked stale for nothing. The 2D replay disk cache stores only replay-derived
   geometry and the playerId → toon mapping; player name/hero/team/win are read from
   `match_players` on every request, so a cache entry warmed before the repair (even across a
   restart) serves the repaired hero. The entry (`{id}-replay2d-v{VIEWER_VERSION}-split2.json`) is

@@ -833,6 +833,8 @@ async fn activate(
         .execute(&mut *tx)
         .await?;
     let repaired = crate::project::repair_reference_heroes(&mut tx).await?;
+    // Scouting replays get the same correction, under the same fence (`scouting_games` lock).
+    let scouting = crate::scouting::api::repair_reference_heroes(&mut tx).await?;
     sqlx::query(
         "INSERT INTO app_settings (key, value) VALUES ($1, $2)
                  ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
@@ -851,6 +853,15 @@ async fn activate(
     if repaired > 0 {
         crate::insights::cache::invalidate().await;
         tracing::info!(repaired, "reference sync: repaired hero attribution");
+    }
+    // Before the new revision is published, so a scouting page refetched on it reads fresh facts.
+    let reports = crate::scouting::api::refresh_reference_facts(&app.db).await;
+    if scouting > 0 || reports > 0 {
+        tracing::info!(
+            scouting,
+            reports,
+            "reference sync: repaired scouting heroes and facts"
+        );
     }
     let mut view = state.view();
     view.status.version = Some(staged.active.version.clone());
