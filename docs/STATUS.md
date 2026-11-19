@@ -1,5 +1,18 @@
 # STATUS — read first, update last
 
+## Shareable match card (2026-11-19), branch `feat/match-card`
+
+Approved spec: `docs/specs/2026-11-19-match-card.md`. Match page: "Save as image" + "Show player names"
+toggle (off by default, remembered). The 1200×675 PNG is drawn client-side on a canvas (`core/card.rs` pure
+layout + tests, `app/card.rs` thin canvas code) from the match detail, insights fights, minimap and portraits,
+then saved through `<a download>`. No API change, no new crate (one `web-sys` feature, `TextMetrics`).
+
+Docker checks (web-rs fmt, clippy native + wasm, test, trunk build app) green; app bundle **1,006,511 bytes**
+Brotli: needs the 1.25 MB cap of PR #53 before CI passes. Browser check on a committed-replay fixture (win,
+names on/off, missing minimap, missing portrait): render+download about 200 ms. **Not done**: box DB games
+(loss, no operator account), installed WebView2 download on MH-Home (acceptance item 15; decides the
+`save_card` fallback).
+
 ## CI action pins and desktop release notes (2026-11-19), branch `ci/pin-actions-release-notes`
 
 Every action in `ci.yml` is now pinned to a full commit SHA (version in a comment, Dependabot `github-actions`

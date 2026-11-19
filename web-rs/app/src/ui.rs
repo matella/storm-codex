@@ -241,7 +241,7 @@ pub fn initials(h: &str) -> String {
 }
 
 /// Revision-keyed portrait URLs retry an earlier missing image and bypass a cached old one.
-fn portrait_src(path: &str, revision: Option<&str>) -> String {
+pub(crate) fn portrait_src(path: &str, revision: Option<&str>) -> String {
     match revision.filter(|_| path.starts_with("/images/heroes/")) {
         Some(revision) => format!(
             "{path}?ref={}",

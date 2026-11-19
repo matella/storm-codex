@@ -152,6 +152,11 @@ installer. Record the installer size.
     exact installer size and compare it with the 0.1.1 draft (**110,766,415 bytes**). With WebView2
     available and networking disabled, install on a fresh profile, import a real replay and browse
     it. See `docs/specs/2026-11-19-standalone-reference-download.md` for runtime sync acceptance.
+15. **Match card download (spec `docs/specs/2026-11-19-match-card.md`).** Offline, open a match and
+    click "Save as image" (names toggle off, then on). *Expected:* a PNG named
+    `storm-codex-<map>-<YYYY-MM-DD>-<id>.png` is saved where WebView2 says (Downloads or its prompt);
+    it opens, shows no player name with the toggle off. **If no file is saved**, the spec's
+    `save_card` native save-dialog fallback must be built (not built yet).
 
 ## Known limitations (v1, accepted or deferred)
 

@@ -99,3 +99,24 @@ The open questions were resolved as follows:
 1. Player names on the card: off by default (proposed), or on by default with the toggle?
 2. Implement the native save-dialog fallback upfront, or only if the WebView2 download fails on MH-Home?
 3. Card size: 1200 × 675 (16:9, proposed) or a square 1080 × 1080?
+
+## Implementation notes (2026-11-19, branch `feat/match-card`)
+
+- `core/card.rs` builds the card (`build_card`) and a display list (`layout`: rects, texts, portraits, crown);
+  text fitting takes a `measure` closure, so the layout is unit-tested natively (13 tests: win/loss/neutral sides,
+  names hidden by default and never a `#tag` or toon, file name, truncation, bounds). `app/card.rs` only loads
+  fonts/images, measures with `measureText` and replays the list. One `web-sys` feature added: `TextMetrics`.
+- The MVP mark is a crown drawn as a canvas shape next to "MVP", not the 👑 emoji: emoji fonts are not
+  guaranteed (Linux/headless rendered a missing glyph).
+- Highlights: "MVP · <hero>" (hero only, even with names on), "Team fights won N of M" (or
+  "Blue won N of M team fights" without an operator account), then "<team> first to level 10" from
+  `levelTimes`, falling back to "First fort: <team>" when no team reached 10.
+- Team fights are read at click time from `GET /api/matches/{id}/insights` (whole match, ignoring the page's
+  `?from=&to=` window); if it fails the fights highlight is left out. Hero names come from the match detail and
+  portraits/rings from `Dim` + reference revision, both reference-aware reads.
+- The card date is the browser's local calendar day of `match.date` (ISO day as fallback); the kicker shows
+  mode · day · duration, the footer the game version (`m_major.m_minor.m_revision.m_build`).
+- The button only exists once the match has loaded (the page shows "loading…" before), so there is no disabled
+  pre-load state; while rendering it is disabled and reads "Saving…".
+- Desktop `save_card` fallback: not built; acceptance item 15 in `docs/standalone-acceptance.md` decides it.
+- App bundle: 1,006,511 bytes Brotli (+10,727 vs 995,784), over the current 1,000,000 cap: needs PR #53 (1.25 MB).

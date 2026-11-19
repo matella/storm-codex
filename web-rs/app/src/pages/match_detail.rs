@@ -9,8 +9,10 @@ use leptos::prelude::*;
 use leptos_router::hooks::use_params_map;
 use serde_json::Value;
 use storm_web_core::{
-    aggregates::has_map_art,
+    aggregates::{has_map_art, minimap_image},
+    card::{build_card, CardInput},
     herodetail::{decamelize, DimTalent},
+    insights::MatchInsights,
     matchdetail::{
         announce_label, arr, ban_hero, ban_phase, bar_width, col_maxes, count, fmt_clock, fmt_k,
         get, idx, is_num, level_adv, num, num_eq, pings, score_rows, some, target, text,
@@ -26,8 +28,8 @@ use crate::{
     matchui::{AwardTag, ModeTag},
     pages::match_insights::{MatchInsightsSections, Who},
     ui::{
-        fetch_reference, map_art, use_operator, use_owner_toons, use_talents, Link, Portrait,
-        SecHead, Tone,
+        fetch_reference, map_art, portrait_src, use_dim, use_operator, use_owner_toons,
+        use_talents, Link, Portrait, SecHead, Tone,
     },
 };
 
@@ -400,6 +402,77 @@ impl Ctx {
     }
 }
 
+/// `localStorage` key of the card's "Show player names" toggle (off by default).
+const CARD_NAMES_KEY: &str = "matchCard.showNames";
+
+/// "Save as image" (shareable PNG card, `crate::card`) and its "Show player names" toggle. Heroes and portraits
+/// come from the reference-aware reads of the page (match detail, `Dim`, reference revision).
+#[component]
+fn SaveCard(ctx: Arc<Ctx>) -> impl IntoView {
+    let names = RwSignal::new(net::storage_get(CARD_NAMES_KEY).as_deref() == Some("1"));
+    let busy = RwSignal::new(false);
+    let msg = RwSignal::new(None::<(String, bool)>);
+    let dim = use_dim();
+    let revision = crate::reference::use_reference().revision;
+    let toggle = move |_| {
+        let on = !names.get_untracked();
+        names.set(on);
+        net::storage_set(CARD_NAMES_KEY, if on { "1" } else { "0" });
+    };
+    let save = move |_| {
+        if busy.get_untracked() {
+            return;
+        }
+        busy.set(true);
+        msg.set(None);
+        let ctx = ctx.clone();
+        let show_names = names.get_untracked();
+        let rev = revision.get_untracked();
+        let heroes = dim.with_untracked(|d| {
+            ctx.players
+                .iter()
+                .filter_map(|p| text(get(p, "hero")).filter(|h| !h.is_empty()))
+                .map(|h| {
+                    let icon = d.icon(h).map(|p| portrait_src(p, rev.as_deref()));
+                    (h.to_string(), (icon, d.ring(Some(h)).to_string()))
+                })
+                .collect()
+        });
+        leptos::task::spawn_local(async move {
+            let insights =
+                net::get_json::<MatchInsights>(&format!("/api/matches/{}/insights", ctx.id))
+                    .await
+                    .ok();
+            let detail = serde_json::json!({"id": ctx.id, "match": ctx.m, "players": ctx.by_toon});
+            let card = build_card(&CardInput {
+                detail: &detail,
+                insights: insights.as_ref(),
+                me_toon: ctx.me_toon.as_deref(),
+                show_names,
+                local_day: text(get(&ctx.m, "date")).and_then(crate::card::local_day),
+            });
+            let art = crate::card::Art {
+                minimap: minimap_image(&card.map),
+                heroes,
+            };
+            msg.set(Some(match crate::card::save(&card, &art).await {
+                Ok(f) => (format!("Saved {f}"), false),
+                Err(e) => (format!("Could not save the image ({e})"), true),
+            }));
+            busy.set(false);
+        });
+    };
+    view! {
+        <span class=move || pill(names.get()) role="switch" aria-checked=move || names.get().to_string()
+            title="Show in-game player names on the image (never the #tag)" style="margin-left: auto" on:click=toggle>"Show player names"</span>
+        <button type="button" class="ds-pill" disabled=move || busy.get() on:click=save
+            title=move || if busy.get() { "Rendering the image…" } else { "Save a PNG summary of this match (1200 × 675)" }>
+            {move || if busy.get() { "Saving…" } else { "Save as image" }}
+        </button>
+        {move || msg.get().map(|(t, bad)| view! { <span class="muted" style=if bad { "color: var(--loss-soft); font-size: 11px; align-self: center" } else { "font-size: 11px; align-self: center" }>{t}</span> })}
+    }
+}
+
 fn side_cls(t: &Value) -> &'static str {
     match t.as_f64() {
         Some(t) if t >= 0.0 => {
@@ -501,6 +574,7 @@ fn header_and_tabs(
     };
     let raw_href = format!("/api/matches/{}/raw?stream=tracker", ctx.id);
     let tab_ctx = ctx.clone();
+    let card_ctx = ctx.clone();
     view! {
         <div class="ds-page">
             <header class="ds-mhead" style=header_style>
@@ -519,7 +593,8 @@ fn header_and_tabs(
             <div class="ds-tabs">
                 <span class=move || pill(!replay.get()) on:click=move |_| replay.set(false)>"Score"</span>
                 <span class=move || pill(replay.get()) on:click=move |_| replay.set(true)>"Replay 2D"</span>
-                <a class="ds-pill" style="margin-left: auto" href=raw_href target="_blank" rel="noreferrer">"raw dump ›"</a>
+                <SaveCard ctx=card_ctx />
+                <a class="ds-pill" href=raw_href target="_blank" rel="noreferrer">"raw dump ›"</a>
             </div>
 
             {move || if replay.get() {
