@@ -9,7 +9,7 @@ description = "Process supervision helpers for the standalone Storm Codex instal
 [dependencies]
 fs4 = "0.13"
 # CSPRNG for the generated Postgres password.
-getrandom = "0.3"
+getrandom = "0.4"
 # Process listing for stale `postmaster.pid` detection (process feature only).
 sysinfo = { version = "0.38", default-features = false, features = ["system"] }
 thiserror = "2"
