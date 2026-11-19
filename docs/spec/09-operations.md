@@ -13,7 +13,10 @@ Front-end (`web-rs/`, needs `rustup target add wasm32-unknown-unknown` and `trun
 (`/cast/overlay`, `/draft/overlay`, `/ticker`, `/widget`, `/queue`, `/now-playing` for the OBS sources), exactly as in production. The server
 reads the pages at each request, so a rebuild needs no restart.
 
-**Production:** the Docker image builds the three bundles (stage `web`, pinned Trunk) and sets `WEB_DIR=/app/web`. React was removed after
+**Production:** the Docker image builds the three bundles (stage `web`, pinned Trunk), then runs
+`node scripts/precompress-web.mjs` (with the stage's `dist` path) to make Brotli quality 11 and gzip
+level 9 siblings next to top-level JS, CSS and WASM. Node is build-only; the image sets `WEB_DIR=/app/web`
+and ships both representations and originals. Keep them together from the same Trunk build. React was removed after
 the switch of 2026-11-12 (last commit with it: `2134853`), so there is no `WEB_ROOT` rollback switch any more: rolling back means deploying
 the previous image tag (`sha-<commit>`).
 
@@ -264,7 +267,7 @@ fresh migrated cluster → import.
 - **Folders.** Data root = Tauri `app_local_data_dir()` (`%LOCALAPPDATA%\com.matella.stormcodex`,
   covered by the uninstaller's "delete app data" option): `pg/`, `pg-password`, `archive/`,
   `raw-cache/`, `images/`, `logs/`, `uploaded.json`. Resources (next to the exe once packaged):
-  `storm-codex-server.exe`, `postgres/{bin,lib,share}`, `web/` (= `web-rs/dist`), `minimaps/`
+  `storm-codex-server.exe`, `postgres/{bin,lib,share}`, `web/` (= `web-rs/dist`, including `.br` and `.gz` siblings), `minimaps/`
   (= `assets/minimaps`). The Tauri identifier `com.matella.stormcodex`
   determines the data root `%LOCALAPPDATA%\com.matella.stormcodex`; changing it orphans the
   users' data, so it must stay stable (packaging keeps it).
@@ -689,7 +692,9 @@ then `python3 scripts/release-notes.py --repo matella/storm-codex --version X.Y.
    fetches pinned Postgres 17 (SHA-256 checked);
    installs pinned tools (Rust `1.94.0` + `wasm32-unknown-unknown`; Trunk prebuilt `0.22.0-beta.1`,
    SHA-256 checked against the committed `TRUNK_SHA256`; tauri-cli `2.12.4` prebuilt, checked against
-   `TAURI_CLI_SHA256`; NSIS is downloaded by the Tauri bundler itself); builds the three `web-rs` bundles, `cargo build --release --locked -p
+   TAURI_CLI_SHA256`; NSIS is downloaded by the Tauri bundler itself); builds the three `web-rs` bundles,
+   runs the compression test and the same Node compression script as Docker using the runner's Node,
+   then `cargo build --release --locked -p
    storm-codex-server`, then `cargo tauri build --config tauri.bundle.conf.json` with the signing
    secrets in the environment (gives `…-setup.exe` and its `.sig`).
 4. It publishes, with `gh release create --latest` and the generated release notes as body, the release `desktop-vX.Y.Z` with

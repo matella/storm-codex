@@ -98,10 +98,18 @@ rule); the requests of `gloo-net` carry a trailing `&` after an existing query s
 Status: the six OBS sources are built and checked in the browser against React on real and synthetic data (normalised
 DOM identical for ticker, widget with and without MVP, queue with mixed modes / awards / two operator accounts / a streak and
 the music card, now playing default / `?mini` / `?reveal`, draft overlay with a skin, cast overlay; the reveal hold of about 2.6 s
-observed). **Real-OBS check pending for each source (operator).** JetBrains Mono (400/600 in `sources`, 700 in `overlay`, latin subset, `fonts/` next to each bundle) is self-hosted, so no OBS source needs Google Fonts for it; the overlay still loads Cinzel and Oswald from Google Fonts, exactly like the React overlay. The app bundle is below.
+observed). **Use OBS Studio 31 or later (CEF Chromium 127 minimum); real-OBS acceptance is pending.**
+The Latin subsets of JetBrains Mono (400/600 in `sources`, 700 in `overlay`), Cinzel (700/800) and
+Oswald (500/700) are served locally from the two bundles' `fonts/` directories, with their OFL
+licenses. Cinzel and Oswald are from Fontsource 5.3.0. No font CDN is used. Both OBS documents
+declare `lang="en"` and fall back to system fonts. The active draft slot pulses by animating only
+the opacity of a separate glow; the now-playing equaliser bars use a `--i` stagger without changing
+the reveal morph. Existing operator-supplied media URLs are unaffected.
 Contract: **OBS bundles stay <= 300 kB gzip; the app bundle stays <= 1.25 MB brotli** (cap raised from 1 MB by the operator on 2026-11-19, with 995,946 bytes used, to make room for the approved session review, match card and replay search; 911 kB on 2026-11-11, 937 kB on 2026-11-13 with the standalone screens, 943 kB on 2026-11-14 with the startup toggle, 977 kB on 2026-11-18 with the local insights pages, 982 kB with standalone folder identity, 994,513 bytes with standalone reference sync, 994,763 bytes with repair-sensitive refetches; the server negotiates brotli; `SIZE_CODEC=br` in the script) (`scripts/check-web-rs-size.sh`, enforced in CI; `overlay` 229 kB and `sources`
 191 kB on 2026-11-11). Putting the session and music sources in the overlay bundle gave 314 kB (the view machinery is linked once per
-bundle), hence two bundles: an OBS source only loads the bundle of its family. One bundle per page family: the sanitiser
+bundle), hence two bundles: an OBS source only loads the bundle of its family. Patch-note HTML is sanitised
+in an inert template; images have `referrerpolicy="no-referrer"` and `loading="lazy"` set before insertion,
+not copied from input. Image URLs are not proxied. One bundle per page family: the sanitiser
 (`ammonia`, about 300 kB) must never be linked into an OBS bundle.
 
 ## Standalone (desktop) mode

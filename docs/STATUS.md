@@ -1,5 +1,16 @@
 # STATUS — read first, update last
 
+## Web audit platform slice (2026-11-19), branch `fix/web-audit-platform`
+
+Docker and Windows packaging generate Brotli/gzip siblings; the loopback binary served them byte for
+byte, with dynamic fallback. Only fingerprinted bundles and matching managed image revisions are
+immutable. Patch images suppress referrers and load lazily. OBS fonts are local, with OBS 31+ required.
+Linux: 515 workspace tests passed (10 ignored), 55 reference tests also passed with the full pinned
+archive, 153 web tests passed, strict Clippy and actionlint passed, both Docker targets built and all
+six OBS routes passed the Chromium fixture smoke. Bundle sizes: app 996,438 B Brotli, overlay
+217,940 B gzip, sources 181,344 B gzip. Tauri's merged configuration and resource mapping passed
+local validation; actual Windows NSIS/WebView2 and real OBS are pending. No push, release or deploy.
+
 ## CI action pins and desktop release notes (2026-11-19), branch `ci/pin-actions-release-notes`
 
 Every action in `ci.yml` is now pinned to a full commit SHA (version in a comment, Dependabot `github-actions`

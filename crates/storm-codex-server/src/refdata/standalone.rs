@@ -317,7 +317,7 @@ async fn map_image(
 
 async fn image(app: &AppState, group: &str, name: &str, mut req: Request) -> Response {
     if name.contains('/') || !safe_image_dest(name) || !name.ends_with(".png") {
-        return StatusCode::NOT_FOUND.into_response();
+        return (StatusCode::NOT_FOUND, [(header::CACHE_CONTROL, "no-store")]).into_response();
     }
     let path = format!("{group}/{name}");
     let active = app
@@ -329,7 +329,11 @@ async fn image(app: &AppState, group: &str, name: &str, mut req: Request) -> Res
     req.headers_mut().remove(header::IF_MODIFIED_SINCE);
     let (parts, _) = req.into_parts();
     let managed = active.filter(|a| a.images.contains_key(&path));
+    let mut immutable = false;
     let mut response = if let Some(active) = managed {
+        // Only the bytes from the captured generation may be pinned under its exact URL.
+        immutable = parts.uri.query().and_then(|q| q.strip_prefix("ref="))
+            == Some(active.revision.as_str());
         serve_image(
             active.dir(&asset_root(app)).join(&path),
             &parts.method,
@@ -340,11 +344,17 @@ async fn image(app: &AppState, group: &str, name: &str, mut req: Request) -> Res
         StatusCode::NOT_FOUND.into_response()
     };
     if response.status() == StatusCode::NOT_FOUND {
+        immutable = false;
         response = serve_image(app.cfg.images_dir.join(path), &parts.method, &parts.headers).await;
     }
+    let cache = match response.status() {
+        StatusCode::OK | StatusCode::PARTIAL_CONTENT if immutable => crate::IMMUTABLE_CACHE,
+        status if status.is_success() => "no-cache",
+        _ => "no-store",
+    };
     response
         .headers_mut()
-        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static(cache));
     response
 }
 

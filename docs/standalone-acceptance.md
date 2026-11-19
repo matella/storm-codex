@@ -84,6 +84,11 @@ code changed. What they change for the checklist below:
 Do these on a **clean Windows 11 VM** (fresh local user) unless said otherwise. Record the
 result and date next to each step, and copy the measurements into `docs/spec/09-operations.md`.
 
+For the platform audit, verify the installed `web/` contains each bundle's original CSS, JS and
+WASM plus the `.br` and `.gz` siblings. Check that WebView2 receives Brotli WASM from loopback,
+and smoke all six Browser Sources in OBS Studio 31 or later (including local fonts on the Nexus
+and Tactical draft skins). A Linux Chromium smoke does not substitute for either check.
+
 **Before (one time, see 09-operations "Releasing the desktop app"):** generate the updater key
 pair, set `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, replace
 `plugins.updater.pubkey`, run the release workflow as a **dry run** (draft) and download the

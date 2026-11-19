@@ -63,3 +63,17 @@ thumbnails, proxying remote patch-note images. Each needs its own design decisio
 - Lighthouse (desktop) accessibility ≥ 95 on those pages; no performance regression; download page stays 100.
 - Network probe: OBS overlays make zero third-party requests; the app wasm is served from the `.br` sibling.
 - Existing tests green; new tests for the precompressed serving, headers and sanitizer attributes.
+
+## Platform implementation notes
+
+- Docker and the desktop workflow share a build-only Node script; they retain original files and add
+  siblings only for CSS, JS and WASM. On the same Linux release build, app WASM transfers at 969,647
+  bytes with precompressed Brotli versus 1,255,662 with dynamic Brotli (22.8% smaller).
+- Standalone cache eligibility follows the existing portrait URL contract (`?ref=<revision>`). The
+  server does not treat arbitrary revisions, legacy fallback files, or misses as immutable. Unkeyed
+  references (including self-hosted art) do not get the new policy.
+- Linux Chromium on loopback verified all six OBS sources, including local Cinzel/Oswald, draft pulse
+  and music stagger, with no third-party requests on the fixtures. Existing operator media URLs are
+  unchanged. The patch fixture's cross-origin image reached its local receiver without a `Referer`.
+  Windows NSIS/WebView2 and real OBS acceptance remain pending; the app slice's audits are not gates
+  for this platform-only commit.
