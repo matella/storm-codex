@@ -28,11 +28,9 @@ pub struct Config {
     /// HotsPatchNotes dataset release download base (`REFDATA_URL`, default the producer's
     /// `releases/latest/download/`; empty = no reference-data refresh). Box only. See `refdata::load`.
     pub refdata_url: Option<String>,
-    /// Standalone (installer) mode, `STANDALONE=1`: loopback-only bind, no network refresh of the
-    /// reference data; it is seeded once from `referential_file`. See `Config::validate`.
+    /// Standalone (installer) mode, `STANDALONE=1`: loopback-only bind and independent reference sync.
     pub standalone: bool,
-    /// Bundled `referential.tar.gz` on disk (`REFERENTIAL_FILE`), used to seed an empty
-    /// `dim_heroes` in standalone mode. See `refdata::load::ingest_bundle`.
+    /// Optional legacy `referential.tar.gz` (`REFERENTIAL_FILE`) for offline standalone seeding.
     pub referential_file: Option<PathBuf>,
     /// Upload ledger of the standalone watcher (`LEDGER_FILE`, standalone only). Default:
     /// `uploaded.json` next to `archive_dir` (see [`Config::ledger_path`]).

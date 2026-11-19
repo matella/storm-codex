@@ -3,8 +3,8 @@
 //! The hero/talent/map/patch reference data comes from the HotsPatchNotes **dataset** (schema v1,
 //! published as GitHub releases). This module turns that dataset into the rows of `dim_heroes`,
 //! `dim_talents`, `dim_patches` and `patch_hero_sections`, plus the list of images to copy. It does no
-//! I/O: the two thin loaders in [`load`] (box: download a release; standalone: read the bundled trimmed
-//! file) feed it bytes and write what it returns. One pipeline, one source (hard rule 7).
+//! I/O: [`load`] and [`standalone`] feed it the validated release or legacy bundle, then use the same
+//! writer. One adapter, one source (hard rule 7).
 //!
 //! Join keys kept from the old API:
 //! - hero: the **parser name** (`dim_heroes.id`/`name`), via the dataset `attributeId` →
@@ -13,6 +13,7 @@
 
 pub mod classify;
 pub mod load;
+pub mod standalone;
 
 use serde_json::{json, Map, Value as J};
 use sha2::{Digest, Sha256};

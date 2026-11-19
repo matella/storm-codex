@@ -70,10 +70,9 @@ Only in standalone mode (`STANDALONE=1`); without it the routes below answer 404
 starts. One background task (`standalone/orchestrator.rs`) owns the upload ledger and runs,
 once the listener is bound (`/api/health` answers 200 during the whole sequence):
 
-1. **seed** the reference data from `REFERENTIAL_FILE` when `dim_heroes` is empty or the bundled
-   file differs from the one last ingested (an app update ships a newer one) (phase `seeding`);
-   then, in a background task started **once the first import run ends** (step 6; so it does
-   not compete with the backfill for `parse_sem`, whose saturation makes uploads answer 202
+1. **initialize** import (phase `seeding`); reference sync runs separately and does not gate
+   import. In a background task started **once the first import run ends** (step 6; so it does not
+   compete with the backfill for `parse_sem`, whose saturation makes uploads answer 202
    before their outcome is known), the **re-process after an update**: every
    upload `parsed` with `parser_version < PARSER_VERSION` is re-parsed and re-projected
    (`admin::outdated_uploads` + `admin::reprocess_one`, one `parse_sem` permit each, so it
@@ -276,14 +275,34 @@ empty, retry every **10 min**. Each round (`refdata::load::refresh`):
 4. when some image is missing from `IMAGES_DIR`, download `dataset.tar.gz`, check it against
    `dataset.tar.gz.sha256`, and copy the missing images (each checked against `assets.json`).
 
-**Standalone mode** (`STANDALONE=1`, installer bundle): no network. When `REFERENTIAL_FILE` is
-set (the trimmed bundle built by `storm-codex-server refdata trim`, see `09-operations.md`), its
-SHA-256 is compared with `app_settings.reference_snapshot_sha256` (a JSON string) at each start;
-when `dim_heroes` is empty or the hashes differ (an app update ships a newer bundle), the bundle is
-ingested as the first step of the standalone import task (phase `seeding`, see "Standalone import"
-below) by `refdata::load::ingest_bundle` — same manifest/schema/SHA-256 checks and the same writer
-as the box — and the hash is saved only after a successful ingest (an unreadable, corrupt or
-tampered file is retried at the next start). The 24 h refresh loop is not started.
+**Standalone mode** (`STANDALONE=1`; approved download spec 2026-11-19). The reference worker
+(`refdata/standalone.rs`) starts alongside import. It checks the same fixed stable feed at startup
+and every 24 h. Failed checks retry after 1, 5 and 30 minutes, then return to the daily cadence.
+Manual refresh and enabling queue a check; requests coalesce and rounds never overlap. The persisted
+`app_settings.standalone_reference_enabled` defaults to true. Disabling prevents new rounds and
+activation of work still being fetched; it does not remove cached rows or assets.
+
+- The manifest schema and metadata checks use the existing adapter. An unchanged version with
+  complete verified local images fetches only `manifest.json`. Otherwise the worker verifies the
+  archive checksum, verifies every required image against both asset and manifest hashes, and
+  flushes the images to an isolated generation under `<data>/reference-assets/<revision>`.
+- The shared transaction writer installs the reference rows and records the generation and version
+  in `app_settings` (`standalone_reference_active` and `refdata_dataset_version`). Until commit the
+  old generation remains active. Standalone hero and battleground artwork use the committed
+  generation, with legacy `IMAGES_DIR` as fallback; `/images/minimaps` is unchanged. Superseded
+  managed generations are retired on restart. Cached legacy rows and files are preserved on upgrade.
+- `REFERENTIAL_FILE`, when provided, remains an offline seed and uses the same activation path,
+  even with network sync disabled. A changed bundle is accepted until a network generation is
+  active; then a legacy resource cannot downgrade it. A restore with missing images keeps its
+  rows: the next successful check restages even the same version and publishes a new revision.
+  Cached rows remain readable during a check or failure.
+- Activation repairs hero attribution of already projected replays in bounded batches, using stored
+  talent IDs and the live correction rule. It updates the promoted hero and affected player/match
+  JSON (including takedowns), retaining original hero provenance and match/upload IDs. It does not
+  re-decode or re-upload replays. Only the local activation transaction fences projection writes;
+  neither network I/O nor staging holds that fence. Repair is idempotent and invalidates the
+  insights corpus when it changes a match.
+
 `Config::validate()` (run right after `from_env()`) rejects a non-loopback `BIND_ADDR` in this mode
 ("standalone mode requires a loopback BIND_ADDR"): the IP must be exactly `127.0.0.1` or `::1`, the
 addresses the Host guard accepts (another 127/8 address would make every in-process upload a 403).
@@ -361,8 +380,8 @@ Design: `docs/specs/2026-10-24-feed-live-en-partie-design.md`.
 | `IMAGES_DIR` | `./.images` | vendored images, served on `/images` |
 | `REDIS_URL` / `JARVIS_CHANNEL` | empty = no emission / `jarvis:events` (box production: `storm-codex:match_completed`) | Jarvis events |
 | `REFDATA_URL` | the producer's `releases/latest/download/`; empty = off | reference dataset release (box; see above) |
-| `STANDALONE` | empty = off | `1` = standalone (installer) mode: loopback-only `BIND_ADDR` (checked at startup), no reference-data network refresh |
-| `REFERENTIAL_FILE` | empty | bundled trimmed `referential.tar.gz` (`refdata trim`) that seeds the reference data in standalone mode |
+| `STANDALONE` | empty = off | `1` = standalone (installer) mode: loopback-only `BIND_ADDR` (checked at startup), independent reference sync |
+| `REFERENTIAL_FILE` | empty | optional legacy trimmed `referential.tar.gz` (`refdata trim`) for offline seeding in standalone mode |
 | `LEDGER_FILE` | `<ARCHIVE_DIR>/../uploaded.json` | standalone only: upload ledger of the in-process watcher (the desktop shell passes `<data>/uploaded.json`) |
 | `ORPHEUS_URL` | empty | music proxy for `/api/now-playing` |
 | `PATCH_WEBHOOK_URL` | empty | outgoing new-patch notification |

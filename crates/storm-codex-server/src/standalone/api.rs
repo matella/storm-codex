@@ -35,7 +35,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/standalone/shutdown", post(shutdown))
 }
 
-fn error(code: StatusCode, message: String) -> Response {
+pub(crate) fn error(code: StatusCode, message: String) -> Response {
     (code, Json(serde_json::json!({ "error": message }))).into_response()
 }
 

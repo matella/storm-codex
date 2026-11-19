@@ -167,6 +167,7 @@ async fn run() -> Result<(), String> {
     let standalone = if cfg.standalone {
         let st = standalone::StandaloneState::new(&cfg);
         st.load_saved_extras(&db).await;
+        st.reference.load(&db).await;
         Some(Arc::new(st))
     } else {
         None
@@ -189,8 +190,7 @@ async fn run() -> Result<(), String> {
     // Hero/talent/map/patch reference data + images from the HotsPatchNotes dataset (`refdata`,
     // spec 2026-11-15): the latest validated release at `REFDATA_URL`, verified, re-checked every
     // 24 h (a round with an unchanged `datasetVersion` downloads only `manifest.json`). Each new patch
-    // → in-app WS notification + optional webhook. Standalone mode: no network and no refresh loop;
-    // the import task seeds from the bundled trimmed snapshot instead.
+    // → in-app WS notification + optional webhook. Standalone uses a separate activation worker.
     if let (false, Some(url)) = (state.cfg.standalone, state.cfg.refdata_url.clone()) {
         let st = state.clone();
         tokio::spawn(async move {
@@ -260,6 +260,10 @@ async fn serve(
     let standalone = state.standalone.clone();
     let import = standalone.as_ref().map(|st| {
         st.set_port(local.port());
+        // In-process listener tests must not contact GitHub; reference tests inject a Source.
+        if !cfg!(test) {
+            refdata::standalone::spawn(state.clone());
+        }
         standalone::spawn(state.clone(), format!("http://{local}"))
     });
     axum::serve(listener, app)
@@ -353,7 +357,9 @@ fn app_router(state: AppState) -> Router {
 fn api_router(state: &AppState) -> Router<AppState> {
     let router = base_router(state);
     if state.standalone.is_some() {
-        router.merge(standalone::api::router())
+        router
+            .merge(standalone::api::router())
+            .merge(refdata::standalone::router())
     } else {
         router
     }

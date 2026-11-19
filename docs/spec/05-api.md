@@ -217,6 +217,22 @@ included, whose `Origin` is present and is not the app's own (`http://` + loopba
 port) (403); see [04-serveur.md](04-serveur.md) "Standalone import". Bodies and answers: the route table
 in [04-serveur.md](04-serveur.md) ("Standalone import").
 
+### Standalone reference status and controls
+
+| Request | Response |
+|---|---|
+| `GET /api/standalone/reference` | `200` with `{enabled, phase, version, revision}` |
+| `PUT /api/standalone/reference` with `{enabled: bool}` | Persists the preference, queues a check when enabled, and returns `200` with the same shape. |
+| `POST /api/standalone/reference/refresh` | Requests one check: `202` when enabled, `409` when disabled. |
+
+These routes are standalone-only (`404` otherwise) and use the same Host/Origin checks. There is
+no request-supplied feed URL. `phase` is `waiting`, `syncing`, `ready` or `error` and is independent
+of import progress. `enabled` is independent of cached dataset usability. `version` is the active
+dataset version (a string), or `null`. `revision` is an opaque **string**: compare for equality, not
+ordering. It changes when an activation becomes visible, including an update with no new patch ID
+and same-version asset recovery. It does not change on a refused check or a preference toggle.
+Clients poll this local status (not GitHub) and refetch reference-dependent data when it changes.
+
 In standalone mode, operator perspective in Matches/CSV, Heroes, Maps (including early leads),
 Trends, Synergies, Records and resolved lobby stats includes exact folder ToonHandles in addition to
 manual names. Existing plain `account` values still match names; selectors may send

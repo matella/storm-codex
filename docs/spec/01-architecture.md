@@ -54,8 +54,10 @@ Design: `docs/specs/2026-11-12-standalone-installer-design.md`.
   dead webhook — the upload→parse→projection pipeline must never depend on them.
 - **Single reference source**: heroes/talents/maps/patches come from the HotsPatchNotes **dataset**
   (schema v1, GitHub releases) through the single `refdata` adapter, replicated into `dim_*`. Box:
-  latest validated release, SHA-256 verified, refreshed every 24 h. Standalone: a trimmed snapshot of a
-  pinned release, bundled in the installer. No second sync pipeline (spec 2026-11-15).
+  latest validated release, SHA-256 verified, refreshed every 24 h. Standalone checks the same stable
+  feed independently of startup, replay import and application updates. It activates only after its
+  required images are staged and verified; offline startup uses cached data or replay-derived fallbacks.
+  The existing local bundle remains supported (approved download spec, 2026-11-19).
 - **`PARSER_VERSION`** (`main.rs`): bump on every projection change; it is what drives
   re-processing.
 
@@ -66,6 +68,7 @@ Design: `docs/specs/2026-11-12-standalone-installer-design.md`.
 | Full parse (decode + stats) | < 150 ms/replay | 133 ms median (`docs/research/2026-06-12-jalon2-parite.md`) |
 | End of game → page updated | < 5 s | 1.4 s (`docs/research/2026-06-12-jalon3-bench.md`) |
 | API p95 | < 100 ms | 52 ms (same); `GET /api/scouting/{id}`: 5.9 ms (25 requests, real 3-game report, 2026-09-26) |
+| Standalone reference status (`GET /api/standalone/reference`) | API p95 < 100 ms | 0.74 ms (200 warm loopback requests, Linux debug server, clean DB after first sync, 2026-11-19) |
 | 3-year archive backfill (~2,800) | < 5 min | 1.8 min (same) |
 | Local insights (`/api/records`, `/api/maps/early-leads`, `/api/matches/{id}/insights`, `/api/compare`) | API p95 < 100 ms | warm: 35 / 6 / 4 / 12 ms (copy of the box DB, 3,480 games, release, 2026-11-18) |
 | Local insights: `/api/players/{toon}/insights` | API p95 < 100 ms — **at the limit, operator to accept or ask for more work** | 75–100 ms (same setup; account with 2,684 games) |

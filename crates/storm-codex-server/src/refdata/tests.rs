@@ -19,21 +19,21 @@ fn fixture_dir() -> PathBuf {
 }
 
 /// Release-like source over a folder laid out as the tarball (`locales/enus.json`), recording requests.
-struct DirSource {
+pub(super) struct DirSource {
     dir: PathBuf,
     asked: Mutex<Vec<String>>,
     tamper: Option<&'static str>,
 }
 
 impl DirSource {
-    fn new(dir: PathBuf) -> DirSource {
+    pub(super) fn new(dir: PathBuf) -> DirSource {
         DirSource {
             dir,
             asked: Mutex::new(Vec::new()),
             tamper: None,
         }
     }
-    fn asked(&self) -> Vec<String> {
+    pub(super) fn asked(&self) -> Vec<String> {
         self.asked.lock().unwrap().clone()
     }
 }
@@ -41,7 +41,7 @@ impl DirSource {
 impl Source for DirSource {
     fn get(&self, name: &str) -> Result<Vec<u8>, RefdataError> {
         self.asked.lock().unwrap().push(name.into());
-        let rel = if name == "enus.json" {
+        let rel = if name == "enus.json" && !self.dir.join(name).is_file() {
             "locales/enus.json"
         } else {
             name
@@ -729,7 +729,7 @@ async fn a_refused_round_keeps_the_previous_data() {
 }
 
 /// Copies the fixture to `<tmp>/dataset` so a test can alter it; returns that folder.
-fn fixture_dir_copy(tmp: &Path) -> PathBuf {
+pub(super) fn fixture_dir_copy(tmp: &Path) -> PathBuf {
     fn copy(src: &Path, dst: &Path) {
         std::fs::create_dir_all(dst).unwrap();
         for e in std::fs::read_dir(src).unwrap() {
@@ -755,22 +755,6 @@ fn fixture_dir_copy(tmp: &Path) -> PathBuf {
     )
     .unwrap();
     dst
-}
-
-#[tokio::test]
-async fn the_trimmed_bundle_seeds_offline() {
-    let Some((db, name)) = isolated_db().await else {
-        return;
-    };
-    let tmp = tempfile::tempdir().unwrap();
-    let out = tmp.path().join("referential.tar.gz");
-    load::trim(&fixture_tarball(tmp.path()), &out).unwrap();
-    let images = tmp.path().join("images");
-    load::ingest_bundle(&db, &images, &out).await.unwrap();
-    assert_eq!(count(&db, "dim_heroes").await, 9);
-    assert_eq!(count(&db, "dim_patches").await, 5);
-    assert!(images.join("heroes/lucio.png").is_file());
-    drop_db(db, &name).await;
 }
 
 /// Key sets of a JSON value (recursively: objects by key, arrays by their first element).

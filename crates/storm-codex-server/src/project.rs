@@ -48,7 +48,7 @@ fn talent_hero(p: &J, lut: &HashMap<String, String>) -> Option<String> {
     }
     tally
         .into_iter()
-        .max_by_key(|(_, n)| *n)
+        .max_by(|(a, n), (b, m)| n.cmp(m).then_with(|| b.cmp(a)))
         .map(|(h, _)| h.to_string())
 }
 
@@ -112,13 +112,77 @@ fn apply_hero_corrections(
         };
         if let Some(h) = fix.get(toon) {
             let orig = obj.get("hero").cloned().unwrap_or(J::Null);
-            obj.insert("heroCorrectedFrom".into(), orig);
+            obj.entry("heroCorrectedFrom").or_insert(orig);
             obj.insert("hero".into(), J::from(h.clone()));
         }
         fix_takedown_heroes(obj.get_mut("deaths"), fix);
         fix_takedown_heroes(obj.get_mut("takedowns"), fix);
     }
     fix_takedown_heroes(match_.get_mut("takedowns"), fix);
+}
+
+/// Re-apply the same hero correction to stored projections without decoding replays or
+/// replacing match IDs. The caller holds the projection writer fence and has written the new
+/// lookup in this transaction. Keyset batches bound the working set, even for large archives.
+pub(crate) async fn repair_reference_heroes(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+) -> Result<usize, sqlx::Error> {
+    let lut: HashMap<String, String> = sqlx::query_as::<_, (String, String)>(
+        "SELECT tree_id, hero_id FROM dim_talents WHERE tree_id IS NOT NULL ORDER BY tree_id, hero_id",
+    )
+    .fetch_all(&mut **tx)
+    .await?
+    .into_iter()
+    .collect();
+    if lut.is_empty() {
+        return Ok(0);
+    }
+    let mut after = 0_i64;
+    let mut repaired = 0;
+    loop {
+        let ids: Vec<i64> =
+            sqlx::query_scalar("SELECT id FROM matches WHERE id > $1 ORDER BY id LIMIT 32")
+                .bind(after)
+                .fetch_all(&mut **tx)
+                .await?;
+        let Some(last) = ids.last() else {
+            return Ok(repaired);
+        };
+        after = *last;
+        let mut groups: HashMap<i64, Map<String, J>> = HashMap::new();
+        for (id, toon, data) in sqlx::query_as::<_, (i64, String, J)>(
+            "SELECT match_id, toon_handle, data FROM match_players WHERE match_id = ANY($1)",
+        )
+        .bind(&ids)
+        .fetch_all(&mut **tx)
+        .await?
+        {
+            groups.entry(id).or_default().insert(toon, data);
+        }
+        for (id, mut players) in groups {
+            let corrections = hero_corrections(&players, &lut);
+            if corrections.is_empty() {
+                continue;
+            }
+            let sqlx::types::Json(mut match_data): sqlx::types::Json<Map<String, J>> =
+                sqlx::query_scalar("SELECT data FROM matches WHERE id = $1")
+                    .bind(id)
+                    .fetch_one(&mut **tx)
+                    .await?;
+            apply_hero_corrections(&mut match_data, &mut players, &corrections);
+            sqlx::query("UPDATE matches SET data = $2 WHERE id = $1")
+                .bind(id)
+                .bind(sqlx::types::Json(match_data))
+                .execute(&mut **tx)
+                .await?;
+            for (toon, data) in players {
+                sqlx::query("UPDATE match_players SET hero = $3, data = $4 WHERE match_id = $1 AND toon_handle = $2")
+                    .bind(id).bind(toon).bind(data.get("hero").and_then(J::as_str)).bind(&data)
+                    .execute(&mut **tx).await?;
+            }
+            repaired += 1;
+        }
+    }
 }
 
 /// `true` if the error is a deadlock (40P01) or a serialisation failure (40001) — transient,
@@ -196,7 +260,7 @@ async fn project_once(
         HashMap::new()
     } else {
         sqlx::query_as::<_, (String, String)>(
-            "SELECT tree_id, hero_id FROM dim_talents WHERE tree_id = ANY($1)",
+            "SELECT tree_id, hero_id FROM dim_talents WHERE tree_id = ANY($1) ORDER BY tree_id, hero_id",
         )
         .bind(&talent_ids)
         .fetch_all(&mut *tx)

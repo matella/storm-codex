@@ -1,18 +1,17 @@
-//! The two thin loaders of the reference dataset, and the one writer they share.
+//! Shared dataset loading and writing, plus the box refresh and legacy bundle tooling.
 //!
 //! - **Box** ([`refresh`]): reads `manifest.json` from `REFDATA_URL` (a release download base), refuses a
 //!   schema other than v1, skips the round when `datasetVersion` is the one last ingested, else downloads
 //!   the data files, checks each against the manifest SHA-256 and writes them in one transaction. Images
 //!   missing from `images_dir` come from `dataset.tar.gz` (checked against `dataset.tar.gz.sha256`).
-//! - **Standalone** ([`ingest_bundle`]): reads the trimmed bundle shipped with the installer (built by
-//!   [`trim`], `storm-codex-server refdata trim`), with the same checks. No network.
+//! - **Standalone** stages the feed or a legacy trimmed bundle ([`trim`]) via `standalone`.
 //!
 //! Any refusal (schema, hash, shape) happens before the transaction: the previous data is kept.
 
 use super::{
-    build, parse_manifest, sha256_hex, Dataset, ImageCopy, RefdataError, Rows, DATA_FILES,
+    build, parse_manifest, sha256_hex, Dataset, ImageCopy, Manifest, RefdataError, Rows, DATA_FILES,
 };
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 use std::collections::{BTreeSet, HashMap};
 use std::io::Read;
 use std::path::Path;
@@ -39,12 +38,24 @@ pub trait Source: Send + Sync {
 /// A release download base (`…/releases/latest/download/` or `…/releases/download/<tag>/`).
 pub struct Http {
     base: String,
+    agent: ureq::Agent,
 }
 
 impl Http {
     pub fn new(base: &str) -> Http {
         Http {
             base: format!("{}/", base.trim_end_matches('/')),
+            agent: ureq::Agent::new_with_defaults(),
+        }
+    }
+
+    pub fn standalone() -> Self {
+        let config = ureq::Agent::config_builder()
+            .timeout_global(Some(std::time::Duration::from_secs(300)))
+            .build();
+        Self {
+            base: DEFAULT_URL.into(),
+            agent: ureq::Agent::new_with_config(config),
         }
     }
 }
@@ -52,7 +63,8 @@ impl Http {
 impl Source for Http {
     fn get(&self, name: &str) -> Result<Vec<u8>, RefdataError> {
         let url = format!("{}{name}", self.base);
-        ureq::get(&url)
+        self.agent
+            .get(&url)
             .call()
             .map_err(|e| RefdataError::Io(format!("{url}: {e}")))?
             .body_mut()
@@ -64,7 +76,9 @@ impl Source for Http {
 
     fn download(&self, name: &str, file: &Path) -> Result<(), RefdataError> {
         let url = format!("{}{name}", self.base);
-        let res = ureq::get(&url)
+        let res = self
+            .agent
+            .get(&url)
             .call()
             .map_err(|e| RefdataError::Io(format!("{url}: {e}")))?;
         let mut reader = res.into_body().into_reader();
@@ -75,12 +89,12 @@ impl Source for Http {
     }
 }
 
-fn io_err(path: &Path, e: impl std::fmt::Display) -> RefdataError {
+pub(super) fn io_err(path: &Path, e: impl std::fmt::Display) -> RefdataError {
     RefdataError::Io(format!("{}: {e}", path.display()))
 }
 
 /// Release asset name of a dataset path (`locales/enus.json` is published as `enus.json`).
-fn asset_name(path: &str) -> &str {
+pub(super) fn asset_name(path: &str) -> &str {
     DATA_FILES
         .iter()
         .find(|(p, _)| *p == path)
@@ -162,14 +176,23 @@ fn fetch_images(src: &dyn Source, images: &[ImageCopy], dir: &Path) -> Result<u3
         "storm-codex-dataset-{}.tar.gz",
         uuid::Uuid::new_v4()
     ));
+    fetch_images_via(src, images, dir, &file)
+}
+
+pub(super) fn fetch_images_via(
+    src: &dyn Source,
+    images: &[ImageCopy],
+    dir: &Path,
+    file: &Path,
+) -> Result<u32, RefdataError> {
     let result = (|| {
-        src.download("dataset.tar.gz", &file)?;
+        src.download("dataset.tar.gz", file)?;
         let expected = parse_sha256_file(&src.get("dataset.tar.gz.sha256")?)?;
-        check_file_hash(&file, &expected)?;
-        let gz = std::fs::File::open(&file).map_err(|e| io_err(&file, e))?;
+        check_file_hash(file, &expected)?;
+        let gz = std::fs::File::open(file).map_err(|e| io_err(file, e))?;
         copy_images(gz, images, dir)
     })();
-    let _ = std::fs::remove_file(&file);
+    let _ = std::fs::remove_file(file);
     result
 }
 
@@ -228,6 +251,9 @@ fn copy_images(gz: impl Read, images: &[ImageCopy], dir: &Path) -> Result<u32, R
         .map_err(|e| RefdataError::Io(e.to_string()))?
     {
         let mut entry = entry.map_err(|e| RefdataError::Io(e.to_string()))?;
+        if !entry.header().entry_type().is_file() {
+            continue;
+        }
         let path = entry
             .path()
             .map_err(|e| RefdataError::Io(e.to_string()))?
@@ -281,12 +307,21 @@ pub async fn last_version(db: &PgPool) -> Option<String> {
 /// records the dataset version. Returns the new patches, none on the first seed (empty `dim_patches`).
 pub async fn store(db: &PgPool, rows: &Rows) -> Result<Vec<(String, String)>, sqlx::Error> {
     let mut tx = db.begin().await?;
+    let new = write_rows(&mut tx, rows).await?;
+    tx.commit().await?;
+    Ok(new)
+}
+
+pub(super) async fn write_rows(
+    tx: &mut Transaction<'_, Postgres>,
+    rows: &Rows,
+) -> Result<Vec<(String, String)>, sqlx::Error> {
     let was_empty: bool = sqlx::query_scalar("SELECT NOT EXISTS (SELECT 1 FROM dim_patches)")
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut **tx)
         .await?;
 
     sqlx::query("DELETE FROM dim_heroes")
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     for h in &rows.heroes {
         sqlx::query(
@@ -298,12 +333,12 @@ pub async fn store(db: &PgPool, rows: &Rows) -> Result<Vec<(String, String)>, sq
         .bind(&h.role)
         .bind(&h.universe)
         .bind(&h.data)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     }
 
     sqlx::query("DELETE FROM dim_talents")
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     for t in &rows.talents {
         sqlx::query(
@@ -315,7 +350,7 @@ pub async fn store(db: &PgPool, rows: &Rows) -> Result<Vec<(String, String)>, sq
         .bind(&t.name)
         .bind(&t.tree_id)
         .bind(&t.data)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     }
 
@@ -339,7 +374,7 @@ pub async fn store(db: &PgPool, rows: &Rows) -> Result<Vec<(String, String)>, sq
         .bind(p.map_count)
         .bind(&p.aliases)
         .bind(&p.data)
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut **tx)
         .await?;
         if inserted {
             new.push((p.internal_id.clone(), p.name.clone()));
@@ -348,11 +383,11 @@ pub async fn store(db: &PgPool, rows: &Rows) -> Result<Vec<(String, String)>, sq
     }
     sqlx::query("DELETE FROM dim_patches WHERE NOT (internal_id = ANY($1))")
         .bind(&ids)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
 
     sqlx::query("DELETE FROM patch_hero_sections")
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     for s in &rows.sections {
         sqlx::query(
@@ -374,7 +409,7 @@ pub async fn store(db: &PgPool, rows: &Rows) -> Result<Vec<(String, String)>, sq
         .bind(&s.patch_type)
         .bind(&s.live_date)
         .bind(&s.channel)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     }
 
@@ -384,9 +419,8 @@ pub async fn store(db: &PgPool, rows: &Rows) -> Result<Vec<(String, String)>, sq
     )
     .bind(VERSION_KEY)
     .bind(&rows.dataset_version)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
-    tx.commit().await?;
     tracing::info!(
         "reference data: dataset {} ingested — {} heroes, {} talents, {} patches ({} new), {} hero sections",
         rows.dataset_version,
@@ -451,53 +485,14 @@ fn dataset_from(files: &HashMap<String, Vec<u8>>) -> Result<Dataset, RefdataErro
     })
 }
 
-/// Standalone: ingests the bundled trimmed snapshot (`REFERENTIAL_FILE`). Same checks as the box; the
-/// images come from the bundle. Returns the new patches (none on the first seed).
-pub async fn ingest_bundle(
-    db: &PgPool,
-    images_dir: &Path,
-    file: &Path,
-) -> Result<Vec<(String, String)>, String> {
-    let file = file.to_path_buf();
-    let dir = images_dir.to_path_buf();
-    let prepared = tokio::task::spawn_blocking(move || -> Result<Rows, RefdataError> {
-        let bytes = std::fs::read(&file).map_err(|e| io_err(&file, e))?;
-        let files = read_tar(bytes.as_slice(), |_| true)?;
-        let ds = dataset_from(&files)?;
-        let rows = build(&ds)?;
-        // Images: the bundle holds exactly the ones `build` lists; check each, keep existing files.
-        let mut copied = 0;
-        for img in &rows.images {
-            let Some(data) = files.get(&img.source) else {
-                continue; // a map without art: the front falls back
-            };
-            ds.manifest.verify(&img.source, data)?;
-            let dest = dir.join(&img.dest);
-            if dest.exists() {
-                continue;
-            }
-            if let Some(parent) = dest.parent() {
-                std::fs::create_dir_all(parent).map_err(|e| io_err(parent, e))?;
-            }
-            std::fs::write(&dest, data).map_err(|e| io_err(&dest, e))?;
-            copied += 1;
-        }
-        tracing::info!("reference data (bundle): {copied} image(s) copied");
-        Ok(rows)
-    })
-    .await;
-    let rows = match prepared {
-        Ok(Ok(rows)) => rows,
-        Ok(Err(e)) => {
-            tracing::warn!("reference data: bundled snapshot refused ({e})");
-            return Err(e.to_string());
-        }
-        Err(e) => return Err(e.to_string()),
-    };
-    store(db, &rows).await.map_err(|e| {
-        tracing::warn!("reference data: write failed ({e})");
-        e.to_string()
-    })
+/// Stage a legacy trimmed snapshot with the same adapter and image verifier as the feed.
+pub(super) fn stage_bundle(file: &Path, dir: &Path) -> Result<(Rows, Manifest), RefdataError> {
+    let open = || std::fs::File::open(file).map_err(|e| io_err(file, e));
+    let files = read_tar(open()?, is_data_file)?;
+    let ds = dataset_from(&files)?;
+    let rows = build(&ds)?;
+    copy_images(open()?, &rows.images, dir)?;
+    Ok((rows, ds.manifest))
 }
 
 /// What [`trim`] produced.
