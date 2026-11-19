@@ -1,17 +1,19 @@
 {
   "name": "parity-harness",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
+  "description": "Milestone 2 stats parity harness: hots-parser (Node reference) dumps for diff.py",
+  "scripts": {},
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
     "hots-parser": "^7.55.7",
-    "pino": "^10.4.0"
+    "pino": "^10.4.0",
+    "download-github-repo": "file:vendor/download-github-repo"
+  },
+  "private": true,
+  "overrides": {
+    "download-github-repo": "$download-github-repo"
   }
 }
