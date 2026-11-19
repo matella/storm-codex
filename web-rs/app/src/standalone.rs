@@ -13,10 +13,10 @@ use storm_web_core::{
     net,
     route::app_href,
     standalone::{
-        autostart_args, autostart_error, backup_outcome, error_message, extras_with, extras_without,
-        parse_autostart, parse_update_status, poll_ms, redirects_to_welcome, reloads_after,
-        update_failed_message, BackupAction, BackupOutcome, Status, StatusRequests, UpdateState,
-        UpdateStatus, GET_AUTOSTART, SET_AUTOSTART,
+        autostart_args, autostart_error, backup_outcome, error_message, extras_with,
+        extras_without, parse_autostart, parse_update_status, poll_ms, redirects_to_welcome,
+        reloads_after, update_failed_message, BackupAction, BackupOutcome, Status, StatusRequests,
+        UpdateState, UpdateStatus, GET_AUTOSTART, SET_AUTOSTART,
     },
 };
 
@@ -82,7 +82,11 @@ pub fn use_status_poll(ctx: Standalone) {
         if ctx.status.get_untracked().is_none() {
             return; // box deployment: nothing to poll
         }
-        let Some(request) = ctx.requests.try_update(StatusRequests::begin_poll).flatten() else {
+        let Some(request) = ctx
+            .requests
+            .try_update(StatusRequests::begin_poll)
+            .flatten()
+        else {
             net::after_ms(300, move || step(ctx, alive));
             return;
         };
