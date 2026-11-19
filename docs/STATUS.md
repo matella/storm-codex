@@ -1,5 +1,33 @@
 # STATUS — read first, update last
 
+## Shareable match card (2026-11-19), branch `feat/match-card`
+
+Approved spec: `docs/specs/2026-11-19-match-card.md`. Match page: "Save as image" + "Show player names"
+toggle (off by default, remembered). The 1200×675 PNG is drawn client-side on a canvas (`core/card.rs` pure
+layout + tests, `app/card.rs` thin canvas code) from the match detail, insights fights, minimap and portraits,
+then saved through `<a download>`. No API change, no new crate (one `web-sys` feature, `TextMetrics`).
+
+Earlier Chromium check on a committed-replay fixture (win, names on/off, missing minimap, missing portrait):
+render+download about 200 ms. **Not done**: box DB games
+(loss, no operator account), installed WebView2 download on MH-Home (acceptance item 15; decides the
+`save_card` fallback).
+
+Review fixes: the keyboard-operable privacy switch invalidates a named export before download;
+unknown results no longer claim a winner, and download setup failures are reported.
+
+Merged `origin/main` (`b89c12d`). Linux PostgreSQL 17 workspace tests: 513 passed, 10 ignored; web tests:
+167 passed, including 14 card tests. Release app: **1,007,131 bytes Brotli** (cap 1,250,000). On the integrated
+release bundle, Chromium saved an actual 1200×675 PNG with names off, canceled a held named export after the
+keyboard toggle went off and back on, and surfaced an injected download setup failure. The fixture used a
+committed replay with no operator configured and no artwork. Installed WebView2 item 15 still needs a real
+file-save check; no native fallback was added.
+
+Merged `origin/main` (`ad3da36`, session review) to pick up the merged session-review PR. Docker checks on the
+integrated branch (storm-dev, throwaway PostgreSQL): fmt, strict clippy (native workspace; web-rs native + wasm32),
+full workspace tests 526 passed/0 failed/3 ignored, web-rs tests 173 passed, trunk release build of all three
+bundles. Release app with both features integrated: **1,027,189 bytes Brotli** (cap 1,250,000, overlay 217,627
+bytes gzip, sources 181,306 bytes gzip).
+
 ## Session review (2026-11-19), branch `feat/session-review`
 
 Approved spec: `docs/specs/2026-11-19-session-review.md` (operator decisions: baseline = modes played in the

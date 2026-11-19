@@ -125,19 +125,21 @@ fn js_sys_array(blobs: &[web_sys::Blob]) -> JsValue {
     arr.into()
 }
 
-/// Starts the download of a blob through a temporary `<a download>`.
-pub fn download_blob(blob: &web_sys::Blob, filename: &str) {
-    let Ok(url) = web_sys::Url::create_object_url_with_blob(blob) else {
-        return;
-    };
-    if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
-        if let Ok(a) = doc.create_element("a") {
-            if let Ok(a) = a.dyn_into::<web_sys::HtmlAnchorElement>() {
-                a.set_href(&url);
-                a.set_download(filename);
-                a.click();
-            }
-        }
-    }
+/// Triggers a blob download through `<a download>`; success does not confirm the file was saved.
+pub fn download_blob(blob: &web_sys::Blob, filename: &str) -> Result<(), String> {
+    let doc = web_sys::window()
+        .and_then(|w| w.document())
+        .ok_or("no document for download")?;
+    let a = doc
+        .create_element("a")
+        .map_err(|_| "could not create download link")?
+        .dyn_into::<web_sys::HtmlAnchorElement>()
+        .map_err(|_| "invalid download link")?;
+    let url = web_sys::Url::create_object_url_with_blob(blob)
+        .map_err(|_| "could not create download URL")?;
+    a.set_href(&url);
+    a.set_download(filename);
+    a.click();
     let _ = web_sys::Url::revoke_object_url(&url);
+    Ok(())
 }

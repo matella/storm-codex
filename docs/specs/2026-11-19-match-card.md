@@ -49,13 +49,15 @@ Pick **A**: no new dependency, nothing new on the API budget, one layout in the 
   coloured disc with initials, like `Portrait`. Pure layout maths (column positions, text truncation widths,
   number formatting, file name) in `core/card.rs` with native tests.
 - **Contents**: dimmed minimap background; map, mode, date, duration; result from the perspective player
-  (WIN/LOSS banner) or "Blue/Red team wins" if no operator account played; two team columns of 5 rows:
+  (WIN/LOSS banner) or "Blue/Red team wins" if no operator account played; "Result unavailable" when no
+  winner is known. Two team columns of 5 rows:
   portrait, hero, optional player name, K/D/A, award tag (MVP crown); end levels per team; up to 3 highlights
   already computed: MVP, "Team fights won N of M" (insights `fights`), first to 10 / first fort (match data);
   footer "Storm Codex" + game version. Perspective player's row highlighted.
 - **Privacy**: a "Show player names" toggle next to the button, **off by default**: off = heroes only, no names
   anywhere; on = in-game names without `#tag` and never toon handles. No chat text, no battle-tag, no
-  replay file name. The toggle choice is remembered in `localStorage`.
+  replay file name. The toggle is a native button and its choice is remembered in `localStorage`. Switching
+  names off before download discards an in-flight named PNG, even if names are switched back on in the meantime.
 - **File name**: `storm-codex-<map-slug>-<YYYY-MM-DD>-<id>.png`.
 - **Desktop saving**: acceptance item on MH-Home that the `<a download>` path saves a file in the installed
   app (WebView2 default download behaviour). If it does not, add one app command `save_card(png bytes)` that
@@ -75,7 +77,9 @@ Pick **A**: no new dependency, nothing new on the API budget, one layout in the 
 
 ## Tests / acceptance
 
-- Native tests for `core/card.rs` (layout, truncation, file name slug, names hidden when toggle off).
+- Native tests for `core/card.rs` (layout, truncation, file name slug, names hidden when toggle off, unknown result).
+- Browser regression: hold the card canvas `toBlob` callback, switch names off and back on, then release it.
+  No download may start. Force `URL.createObjectURL` to fail and confirm the page reports an error.
 - Browser check on 3 real games (win, loss, a game without any operator account; one with missing portraits):
   the PNG opens, text is legible at 50 % size, no player name when the toggle is off.
 - Installed standalone on MH-Home: save works offline, the file lands where the dialog/download says.
@@ -99,3 +103,26 @@ The open questions were resolved as follows:
 1. Player names on the card: off by default (proposed), or on by default with the toggle?
 2. Implement the native save-dialog fallback upfront, or only if the WebView2 download fails on MH-Home?
 3. Card size: 1200 × 675 (16:9, proposed) or a square 1080 × 1080?
+
+## Implementation notes (2026-11-19, branch `feat/match-card`)
+
+- `core/card.rs` builds the card (`build_card`) and a display list (`layout`: rects, texts, portraits, crown);
+  text fitting takes a `measure` closure, so the layout is unit-tested natively (13 tests: win/loss/neutral sides,
+  names hidden by default and never a `#tag` or toon, file name, truncation, bounds). `app/card.rs` only loads
+  fonts/images, measures with `measureText` and replays the list. One `web-sys` feature added: `TextMetrics`.
+- The MVP mark is a crown drawn as a canvas shape next to "MVP", not the 👑 emoji: emoji fonts are not
+  guaranteed (Linux/headless rendered a missing glyph).
+- Highlights: "MVP · <hero>" (hero only, even with names on), "Team fights won N of M" (or
+  "Blue won N of M team fights" without an operator account), then "<team> first to level 10" from
+  `levelTimes`, falling back to "First fort: <team>" when no team reached 10.
+- Team fights are read at click time from `GET /api/matches/{id}/insights` (whole match, ignoring the page's
+  `?from=&to=` window); if it fails the fights highlight is left out. Hero names come from the match detail and
+  portraits/rings from `Dim` + reference revision, both reference-aware reads.
+- The card date is the browser's local calendar day of `match.date` (ISO day as fallback); the kicker shows
+  mode · day · duration, the footer the game version (`m_major.m_minor.m_revision.m_build`).
+- The button only exists once the match has loaded (the page shows "loading…" before), so there is no disabled
+  pre-load state; while rendering it is disabled and reads "Saving…". Once the browser download is triggered,
+  it says "Download started", not that the PNG was saved; setup failures are surfaced instead.
+- Desktop `save_card` fallback: not built; acceptance item 15 in `docs/standalone-acceptance.md` decides it.
+- App bundle: 1,007,131 bytes Brotli after merging the desktop update notes, under the 1,250,000-byte cap.
+  Before integration: 1,006,511 bytes (+10,727 vs 995,784).
