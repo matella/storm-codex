@@ -32,8 +32,22 @@ pub async fn get_json<T: serde::de::DeserializeOwned>(path: &str) -> Result<T, S
 
 /// `GET path` where `204 No Content` means "nothing" (`None`), as `fetchLive` does.
 pub async fn get_json_opt<T: serde::de::DeserializeOwned>(path: &str) -> Result<Option<T>, String> {
+    get_json_with_missing(path, 204).await
+}
+
+/// `GET path` where only `404 Not Found` means the requested item does not exist.
+pub async fn get_json_or_not_found<T: serde::de::DeserializeOwned>(
+    path: &str,
+) -> Result<Option<T>, String> {
+    get_json_with_missing(path, 404).await
+}
+
+async fn get_json_with_missing<T: serde::de::DeserializeOwned>(
+    path: &str,
+    missing: u16,
+) -> Result<Option<T>, String> {
     let r = Request::get(path).send().await.map_err(|e| e.to_string())?;
-    if r.status() == 204 {
+    if r.status() == missing {
         return Ok(None);
     }
     if !r.ok() {

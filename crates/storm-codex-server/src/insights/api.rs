@@ -537,12 +537,60 @@ pub async fn player_insights(State(s): State<AppState>, Path(toon): Path<String>
     Ok(Json(out))
 }
 
+// ── Session review ───────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct SessionsQuery {
+    account: Option<String>,
+    limit: Option<i64>,
+}
+
+/// The operator's dated games (or one account's), oldest first; 400 `account` on an unknown account.
+async fn session_games(
+    s: &AppState,
+    account: Option<&str>,
+) -> Result<Vec<super::session::MyGame>, Err> {
+    let ops = operator_names(&s.db).await.map_err(db_err)?;
+    let toons = crate::standalone::operator_toons(s);
+    let who = super::session::Perspective {
+        ops: &ops,
+        toons: &toons,
+        account,
+    };
+    if !who.known() {
+        return Err(bad("account"));
+    }
+    let corpus = cache::corpus(&s.db).await.map_err(db_err)?;
+    Ok(super::session::my_games(&corpus, &who))
+}
+
+/// GET /api/sessions?account=&limit= — the operator's play sessions, newest first (`limit` 20, max 100).
+pub async fn sessions(State(s): State<AppState>, Query(q): Query<SessionsQuery>) -> Resp {
+    let limit = q.limit.unwrap_or(20).clamp(1, 100) as usize;
+    let games = session_games(&s, q.account.as_deref()).await?;
+    Ok(Json(
+        json!({ "sessions": super::session::list(&games, limit) }),
+    ))
+}
+
+/// GET /api/sessions/{id}?account= — one session against the 90 days before it; 404 unless `id` starts a session.
+pub async fn session_review(
+    State(s): State<AppState>,
+    Path(id): Path<i64>,
+    Query(q): Query<SessionsQuery>,
+) -> Resp {
+    let games = session_games(&s, q.account.as_deref()).await?;
+    match super::session::review(&games, id) {
+        Some(r) => Ok(Json(json!(r))),
+        None => Err((StatusCode::NOT_FOUND, Json(json!({ "error": "not_found" })))),
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use logic::EarlyLeads;
-    use std::sync::Arc;
 
     fn lg(map: &str, winner: u8, my: Option<u8>, fb: Option<u8>, f10: Option<u8>) -> LeadGame {
         LeadGame {
@@ -642,19 +690,36 @@ mod tests {
         assert_eq!(r[1]["name"], "B");
     }
 
-    /// The corpus catches up with a new game without loading the old ones twice.
+    /// The corpus catches up with a new game even when other games disappear.
     #[tokio::test]
     async fn corpus_refreshes_incrementally() {
         let Some(state) = crate::api_tests::test_state(None).await else {
             return;
         };
-        let before = cache::corpus(&state.db).await.unwrap();
         let tag = uuid::Uuid::new_v4().simple().to_string();
+        let retired: Vec<i64> = sqlx::query_scalar(
+            "INSERT INTO matches (fingerprint, parser_version, data, map, mode)
+             VALUES ($1, 0, '{}', 'Test Map', 50091), ($2, 0, '{}', 'Test Map', 50091) RETURNING id",
+        )
+        .bind(format!("insights-{tag}-retired-a"))
+        .bind(format!("insights-{tag}-retired-b"))
+        .fetch_all(&state.db)
+        .await
+        .unwrap();
+        let before = cache::corpus(&state.db).await.unwrap();
+
+        // Simulate another test cleaning up its fixtures between corpus reads.
+        let mut change = state.db.begin().await.unwrap();
+        sqlx::query("DELETE FROM matches WHERE id = ANY($1)")
+            .bind(&retired)
+            .execute(&mut *change)
+            .await
+            .unwrap();
         let id: i64 = sqlx::query_scalar(
             "INSERT INTO matches (fingerprint, parser_version, data, map, mode) VALUES ($1, 0, '{}', 'Test Map', 50091) RETURNING id",
         )
         .bind(format!("insights-{tag}"))
-        .fetch_one(&state.db)
+        .fetch_one(&mut *change)
         .await
         .unwrap();
         sqlx::query(
@@ -663,19 +728,32 @@ mod tests {
         )
         .bind(id)
         .bind(format!("toon-{tag}"))
-        .execute(&state.db)
+        .execute(&mut *change)
         .await
         .unwrap();
+        change.commit().await.unwrap();
         let after = cache::corpus(&state.db).await.unwrap();
-        assert!(after.games.contains_key(&id));
-        let rows: Vec<_> = after.games[&id].players.iter().collect();
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].stats[0], Some(7.0));
-        assert_eq!(rows[0].stats[2], Some(3.0));
-        assert!(after.games.len() > before.games.len() || before.games.contains_key(&id));
-        // same version again: the same corpus, no reload
         let again = cache::corpus(&state.db).await.unwrap();
-        assert!(Arc::ptr_eq(&after, &again) || again.version != after.version);
+        sqlx::query("DELETE FROM matches WHERE id = $1")
+            .bind(id)
+            .execute(&state.db)
+            .await
+            .unwrap();
+        std::fs::remove_dir_all(state.cfg.archive_dir.parent().unwrap()).unwrap();
+
+        assert!(!before.games.contains_key(&id));
+        for retired_id in retired {
+            assert!(before.games.contains_key(&retired_id));
+            assert!(!after.games.contains_key(&retired_id));
+        }
+        // Other tests also write to this database; check only the rows we own.
+        for snapshot in [&after, &again] {
+            let rows = &snapshot.games[&id].players;
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].toon, format!("toon-{tag}"));
+            assert_eq!(rows[0].stats[0], Some(7.0));
+            assert_eq!(rows[0].stats[2], Some(3.0));
+        }
     }
 
     #[tokio::test]
@@ -755,5 +833,193 @@ mod tests {
         assert_eq!(st, StatusCode::OK, "{p}");
         assert!(p["games"].as_u64().unwrap() >= 1);
         assert!(p["maps"].is_array() && p["heroes"].is_array());
+    }
+
+    /// One game of `toon` (team 0) against a filler row, for the session endpoints.
+    #[allow(clippy::too_many_arguments)]
+    async fn session_game(
+        db: &mut sqlx::PgConnection,
+        toon: &str,
+        name: &str,
+        at: DateTime<Utc>,
+        hero: &str,
+        win: bool,
+        kills: i32,
+        deaths: i32,
+    ) -> i64 {
+        let tag = uuid::Uuid::new_v4().simple().to_string();
+        let id: i64 = sqlx::query_scalar(
+            "INSERT INTO matches (fingerprint, parser_version, data, played_at, map, mode, length)
+             VALUES ($1, 0, '{}', $2, 'Sky Temple', 50091, 1200) RETURNING id",
+        )
+        .bind(format!("session-{tag}"))
+        .bind(at)
+        .fetch_one(&mut *db)
+        .await
+        .unwrap();
+        for (t, n, team, w) in [
+            (toon.to_string(), name.to_string(), 0, win),
+            (format!("other-{tag}"), "Other".to_string(), 1, !win),
+        ] {
+            sqlx::query(
+                "INSERT INTO match_players (match_id, toon_handle, name, hero, team, win, kills, deaths,
+                                            takedowns, hero_damage, healing, experience, data)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $7 + 4, 1000 * $7, 0, 9000,
+                         '{\"gameStats\": {\"SiegeDamage\": 20000, \"awards\": [\"EndOfMatchAwardMVPBoolean\"]}}')",
+            )
+            .bind(id)
+            .bind(t)
+            .bind(n)
+            .bind(hero)
+            .bind(team)
+            .bind(w)
+            .bind(kills)
+            .bind(deaths)
+            .execute(&mut *db)
+            .await
+            .unwrap();
+        }
+        id
+    }
+
+    #[tokio::test]
+    async fn session_endpoints_list_review_and_navigate() {
+        let Some(state) = crate::api_tests::test_state(None).await else {
+            return;
+        };
+        let tag = uuid::Uuid::new_v4().simple().to_string();
+        let (toon, name) = (format!("sess-{tag}"), format!("Sess{tag}"));
+        let mut fixture = state.db.begin().await.unwrap();
+        // add the account to `operator_names` without dropping the other tests' names
+        sqlx::query(
+            "INSERT INTO app_settings (key, value) VALUES ('operator_names', jsonb_build_array($1::text))
+             ON CONFLICT (key) DO UPDATE SET value = app_settings.value || EXCLUDED.value",
+        )
+        .bind(&name)
+        .execute(&mut *fixture)
+        .await
+        .unwrap();
+        let t0 = chrono::TimeZone::with_ymd_and_hms(&Utc, 2021, 3, 1, 20, 0, 0).unwrap();
+        let h = chrono::Duration::hours;
+        let mut ids = Vec::new();
+        // baseline: 5 Valla games in the 90 days before, 6 kills each
+        for d in 1..=5 {
+            ids.push(
+                session_game(
+                    &mut fixture,
+                    &toon,
+                    &name,
+                    t0 - chrono::Duration::days(d),
+                    "Valla",
+                    d % 2 == 0,
+                    6,
+                    3,
+                )
+                .await,
+            );
+        }
+        // session 1: two games 1 h apart; session 2: 4 h later, three games
+        let s1 = session_game(&mut fixture, &toon, &name, t0, "Valla", true, 9, 1).await;
+        let s1b = session_game(&mut fixture, &toon, &name, t0 + h(1), "Jaina", false, 2, 6).await;
+        let s2 = session_game(&mut fixture, &toon, &name, t0 + h(5), "Valla", true, 7, 2).await;
+        ids.push(session_game(&mut fixture, &toon, &name, t0 + h(6), "Valla", true, 4, 5).await);
+        ids.push(session_game(&mut fixture, &toon, &name, t0 + h(7), "Valla", false, 5, 4).await);
+        ids.extend([s1, s1b, s2]);
+        fixture.commit().await.unwrap();
+        let call = |path: String| {
+            let state = state.clone();
+            async move { crate::api_tests::call(&state, "GET", &path, None).await }
+        };
+        let acc = format!("account={name}");
+
+        let (st, l) = call(format!("/api/sessions?{acc}")).await;
+        let (one_st, one) = call(format!("/api/sessions?{acc}&limit=1")).await;
+        let (review_st, r) = call(format!("/api/sessions/{s1}?{acc}")).await;
+        let (review2_st, r2) = call(format!("/api/sessions/{s2}?{acc}")).await;
+        let (not_found, _) = call(format!("/api/sessions/{s1b}?{acc}")).await;
+        let (unknown_account, e) = call(format!("/api/sessions?account=nobody-{tag}")).await;
+        let (unverified_toon, _) = call(format!("/api/sessions/{s1}?account=toon%3A{toon}")).await;
+
+        // Clean up before assertions so a regression cannot leave matches or operator names behind.
+        let mut cleanup = state.db.begin().await.unwrap();
+        sqlx::query("DELETE FROM matches WHERE id = ANY($1)")
+            .bind(&ids)
+            .execute(&mut *cleanup)
+            .await
+            .unwrap();
+        sqlx::query(
+            "UPDATE app_settings SET value = value - $1::text WHERE key = 'operator_names'",
+        )
+        .bind(&name)
+        .execute(&mut *cleanup)
+        .await
+        .unwrap();
+        cleanup.commit().await.unwrap();
+        std::fs::remove_dir_all(state.cfg.archive_dir.parent().unwrap()).unwrap();
+
+        assert_eq!(st, StatusCode::OK, "{l}");
+        let list = l["sessions"].as_array().unwrap();
+        // 5 one-game baseline sessions (a day apart) + the two sessions
+        assert_eq!(list.len(), 7);
+        assert_eq!(list[0]["id"], s2, "newest first");
+        assert_eq!(
+            (list[0]["games"].as_u64(), list[0]["wins"].as_u64()),
+            (Some(3), Some(2))
+        );
+        assert_eq!(list[1]["id"], s1);
+        assert_eq!(one_st, StatusCode::OK);
+        assert_eq!(one["sessions"].as_array().unwrap().len(), 1);
+
+        assert_eq!(review_st, StatusCode::OK, "{r}");
+        assert_eq!(r["record"], json!({"wins": 1, "losses": 1}));
+        assert_eq!(r["games"][0]["match_id"], s1);
+        assert_eq!(r["games"][0]["baseline"], "hero");
+        assert_eq!(r["games"][0]["deltas"]["kills"], 3.0);
+        assert_eq!(r["games"][0]["assists"], 4.0);
+        assert_eq!(r["games"][0]["award"], "EndOfMatchAwardMVPBoolean");
+        assert_eq!(r["games"][1]["baseline"], "overall");
+        assert_eq!(
+            (r["best"].as_i64(), r["worst"].as_i64()),
+            (Some(s1), Some(s1b))
+        );
+        assert_eq!(r["baseline"]["games"], 5);
+        assert_eq!(r["baseline"]["small_sample"], true);
+        assert_eq!(r["baseline"]["modes"], json!([50091]));
+        assert_eq!(r["span_s"], 4800.0);
+        assert_eq!(r["played_s"], 2400.0);
+        let valla = r["heroes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|x| x["name"] == "Valla")
+            .unwrap();
+        assert_eq!(
+            (
+                valla["base_games"].as_u64(),
+                valla["small_sample"].as_bool()
+            ),
+            (Some(5), Some(false))
+        );
+        assert_eq!(r["next"], s2);
+        assert!(r["prev"].is_i64());
+
+        assert_eq!(review2_st, StatusCode::OK);
+        assert_eq!(r2["prev"], s1);
+        assert!(r2["next"].is_null());
+        assert_eq!(
+            r2["streaks"],
+            json!({"best_win": 2, "worst_loss": 1, "current": -1})
+        );
+
+        assert_eq!(not_found, StatusCode::NOT_FOUND);
+        assert_eq!(
+            (unknown_account, e["error"].as_str()),
+            (StatusCode::BAD_REQUEST, Some("account"))
+        );
+        assert_eq!(
+            unverified_toon,
+            StatusCode::BAD_REQUEST,
+            "a toon is only an account when a folder verifies it"
+        );
     }
 }
