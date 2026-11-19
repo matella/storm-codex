@@ -1,5 +1,25 @@
 # STATUS — read first, update last
 
+## Second merge of `origin/main` into `feat/replay-search` (2026-11-19)
+
+Merged `origin/main` (`733fd1d`, web-audit platform fixes #61, on top of the already-integrated match
+card #59 and session review #60) as a true merge commit (head `a449a78`), resolving conflicts only in
+`docs/STATUS.md` and `docs/spec/08-frontend.md` (both append-style; kept every dated section and the
+`/match/:id` row's superset of fields — APM column, Save as image card, raw dump link — plus this
+branch's own `/matches` filter row). Folded the bundle-size history into one ordered list and replaced
+the "rebuild pending" placeholder with the real post-merge number.
+
+Docker checks on the merged tree (`storm-dev:latest`, throwaway PostgreSQL 17 on 55451, dedicated
+target volume `storm-dev-target-replay-search`): fmt, strict Clippy (native workspace, `-D warnings`)
+passed; 537 workspace tests passed (0 failed, 3 ignored); web-rs fmt/clippy native + wasm32 passed;
+180 web-rs tests passed; all three Trunk release builds passed their size budgets (overlay 217,951
+bytes gzip, sources 181,343 bytes gzip, **app 1,041,779 bytes Brotli**, cap 1,250,000); `actionlint`
+clean on the full workflow set. (A workspace-wide `cargo clippy --target wasm32-unknown-unknown` over
+the *server* crates fails on `mio`/`tokio` — those crates are never built for wasm32 in CI; only
+`web-rs`'s own wasm32 clippy, which passed, is the real CI gate.) Not run: real OBS, Windows installer,
+box DB validation, independent review, deploy. Pushed to `origin/feat/replay-search`; PR #58 not
+marked ready.
+
 ## Replay search (2026-11-19), branch `feat/replay-search`
 
 Approved spec: `docs/specs/2026-11-19-replay-search.md` (operator decisions: typed stat columns only, total in
