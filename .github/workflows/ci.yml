@@ -22,6 +22,8 @@ jobs:
           components: rustfmt
       - name: format (cargo fmt)
         run: cargo fmt --all -- --check
+      - name: download page generator (scripts/build-pages.py)
+        run: python3 -m unittest discover -s scripts -p 'test_build_pages.py'
       - name: existing migrations unchanged
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
