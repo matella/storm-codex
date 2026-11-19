@@ -13,7 +13,7 @@ use storm_web_core::{
     route::{query_value, uri_component},
 };
 
-use crate::ui::{fetch, Link, Portrait, SecHead};
+use crate::ui::{fetch_reference, Link, Portrait, SecHead};
 
 /// Name field + "Find" → a list of accounts to pick from. Never picks the first hit on its own.
 #[component]
@@ -111,7 +111,7 @@ pub fn ComparePage() -> impl IntoView {
             )
         });
     };
-    let data = fetch::<Compare>(move || match (a.get(), b.get()) {
+    let data = fetch_reference::<Compare>(move || match (a.get(), b.get()) {
         (Some(a), Some(b)) => format!(
             "/api/compare?a={}&b={}",
             uri_component(&a),

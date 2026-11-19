@@ -15,7 +15,9 @@ use storm_web_core::{
 
 use crate::{
     matchui::{ModeTag, SearchSelect},
-    ui::{fetch, fetch_operator_stats, map_art, use_account_options, Portrait, Tone},
+    ui::{
+        fetch, fetch_operator_stats, fetch_reference, map_art, use_account_options, Portrait, Tone,
+    },
 };
 
 fn pill(on: bool) -> &'static str {
@@ -86,7 +88,7 @@ pub fn Matches() -> impl IntoView {
         )
     });
     let maps = fetch::<Vec<MapStat>>(|| "/api/maps".to_string());
-    let heroes = fetch::<Vec<HeroStat>>(|| "/api/heroes".to_string());
+    let heroes = fetch_reference::<Vec<HeroStat>>(|| "/api/heroes".to_string());
     let map_options = Signal::derive(move || {
         let mut v: Vec<String> = maps
             .get()

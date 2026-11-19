@@ -20,6 +20,7 @@ routes marked 🔒 require `Authorization: Bearer` (personal upload token for up
 | `GET /api/matches.csv` | CSV export (same filters and perspective selection; the UI's "JSON export" = `/api/matches` with a high `limit`) |
 | `GET /api/matches/{id}` | full detail `{id, fingerprint, parser_version, match, players}` (each player carries **`apm`**, `null` before re-process) — `match` = full storm-stats object (timeline, objectives, `messages`…) |
 | `GET /api/matches/{id}/raw?stream=…` | dump decoded on the fly (7 heroprotocol streams) + LRU cache |
+| `GET /api/matches/{id}/replay2d` | 2D viewer model decoded on the fly, plus `players[] {playerId, name, hero, team, win}`. The LRU disk cache (`RAW_CACHE_DIR`) holds only the replay-derived model and toon mapping; player metadata is read from Postgres on every request, so in-place hero repairs are visible on the next read |
 | `GET /api/players/search?q=&limit=` | player search: `{hits:[{toon, name, matched_name, matched_old, games, wins, roles[2], last_seen}]}`. Searches the current name **and all former ones** (substring, case-insensitive, literal `_`/`%`); < 2 characters → `hits: []`; `limit` default 20, max 50; order exact > prefix > substring then games. Static route: takes priority over `{toon}` (axum). Measured on the dev corpus (2,723 games, 7,618 players): p95 26 ms (budget < 100 ms) |
 | `GET /api/players/{toon}` | player summary + hero pool; **`avg_apm`** = mean of measured APMs (NULLs ignored, `null` if no game measured), `apm_games` = measured games, `recent[].apm` = the game's APM (rounded); `name` = current name (dated history), `names` = all names seen, **most recent first** |
 | `GET /api/players/{toon}/identity` | Identity tab: `{toon, name, names:[{name, first_seen, last_seen, games}], profiles:[{name, first_seen, last_seen, games}], suggestions:[{toon, name, level:"high"\|"low", score, reasons:[{kind, text}]}], confirmed:[{toon, name, decided_at}]}`. `suggestions` = **estimate** of accounts belonging to the same person (pure scoring `players/similarity.rs`, preselection bounded to 30 candidates `players/identity.rs`); `profiles` = non-ignored hotkey profile names (`players/profiles.rs`); a **non-generic** name shared by two accounts (reason `profile`, strong signal) is enough on its own for the HIGH level and makes the account a candidate even if it is otherwise excluded; excludes the operator, upload-token owners (except token/profile signal), accounts already met in a game, decided pairs. 404 if the player is unknown. ~400 ms on the dev corpus |
@@ -216,6 +217,28 @@ a loopback `Host` (other hosts 403) and refuses any request, `GET` and the `/ws`
 included, whose `Origin` is present and is not the app's own (`http://` + loopback name + bound
 port) (403); see [04-serveur.md](04-serveur.md) "Standalone import". Bodies and answers: the route table
 in [04-serveur.md](04-serveur.md) ("Standalone import").
+
+### Standalone reference status and controls
+
+| Request | Response |
+|---|---|
+| `GET /api/standalone/reference` | `200` with `{enabled, phase, version, revision, artwork}` |
+| `PUT /api/standalone/reference` with `{enabled: bool}` | Persists the preference, queues a check when enabled, and returns `200` with the same shape. |
+| `POST /api/standalone/reference/refresh` | Requests one check: `202` when enabled, `409` when disabled. |
+
+These routes are standalone-only (`404` otherwise) and use the same Host/Origin checks. There is
+no request-supplied feed URL. `phase` is `waiting`, `syncing`, `ready` or `error` and is independent
+of import progress. `enabled` is independent of cached dataset usability. `version` is the active
+dataset version (a string), or `null`. `artwork` is `true` only when the active dataset's managed
+image generation is complete on this PC; it is checked locally (never over the network) at startup,
+so it is `false` after restoring a database without its asset folder, for a legacy unmanaged image
+folder, or with no active dataset, even while downloads are disabled. `revision` is an opaque **string**: compare for equality, not
+ordering. It changes when an activation becomes visible, including an update with no new patch ID
+and same-version asset recovery. It does not change on a refused check or a preference toggle.
+Every preference change cancels the check in progress: a download started before sync was turned off
+never activates, even if sync is turned back on before it finishes; the check queued by re-enabling
+runs instead.
+Clients poll this local status (not GitHub) and refetch reference-dependent data when it changes.
 
 In standalone mode, operator perspective in Matches/CSV, Heroes, Maps (including early leads),
 Trends, Synergies, Records and resolved lobby stats includes exact folder ToonHandles in addition to

@@ -12,13 +12,13 @@ use storm_web_core::{
 
 use crate::{
     safehtml::SafeHtml,
-    ui::{fetch, Link},
+    ui::{fetch_reference, Link},
 };
 
 #[component]
 pub fn Patch() -> impl IntoView {
     let params = use_params_map();
-    let data = fetch::<Option<PatchDetail>>(move || {
+    let data = fetch_reference::<Option<PatchDetail>>(move || {
         format!(
             "/api/patches/{}",
             uri_component(&params.read().get("id").unwrap_or_default())

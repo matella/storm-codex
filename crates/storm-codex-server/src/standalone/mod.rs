@@ -14,7 +14,7 @@ pub(crate) use identity::operator_toons;
 pub(crate) mod token;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 pub use orchestrator::spawn;
 
@@ -37,7 +37,7 @@ pub const EXTRA_FOLDERS_KEY: &str = "standalone_extra_folders";
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Phase {
-    /// Reference data being seeded from the bundled snapshot.
+    /// Import initialization, before the first folder scan.
     Seeding,
     /// Backfill of the replay folders in progress.
     Importing,
@@ -120,6 +120,7 @@ type Detector = Arc<dyn Fn() -> Vec<PathBuf> + Send + Sync>;
 /// State shared between the standalone routes and the orchestrator task.
 pub struct StandaloneState {
     data_dir: PathBuf,
+    pub(crate) reference: crate::refdata::standalone::ReferenceState,
     view: Mutex<View>,
     /// Serializes folder saves through persistence, status publication and enqueueing.
     folder_save: tokio::sync::Mutex<()>,
@@ -149,6 +150,7 @@ impl StandaloneState {
         let (commands, command_rx) = mpsc::unbounded_channel();
         StandaloneState {
             data_dir: cfg.data_dir(),
+            reference: crate::refdata::standalone::ReferenceState::new(cfg),
             view: Mutex::new(View {
                 phase: Phase::Seeding,
                 folders: Vec::new(),
@@ -365,6 +367,10 @@ impl StandaloneState {
     /// Tells the import task to stop: in-flight uploads are abandoned, the ledger is flushed.
     pub fn stop_import(&self) {
         self.stop.send_replace(true);
+    }
+
+    pub(crate) fn stop_requested(&self) -> bool {
+        *self.stop.borrow()
     }
 
     /// Completes once [`StandaloneState::stop_import`] was called (immediately if it already was).

@@ -55,7 +55,8 @@ integration (Redis events) and the existing `client-rs` uploader (Hots-Overlay r
    occurred_at/recorded_at, past-tense `entity.verb`).
 7. The hero/talent/map/patch reference data comes from the HotsPatchNotes **dataset** (schema v1, GitHub releases),
    through the single `refdata` adapter, replicated into `dim_*`. Box: latest validated release, verified, refreshed
-   every 24 h. Standalone: a trimmed snapshot of a pinned release, bundled in the installer. No second sync pipeline.
+   every 24 h. Standalone: no reference data in the default installer; keep legacy local snapshots
+   supported and reuse the same adapter for runtime sync (approved spec 2026-11-19).
 
 ## Environment
 - The maintainer runs a private self-hosted deployment. Use isolated local fixtures for public development; do not assume access to that deployment.

@@ -324,13 +324,23 @@ pub fn session_set(key: &str, value: &str) {
 
 /// `GET /api/standalone/status`: `Ok(None)` when the route answers 404 (box deployment, not standalone).
 pub async fn fetch_standalone_status() -> Result<Option<crate::standalone::Status>, String> {
-    const PATH: &str = "/api/standalone/status";
-    let r = Request::get(PATH).send().await.map_err(|e| e.to_string())?;
+    get_standalone("/api/standalone/status").await
+}
+
+pub const REFERENCE_PATH: &str = "/api/standalone/reference";
+
+pub async fn fetch_reference_status() -> Result<Option<crate::standalone::ReferenceStatus>, String>
+{
+    get_standalone(REFERENCE_PATH).await
+}
+
+async fn get_standalone<T: serde::de::DeserializeOwned>(path: &str) -> Result<Option<T>, String> {
+    let r = Request::get(path).send().await.map_err(|e| e.to_string())?;
     if r.status() == 404 {
         return Ok(None);
     }
     if !r.ok() {
-        return Err(format!("{PATH} → {}", r.status()));
+        return Err(format!("{path} → {}", r.status()));
     }
     r.json().await.map(Some).map_err(|e| e.to_string())
 }

@@ -7,6 +7,7 @@ mod layout;
 mod matchui;
 mod pages;
 mod patchui;
+mod reference;
 mod replay;
 mod safehtml;
 mod standalone;

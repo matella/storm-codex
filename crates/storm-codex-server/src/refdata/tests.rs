@@ -19,21 +19,28 @@ fn fixture_dir() -> PathBuf {
 }
 
 /// Release-like source over a folder laid out as the tarball (`locales/enus.json`), recording requests.
-struct DirSource {
+pub(super) struct DirSource {
     dir: PathBuf,
     asked: Mutex<Vec<String>>,
     tamper: Option<&'static str>,
+    limits: load::Limits,
 }
 
 impl DirSource {
-    fn new(dir: PathBuf) -> DirSource {
+    pub(super) fn new(dir: PathBuf) -> DirSource {
         DirSource {
             dir,
             asked: Mutex::new(Vec::new()),
             tamper: None,
+            limits: load::Limits::DEFAULT,
         }
     }
-    fn asked(&self) -> Vec<String> {
+    /// The same folder held to a smaller archive budget.
+    pub(crate) fn with_limits(mut self, limits: load::Limits) -> DirSource {
+        self.limits = limits;
+        self
+    }
+    pub(super) fn asked(&self) -> Vec<String> {
         self.asked.lock().unwrap().clone()
     }
 }
@@ -41,7 +48,7 @@ impl DirSource {
 impl Source for DirSource {
     fn get(&self, name: &str) -> Result<Vec<u8>, RefdataError> {
         self.asked.lock().unwrap().push(name.into());
-        let rel = if name == "enus.json" {
+        let rel = if name == "enus.json" && !self.dir.join(name).is_file() {
             "locales/enus.json"
         } else {
             name
@@ -57,6 +64,9 @@ impl Source for DirSource {
         self.asked.lock().unwrap().push(name.into());
         std::fs::copy(self.dir.join(name), file).map_err(|e| RefdataError::Io(e.to_string()))?;
         Ok(())
+    }
+    fn limits(&self) -> load::Limits {
+        self.limits
     }
 }
 
@@ -729,7 +739,7 @@ async fn a_refused_round_keeps_the_previous_data() {
 }
 
 /// Copies the fixture to `<tmp>/dataset` so a test can alter it; returns that folder.
-fn fixture_dir_copy(tmp: &Path) -> PathBuf {
+pub(super) fn fixture_dir_copy(tmp: &Path) -> PathBuf {
     fn copy(src: &Path, dst: &Path) {
         std::fs::create_dir_all(dst).unwrap();
         for e in std::fs::read_dir(src).unwrap() {
@@ -755,22 +765,6 @@ fn fixture_dir_copy(tmp: &Path) -> PathBuf {
     )
     .unwrap();
     dst
-}
-
-#[tokio::test]
-async fn the_trimmed_bundle_seeds_offline() {
-    let Some((db, name)) = isolated_db().await else {
-        return;
-    };
-    let tmp = tempfile::tempdir().unwrap();
-    let out = tmp.path().join("referential.tar.gz");
-    load::trim(&fixture_tarball(tmp.path()), &out).unwrap();
-    let images = tmp.path().join("images");
-    load::ingest_bundle(&db, &images, &out).await.unwrap();
-    assert_eq!(count(&db, "dim_heroes").await, 9);
-    assert_eq!(count(&db, "dim_patches").await, 5);
-    assert!(images.join("heroes/lucio.png").is_file());
-    drop_db(db, &name).await;
 }
 
 /// Key sets of a JSON value (recursively: objects by key, arrays by their first element).
@@ -917,4 +911,198 @@ async fn endpoints_keep_their_shape_and_old_ids_resolve() {
     let hero_patches = get("/api/hero/Thrall/patches").await;
     assert!(!hero_patches.as_array().unwrap().is_empty());
     drop_db(db, &name).await;
+}
+
+/// Replaces `file` (path in the fixture folder) and its manifest digest, so the release stays
+/// checksum-consistent while its content changes.
+pub(crate) fn rewrite_listed(dir: &Path, file: &str, bytes: &[u8]) {
+    std::fs::write(dir.join(file), bytes).unwrap();
+    let manifest = dir.join("manifest.json");
+    let mut m: J = serde_json::from_slice(&std::fs::read(&manifest).unwrap()).unwrap();
+    m["files"][file] = J::from(sha256_hex(bytes));
+    std::fs::write(manifest, serde_json::to_vec(&m).unwrap()).unwrap();
+}
+
+fn shape_err(ds: &Dataset) -> String {
+    match build(ds) {
+        Err(RefdataError::Shape(msg)) => msg,
+        Err(e) => panic!("expected a shape error, got {e}"),
+        Ok(_) => panic!("an incomplete release was accepted"),
+    }
+}
+
+#[test]
+fn a_release_with_an_empty_required_catalog_is_refused() {
+    let mut ds = fixture();
+    ds.patches = json!([]);
+    assert!(shape_err(&ds).contains("patches.json"));
+    let mut ds = fixture();
+    ds.game["heroes"] = json!({});
+    assert!(shape_err(&ds).contains("heroes"));
+    let mut ds = fixture();
+    ds.game["battlegrounds"] = json!({});
+    assert!(shape_err(&ds).contains("battlegrounds"));
+    let mut ds = fixture();
+    ds.enus["talents"] = json!({});
+    assert!(shape_err(&ds).contains("talents"));
+    let mut ds = fixture();
+    ds.assets = json!({});
+    assert!(shape_err(&ds).contains("assets.json"));
+    let mut ds = fixture();
+    for h in ds.game["heroes"].as_object_mut().unwrap().values_mut() {
+        h["structure"]["talents"] = json!({});
+    }
+    assert!(shape_err(&ds).contains("talents"));
+}
+
+#[test]
+fn artwork_references_must_resolve_except_the_documented_fallbacks() {
+    let loading = "heroportraits/storm_ui_ingame_hero_loadingscreen_abathur.png";
+    let map = "loadingscreens/ui_ingame_mapmechanic_loadscreen_gardenofterror.png";
+    // A dropped record: Abathur declares a heroSelect icon the fixture lacks and a loading portrait.
+    let mut ds = fixture();
+    ds.assets.as_object_mut().unwrap().remove(loading);
+    assert!(shape_err(&ds).contains("heroes/abathur.png"));
+    let mut ds = fixture();
+    ds.assets.as_object_mut().unwrap().remove(map);
+    assert!(shape_err(&ds).contains("battlegrounds/garden-of-terror.png"));
+    // A malformed record is refused, not skipped.
+    let mut ds = fixture();
+    ds.assets[loading]["sha256"] = J::Null;
+    assert!(shape_err(&ds).contains(loading));
+
+    // Exceptions: a missing heroSelect icon falls back to the loading portrait (D3), and a hero or
+    // map that declares no artwork gets none.
+    let mut ds = fixture();
+    ds.assets
+        .as_object_mut()
+        .unwrap()
+        .remove("abilitytalents/storm_ui_ingame_heroselect_btn_lostvikings.png");
+    ds.game["heroes"]["Thrall"]["structure"]
+        .as_object_mut()
+        .unwrap()
+        .remove("portraits");
+    ds.game["battlegrounds"]["garden_of_terror"]["structure"]
+        .as_object_mut()
+        .unwrap()
+        .remove("loadingScreenImage");
+    let rows = build(&ds).unwrap();
+    let dest = |d: &str| rows.images.iter().find(|i| i.dest == d);
+    assert!(dest("heroes/thelostvikings.png")
+        .unwrap()
+        .source
+        .contains("loadingscreen"));
+    assert!(dest("heroes/thrall.png").is_none());
+    assert!(dest("battlegrounds/garden-of-terror.png").is_none());
+    assert_eq!(rows.images.len(), 10);
+}
+
+const UNLIMITED: load::Limits = load::Limits {
+    archive_bytes: u64::MAX,
+    expanded_bytes: u64::MAX,
+    image_bytes: u64::MAX,
+};
+
+/// Stages the fixture's images from its archive under `limits`; returns the error and whether
+/// anything was left behind (the downloaded archive or a copied image).
+fn stage_images_under(limits: load::Limits) -> (Result<u32, RefdataError>, bool) {
+    let tmp = tempfile::tempdir().unwrap();
+    let src = DirSource::new(fixture_dir_copy(tmp.path())).with_limits(limits);
+    let rows = build(&fixture()).unwrap();
+    let out = tmp.path().join("out");
+    std::fs::create_dir(&out).unwrap();
+    let file = out.join("dataset.tar.gz");
+    let got = load::fetch_images_via(&src, &rows.images, &out.join("images"), &file);
+    (got, file.exists())
+}
+
+#[test]
+fn the_archive_download_is_capped() {
+    let (got, left) = stage_images_under(load::Limits {
+        archive_bytes: 64,
+        ..UNLIMITED
+    });
+    assert!(
+        matches!(got, Err(RefdataError::Budget { ref what, limit: 64 }) if what == "dataset.tar.gz"),
+        "{got:?}"
+    );
+    assert!(!left, "the oversized download is removed");
+}
+
+#[test]
+fn the_decompressed_archive_is_capped() {
+    let (got, _) = stage_images_under(load::Limits {
+        expanded_bytes: 2048,
+        ..UNLIMITED
+    });
+    assert!(
+        matches!(got, Err(RefdataError::Budget { limit: 2048, .. })),
+        "{got:?}"
+    );
+}
+
+#[test]
+fn each_image_is_capped_before_it_is_buffered() {
+    let (got, _) = stage_images_under(load::Limits {
+        image_bytes: 8,
+        ..UNLIMITED
+    });
+    assert!(
+        matches!(got, Err(RefdataError::Budget { ref what, limit: 8 }) if what.starts_with("images/")),
+        "{got:?}"
+    );
+    // The defaults fit the fixture (and, per their documentation, the pinned release).
+    assert_eq!(stage_images_under(load::Limits::DEFAULT).0.unwrap(), 12);
+}
+
+#[test]
+fn an_image_missing_from_a_checksum_valid_archive_is_refused() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = fixture_dir_copy(tmp.path());
+    let mut rows = build(&fixture()).unwrap();
+    rows.images[0].source = "images/heroportraits/absent.png".into();
+    let out = tmp.path().join("out");
+    let got = load::fetch_images_via(
+        &DirSource::new(dir),
+        &rows.images,
+        &out,
+        &tmp.path().join("dataset.tar.gz"),
+    );
+    assert!(
+        matches!(got, Err(RefdataError::Io(ref m)) if m.contains("absent.png")),
+        "{got:?}"
+    );
+}
+
+/// The HTTP source stops reading one byte past the compressed budget.
+#[test]
+fn the_http_download_stops_at_the_archive_budget() {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = std::thread::spawn(move || {
+        let (mut conn, _) = listener.accept().unwrap();
+        let mut buf = [0u8; 4096];
+        let _ = conn.read(&mut buf);
+        let body = vec![b'x'; 64 * 1024];
+        let _ = write!(
+            conn,
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        let _ = conn.write_all(&body);
+    });
+    let tmp = tempfile::tempdir().unwrap();
+    let file = tmp.path().join("dataset.tar.gz");
+    let http = load::Http::new(&format!("http://{addr}/")).with_limits(load::Limits {
+        archive_bytes: 1000,
+        ..UNLIMITED
+    });
+    let got = http.download("dataset.tar.gz", &file);
+    assert!(
+        matches!(got, Err(RefdataError::Budget { limit: 1000, .. })),
+        "{got:?}"
+    );
+    assert!(std::fs::metadata(&file).unwrap().len() <= 1001);
+    server.join().unwrap();
 }

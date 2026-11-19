@@ -13,7 +13,7 @@ use storm_web_core::{
     route::query_value,
 };
 
-use crate::ui::{fetch, Portrait, SecHead};
+use crate::ui::{fetch_reference, Portrait, SecHead};
 
 /// A player of the match, as the sections need it.
 #[derive(Clone)]
@@ -70,7 +70,7 @@ pub fn MatchInsightsSections(
             )
         });
     };
-    let data = fetch::<MatchInsights>(move || match (from.get(), to.get()) {
+    let data = fetch_reference::<MatchInsights>(move || match (from.get(), to.get()) {
         (Some(a), Some(b)) => format!("/api/matches/{id}/insights?from={a}&to={b}"),
         _ => format!("/api/matches/{id}/insights"),
     });

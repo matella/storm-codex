@@ -6,8 +6,7 @@
       "../target/release/storm-codex-server.exe": "storm-codex-server.exe",
       "../target/postgres/": "postgres/",
       "../web-rs/dist/": "web/",
-      "../assets/minimaps/": "minimaps/",
-      "../target/referential/referential.tar.gz": "referential.tar.gz"
+      "../assets/minimaps/": "minimaps/"
     }
   }
 }

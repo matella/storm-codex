@@ -1,21 +1,23 @@
-//! The two thin loaders of the reference dataset, and the one writer they share.
+//! Shared dataset loading and writing, plus the box refresh and legacy bundle tooling.
 //!
 //! - **Box** ([`refresh`]): reads `manifest.json` from `REFDATA_URL` (a release download base), refuses a
 //!   schema other than v1, skips the round when `datasetVersion` is the one last ingested, else downloads
 //!   the data files, checks each against the manifest SHA-256 and writes them in one transaction. Images
 //!   missing from `images_dir` come from `dataset.tar.gz` (checked against `dataset.tar.gz.sha256`).
-//! - **Standalone** ([`ingest_bundle`]): reads the trimmed bundle shipped with the installer (built by
-//!   [`trim`], `storm-codex-server refdata trim`), with the same checks. No network.
+//! - **Standalone** stages the feed or a legacy trimmed bundle ([`trim`]) via `standalone`.
 //!
-//! Any refusal (schema, hash, shape) happens before the transaction: the previous data is kept.
+//! Any refusal (schema, hash, shape, resource budget) happens before the transaction: the previous
+//! data is kept. Archive downloads and decompression are bounded by [`Limits`].
 
 use super::{
-    build, parse_manifest, sha256_hex, Dataset, ImageCopy, RefdataError, Rows, DATA_FILES,
+    build, parse_manifest, sha256_hex, Dataset, ImageCopy, Manifest, RefdataError, Rows, DATA_FILES,
 };
-use sqlx::PgPool;
-use std::collections::{BTreeSet, HashMap};
+use sqlx::{PgPool, Postgres, Transaction};
+use std::cell::Cell;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::io::Read;
 use std::path::Path;
+use std::rc::Rc;
 use std::sync::Arc;
 
 /// `app_settings` key holding the `datasetVersion` last ingested.
@@ -28,31 +30,78 @@ pub const DEFAULT_URL: &str =
 /// Largest data file accepted from the network (patches.json is ~19 MB in schema v1).
 const MAX_FILE: u64 = 256 * 1024 * 1024;
 
+/// Resource budget for one `dataset.tar.gz` (spec 04-serveur, "Reference data"). The defaults are
+/// several times the pinned release (`desktop/referential-pin.txt`, `data-d6776d73…`): 100,024,455
+/// compressed bytes, 158,981,122 bytes once decompressed (1,346 files), largest image 5,393,600 bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Limits {
+    /// Bytes downloaded for the archive itself.
+    pub archive_bytes: u64,
+    /// Bytes coming out of the gzip decoder (tar headers and every entry, kept or not).
+    pub expanded_bytes: u64,
+    /// Bytes of one image entry (data files keep the `MAX_FILE` cap).
+    pub image_bytes: u64,
+}
+
+impl Limits {
+    pub const DEFAULT: Limits = Limits {
+        archive_bytes: 512 * 1024 * 1024,
+        expanded_bytes: 1024 * 1024 * 1024,
+        image_bytes: 32 * 1024 * 1024,
+    };
+}
+
 /// Where a release's files come from (an HTTP download base in production, memory in tests).
 pub trait Source: Send + Sync {
     /// The bytes of release asset `name` (e.g. `manifest.json`, `enus.json`).
     fn get(&self, name: &str) -> Result<Vec<u8>, RefdataError>;
     /// Streams release asset `name` into `file`.
     fn download(&self, name: &str, file: &Path) -> Result<(), RefdataError>;
+    /// Budget applied to this source's `dataset.tar.gz` (tests inject small ones).
+    fn limits(&self) -> Limits {
+        Limits::DEFAULT
+    }
 }
 
 /// A release download base (`…/releases/latest/download/` or `…/releases/download/<tag>/`).
 pub struct Http {
     base: String,
+    agent: ureq::Agent,
+    limits: Limits,
 }
 
 impl Http {
     pub fn new(base: &str) -> Http {
         Http {
             base: format!("{}/", base.trim_end_matches('/')),
+            agent: ureq::Agent::new_with_defaults(),
+            limits: Limits::DEFAULT,
         }
+    }
+
+    pub fn standalone() -> Self {
+        let config = ureq::Agent::config_builder()
+            .timeout_global(Some(std::time::Duration::from_secs(300)))
+            .build();
+        Self {
+            base: DEFAULT_URL.into(),
+            agent: ureq::Agent::new_with_config(config),
+            limits: Limits::DEFAULT,
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_limits(mut self, limits: Limits) -> Self {
+        self.limits = limits;
+        self
     }
 }
 
 impl Source for Http {
     fn get(&self, name: &str) -> Result<Vec<u8>, RefdataError> {
         let url = format!("{}{name}", self.base);
-        ureq::get(&url)
+        self.agent
+            .get(&url)
             .call()
             .map_err(|e| RefdataError::Io(format!("{url}: {e}")))?
             .body_mut()
@@ -64,23 +113,34 @@ impl Source for Http {
 
     fn download(&self, name: &str, file: &Path) -> Result<(), RefdataError> {
         let url = format!("{}{name}", self.base);
-        let res = ureq::get(&url)
+        let res = self
+            .agent
+            .get(&url)
             .call()
             .map_err(|e| RefdataError::Io(format!("{url}: {e}")))?;
-        let mut reader = res.into_body().into_reader();
+        let limit = self.limits.archive_bytes;
+        // One byte past the budget is enough to refuse; the transfer stops there.
+        let mut reader = res.into_body().into_reader().take(limit.saturating_add(1));
         let mut out = std::fs::File::create(file).map_err(|e| io_err(file, e))?;
-        std::io::copy(&mut reader, &mut out)
+        let n = std::io::copy(&mut reader, &mut out)
             .map_err(|e| RefdataError::Io(format!("{url}: {e}")))?;
+        if n > limit {
+            return Err(RefdataError::Budget { what: url, limit });
+        }
         Ok(())
+    }
+
+    fn limits(&self) -> Limits {
+        self.limits
     }
 }
 
-fn io_err(path: &Path, e: impl std::fmt::Display) -> RefdataError {
+pub(super) fn io_err(path: &Path, e: impl std::fmt::Display) -> RefdataError {
     RefdataError::Io(format!("{}: {e}", path.display()))
 }
 
 /// Release asset name of a dataset path (`locales/enus.json` is published as `enus.json`).
-fn asset_name(path: &str) -> &str {
+pub(super) fn asset_name(path: &str) -> &str {
     DATA_FILES
         .iter()
         .find(|(p, _)| *p == path)
@@ -162,14 +222,32 @@ fn fetch_images(src: &dyn Source, images: &[ImageCopy], dir: &Path) -> Result<u3
         "storm-codex-dataset-{}.tar.gz",
         uuid::Uuid::new_v4()
     ));
+    fetch_images_via(src, images, dir, &file)
+}
+
+pub(super) fn fetch_images_via(
+    src: &dyn Source,
+    images: &[ImageCopy],
+    dir: &Path,
+    file: &Path,
+) -> Result<u32, RefdataError> {
     let result = (|| {
-        src.download("dataset.tar.gz", &file)?;
+        let limits = src.limits();
+        src.download("dataset.tar.gz", file)?;
+        // Any source is held to the compressed budget, not only the HTTP one that streams it.
+        let size = std::fs::metadata(file).map_err(|e| io_err(file, e))?.len();
+        if size > limits.archive_bytes {
+            return Err(RefdataError::Budget {
+                what: "dataset.tar.gz".into(),
+                limit: limits.archive_bytes,
+            });
+        }
         let expected = parse_sha256_file(&src.get("dataset.tar.gz.sha256")?)?;
-        check_file_hash(&file, &expected)?;
-        let gz = std::fs::File::open(&file).map_err(|e| io_err(&file, e))?;
-        copy_images(gz, images, dir)
+        check_file_hash(file, &expected)?;
+        let gz = std::fs::File::open(file).map_err(|e| io_err(file, e))?;
+        copy_images(gz, images, dir, &limits)
     })();
-    let _ = std::fs::remove_file(&file);
+    let _ = std::fs::remove_file(file);
     result
 }
 
@@ -190,20 +268,45 @@ pub fn parse_sha256_file(bytes: &[u8]) -> Result<String, RefdataError> {
     }
 }
 
-/// Streams `file` through SHA-256 and compares with `expected`.
-pub fn check_file_hash(file: &Path, expected: &str) -> Result<(), RefdataError> {
+/// Streams `reader` (the contents of `file`) through SHA-256; returns the hex digest and byte count.
+fn stream_sha256(file: &Path, mut reader: impl Read) -> Result<(String, u64), RefdataError> {
     use sha2::{Digest, Sha256};
-    let mut f = std::fs::File::open(file).map_err(|e| io_err(file, e))?;
     let mut h = Sha256::new();
     let mut buf = vec![0u8; 1 << 16];
+    let mut total = 0u64;
     loop {
-        let n = f.read(&mut buf).map_err(|e| io_err(file, e))?;
+        let n = reader.read(&mut buf).map_err(|e| io_err(file, e))?;
         if n == 0 {
             break;
         }
         h.update(&buf[..n]);
+        total += n as u64;
     }
-    let actual = hex::encode(h.finalize());
+    Ok((hex::encode(h.finalize()), total))
+}
+
+/// SHA-256 of `file`, streamed. A file over `limit` bytes is refused (checked against its size
+/// first, and while reading in case it grows).
+pub(super) fn file_sha256(file: &Path, limit: u64) -> Result<String, RefdataError> {
+    let f = std::fs::File::open(file).map_err(|e| io_err(file, e))?;
+    let too_big = || RefdataError::Budget {
+        what: file.display().to_string(),
+        limit,
+    };
+    if f.metadata().map_err(|e| io_err(file, e))?.len() > limit {
+        return Err(too_big());
+    }
+    let (hash, n) = stream_sha256(file, f.take(limit.saturating_add(1)))?;
+    if n > limit {
+        return Err(too_big());
+    }
+    Ok(hash)
+}
+
+/// Streams `file` through SHA-256 and compares with `expected`.
+pub fn check_file_hash(file: &Path, expected: &str) -> Result<(), RefdataError> {
+    let f = std::fs::File::open(file).map_err(|e| io_err(file, e))?;
+    let (actual, _) = stream_sha256(file, f)?;
     if actual != expected {
         return Err(RefdataError::Hash {
             path: file.display().to_string(),
@@ -214,52 +317,135 @@ pub fn check_file_hash(file: &Path, expected: &str) -> Result<(), RefdataError> 
     Ok(())
 }
 
+/// Fails the read once more than `left` bytes have come out of the gzip decoder. `over` records it,
+/// because the tar reader wraps the read error.
+struct Expansion<R> {
+    inner: R,
+    left: u64,
+    over: Rc<Cell<bool>>,
+}
+
+impl<R: Read> Read for Expansion<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        match self.left.checked_sub(n as u64) {
+            Some(left) => {
+                self.left = left;
+                Ok(n)
+            }
+            None => {
+                self.over.set(true);
+                Err(std::io::Error::other("expansion budget exceeded"))
+            }
+        }
+    }
+}
+
+/// Visits the regular files of a gzipped tarball within `expanded_bytes` of decompressed output.
+/// `cap(path)` is the largest size accepted for an entry to read (`None` = skip it unread); an
+/// entry over its cap is refused before it is buffered.
+fn each_entry(
+    gz: impl Read,
+    expanded_bytes: u64,
+    cap: impl Fn(&str) -> Option<u64>,
+    mut visit: impl FnMut(String, Vec<u8>) -> Result<(), RefdataError>,
+) -> Result<(), RefdataError> {
+    let over = Rc::new(Cell::new(false));
+    let mut archive = tar::Archive::new(Expansion {
+        inner: flate2::read::GzDecoder::new(gz),
+        left: expanded_bytes,
+        over: over.clone(),
+    });
+    let fail = |e: std::io::Error, path: &str| {
+        if over.get() {
+            RefdataError::Budget {
+                what: "expanded dataset archive".into(),
+                limit: expanded_bytes,
+            }
+        } else if path.is_empty() {
+            RefdataError::Io(e.to_string())
+        } else {
+            RefdataError::Io(format!("{path}: {e}"))
+        }
+    };
+    for entry in archive.entries().map_err(|e| fail(e, ""))? {
+        let mut entry = entry.map_err(|e| fail(e, ""))?;
+        if !entry.header().entry_type().is_file() {
+            continue;
+        }
+        let path = entry
+            .path()
+            .map_err(|e| fail(e, ""))?
+            .to_string_lossy()
+            .trim_start_matches("./")
+            .to_string();
+        let Some(limit) = cap(&path) else {
+            continue;
+        };
+        if entry.size() > limit {
+            return Err(RefdataError::Budget { what: path, limit });
+        }
+        let mut bytes = Vec::new();
+        (&mut entry)
+            .take(limit.saturating_add(1))
+            .read_to_end(&mut bytes)
+            .map_err(|e| fail(e, &path))?;
+        if bytes.len() as u64 > limit {
+            return Err(RefdataError::Budget { what: path, limit });
+        }
+        visit(path, bytes)?;
+    }
+    Ok(())
+}
+
 /// Copies the `images` found in a gzipped tarball into `dir`, each checked against its `assets.json`
 /// SHA-256; files already in `dir` are kept (D3: the square icons vendored by the old API stay).
-fn copy_images(gz: impl Read, images: &[ImageCopy], dir: &Path) -> Result<u32, RefdataError> {
+/// An image the archive does not hold is an error: a generation is complete or not staged at all.
+fn copy_images(
+    gz: impl Read,
+    images: &[ImageCopy],
+    dir: &Path,
+    limits: &Limits,
+) -> Result<u32, RefdataError> {
     let mut wanted: HashMap<&str, Vec<&ImageCopy>> = HashMap::new();
     for i in images {
         wanted.entry(i.source.as_str()).or_default().push(i);
     }
-    let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(gz));
+    let mut found = HashSet::new();
     let mut copied = 0;
-    for entry in archive
-        .entries()
-        .map_err(|e| RefdataError::Io(e.to_string()))?
-    {
-        let mut entry = entry.map_err(|e| RefdataError::Io(e.to_string()))?;
-        let path = entry
-            .path()
-            .map_err(|e| RefdataError::Io(e.to_string()))?
-            .to_string_lossy()
-            .trim_start_matches("./")
-            .to_string();
-        let Some(targets) = wanted.get(path.as_str()) else {
-            continue;
-        };
-        let mut bytes = Vec::new();
-        entry
-            .read_to_end(&mut bytes)
-            .map_err(|e| RefdataError::Io(format!("{path}: {e}")))?;
-        let actual = sha256_hex(&bytes);
-        for img in targets {
-            if actual != img.sha256 {
-                return Err(RefdataError::Hash {
-                    path: path.clone(),
-                    expected: img.sha256.clone(),
-                    actual: actual.clone(),
-                });
+    each_entry(
+        gz,
+        limits.expanded_bytes,
+        |path| wanted.contains_key(path).then_some(limits.image_bytes),
+        |path, bytes| {
+            let targets = wanted.get(path.as_str()).map_or(&[][..], Vec::as_slice);
+            let actual = sha256_hex(&bytes);
+            for img in targets {
+                if actual != img.sha256 {
+                    return Err(RefdataError::Hash {
+                        path: path.clone(),
+                        expected: img.sha256.clone(),
+                        actual: actual.clone(),
+                    });
+                }
+                let dest = dir.join(&img.dest);
+                if dest.exists() {
+                    continue;
+                }
+                if let Some(parent) = dest.parent() {
+                    std::fs::create_dir_all(parent).map_err(|e| io_err(parent, e))?;
+                }
+                std::fs::write(&dest, &bytes).map_err(|e| io_err(&dest, e))?;
+                copied += 1;
             }
-            let dest = dir.join(&img.dest);
-            if dest.exists() {
-                continue;
-            }
-            if let Some(parent) = dest.parent() {
-                std::fs::create_dir_all(parent).map_err(|e| io_err(parent, e))?;
-            }
-            std::fs::write(&dest, &bytes).map_err(|e| io_err(&dest, e))?;
-            copied += 1;
-        }
+            found.insert(path);
+            Ok(())
+        },
+    )?;
+    if let Some(missing) = wanted.keys().find(|p| !found.contains(**p)) {
+        return Err(RefdataError::Io(format!(
+            "{missing} missing from the archive"
+        )));
     }
     Ok(copied)
 }
@@ -281,12 +467,21 @@ pub async fn last_version(db: &PgPool) -> Option<String> {
 /// records the dataset version. Returns the new patches, none on the first seed (empty `dim_patches`).
 pub async fn store(db: &PgPool, rows: &Rows) -> Result<Vec<(String, String)>, sqlx::Error> {
     let mut tx = db.begin().await?;
+    let new = write_rows(&mut tx, rows).await?;
+    tx.commit().await?;
+    Ok(new)
+}
+
+pub(super) async fn write_rows(
+    tx: &mut Transaction<'_, Postgres>,
+    rows: &Rows,
+) -> Result<Vec<(String, String)>, sqlx::Error> {
     let was_empty: bool = sqlx::query_scalar("SELECT NOT EXISTS (SELECT 1 FROM dim_patches)")
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut **tx)
         .await?;
 
     sqlx::query("DELETE FROM dim_heroes")
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     for h in &rows.heroes {
         sqlx::query(
@@ -298,12 +493,12 @@ pub async fn store(db: &PgPool, rows: &Rows) -> Result<Vec<(String, String)>, sq
         .bind(&h.role)
         .bind(&h.universe)
         .bind(&h.data)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     }
 
     sqlx::query("DELETE FROM dim_talents")
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     for t in &rows.talents {
         sqlx::query(
@@ -315,7 +510,7 @@ pub async fn store(db: &PgPool, rows: &Rows) -> Result<Vec<(String, String)>, sq
         .bind(&t.name)
         .bind(&t.tree_id)
         .bind(&t.data)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     }
 
@@ -339,7 +534,7 @@ pub async fn store(db: &PgPool, rows: &Rows) -> Result<Vec<(String, String)>, sq
         .bind(p.map_count)
         .bind(&p.aliases)
         .bind(&p.data)
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut **tx)
         .await?;
         if inserted {
             new.push((p.internal_id.clone(), p.name.clone()));
@@ -348,11 +543,11 @@ pub async fn store(db: &PgPool, rows: &Rows) -> Result<Vec<(String, String)>, sq
     }
     sqlx::query("DELETE FROM dim_patches WHERE NOT (internal_id = ANY($1))")
         .bind(&ids)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
 
     sqlx::query("DELETE FROM patch_hero_sections")
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     for s in &rows.sections {
         sqlx::query(
@@ -374,7 +569,7 @@ pub async fn store(db: &PgPool, rows: &Rows) -> Result<Vec<(String, String)>, sq
         .bind(&s.patch_type)
         .bind(&s.live_date)
         .bind(&s.channel)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     }
 
@@ -384,9 +579,8 @@ pub async fn store(db: &PgPool, rows: &Rows) -> Result<Vec<(String, String)>, sq
     )
     .bind(VERSION_KEY)
     .bind(&rows.dataset_version)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
-    tx.commit().await?;
     tracing::info!(
         "reference data: dataset {} ingested — {} heroes, {} talents, {} patches ({} new), {} hero sections",
         rows.dataset_version,
@@ -399,36 +593,34 @@ pub async fn store(db: &PgPool, rows: &Rows) -> Result<Vec<(String, String)>, sq
     Ok(if was_empty { Vec::new() } else { new })
 }
 
-/// Reads every entry of a gzipped tarball into memory (`path → bytes`), keeping only `keep(path)`.
+/// Reads every entry of a gzipped tarball into memory (`path → bytes`), keeping only `keep(path)`,
+/// within `limits` (data files are capped at `MAX_FILE`, other entries at `image_bytes`).
+///
+/// Memory bound: everything kept is buffered at once, so peak memory can reach
+/// `limits.expanded_bytes` (1 GiB by default), not just one entry. Callers pass narrow `keep`
+/// filters (the data files, or only the listed images) on trusted local inputs: the desktop bundle
+/// or the `refdata trim` CLI input checked against its `.sha256`.
 fn read_tar(
     gz: impl Read,
     keep: impl Fn(&str) -> bool,
+    limits: &Limits,
 ) -> Result<HashMap<String, Vec<u8>>, RefdataError> {
-    let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(gz));
     let mut out = HashMap::new();
-    for entry in archive
-        .entries()
-        .map_err(|e| RefdataError::Io(e.to_string()))?
-    {
-        let mut entry = entry.map_err(|e| RefdataError::Io(e.to_string()))?;
-        if !entry.header().entry_type().is_file() {
-            continue;
-        }
-        let path = entry
-            .path()
-            .map_err(|e| RefdataError::Io(e.to_string()))?
-            .to_string_lossy()
-            .trim_start_matches("./")
-            .to_string();
-        if !keep(&path) {
-            continue;
-        }
-        let mut bytes = Vec::new();
-        entry
-            .read_to_end(&mut bytes)
-            .map_err(|e| RefdataError::Io(format!("{path}: {e}")))?;
-        out.insert(path, bytes);
-    }
+    each_entry(
+        gz,
+        limits.expanded_bytes,
+        |path| {
+            keep(path).then_some(if is_data_file(path) {
+                MAX_FILE
+            } else {
+                limits.image_bytes
+            })
+        },
+        |path, bytes| {
+            out.insert(path, bytes);
+            Ok(())
+        },
+    )?;
     Ok(out)
 }
 
@@ -451,53 +643,14 @@ fn dataset_from(files: &HashMap<String, Vec<u8>>) -> Result<Dataset, RefdataErro
     })
 }
 
-/// Standalone: ingests the bundled trimmed snapshot (`REFERENTIAL_FILE`). Same checks as the box; the
-/// images come from the bundle. Returns the new patches (none on the first seed).
-pub async fn ingest_bundle(
-    db: &PgPool,
-    images_dir: &Path,
-    file: &Path,
-) -> Result<Vec<(String, String)>, String> {
-    let file = file.to_path_buf();
-    let dir = images_dir.to_path_buf();
-    let prepared = tokio::task::spawn_blocking(move || -> Result<Rows, RefdataError> {
-        let bytes = std::fs::read(&file).map_err(|e| io_err(&file, e))?;
-        let files = read_tar(bytes.as_slice(), |_| true)?;
-        let ds = dataset_from(&files)?;
-        let rows = build(&ds)?;
-        // Images: the bundle holds exactly the ones `build` lists; check each, keep existing files.
-        let mut copied = 0;
-        for img in &rows.images {
-            let Some(data) = files.get(&img.source) else {
-                continue; // a map without art: the front falls back
-            };
-            ds.manifest.verify(&img.source, data)?;
-            let dest = dir.join(&img.dest);
-            if dest.exists() {
-                continue;
-            }
-            if let Some(parent) = dest.parent() {
-                std::fs::create_dir_all(parent).map_err(|e| io_err(parent, e))?;
-            }
-            std::fs::write(&dest, data).map_err(|e| io_err(&dest, e))?;
-            copied += 1;
-        }
-        tracing::info!("reference data (bundle): {copied} image(s) copied");
-        Ok(rows)
-    })
-    .await;
-    let rows = match prepared {
-        Ok(Ok(rows)) => rows,
-        Ok(Err(e)) => {
-            tracing::warn!("reference data: bundled snapshot refused ({e})");
-            return Err(e.to_string());
-        }
-        Err(e) => return Err(e.to_string()),
-    };
-    store(db, &rows).await.map_err(|e| {
-        tracing::warn!("reference data: write failed ({e})");
-        e.to_string()
-    })
+/// Stage a legacy trimmed snapshot with the same adapter and image verifier as the feed.
+pub(super) fn stage_bundle(file: &Path, dir: &Path) -> Result<(Rows, Manifest), RefdataError> {
+    let open = || std::fs::File::open(file).map_err(|e| io_err(file, e));
+    let files = read_tar(open()?, is_data_file, &Limits::DEFAULT)?;
+    let ds = dataset_from(&files)?;
+    let rows = build(&ds)?;
+    copy_images(open()?, &rows.images, dir, &Limits::DEFAULT)?;
+    Ok((rows, ds.manifest))
 }
 
 /// What [`trim`] produced.
@@ -522,11 +675,13 @@ pub fn trim(from: &Path, out: &Path) -> Result<Trimmed, RefdataError> {
     check_file_hash(from, &expected)?;
 
     let open = || std::fs::File::open(from).map_err(|e| io_err(from, e));
-    let data = read_tar(open()?, is_data_file)?;
+    let data = read_tar(open()?, is_data_file, &Limits::DEFAULT)?;
     let ds = dataset_from(&data)?;
     let rows = build(&ds)?;
     let images: BTreeSet<&str> = rows.images.iter().map(|i| i.source.as_str()).collect();
-    let mut kept = read_tar(open()?, |p| images.contains(p))?;
+    // Holds every listed image in memory until the bundle is written (bounded by
+    // `expanded_bytes`, see `read_tar`); fine for a build-time tool on the pinned release.
+    let mut kept = read_tar(open()?, |p| images.contains(p), &Limits::DEFAULT)?;
     for (path, bytes) in &kept {
         ds.manifest.verify(path, bytes)?;
     }

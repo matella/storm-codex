@@ -90,7 +90,62 @@ pub struct Status {
     pub reprocess_done: u64,
 }
 
-/// Shared ordering of status polls and folder edits within a tab.
+/// Standalone reference sync is independent of replay import and the app updater.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReferencePhase {
+    Waiting,
+    Syncing,
+    Ready,
+    Error,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize)]
+pub struct ReferenceStatus {
+    pub enabled: bool,
+    pub phase: ReferencePhase,
+    pub version: Option<String>,
+    pub revision: String,
+    /// The active dataset's artwork is complete on this PC (absent from older servers).
+    #[serde(default)]
+    pub artwork: bool,
+}
+
+impl ReferenceStatus {
+    /// Even a disabled, syncing or failed check can have an active dataset.
+    pub fn active_revision(&self) -> Option<&str> {
+        self.version.as_ref().map(|_| self.revision.as_str())
+    }
+}
+
+/// Key of the reads that follow reference activation. `generation` moves only when the active revision changes
+/// between two known statuses: the first status (unknown → known) describes the data the mounted pages have just
+/// read, so it must not refetch them, while a first activation after a known "no dataset" status still does.
+/// Without a status (the box, or an older standalone server) the generation never moves.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RevisionWatch {
+    known: Option<Option<String>>,
+    pub generation: u64,
+}
+
+impl RevisionWatch {
+    /// `status` is the current status's active revision, `None` while no status is known.
+    pub fn observe(&self, status: Option<Option<&str>>) -> Self {
+        let Some(current) = status else {
+            return self.clone();
+        };
+        let changed = self
+            .known
+            .as_ref()
+            .is_some_and(|known| known.as_deref() != current);
+        Self {
+            known: Some(current.map(str::to_owned)),
+            generation: self.generation + u64::from(changed),
+        }
+    }
+}
+
+/// Shared ordering of status polls and settings writes within a tab.
 #[derive(Default)]
 pub struct StatusRequests {
     issued: u64,
@@ -410,6 +465,61 @@ pub fn reloads_after(action: BackupAction, outcome: &BackupOutcome) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reference_revision_is_opaque_and_absent_until_activation() {
+        let waiting: ReferenceStatus = serde_json::from_str(
+            r#"{"enabled":true,"phase":"waiting","version":null,"revision":"empty:0"}"#,
+        )
+        .unwrap();
+        assert_eq!(waiting.active_revision(), None);
+        assert!(!waiting.artwork);
+
+        let cached: ReferenceStatus = serde_json::from_str(
+            r#"{"enabled":false,"phase":"error","version":"data-123","revision":"restored:abc","artwork":true}"#,
+        )
+        .unwrap();
+        assert_eq!(cached.active_revision(), Some("restored:abc"));
+        assert!(cached.artwork);
+        assert!(!cached.enabled);
+        assert_eq!(cached.phase, ReferencePhase::Error);
+
+        assert!(serde_json::from_str::<ReferenceStatus>(
+            r#"{"enabled":true,"phase":"ready","version":"data-123","revision":7}"#,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn revision_watch_skips_the_first_status_only() {
+        let first = RevisionWatch::default().observe(None);
+        assert_eq!(first.generation, 0, "no status: the box never refetches");
+        let polled = first.observe(Some(Some("r1")));
+        assert_eq!(
+            polled.generation, 0,
+            "the first poll is what pages already read"
+        );
+        assert_eq!(polled.observe(Some(Some("r1"))).generation, 0);
+        let activated = polled.observe(Some(Some("r2")));
+        assert_eq!(activated.generation, 1, "a real activation refetches");
+        assert_eq!(
+            activated.observe(None).generation,
+            1,
+            "losing the status keeps the key"
+        );
+        assert_eq!(
+            activated.observe(None).observe(Some(Some("r3"))).generation,
+            2
+        );
+
+        let empty = RevisionWatch::default().observe(Some(None));
+        assert_eq!(empty.generation, 0, "first poll without a dataset");
+        assert_eq!(
+            empty.observe(Some(Some("r1"))).generation,
+            1,
+            "the first download after a known empty status refetches"
+        );
+    }
 
     /// Shape of the server's `Status` (crates/storm-codex-server/src/standalone/mod.rs), as serialised.
     const FIXTURE: &str = r#"{

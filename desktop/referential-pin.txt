@@ -1,8 +1,5 @@
-# Reference dataset bundled (trimmed) by the standalone desktop installer: a HotsPatchNotes dataset release
-# (schema v1, https://github.com/matella/HeroesOfTheStormPatchNotes/releases), pinned by the URL and SHA-256 of
-# its `dataset.tar.gz` (spec docs/specs/2026-11-15-reference-dataset-adapter-design.md, D5).
-# The release workflow downloads it, refuses it unless the SHA-256 matches, then runs
-# `storm-codex-server refdata trim` to build the bundled referential.tar.gz (only what the app reads).
+# HotsPatchNotes dataset release (schema v1) used by ci.yml for full-release adapter tests.
+# The desktop release workflow does not use this pin.
 # Refresh = pick a newer `data-<sha256>` release, change both lines in the same commit (the tag is the SHA-256).
 url=https://github.com/matella/HeroesOfTheStormPatchNotes/releases/download/data-d6776d732e7265d6b714dfce5ba508b1bc8975ea7cadc4a18a41ba5b337a2c0f/dataset.tar.gz
 sha256=d6776d732e7265d6b714dfce5ba508b1bc8975ea7cadc4a18a41ba5b337a2c0f

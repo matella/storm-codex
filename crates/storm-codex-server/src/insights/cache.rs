@@ -281,6 +281,12 @@ fn slot() -> &'static Mutex<Arc<Corpus>> {
     S.get_or_init(|| Mutex::new(Arc::new(Corpus::default())))
 }
 
+/// Reference hero repairs preserve match IDs and parser versions, so those edits are not
+/// detectable by the normal incremental version check.
+pub(crate) async fn invalidate() {
+    *slot().lock().await = Arc::new(Corpus::default());
+}
+
 /// The corpus, up to date with the database.
 pub async fn corpus(db: &PgPool) -> Result<Arc<Corpus>, sqlx::Error> {
     let mut guard = slot().lock().await;

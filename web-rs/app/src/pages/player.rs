@@ -21,7 +21,7 @@ use storm_web_core::{
 use crate::{
     matchui::ModeTag,
     pages::player_identity::PlayerIdentity,
-    ui::{fetch, map_art, use_dim, Link, Portrait, SecHead, Tone},
+    ui::{fetch, fetch_reference, map_art, use_dim, Link, Portrait, SecHead, Tone},
 };
 
 /// Chat habits of an account: measures only, never the text. Nothing when the account is not in the corpus.
@@ -72,7 +72,7 @@ fn best_worst(
 #[component]
 fn PlayerInsightsTab(toon: Signal<String>) -> impl IntoView {
     use storm_web_core::insights::{pct as ipct, PlayerInsights, Ranked};
-    let data = fetch::<PlayerInsights>(move || {
+    let data = fetch_reference::<PlayerInsights>(move || {
         format!("/api/players/{}/insights", uri_component(&toon.get()))
     });
     let ranked = |list: Vec<Ranked>, link: fn(&str) -> String| {
@@ -152,8 +152,9 @@ pub fn Player() -> impl IntoView {
     let loc = use_location();
     let nav = StoredValue::new_local(use_navigate());
     let dim = use_dim();
-    let data =
-        fetch::<PlayerSummary>(move || format!("/api/players/{}", uri_component(&toon.get())));
+    let data = fetch_reference::<PlayerSummary>(move || {
+        format!("/api/players/{}", uri_component(&toon.get()))
+    });
     // loaded apart from the summary (linked accounts are slower)
     let identity =
         fetch::<Identity>(move || format!("/api/players/{}/identity", uri_component(&toon.get())));

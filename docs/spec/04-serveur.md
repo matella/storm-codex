@@ -70,10 +70,9 @@ Only in standalone mode (`STANDALONE=1`); without it the routes below answer 404
 starts. One background task (`standalone/orchestrator.rs`) owns the upload ledger and runs,
 once the listener is bound (`/api/health` answers 200 during the whole sequence):
 
-1. **seed** the reference data from `REFERENTIAL_FILE` when `dim_heroes` is empty or the bundled
-   file differs from the one last ingested (an app update ships a newer one) (phase `seeding`);
-   then, in a background task started **once the first import run ends** (step 6; so it does
-   not compete with the backfill for `parse_sem`, whose saturation makes uploads answer 202
+1. **initialize** import (phase `seeding`); reference sync runs separately and does not gate
+   import. In a background task started **once the first import run ends** (step 6; so it does not
+   compete with the backfill for `parse_sem`, whose saturation makes uploads answer 202
    before their outcome is known), the **re-process after an update**: every
    upload `parsed` with `parser_version < PARSER_VERSION` is re-parsed and re-projected
    (`admin::outdated_uploads` + `admin::reprocess_one`, one `parse_sem` permit each, so it
@@ -263,6 +262,28 @@ records `app_settings.refdata_dataset_version`.
   `metadataOnly` patches keep the dataset `reason` in the detail.
 - **Hero sections.** One `patch_hero_sections` row per section with a `heroId` of available
   English content, `hero_name` = the parser name, `channel` = `live`/`ptr`.
+- **Completeness.** Matching checksums do not make a release complete. `refdata::build` refuses
+  (before any write or staging) a release whose required catalogs are empty (`game.json`
+  heroes/battlegrounds, `enus.json` heroes/talents/battlegrounds, `assets.json`, `patches.json`, or
+  no talent or artwork at all), an `assets.json` record without a path or SHA-256, and a declared
+  hero portrait or map `loadingScreenImage` with no asset record. Documented exceptions: a hero's
+  `heroSelect` icon may be absent when its `loading` portrait resolves (D3; the trimmed test fixture
+  relies on it), a hero or map that declares no artwork gets none, and a map without an English name
+  is skipped. Copying from `dataset.tar.gz` fails when a listed image is not in the archive, so a
+  generation is never staged with only the images that survived. This applies to the box refresh
+  too: a box round whose archive lacks a listed image copies the images found before the error
+  and logs "images not copied". The rows stay ingested, so the version counts as current: the
+  missing images are only retried with the next `datasetVersion`. The pinned release
+  (`desktop/referential-pin.txt`) resolves all 91 hero and 35 map artworks.
+- **Archive budget** (`refdata::load::Limits::DEFAULT`, box and standalone). `dataset.tar.gz` may
+  be at most **512 MiB** downloaded (the HTTP stream stops one byte past it), **1 GiB** once
+  decompressed (counted at the gzip decoder, skipped entries included), and **32 MiB** per image
+  entry (refused from the tar header before it is buffered; data files keep the 256 MiB cap). The
+  pinned release is 100,024,455 B compressed, 158,981,122 B expanded, largest image 5,393,600 B. A
+  breach refuses the round: the download is deleted, standalone staging is removed and the active
+  generation stays. The legacy `REFERENTIAL_FILE` bundle is hashed by streaming and refused over
+  512 MiB. The local tar readers used for that bundle and `refdata trim` buffer the kept entries
+  at once, so their memory is bounded by the 1 GiB expansion budget, not by one entry.
 
 **Box** (`REFDATA_URL`, default
 `https://github.com/matella/HeroesOfTheStormPatchNotes/releases/latest/download/`; empty =
@@ -276,14 +297,66 @@ empty, retry every **10 min**. Each round (`refdata::load::refresh`):
 4. when some image is missing from `IMAGES_DIR`, download `dataset.tar.gz`, check it against
    `dataset.tar.gz.sha256`, and copy the missing images (each checked against `assets.json`).
 
-**Standalone mode** (`STANDALONE=1`, installer bundle): no network. When `REFERENTIAL_FILE` is
-set (the trimmed bundle built by `storm-codex-server refdata trim`, see `09-operations.md`), its
-SHA-256 is compared with `app_settings.reference_snapshot_sha256` (a JSON string) at each start;
-when `dim_heroes` is empty or the hashes differ (an app update ships a newer bundle), the bundle is
-ingested as the first step of the standalone import task (phase `seeding`, see "Standalone import"
-below) by `refdata::load::ingest_bundle` — same manifest/schema/SHA-256 checks and the same writer
-as the box — and the hash is saved only after a successful ingest (an unreadable, corrupt or
-tampered file is retried at the next start). The 24 h refresh loop is not started.
+**Standalone mode** (`STANDALONE=1`; approved download spec 2026-11-19). The reference worker
+(`refdata/standalone.rs`) starts alongside import. It checks the same fixed stable feed at startup
+and every 24 h. Failed checks retry after 1, 5 and 30 minutes, then return to the daily cadence.
+Manual refresh and enabling queue a check; requests coalesce and rounds never overlap. The persisted
+`app_settings.standalone_reference_enabled` defaults to true. Disabling prevents new rounds and
+activation of work still being fetched; it does not remove cached rows or assets. Each preference
+change bumps a round epoch: a round only fetches and activates while its starting epoch is current,
+so disabling then re-enabling during a download cannot revive that round; the queued check runs
+once instead.
+
+- The manifest schema and metadata checks use the existing adapter. An unchanged version with
+  complete verified local images fetches only `manifest.json`. Otherwise the worker verifies the
+  archive checksum, verifies every required image against both asset and manifest hashes, and
+  flushes the images to an isolated generation under `<data>/reference-assets/<revision>`.
+- The shared transaction writer installs the reference rows and records the generation and version
+  in `app_settings` (`standalone_reference_active` and `refdata_dataset_version`). Until commit the
+  old generation remains active. Standalone hero and battleground artwork use the committed
+  generation, with legacy `IMAGES_DIR` as fallback; `/images/minimaps` is unchanged. Superseded
+  managed generations are retired on restart. Cached legacy rows and files are preserved on upgrade.
+- `REFERENTIAL_FILE`, when provided, remains an offline seed and uses the same activation path,
+  even with network sync disabled. A changed bundle is accepted until a network generation is
+  active; then a legacy resource cannot downgrade it. A restore with missing images keeps its
+  rows: the next successful check restages even the same version and publishes a new revision.
+  Startup checks the active generation's files locally (no network, whatever the preference) and
+  reports the result as the status `artwork` flag, so cached rows with missing artwork are not
+  presented as available offline. Before the server binds, this check is cheap: every listed image
+  must be a non-empty file. The worker then hashes every image in the background before its first
+  bundle or network check and corrects `artwork`; that first check reuses this result instead of
+  hashing again when it is less than 5 minutes old (sync may be enabled long after startup). The
+  background hash stops between images when the app is quitting. Every later check that finds the active version (network manifest or same legacy
+  bundle) re-verifies the files and sets `artwork` to the result, so it returns to true once the
+  files are back without a new activation.
+- A release refused for its content is remembered in memory by `datasetVersion`: at the first
+  resource-budget or shape failure, but only after two consecutive SHA-256 mismatches on the same
+  version (a single mismatch may be a corrupted transfer; the next check downloads it again). While
+  `manifest.json` still names it, later automatic checks fetch only the manifest and report
+  `phase: error`, instead of downloading the data files and archive again; the first such check
+  logs a warning, later ones log at debug. A new version clears it, so does a restart (the first
+  check after it retries the release once), and so does the user's Retry
+  (`POST /api/standalone/reference/refresh`), which downloads the release once more. Automatic
+  checks (schedule, failure retries, enabling) keep it.
+- A check interrupted by shutdown exits quietly, and one cut short by a preference change counts as
+  cancelled, whatever error the interruption caused; neither is reported as a failed check.
+  Cached rows remain readable during a check or failure.
+- Activation repairs hero attribution of already projected replays in bounded batches, using stored
+  talent IDs and the live correction rule. It updates the promoted hero and affected player/match
+  JSON (including takedowns), retaining original hero provenance and match/upload IDs. It does not
+  re-decode or re-upload replays. Only the local activation transaction fences projection writes;
+  neither network I/O nor staging holds that fence. Repair is idempotent and invalidates the
+  insights corpus when it changes a match. The 2D replay disk cache stores only replay-derived
+  geometry and the playerId → toon mapping; player name/hero/team/win are read from
+  `match_players` on every request, so a cache entry warmed before the repair (even across a
+  restart) serves the repaired hero. The entry (`{id}-replay2d-v{VIEWER_VERSION}-split2.json`) is
+  the toons JSON line, the model's byte length as a decimal line, then the model's serialised
+  bytes; a hit splices the fresh `players` array into those bytes without parsing the model. It is
+  written to a unique temporary file in the cache directory and renamed into place, so readers
+  never see a partial entry; a malformed header or a model whose length differs from the header
+  is a miss (decoded again), as are entries of the older `-split` layout. A model that cannot be serialised as a JSON
+  object without a `players` key returns 500 and is not cached.
+
 `Config::validate()` (run right after `from_env()`) rejects a non-loopback `BIND_ADDR` in this mode
 ("standalone mode requires a loopback BIND_ADDR"): the IP must be exactly `127.0.0.1` or `::1`, the
 addresses the Host guard accepts (another 127/8 address would make every in-process upload a 403).
@@ -361,8 +434,8 @@ Design: `docs/specs/2026-10-24-feed-live-en-partie-design.md`.
 | `IMAGES_DIR` | `./.images` | vendored images, served on `/images` |
 | `REDIS_URL` / `JARVIS_CHANNEL` | empty = no emission / `jarvis:events` (box production: `storm-codex:match_completed`) | Jarvis events |
 | `REFDATA_URL` | the producer's `releases/latest/download/`; empty = off | reference dataset release (box; see above) |
-| `STANDALONE` | empty = off | `1` = standalone (installer) mode: loopback-only `BIND_ADDR` (checked at startup), no reference-data network refresh |
-| `REFERENTIAL_FILE` | empty | bundled trimmed `referential.tar.gz` (`refdata trim`) that seeds the reference data in standalone mode |
+| `STANDALONE` | empty = off | `1` = standalone (installer) mode: loopback-only `BIND_ADDR` (checked at startup), independent reference sync |
+| `REFERENTIAL_FILE` | empty | optional legacy trimmed `referential.tar.gz` (`refdata trim`) for offline seeding in standalone mode |
 | `LEDGER_FILE` | `<ARCHIVE_DIR>/../uploaded.json` | standalone only: upload ledger of the in-process watcher (the desktop shell passes `<data>/uploaded.json`) |
 | `ORPHEUS_URL` | empty | music proxy for `/api/now-playing` |
 | `PATCH_WEBHOOK_URL` | empty | outgoing new-patch notification |

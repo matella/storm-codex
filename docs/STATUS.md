@@ -1,5 +1,25 @@
 # STATUS — read first, update last
 
+## Standalone reference data downloads, desktop 0.1.2 (2026-11-19), branch `docs/standalone-reference-download`
+
+Approved spec: `docs/specs/2026-11-19-standalone-reference-download.md`. The NSIS installer no longer
+ships a reference snapshot (0.1.1 draft baseline: **110,766,415 bytes**); the standalone server
+downloads it in the background, verifies and stages artwork, and activates it atomically while keeping
+the last good generation. Replays import and stay browsable before the first sync; activation repairs
+hero attribution in place (projected matches and cached 2D replays; scouting summaries are not
+repaired, see spec notes). This PC shows sync status, an automatic-download toggle and retry.
+
+Three review rounds fixed: stale 2D cache after repair, incomplete or oversized releases (completeness
+checks; caps 512 MiB download / 1 GiB expanded / 32 MiB per image), off/on during a download (epoch),
+`artwork` derived from local files (presence at startup, background hash), refused releases not
+re-downloaded (Retry clears that memory; a SHA-256 mismatch counts after two in a row), atomic 2D cache
+entries with a length header, cancelled rounds not counted as failures, 2D cache hits served without parsing the model
+(p50 about 8 ms → 0.14 ms on fixture models: 6–8.4 ms before, 0.11–0.14 ms after), and no double fetch on first load.
+
+Docker checks on the integrated branch: see the PR. App bundle ~996 kB Brotli (cap 1,000,000, ~4 kB
+left). **Not done**: browser check of the refetch, Windows draft build, installer size comparison,
+clean offline install and 0.1.1 upgrade on MH-Home (needs the machine online).
+
 ## Download page (2026-11-19), issue #39, branch `feat/pages-download`
 
 Approved spec: `docs/specs/2026-11-19-github-pages-download.md`. Static page in `site/`, rendered by
@@ -47,8 +67,8 @@ box loader `REFDATA_URL` + standalone `ingest_bundle` + `refdata trim`); migrati
 `/api/patches/{id}` accepts an old id; PTR kept out of `/hero-changes`; "Community notes" label in the patch pages.
 Removed: `dim.rs` (`sync_*`, `vendor_images`, `backfill_hero_sections`, `ingest_snapshot*`), `read::hpn_proxy`,
 `HOTSPATCHNOTES_URL`, `REFERENTIAL_URL`, `scripts/make-referential.sh`, `scripts/fetch-referential.ps1`.
-`desktop/referential-pin.txt` now pins release `data-d6776d73…` (2026-11-16; the release workflow downloads and trims
-it). That release came from HotsPatchNotes PR 6: 260 patches (blog/forum duplicates merged), old ids as aliases, the
+`desktop/referential-pin.txt` pins release `data-d6776d73…` (2026-11-16; formerly used by the desktop release
+workflow, now retained for CI tests). That release came from HotsPatchNotes PR 6: 260 patches (blog/forum duplicates merged), old ids as aliases, the
 square `heroSelect` icons (D3), and a file-safe `Battleground.slug` that names the map art (the front's `map_slug`
 follows the same rule, so "Checkpoint: Hanamura" → `checkpoint-hanamura`).
 

@@ -11,6 +11,7 @@ use storm_web_core::{
 };
 
 use crate::{
+    reference::provide_reference,
     standalone::{provide_standalone, Standalone, UpdateBanner},
     ui::{provide_dim, provide_operator, provide_talents, Link},
 };
@@ -36,11 +37,11 @@ fn bump(s: RwSignal<u32>) {
 
 #[component]
 pub fn Layout() -> impl IntoView {
-    provide_talents();
-    provide_dim(); // reference data (universe rings)
-
     // desktop app: import status (404 on the box: nothing shown), first-load redirect to /welcome
     let standalone = provide_standalone();
+    provide_reference(standalone);
+    provide_talents();
+    provide_dim(); // reference data (universe rings)
     provide_operator(standalone);
     let importing = move || {
         standalone
