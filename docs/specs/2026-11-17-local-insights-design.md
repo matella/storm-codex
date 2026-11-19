@@ -13,7 +13,7 @@ operator asked. Everything runs the same on the box and in the standalone app.
 - Read-only, computed from data already stored (`matches.data`, `match_players.data`, storm-stats JSON).
 - No migration, no new dependency, no network call, no account, no Twitch or Discord.
 - New read endpoints live in the existing axum server, so the standalone app gets them for free.
-- web-rs app stays within its 1 MB brotli budget (`scripts/check-web-rs-size.sh`).
+- web-rs app stays within its brotli budget (1 MB at the time, 1.25 MB since 2026-11-19) (`scripts/check-web-rs-size.sh`).
 - Pure logic (clustering, classification, window maths) lives in a server module (`insights/logic.rs`) with
   unit tests, so the match page and the cross-game insights share one implementation; endpoints get
   integration tests like the existing read endpoints.
