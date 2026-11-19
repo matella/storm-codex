@@ -98,7 +98,7 @@ fn fix_takedown_heroes(tds: Option<&mut J>, fix: &HashMap<String, String>) {
 /// `players[].hero` (original traced in `heroCorrectedFrom`), `players[].deaths`,
 /// `players[].takedowns` (of **all** the players: an uncorrected player can have a corrected
 /// killer) and `match.takedowns`. No correction → input unchanged.
-fn apply_hero_corrections(
+pub(crate) fn apply_hero_corrections(
     match_: &mut Map<String, J>,
     players: &mut Map<String, J>,
     fix: &HashMap<String, String>,
@@ -121,19 +121,51 @@ fn apply_hero_corrections(
     fix_takedown_heroes(match_.get_mut("takedowns"), fix);
 }
 
+/// The whole talent → hero lookup, as seen by `tx` (activation writes it before repairing).
+pub(crate) async fn reference_lut(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+) -> Result<HashMap<String, String>, sqlx::Error> {
+    Ok(sqlx::query_as::<_, (String, String)>(
+        "SELECT tree_id, hero_id FROM dim_talents WHERE tree_id IS NOT NULL ORDER BY tree_id, hero_id",
+    )
+    .fetch_all(&mut **tx)
+    .await?
+    .into_iter()
+    .collect())
+}
+
+/// Talent → hero lookup restricted to the talents of `players`, for a projection. Best-effort, like
+/// the projection itself: an empty or unreadable `dim_talents` gives an empty lookup.
+pub(crate) async fn talent_lookup(
+    conn: &mut sqlx::PgConnection,
+    players: &Map<String, J>,
+) -> HashMap<String, String> {
+    let talent_ids: Vec<String> = players
+        .values()
+        .filter_map(|p| p.get("talents").and_then(J::as_object))
+        .flat_map(|t| t.values().filter_map(J::as_str).map(str::to_owned))
+        .collect();
+    if talent_ids.is_empty() {
+        return HashMap::new();
+    }
+    sqlx::query_as::<_, (String, String)>(
+        "SELECT tree_id, hero_id FROM dim_talents WHERE tree_id = ANY($1) ORDER BY tree_id, hero_id",
+    )
+    .bind(&talent_ids)
+    .fetch_all(conn)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .collect()
+}
+
 /// Re-apply the same hero correction to stored projections without decoding replays or
 /// replacing match IDs. The caller holds the projection writer fence and has written the new
 /// lookup in this transaction. Keyset batches bound the working set, even for large archives.
 pub(crate) async fn repair_reference_heroes(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
 ) -> Result<usize, sqlx::Error> {
-    let lut: HashMap<String, String> = sqlx::query_as::<_, (String, String)>(
-        "SELECT tree_id, hero_id FROM dim_talents WHERE tree_id IS NOT NULL ORDER BY tree_id, hero_id",
-    )
-    .fetch_all(&mut **tx)
-    .await?
-    .into_iter()
-    .collect();
+    let lut = reference_lut(tx).await?;
     if lut.is_empty() {
         return Ok(0);
     }
@@ -251,24 +283,7 @@ async fn project_once(
     // Hero correction (see talent_hero): we resolve the played hero via dim_talents for all the
     // talents of the match in one query, BEFORE writing `matches.data` (which carries `takedowns`).
     // Best-effort — empty reference data → empty LUT → we keep the parser's hero.
-    let talent_ids: Vec<String> = players
-        .values()
-        .filter_map(|p| p.get("talents").and_then(J::as_object))
-        .flat_map(|t| t.values().filter_map(J::as_str).map(str::to_owned))
-        .collect();
-    let talent_lut: HashMap<String, String> = if talent_ids.is_empty() {
-        HashMap::new()
-    } else {
-        sqlx::query_as::<_, (String, String)>(
-            "SELECT tree_id, hero_id FROM dim_talents WHERE tree_id = ANY($1) ORDER BY tree_id, hero_id",
-        )
-        .bind(&talent_ids)
-        .fetch_all(&mut *tx)
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .collect()
-    };
+    let talent_lut = talent_lookup(&mut tx, players).await;
     let corrections = hero_corrections(players, &talent_lut);
     let mut match_obj = m.clone();
     let mut players = players.clone();

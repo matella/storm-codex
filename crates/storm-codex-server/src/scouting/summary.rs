@@ -236,10 +236,58 @@ pub fn summarize(out: &storm_stats::Output) -> Result<GameSummary, SummaryError>
     })
 }
 
+/// Applies the projection's hero corrections (toon → played hero, `project::hero_corrections`) to
+/// the players of a summary. Draft `picks` and `bans` are read from draft events and stay as they
+/// are, like `match.picks` in the projection. Returns `true` if a hero changed.
+pub fn apply_hero_corrections(
+    s: &mut GameSummary,
+    fix: &std::collections::HashMap<String, String>,
+) -> bool {
+    let mut changed = false;
+    for p in s.teams.iter_mut().flatten() {
+        if let Some(h) = fix.get(&p.toon).filter(|h| **h != p.hero) {
+            p.hero = h.clone();
+            changed = true;
+        }
+    }
+    changed
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hero_corrections_follow_the_toon_and_are_idempotent() {
+        let player = |toon: &str, hero: &str| Player {
+            toon: toon.into(),
+            name: toon.into(),
+            hero: hero.into(),
+            stats: PlayerStats::default(),
+        };
+        let mut s = GameSummary {
+            date: None,
+            map: "m".into(),
+            build: None,
+            length_s: 0.0,
+            winner: None,
+            teams: [vec![player("a", "D.Va")], vec![player("b", "D.Va")]],
+            bans: [vec![], vec![]],
+            picks: [vec!["D.Va".into()], vec![]],
+            first_pick: None,
+            first_fort: None,
+            first_objective: None,
+            level10: [None, None],
+            level_diff: vec![],
+        };
+        let fix = [("b".to_string(), "Johanna".to_string())].into();
+        assert!(apply_hero_corrections(&mut s, &fix));
+        assert_eq!(s.teams[0][0].hero, "D.Va", "same parser hero, other toon");
+        assert_eq!(s.teams[1][0].hero, "Johanna");
+        assert_eq!(s.picks[0], vec!["D.Va".to_string()]);
+        assert!(!apply_hero_corrections(&mut s, &fix));
+    }
 
     #[test]
     fn code_de_ban_resolu_en_nom_de_heros() {

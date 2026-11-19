@@ -18,7 +18,7 @@ use storm_web_core::{
     session::to_fixed1,
 };
 
-use crate::ui::{fetch, map_art, use_dim, Link, Portrait, SecHead, Tone};
+use crate::ui::{fetch, fetch_reference, map_art, use_dim, Link, Portrait, SecHead, Tone};
 
 type Names = Arc<HashMap<String, String>>;
 
@@ -1137,7 +1137,8 @@ pub fn ScoutingReport() -> impl IntoView {
     let params = use_params_map();
     let id = move || params.read().get("id").unwrap_or_default();
     let bump = RwSignal::new(0u32);
-    let data = fetch::<Report>(move || {
+    // reference activation repairs the stored heroes and facts in place
+    let data = fetch_reference::<Report>(move || {
         bump.track();
         format!("/api/scouting/{}", id())
     });
