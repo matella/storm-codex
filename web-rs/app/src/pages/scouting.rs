@@ -98,7 +98,7 @@ pub fn Scouting() -> impl IntoView {
                         on:input=move |e| target.set(event_target_value(&e)) on:keydown=on_enter />
                     <input class="ds-input" style="flex: 2; min-width: 220px" placeholder="report title (e.g. Week 4 — playoffs)"
                         prop:value=move || title.get() on:input=move |e| title.set(event_target_value(&e)) on:keydown=on_enter2 />
-                    <span class="ds-btn primary" style="align-self: center" on:click=move |_| create()>"New report"</span>
+                    <button type="button" class="ds-btn primary" style="align-self: center" on:click=move |_| create()>"New report"</button>
                 </div>
                 {move || msg.get().map(|m| view! { <div class="ds-meta" style="margin-top: 8px; color: var(--loss-soft)">{m}</div> })}
             </header>

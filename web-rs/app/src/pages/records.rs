@@ -33,11 +33,11 @@ pub fn RecordsPage() -> impl IntoView {
                 <div class="ds-subtitle" style="cursor: default">"Top 5 per stat across every game here. Click a game to open it."</div>
                 <div class="ds-filterbar">
                     {MODES.iter().map(|&(label, m)| view! {
-                        <span class=move || pill_class(mode.get() == m) on:click=move |_| mode.set(m)>{label}</span>
+                        <button type="button" class=move || pill_class(mode.get() == m) on:click=move |_| mode.set(m)>{label}</button>
                     }).collect_view()}
                     <span class="ds-sep"></span>
-                    <span class=move || pill_class(mine.get()) on:click=move |_| mine.update(|v| *v = !*v)>"My games only"</span>
-                    <select class="ds-input" on:change=move |e| map.set(event_target_value(&e))>
+                    <button type="button" class=move || pill_class(mine.get()) on:click=move |_| mine.update(|v| *v = !*v)>"My games only"</button>
+                    <select class="ds-input" aria-label="Battleground" on:change=move |e| map.set(event_target_value(&e))>
                         <option value="" selected=move || map.get().is_empty()>"All maps"</option>
                         {move || maps.get().and_then(Result::ok).unwrap_or_default().into_iter().map(|m| {
                             let (v, l, sel) = (m.map.clone(), m.map.clone(), m.map.clone());

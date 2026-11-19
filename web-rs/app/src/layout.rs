@@ -1,12 +1,12 @@
 //! Top bar, live channel, toast and the two help modals. Port of `components/Layout.tsx`, `Onboarding.tsx` and
 //! `WhatsNew.tsx`.
 
-use leptos::prelude::*;
-use leptos_router::{components::Outlet, hooks::use_location};
+use leptos::{prelude::*, wasm_bindgen, wasm_bindgen::JsCast, web_sys};
+use leptos_router::{components::Outlet, hooks::use_location, hooks::use_navigate};
 use storm_web_core::{
     live::{effects, reopen_effects, Effects},
     net,
-    route::{app_href, app_path, tab_active, TABS},
+    route::{app_href, app_path, page_title, tab_active, TABS},
     whatsnew::{entries_since, APP_VERSION},
 };
 
@@ -33,6 +33,84 @@ pub struct LiveBus {
 
 fn bump(s: RwSignal<u32>) {
     s.update(|n| *n += 1);
+}
+
+/// A21: whether the browser both supports `document.startViewTransition` and the user allows motion
+/// (`prefers-reduced-motion: reduce` skips it, as the spec requires). Feature-detected at call time (the
+/// pinned `web-sys` has no typed binding for this newly-available API) so unsupported browsers (and the
+/// reduced-motion case) fall back to plain navigation with no behaviour change.
+fn start_view_transition_fn() -> Option<js_sys::Function> {
+    let window = web_sys::window()?;
+    let reduced = window
+        .match_media("(prefers-reduced-motion: reduce)")
+        .ok()
+        .flatten()
+        .is_some_and(|m| m.matches());
+    if reduced {
+        return None;
+    }
+    let document = window.document()?;
+    let v = js_sys::Reflect::get(
+        &document,
+        &wasm_bindgen::JsValue::from_str("startViewTransition"),
+    )
+    .ok()?;
+    v.is_function().then(|| v.unchecked_into())
+}
+
+/// A21: same-document view transitions on internal navigations, as progressive enhancement. A capture-phase
+/// click listener on the app root runs before the router's own delegated click handling; when the API is
+/// unsupported or motion is reduced, it does nothing and the normal click (and the router's handling of it)
+/// proceeds unchanged.
+fn view_transition_click(ev: web_sys::MouseEvent) {
+    if ev.default_prevented()
+        || ev.button() != 0
+        || ev.ctrl_key()
+        || ev.meta_key()
+        || ev.shift_key()
+        || ev.alt_key()
+    {
+        return;
+    }
+    let Some(target) = ev
+        .target()
+        .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+    else {
+        return;
+    };
+    let Some(a) = target
+        .closest("a[href]")
+        .ok()
+        .flatten()
+        .and_then(|e| e.dyn_into::<web_sys::HtmlAnchorElement>().ok())
+    else {
+        return;
+    };
+    if !a.target().is_empty() || a.has_attribute("download") {
+        return;
+    }
+    // same-origin check: HtmlAnchorElement resolves `.origin()` against the current document
+    let page_origin = web_sys::window().and_then(|w| w.location().origin().ok());
+    if page_origin.as_deref() != Some(a.origin().as_str()) {
+        return;
+    }
+    let Some(start) = start_view_transition_fn() else {
+        return;
+    };
+    let path = format!("{}{}", a.pathname(), a.search());
+    ev.prevent_default();
+    let navigate = use_navigate();
+    let cb = wasm_bindgen::closure::Closure::wrap(Box::new(move || {
+        navigate(&path, Default::default());
+    }) as Box<dyn FnMut()>);
+    let this = web_sys::window()
+        .and_then(|w| w.document())
+        .map(wasm_bindgen::JsValue::from);
+    let _ = start.call1(
+        this.as_ref().unwrap_or(&wasm_bindgen::JsValue::UNDEFINED),
+        cb.as_ref().unchecked_ref(),
+    );
+    cb.forget();
 }
 
 #[component]
@@ -96,6 +174,25 @@ pub fn Layout() -> impl IntoView {
         }
     });
 
+    // A21: capture-phase click listener (runs before the router's own delegated click handling) for
+    // progressive-enhancement view transitions on internal navigations.
+    let root_ref = NodeRef::<leptos::html::Div>::new();
+    Effect::new(move |_| {
+        let Some(el) = root_ref.get() else { return };
+        let target: &web_sys::EventTarget = el.as_ref();
+        let cb = wasm_bindgen::closure::Closure::wrap(
+            Box::new(view_transition_click) as Box<dyn FnMut(web_sys::MouseEvent)>
+        );
+        let _ = target.add_event_listener_with_callback_and_bool(
+            "click",
+            cb.as_ref().unchecked_ref(),
+            true,
+        );
+        // The layout mounts once for the app's whole lifetime (it wraps every route), so this listener
+        // is never removed; `forget` keeps the closure alive for as long as it can fire.
+        cb.forget();
+    });
+
     // the dot disappears when the Patch Notes page is visited
     let loc = use_location();
     Effect::new(move |_| {
@@ -104,41 +201,61 @@ pub fn Layout() -> impl IntoView {
         }
     });
 
+    // A6: per-route document.title (was always "Storm Codex"), and focus moved to the page heading so
+    // screen readers and keyboard users get a cue that the route changed.
+    Effect::new(move |_| {
+        let title = page_title(app_path(&loc.pathname.get()));
+        if let Some(document) = web_sys::window().and_then(|w| w.document()) {
+            document.set_title(&format!("{title} · Storm Codex"));
+            if let Ok(Some(h)) = document.query_selector("#main h1, #main .ds-title") {
+                if h.get_attribute("tabindex").is_none() {
+                    let _ = h.set_attribute("tabindex", "-1");
+                }
+                if let Some(el) = h.dyn_ref::<web_sys::HtmlElement>() {
+                    let _ = el.focus();
+                }
+            }
+        }
+    });
+
     view! {
-        <div class="ds-app">
+        <div class="ds-app" node_ref=root_ref>
+            <a class="ds-skip" href="#main">"Skip to content"</a>
             <header class="ds-top">
                 <Link to="/" class="ds-brand">"STORM "<b>"CODEX"</b></Link>
-                <nav class="ds-topnav">
+                <nav class="ds-topnav" aria-label="Main">
                     {TABS
                         .iter()
                         .map(|&(to, label)| {
                             let on = move || tab_active(app_path(&loc.pathname.get()), to);
                             view! {
-                                <Link to=to class=Signal::derive(move || if on() { "on".to_string() } else { String::new() })>
+                                <a href=app_href(to) class=move || if on() { "on".to_string() } else { String::new() }
+                                    aria-current=move || on().then_some("page")>
                                     {label}
                                     {(to == "/patches").then(|| view! {
                                         <Show when=move || new_patch.get()>
                                             <i class="dot" title="new patch"></i>
                                         </Show>
                                     })}
-                                </Link>
+                                </a>
                             }
                         })
                         .collect_view()}
                     <Show when=importing>
-                        <Link to="/welcome" class=Signal::derive(move || if tab_active(app_path(&loc.pathname.get()), "/welcome") { "on".to_string() } else { String::new() })>
+                        <a href=app_href("/welcome") class=move || if tab_active(app_path(&loc.pathname.get()), "/welcome") { "on".to_string() } else { String::new() }
+                            aria-current=move || tab_active(app_path(&loc.pathname.get()), "/welcome").then_some("page")>
                             "Import"
-                        </Link>
+                        </a>
                     </Show>
                 </nav>
-                <span class="ds-help" title="Help / what's new" on:click=move |_| tour.set(true)>"?"</span>
+                <button type="button" class="ds-help" title="Help / what's new" aria-label="Help / what's new" on:click=move |_| tour.set(true)>"?"</button>
                 <span class=move || if online.get() { "ds-live" } else { "ds-live off" }>
                     <i></i>
                     {move || if online.get() { "online" } else { "offline" }}
                 </span>
             </header>
             <UpdateBanner />
-            <main class="ds-shell">
+            <main class="ds-shell" id="main" tabindex="-1">
                 {move || flash.get().map(|t| view! { <div class="ds-flash">{t}</div> })}
                 <Outlet />
             </main>
@@ -147,8 +264,6 @@ pub fn Layout() -> impl IntoView {
         </div>
     }
 }
-
-const OVERLAY: &str = "position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 1000";
 
 #[component]
 fn Step(n: u32, title: &'static str, children: Children) -> impl IntoView {
@@ -164,30 +279,46 @@ fn Step(n: u32, title: &'static str, children: Children) -> impl IntoView {
 }
 
 /// First-launch assistant (identity, uploader, OBS sources): shown until finished once, re-opened by the `?` button
-/// (`force`).
+/// (`force`). A4: real `<dialog>` + `showModal()` (Esc, focus containment and return, `::backdrop`).
 #[component]
 fn Onboarding(force: RwSignal<bool>, standalone: Standalone) -> impl IntoView {
     let open = RwSignal::new(net::storage_get(ONBOARDING_KEY).is_none());
+    let shown = move || {
+        (open.get() && standalone.known.get() && standalone.status.with(Option::is_none))
+            || force.get()
+    };
     let close = move || {
         net::storage_set(ONBOARDING_KEY, "1");
         open.set(false);
         force.set(false);
     };
+    let dialog_ref = NodeRef::<leptos::html::Dialog>::new();
+    Effect::new(move |_| {
+        let Some(d) = dialog_ref.get() else { return };
+        if shown() {
+            if !d.open() {
+                let _ = d.show_modal();
+            }
+        } else if d.open() {
+            d.close();
+        }
+    });
     view! {
         // not over the desktop app's welcome screen: its steps (tokens, uploader) are the box setup
-        <Show when=move || (open.get() && standalone.known.get() && standalone.status.with(Option::is_none)) || force.get()>
-            <div on:click=move |_| close() style=OVERLAY>
-                <div on:click=|e| e.stop_propagation() style="background: var(--surface); border: 1px solid var(--hairline-strong); border-radius: 14px; padding: 22px 26px; max-width: 560px; max-height: 82vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.6)">
+        <dialog node_ref=dialog_ref class="sa-dialog" on:close=move |_| close() on:click=move |e| {
+            let t: web_sys::Element = event_target(&e);
+            if dialog_ref.get().is_some_and(|d| t == **d) { close(); }
+        } style="background: var(--surface); border: 1px solid var(--hairline-strong); border-radius: 14px; padding: 22px 26px; max-width: 560px; max-height: 82vh; overflow-y: auto; color: inherit; margin: auto; box-shadow: 0 20px 60px rgba(0,0,0,.6)">
                     <div style="display: flex; align-items: baseline; gap: 10px; margin-bottom: 16px">
                         <h2 style="margin: 0">"Welcome to Storm Codex"</h2>
-                        <span class="pill" style="margin-left: auto" on:click=move |_| close()>"skip"</span>
+                        <button type="button" class="pill" style="margin-left: auto" on:click=move |_| close()>"skip"</button>
                     </div>
                     <Step n=1 title="Set your in-game name(s)">
-                        "Open "<Link to="/admin" on:click=move |_| close() style="color: var(--accent)">"Admin → My identity"</Link>
+                        "Open "<Link to="/admin" on:click=move |_| close() style="color: var(--accent); text-decoration: underline">"Admin → My identity"</Link>
                         " and enter your HotS name(s), comma-separated. This drives all your stats, the session panel and overlays."
                     </Step>
                     <Step n=2 title="Connect the uploader (your gaming PC)">
-                        "In "<Link to="/admin" on:click=move |_| close() style="color: var(--accent)">"Admin → Upload tokens"</Link>
+                        "In "<Link to="/admin" on:click=move |_| close() style="color: var(--accent); text-decoration: underline">"Admin → Upload tokens"</Link>
                         ", create a token, then run the uploader on your PC pointing here (server URL + token + your HotS replays folder). It backfills and watches new games automatically."
                     </Step>
                     <Step n=3 title="Add the OBS overlays (optional)">
@@ -201,14 +332,12 @@ fn Onboarding(force: RwSignal<bool>, standalone: Standalone) -> impl IntoView {
                     <div style="display: flex; justify-content: flex-end; margin-top: 8px">
                         <Link to="/admin" on:click=move |_| close() class="pill on">"Get started ›"</Link>
                     </div>
-                </div>
-            </div>
-        </Show>
+        </dialog>
     }
 }
 
 /// "What's new": on opening, when the current version is newer than the last seen one, shows what changed. Only for
-/// an existing user (onboarding done), so there is no double modal on the first run.
+/// an existing user (onboarding done), so there is no double modal on the first run. A4: real `<dialog>`.
 #[component]
 fn WhatsNew() -> impl IntoView {
     let seen = net::storage_get(WHATSNEW_KEY).unwrap_or_default();
@@ -222,14 +351,26 @@ fn WhatsNew() -> impl IntoView {
         net::storage_set(WHATSNEW_KEY, APP_VERSION);
         open.set(false);
     };
+    let dialog_ref = NodeRef::<leptos::html::Dialog>::new();
+    Effect::new(move |_| {
+        let Some(d) = dialog_ref.get() else { return };
+        if open.get() {
+            if !d.open() {
+                let _ = d.show_modal();
+            }
+        } else if d.open() {
+            d.close();
+        }
+    });
     view! {
-        <Show when=move || open.get()>
-            <div on:click=move |_| close() style=OVERLAY>
-                <div on:click=|e| e.stop_propagation() style="background: var(--surface); border: 1px solid var(--hairline-strong); border-radius: 14px; padding: 20px 24px; max-width: 520px; max-height: 80vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.6)">
+        <dialog node_ref=dialog_ref class="sa-dialog" on:close=move |_| close() on:click=move |e| {
+            let t: web_sys::Element = event_target(&e);
+            if dialog_ref.get().is_some_and(|d| t == **d) { close(); }
+        } style="background: var(--surface); border: 1px solid var(--hairline-strong); border-radius: 14px; padding: 20px 24px; max-width: 520px; max-height: 80vh; overflow-y: auto; color: inherit; margin: auto; box-shadow: 0 20px 60px rgba(0,0,0,.6)">
                     <div style="display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px">
                         <h2 style="margin: 0">"What's new"</h2>
                         <span class="mono muted" style="font-size: 11px">{APP_VERSION}</span>
-                        <span class="pill" style="margin-left: auto" on:click=move |_| close()>"got it"</span>
+                        <button type="button" class="pill" style="margin-left: auto" on:click=move |_| close()>"got it"</button>
                     </div>
                     {entries
                         .iter()
@@ -242,8 +383,6 @@ fn WhatsNew() -> impl IntoView {
                             </div>
                         })
                         .collect_view()}
-                </div>
-            </div>
-        </Show>
+        </dialog>
     }
 }

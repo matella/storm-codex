@@ -77,3 +77,25 @@ thumbnails, proxying remote patch-note images. Each needs its own design decisio
   unchanged. The patch fixture's cross-origin image reached its local receiver without a `Referer`.
   Windows NSIS/WebView2 and real OBS acceptance remain pending; the app slice's audits are not gates
   for this platform-only commit.
+
+## App implementation notes (2026-11-19, branch `fix/web-audit-app`)
+
+Full write-up and file-level detail: `docs/spec/08-frontend.md` ("Web-audit App slice").
+
+- All items implemented (A1–A23) except two explicit, surgical reductions in scope, both documented as
+  known gaps rather than silently dropped:
+  - A9/A11/A20 (`eager`/`fetchpriority`/`captioned` portrait loading): wired into the shared `Portrait`
+    component and applied to the Heroes wall's first row, not retroactively to every other portrait call
+    site (player/match/hero cover portraits, `Avatar`, scoreboard rows).
+  - A1 (keyboard): every `<span>`/`<div>` click target on the nine audited gate pages (Session, Matches,
+    Match, Heroes, Maps, Records, Patch notes, Scouting, Admin) is now a real `<button>`/`<a>`. The Cast
+    control room and Live page (not in the axe gate list) were left untouched to stay surgical.
+- Verified: fmt/clippy (native + wasm32)/tests/trunk builds all green in `storm-dev:latest`; app bundle
+  1,046,738 bytes Brotli (+4,959 bytes vs the `1,041,779` baseline on `origin/main`); 0 axe serious/critical
+  violations on all nine gate pages, checked in headless Chromium against the built bundle served
+  standalone (no backend); native `showModal()`/Esc/focus-return confirmed on the Onboarding dialog;
+  `document.title` and `color-scheme: dark` confirmed live.
+- Not verified in this pass (see "Not verified" in `08-frontend.md`): real-data pages (needs a running
+  server + DB), Lighthouse accessibility scores, a full keyboard Tab-order walk, and any performance
+  regression measurement. Recommend a follow-up pass against a copy of the box DB before merge if the
+  operator wants those specific numbers rather than the static/offline evidence collected here.

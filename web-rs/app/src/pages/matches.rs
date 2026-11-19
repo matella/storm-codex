@@ -21,7 +21,8 @@ use crate::{
     matchui::{ModeTag, SearchSelect},
     pages::compare::Picker,
     ui::{
-        archive_generation, fetch, fetch_reference, map_art, use_account_options, Portrait, Tone,
+        archive_generation, fetch, fetch_reference, map_art, use_account_options, Link, Portrait,
+        Tone,
     },
 };
 
@@ -354,12 +355,10 @@ pub fn Matches() -> impl IntoView {
                             let map = m.map.clone().unwrap_or_default();
                             let style = if has_map_art(&map) { map_art(&map) } else { String::new() };
                             let id = m.id;
-                            let go = move || nav.with_value(|nav| nav(&format!("/match/{id}"), Default::default()));
-                            let go2 = go;
                             let tone = match win { Some(true) => Tone::Pick, Some(false) => Tone::Loss, None => Tone::Plain };
                             let what = hero.clone().unwrap_or_else(|| format!("{} team wins", match m.winner { Some(0) => "Blue", Some(1) => "Red", _ => "?" }));
                             view! {
-                                <div class=cls style=style on:click=move |_| go() role="link" tabindex="0" on:keydown=move |e| if e.key() == "Enter" { go2() }>
+                                <Link to=format!("/match/{id}") class=cls.to_string() style=style>
                                     <span class="when">{net::fmt_time(m.played_at.as_deref())}</span>
                                     <span><ModeTag mode=m.mode short=true /></span>
                                     {match hero { Some(h) => view! { <Portrait hero=h size=40 tone=tone /> }.into_any(), None => view! { <span></span> }.into_any() }}
@@ -369,7 +368,7 @@ pub fn Matches() -> impl IntoView {
                                         {aw.filter(|a| a.mvp).map(|_| view! { <span class="ds-tag mvp">"👑 MVP"</span> })}
                                     </span>
                                     <span class="len">{format!("{} ›", fmt_dur(m.length))}</span>
-                                </div>
+                                </Link>
                             }
                         }).collect_view()
                     }}
