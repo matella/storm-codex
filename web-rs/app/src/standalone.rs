@@ -15,8 +15,8 @@ use storm_web_core::{
     standalone::{
         autostart_args, autostart_error, backup_outcome, error_message, extras_with,
         extras_without, parse_autostart, parse_update_status, poll_ms, redirects_to_welcome,
-        reloads_after, update_failed_message, BackupAction, BackupOutcome, Status, StatusRequests,
-        UpdateState, UpdateStatus, GET_AUTOSTART, SET_AUTOSTART,
+        release_page_url, reloads_after, update_failed_message, BackupAction, BackupOutcome,
+        Status, StatusRequests, UpdateState, UpdateStatus, GET_AUTOSTART, SET_AUTOSTART,
     },
 };
 
@@ -260,6 +260,7 @@ pub const CSS: &str = r#"
 .sa-kv .mono{font-size:12px;overflow-wrap:anywhere}
 .sa-privacy{margin:14px 0 0;font-weight:600}
 .sa-update{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 16px;background:rgba(93,202,165,.1);border-bottom:1px solid rgba(93,202,165,.35);font-size:13px}
+.sa-update-notes{flex-basis:100%;white-space:pre-line;margin:0;line-height:1.5}
 "#;
 
 /// OBS browser-source URLs, built from the running origin (never a fixed port).
@@ -508,6 +509,7 @@ pub fn UpdateBanner() -> impl IntoView {
     let update = RwSignal::new(UpdateStatus::default());
     let busy = RwSignal::new(false);
     let failure = RwSignal::new(None::<String>);
+    let show_notes = RwSignal::new(false);
     if tauri_invoke().is_some() {
         let check = move || {
             spawn_local(async move {
@@ -544,7 +546,21 @@ pub fn UpdateBanner() -> impl IntoView {
                 <button class="ds-btn primary small" disabled=move || busy.get() on:click=install>
                     {move || if busy.get() { "Restarting…" } else { "Restart to update" }}
                 </button>
+                {move || update.with(|u| u.notes.is_some()).then(|| view! {
+                    <button class="ds-btn small" aria-expanded=move || show_notes.get().to_string()
+                        on:click=move |_| show_notes.update(|s| *s = !*s)>
+                        {move || if show_notes.get() { "Hide what's new" } else { "What's new" }}
+                    </button>
+                })}
+                // target=_blank: the desktop shell opens it in the system browser
+                {move || update.with(|u| u.version.as_deref().and_then(release_page_url)).map(|href| view! {
+                    <a href=href target="_blank" rel="noreferrer">"Release page ↗"</a>
+                })}
                 {move || failure.get().map(|m| view! { <span class="sa-err">{m}</span> })}
+                // plain text node (escaped), never HTML
+                {move || show_notes.get().then(|| update.with(|u| u.notes.clone())).flatten().map(|n| view! {
+                    <p class="sa-update-notes">{n}</p>
+                })}
             </div>
         </Show>
     }
