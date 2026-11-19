@@ -1,5 +1,55 @@
 # STATUS — read first, update last
 
+## Three-way merge: web-audit platform + match card + session review (2026-11-19), branch `fix/web-audit-platform`
+
+Merged `origin/main` (`17e82fc`, shareable match card #59) on top of the earlier `ad3da36` (session review)
+merge to clear PR #61's second conflict round (`docs/STATUS.md`, `docs/spec/08-frontend.md`; both
+append-style, kept all three sides' content). Full recheck on the fully-integrated tree (web-audit
+platform fixes + match card + session review together) in `storm-dev:latest` with a dedicated
+`/src/target` and a throwaway Postgres 17: fmt, strict Clippy (native workspace; web-rs native +
+wasm32), `cargo audit` (one pre-existing `chrono` unmaintained warning, unrelated to this branch),
+530 workspace tests passed (10 ignored), 174 web-rs tests passed, all three Trunk release bundles
+built, actionlint clean, and the server `Dockerfile` built successfully end to end (front-end Trunk
+stage, server cargo-chef stage, runtime image). Bundle sizes on the fully merged tree: **app
+1,026,938 B Brotli** (cap 1,250,000), **overlay 217,950 B gzip**, **sources 181,341 B gzip** (caps
+300,000) — all within budget; the app figure moved from 1,027,189 B (match card + session review
+only) to 1,026,938 B after also integrating this branch's own platform fixes (no new web-rs code in
+this branch, so the figure is essentially a wash, not an additive stack). No push beyond
+`fix/web-audit-platform` itself at commit time; no release or deploy.
+
+## Web audit platform slice (2026-11-19), branch `fix/web-audit-platform`
+
+Docker and Windows packaging generate Brotli/gzip siblings; the loopback binary served them byte for
+byte, with dynamic fallback. Only fingerprinted bundles and matching managed image revisions are
+immutable. Patch images suppress referrers and load lazily. OBS fonts are local, with OBS 31+ required.
+Linux: 515 workspace tests passed (10 ignored), 55 reference tests also passed with the full pinned
+archive, 153 web tests passed, strict Clippy and actionlint passed, both Docker targets built and all
+six OBS routes passed the Chromium fixture smoke. Bundle sizes: app 996,438 B Brotli, overlay
+217,940 B gzip, sources 181,344 B gzip. Tauri's merged configuration and resource mapping passed
+local validation; actual Windows NSIS/WebView2 and real OBS are pending. No push, release or deploy.
+
+Review fixes (2026-11-19): managed reference images no longer get `immutable` caching for a generation
+whose artwork has not yet passed a real digest check (a restored DB reports artwork present but
+unverified until the background worker hashes it; serving `?ref=<revision>` during that window now
+answers `no-cache`, not `immutable`). The managed-image 304 path no longer forces `no-store`; a
+conditional hit now keeps the selected representation's own cache policy (`immutable` or `no-cache`),
+matching the `/v2` bundle middleware. Added a router-level test matrix for Range/If-Range/conditional
+negotiation across identity/br/gzip representations (206/304/416, `Content-Range` totals, `Vary`,
+`Cache-Control`) in `platform_tests.rs`. Found and documented, rather than assumed: tower-http 0.7's
+ServeDir/ServeFile does not implement If-Range at all (a stale If-Range validator does not fall back
+to the full body; Range always wins). Rechecked on the merged tree (origin/main's release-notes banner
+integrated locally): server fmt, strict Clippy and 517 workspace tests passed (10 ignored, throwaway
+Postgres 17); web-rs and packaging not reverified by this review pass (no web-rs or desktop changes).
+
+Merged `origin/main` (session review, `ad3da36`) to clear PR #61's merge conflict (`docs/STATUS.md`,
+`docs/spec/08-frontend.md`; both append-style, kept both sides' content). Full recheck on the merged
+tree in `storm-dev:latest` with the pinned reference dataset and a throwaway Postgres 17: fmt, strict
+Clippy (native + wasm32), actionlint and `cargo audit` (one pre-existing `chrono` unmaintained warning,
+unrelated to this PR) all passed; 530 workspace tests passed (10 ignored), 160 web-rs tests passed, all
+three Trunk release bundles built. Bundle sizes on the merged tree: app 1,016,390 B Brotli (cap
+1,250,000), overlay 217,926 B gzip, sources 181,343 B gzip (caps 300,000) — all within budget; the app
+figure moved from 996,438 B to 1,016,390 B because of the session-review page merged in from main, not
+this PR's own change. No push, release or deploy beyond `fix/web-audit-platform` itself.
 ## Shareable match card (2026-11-19), branch `feat/match-card`
 
 Approved spec: `docs/specs/2026-11-19-match-card.md`. Match page: "Save as image" + "Show player names"

@@ -4,7 +4,9 @@
 //! Replaces `components/SafeHtml.tsx` (DOMPurify).
 
 use leptos::{prelude::*, wasm_bindgen::JsCast, web_sys};
-use storm_web_core::sanitize::{attr_allowed, style_safe, tag_allowed, tag_dropped, url_safe};
+use storm_web_core::sanitize::{
+    attr_allowed, forced_attributes, style_safe, tag_allowed, tag_dropped, url_safe,
+};
 
 /// Removes from `parent` everything the allowlists refuse: comments, active content with its content, unknown tags
 /// (unwrapped, their text stays), forbidden attributes and unsafe links or styles.
@@ -57,6 +59,9 @@ fn clean_attributes(el: &web_sys::Element, tag: &str, keep_ids: bool) {
         if !keep {
             let _ = el.remove_attribute(&name);
         }
+    }
+    for (name, value) in forced_attributes(tag) {
+        let _ = el.set_attribute(name, value);
     }
 }
 

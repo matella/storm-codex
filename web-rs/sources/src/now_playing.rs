@@ -222,7 +222,7 @@ fn RevealCard(track: Memo<Track>, phase: Memo<RevealPhase>) -> impl IntoView {
                 <div class="npr-layer npr-big">
                     <div class="npr-krow">
                         <span class="npr-kick">"Now playing"</span>
-                        <span class="npr-eq"><i></i><i></i><i></i><i></i></span>
+                        <span class="npr-eq"><i style="--i:0"></i><i style="--i:1"></i><i style="--i:2"></i><i style="--i:3"></i></span>
                     </div>
                     {art}
                     <div class="npr-title">{title}</div>

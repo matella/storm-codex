@@ -9,13 +9,15 @@
 FROM rust:1-slim AS web
 RUN rustup target add wasm32-unknown-unknown \
  && apt-get update \
- && apt-get install -y --no-install-recommends curl ca-certificates \
+ && apt-get install -y --no-install-recommends curl ca-certificates nodejs \
  && rm -rf /var/lib/apt/lists/* \
  && curl -fsSL https://github.com/trunk-rs/trunk/releases/download/v0.22.0-beta.1/trunk-x86_64-unknown-linux-gnu.tar.gz \
     | tar -xz -C /usr/local/bin
 WORKDIR /src/web-rs
 COPY web-rs/ ./
 RUN for b in overlay sources app; do (cd "$b" && trunk build --release) || exit 1; done
+COPY scripts/precompress-web.mjs /src/precompress-web.mjs
+RUN node /src/precompress-web.mjs dist
 
 # ── 2. Serveur Rust (release) ───────────────────────────────────────────────
 # cargo-chef: the workspace dependencies (5 crates) are compiled in a separate layer, which

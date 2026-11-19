@@ -113,6 +113,12 @@ struct View {
     /// Set by Retry (`POST …/refresh`); the worker consumes it before its next round and forgets
     /// a refused release, so a user retry downloads it once more. Automatic checks never set it.
     retry: bool,
+    /// The revision whose files on disk have actually passed a SHA-256 check (fresh activation,
+    /// which hashes while staging, or the worker's background `complete_unless`), as opposed to
+    /// the cheap startup presence check. `None` until that real check has run for the current
+    /// generation, or once it finds a mismatch: a restored DB must not pin unverified bytes as
+    /// `immutable` just because `ref=` matches and the files happen to be present.
+    digest_verified: Option<String>,
 }
 
 impl View {
@@ -152,6 +158,7 @@ impl ReferenceState {
                 epoch: 0,
                 checked: None,
                 retry: false,
+                digest_verified: None,
             }),
             control: tokio::sync::Mutex::new(()),
             check: Notify::new(),
@@ -168,6 +175,9 @@ impl ReferenceState {
         let mut view = self.view();
         if view.active.as_ref().is_some_and(|a| a.revision == revision) {
             view.status.artwork = complete;
+            // This *is* the real digest check (unlike the cheap startup presence check): trust
+            // it either way, so a mismatch also revokes a wrongly-granted immutable cache.
+            view.digest_verified = complete.then(|| revision.to_string());
         }
     }
 
@@ -317,19 +327,29 @@ async fn map_image(
 
 async fn image(app: &AppState, group: &str, name: &str, mut req: Request) -> Response {
     if name.contains('/') || !safe_image_dest(name) || !name.ends_with(".png") {
-        return StatusCode::NOT_FOUND.into_response();
+        return (StatusCode::NOT_FOUND, [(header::CACHE_CONTROL, "no-store")]).into_response();
     }
     let path = format!("{group}/{name}");
-    let active = app
-        .standalone
-        .as_ref()
-        .and_then(|st| st.reference.view().active.clone());
+    let (active, verified) = match app.standalone.as_ref() {
+        Some(st) => {
+            let view = st.reference.view();
+            (view.active.clone(), view.digest_verified.clone())
+        }
+        None => (None, None),
+    };
     // A URL can now change content without changing its name. The ServeFile validator has
     // one-second granularity and does not distinguish two generations with the same timestamp.
     req.headers_mut().remove(header::IF_MODIFIED_SINCE);
     let (parts, _) = req.into_parts();
     let managed = active.filter(|a| a.images.contains_key(&path));
+    let mut immutable = false;
     let mut response = if let Some(active) = managed {
+        // Only the bytes from the captured generation may be pinned under its exact URL, and only
+        // once a real digest check (not the cheap startup presence check) has verified them: a
+        // restored DB can report an unverified generation as present before it is known correct.
+        immutable = parts.uri.query().and_then(|q| q.strip_prefix("ref="))
+            == Some(active.revision.as_str())
+            && verified.as_deref() == Some(active.revision.as_str());
         serve_image(
             active.dir(&asset_root(app)).join(&path),
             &parts.method,
@@ -340,11 +360,19 @@ async fn image(app: &AppState, group: &str, name: &str, mut req: Request) -> Res
         StatusCode::NOT_FOUND.into_response()
     };
     if response.status() == StatusCode::NOT_FOUND {
+        immutable = false;
         response = serve_image(app.cfg.images_dir.join(path), &parts.method, &parts.headers).await;
     }
+    let cache = match response.status() {
+        StatusCode::OK | StatusCode::PARTIAL_CONTENT | StatusCode::NOT_MODIFIED if immutable => {
+            crate::IMMUTABLE_CACHE
+        }
+        status if status.is_success() || status == StatusCode::NOT_MODIFIED => "no-cache",
+        _ => "no-store",
+    };
     response
         .headers_mut()
-        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static(cache));
     response
 }
 
@@ -868,6 +896,9 @@ async fn activate(
     view.status.revision = staged.active.revision.clone();
     view.status.phase = Phase::Ready;
     view.status.artwork = true;
+    // Freshly staged images were hashed against the manifest while downloading (`load::copy_images`):
+    // this activation *is* the digest check, so the new generation is immediately cache-eligible.
+    view.digest_verified = Some(staged.active.revision.clone());
     view.active = Some(Arc::new(staged.active.clone()));
     Ok(())
 }

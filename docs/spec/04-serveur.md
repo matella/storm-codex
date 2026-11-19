@@ -58,11 +58,15 @@ POST /api/upload(-raw)  [personal Bearer token]
   manifest, `game.json`, `patches.json`, `assets.json`, `locales/enus.json` and the hero/map images the app uses
   (no talent icons, no other locale). Prints the dataset version, file count, size and SHA-256. Exit codes:
   **0** written; **2** usage; **1** any refusal or I/O error. Run by the desktop release workflow (`09-operations.md`).
-- **Compression**: `CompressionLayer` (gzip / brotli depending on `Accept-Encoding`) on all
-  responses; the default predicate skips small responses, images and streams.
-- **SPA HTTP cache**: `/assets/*` (names fingerprinted by Vite) as
-  `Cache-Control: public, max-age=31536000, immutable` — a missing asset answers 404, never
-  `index.html`; `index.html` and the SPA routes as `no-cache`.
+- **Compression**: `/v2/` serves an accepted `.br` or `.gz` sibling before falling back to
+  the original. Representations vary on `Accept-Encoding`; MIME types come from the original
+  path. The global `CompressionLayer` skips already-encoded responses and handles eligible
+  originals on the fly (its default predicate skips small responses, images and streams).
+- **SPA HTTP cache**: successful fingerprinted Trunk CSS, JS and WASM assets get
+  `Cache-Control: public, max-age=31536000, immutable`. HTML and unversioned assets (including
+  copied fonts) get `no-cache`. Missing assets return 404 with `no-store`, not the SPA HTML.
+- **Referrer privacy**: every application response sends `Referrer-Policy: no-referrer`,
+  including standalone access-guard rejections.
 - **Cast/draft write guard**: middleware `auth::guard_writes` (see 05-api.md).
 
 ## Standalone import (`standalone/`)
@@ -320,6 +324,10 @@ once instead.
   old generation remains active. Standalone hero and battleground artwork use the committed
   generation, with legacy `IMAGES_DIR` as fallback; `/images/minimaps` is unchanged. Superseded
   managed generations are retired on restart. Cached legacy rows and files are preserved on upgrade.
+  A successful image from the captured managed generation is immutable for one year only when
+  the query is exactly `ref=<that generation's revision>`. Unkeyed or stale URLs and legacy bytes
+  still revalidate (`no-cache`); misses use `no-store`. No `If-Modified-Since` is used on these
+  routes, since a same-second activation can change bytes without changing the image name.
 - `REFERENTIAL_FILE`, when provided, remains an offline seed and uses the same activation path,
   even with network sync disabled. A changed bundle is accepted until a network generation is
   active; then a legacy resource cannot downgrade it. A restore with missing images keeps its
