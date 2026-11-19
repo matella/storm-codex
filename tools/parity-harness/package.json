@@ -12,6 +12,6 @@
   "type": "commonjs",
   "dependencies": {
     "hots-parser": "^7.55.7",
-    "pino": "^10.3.1"
+    "pino": "^10.4.0"
   }
 }
