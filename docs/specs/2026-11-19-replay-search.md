@@ -66,8 +66,8 @@ existing migrations are never edited.
   Played against (player pickers reusing `/api/players/search`), one stat row "stat [select] ≥ [n] ≤ [n]"
   (one stat at a time in the UI; the API accepts several), length min/max. All in the URL like today; active
   advanced filters appear as removable chips. Header shows "N games" from `X-Total-Count`; "Load more" pages
-  by 200. Entry points: Player page and Compare "games together/against" link to `/matches?with=` /
-  `?against=`.
+  by 100 (operator decision below, 2026-11-19). Entry points: Player page and Compare "games together/against" link
+  to `/matches?with=` / `?against=`.
 
 ## Perf & budget impact
 
@@ -160,3 +160,10 @@ Next decision: retain 200 and explicitly accept the measured latency, or approve
 materializing awards while preserving the 200-row response. Reducing the page size also changes the approved
 contract and would require approval and a new worst-case measurement (as a diagnostic, 100 rows measured
 44.1 ms for teammate + death bound and 47.9 ms for all typed bounds). A box DB copy was not used in this run.
+
+## Operator decision: 100-row pages (2026-11-19)
+
+**Accepted**: 100-row pages, p95 <= 65 ms accepted (operator, 2026-11-19), worst measured 61 ms (100-row page,
+all typed bounds, synthetic 3,500-game fixture). This replaces the 200-row / <50 ms contract above and closes
+the open "next decision": the page size is now 100 (`LIMIT` in `web-rs/app/src/pages/matches.rs`, "Load more"
+pages by 100), not a further query-shape change. No longer an open blocker.

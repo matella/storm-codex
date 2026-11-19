@@ -26,11 +26,27 @@ pub struct UpdateStatus {
     /// `"none"`, `"downloading"` or `"ready"`.
     pub state: &'static str,
     pub version: Option<String>,
+    /// Plain-text release notes of the announced update (latest.json `notes`), `None` when
+    /// the manifest has none.
+    pub notes: Option<String>,
+}
+
+impl UpdateStatus {
+    /// No update announced.
+    pub fn none() -> Self {
+        Self {
+            state: "none",
+            version: None,
+            notes: None,
+        }
+    }
 }
 
 /// An update announced by the endpoint.
 pub struct UpdateInfo<P> {
     pub version: String,
+    /// Release notes (`Update::body`), as announced.
+    pub notes: Option<String>,
     /// Source-specific handle (the Tauri `Update`).
     pub pending: P,
 }
@@ -48,15 +64,21 @@ pub trait UpdateSource: Send + Sync {
     fn install(&self, pending: &Self::Pending, bytes: &[u8]) -> Result<(), String>;
 }
 
+/// Version and notes of the update being handled.
+struct Announced {
+    version: String,
+    notes: Option<String>,
+}
+
 enum Phase<P> {
     None,
-    Downloading(String),
+    Downloading(Announced),
     Ready {
-        version: String,
+        update: Announced,
         pending: P,
         bytes: Vec<u8>,
     },
-    Installing(String),
+    Installing(Announced),
 }
 
 /// Why `install_update` did nothing (the stack was not touched).
@@ -99,20 +121,17 @@ impl<U: UpdateSource> Updater<U> {
     }
 
     pub fn status(&self) -> UpdateStatus {
-        match &*self.lock() {
-            Phase::None => UpdateStatus {
-                state: "none",
-                version: None,
-            },
-            Phase::Downloading(v) => UpdateStatus {
-                state: "downloading",
-                version: Some(v.clone()),
-            },
+        let phase = self.lock();
+        let (state, update) = match &*phase {
+            Phase::None => return UpdateStatus::none(),
+            Phase::Downloading(a) => ("downloading", a),
             // Installing reads as ready: the banner button stays disabled meanwhile.
-            Phase::Ready { version, .. } | Phase::Installing(version) => UpdateStatus {
-                state: "ready",
-                version: Some(version.clone()),
-            },
+            Phase::Ready { update, .. } | Phase::Installing(update) => ("ready", update),
+        };
+        UpdateStatus {
+            state,
+            version: Some(update.version.clone()),
+            notes: update.notes.clone(),
         }
     }
 
@@ -131,7 +150,16 @@ impl<U: UpdateSource> Updater<U> {
                 return None;
             }
         };
-        *self.lock() = Phase::Downloading(info.version.clone());
+        let announced = || Announced {
+            version: info.version.clone(),
+            notes: info
+                .notes
+                .as_deref()
+                .map(str::trim)
+                .filter(|n| !n.is_empty())
+                .map(str::to_string),
+        };
+        *self.lock() = Phase::Downloading(announced());
         match self.source.download(&info.pending) {
             Ok(bytes) => {
                 log(&format!(
@@ -140,7 +168,7 @@ impl<U: UpdateSource> Updater<U> {
                     bytes.len()
                 ));
                 *self.lock() = Phase::Ready {
-                    version: info.version.clone(),
+                    update: announced(),
                     pending: info.pending,
                     bytes,
                 };
@@ -161,11 +189,12 @@ impl<U: UpdateSource> Updater<U> {
             let mut phase = self.lock();
             match std::mem::replace(&mut *phase, Phase::None) {
                 Phase::Ready {
-                    version,
+                    update,
                     pending,
                     bytes,
                 } => {
-                    *phase = Phase::Installing(version.clone());
+                    let version = update.version.clone();
+                    *phase = Phase::Installing(update);
                     (version, pending, bytes)
                 }
                 Phase::Installing(v) => {
@@ -218,6 +247,7 @@ impl UpdateSource for TauriSource {
         let update = tauri::async_runtime::block_on(updater.check()).map_err(|e| e.to_string())?;
         Ok(update.map(|u| UpdateInfo {
             version: u.version.clone(),
+            notes: u.body.clone(),
             pending: u,
         }))
     }
@@ -271,10 +301,18 @@ mod tests {
         fn check(&self) -> Result<Option<UpdateInfo<String>>, String> {
             self.call("check");
             let next = self.script.lock().expect("script").check.remove(0);
+            // `"<version>|<notes>"` announces notes with the version.
             next.map(|v| {
-                v.map(|version| UpdateInfo {
-                    pending: format!("pending-{version}"),
-                    version,
+                v.map(|spec| {
+                    let (version, notes) = match spec.split_once('|') {
+                        Some((v, n)) => (v.to_string(), Some(n.to_string())),
+                        None => (spec, None),
+                    };
+                    UpdateInfo {
+                        pending: format!("pending-{version}"),
+                        version,
+                        notes,
+                    }
                 })
             })
         }
@@ -313,13 +351,7 @@ mod tests {
         );
         source.hold_download = Some((entered_tx, StdMutex::new(release_rx)));
         let updater = Arc::new(Updater::new(source));
-        assert_eq!(
-            updater.status(),
-            UpdateStatus {
-                state: "none",
-                version: None
-            }
-        );
+        assert_eq!(updater.status(), UpdateStatus::none());
         let ticker = {
             let updater = updater.clone();
             std::thread::spawn(move || updater.tick(&no_log))
@@ -329,7 +361,8 @@ mod tests {
             updater.status(),
             UpdateStatus {
                 state: "downloading",
-                version: Some("0.2.0".into())
+                version: Some("0.2.0".into()),
+                notes: None
             }
         );
         release_tx.send(()).expect("release");
@@ -338,7 +371,8 @@ mod tests {
             updater.status(),
             UpdateStatus {
                 state: "ready",
-                version: Some("0.2.0".into())
+                version: Some("0.2.0".into()),
+                notes: None
             }
         );
         // While ready, later ticks do not check again.
@@ -351,8 +385,47 @@ mod tests {
         let json = serde_json::to_value(updater.status()).expect("json");
         assert_eq!(
             json,
-            serde_json::json!({"state": "ready", "version": "0.2.0"})
+            serde_json::json!({"state": "ready", "version": "0.2.0", "notes": null})
         );
+    }
+
+    #[test]
+    fn release_notes_are_forwarded_trimmed_and_blank_notes_dropped() {
+        let calls = calls();
+        let updater = Updater::new(FakeSource::new(
+            Script {
+                check: vec![Ok(Some("0.2.0|  New:\n- Faster scouting\n".into()))],
+                download: vec![Ok(vec![1])],
+                install: vec![Err("installer refused to start".into())],
+            },
+            &calls,
+        ));
+        updater.tick(&no_log);
+        let json = serde_json::to_value(updater.status()).expect("json");
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "state": "ready",
+                "version": "0.2.0",
+                "notes": "New:\n- Faster scouting"
+            })
+        );
+        // Still shown while installing.
+        updater.install(|| Ok(()));
+        assert_eq!(
+            updater.status().notes.as_deref(),
+            Some("New:\n- Faster scouting")
+        );
+        let updater = Updater::new(FakeSource::new(
+            Script {
+                check: vec![Ok(Some("0.3.0| \n ".into()))],
+                download: vec![Ok(vec![1])],
+                ..Default::default()
+            },
+            &calls,
+        ));
+        updater.tick(&no_log);
+        assert_eq!(updater.status().notes, None);
     }
 
     #[test]

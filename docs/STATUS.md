@@ -7,14 +7,17 @@ Approved spec: `docs/specs/2026-11-19-replay-search.md` (operator decisions: typ
 `with`/`against`, `min_`/`max_<stat>` (kills, deaths, takedowns, assists, hero damage, healing, XP, APM) and
 `min_len`/`max_len`, validated in `read/filter.rs` (400 `bad_filter` / `perspective_required`), built with
 `QueryBuilder` binds only. Matches has a "More filters" panel with removable chips, "N games" from the header and
-"Load more" by 200; Player and Compare link to `/matches?with=` / `?against=`. Migration **0018** adds a partial
+"Load more" by 100 (operator decision, 2026-11-19: 100-row pages, p95 <= 65 ms accepted, worst measured 61 ms);
+Player and Compare link to `/matches?with=` / `?against=`. Migration **0018** adds a partial
 MVP index (the existing MVP filter measured 157 ms).
 
 Measured on a synthetic 3,500-game archive with real storm-stats JSON (not the box DB copy): 200-game pages
 82–96 ms p95 with any filters (before: ~100 ms unfiltered, 157 ms MVP, 1.1 s at `offset=3000`), `limit=50` 21 ms.
-**The spec's 50 ms target is missed**: reading each player's award from the JSON is the floor (operator decision:
-typed `award` column, smaller page, or accept). Shared host: a busy rerun reached 121 ms. App bundle 1,009,761 bytes
-Brotli (+13,977): needs PR #53's 1.25 MB cap. Docker checks passed (fmt, clippy, 516 workspace tests with
+**Operator decision (2026-11-19): 100-row pages, p95 <= 65 ms accepted, worst measured 61 ms** (100-row page, all
+typed bounds) — this closed the open 50 ms target question; reading each player's award from the JSON remains the
+floor, but the smaller page keeps it within budget. Shared host: a busy rerun reached 121 ms. App bundle
+1,030,208 bytes Brotli after merging `origin/main` (2026-11-19, re-measured with the 100-row page): needs PR #53's
+1.25 MB cap. Docker checks passed (fmt, clippy, 516 workspace tests with
 PostgreSQL 17, web fmt/clippy native+wasm32, 154 web tests, trunk release build + size check at 1.25 MB). Browser
 check on the synthetic archive: Braxis example, with picker, stat switch, chip removal, Load more, back button,
 perspective error. Not pushed.
@@ -34,6 +37,50 @@ Brotli). A parallel workspace run hit an intermittent insights-corpus assertion;
 the fresh-DB serial run passed. Chromium verified native keyboard controls, stale responses across an injected
 import event and filter change, same-offset retry and zero-progress reload. Real OBS, Windows installer,
 box DB validation and an independent review were not run. No push or deployment.
+
+**Operator decision (2026-11-19): 100-row pages, p95 <= 65 ms accepted, worst measured 61 ms** (100-row page, all
+typed bounds, synthetic 3,500-game fixture); closes the formerly open 50 ms target. The UI page size (`LIMIT` in
+`web-rs/app/src/pages/matches.rs`, "Load more") is now 100, not 200. No longer an open blocker.
+
+## Merge of `origin/main` into `feat/replay-search` (2026-11-19)
+
+Merged `origin/main` as a merge commit (session review, update-notes, CI action pins, standalone reference data
+downloads, download page; conflicts only in this file and `08-frontend.md`, resolved keeping both sides).
+Docker checks on the merged tree (`storm-dev:latest`, throwaway PostgreSQL 17, dedicated target dir): fmt,
+clippy (native, `-D warnings`) passed; 433 workspace tests passed (3 ignored; an initial parallel run hit
+`PoolTimedOut` under default Postgres `max_connections` and a shared host — a rerun with a higher connection
+limit passed cleanly, confirming contention rather than a regression); web-rs fmt/clippy native + wasm32 passed;
+165 web tests passed; all three Trunk release builds passed their size budgets (overlay 217,601 bytes gzip,
+sources 181,309 bytes gzip, **app 1,030,208 bytes Brotli**, cap 1,250,000). Not run: real OBS, Windows installer,
+box DB validation, independent review, deploy.
+
+## Session review (2026-11-19), branch `feat/session-review`
+
+Approved spec: `docs/specs/2026-11-19-session-review.md` (operator decisions: baseline = modes played in the
+session, best/worst = most stats above the hero average with KDA ties, fixed 3 h gap). New `GET /api/sessions` and
+`GET /api/sessions/{id}` on the insights corpus (pure logic `insights/session.rs`); the Session page reads them
+(`?s=<id>`, previous / next links, new Review section; "Your form" unchanged). Measured on a copy of the box DB
+(3,492 games): p95 6.7 ms for both endpoints. Deviations are listed in the spec's implementation notes
+(deaths count as better when lower; `baseline.modes` added).
+
+Review fixes: rank only games with comparable data, using the rounded deltas returned to the page.
+Transport and server errors no longer look like empty or missing sessions. Verified with the
+server workspace tests on throwaway PostgreSQL and Chromium against controlled HTTP responses.
+
+Merged `origin/main` (`b89c12d`). The incremental corpus test now checks owned IDs and player rows, not
+global growth. Deleting two fixtures while inserting one reproduced the old assertion failure; the corrected
+test and 15 parallel insights-suite runs passed. Linux PostgreSQL 17 workspace tests: 526 passed, 10 ignored;
+web tests: 159 passed. Release app: **1,016,321 bytes Brotli** (cap 1,250,000). Installed standalone acceptance
+and API latency during an import remain pending.
+
+## Release notes in the desktop update banner (2026-11-19), branch `feat/update-notes`
+
+The shell forwards latest.json `notes` (`Update::body`, trimmed, `null` when blank) in `update_status`; the web update
+banner shows them behind a collapsed "What's new" toggle as plain text (`white-space: pre-line`) plus a "Release page ↗"
+link to `desktop-vX.Y.Z` (opened in the system browser by the shell's `target=_blank` handling). Older shells without
+`notes` keep the previous banner. Checked in Docker: web-rs fmt, clippy native + wasm32, tests, app bundle size;
+desktop `cargo fmt --check` and the `updater.rs` state-machine tests in an isolated crate (no GLib in `storm-dev`).
+**Not done**: full desktop clippy/tests (Windows CI `desktop` job), seeing the banner with real notes in an installed build.
 
 ## CI action pins and desktop release notes (2026-11-19), branch `ci/pin-actions-release-notes`
 

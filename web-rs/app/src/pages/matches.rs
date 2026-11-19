@@ -33,7 +33,7 @@ fn pill(on: bool) -> &'static str {
     }
 }
 
-const LIMIT: &str = "200";
+const LIMIT: &str = "100";
 
 #[component]
 pub fn Matches() -> impl IntoView {

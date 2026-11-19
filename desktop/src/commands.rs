@@ -119,10 +119,7 @@ async fn blocking<R: Send + 'static>(
 pub fn update_status(app: AppHandle) -> UpdateStatus {
     match shell(&app).updater.get() {
         Some(updater) => updater.status(),
-        None => UpdateStatus {
-            state: "none",
-            version: None,
-        },
+        None => UpdateStatus::none(),
     }
 }
 
