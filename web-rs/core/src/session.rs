@@ -31,6 +31,8 @@ pub struct MatchSummary {
     pub length: Option<f64>,
     pub winner: Option<i64>,
     pub players: Option<Vec<MatchPlayer>>,
+    /// Player selected by the archive API for the account/result/MVP filters.
+    pub perspective_toon: Option<String>,
 }
 
 /// `GET /api/settings`.
@@ -458,6 +460,7 @@ mod tests {
             length: Some(600.0),
             winner: Some(winner),
             players: Some(vec![me, p("enemy", 1, "Zeratul", 3, 5, 6)]),
+            perspective_toon: None,
         }
     }
 

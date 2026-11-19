@@ -13,6 +13,9 @@ use serde_json::Value as J;
 
 type Resp = Result<Json<J>, (StatusCode, Json<J>)>;
 
+#[cfg(test)]
+mod tests;
+
 fn db_err(e: sqlx::Error) -> (StatusCode, Json<J>) {
     tracing::error!("read: {e}");
     (
@@ -59,6 +62,7 @@ pub async fn list_matches(State(s): State<AppState>, Query(f): Query<MatchFilter
          SELECT COALESCE(jsonb_agg(t ORDER BY t.played_at DESC NULLS LAST), '[]'::jsonb)
          FROM (
            SELECT m.id, m.map, m.mode, m.played_at, m.length, m.winner, m.build,
+             me.toon_handle AS perspective_toon,
              (SELECT jsonb_agg(jsonb_build_object(
                  'toon', mp.toon_handle, 'name', mp.name, 'hero', mp.hero,
                  'team', mp.team, 'win', mp.win,
@@ -67,14 +71,17 @@ pub async fn list_matches(State(s): State<AppState>, Query(f): Query<MatchFilter
                  ORDER BY mp.team, mp.id)
               FROM match_players mp WHERE mp.match_id = m.id) AS players
            FROM matches m
-           -- operator's row in this match: specific account ($7) otherwise any
-           -- operator_name. Used by the result / MVP / account filters.
+           -- Same perspective for the archive and its filters. Keep the CSV query in sync.
            LEFT JOIN LATERAL (
              SELECT p.win, p.toon_handle, (p.data #>> '{gameStats,awards,0}') AS award
              FROM match_players p
              WHERE p.match_id = m.id
-               AND (($7::text IS NOT NULL AND (lower(p.name) = lower($7) OR (p.toon_handle = ANY($12::text[]) AND 'toon:' || p.toon_handle = $7)))
-                 OR ($7::text IS NULL     AND (lower(p.name) IN (SELECT name FROM ops) OR p.toon_handle = ANY($12::text[]))))
+               AND CASE
+                 WHEN $7::text IS NULL THEN lower(p.name) IN (SELECT name FROM ops) OR p.toon_handle = ANY($12::text[])
+                 WHEN starts_with($7, 'toon:') THEN p.toon_handle = ANY($12::text[]) AND 'toon:' || p.toon_handle = $7
+                 ELSE lower(p.name) = lower($7)
+               END
+             ORDER BY (p.toon_handle = ANY($12::text[])) DESC, p.team, p.id
              LIMIT 1
            ) me ON true
            WHERE ($1::text IS NULL OR m.map = $1)
@@ -353,8 +360,12 @@ pub async fn matches_csv(
                SELECT p.win, p.toon_handle, (p.data #>> '{gameStats,awards,0}') AS award
                FROM match_players p
                WHERE p.match_id = m.id
-                 AND (($4::text IS NOT NULL AND (lower(p.name) = lower($4) OR (p.toon_handle = ANY($10::text[]) AND 'toon:' || p.toon_handle = $4)))
-                   OR ($4::text IS NULL     AND (lower(p.name) IN (SELECT name FROM ops) OR p.toon_handle = ANY($10::text[]))))
+                 AND CASE
+                   WHEN $4::text IS NULL THEN lower(p.name) IN (SELECT name FROM ops) OR p.toon_handle = ANY($10::text[])
+                   WHEN starts_with($4, 'toon:') THEN p.toon_handle = ANY($10::text[]) AND 'toon:' || p.toon_handle = $4
+                   ELSE lower(p.name) = lower($4)
+                 END
+               ORDER BY (p.toon_handle = ANY($10::text[])) DESC, p.team, p.id
                LIMIT 1
              ) me ON true
              WHERE ($1::text IS NULL OR m.map = $1)

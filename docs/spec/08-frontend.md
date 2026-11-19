@@ -134,6 +134,14 @@ deserialisation, `progress_percent`, `phase_message`, `redirects_to_welcome`, `p
   `PUT /api/admin/settings`; identity updates never replace a draft or a saved manual name. Check old
   saved entries that may have come from a previous version. The archive, match detail, and session
   use verified handles through renames; account selectors display the latest name and filter by handle.
+- **Archive perspective.** A selected name (case-insensitive) or verified `toon:<handle>` takes
+  precedence. With no selection, verified handles take priority over manual names. Ties use
+  player order (team, then stored row ID). Matches renders the nullable `perspective_toon` from
+  each archive response for hero, win/loss tally and badges, so the displayed player is the same
+  one used by the result and MVP filters in Matches and CSV. No resolved player means no personal result.
+- **Live statistics.** Mounted Heroes, Maps (including Early Leads) and Records re-read their
+  data on changes to manual names or the set of verified handles, and on committed match events
+  or live-channel reconnection. Alias-label-only changes do not reload statistics.
 - **Polling** (`use_status_poll`): only while `/welcome` or the "This PC" section is mounted, every 1 s while the phase is
   `seeding`/`importing`, every 10 s otherwise; stops when the page is left (`on_cleanup` flag) and for good on a current 404.
   Replies older than a newer accepted poll, from a departed page, or from before a folder save are ignored.

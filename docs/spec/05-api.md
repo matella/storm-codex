@@ -16,8 +16,8 @@ routes marked 🔒 require `Authorization: Bearer` (personal upload token for up
 | Route | Role |
 |---|---|
 | `GET /api/health` | `{status, parser_version, db}` — 200 or 503 |
-| `GET /api/matches` | paginated list; filters `map`, `mode`, `hero`, `player`, `limit`/`offset` |
-| `GET /api/matches.csv` | CSV export (same filters; the UI's "JSON export" = `/api/matches` with a high `limit`) |
+| `GET /api/matches` | paginated list; filters `map`, `mode`, `hero`, `player`, `limit`/`offset`. Each match carries `perspective_toon` (nullable): result and MVP filters use the same perspective as the UI. An explicit account (`toon:` for a verified handle, otherwise case-insensitive name) restricts eligible rows; without it, verified handles precede manual names. Ties are ordered by team and player row ID. |
+| `GET /api/matches.csv` | CSV export (same filters and perspective selection; the UI's "JSON export" = `/api/matches` with a high `limit`) |
 | `GET /api/matches/{id}` | full detail `{id, fingerprint, parser_version, match, players}` (each player carries **`apm`**, `null` before re-process) — `match` = full storm-stats object (timeline, objectives, `messages`…) |
 | `GET /api/matches/{id}/raw?stream=…` | dump decoded on the fly (7 heroprotocol streams) + LRU cache |
 | `GET /api/players/search?q=&limit=` | player search: `{hits:[{toon, name, matched_name, matched_old, games, wins, roles[2], last_seen}]}`. Searches the current name **and all former ones** (substring, case-insensitive, literal `_`/`%`); < 2 characters → `hits: []`; `limit` default 20, max 50; order exact > prefix > substring then games. Static route: takes priority over `{toon}` (axum). Measured on the dev corpus (2,723 games, 7,618 players): p95 26 ms (budget < 100 ms) |

@@ -258,18 +258,13 @@ pub fn set_param(search: &str, key: &str, value: &str) -> String {
         .join("&")
 }
 
-/// The archive row from the operator's side. Keep the legacy fallback when no toon is known.
-pub fn own_player<'a>(
-    m: &'a MatchSummary,
-    names: &[String],
-    toons: &[String],
-) -> Option<&'a MatchPlayer> {
-    let players = m.players.as_deref().unwrap_or(&[]);
-    if toons.is_empty() {
-        crate::session::pick_operator(players, None, names)
-    } else {
-        find_toon(players, toons).or_else(|| match_operator(players, names))
-    }
+/// The same player the archive API used to filter this match.
+pub fn archive_player(m: &MatchSummary) -> Option<&MatchPlayer> {
+    let toon = m.perspective_toon.as_deref()?;
+    m.players
+        .as_ref()?
+        .iter()
+        .find(|p| p.toon.as_deref() == Some(toon))
 }
 
 fn find_toon<'a>(players: &'a [MatchPlayer], toons: &[String]) -> Option<&'a MatchPlayer> {
@@ -298,11 +293,30 @@ mod tests {
         };
         let handles = vec!["verified".to_string()];
         assert_eq!(
-            own_player(&mine, &[], &handles).unwrap().hero.as_deref(),
+            my_games(&[mine], &[], &handles)[0].me.hero.as_deref(),
             Some("OwnerHero")
         );
-        assert!(own_player(&unrelated, &[], &handles).is_none());
         assert!(my_games(&[unrelated], &[], &handles).is_empty());
+    }
+
+    #[test]
+    fn archive_uses_the_server_perspective_for_opposing_accounts() {
+        let mut game: MatchSummary = serde_json::from_str(
+            r#"{
+            "perspective_toon":"manual",
+            "players":[
+                {"toon":"verified", "hero":"Jaina", "win":false},
+                {"toon":"manual", "hero":"Valla", "win":true, "award":"EndOfMatchAwardMVPBoolean"}
+            ]
+        }"#,
+        )
+        .unwrap();
+        let p = archive_player(&game).unwrap();
+        assert_eq!(p.hero.as_deref(), Some("Valla"));
+        assert_eq!(p.win, Some(true));
+        assert_eq!(p.award.as_deref(), Some("EndOfMatchAwardMVPBoolean"));
+        game.perspective_toon = None;
+        assert!(archive_player(&game).is_none());
     }
 
     fn player(name: &str, team: i64, hero: &str) -> MatchPlayer {

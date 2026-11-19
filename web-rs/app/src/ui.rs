@@ -332,6 +332,20 @@ pub fn fetch<T: DeserializeOwned + 'static>(
     })
 }
 
+/// Statistics read from the current replay corpus and operator settings, not just from a filter URL.
+pub fn fetch_operator_stats<T: DeserializeOwned + 'static>(
+    url: impl Fn() -> String + 'static,
+) -> LocalResource<Result<T, String>> {
+    let op = expect_context::<Operator>();
+    let matches = expect_context::<crate::layout::LiveBus>().matches;
+    fetch(move || {
+        matches.track();
+        op.manual.track();
+        op.toons.track();
+        url()
+    })
+}
+
 /// Style that gives a tile the in-game minimap of a map (`mapArt`).
 pub fn map_art(map: &str) -> String {
     format!(

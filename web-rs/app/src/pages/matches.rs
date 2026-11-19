@@ -8,15 +8,14 @@ use leptos_router::{
 };
 use storm_web_core::{
     aggregates::{has_map_art, HeroStat, MapStat, MODES},
-    dashboard::{own_player, set_param, MatchFilter},
+    dashboard::{archive_player, set_param, MatchFilter},
     net,
     session::{award_label, fmt_dur, MatchSummary},
 };
 
 use crate::{
-    layout::LiveBus,
     matchui::{ModeTag, SearchSelect},
-    ui::{fetch, map_art, use_account_options, use_operator, use_owner_toons, Portrait, Tone},
+    ui::{fetch, fetch_operator_stats, map_art, use_account_options, Portrait, Tone},
 };
 
 fn pill(on: bool) -> &'static str {
@@ -31,12 +30,10 @@ const LIMIT: &str = "200";
 
 #[component]
 pub fn Matches() -> impl IntoView {
-    let manual = use_operator();
-    let toons = use_owner_toons();
     let accounts = use_account_options();
     let nav = StoredValue::new_local(use_navigate());
     let loc = use_location();
-    let bus = expect_context::<LiveBus>();
+
     let search = move || loc.search.get();
     let filter = Memo::new(move |_| MatchFilter::from_search(&search()));
     // sets one URL parameter, replacing the history entry
@@ -80,9 +77,7 @@ pub fn Matches() -> impl IntoView {
                 .flatten(),
         )
     };
-    let data = fetch::<Vec<MatchSummary>>(move || {
-        bus.matches.track();
-        toons.track();
+    let data = fetch_operator_stats::<Vec<MatchSummary>>(move || {
         let f = filter.get();
         let (a, b) = bounds(&f);
         format!(
@@ -133,9 +128,7 @@ pub fn Matches() -> impl IntoView {
                             return "loading…".into_any();
                         }
                         let l = list();
-                        let names = manual.get();
-                        let handles = toons.get();
-                        let known: Vec<bool> = l.iter().filter_map(|m| own_player(m, &names, &handles).and_then(|p| p.win)).collect();
+                        let known: Vec<bool> = l.iter().filter_map(|m| archive_player(m).and_then(|p| p.win)).collect();
                         let w = known.iter().filter(|x| **x).count();
                         view! {
                             {format!("{} game{}{}", l.len(), if l.len() == 1 { "" } else { "s" }, if l.len() == 200 { " (latest 200)" } else { "" })}
@@ -214,10 +207,8 @@ pub fn Matches() -> impl IntoView {
                 {move || (data.get().is_some() && list().is_empty()).then(|| view! { <div class="ds-empty">"No match for this filter."</div> })}
                 <div class="ds-mlist">
                     {move || {
-                        let names = manual.get();
-                        let handles = toons.get();
                         list().into_iter().map(|m| {
-                            let own = own_player(&m, &names, &handles);
+                            let own = archive_player(&m);
                             let (hero, win, award) = (
                                 own.and_then(|p| p.hero.clone()),
                                 own.and_then(|p| p.win),
