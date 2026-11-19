@@ -6,7 +6,7 @@ Storm Codex turns your Heroes of the Storm replays into a match history you can 
 
 ## Run it on Windows
 
-Download `StormCodex_<version>_x64-setup.exe` from [GitHub Releases](https://github.com/matella/storm-codex/releases) when a public build is available. Maintainer-only draft builds do not appear there for other users. The installer bundles PostgreSQL and manages it for you.
+Download the latest installer from the [Storm Codex download page](https://matella.github.io/storm-codex/) or `StormCodex_<version>_x64-setup.exe` from [GitHub Releases](https://github.com/matella/storm-codex/releases) when a public build is available. Maintainer-only draft builds do not appear there for other users. The installer bundles PostgreSQL and manages it for you.
 
 1. Launch Storm Codex. It looks for the game's standard replay folders and imports completed `.StormReplay` files.
 2. If you keep replays somewhere else, add the folder under **Admin → This PC**. Check **My identity** if the app hasn't picked up your account.

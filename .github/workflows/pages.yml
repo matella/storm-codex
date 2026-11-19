@@ -1,0 +1,55 @@
+# Download page on GitHub Pages (docs/specs/2026-11-19-github-pages-download.md, docs/spec/09-operations.md).
+# Renders site/ with the latest *stable* desktop release (scripts/build-pages.py) and deploys it to
+# https://matella.github.io/storm-codex/. The installer itself stays on GitHub Releases; the page only links to it.
+# Triggers: site changes on main; every completed release-desktop run (a release created with GITHUB_TOKEN emits no
+# `release` event, so workflow_run is the hook); manual release edits; manual run.
+# Supply chain: actions pinned to full commit SHAs, checkout without persisted credentials, read-only contents.
+name: pages
+on:
+  push:
+    branches: [main]
+    paths: ["site/**", "scripts/build-pages.py", "desktop/icons/128x128.png", ".github/workflows/pages.yml"]
+  workflow_run:
+    workflows: [release-desktop]
+    types: [completed]
+  release:
+    types: [published, unpublished, edited, deleted, released, prereleased]
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  build:
+    # A failed release run changed nothing; skip it.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: main # the published site always comes from main, whatever event started the run
+      - name: tests
+        run: python3 -m unittest discover -s scripts -p 'test_build_pages.py'
+      - name: render (latest stable release)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: python3 scripts/build-pages.py --repo "$REPOSITORY" --out _site | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
