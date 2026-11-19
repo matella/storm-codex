@@ -12,7 +12,7 @@ use storm_web_core::{
     route::uri_component,
 };
 
-use crate::ui::{fetch, use_dim, AggFilterBar, Portrait};
+use crate::ui::{fetch_operator_stats, use_dim, AggFilterBar, Portrait};
 
 fn pill(on: bool) -> &'static str {
     if on {
@@ -29,8 +29,9 @@ pub fn Heroes() -> impl IntoView {
     let filter = RwSignal::new(AggFilter::default());
     let nav = use_navigate();
     let dim = use_dim();
-    let data =
-        fetch::<Vec<HeroStat>>(move || format!("/api/heroes?{}", net::agg_params(&filter.get())));
+    let data = fetch_operator_stats::<Vec<HeroStat>>(move || {
+        format!("/api/heroes?{}", net::agg_params(&filter.get()))
+    });
     // roles of the loaded rows, read with the reference data once it has arrived
     let roles = move || match data.get() {
         Some(Ok(d)) => dim.with(|dm| hero_roles(&d, dm)),

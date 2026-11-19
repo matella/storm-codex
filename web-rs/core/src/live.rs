@@ -56,10 +56,11 @@ pub fn effects(kind: &str, map: Option<&str>, name: Option<&str>) -> Effects {
     }
 }
 
-/// After a reconnection the events missed in between are lost: the cast and draft state are read again
+/// After a reconnection the events missed in between are lost: matches, cast and draft are read again
 /// (`reopenInvalidations`). Nothing after the first connection.
 pub fn reopen_effects(had_disconnect: bool) -> Effects {
     Effects {
+        matches_changed: had_disconnect,
         cast_changed: had_disconnect,
         draft_changed: had_disconnect,
         ..Effects::default()
@@ -111,9 +112,9 @@ mod tests {
     }
 
     #[test]
-    fn only_a_reconnection_rereads_cast_and_draft() {
+    fn reconnect_rereads_matches_cast_and_draft_without_a_toast() {
         assert_eq!(reopen_effects(false), Effects::default());
         let e = reopen_effects(true);
-        assert!(e.cast_changed && e.draft_changed && e.flash.is_none());
+        assert!(e.matches_changed && e.cast_changed && e.draft_changed && e.flash.is_none());
     }
 }

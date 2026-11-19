@@ -99,14 +99,14 @@ Status: the six OBS sources are built and checked in the browser against React o
 DOM identical for ticker, widget with and without MVP, queue with mixed modes / awards / two operator accounts / a streak and
 the music card, now playing default / `?mini` / `?reveal`, draft overlay with a skin, cast overlay; the reveal hold of about 2.6 s
 observed). **Real-OBS check pending for each source (operator).** JetBrains Mono (400/600 in `sources`, 700 in `overlay`, latin subset, `fonts/` next to each bundle) is self-hosted, so no OBS source needs Google Fonts for it; the overlay still loads Cinzel and Oswald from Google Fonts, exactly like the React overlay. The app bundle is below.
-Contract: **OBS bundles stay <= 300 kB gzip; the app bundle stays <= 1 MB brotli** (911 kB on 2026-11-11, 937 kB on 2026-11-13 with the standalone screens, 943 kB on 2026-11-14 with the startup toggle, 977 kB on 2026-11-18 with the local insights pages; the server negotiates brotli; `SIZE_CODEC=br` in the script) (`scripts/check-web-rs-size.sh`, enforced in CI; `overlay` 229 kB and `sources`
+Contract: **OBS bundles stay <= 300 kB gzip; the app bundle stays <= 1 MB brotli** (911 kB on 2026-11-11, 937 kB on 2026-11-13 with the standalone screens, 943 kB on 2026-11-14 with the startup toggle, 977 kB on 2026-11-18 with the local insights pages, 982 kB with standalone folder identity; the server negotiates brotli; `SIZE_CODEC=br` in the script) (`scripts/check-web-rs-size.sh`, enforced in CI; `overlay` 229 kB and `sources`
 191 kB on 2026-11-11). Putting the session and music sources in the overlay bundle gave 314 kB (the view machinery is linked once per
 bundle), hence two bundles: an OBS source only loads the bundle of its family. One bundle per page family: the sanitiser
 (`ammonia`, about 300 kB) must never be linked into an OBS bundle.
 
 ## Standalone (desktop) mode
 
-Contract with the server: `GET /api/standalone/status`, `PUT /api/standalone/folders`, `POST /api/standalone/rescan`
+Contract with the server: `GET /api/standalone/status`, `GET /api/standalone/identity`, `PUT /api/standalone/folders`, `POST /api/standalone/rescan`
 (`04-serveur.md`, "Standalone import"). Types and pure helpers in `web-rs/core/src/standalone.rs` (native tests: `Status`
 deserialisation, `progress_percent`, `phase_message`, `redirects_to_welcome`, `poll_ms`, `human_bytes`, folder list add/remove,
 `error_message`, `parse_update_status`, `BackupAction`, `backup_outcome`, `reloads_after`, `reprocess_message`,
@@ -119,24 +119,39 @@ deserialisation, `progress_percent`, `phase_message`, `redirects_to_welcome`, `p
   (redirected, or already `ready`): the user can leave the page and is never sent back.
 - **Nav.** An "Import" tab after the regular tabs while the phase is not `ready` (from the last status read).
 - **`/welcome`.** Progress bar (`progress_percent(done, total)`), `phase_message` text, tiles imported `done/total`, already known
-  (duplicates), rejected, failed; collapsible lists of rejected replays (file — reason) and failed uploads. `no-folders` and
+  (duplicates), rejected, failed; collapsible lists of rejected replays (file — reason) and failed uploads. The progress panel stays
+  mounted across status updates, preserving the bar animation and expanded lists. `no-folders` and
   `disk-full` are states, not errors: `no-folders` shows the folder editor ("No replays found: add a folder…"), `disk-full`
   shows free vs needed space in human units (`human_bytes`, binary multiples labelled KB/MB/GB) and a "Rescan now" button;
   `error` shows a clear message in the error colour. While the server re-processes the stored replays after an update
   (`reprocessDone < reprocessTotal`), a second line says "Updating your stats for this version: N of M replays. Pages may
-  show older numbers until then." (`reprocess_message`; absent fields from older servers read as 0). A **Your in-game
-  names** field (the standalone replacement of the box onboarding's step 1, which is not shown in the desktop app):
-  comma-separated, prefilled from `GET /api/settings` (re-read at each phase change, so the names the server detects
-  after the first import appear; the typed value wins once edited), saved with `PUT /api/admin/settings`
-  `{operator_names}` (`parse_names`: trimmed, empties and duplicates dropped) and pushed to the shared operator
-  context. "Continue to the app" and "Settings" links.
+  show older numbers until then." (`reprocess_message`; absent fields from older servers read as 0).
+  "Continue to the app" and "Settings" links.
+- **Identity.** Welcome and Admin → This PC show the latest verified name per replay folder in a
+  read-only list, or "Owner not detected". The layout fetches identity after standalone discovery
+  and polls every 3 s across routes, with at most one identity request in flight. Box mode never
+  requests it. Welcome and Admin still edit only comma-separated manual `operator_names` via
+  `PUT /api/admin/settings`; identity updates never replace a draft or a saved manual name. Check old
+  saved entries that may have come from a previous version. The archive, match detail, and session
+  use verified handles through renames; account selectors display the latest name and filter by handle.
+- **Archive perspective.** A selected name (case-insensitive) or verified `toon:<handle>` takes
+  precedence. With no selection, verified handles take priority over manual names. Ties use
+  player order (team, then stored row ID). Matches renders the nullable `perspective_toon` from
+  each archive response for hero, win/loss tally and badges, so the displayed player is the same
+  one used by the result and MVP filters in Matches and CSV. No resolved player means no personal result.
+- **Live statistics.** Mounted Heroes, Maps (including Early Leads) and Records re-read their
+  data on changes to manual names or the set of verified handles, and on committed match events
+  or live-channel reconnection. Alias-label-only changes do not reload statistics.
 - **Polling** (`use_status_poll`): only while `/welcome` or the "This PC" section is mounted, every 1 s while the phase is
-  `seeding`/`importing`, every 10 s otherwise; stops when the page is left (`on_cleanup` flag) and for good on a 404.
+  `seeding`/`importing`, every 10 s otherwise; stops when the page is left (`on_cleanup` flag) and for good on a current 404.
+  Replies older than a newer accepted poll, from a departed page, or from before a folder save are ignored.
+  Folder saves are serialized within the tab and suspend polling until the save reply is handled.
 - **Settings "This PC"** (last numbered section of `/admin`, standalone only): **Scanned folders** (`status.folders`, read-only:
   found automatically or under an extra folder) and **Your extra folders** (`status.extraFolders`) with **Remove** and **Add
   folder** (typed path; the `PUT /api/standalone/folders` body is `extraFolders` plus/minus that path only — `extras_with` /
   `extras_without` —, never the scanned list; the server's 400 message is shown inline; a status without `extraFolders` (older
-  server) reads as no extras), **Rescan now** (`POST /api/standalone/rescan`), data location (`dataDir`), app version
+  server) reads as no extras), **Rescan now** (`POST /api/standalone/rescan`, confirms queueing, shows worker failures inline),
+  data location (`dataDir`), app version
   (`version`), the sentence "Nothing leaves this PC except the update check.", and the OBS browser-source URLs built from
   `location.origin` + `route::app_href` (never a fixed port). No native folder picker yet (needs the shell IPC).
 - **Startup** (block of "This PC", rendered only inside the desktop shell, like Backup): a **Start with Windows** checkbox.

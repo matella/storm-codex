@@ -16,11 +16,16 @@ pub struct MyGame<'a> {
 }
 
 /// `myGames`: the matches that contain one of the operator's accounts.
-pub fn my_games<'a>(matches: &'a [MatchSummary], names: &[String]) -> Vec<MyGame<'a>> {
+pub fn my_games<'a>(
+    matches: &'a [MatchSummary],
+    names: &[String],
+    toons: &[String],
+) -> Vec<MyGame<'a>> {
     matches
         .iter()
         .filter_map(|m| {
-            let me = match_operator(m.players.as_deref().unwrap_or(&[]), names)?;
+            let players = m.players.as_deref().unwrap_or(&[]);
+            let me = find_toon(players, toons).or_else(|| match_operator(players, names))?;
             Some(MyGame {
                 m,
                 me,
@@ -253,15 +258,66 @@ pub fn set_param(search: &str, key: &str, value: &str) -> String {
         .join("&")
 }
 
-/// The archive row of a match from the operator's side (`ownPlayer`): the match's first player when no account
-/// is configured to match (as `pickOperator` does without names).
-pub fn own_player<'a>(m: &'a MatchSummary, names: &[String]) -> Option<&'a MatchPlayer> {
-    crate::session::pick_operator(m.players.as_deref().unwrap_or(&[]), None, names)
+/// The same player the archive API used to filter this match.
+pub fn archive_player(m: &MatchSummary) -> Option<&MatchPlayer> {
+    let toon = m.perspective_toon.as_deref()?;
+    m.players
+        .as_ref()?
+        .iter()
+        .find(|p| p.toon.as_deref() == Some(toon))
+}
+
+fn find_toon<'a>(players: &'a [MatchPlayer], toons: &[String]) -> Option<&'a MatchPlayer> {
+    players
+        .iter()
+        .find(|p| p.toon.as_ref().is_some_and(|t| toons.contains(t)))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn verified_account_uses_toon_not_historical_namesake() {
+        let mut owner = player("Now", 0, "OwnerHero");
+        owner.toon = Some("verified".into());
+        let mut namesake = player("Before", 1, "WrongHero");
+        namesake.toon = Some("someone-else".into());
+        let mine = MatchSummary {
+            players: Some(vec![namesake.clone(), owner]),
+            ..Default::default()
+        };
+        let unrelated = MatchSummary {
+            players: Some(vec![namesake]),
+            ..Default::default()
+        };
+        let handles = vec!["verified".to_string()];
+        assert_eq!(
+            my_games(&[mine], &[], &handles)[0].me.hero.as_deref(),
+            Some("OwnerHero")
+        );
+        assert!(my_games(&[unrelated], &[], &handles).is_empty());
+    }
+
+    #[test]
+    fn archive_uses_the_server_perspective_for_opposing_accounts() {
+        let mut game: MatchSummary = serde_json::from_str(
+            r#"{
+            "perspective_toon":"manual",
+            "players":[
+                {"toon":"verified", "hero":"Jaina", "win":false},
+                {"toon":"manual", "hero":"Valla", "win":true, "award":"EndOfMatchAwardMVPBoolean"}
+            ]
+        }"#,
+        )
+        .unwrap();
+        let p = archive_player(&game).unwrap();
+        assert_eq!(p.hero.as_deref(), Some("Valla"));
+        assert_eq!(p.win, Some(true));
+        assert_eq!(p.award.as_deref(), Some("EndOfMatchAwardMVPBoolean"));
+        game.perspective_toon = None;
+        assert!(archive_player(&game).is_none());
+    }
 
     fn player(name: &str, team: i64, hero: &str) -> MatchPlayer {
         MatchPlayer {
@@ -300,14 +356,14 @@ mod tests {
             game(1, "2026-11-09T17:00:00Z", 0, 50001, "Li-Ming"),
         ];
         let names = vec!["Me".to_string()];
-        let all = my_games(&ms, &names);
+        let all = my_games(&ms, &names, &[]);
         assert_eq!(all.len(), 4);
         assert!(all[0].won && !all[1].won);
         let s = last_session(&all, ts);
         // oldest first; the 17:00 game is 4 h before the 21:30 one
         assert_eq!(s.iter().map(|g| g.m.id).collect::<Vec<_>>(), [2, 3, 4]);
         assert!(last_session(&[], ts).is_empty());
-        assert!(my_games(&ms, &["nobody".into()]).is_empty());
+        assert!(my_games(&ms, &["nobody".into()], &[]).is_empty());
     }
 
     #[test]
@@ -317,7 +373,7 @@ mod tests {
             game(2, "2026-11-09T21:30:00Z", 0, 50001, "Li-Ming"),
             game(1, "2026-11-09T17:00:00Z", 0, 50091, "Valla"),
         ];
-        let all = my_games(&ms, &["me".into()]);
+        let all = my_games(&ms, &["me".into()], &[]);
         let h = by_hero(&all);
         assert_eq!((h[0].key.as_str(), h[0].games, h[0].wins), ("Valla", 2, 1));
         let m = by_mode(&all, mode_name);

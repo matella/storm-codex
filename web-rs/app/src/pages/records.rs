@@ -9,7 +9,7 @@ use storm_web_core::{
     route::uri_component,
 };
 
-use crate::ui::{fetch, pill_class, Link, Portrait, SecHead};
+use crate::ui::{fetch_operator_stats, pill_class, Link, Portrait, SecHead};
 
 #[component]
 pub fn RecordsPage() -> impl IntoView {
@@ -18,8 +18,8 @@ pub fn RecordsPage() -> impl IntoView {
     let map = RwSignal::new(String::new());
     let hero = RwSignal::new(String::new());
     let hero_txt = RwSignal::new(String::new());
-    let maps = fetch::<Vec<MapStat>>(|| "/api/maps".to_string());
-    let data = fetch::<Records>(move || {
+    let maps = fetch_operator_stats::<Vec<MapStat>>(|| "/api/maps".to_string());
+    let data = fetch_operator_stats::<Records>(move || {
         format!(
             "/api/records?{}",
             records_query(mode.get(), Some(&map.get()), Some(&hero.get()), mine.get())

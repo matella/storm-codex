@@ -9,6 +9,7 @@ use serde::Deserialize;
 #[derive(Clone, Debug, Default, PartialEq, Deserialize)]
 #[serde(default)]
 pub struct MatchPlayer {
+    pub toon: Option<String>,
     pub name: Option<String>,
     pub hero: Option<String>,
     pub team: Option<i64>,
@@ -30,6 +31,8 @@ pub struct MatchSummary {
     pub length: Option<f64>,
     pub winner: Option<i64>,
     pub players: Option<Vec<MatchPlayer>>,
+    /// Player selected by the archive API for the account/result/MVP filters.
+    pub perspective_toon: Option<String>,
 }
 
 /// `GET /api/settings`.
@@ -436,6 +439,7 @@ mod tests {
 
     fn p(name: &str, team: i64, hero: &str, k: u32, td: u32, d: u32) -> MatchPlayer {
         MatchPlayer {
+            toon: None,
             name: Some(name.into()),
             hero: Some(hero.into()),
             team: Some(team),
@@ -456,6 +460,7 @@ mod tests {
             length: Some(600.0),
             winner: Some(winner),
             players: Some(vec![me, p("enemy", 1, "Zeratul", 3, 5, 6)]),
+            perspective_toon: None,
         }
     }
 

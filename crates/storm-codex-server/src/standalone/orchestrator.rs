@@ -1,9 +1,9 @@
 //! The single task that owns the upload ledger in standalone mode.
 //!
 //! Sequence: seed the reference data → detect the folders (HotS folders + saved extras) →
-//! open the ledger → disk gate (sized on the replays the ledger does not have yet) → upload
-//! token → live watcher → backfill → loop on live watcher events and HTTP commands. The watcher
-//! starts right before the backfill; the replays it reports meanwhile wait in its channel and
+//! open the ledger → live watcher → list the batch and check disk space → upload token →
+//! backfill → loop on live watcher events and HTTP commands. The watcher starts before listing
+//! the batch; the replays it reports meanwhile wait in its channel and
 //! are handled once the backfill is over (the ledger check skips those the backfill already
 //! sent). When the disk gate blocks the backfill, the watcher still runs: new games keep being
 //! imported. A command received during the backfill cancels it (the ledger is flushed on drop)
@@ -163,8 +163,8 @@ impl Orchestrator {
     async fn import(&mut self) -> Flow {
         let st = self.st.clone();
         loop {
-            self.st.set_folders(&self.folders);
             if self.folders.is_empty() {
+                self.st.set_folders(&self.folders);
                 self.watch = None;
                 self.st.set_phase(Phase::NoFolders);
                 return Flow::Continue;
@@ -172,11 +172,21 @@ impl Orchestrator {
             if let Err(e) = self.open_ledger().await {
                 return self.fail(&e);
             }
-            let bytes = match self.pending_bytes().await {
-                Ok(bytes) => bytes,
+            // Watch before taking the batch snapshot so arrivals after it are not lost.
+            if self.watch.is_none() {
+                self.restart_watch();
+            }
+            let (candidates, bytes) = match self.pending_batch().await {
+                Ok(batch) => batch,
                 Err(e) => return self.fail(&e),
             };
-            let blocked = match self.st.disk_gate(&self.app.cfg.archive_dir, bytes) {
+            let keep_ready = candidates.is_empty() && self.st.ready_for(&self.folders);
+            self.st.set_folders(&self.folders);
+            let blocked = match if keep_ready {
+                Ok(())
+            } else {
+                self.st.disk_gate(&self.app.cfg.archive_dir, bytes)
+            } {
                 Ok(()) => false,
                 Err(DiskError::Insufficient { free, needed }) => {
                     tracing::warn!(free, needed, "not enough free disk space: backfill blocked");
@@ -191,31 +201,35 @@ impl Orchestrator {
             if let Err(e) = self.provision_uploader().await {
                 return self.fail(&e);
             }
-            self.restart_watch();
             if blocked {
                 // New games stay small: the live watcher keeps importing them.
                 self.st.set_phase(Phase::DiskFull);
                 return Flow::Continue;
             }
 
-            let progress = Arc::new(Progress::default());
-            self.st.start_run(progress.clone());
-            self.st.set_phase(Phase::Importing);
-            let (Some(uploader), Some(ledger)) = (self.uploader.as_ref(), self.ledger.as_mut())
-            else {
-                return self.fail("import state missing");
-            };
-            let interrupted = tokio::select! {
-                () = backfill::run(&self.folders, uploader, ledger, &progress) => None,
-                command = self.commands.recv() => Some(command),
-                () = st.stopping() => Some(None),
+            let empty = candidates.is_empty();
+            let interrupted = if empty {
+                None
+            } else {
+                let (Some(uploader), Some(ledger)) = (self.uploader.as_ref(), self.ledger.as_mut())
+                else {
+                    return self.fail("import state missing");
+                };
+                let progress = Arc::new(Progress::new(candidates.len()));
+                self.st.start_run(progress.clone());
+                tokio::select! {
+                    () = backfill::run_pending(candidates, uploader, ledger, &progress) => None,
+                    command = self.commands.recv() => Some(command),
+                    () = st.stopping() => Some(None),
+                }
             };
             match interrupted {
                 None => {
-                    if self.st.upkeep() {
-                        detect_operator_names(&self.app).await;
+                    if empty && !keep_ready {
+                        self.st.finish_empty_run();
+                    } else {
+                        self.st.set_phase(Phase::Ready);
                     }
-                    self.st.set_phase(Phase::Ready);
                     return Flow::Continue;
                 }
                 Some(None) => return Flow::Stop,
@@ -248,21 +262,22 @@ impl Orchestrator {
         Ok(())
     }
 
-    /// Size of the replays the backfill would send (those the ledger does not have yet).
-    async fn pending_bytes(&mut self) -> Result<u64, String> {
+    /// Candidate list and disk budget from the same off-runtime scan.
+    async fn pending_batch(&mut self) -> Result<(Vec<PathBuf>, u64), String> {
         let Some(ledger) = self.ledger.take() else {
             return Err("upload ledger not open".into());
         };
         let dirs = self.folders.clone();
-        let (ledger, bytes) = tokio::task::spawn_blocking(move || {
-            let bytes = replay_bytes(&backfill::pending_files(&dirs, &ledger));
-            (ledger, bytes)
+        let (ledger, candidates, bytes) = tokio::task::spawn_blocking(move || {
+            let candidates = backfill::pending_files(&dirs, &ledger);
+            let bytes = replay_bytes(&candidates);
+            (ledger, candidates, bytes)
         })
         .await
         // The ledger is lost with the panicked task: reopened from disk at the next import.
         .map_err(|e| format!("sizing the replay folders failed: {e}"))?;
         self.ledger = Some(ledger);
-        Ok(bytes)
+        Ok((candidates, bytes))
     }
 
     /// Provisions the upload token once (retried at the next import when it failed).
@@ -291,9 +306,22 @@ impl Orchestrator {
         }
     }
 
-    /// Uploads a replay reported by the watcher unless the ledger already has it. Abandoned
+    /// Uploads a replay from the current folders unless the ledger already has it. Abandoned
     /// (not recorded, retried at the next start) when a stop is requested meanwhile.
     async fn handle_live(&mut self, path: &Path) {
+        // Replacing the watcher does not remove events it has already queued.
+        if !self.folders.iter().any(|folder| {
+            if path.starts_with(folder) {
+                return true;
+            }
+            // notify's FSEvents backend canonicalizes roots before watching them.
+            cfg!(target_os = "macos")
+                && folder
+                    .canonicalize()
+                    .is_ok_and(|root| path.starts_with(root))
+        }) {
+            return;
+        }
         let name = path
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -340,100 +368,6 @@ fn open_ledger(path: &Path) -> io::Result<Ledger> {
         }
         other => other,
     }
-}
-
-/// `operator_names` written by migration 0003 for the box's operator: on a player's PC it is not
-/// their name.
-const SEEDED_OPERATOR: &str = "matella";
-/// `app_settings` key set once the operator names were detected (or found set by the user).
-const NAMES_DETECTED_KEY: &str = "operator_names_detected";
-
-/// What [`detect_operator_names`] writes: `Some(names)` replaces `operator_names`, `None`
-/// keeps them. Only the migration seed (or nothing) is replaced, by the most frequent player.
-pub(super) fn detected_names(current: &[String], top: Option<String>) -> Option<Vec<String>> {
-    if !is_seeded(current) {
-        return None;
-    }
-    top.filter(|t| !t.trim().is_empty()).map(|t| vec![t])
-}
-
-/// True when `operator_names` is still the migration seed (or empty).
-fn is_seeded(current: &[String]) -> bool {
-    current.is_empty() || (current.len() == 1 && current[0] == SEEDED_OPERATOR)
-}
-
-/// Once per install, after the first completed import: the "me" of every stats page is the
-/// player of (almost) every imported game, as the box's onboarding expects the operator to set
-/// it. Names the user already set are kept; nothing is done (and it is retried at the next
-/// `ready`) while no game is imported. The user edits them on the welcome page or in Settings.
-pub(super) async fn detect_operator_names(app: &AppState) {
-    let done =
-        sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM app_settings WHERE key = $1)")
-            .bind(NAMES_DETECTED_KEY)
-            .fetch_one(&app.db)
-            .await
-            .unwrap_or(true);
-    if done {
-        return;
-    }
-    let current: Vec<String> = sqlx::query_scalar::<_, serde_json::Value>(
-        "SELECT value FROM app_settings WHERE key = 'operator_names'",
-    )
-    .fetch_optional(&app.db)
-    .await
-    .ok()
-    .flatten()
-    .and_then(|v| serde_json::from_value(v).ok())
-    .unwrap_or_default();
-    let top: Option<String> = match sqlx::query_scalar(
-        "SELECT name FROM match_players WHERE name IS NOT NULL AND name <> ''
-         GROUP BY name ORDER BY count(DISTINCT match_id) DESC, name LIMIT 1",
-    )
-    .fetch_optional(&app.db)
-    .await
-    {
-        Ok(top) => top,
-        Err(e) => {
-            tracing::warn!("operator names: detection failed: {e}");
-            return;
-        }
-    };
-    let names = detected_names(&current, top);
-    if is_seeded(&current) && names.is_none() {
-        return; // nothing imported yet: retried at the next `ready`
-    }
-    if let Err(e) = save_detected_names(&app.db, names.as_deref()).await {
-        tracing::warn!("operator names: {e}");
-    }
-}
-
-/// Writes the detected names (if any) and the "detected" mark in one transaction.
-async fn save_detected_names(
-    db: &sqlx::PgPool,
-    names: Option<&[String]>,
-) -> Result<(), sqlx::Error> {
-    let mut tx = db.begin().await?;
-    if let Some(names) = names {
-        tracing::info!(?names, "operator names detected from the imported games");
-        // conditional: a `PUT /api/admin/settings` that landed since the read is kept
-        sqlx::query(
-            "INSERT INTO app_settings (key, value) VALUES ('operator_names', $1)
-             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-             WHERE app_settings.value IN (jsonb_build_array($2::text), '[]'::jsonb)",
-        )
-        .bind(serde_json::json!(names))
-        .bind(SEEDED_OPERATOR)
-        .execute(&mut *tx)
-        .await?;
-    }
-    sqlx::query(
-        "INSERT INTO app_settings (key, value) VALUES ($1, 'true'::jsonb)
-         ON CONFLICT (key) DO NOTHING",
-    )
-    .bind(NAMES_DETECTED_KEY)
-    .execute(&mut *tx)
-    .await?;
-    tx.commit().await
 }
 
 /// After an update that raised `PARSER_VERSION`: re-processes, in the background and bounded
@@ -550,5 +484,62 @@ pub(super) async fn seed_reference_data(app: &AppState) {
     .await
     {
         tracing::warn!("reference data: could not record the snapshot hash ({e})");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+    use axum::{http::StatusCode, routing::post, Router};
+
+    #[tokio::test]
+    async fn queued_events_only_upload_from_active_folders() {
+        let tmp = tempfile::tempdir().unwrap();
+        let kept = tmp.path().join("replays");
+        let removed = tmp.path().join("replays-old");
+        let stale = removed.join("removed.StormReplay");
+        let live = kept.join("nested/kept.StormReplay");
+        for path in [&stale, &live] {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, b"replay").unwrap();
+        }
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let router = Router::new().route("/api/upload", post(|| async { StatusCode::OK }));
+            axum::serve(listener, router).await.unwrap();
+        });
+        let app = super::super::tests::lazy_state(tmp.path(), None);
+        let st = Arc::new(StandaloneState::new(&app.cfg));
+        let ledger_path = app.cfg.ledger_path();
+        let (events_tx, events_rx) = mpsc::unbounded_channel();
+        let mut worker = Orchestrator {
+            app,
+            st: st.clone(),
+            uploader: Some(Uploader::new(base_url.clone())),
+            base_url,
+            ledger: Some(Ledger::open(&ledger_path).unwrap()),
+            ledger_path,
+            folders: vec![kept.clone(), removed],
+            watch: None,
+            events_tx,
+            events_rx,
+            commands: st.take_commands().unwrap(),
+        };
+        worker.events_tx.send(stale).unwrap();
+        worker.events_tx.send(live).unwrap();
+        worker.apply(Command::SetFolders(vec![kept])).await;
+        while let Ok(path) = worker.events_rx.try_recv() {
+            worker.handle_live(&path).await;
+        }
+        server.abort();
+
+        let ledger = worker.ledger.unwrap();
+        assert!(!ledger.contains("removed.StormReplay"));
+        assert!(ledger.contains("kept.StormReplay"));
+        assert_eq!(st.status().done, 1);
     }
 }

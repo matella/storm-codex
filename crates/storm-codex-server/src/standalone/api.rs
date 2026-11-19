@@ -23,12 +23,13 @@ use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use serde::Deserialize;
 
-use super::{resolve_folders, save_extra_folders, Command, Phase};
+use super::{resolve_folders, save_extra_folders, Command};
 use crate::AppState;
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/standalone/status", get(status))
+        .route("/api/standalone/identity", get(identity))
         .route("/api/standalone/folders", put(put_folders))
         .route("/api/standalone/rescan", post(rescan))
         .route("/api/standalone/shutdown", post(shutdown))
@@ -112,6 +113,23 @@ async fn status(State(state): State<AppState>) -> Response {
     }
 }
 
+/// GET /api/standalone/identity — current projection for the effective replay folders.
+async fn identity(State(state): State<AppState>) -> Response {
+    let Some(st) = &state.standalone else {
+        return not_found();
+    };
+    match super::identity::folder_identities(&state.db, st).await {
+        Ok(owners) => Json(owners).into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, "reading replay folder identity");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "could not read replay folder identity".into(),
+            )
+        }
+    }
+}
+
 #[derive(Deserialize)]
 struct FoldersBody {
     folders: Vec<String>,
@@ -139,14 +157,6 @@ async fn put_folders(State(state): State<AppState>, Json(body): Json<FoldersBody
         .iter()
         .map(|p| p.to_string_lossy().into_owned())
         .collect();
-    if let Err(e) = save_extra_folders(&state.db, &saved).await {
-        tracing::error!(error = %e, "saving the replay folders");
-        return error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "could not save the folders".into(),
-        );
-    }
-    st.set_extra_folders(&saved);
     let resolver = st.clone();
     let folders = match tokio::task::spawn_blocking(move || {
         resolve_folders(resolver.detect(), &extras)
@@ -162,14 +172,23 @@ async fn put_folders(State(state): State<AppState>, Json(body): Json<FoldersBody
             );
         }
     };
-    st.set_folders(&folders);
-    st.set_phase(if folders.is_empty() {
-        Phase::NoFolders
-    } else {
-        Phase::Importing
-    });
+    // Resolve before saving so a slow scan cannot enqueue an older save after a newer one.
+    // Keep persistence, status publication and command ordering under the same lock.
+    let _save = st.folder_save.lock().await;
+    if let Err(e) = save_extra_folders(&state.db, &saved).await {
+        tracing::error!(error = %e, "saving the replay folders");
+        return error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "could not save the folders".into(),
+        );
+    }
+    st.set_extra_folders(&saved);
     if !st.send(Command::SetFolders(folders)) {
         tracing::warn!("folders saved, but the import task is not running");
+        return error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "folders saved, but the import worker is not running; restart Storm Codex".into(),
+        );
     }
     Json(st.status()).into_response()
 }
@@ -180,6 +199,10 @@ async fn rescan(State(state): State<AppState>) -> Response {
         Some(st) => {
             if !st.send(Command::Rescan) {
                 tracing::warn!("rescan requested, but the import task is not running");
+                return error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "the import worker is not running".into(),
+                );
             }
             StatusCode::ACCEPTED.into_response()
         }

@@ -7,7 +7,10 @@
 //! [`Command`]s to the orchestrator; it never touches the ledger.
 
 pub mod api;
+mod identity;
 mod orchestrator;
+
+pub(crate) use identity::operator_toons;
 pub(crate) mod token;
 
 #[cfg(test)]
@@ -118,6 +121,8 @@ type Detector = Arc<dyn Fn() -> Vec<PathBuf> + Send + Sync>;
 pub struct StandaloneState {
     data_dir: PathBuf,
     view: Mutex<View>,
+    /// Serializes folder saves through persistence, status publication and enqueueing.
+    folder_save: tokio::sync::Mutex<()>,
     /// Counters of the current backfill run (replaced at each run).
     progress: Mutex<Arc<Progress>>,
     live: Mutex<LiveCounters>,
@@ -135,8 +140,7 @@ pub struct StandaloneState {
     token_name: String,
     /// Background re-process after a parser bump: (total, done).
     reprocess: Mutex<(usize, usize)>,
-    /// Database-wide upkeep of the import task (re-process after an update, operator names
-    /// detection). Off only in tests that share one database.
+    /// Database-wide re-process after an update. Off only in tests that share one database.
     upkeep: bool,
 }
 
@@ -152,6 +156,7 @@ impl StandaloneState {
                 free_bytes: None,
                 needed_bytes: None,
             }),
+            folder_save: tokio::sync::Mutex::new(()),
             progress: Mutex::new(Arc::new(Progress::default())),
             live: Mutex::new(LiveCounters::default()),
             commands,
@@ -262,6 +267,11 @@ impl StandaloneState {
         lock(&self.view).phase = phase;
     }
 
+    fn ready_for(&self, folders: &[PathBuf]) -> bool {
+        let view = lock(&self.view);
+        view.phase == Phase::Ready && view.folders == folders
+    }
+
     pub(crate) fn set_folders(&self, folders: &[PathBuf]) {
         lock(&self.view).folders = folders.to_vec();
     }
@@ -285,8 +295,18 @@ impl StandaloneState {
 
     /// Starts a new backfill run: its progress replaces the previous one, live counts reset.
     pub(crate) fn start_run(&self, progress: Arc<Progress>) {
+        let mut view = lock(&self.view);
         *lock(&self.progress) = progress;
         *lock(&self.live) = LiveCounters::default();
+        view.phase = Phase::Importing;
+    }
+
+    /// Settles a new empty scan without exposing an importing phase.
+    fn finish_empty_run(&self) {
+        let mut view = lock(&self.view);
+        *lock(&self.progress) = Arc::new(Progress::default());
+        *lock(&self.live) = LiveCounters::default();
+        view.phase = Phase::Ready;
     }
 
     /// Counts the outcome of a replay uploaded by the live watcher.

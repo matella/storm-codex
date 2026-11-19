@@ -24,6 +24,32 @@ pub struct Rejected {
     pub reason: String,
 }
 
+/// Read-only identity from the replay projection; unknown folders have neither name nor toon.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct FolderIdentity {
+    pub folder: String,
+    pub toon: Option<String>,
+    pub name: Option<String>,
+    pub aliases: Vec<String>,
+}
+
+/// One choice per verified toon, plus the manual names (which keep name-based matching).
+pub fn account_options(manual: &[String], folders: &[FolderIdentity]) -> Vec<(String, String)> {
+    let mut options: Vec<_> = manual
+        .iter()
+        .map(|name| (name.clone(), name.clone()))
+        .collect();
+    let mut seen = std::collections::HashSet::new();
+    for folder in folders {
+        if let (Some(toon), Some(name)) = (&folder.toon, &folder.name) {
+            if seen.insert(toon) {
+                options.push((format!("toon:{toon}"), format!("{name} ({toon})")));
+            }
+        }
+    }
+    options
+}
+
 /// Body of `GET /api/standalone/status` (camelCase on the wire, see docs/spec/04-serveur.md).
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -62,6 +88,49 @@ pub struct Status {
     pub reprocess_total: u64,
     #[serde(default)]
     pub reprocess_done: u64,
+}
+
+/// Shared ordering of status polls and folder edits within a tab.
+#[derive(Default)]
+pub struct StatusRequests {
+    issued: u64,
+    applied: u64,
+    saving: bool,
+}
+
+impl StatusRequests {
+    pub fn begin_poll(&mut self) -> Option<u64> {
+        if self.saving {
+            return None;
+        }
+        self.issued += 1;
+        Some(self.issued)
+    }
+
+    pub fn accept_poll(&mut self, request: u64) -> bool {
+        if self.saving || request <= self.applied {
+            return false;
+        }
+        self.applied = request;
+        true
+    }
+
+    pub fn begin_save(&mut self) -> bool {
+        if self.saving {
+            return false;
+        }
+        self.saving = true;
+        self.applied = self.issued; // discard every poll sent before the write
+        true
+    }
+
+    pub fn finish_save(&mut self) {
+        self.saving = false;
+    }
+
+    pub fn saving(&self) -> bool {
+        self.saving
+    }
 }
 
 /// Line shown while the server re-processes the stored replays after an update (`None` when it is not).
@@ -453,6 +522,29 @@ mod tests {
     }
 
     #[test]
+    fn late_poll_cannot_replace_a_newer_snapshot() {
+        let mut order = StatusRequests::default();
+        let old = order.begin_poll().unwrap();
+        let new = order.begin_poll().unwrap();
+        assert!(order.accept_poll(new));
+        assert!(!order.accept_poll(old));
+    }
+
+    #[test]
+    fn folder_save_invalidates_inflight_polls() {
+        let mut order = StatusRequests::default();
+        let old = order.begin_poll().unwrap();
+        assert!(order.begin_save());
+        assert!(!order.accept_poll(old));
+        assert!(order.begin_poll().is_none());
+        assert!(!order.begin_save());
+        order.finish_save();
+        assert!(!order.accept_poll(old));
+        let fresh = order.begin_poll().unwrap();
+        assert!(order.accept_poll(fresh));
+    }
+
+    #[test]
     fn progress_percent_handles_zero_total() {
         assert_eq!(progress_percent(0, 0), 0);
         assert_eq!(progress_percent(5, 0), 0);
@@ -646,5 +738,29 @@ mod tests {
         assert_eq!(p("null"), UpdateStatus::default());
         assert_eq!(p(r#""ready""#), UpdateStatus::default());
         assert_eq!(p(r#"{"state":1,"version":2}"#), UpdateStatus::default());
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+
+    #[test]
+    fn account_options_keep_manual_names_and_show_only_latest_labels_for_verified_toons() {
+        let folders: Vec<FolderIdentity> = serde_json::from_value(serde_json::json!([
+            {"folder":"primary","toon":"2-Hero-1-10","name":"New","aliases":["New","Old"]},
+            {"folder":"backup","toon":"2-Hero-1-10","name":"New","aliases":["New","Old"]},
+            {"folder":"flat","toon":null,"name":null,"aliases":[]},
+            {"folder":"alt","toon":"1-Hero-1-99","name":"New","aliases":["New"]}
+        ]))
+        .unwrap();
+        assert_eq!(
+            account_options(&["Manual".into()], &folders),
+            [
+                ("Manual".into(), "Manual".into()),
+                ("toon:2-Hero-1-10".into(), "New (2-Hero-1-10)".into()),
+                ("toon:1-Hero-1-99".into(), "New (1-Hero-1-99)".into()),
+            ]
+        );
     }
 }

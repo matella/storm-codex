@@ -15,12 +15,13 @@ use storm_web_core::{
 use crate::{
     layout::LiveBus,
     matchui::{AwardTag, GameCard, Pips},
-    ui::{fetch, map_art, use_operator, Link, Portrait, SecHead, Tone},
+    ui::{fetch, map_art, use_operator, use_owner_toons, Link, Portrait, SecHead, Tone},
 };
 
 #[component]
 pub fn Session() -> impl IntoView {
     let operator = use_operator();
+    let toons = use_owner_toons();
     let bus = expect_context::<LiveBus>();
     let matches = fetch::<Vec<MatchSummary>>(move || {
         bus.matches.track(); // a parsed match re-reads the list
@@ -34,8 +35,9 @@ pub fn Session() -> impl IntoView {
                 };
                 let list = res.unwrap_or_default();
                 let names = operator.get();
-                let configured = !names.is_empty();
-                let games = my_games(&list, &names);
+                let handles = toons.get();
+                let configured = !names.is_empty() || !handles.is_empty();
+                let games = my_games(&list, &names, &handles);
                 if !configured || games.is_empty() {
                     let sub = if configured {
                         "None of your accounts appears in the archive yet — upload replays with the uploader."

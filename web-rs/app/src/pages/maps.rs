@@ -9,13 +9,13 @@ use storm_web_core::{
     session::fmt_dur,
 };
 
-use crate::ui::{fetch, map_art, AggFilterBar, Link, SecHead};
+use crate::ui::{fetch_operator_stats, map_art, AggFilterBar, Link, SecHead};
 
 /// How often getting there first won the game (spec `docs/specs/2026-11-17-local-insights-design.md`, F2).
 #[component]
 fn EarlyLeadsBlock(filter: RwSignal<AggFilter>) -> impl IntoView {
     use storm_web_core::insights::{pct, EarlyLeads};
-    let data = fetch::<EarlyLeads>(move || {
+    let data = fetch_operator_stats::<EarlyLeads>(move || {
         format!("/api/maps/early-leads?{}", net::agg_params(&filter.get()))
     });
     move || {
@@ -79,8 +79,9 @@ fn EarlyLeadsBlock(filter: RwSignal<AggFilter>) -> impl IntoView {
 #[component]
 pub fn Maps() -> impl IntoView {
     let filter = RwSignal::new(AggFilter::default());
-    let data =
-        fetch::<Vec<MapStat>>(move || format!("/api/maps?{}", net::agg_params(&filter.get())));
+    let data = fetch_operator_stats::<Vec<MapStat>>(move || {
+        format!("/api/maps?{}", net::agg_params(&filter.get()))
+    });
     view! {
         <div class="ds-page">
             <header class="ds-cover" style="margin-top: 18px">
