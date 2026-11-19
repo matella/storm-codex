@@ -24,25 +24,11 @@ Tests: `cargo test` (the projection test is skipped without `DATABASE_URL`); par
 `git fetch origin` **before** reading the code or planning; after a pull,
 rebuild the bundles with `trunk build --release` if `web-rs/` changed.
 
-## Production (box 192.168.129.85, `~/apps/storm-codex`)
+## Self-hosted server
 
-- **Stack**: `docker-compose.yml` — dedicated Postgres `storm-codex-pg` (volume `storm-codex-pgdata`)
-  + `storm-codex-server` (multi-stage build: Vite SPA → Rust release → Debian slim; volume
-  `/data` = archive + caches + images). Host port **5102** (8088 is taken by gluetun).
-  Healthcheck on `/api/health`.
-- **Networks**: `default` + `jarvis_default` (external) to publish on jarvis-redis.
-  `DATABASE_URL` points to the **container name** `storm-codex-pg` (the `postgres` alias collides
-  with jarvis-postgres on the shared network).
-- **Secrets**: only in the box's `.env` (never committed). `POSTGRES_PASSWORD` initialised
-  the volume — recoverable from the running container (`docker inspect`).
-- **Deploy**: rsync the repo → `docker compose up -d --build`. Or, for an isolated
-  front-end/server change: fetch the files from GitHub (public repo) then rebuild — the
-  Docker cache only rebuilds the affected stage.
-  ⚠️ **NEVER `rsync --delete` without `--exclude .env`** (it would delete the box's `.env`).
-- **Verify after deployment**: containers healthy, `/api/health` 200, bundle hash
-  (`index-*.js` in `/`) changed.
-- **Remote access**: Tailscale → 192.168.129.85 (SSH + :5102), in the evening when the box is running.
-  The SSH keys exist on the Mac (not on the gaming PC).
+- `docker-compose.yml` is the maintainer's deployment example. It serves the Rust/Wasm frontend and API, persists replay archives and reference assets under `/data`, and uses PostgreSQL. For a separate installation, configure your own volumes, network, and credentials; the optional Jarvis network must not be assumed to exist.
+- Keep PostgreSQL private and treat the app as trusted-network software. Open Admin mode is for local use only. For remote access, use a trusted VPN or an authenticated HTTPS reverse proxy and configure admin and upload credentials. See [SECURITY.md](../../SECURITY.md).
+- Keep secrets outside the repository. After an update, verify `/api/health`, check the app and archive access, and keep the previous image tag available for rollback.
 
 ## Uploader (gaming PC)
 
@@ -90,6 +76,12 @@ app" below. Everything else is `ci.yml`.
 
 The box can update itself with `docker pull ghcr.io/matella/storm-codex:latest` (or go back to
 a specific version with `:sha-…`) instead of a local build — the box's current compose uses `build: .`.
+
+### Dependency updates and security
+
+Dependabot checks active Cargo workspaces, GitHub Actions, Docker and the npm parity harness weekly. Review its PRs normally; do not auto-merge them or bypass CI. Leave archived spikes out of routine updates. Keep the RustSec audit in CI and preserve full-commit SHA pins in the signing workflow. Review manually pinned tools, binary checksums and reference snapshots separately; a Dependabot PR does not update those as a unit.
+
+GitHub private vulnerability reports, dependency and secret alerts, and CodeQL findings are triaged by the maintainer. Do not paste sensitive findings or secrets into public work items. Use [SECURITY.md](../../SECURITY.md) for disclosure.
 
 ## Docker image (`Dockerfile`)
 

@@ -27,6 +27,10 @@ Use [storm-codex-suite](https://github.com/matella/storm-codex-suite) for the Do
 
 Start with the [technical documentation](docs/spec/README.md), [development workflow](docs/spec/10-developpement.md), or [Windows acceptance checklist](docs/standalone-acceptance.md). See [project status](docs/STATUS.md) for work in progress.
 
+## Help and contributing
+
+See [Support](SUPPORT.md) for bugs and setup questions, [Contributing](CONTRIBUTING.md) for changes, and the [security policy](SECURITY.md) to report vulnerabilities privately. Storm Codex is [MIT-licensed](LICENSE).
+
 ## Credits
 
 Storm Codex is a Rust rewrite inspired by [Stats of the Storm](https://github.com/ebshimizu/stats-of-the-storm) and [hots-parser](https://github.com/ebshimizu/hots-parser) by [@ebshimizu](https://github.com/ebshimizu). Heroes of the Storm is a trademark of Blizzard Entertainment, Inc. This project is not affiliated with Blizzard.

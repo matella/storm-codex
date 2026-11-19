@@ -58,9 +58,7 @@ integration (Redis events) and the existing `client-rs` uploader (Hots-Overlay r
    every 24 h. Standalone: a trimmed snapshot of a pinned release, bundled in the installer. No second sync pipeline.
 
 ## Environment
-- Box: matella@192.168.129.85 (evening server ~6pm→night); Jarvis Postgres/Redis on it;
-  Node overlay :8086 (to be decommissioned at milestone 5,
-  the Twitch Azure EBS stays). Deployment: rsync + docker compose build (no `git pull` on the box).
+- The maintainer runs a private self-hosted deployment. Use isolated local fixtures for public development; do not assume access to that deployment.
 - Windows gaming PC: replays in `Documents/Heroes of the Storm/Accounts/*/*/Replays/Multiplayer`
   (~3,000 files, 2–3 GB); uploader = `client-rs` (Hots-Overlay repo).
 - Test corpus: NAS/box + `fetch-corpus` script; mini-corpus committed for public CI.
@@ -79,8 +77,7 @@ local dependency on the other projects. Milestone 0 is ideally done **on the Win
 | matella HeroesOfTheStormPatchNotes | GitHub (public) | reference data consumed as **dataset releases** (schema v1, `refdata` adapter); the clone is only useful to read the producer's code |
 | Jarvis | **not on GitHub** (box remote only) | milestone 5 — the connector is written from the Mac/box; nothing to clone on the PC |
 
-Box access from anywhere: Tailscale (subnet route active) → 192.168.129.85 (SSH + APIs),
-in the evening when the box is running. Milestones 0–2 do not need the box at all.
+The committed replay corpus and public CI do not require maintainer infrastructure.
 
 ## Conventions
 Rust 2021+, strict clippy, typed errors (`thiserror`), no `unwrap()` outside tests;
