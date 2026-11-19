@@ -68,7 +68,7 @@ fn initials(h: &str) -> String {
 }
 
 /// Lowercase ASCII slug: runs of other characters become one dash, edges trimmed.
-fn slug(name: &str) -> String {
+pub(crate) fn slug(name: &str) -> String {
     let mut out = String::new();
     let mut dash = false;
     for c in name.to_lowercase().chars() {
@@ -84,7 +84,7 @@ fn slug(name: &str) -> String {
 }
 
 /// Latin letter without its accent (what `normalize("NFD")` + stripping combining marks leaves).
-fn deaccent(c: char) -> char {
+pub(crate) fn deaccent(c: char) -> char {
     match c {
         'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' | 'ā' | 'ă' | 'ą' => 'a',
         'ç' | 'ć' | 'č' => 'c',

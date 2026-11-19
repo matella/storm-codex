@@ -31,16 +31,7 @@ pub fn ModeTag(mode: Option<i64>, #[prop(optional)] short: bool) -> impl IntoVie
     } else {
         "qm"
     };
-    let long = match code {
-        "SL" => "Storm League",
-        "HL" => "Hero League",
-        "TL" => "Team League",
-        "UD" => "Unranked",
-        "QM" => "Quick Match",
-        "ARAM" => "ARAM",
-        "CUSTOM" => "Custom",
-        c => c,
-    };
+    let long = storm_web_core::card::mode_name(mode);
     view! { <span class=format!("ds-mode {fam}") title=long>{if short { code } else { long }}</span> }
 }
 

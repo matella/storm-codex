@@ -1,13 +1,11 @@
-@import url("https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Cinzel:wght@700;800&display=swap");
-
 /* Overlay de draft OBS — vue Timeline. Fond transparent ; data-skin sur .draft-overlay.
    Porté de docs/specs/2026-06-19-draft-aesthetics.html (skins nexus/glass/tactical/mono). */
 .draft-overlay { position: fixed; inset: 0; overflow: hidden; color: #eef2fc;
-  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+  font-family: "Segoe UI", system-ui, sans-serif;
   --blue:#2f6df6; --red:#e0414b; --blue-soft:#7fa6ff; --red-soft:#ff8088; --gold:#e8c66a;
   --bg:radial-gradient(125% 95% at 50% 35%,#211a44 0%,#120e26 46%,#06060f 100%);
   --cardbd:#2a3052; --radius:12px; --clip:none;
-  --label-ff:"Inter",sans-serif; --label-tr:.06em; --num-ff:"Inter",sans-serif; }
+  --label-ff:sans-serif; --label-tr:.06em; --num-ff:sans-serif; }
 .draft-overlay[data-skin=glass]{ --bg:linear-gradient(115deg,#0a1326 0%,#0b0e1c 42%,#1a0c14 100%);
   --cardbd:rgba(255,255,255,.14); --radius:13px; --gold:#d8c089; --label-tr:.12em; }
 .draft-overlay[data-skin=tactical]{ --blue:#2ee6d6; --red:#ff4655; --blue-soft:#7ff0e6; --red-soft:#ff7a85; --gold:#ffd36b;
@@ -27,7 +25,8 @@
 .draft-overlay[data-skin=tactical] .stars,.draft-overlay[data-skin=mono] .stars{ opacity:.12;
   background-image:linear-gradient(#ffffff08 1px,transparent 1px),linear-gradient(90deg,#ffffff08 1px,transparent 1px);background-size:38px 38px; }
 
-@keyframes pulse{0%,100%{box-shadow:0 0 0 2px var(--gold)}50%{box-shadow:0 0 0 2px var(--gold),0 0 24px var(--gold)}}
+/* the glow of the active slot pulses on opacity only (compositor), see `.active::before` below */
+@keyframes pulse{0%,100%{opacity:0}50%{opacity:1}}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
 .draft-overlay .num{font-family:var(--num-ff)}
 .draft-overlay .por{position:absolute;inset:0;background-size:cover;background-position:50% 16%;background-color:#141a2a;z-index:1}
@@ -60,7 +59,7 @@
 .draft-overlay .pk .nm i{display:block;font-style:normal;font-size:.62vw;font-weight:600;color:#c4cdea;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .draft-overlay .pk.empty{border:1px dashed #2a3148}
 .draft-overlay .pk.empty .nm{background:none} .draft-overlay .pk.empty .nm b{color:#7c8aa8}
-.draft-overlay .pk.active{border-color:var(--gold);animation:pulse 1.4s ease-in-out infinite}
+.draft-overlay .pk.active{border-color:var(--gold)}
 .draft-overlay .tl-bans{display:flex;justify-content:center;align-items:center;gap:.5vw}
 .draft-overlay .tl-bans .sep{width:1vw}
 .draft-overlay .bn{position:relative;width:2.2vw;height:2.2vw;border-radius:calc(var(--radius) - 4px);overflow:hidden;clip-path:var(--clip);
@@ -68,7 +67,15 @@
 .draft-overlay .bn.b{outline:2px solid color-mix(in srgb,var(--blue) 55%,transparent);outline-offset:-2px}
 .draft-overlay .bn.r{outline:2px solid color-mix(in srgb,var(--red) 55%,transparent);outline-offset:-2px}
 .draft-overlay .bn::after{content:"";position:absolute;inset:0;background:linear-gradient(135deg,transparent 45%,#ff3b46 46%,#ff3b46 54%,transparent 55%);opacity:.9;z-index:2}
-.draft-overlay .bn.active{outline-color:var(--gold);animation:pulse 1.4s ease-in-out infinite}
+.draft-overlay .bn.active{outline-color:var(--gold)}
 .draft-overlay .bn.empty{filter:none;background:#0e1320;border:1px dashed #2a3148}
 .draft-overlay .bn.empty::after{display:none}
 .draft-overlay .ready{display:inline-flex;align-items:center;font-family:var(--label-ff);font-weight:800;font-size:.8vw;letter-spacing:.14em;text-transform:uppercase;padding:.3vw .9vw;border-radius:999px;border:1px solid var(--cardbd);color:var(--gold);margin-top:.6vw;background:#0b0e18cc}
+/* Active slot: a static gold ring on the card and its glow on a pseudo-element whose opacity pulses, so the broadcast
+   does not repaint a box-shadow every frame. The active card stops clipping (the glow lies outside it); its children
+   take the rounded corners themselves. The ring rule comes after the team stripes, which it replaces (as before). */
+.draft-overlay .tl-picks .pk.active,.draft-overlay .tl-bans .bn.active{overflow:visible;box-shadow:0 0 0 2px var(--gold)}
+.draft-overlay .pk.active::before,.draft-overlay .bn.active::before{content:"";position:absolute;inset:-1px;border-radius:inherit;
+  box-shadow:0 0 24px var(--gold);opacity:0;animation:pulse 1.4s ease-in-out infinite;pointer-events:none}
+.draft-overlay .pk.active>*{border-radius:calc(var(--radius) - 1px)}
+.draft-overlay .bn.active>*,.draft-overlay .bn.active::after{border-radius:calc(var(--radius) - 5px)}

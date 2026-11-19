@@ -341,15 +341,20 @@ fn app_router(state: AppState) -> Router {
     .layer(tower_http::compression::CompressionLayer::new());
     // Standalone: the server runs on a player's PC in open mode (no ADMIN_TOKEN), so every
     // request must name the loopback server (DNS rebinding) and no write may come from another
-    // site (CSRF). Outermost, so it also covers the pages, images and the WebSocket.
-    if state.standalone.is_some() {
+    // site (CSRF). Covers pages, images and WebSockets, as well as API routes.
+    let app = if state.standalone.is_some() {
         app.layer(axum::middleware::from_fn_with_state(
             state,
             standalone::api::local_requests_only,
         ))
     } else {
         app
-    }
+    };
+    // Outside the standalone guard so its rejection responses get the policy too.
+    app.layer(tower_http::set_header::SetResponseHeaderLayer::overriding(
+        axum::http::header::REFERRER_POLICY,
+        axum::http::HeaderValue::from_static("no-referrer"),
+    ))
 }
 
 /// All the API routes + images (without the SPA fallback) — extracted for the integration tests.
@@ -640,9 +645,13 @@ fn v2_page_handler(
         let root = root.clone();
         async move {
             use axum::response::IntoResponse;
+            let missing = (
+                StatusCode::NOT_FOUND,
+                [(axum::http::header::CACHE_CONTROL, "no-store")],
+            );
             let path = uri.path().strip_prefix("/v2").unwrap_or(uri.path());
             if path.rsplit('/').next().is_some_and(|s| s.contains('.')) {
-                return StatusCode::NOT_FOUND.into_response();
+                return missing.into_response();
             }
             match tokio::fs::read_to_string(root.join(v2_page(path))).await {
                 Ok(html) => (
@@ -650,7 +659,7 @@ fn v2_page_handler(
                     axum::response::Html(html),
                 )
                     .into_response(),
-                Err(_) => StatusCode::NOT_FOUND.into_response(),
+                Err(_) => missing.into_response(),
             }
         }
     })
@@ -669,21 +678,66 @@ fn serve_v2_at_root<S: Clone + Send + Sync + 'static>(
 /// `/v2/sources/`, `app/` at `/v2/app/`): files are fingerprinted (cacheable for a
 /// year); a path that looks like a file and does not exist answers 404 (never an HTML page instead of a
 /// `.wasm`); any other path returns the page of `v2_page` (status 200, `no-cache`, read at each request so a
-/// rebuild is picked up without restarting the server). React keeps `/`.
+/// rebuild is picked up without restarting the server).
 fn serve_v2<S: Clone + Send + Sync + 'static>(
     app: Router<S>,
     dir: Option<&std::path::Path>,
 ) -> Router<S> {
     let Some(dir) = dir else { return app };
     let page = v2_page_handler(dir);
-    let files = tower_http::set_header::SetResponseHeader::if_not_present(
-        tower_http::services::ServeDir::new(dir)
-            .append_index_html_on_directories(false)
-            .fallback(page),
-        axum::http::header::CACHE_CONTROL,
-        axum::http::HeaderValue::from_static("public, max-age=31536000, immutable"),
-    );
+    let files = tower_http::services::ServeDir::new(dir)
+        .append_index_html_on_directories(false)
+        .precompressed_br()
+        .precompressed_gzip()
+        .fallback(page);
+    let files = Router::new()
+        .fallback_service(files)
+        .layer(axum::middleware::from_fn(bundle_cache_headers));
     app.nest_service("/v2", files)
+}
+
+const IMMUTABLE_CACHE: &str = "public, max-age=31536000, immutable";
+
+async fn bundle_cache_headers(
+    mut req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use axum::http::{header, HeaderValue};
+
+    // Trunk emits top-level name-<hex>.js/.css and name-<hex>_bg.wasm. Its u64 hash is
+    // not zero-padded. Be conservative: unusually short hashes just revalidate.
+    let fingerprinted = (|| {
+        let (bundle, name) = req.uri().path().trim_start_matches('/').split_once('/')?;
+        if !matches!(bundle, "app" | "overlay" | "sources") || name.contains('/') {
+            return None;
+        }
+        let (stem, ext) = name.rsplit_once('.')?;
+        if !matches!(ext, "js" | "css" | "wasm") {
+            return None;
+        }
+        let (_, hash) = stem.strip_suffix("_bg").unwrap_or(stem).rsplit_once('-')?;
+        ((12..=16).contains(&hash.len()) && hash.bytes().all(|b| b.is_ascii_hexdigit()))
+            .then_some(())
+    })()
+    .is_some();
+    if !fingerprinted {
+        // Last-Modified has only second precision: not a safe validator for local rebuilds.
+        req.headers_mut().remove(header::IF_MODIFIED_SINCE);
+    }
+    let mut response = next.run(req).await;
+    let cache = match response.status() {
+        StatusCode::OK | StatusCode::PARTIAL_CONTENT | StatusCode::NOT_MODIFIED
+            if fingerprinted =>
+        {
+            IMMUTABLE_CACHE
+        }
+        status if status.is_success() || status == StatusCode::NOT_MODIFIED => "no-cache",
+        _ => "no-store",
+    };
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static(cache));
+    response
 }
 
 async fn health(State(state): State<AppState>) -> (StatusCode, Json<serde_json::Value>) {
@@ -727,6 +781,10 @@ pub(crate) fn test_app_state(cfg: Config, db: PgPool) -> AppState {
     }
 }
 
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod platform_tests;
+
 /// Router-level integration tests (tower::oneshot, without network listening). Skipped without
 /// `DATABASE_URL` (pattern of the projection test) — run with the dev Docker Postgres,
 /// run in CI against a Postgres service.
@@ -750,7 +808,7 @@ mod front_end_tests {
         std::fs::write(dir.join("app/index.html"), "<html>app</html>").unwrap();
         std::fs::write(dir.join("overlay/index.html"), "<html>overlay</html>").unwrap();
         std::fs::write(dir.join("sources/index.html"), "<html>sources</html>").unwrap();
-        std::fs::write(dir.join("overlay/a-123.wasm"), "wasm").unwrap();
+        std::fs::write(dir.join("overlay/a-1234567890abcdef.wasm"), "wasm").unwrap();
         let app = super::serve_v2(axum::Router::<()>::new(), Some(&dir));
         let get = |path: &'static str| {
             let app = app.clone();
@@ -768,7 +826,7 @@ mod front_end_tests {
                 (status, cache, String::from_utf8_lossy(&body).to_string())
             }
         };
-        let (st, cache, _) = get("/v2/overlay/a-123.wasm").await;
+        let (st, cache, _) = get("/v2/overlay/a-1234567890abcdef.wasm").await;
         assert_eq!(
             (st, cache.as_deref()),
             (StatusCode::OK, Some("public, max-age=31536000, immutable"))

@@ -252,9 +252,11 @@ manual names or their existing explicit override.
 ## Static
 
 `/` = SPA (`index.html` fallback as `no-cache` — a redeploy changes the bundle hash);
-`/images` = hero portraits + vendored map backgrounds; `/assets` = fingerprinted Vite bundle,
-served as `Cache-Control: public, max-age=31536000, immutable` (missing asset → 404). Responses
-compressed gzip/brotli depending on `Accept-Encoding`.
+`/images` = hero portraits + vendored map backgrounds; standalone artwork has immutable caching
+only for a successful managed image requested with its matching `?ref=<revision>` (see `04-serveur.md`).
+`/v2/<bundle>/` = Trunk assets. Fingerprinted CSS, JS and WASM get
+`Cache-Control: public, max-age=31536000, immutable`; missing assets get 404 with `no-store`.
+The server negotiates Brotli/gzip on `Accept-Encoding` and prefers a matching precompressed file.
 
 ## WebSocket `/ws`
 

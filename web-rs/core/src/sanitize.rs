@@ -82,6 +82,15 @@ pub fn attr_allowed(tag: &str, name: &str, keep_ids: bool) -> bool {
     }
 }
 
+/// Trusted attributes added after filtering the untrusted HTML, before it enters the live DOM.
+pub fn forced_attributes(tag: &str) -> &'static [(&'static str, &'static str)] {
+    if tag.eq_ignore_ascii_case("img") {
+        &[("referrerpolicy", "no-referrer"), ("loading", "lazy")]
+    } else {
+        &[]
+    }
+}
+
 /// A link target that cannot run code: `http(s)`, `mailto`, `tel`, a fragment or a relative path. Control
 /// characters and whitespace inside the scheme are stripped before the check (`java\tscript:` is still a script).
 /// `data:` images are allowed for `src` only.
@@ -167,6 +176,21 @@ mod tests {
         assert!(!attr_allowed("h3", "id", false));
         assert!(!attr_allowed("a", "onclick", true));
         assert!(!attr_allowed("a", "target", true));
+    }
+
+    #[test]
+    fn sanitized_images_force_privacy_and_lazy_loading() {
+        assert_eq!(
+            forced_attributes("IMG"),
+            &[("referrerpolicy", "no-referrer"), ("loading", "lazy")]
+        );
+        assert!(forced_attributes("a").is_empty());
+        for name in ["referrerpolicy", "loading", "srcset", "onload"] {
+            assert!(
+                !attr_allowed("img", name, true),
+                "{name} cannot come from input HTML"
+            );
+        }
     }
 
     #[test]

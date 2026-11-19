@@ -124,6 +124,11 @@ jobs:
             trunk build --release
             Pop-Location
           }
+      - name: precompress web bundles (shipped with originals in web/)
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          node --test scripts/test-precompress-web.mjs
+          node scripts/precompress-web.mjs
       # Static CRT: a clean Windows install has no VC++ redistributable and the per-user installer cannot add one.
       # Scoped to this step (RUSTFLAGS), so local and CI dev builds keep the default dynamic CRT; the shell already
       # links it statically (tauri-build static_vcruntime).

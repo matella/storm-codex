@@ -776,7 +776,7 @@ fn Viewer(
                     spawn_local(async move {
                         if let Some(rec) = rec {
                             if let Ok(blob) = rec.stop().await {
-                                clip::download_blob(
+                                let _ = clip::download_blob(
                                     &blob,
                                     &format!(
                                         "replay-{id}-{}-{}.webm",

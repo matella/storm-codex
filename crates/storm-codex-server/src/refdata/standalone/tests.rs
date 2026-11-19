@@ -98,6 +98,157 @@ fn set_version(feed: &Path, version: &str, schema: u64) {
     fs::write(path, serde_json::to_vec(&manifest).unwrap()).unwrap();
 }
 
+#[tokio::test]
+async fn platform_only_matching_managed_image_bytes_are_immutable() {
+    let tmp = tempfile::tempdir().unwrap();
+    let db = sqlx::postgres::PgPoolOptions::new()
+        .connect_lazy("postgres://localhost/unused")
+        .unwrap();
+    let app = setup(&db, tmp.path(), vec![]);
+    let st = app.standalone.as_ref().unwrap();
+    let path = "heroes/abathur.png";
+    let active = Arc::new(Active {
+        version: "same-dataset".into(),
+        revision: Uuid::new_v4().to_string(),
+        images: [(path.to_owned(), crate::refdata::sha256_hex(b"new image"))].into(),
+        bundle_hash: None,
+    });
+    let file = active.dir(&asset_root(&app)).join(path);
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    fs::write(&file, b"new image").unwrap();
+    st.reference.view().active = Some(active.clone());
+    st.reference.view().digest_verified = Some(active.revision.clone());
+    let router = crate::app_router(app.clone());
+    let read = |url: String| {
+        let router = router.clone();
+        async move {
+            let r = router
+                .oneshot(
+                    Request::get(url)
+                        .header(header::HOST, "localhost")
+                        .header(header::IF_MODIFIED_SINCE, "Thu, 31 Dec 2099 00:00:00 GMT")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let cache = r.headers()[header::CACHE_CONTROL]
+                .to_str()
+                .unwrap()
+                .to_owned();
+            (
+                r.status(),
+                cache,
+                r.into_body().collect().await.unwrap().to_bytes(),
+            )
+        }
+    };
+    let keyed = format!("{IMAGE}?ref={}", active.revision);
+    let (status, cache, bytes) = read(keyed.clone()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(cache, "public, max-age=31536000, immutable");
+    assert_eq!(bytes, "new image");
+    for url in [
+        IMAGE.to_owned(),
+        format!("{IMAGE}?ref={}", Uuid::new_v4()),
+        format!("{keyed}&ref=other"),
+    ] {
+        let (status, cache, bytes) = read(url).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(cache, "no-cache");
+        assert_eq!(bytes, "new image");
+    }
+    fs::remove_file(file).unwrap();
+    let (status, cache, _) = read(keyed.clone()).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(cache, "no-store");
+    let legacy = app.cfg.images_dir.join(path);
+    fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+    fs::write(legacy, b"legacy image").unwrap();
+    let (status, cache, bytes) = read(keyed).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(cache, "no-cache");
+    assert_eq!(bytes, "legacy image");
+}
+
+/// A restored DB can name a generation whose files were restored too, but not yet digest-checked
+/// (startup only checks presence). Even when the bytes on disk are wrong — same length as the
+/// manifest expects, different content, so only a hash can tell — the exact `ref=` URL must not be
+/// cached as `immutable` until that real check has run and passed.
+#[tokio::test]
+async fn platform_unverified_restored_artwork_is_not_immutable() {
+    let tmp = tempfile::tempdir().unwrap();
+    let db = sqlx::postgres::PgPoolOptions::new()
+        .connect_lazy("postgres://localhost/unused")
+        .unwrap();
+    let app = setup(&db, tmp.path(), vec![]);
+    let st = app.standalone.as_ref().unwrap();
+    let path = "heroes/abathur.png";
+    let active = Arc::new(Active {
+        version: "same-dataset".into(),
+        revision: Uuid::new_v4().to_string(),
+        images: [(path.to_owned(), crate::refdata::sha256_hex(b"new image"))].into(),
+        bundle_hash: None,
+    });
+    let file = active.dir(&asset_root(&app)).join(path);
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    // Nonempty corrupt bytes: present (passes the cheap startup check) but wrong (fails a hash).
+    fs::write(&file, b"corrupted").unwrap();
+    assert_eq!(
+        fs::metadata(&file).unwrap().len(),
+        b"new image".len() as u64
+    );
+    // As after `load()` from a restored DB: active is set, but no digest check has run yet.
+    st.reference.view().active = Some(active.clone());
+    let router = crate::app_router(app.clone());
+    let keyed = format!("{IMAGE}?ref={}", active.revision);
+    let r = router
+        .clone()
+        .oneshot(
+            Request::get(&keyed)
+                .header(header::HOST, "localhost")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+    assert_eq!(r.headers()[header::CACHE_CONTROL], "no-cache");
+    let bytes = r.into_body().collect().await.unwrap().to_bytes();
+    assert_eq!(bytes, "corrupted");
+
+    // Once a mismatching digest check publishes, the exact URL stays uncached even after that.
+    st.reference.set_artwork(&active.revision, false);
+    let r = router
+        .clone()
+        .oneshot(
+            Request::get(&keyed)
+                .header(header::HOST, "localhost")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(r.headers()[header::CACHE_CONTROL], "no-cache");
+
+    // A passing digest check for the same revision is what makes the exact URL immutable.
+    fs::write(&file, b"new image").unwrap();
+    st.reference.set_artwork(&active.revision, true);
+    let r = router
+        .oneshot(
+            Request::get(&keyed)
+                .header(header::HOST, "localhost")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        r.headers()[header::CACHE_CONTROL],
+        "public, max-age=31536000, immutable"
+    );
+}
+
 /// A fresh profile can import and browse via the actual watcher and upload endpoint with no
 /// reference data, even as the retry loop is running. Activation repairs its existing match.
 #[tokio::test]

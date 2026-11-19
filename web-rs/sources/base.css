@@ -37,8 +37,8 @@
   --u-nexus: #afa9ec;
 }
 
-/* the session sources set no font of their own: same stack as the app */
-body { color: var(--text); font-family: Inter, -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 13px; }
+/* the session sources set no font of their own: the platform UI font (Segoe UI on Windows) */
+body { color: var(--text); font-family: -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 13px; }
 body * { box-sizing: border-box; }
 
 .mono { font-family: "JetBrains Mono", Consolas, monospace; }
