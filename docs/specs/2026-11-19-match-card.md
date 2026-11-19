@@ -1,6 +1,6 @@
 # Shareable match card (PNG), rendered locally
 
-Date: 2026-11-19 · Status: **proposed** (awaiting operator approval) · Branch `docs/specs-session-card-search`
+Date: 2026-11-19 · Status: **approved** by the operator in chat (2026-11-19)
 
 ## Goal
 
@@ -86,7 +86,15 @@ Pick **A**: no new dependency, nothing new on the API budget, one layout in the 
 Server-side rendering, sharing to any service, clipboard copy, animated or video cards, session cards,
 custom themes or layouts, chat or talent builds on the card.
 
-## Open questions for the operator
+## Operator decisions (2026-11-19)
+
+The open questions were resolved as follows:
+
+- Player names hidden by default; the toggle shows them without the `#tag`.
+- Format: 16:9, 1200×675.
+- Desktop save dialog fallback (`save_card`) only if the download link does not save a file in the installed Windows app (MH-Home acceptance).
+
+## Open questions (as proposed)
 
 1. Player names on the card: off by default (proposed), or on by default with the toggle?
 2. Implement the native save-dialog fallback upfront, or only if the WebView2 download fails on MH-Home?

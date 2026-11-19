@@ -1,6 +1,6 @@
 # Replay search: structured filters on the match archive
 
-Date: 2026-11-19 · Status: **proposed** (awaiting operator approval) · Branch `docs/specs-session-card-search`
+Date: 2026-11-19 · Status: **approved** by the operator in chat (2026-11-19)
 
 ## Goal
 
@@ -90,7 +90,15 @@ Free-text or natural-language queries, saved searches, JSON-only stats (siege, d
 filters on talents, draft order, time-windowed events (damage per window is not in the replay), team
 composition queries (e.g. "against double support"), stat bounds on players other than "me".
 
-## Open questions for the operator
+## Operator decisions (2026-11-19)
+
+The open questions were resolved as follows:
+
+- Filters use existing stat columns only (no siege damage, damage taken or camps for now).
+- Total count in an `X-Total-Count` response header; the body stays a plain array.
+- The UI hero filter means "my hero" by default (the any-player filter stays available).
+
+## Open questions (as proposed)
 
 1. Are the 8 typed stats enough, or do you want siege damage / damage taken / camps too (would use the
    in-memory insights corpus instead of SQL, or a new typed-column migration plus a re-process)?

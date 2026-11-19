@@ -1,6 +1,6 @@
 # Session review: one play session against the player's usual baseline
 
-Date: 2026-11-19 · Status: **proposed** (awaiting operator approval) · Branch `docs/specs-session-card-search`
+Date: 2026-11-19 · Status: **approved** by the operator in chat (2026-11-19)
 
 ## Goal
 
@@ -86,7 +86,15 @@ Server-side, read-only, on the insights corpus. No migration, no new dependency.
 Damage or healing per time window (replays store them as end-of-game totals only), comparing with other
 players or a global meta, notifications or end-of-session pop-ups, OBS session sources, writing anything.
 
-## Open questions for the operator
+## Operator decisions (2026-11-19)
+
+The open questions were resolved as follows:
+
+- Baseline: only the game modes played in the session.
+- Best/worst game: the game with the most stats above the player's own hero average (ties: KDA ratio).
+- Session boundary: fixed 3 h gap between game starts (no setting).
+
+## Open questions (as proposed)
 
 1. Baseline = last 90 days before the session, all modes — or same modes as the session only?
 2. Best/worst game = "most stats above my hero average" (proposed) — or simply highest / lowest KDA ratio?
