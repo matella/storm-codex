@@ -1,5 +1,22 @@
 # STATUS — read first, update last
 
+## Three-way merge: web-audit platform + match card + session review (2026-11-19), branch `fix/web-audit-platform`
+
+Merged `origin/main` (`17e82fc`, shareable match card #59) on top of the earlier `ad3da36` (session review)
+merge to clear PR #61's second conflict round (`docs/STATUS.md`, `docs/spec/08-frontend.md`; both
+append-style, kept all three sides' content). Full recheck on the fully-integrated tree (web-audit
+platform fixes + match card + session review together) in `storm-dev:latest` with a dedicated
+`/src/target` and a throwaway Postgres 17: fmt, strict Clippy (native workspace; web-rs native +
+wasm32), `cargo audit` (one pre-existing `chrono` unmaintained warning, unrelated to this branch),
+530 workspace tests passed (10 ignored), 174 web-rs tests passed, all three Trunk release bundles
+built, actionlint clean, and the server `Dockerfile` built successfully end to end (front-end Trunk
+stage, server cargo-chef stage, runtime image). Bundle sizes on the fully merged tree: **app
+1,026,938 B Brotli** (cap 1,250,000), **overlay 217,950 B gzip**, **sources 181,341 B gzip** (caps
+300,000) — all within budget; the app figure moved from 1,027,189 B (match card + session review
+only) to 1,026,938 B after also integrating this branch's own platform fixes (no new web-rs code in
+this branch, so the figure is essentially a wash, not an additive stack). No push beyond
+`fix/web-audit-platform` itself at commit time; no release or deploy.
+
 ## Web audit platform slice (2026-11-19), branch `fix/web-audit-platform`
 
 Docker and Windows packaging generate Brotli/gzip siblings; the loopback binary served them byte for
@@ -33,6 +50,33 @@ three Trunk release bundles built. Bundle sizes on the merged tree: app 1,016,39
 1,250,000), overlay 217,926 B gzip, sources 181,343 B gzip (caps 300,000) — all within budget; the app
 figure moved from 996,438 B to 1,016,390 B because of the session-review page merged in from main, not
 this PR's own change. No push, release or deploy beyond `fix/web-audit-platform` itself.
+## Shareable match card (2026-11-19), branch `feat/match-card`
+
+Approved spec: `docs/specs/2026-11-19-match-card.md`. Match page: "Save as image" + "Show player names"
+toggle (off by default, remembered). The 1200×675 PNG is drawn client-side on a canvas (`core/card.rs` pure
+layout + tests, `app/card.rs` thin canvas code) from the match detail, insights fights, minimap and portraits,
+then saved through `<a download>`. No API change, no new crate (one `web-sys` feature, `TextMetrics`).
+
+Earlier Chromium check on a committed-replay fixture (win, names on/off, missing minimap, missing portrait):
+render+download about 200 ms. **Not done**: box DB games
+(loss, no operator account), installed WebView2 download on MH-Home (acceptance item 15; decides the
+`save_card` fallback).
+
+Review fixes: the keyboard-operable privacy switch invalidates a named export before download;
+unknown results no longer claim a winner, and download setup failures are reported.
+
+Merged `origin/main` (`b89c12d`). Linux PostgreSQL 17 workspace tests: 513 passed, 10 ignored; web tests:
+167 passed, including 14 card tests. Release app: **1,007,131 bytes Brotli** (cap 1,250,000). On the integrated
+release bundle, Chromium saved an actual 1200×675 PNG with names off, canceled a held named export after the
+keyboard toggle went off and back on, and surfaced an injected download setup failure. The fixture used a
+committed replay with no operator configured and no artwork. Installed WebView2 item 15 still needs a real
+file-save check; no native fallback was added.
+
+Merged `origin/main` (`ad3da36`, session review) to pick up the merged session-review PR. Docker checks on the
+integrated branch (storm-dev, throwaway PostgreSQL): fmt, strict clippy (native workspace; web-rs native + wasm32),
+full workspace tests 526 passed/0 failed/3 ignored, web-rs tests 173 passed, trunk release build of all three
+bundles. Release app with both features integrated: **1,027,189 bytes Brotli** (cap 1,250,000, overlay 217,627
+bytes gzip, sources 181,306 bytes gzip).
 
 ## Session review (2026-11-19), branch `feat/session-review`
 
