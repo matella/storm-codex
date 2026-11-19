@@ -1,6 +1,9 @@
 # Quality CI: format + frozen migrations, strict clippy + Rust tests (with a service Postgres
 # → the DB-gated integration tests really run), dependency audit, front-end tests & build.
 # The ghcr.io image is only published (`publish` job) after all these jobs succeed.
+# Every action is pinned to a full commit SHA, version in a comment (Dependabot `github-actions` bumps them).
+# dtolnay/rust-toolchain has no version tags: pinned to its `stable` branch commit, the toolchain is chosen by the
+# explicit `toolchain: stable` input (a SHA ref no longer selects it).
 name: ci
 on:
   push:
@@ -14,16 +17,19 @@ jobs:
   checks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # the migrations check compares against the base
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable branch, 2026-11-15
         with:
+          toolchain: stable
           components: rustfmt
       - name: format (cargo fmt)
         run: cargo fmt --all -- --check
       - name: download page generator (scripts/build-pages.py)
         run: python3 -m unittest discover -s scripts -p 'test_build_pages.py'
+      - name: desktop release notes generator (scripts/release-notes.py)
+        run: python3 -m unittest discover -s scripts -p 'test_release_notes.py'
       - name: existing migrations unchanged
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
@@ -47,11 +53,12 @@ jobs:
     env:
       DATABASE_URL: postgres://storm:storm@localhost:5432/storm_codex
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable branch, 2026-11-15
         with:
+          toolchain: stable
           components: clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: clippy (strict)
         run: cargo clippy --workspace --all-targets -- -D warnings
       # The data files of the pinned HotsPatchNotes dataset release (desktop/referential-pin.txt): the refdata
@@ -77,11 +84,12 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable branch, 2026-11-15
         with:
+          toolchain: stable
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: |
             . -> target
@@ -109,8 +117,8 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: taiki-e/install-action@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
         with:
           tool: cargo-audit
       - name: cargo audit (RustSec)
@@ -119,15 +127,16 @@ jobs:
   web-rs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable branch, 2026-11-15
         with:
+          toolchain: stable
           components: clippy
           targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: web-rs
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
         with:
           tool: trunk
       - name: "clippy (native, core)"
@@ -166,9 +175,9 @@ jobs:
       contents: read
       packages: write # push to ghcr.io (GITHUB_TOKEN is enough)
     steps:
-      - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/login-action@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -180,7 +189,7 @@ jobs:
           if [ "${GITHUB_REF}" = "refs/heads/main" ]; then tags="$tags,$img:latest"; fi
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then tags="$tags,$img:${GITHUB_REF_NAME}"; fi
           echo "tags=$tags" >> "$GITHUB_OUTPUT"
-      - uses: docker/build-push-action@v7
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           push: true
