@@ -2,38 +2,31 @@
 
 # Storm Codex
 
-A ground-up renovation of [Stats of the Storm](https://github.com/ebshimizu/stats-of-the-storm) —
-a Heroes of the Storm replay stat tracker — rebuilt as:
+Storm Codex turns your Heroes of the Storm replays into a match history you can browse and analyze. Review a fight on the map, compare two players, or see how your results vary by hero and battleground. The Windows app stores your replays and stats on your PC, with no Storm Codex account required.
 
-- **`storm-replay`** — a Rust crate decoding `.StormReplay` files (MPQ + versioned bit-packed
-  protocol, tables generated from [Blizzard/heroprotocol](https://github.com/Blizzard/heroprotocol)).
-- **`storm-stats`** — a Rust crate turning decoded replays into rich match stats: per-map
-  objective timelines, team fights, XP/level advantage, taunts/BM detection, enriched takedowns,
-  awards — a full port of [hots-parser](https://github.com/ebshimizu/hots-parser)'s logic.
-- **`storm-codex-server`** — a single-binary axum server: authenticated replay upload, parallel
-  parse workers, PostgreSQL projections, WebSocket push (end of game → page updated in < 5 s),
-  full-archive backfill, raw-stream decode on demand.
-- **A fast SPA** (React + Vite) with complete Stats-of-the-Storm feature parity — matches, match
-  detail, players, heroes, talent builds, compositions, trends by patch, teams & leagues,
-  collections, maps, rankings — plus an OBS stream widget for post-game summaries.
+## Run it on Windows
 
-Status: **built and running** — full Stats-of-the-Storm feature parity, integrated patch notes,
-OBS overlays, deployed via Docker. For the all-in-one self-hosted bundle (one `docker compose up`,
-pre-seeded referential), see **[storm-codex-suite](https://github.com/matella/storm-codex-suite)**.
+Check [GitHub Releases](https://github.com/matella/storm-codex/releases) for a published `StormCodex_<version>_x64-setup.exe`. If no installer is listed, there is no public Windows build yet. The installer bundles PostgreSQL and manages it for you.
 
-## Documentation (start here)
+1. Launch Storm Codex. It looks for the game's standard replay folders and imports completed `.StormReplay` files.
+2. If you keep replays somewhere else, add the folder under **Admin → This PC**. Check **My identity** if the app hasn't picked up your account.
+3. Open **Matches** to browse the import. Leave the app running to pick up new replays after each game.
 
-| Doc | What |
-|---|---|
-| [`docs/STATUS.md`](docs/STATUS.md) | Where the project is, what's next — read first |
-| [`docs/specs/2026-06-12-storm-codex-design.md`](docs/specs/2026-06-12-storm-codex-design.md) | The validated program design (architecture, data model, perf budgets, milestones) |
-| [`docs/specs/2026-06-12-storm-codex-mockup.html`](docs/specs/2026-06-12-storm-codex-mockup.html) | Visual reference — all 14 screens (open in a browser) |
-| [`docs/research/2026-06-12-stats-of-the-storm-renovation.md`](docs/research/2026-06-12-stats-of-the-storm-renovation.md) | Research dossier: SotS anatomy, dependency verdicts, parser-engine comparison, ecosystem |
-| [`docs/research/hots-replay-data-reference.md`](docs/research/hots-replay-data-reference.md) | Complete `.StormReplay` data location reference (from SotS docs) |
+The match page includes a 2D replay, takedowns, objectives, camp captures, and detected fights. You can select a time range to review events, but replays only provide damage and healing totals for the whole match.
 
-## Acknowledgements
+## Self-host with Docker
 
-Stats of the Storm and hots-parser by [@ebshimizu](https://github.com/ebshimizu) (MIT) — this
-project is a re-architecture of those ideas, not a fork. Replay format reference courtesy of the
-same project. Heroes of the Storm™ is a trademark of Blizzard Entertainment, Inc. This project is
-not affiliated with Blizzard.
+Use [storm-codex-suite](https://github.com/matella/storm-codex-suite) for the Docker Compose setup. See the [operations guide](docs/spec/09-operations.md) for server configuration, OBS sources, and desktop release instructions. The desktop replay watcher imports **completed** games; it does not provide an in-progress game feed.
+
+## Source and documentation
+
+- [`storm-replay`](crates/storm-replay) decodes `.StormReplay` files using tables generated from [Blizzard's heroprotocol](https://github.com/Blizzard/heroprotocol).
+- [`storm-stats`](crates/storm-stats) turns decoded events into match stats.
+- [`storm-codex-server`](crates/storm-codex-server) provides replay ingestion and the API using Axum and PostgreSQL.
+- [`web-rs`](web-rs) contains the Leptos web app and OBS sources. [`desktop`](desktop) contains the Tauri Windows shell and installer configuration.
+
+Start with the [technical documentation](docs/spec/README.md), [development workflow](docs/spec/10-developpement.md), or [Windows acceptance checklist](docs/standalone-acceptance.md). See [project status](docs/STATUS.md) for work in progress.
+
+## Credits
+
+Storm Codex is a Rust rewrite inspired by [Stats of the Storm](https://github.com/ebshimizu/stats-of-the-storm) and [hots-parser](https://github.com/ebshimizu/hots-parser) by [@ebshimizu](https://github.com/ebshimizu). Heroes of the Storm is a trademark of Blizzard Entertainment, Inc. This project is not affiliated with Blizzard.
