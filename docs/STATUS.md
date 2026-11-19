@@ -1,5 +1,23 @@
 # STATUS — read first, update last
 
+## Merge of `origin/main` into `fix/web-audit-image-proxy` (2026-11-19)
+
+Merged `origin/main` (`1c160c4`, App-slice accessibility fixes #63) into this branch as a true merge
+commit (head `4e2b7e2`), resolving PR #64's CONFLICTING/DIRTY state. Conflict only in `docs/STATUS.md`
+(append-style dated sections); kept every section from both sides, newest first. `docs/spec/08-frontend.md`
+and every `web-rs/**` file auto-merged cleanly and are byte-identical to `origin/main` after the merge —
+this branch never touches `web-rs` or `08-frontend.md` (server-side only change), so there is no bundle-size
+history to fold and no stale placeholder to update there.
+
+Full CI-equivalent suite on the merged tree (`storm-dev:latest`, throwaway PostgreSQL 17 on port 55470,
+worktree-local `target/` as the dedicated target dir): `cargo fmt --all -- --check` and
+`cargo clippy --locked --workspace --all-targets -- -D warnings` passed; 550 workspace tests passed (0
+failed, 10 ignored); `web-rs` fmt/clippy native + wasm32 passed; 181 `web-rs` tests passed; all three Trunk
+release builds passed their size budgets — overlay 217,951 bytes gzip, sources 181,334 bytes gzip, **app
+1,047,110 bytes Brotli** (cap 1,250,000, unchanged from before the merge since no `web-rs` file is touched by
+this branch). Not run: real OBS, Windows installer, box DB validation, independent review, deploy. Pushed to
+`origin/fix/web-audit-image-proxy`; PR #64 not merged (operator decision).
+
 ## Patch-note image proxy/cache (2026-11-19), branch `fix/web-audit-image-proxy`
 
 Approved scope: `docs/specs/2026-11-19-patch-image-proxy.md` (addendum to the web-audit-fixes spec,
