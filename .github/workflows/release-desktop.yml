@@ -42,6 +42,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (Node 24)
         with:
           persist-credentials: false # the contents:write token stays out of .git/config (gh gets it via GH_TOKEN)
+          fetch-depth: 0 # history and tags: the release notes start at the previous published desktop-v* tag
       - name: version (tag = desktop/tauri.conf.json)
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -55,6 +56,19 @@ jobs:
           }
           "VERSION=$version" >> $env:GITHUB_ENV
           "TAG=desktop-v$version" >> $env:GITHUB_ENV
+      # Conventional-commit subjects (feat/fix/perf) since the previous published (non-draft) desktop release:
+      # Markdown for the release body, short plain text for latest.json `notes` (scripts/release-notes.py).
+      - name: release notes (commits since the previous published release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $releases = Join-Path $env:RUNNER_TEMP 'releases.jsonl'
+          gh api --paginate "repos/$($env:REPOSITORY)/releases?per_page=100" --jq '.[] | {tag_name, draft, prerelease}' > $releases
+          python scripts/release-notes.py --repo $env:REPOSITORY --version $env:VERSION --releases $releases `
+            --body-out (Join-Path $env:RUNNER_TEMP 'release-body.md') --notes-out (Join-Path $env:RUNNER_TEMP 'release-notes.txt')
+          Get-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'release-body.md') -Raw >> $env:GITHUB_STEP_SUMMARY
       - name: refuse placeholders (updater public key, signing secret)
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -145,7 +159,7 @@ jobs:
           Copy-Item -LiteralPath $sigFile -Destination "out/$name.sig"
           $manifest = [ordered]@{
             version   = $env:VERSION
-            notes     = "Storm Codex $($env:VERSION)"
+            notes     = (Get-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'release-notes.txt') -Raw).Trim()
             pub_date  = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
             platforms = [ordered]@{
               'windows-x86_64' = [ordered]@{
@@ -168,8 +182,12 @@ jobs:
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           $files = (Get-ChildItem out).FullName
+          $changes = Get-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'release-body.md') -Raw
+          $body = Join-Path $env:RUNNER_TEMP 'release-body-full.md'
           if ($env:EVENT_NAME -eq 'push') {
-            gh release create $env:TAG @files --verify-tag --latest --title "Storm Codex $($env:VERSION)" --notes "Windows installer: StormCodex_$($env:VERSION)_x64-setup.exe. Installed apps update themselves."
+            "Windows installer: StormCodex_$($env:VERSION)_x64-setup.exe. Installed apps update themselves.`n`n$changes" | Set-Content -LiteralPath $body -Encoding utf8NoBOM
+            gh release create $env:TAG @files --verify-tag --latest --title "Storm Codex $($env:VERSION)" --notes-file $body
           } else {
-            gh release create $env:TAG @files --draft --target $env:COMMIT_SHA --title "Storm Codex $($env:VERSION) (dry run)" --notes "Dry run from a manual workflow run: a draft, never served to installed apps. Delete it after checking."
+            "Dry run from a manual workflow run: a draft, never served to installed apps. Delete it after checking.`n`n$changes" | Set-Content -LiteralPath $body -Encoding utf8NoBOM
+            gh release create $env:TAG @files --draft --target $env:COMMIT_SHA --title "Storm Codex $($env:VERSION) (dry run)" --notes-file $body
           }

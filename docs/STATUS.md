@@ -1,5 +1,14 @@
 # STATUS — read first, update last
 
+## CI action pins and desktop release notes (2026-11-19), branch `ci/pin-actions-release-notes`
+
+Every action in `ci.yml` is now pinned to a full commit SHA (version in a comment, Dependabot `github-actions`
+bumps them; `dtolnay/rust-toolchain` follows its `stable` branch commit by hand, `toolchain: stable` explicit).
+`release-desktop.yml` builds the release body and latest.json `notes` from conventional commits since the previous
+published desktop release (`scripts/release-notes.py`, tests in the `checks` job). Checked: actionlint, Python unit
+tests, a dry render on the real history. **Not done**: a real `release-desktop` run (next dry run shows the notes in
+the draft body and job summary). The desktop UI does not display `notes` yet (09-operations.md, "Release notes").
+
 ## Standalone reference data downloads, desktop 0.1.2 (2026-11-19), branch `docs/standalone-reference-download`
 
 Approved spec: `docs/specs/2026-11-19-standalone-reference-download.md`. The NSIS installer no longer

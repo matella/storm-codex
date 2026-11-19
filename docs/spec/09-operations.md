@@ -42,8 +42,9 @@ rebuild the bundles with `trunk build --release` if `web-rs/` changed.
 app" below. `pages.yml` deploys the download page: see "Download page (GitHub Pages)" below. Everything else is `ci.yml`.
 
 **Jobs** (push to `main`, `v*` tags, PRs, manual run):
-- `checks`: `cargo fmt --all -- --check`; the download page generator's unit tests
-  (`scripts/test_build_pages.py`); **frozen migrations** (`scripts/check-migrations.sh`):
+- `checks`: `cargo fmt --all -- --check`; the unit tests of the download page generator
+  (`scripts/test_build_pages.py`) and of the desktop release notes generator (`scripts/test_release_notes.py`);
+  **frozen migrations** (`scripts/check-migrations.sh`):
   rejects any change, deletion or rename of a migration already present in the comparison base
   (the target branch for a PR, the previous commit for a push). sqlx checks the
   checksum of every applied migration: rewriting one makes startup fail
@@ -75,12 +76,21 @@ app" below. `pages.yml` deploys the download page: see "Download page (GitHub Pa
   `latest` (push to `main`) and the git tag name (`v*` tag). Docker build cache: GitHub
   Actions (`type=gha`).
 
+**Action pins.** Every action of every workflow (`ci.yml`, `release-desktop.yml`, `pages.yml`) is pinned to a
+full commit SHA with the version in a comment (`uses: owner/repo@<sha> # vX.Y.Z`). Dependabot's `github-actions`
+ecosystem (`.github/dependabot.yml`) proposes the bumps and rewrites SHA and comment together. Exception:
+`dtolnay/rust-toolchain` has no version tags; it is pinned to a commit of its `stable` branch (date in the comment),
+which Dependabot does not track, so refresh it by hand (`gh api repos/dtolnay/rust-toolchain/commits/stable --jq
+.sha`). Since a SHA ref no longer selects the toolchain, every use passes `toolchain:` explicitly (`stable` in
+`ci.yml`, the pinned `RUST_TOOLCHAIN` in the release). Pinning a new action or a bump by hand: `gh api
+repos/<owner>/<repo>/commits/<tag> --jq .sha` (dereferences annotated tags).
+
 The box can update itself with `docker pull ghcr.io/matella/storm-codex:latest` (or go back to
 a specific version with `:sha-…`) instead of a local build — the box's current compose uses `build: .`.
 
 ### Dependency updates and security
 
-Dependabot checks active Cargo workspaces, GitHub Actions, Docker and the npm parity harness weekly. Review its PRs normally; do not auto-merge them or bypass CI. Leave archived spikes out of routine updates. Keep the RustSec audit in CI and preserve full-commit SHA pins in the signing workflow. Review manually pinned tools, binary checksums and reference snapshots separately; a Dependabot PR does not update those as a unit.
+Dependabot checks active Cargo workspaces, GitHub Actions, Docker and the npm parity harness weekly. Review its PRs normally; do not auto-merge them or bypass CI. Leave archived spikes out of routine updates. Keep the RustSec audit in CI and preserve the full-commit SHA pins of every workflow (see "Action pins" above). Review manually pinned tools, binary checksums and reference snapshots separately; a Dependabot PR does not update those as a unit.
 
 GitHub private vulnerability reports, dependency and secret alerts, and CodeQL findings are triaged by the maintainer. Do not paste sensitive findings or secrets into public work items. Use [SECURITY.md](../../SECURITY.md) for disclosure.
 
@@ -627,8 +637,8 @@ web assets and minimaps but no `referential.tar.gz`; installer size and first st
   v7.0.1, Node 24; `dtolnay/rust-toolchain` at the commit of its `stable` branch tip on 2026-11-14 — the
   toolchain itself is pinned by `toolchain: 1.94.0`, env `RUST_TOOLCHAIN`, the version the build is
   checked with locally). Bumping an action = resolve the new tag's commit
-  (`gh api repos/<owner>/<repo>/git/ref/tags/<tag>`, dereferencing an annotated tag) and replace
-  SHA and comment together;
+  (`gh api repos/<owner>/<repo>/commits/<tag> --jq .sha`, which dereferences an annotated tag) and replace
+  SHA and comment together (Dependabot does it for tagged actions);
 - **no build cache** (no `rust-cache`): a restored `~/.cargo/bin` or `target/` could supply a
   `cargo-tauri` or a build output to the step that holds the key. Clean build, releases are rare.
 - tauri-cli and Trunk are the projects' official prebuilt Windows binaries, each checked against a
@@ -639,15 +649,34 @@ web assets and minimaps but no `referential.tar.gz`; installer size and first st
   `cargo install --locked --force` that compiled it from source (~11 of the run's ~33 min,
   measured 2026-11-18);
 - `actions/checkout` with `persist-credentials: false` (the token is not left in `.git/config`;
-  `gh` gets it through `GH_TOKEN`);
+  `gh` gets it through `GH_TOKEN`) and `fetch-depth: 0` (history and tags, for the release notes);
 - event values (`github.ref_name`, `github.event_name`, `github.sha`, `github.repository`) reach the
   scripts through `env:`, never interpolated inside `run:` (a tag name can contain `$(…)`).
-Deferred hardening: `ci.yml` (no signing key; only `publish` writes) still uses movable action refs
-(`actions/checkout@v7`, `dtolnay/rust-toolchain@stable`, `Swatinem/rust-cache@v2`,
-`taiki-e/install-action@v2`, `docker/setup-buildx-action@v4`, `docker/login-action@v4`,
-`docker/build-push-action@v7`) and the default `persist-credentials`; only its `actions/cache`
-(v6.1.0) is SHA-pinned. Every action of both workflows runs on Node 24 or is composite (2026-11-18:
-GitHub deprecated Node 20 actions).
+`ci.yml` (no signing key; only `publish` writes) is SHA-pinned too (2026-11-19, see "Action pins" in the CI
+section) but keeps the default `persist-credentials` and its build caches. Every action of the workflows runs on
+Node 24 or is composite (2026-11-18: GitHub deprecated Node 20 actions).
+
+**Release notes** (`scripts/release-notes.py`, stdlib, tests `scripts/test_release_notes.py` in the `checks` job).
+Before the build, the workflow lists the releases (`gh api --paginate .../releases`) and the script takes the
+conventional-commit subjects (`git log --no-merges`) from the previous **published** desktop release (highest
+`desktop-vX.Y.Z` below the version being built, drafts and prereleases ignored) to the built commit. Without one,
+it starts at the first commit touching `desktop/`, capped at the last 50 commits. Kept: `feat`, `fix`, `perf`,
+grouped (Features, Fixes, Performance), scope stripped, first letter capitalised, a trailing `(#N)` turned into a PR
+link, duplicates dropped. Dropped: every other type (`chore`, `ci`, `docs`, `test`, `build`, `refactor`…), any
+`(deps)` scope and non-conventional subjects (merge commits included, so commits of a PR merged with a merge commit
+appear without their PR number). Outputs:
+- the GitHub Release body: Markdown, at most 25 entries then "…and N more changes.", a compare link
+  `<previous tag>...<commit>` (a fallback sentence without a previous release), under the installer (or dry-run)
+  line; also printed in the job summary;
+- latest.json `notes`: plain text, at most 8 entries and 600 characters (`New:`/`Fixed:`/`Faster:` headers,
+  `- ` items, no links, `+ N more (see the release page).`); "Maintenance release (no user-facing changes)." when
+  nothing is kept.
+The shell does not show `notes` today: `UpdateStatus` (`desktop/src/updater.rs`) carries only state and version,
+and the web banner says "Storm Codex X.Y.Z is ready to install." Showing them needs the shell to forward
+`Update::body` in `update_status` and the banner to render it as plain text (white-space: pre-line). A missing
+previous tag in the clone fails the run rather than producing wrong notes. Local preview:
+`gh api --paginate repos/matella/storm-codex/releases --jq '.[] | {tag_name, draft, prerelease}' > /tmp/rel.jsonl`
+then `python3 scripts/release-notes.py --repo matella/storm-codex --version X.Y.Z --releases /tmp/rel.jsonl`.
 
 **Cutting a release.**
 1. Keep `version` (`X.Y.Z`) in `desktop/tauri.conf.json`, `desktop/Cargo.toml` and the
@@ -661,10 +690,10 @@ GitHub deprecated Node 20 actions).
    `TAURI_CLI_SHA256`; NSIS is downloaded by the Tauri bundler itself); builds the three `web-rs` bundles, `cargo build --release --locked -p
    storm-codex-server`, then `cargo tauri build --config tauri.bundle.conf.json` with the signing
    secrets in the environment (gives `…-setup.exe` and its `.sig`).
-4. It publishes, with `gh release create --latest`, the release `desktop-vX.Y.Z` with
+4. It publishes, with `gh release create --latest` and the generated release notes as body, the release `desktop-vX.Y.Z` with
    `StormCodex_X.Y.Z_x64-setup.exe` (renamed: no spaces, so the URL is stable), its `.sig` and
    `latest.json`:
-   `{"version": "X.Y.Z", "notes": "...", "pub_date": "<RFC 3339>", "platforms": {"windows-x86_64":
+   `{"version": "X.Y.Z", "notes": "<generated plain-text notes>", "pub_date": "<RFC 3339>", "platforms": {"windows-x86_64":
    {"signature": "<content of the .sig>", "url": "https://github.com/<repo>/releases/download/desktop-vX.Y.Z/StormCodex_X.Y.Z_x64-setup.exe"}}}`
    (static updater manifest: `version`, `platforms.<target>.url` and `.signature` required; the
    signature is the file's content, not a path). Installed apps read
