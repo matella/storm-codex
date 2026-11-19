@@ -278,11 +278,11 @@ pub fn server_env(
         ("LEDGER_FILE", data.ledger().into()),
         ("WEB_DIR", resource_dir.join("web").into()),
         ("MINIMAPS_BUNDLE_DIR", resource_dir.join("minimaps").into()),
-        (
-            "REFERENTIAL_FILE",
-            resource_dir.join("referential.tar.gz").into(),
-        ),
     ];
+    let legacy_bundle = resource_dir.join("referential.tar.gz");
+    if legacy_bundle.is_file() {
+        env.push(("REFERENTIAL_FILE", legacy_bundle.into()));
+    }
     for &name in SERVER_ENV_PASSTHROUGH {
         if let Some(value) = inherited(name) {
             env.push((name, value));
@@ -1183,12 +1183,29 @@ mod tests {
             get("MINIMAPS_BUNDLE_DIR"),
             path(Path::new("C:/res").join("minimaps"))
         );
-        assert_eq!(
-            get("REFERENTIAL_FILE"),
-            path(Path::new("C:/res").join("referential.tar.gz"))
-        );
         assert!(get("DATABASE_URL").is_some_and(|u| u.contains("@127.0.0.1:")));
         assert_eq!(cmd.log, data.logs().join("server.log"));
+    }
+
+    #[test]
+    fn server_env_only_passes_a_legacy_reference_file_from_resources() {
+        let resources = tempfile::tempdir().expect("resources");
+        let data = DataDir::new(resources.path().join("data"));
+        let bundle = resources.path().join("referential.tar.gz");
+        let reference_file = || {
+            server_env(resources.path(), &data, SERVER_PORT, String::new(), |_| {
+                Some("parent-value".into())
+            })
+            .into_iter()
+            .find_map(|(key, value)| (key == "REFERENTIAL_FILE").then_some(value))
+        };
+
+        assert_eq!(reference_file(), None, "fresh install");
+        std::fs::create_dir(&bundle).expect("directory in place of bundle");
+        assert_eq!(reference_file(), None, "a directory is not a bundle");
+        std::fs::remove_dir(&bundle).expect("remove directory");
+        std::fs::write(&bundle, b"legacy bundle").expect("bundle file");
+        assert_eq!(reference_file(), Some(bundle.into_os_string()));
     }
 
     /// Every name the shell may set: its own contract variables plus the allow-list.

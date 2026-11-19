@@ -1,5 +1,16 @@
 # STATUS — read first, update last
 
+## Standalone reference packaging (2026-11-19), branch `work/standalone-ref-pack`
+
+Packaging slice of `docs/specs/2026-11-19-standalone-reference-download.md`: desktop 0.1.2 no
+longer downloads or packages a reference snapshot at build time. PostgreSQL, the web frontend,
+minimaps and optional legacy local ingestion remain; application publishing and updates are unchanged.
+The 0.1.1 draft baseline is **110,766,415 bytes**. Local resource/config checks, desktop formatting,
+and a Linux harness for the desktop supervision and backup modules passed (37 tests, one ignored).
+The full desktop test build was blocked by missing Linux GLib development files. The operator's
+Windows draft build, payload inspection, size comparison and installed acceptance are pending.
+Runtime reference sync is separate from this change.
+
 ## Standalone identity and import polish (2026-11-18), branch `fix/standalone-identity-import`
 
 Approved scope: `docs/specs/2026-11-18-standalone-identity-import-polish.md`. My Identity shows the latest known name for each standard replay folder by ToonHandle and replay time; manual names remain separate. Verified handles keep older matches attributable after a rename. A flat folder without a verifiable handle does not guess its owner. Import publishes initialized counters, preserves the settled status on no-op rescans, and ignores stale poll responses.
@@ -39,8 +50,8 @@ box loader `REFDATA_URL` + standalone `ingest_bundle` + `refdata trim`); migrati
 `/api/patches/{id}` accepts an old id; PTR kept out of `/hero-changes`; "Community notes" label in the patch pages.
 Removed: `dim.rs` (`sync_*`, `vendor_images`, `backfill_hero_sections`, `ingest_snapshot*`), `read::hpn_proxy`,
 `HOTSPATCHNOTES_URL`, `REFERENTIAL_URL`, `scripts/make-referential.sh`, `scripts/fetch-referential.ps1`.
-`desktop/referential-pin.txt` now pins release `data-d6776d73…` (2026-11-16; the release workflow downloads and trims
-it). That release came from HotsPatchNotes PR 6: 260 patches (blog/forum duplicates merged), old ids as aliases, the
+`desktop/referential-pin.txt` pins release `data-d6776d73…` (2026-11-16; formerly used by the desktop release
+workflow, now retained for CI tests). That release came from HotsPatchNotes PR 6: 260 patches (blog/forum duplicates merged), old ids as aliases, the
 square `heroSelect` icons (D3), and a file-safe `Battleground.slug` that names the map art (the front's `map_slug`
 follows the same rule, so "Checkpoint: Hanamura" → `checkpoint-hanamura`).
 

@@ -230,7 +230,7 @@ fresh migrated cluster → import.
   covered by the uninstaller's "delete app data" option): `pg/`, `pg-password`, `archive/`,
   `raw-cache/`, `images/`, `logs/`, `uploaded.json`. Resources (next to the exe once packaged):
   `storm-codex-server.exe`, `postgres/{bin,lib,share}`, `web/` (= `web-rs/dist`), `minimaps/`
-  (= `assets/minimaps`), `referential.tar.gz`. The Tauri identifier `com.matella.stormcodex`
+  (= `assets/minimaps`). The Tauri identifier `com.matella.stormcodex`
   determines the data root `%LOCALAPPDATA%\com.matella.stormcodex`; changing it orphans the
   users' data, so it must stay stable (packaging keeps it).
 - **Start (`Stack::start`).** `DataDir::ensure` → Postgres port (`pick_port(54329)`) →
@@ -246,8 +246,9 @@ fresh migrated cluster → import.
   The URLs the app shows use `127.0.0.1` (the page origin). Server environment: `STANDALONE=1`,
   `BIND_ADDR=127.0.0.1:<port>`, `DATABASE_URL` (holds the password: never logged),
   `ARCHIVE_DIR`, `RAW_CACHE_DIR`, `IMAGES_DIR`, `LEDGER_FILE=<data>/uploaded.json`,
-  `WEB_DIR=<res>/web`, `MINIMAPS_BUNDLE_DIR=<res>/minimaps`,
-  `REFERENTIAL_FILE=<res>/referential.tar.gz`. **Allow-list:** the child starts from an empty
+  `WEB_DIR=<res>/web`, `MINIMAPS_BUNDLE_DIR=<res>/minimaps`. The supervisor sets
+  `REFERENTIAL_FILE=<res>/referential.tar.gz` only if that path is a file (legacy installs and
+  local test resources). **Allow-list:** the child starts from an empty
   environment (`env_clear`) and gets only these plus, when the shell has them, `SystemRoot` and
   `windir` (Winsock/CNG/COM need them), `TEMP`, `TMP`, `USERPROFILE` (`std::env::temp_dir()`; the
   server extracts the referential and decodes cast replays there), `PATH` (system DLL search)
@@ -527,9 +528,8 @@ fresh migrated cluster → import.
   what `supervise.rs` resolves: `../target/release/storm-codex-server.exe` →
   `storm-codex-server.exe`; `../target/postgres/` (from `scripts/fetch-postgres.ps1`) →
   `postgres/`; `../web-rs/dist/` → `web/` (`app/`, `overlay/`, `sources/`); `../assets/minimaps/` →
-  `minimaps/`; `../target/referential/referential.tar.gz` (trimmed by `storm-codex-server refdata trim`
-  in the release workflow) → `referential.tar.gz`. `loading.html` is not a resource: it is `build.frontendDist` (`desktop/ui`),
-  embedded in the executable.
+  `minimaps/`. The default installer does not contain `referential.tar.gz`.
+  `loading.html` is not a resource: it is `build.frontendDist` (`desktop/ui`), embedded in the executable.
 - **Uninstall: keep or delete the data.** Tauri's NSIS template already provides it: the
   uninstaller's confirmation page has a **"Delete the application data"** checkbox, **unticked by
   default**; only when ticked does it remove `%LOCALAPPDATA%\com.matella.stormcodex` (the data root:
@@ -556,34 +556,22 @@ fresh migrated cluster → import.
   info → Run anyway**. The updater signature (minisign, below) is unrelated: it protects updates,
   not the first install.
 
-### Reference-data snapshot (`referential.tar.gz`)
+### Reference data and legacy snapshots
 
-Spec `docs/specs/2026-11-15-reference-dataset-adapter-design.md` (D5).
+The approved `docs/specs/2026-11-19-standalone-reference-download.md` supersedes the installer
+snapshot requirement. From 0.1.2, the desktop release build neither downloads the reference
+dataset nor trims an archive for the installer. Runtime sync is separate from this packaging
+change and from the signed application updater.
 
-- **Source and pin.** `desktop/referential-pin.txt` pins a HotsPatchNotes **dataset release**
-  (schema v1): `url=` the release's `dataset.tar.gz`, `sha256=` its SHA-256 (the release tag is
-  `data-<that SHA-256>`). Current pin: `data-d6776d732e7265d6b714dfce5ba508b1bc8975ea7cadc4a18a41ba5b337a2c0f`
-  (2026-11-16, game 2.57.0.98348, `datasetVersion` `aacf7673…`; 260 patches, square hero icons, map `slug`). Refresh = pick a newer release, change
-  both lines in one commit.
-- **Build (release workflow).** Step "reference dataset" downloads the pinned `dataset.tar.gz`,
-  refuses a non-https URL or a hash mismatch and writes `dataset.tar.gz.sha256`; once the server is
-  built, step "reference bundle" runs `storm-codex-server refdata trim --from <dataset.tar.gz> --out
-  target/referential/referential.tar.gz` (checks the `.sha256` again, the schema version and every
-  kept file against the manifest; `04-serveur.md`). The bundle keeps the manifest, `game.json`,
-  `patches.json`, `assets.json`, `locales/enus.json` and the images the app shows (hero portraits,
-  map art); not the talent/ability icons, the other 11 locales, the schemas or the licences.
-  Locally: `gh release download <tag> -R matella/HeroesOfTheStormPatchNotes -p 'dataset.tar.gz*'`
-  then the same `refdata trim` command.
-- **Measured** (release `data-d6776d73…`, 2026-11-16, release build on the gaming PC):
-  `dataset.tar.gz` 100,024,455 bytes → `referential.tar.gz` **66,237,721 bytes** (125 files: 91 square
-  hero icons, 29 map arts, 5 JSON files; trim ≈ 2 s). The PNG art does not compress:
-  it is most of the size.
-- **Stale snapshot (accepted risk).** A standalone install never contacts HotsPatchNotes: heroes,
-  talents and patches released after the pinned dataset are unknown until a new installer ships
-  with a newer pin (new hero = generic portrait and missing talent names; replays still import and
-  every stat is computed from the replay itself). The updated app sees a bundle whose SHA-256
-  differs from the one it last ingested and ingests it at the next start (`04-serveur.md`,
-  Reference data). A runtime refresh stays out of scope (spec non-goal).
+- **CI pin.** `desktop/referential-pin.txt` is kept for `ci.yml` full-release adapter tests, not used
+  by `release-desktop.yml`. To refresh the fixture pin, update the dataset URL and SHA-256 together.
+- **Legacy and local tests.** Existing imported rows and images are not removed. A local
+  `referential.tar.gz` file found in the resource directory can still be ingested at startup
+  (see `04-serveur.md`). To build a local fixture, obtain `dataset.tar.gz` with its `.sha256` and
+  run `storm-codex-server refdata trim --from <dataset.tar.gz> --out <res>/referential.tar.gz`.
+- **Size baseline.** The old trimmed archive was **66,237,721 bytes** for dataset release
+  `data-d6776d73…`. This is the archive size, not the installer savings. Compare the official
+  0.1.2 NSIS installer with the 0.1.1 draft baseline below.
 
 ### Releasing the desktop app (`release-desktop.yml`)
 
@@ -597,7 +585,6 @@ Spec `docs/specs/2026-11-15-reference-dataset-adapter-design.md` (D5).
    `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Never committed, never in logs.
 3. Replace `plugins.updater.pubkey` in `desktop/tauri.conf.json` with the **content** of
    `storm-codex.key.pub` (one base64 line), commit. Builds made before that never check for updates.
-4. Build, upload and pin the reference-data snapshot (above).
 
 **Dry run** (no tag, nothing reaches users): Actions → `release-desktop` → Run workflow. Same build,
 published as a **draft** release `desktop-v<version>` targeting the commit (drafts are never
@@ -609,8 +596,8 @@ check, fill in the measurements below, then delete the draft. Do it before taggi
 the "Quit it first" message and leaves it running; installing over an app killed from Task Manager
 (its Postgres still running) stops that Postgres (`logs/postgres.log` shows a fast shutdown) and
 replaces `postgres\`; the uninstaller shows the "Delete the application data" box unticked and
-keeps `%LOCALAPPDATA%\com.matella.stormcodex` when left unticked; installer size and first start
-measured.
+keeps `%LOCALAPPDATA%\com.matella.stormcodex` when left unticked; the payload includes Postgres,
+web assets and minimaps but no `referential.tar.gz`; installer size and first start are measured.
 
 **Supply-chain rules of the release job** (it holds `contents: write` and the signing key):
 - every action pinned to a full commit SHA with the version in a comment (`actions/checkout`
@@ -640,16 +627,16 @@ Deferred hardening: `ci.yml` (no signing key; only `publish` writes) still uses 
 GitHub deprecated Node 20 actions).
 
 **Cutting a release.**
-1. Bump `version` in `desktop/tauri.conf.json` (`X.Y.Z`; also `desktop/Cargo.toml` for clarity),
-   commit, push.
+1. Keep `version` (`X.Y.Z`) in `desktop/tauri.conf.json`, `desktop/Cargo.toml` and the
+   `storm-codex-desktop` entry in `desktop/Cargo.lock` in sync. Commit and push.
 2. `git tag desktop-vX.Y.Z && git push origin desktop-vX.Y.Z` (the tag must equal the config
    version, else the workflow fails).
 3. The workflow (windows-latest): refuses a placeholder updater pubkey or a missing signing secret;
-   fetches the pinned reference dataset and Postgres 17 (both SHA-256 checked);
+   fetches pinned Postgres 17 (SHA-256 checked);
    installs pinned tools (Rust `1.94.0` + `wasm32-unknown-unknown`; Trunk prebuilt `0.22.0-beta.1`,
    SHA-256 checked against the committed `TRUNK_SHA256`; tauri-cli `2.12.4` prebuilt, checked against
    `TAURI_CLI_SHA256`; NSIS is downloaded by the Tauri bundler itself); builds the three `web-rs` bundles, `cargo build --release --locked -p
-   storm-codex-server`, trims the reference bundle (`refdata trim`), then `cargo tauri build --config tauri.bundle.conf.json` with the signing
+   storm-codex-server`, then `cargo tauri build --config tauri.bundle.conf.json` with the signing
    secrets in the environment (gives `…-setup.exe` and its `.sig`).
 4. It publishes, with `gh release create --latest`, the release `desktop-vX.Y.Z` with
    `StormCodex_X.Y.Z_x64-setup.exe` (renamed: no spaces, so the URL is stable), its `.sig` and
@@ -663,11 +650,13 @@ GitHub deprecated Node 20 actions).
    dataset releases live in the HotsPatchNotes repository, not here).
 5. The job summary prints the installer size.
 
-**Measurements** (no cap, per the spec; to fill in at the first dry run / Task 10):
+**Measurements** (no cap, per the spec):
 
 | Measure | Value | Date / build |
 |---|---|---|
-| Installer size (`StormCodex_X.Y.Z_x64-setup.exe`) | not measured yet (no installer built) | — |
+| Installer size (`StormCodex_0.1.1_x64-setup.exe`) | **110,766,415 bytes** (GitHub draft asset metadata) | 2026-11-19, `desktop-v0.1.1` draft |
+| 0.1.2 installer size and difference vs. 0.1.1 | pending official NSIS build | — |
+| First reference sync transfer | pending installed-build measurement with runtime sync | — |
 | First start, install → app window (clean profile, empty data) | not measured yet (installed build) | — |
 | First start, empty data root → first page served (dev run: **debug** shell, release server, initdb + migrations + a tiny test snapshot) | 7.7 s and 8.8 s (2 runs) | 2026-11-14, `feat/standalone-installer` |
 | Restart with existing data → first page served (same dev run) | 3.5 s and 3.6 s (2 runs; one after a hard kill) | 2026-11-14 |
@@ -675,9 +664,8 @@ GitHub deprecated Node 20 actions).
 
 Method and the other figures (parse, API p95): [`docs/standalone-acceptance.md`](../standalone-acceptance.md).
 
-**Not verified yet** (no tag pushed, no workflow run): the real `cargo tauri build`, the NSIS
-hooks at install/uninstall time, the keep/delete prompt, the release workflow end to end and the
-`latest.json` consumed by a real update.
+**Not verified for 0.1.2:** the Windows release workflow, NSIS payload and installed behavior
+(including hooks, keep/delete prompt, and upgrade from 0.1.1).
 
 ## External dependencies (all best-effort)
 

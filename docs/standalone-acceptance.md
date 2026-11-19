@@ -86,8 +86,8 @@ result and date next to each step, and copy the measurements into `docs/spec/09-
 
 **Before (one time, see 09-operations "Releasing the desktop app"):** generate the updater key
 pair, set `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, replace
-`plugins.updater.pubkey`, build/upload/pin the reference snapshot, run the release workflow as a
-**dry run** (draft) and download the installer. Record the installer size.
+`plugins.updater.pubkey`, run the release workflow as a **dry run** (draft) and download the
+installer. Record the installer size.
 
 0. **VM without the VC++ redistributable** (check *Apps → Installed apps*: no "Microsoft Visual
    C++ 2015-2022 Redistributable (x64)"; `C:\Windows\System32\vcruntime140.dll` absent). Do steps
@@ -122,8 +122,8 @@ pair, set `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, 
    N+1; all matches still there; `server.log` shows the migrations. Repeat with the click during
    a backfill: resumes, nothing uploaded twice. Also run N+1's installer by hand over N: data kept.
    If N+1 raises `PARSER_VERSION`: the Welcome page shows "Updating your stats for this version:
-   n of m" until done, and `uploads.parser_version` ends at the new value. If N+1 ships a newer
-   reference snapshot: a hero or talent only in the new snapshot shows its portrait and name.
+   n of m" until done, and `uploads.parser_version` ends at the new value. For 0.1.1 → 0.1.2,
+   verify that existing reference rows and cached artwork remain usable offline.
 7. **Installer hooks.** Run the installer while the app runs: "Quit it first" message, app left
    running. Kill the app in Task Manager (Postgres keeps running), run the installer: it stops
    that Postgres (`postgres.log` fast shutdown) and replaces `postgres\`.
@@ -147,6 +147,11 @@ pair, set `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, 
     rows' old absolute paths are resolved under the VM's archive).
 13. **Perf on the operator's PC with the installed build:** first start → window and → `ready`
     on the real replays; API p95 with the installed build.
+14. **Reference-free installer (0.1.2).** Inspect the official NSIS payload: the server,
+    Postgres, web bundles and minimaps are present, with no `referential.tar.gz`. Record the
+    exact installer size and compare it with the 0.1.1 draft (**110,766,415 bytes**). With WebView2
+    available and networking disabled, install on a fresh profile, import a real replay and browse
+    it. See `docs/specs/2026-11-19-standalone-reference-download.md` for runtime sync acceptance.
 
 ## Known limitations (v1, accepted or deferred)
 

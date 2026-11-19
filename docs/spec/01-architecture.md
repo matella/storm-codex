@@ -57,7 +57,8 @@ Design: `docs/specs/2026-11-12-standalone-installer-design.md`.
   latest validated release, SHA-256 verified, refreshed every 24 h. Standalone checks the same stable
   feed independently of startup, replay import and application updates. It activates only after its
   required images are staged and verified; offline startup uses cached data or replay-derived fallbacks.
-  The existing local bundle remains supported (approved download spec, 2026-11-19).
+  The standard installer does not include the reference snapshot; legacy local bundles remain supported
+  ([approved download spec](../specs/2026-11-19-standalone-reference-download.md)).
 - **`PARSER_VERSION`** (`main.rs`): bump on every projection change; it is what drives
   re-processing.
 
