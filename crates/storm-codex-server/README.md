@@ -1,13 +1,14 @@
 # storm-codex-server
 
 Single Storm Codex server (milestone 3): **upload → parse → Postgres → real time → REST**.
-axum 0.8 + sqlx 0.8 + tokio. Replaces Hots-Overlay's local Node/Mongo server.
+Uses Axum, Tokio, SQLx, and PostgreSQL.
 
 ## Getting started (dev)
 
 ```bash
 docker compose -f docker-compose.dev.yml up -d        # Postgres 17 on :5433
-cp .env.example .env                                  # DATABASE_URL, ARCHIVE_DIR…
+export DATABASE_URL=postgres://storm:storm@127.0.0.1:5433/storm_codex
+export BIND_ADDR=127.0.0.1:8088
 cargo run -p storm-codex-server                       # automatic migrations, listens on :8088
 ```
 
@@ -33,8 +34,7 @@ cargo run -p storm-codex-server                       # automatic migrations, li
   `project_match` is idempotent (delete-then-insert), with retry on deadlock.
 
 ## Deployment
-Dev = local Docker Postgres (gaming PC). Target: the box (192.168.129.85) via rsync + docker
-compose build. Config 100% through env (stateless server, V2-ready).
+Configuration comes from environment variables. For deployment, see the [operations guide](../../docs/spec/09-operations.md) and [security policy](../../SECURITY.md).
 
 ## Licence
 MIT. Not affiliated with Blizzard.

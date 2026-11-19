@@ -1,0 +1,15 @@
+name: Feature request
+description: Suggest an improvement to Storm Codex
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the problem and whether it affects Windows, self-hosting, or OBS.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Include alternatives or any offline requirements if relevant.
