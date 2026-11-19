@@ -11,6 +11,24 @@ six OBS routes passed the Chromium fixture smoke. Bundle sizes: app 996,438 B Br
 217,940 B gzip, sources 181,344 B gzip. Tauri's merged configuration and resource mapping passed
 local validation; actual Windows NSIS/WebView2 and real OBS are pending. No push, release or deploy.
 
+Review fixes (2026-11-19): managed reference images no longer get `immutable` caching for a generation
+whose artwork has not yet passed a real digest check (a restored DB reports artwork present but
+unverified until the background worker hashes it; serving `?ref=<revision>` during that window now
+answers `no-cache`, not `immutable`). The managed-image 304 path no longer forces `no-store`; a
+conditional hit now keeps the selected representation's own cache policy (`immutable` or `no-cache`),
+matching the `/v2` bundle middleware. Added a router-level test matrix for Range/If-Range/conditional
+negotiation across identity/br/gzip representations (206/304/416, `Content-Range` totals, `Vary`,
+`Cache-Control`) in `platform_tests.rs`.
+
+## Release notes in the desktop update banner (2026-11-19), branch `feat/update-notes`
+
+The shell forwards latest.json `notes` (`Update::body`, trimmed, `null` when blank) in `update_status`; the web update
+banner shows them behind a collapsed "What's new" toggle as plain text (`white-space: pre-line`) plus a "Release page ↗"
+link to `desktop-vX.Y.Z` (opened in the system browser by the shell's `target=_blank` handling). Older shells without
+`notes` keep the previous banner. Checked in Docker: web-rs fmt, clippy native + wasm32, tests, app bundle size;
+desktop `cargo fmt --check` and the `updater.rs` state-machine tests in an isolated crate (no GLib in `storm-dev`).
+**Not done**: full desktop clippy/tests (Windows CI `desktop` job), seeing the banner with real notes in an installed build.
+
 ## CI action pins and desktop release notes (2026-11-19), branch `ci/pin-actions-release-notes`
 
 Every action in `ci.yml` is now pinned to a full commit SHA (version in a comment, Dependabot `github-actions`

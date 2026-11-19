@@ -205,8 +205,14 @@ deserialisation, `progress_percent`, `phase_message`, `redirects_to_welcome`, `p
   mode (the `?` button still opens it).
 - **Update banner** (`UpdateBanner`, under the top bar). Contract with the desktop shell: when `window.__TAURI__.core.invoke` exists
   (read defensively with `Reflect`, never panics), the app calls the Tauri command `update_status` at startup and every 60 s; it
-  answers `{state: "none" | "downloading" | "ready", version: string | null}` (`parse_update_status`: any other shape or state =
-  `none`). On `ready` the banner shows the version and a **Restart to update** button that calls `invoke('install_update')`.
+  answers `{state: "none" | "downloading" | "ready", version: string | null, notes: string | null}` (`parse_update_status`: any
+  other shape or state = `none`; `notes` is optional, absent from older shells, and a blank or non-string value counts as none).
+  On `ready` the banner shows the version and a **Restart to update** button that calls `invoke('install_update')`. With notes,
+  a **What's new** toggle (collapsed by default, `aria-expanded`) shows them under the banner as a plain text node
+  (`white-space: pre-line`, never parsed as HTML). With a version, a **Release page ↗** link (`target=_blank`, which the shell
+  opens in the system browser) points to `https://github.com/matella/storm-codex/releases/tag/desktop-v<version>`
+  (`release_page_url`: only for versions made of ASCII letters, digits, `.`, `-`, `+` and starting with a digit; otherwise no
+  link).
   The button is disabled while the call runs (one call per click sequence; it stays disabled on success, the shell restarts
   the app). A rejected call (or a missing shell) shows "Update failed: <reason>" inline (`update_failed_message`; the reason
   is the rejection string, an `Error`'s `message`, or the value as JSON) and re-enables the button. A call resolving with
