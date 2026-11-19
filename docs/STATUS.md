@@ -1,5 +1,24 @@
 # STATUS — read first, update last
 
+## Replay search (2026-11-19), branch `feat/replay-search`
+
+Approved spec: `docs/specs/2026-11-19-replay-search.md` (operator decisions: typed stat columns only, total in
+`X-Total-Count`, the UI hero filter means "my hero"). `GET /api/matches` and `/api/matches.csv` gain `my_hero`,
+`with`/`against`, `min_`/`max_<stat>` (kills, deaths, takedowns, assists, hero damage, healing, XP, APM) and
+`min_len`/`max_len`, validated in `read/filter.rs` (400 `bad_filter` / `perspective_required`), built with
+`QueryBuilder` binds only. Matches has a "More filters" panel with removable chips, "N games" from the header and
+"Load more" by 200; Player and Compare link to `/matches?with=` / `?against=`. Migration **0018** adds a partial
+MVP index (the existing MVP filter measured 157 ms).
+
+Measured on a synthetic 3,500-game archive with real storm-stats JSON (not the box DB copy): 200-game pages
+82–96 ms p95 with any filters (before: ~100 ms unfiltered, 157 ms MVP, 1.1 s at `offset=3000`), `limit=50` 21 ms.
+**The spec's 50 ms target is missed**: reading each player's award from the JSON is the floor (operator decision:
+typed `award` column, smaller page, or accept). Shared host: a busy rerun reached 121 ms. App bundle 1,009,761 bytes
+Brotli (+13,977): needs PR #53's 1.25 MB cap. Docker checks passed (fmt, clippy, 516 workspace tests with
+PostgreSQL 17, web fmt/clippy native+wasm32, 154 web tests, trunk release build + size check at 1.25 MB). Browser
+check on the synthetic archive: Braxis example, with picker, stat switch, chip removal, Load more, back button,
+perspective error. Not pushed.
+
 ## CI action pins and desktop release notes (2026-11-19), branch `ci/pin-actions-release-notes`
 
 Every action in `ci.yml` is now pinned to a full commit SHA (version in a comment, Dependabot `github-actions`

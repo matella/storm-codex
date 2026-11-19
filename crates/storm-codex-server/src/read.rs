@@ -10,9 +10,11 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::Value as J;
+use sqlx::{Postgres, QueryBuilder};
 
 type Resp = Result<Json<J>, (StatusCode, Json<J>)>;
 
+mod filter;
 #[cfg(test)]
 mod tests;
 
@@ -50,16 +52,25 @@ pub struct MatchFilter {
 }
 
 /// GET /api/matches — filterable, paginated list, most recent first. Filters: map, mode, hero (any
-/// player), player (toon), + operator perspective (account, W/L result, MVP, date range).
-pub async fn list_matches(State(s): State<AppState>, Query(f): Query<MatchFilter>) -> Resp {
+/// player), player (toon), + operator perspective (account, W/L result, MVP, date range) and the replay
+/// search filters (`read/filter.rs`). The body is a bare array; `X-Total-Count` carries the number of
+/// games matching the filters (ignoring `limit`/`offset`).
+pub async fn list_matches(
+    State(s): State<AppState>,
+    Query(f): Query<MatchFilter>,
+    Query(raw): Query<Vec<(String, String)>>,
+) -> Result<axum::response::Response, (StatusCode, Json<J>)> {
+    let search = archive_search(&s, &f, &raw).await?;
     let limit = f.limit.unwrap_or(50).clamp(1, 200);
     let offset = f.offset.unwrap_or(0).max(0);
-    let v: J = sqlx::query_scalar(
+    let toons = operator_toons(&s);
+    // The page is chosen first (ids only), then only its rows are expanded: deep offsets stay cheap.
+    let mut list = QueryBuilder::<Postgres>::new(
         "WITH ops AS (
             SELECT lower(jsonb_array_elements_text(value)) AS name
             FROM app_settings WHERE key = 'operator_names'
          )
-         SELECT COALESCE(jsonb_agg(t ORDER BY t.played_at DESC NULLS LAST), '[]'::jsonb)
+         SELECT COALESCE(jsonb_agg(t ORDER BY t.played_at DESC NULLS LAST, t.id DESC), '[]'::jsonb)
          FROM (
            SELECT m.id, m.map, m.mode, m.played_at, m.length, m.winner, m.build,
              me.toon_handle AS perspective_toon,
@@ -70,51 +81,185 @@ pub async fn list_matches(State(s): State<AppState>, Query(f): Query<MatchFilter
                  'award', mp.data #>> '{gameStats,awards,0}')
                  ORDER BY mp.team, mp.id)
               FROM match_players mp WHERE mp.match_id = m.id) AS players
-           FROM matches m
-           -- Same perspective for the archive and its filters. Keep the CSV query in sync.
-           LEFT JOIN LATERAL (
-             SELECT p.win, p.toon_handle, (p.data #>> '{gameStats,awards,0}') AS award
-             FROM match_players p
-             WHERE p.match_id = m.id
-               AND CASE
-                 WHEN $7::text IS NULL THEN lower(p.name) IN (SELECT name FROM ops) OR p.toon_handle = ANY($12::text[])
-                 WHEN starts_with($7, 'toon:') THEN p.toon_handle = ANY($12::text[]) AND 'toon:' || p.toon_handle = $7
-                 ELSE lower(p.name) = lower($7)
-               END
-             ORDER BY (p.toon_handle = ANY($12::text[])) DESC, p.team, p.id
-             LIMIT 1
-           ) me ON true
-           WHERE ($1::text IS NULL OR m.map = $1)
-             AND ($2::int  IS NULL OR m.mode = $2)
-             AND ($3::text IS NULL OR EXISTS (SELECT 1 FROM match_players h
-                                              WHERE h.match_id = m.id AND h.hero = $3))
-             AND ($4::text IS NULL OR EXISTS (SELECT 1 FROM match_players p
-                                              WHERE p.match_id = m.id AND p.toon_handle = $4))
-             AND ($7::text  IS NULL OR me.toon_handle IS NOT NULL)
-             AND ($8::text  IS NULL OR me.win = ($8 = 'win'))
-             AND (NOT $9::bool OR me.award = 'EndOfMatchAwardMVPBoolean')
-             AND ($10::timestamptz IS NULL OR m.played_at >= $10::timestamptz)
-             AND ($11::timestamptz IS NULL OR m.played_at <  $11::timestamptz)
-           ORDER BY m.played_at DESC NULLS LAST
-           LIMIT $5 OFFSET $6
-         ) t",
+           FROM (SELECT m.id",
+    );
+    push_archive_from(&mut list, &f, &search, &toons);
+    list.push(" ORDER BY m.played_at DESC NULLS LAST, m.id DESC LIMIT ")
+        .push_bind(limit)
+        .push(" OFFSET ")
+        .push_bind(offset)
+        .push(") page JOIN matches m ON m.id = page.id");
+    push_me_join(&mut list, f.account.as_deref(), &toons, true);
+    list.push(") t");
+    let mut count = QueryBuilder::<Postgres>::new(
+        "WITH ops AS (
+            SELECT lower(jsonb_array_elements_text(value)) AS name
+            FROM app_settings WHERE key = 'operator_names'
+         )
+         SELECT count(*)",
+    );
+    push_archive_from(&mut count, &f, &search, &toons);
+    let (v, total): (J, i64) = tokio::try_join!(
+        list.build_query_scalar().fetch_one(&s.db),
+        count.build_query_scalar().fetch_one(&s.db),
     )
-    .bind(f.map)
-    .bind(f.mode)
-    .bind(f.hero)
-    .bind(f.player)
-    .bind(limit)
-    .bind(offset)
-    .bind(f.account)
-    .bind(f.result)
-    .bind(f.mvp)
-    .bind(f.from)
-    .bind(f.to)
-    .bind(operator_toons(&s))
-    .fetch_one(&s.db)
-    .await
     .map_err(db_err)?;
-    Ok(Json(v))
+    Ok(([(TOTAL_COUNT, total.to_string())], Json(v)).into_response())
+}
+
+/// Response header of `/api/matches` with the number of games matching the filters.
+const TOTAL_COUNT: &str = "x-total-count";
+
+/// Parses the replay search filters and checks they have a perspective to apply to.
+async fn archive_search(
+    s: &AppState,
+    f: &MatchFilter,
+    raw: &[(String, String)],
+) -> Result<filter::Search, (StatusCode, Json<J>)> {
+    let search = filter::parse(raw).map_err(|filter::BadFilter(param)| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "bad_filter", "param": param})),
+        )
+    })?;
+    if search.needs_perspective()
+        && f.account.as_deref().is_none_or(str::is_empty)
+        && operator_toons(s).is_empty()
+    {
+        let names: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM app_settings
+               WHERE key = 'operator_names' AND jsonb_typeof(value) = 'array'
+                 AND jsonb_array_length(value) > 0)",
+        )
+        .fetch_one(&s.db)
+        .await
+        .map_err(db_err)?;
+        if !names {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "perspective_required"})),
+            ));
+        }
+    }
+    Ok(search)
+}
+
+/// The operator perspective row `me` of game `m`: verified toons first, then manual `operator_names`;
+/// an explicit `account` restricts it (`toon:` accounts only match verified toons). One definition for the
+/// archive, its filters, its count and the CSV export. `per_game` = a lateral lookup per row of `m`
+/// (cheap for one page); otherwise one pass over all perspective rows, joined on `match_id` (cheaper
+/// than thousands of lookups when a filter reads `me` on every game).
+fn push_me_join(
+    qb: &mut QueryBuilder<Postgres>,
+    account: Option<&str>,
+    toons: &[String],
+    per_game: bool,
+) {
+    qb.push(if per_game {
+        " LEFT JOIN LATERAL (SELECT"
+    } else {
+        " LEFT JOIN (SELECT DISTINCT ON (p.match_id) p.match_id,"
+    });
+    qb.push(
+        // No JSON here: reading `data` would detoast it for every game.
+        " p.win, p.toon_handle, p.team, p.hero, p.kills, p.deaths, p.takedowns,
+                  p.hero_damage, p.healing, p.experience, p.apm
+           FROM match_players p WHERE ",
+    );
+    if per_game {
+        qb.push("p.match_id = m.id AND ");
+    }
+    match account {
+        None => {
+            qb.push("(lower(p.name) IN (SELECT name FROM ops) OR p.toon_handle = ANY(")
+                .push_bind(toons.to_vec())
+                .push("))");
+        }
+        Some(a) if a.starts_with("toon:") => {
+            qb.push("p.toon_handle = ANY(")
+                .push_bind(toons.to_vec())
+                .push(") AND 'toon:' || p.toon_handle = ")
+                .push_bind(a.to_string());
+        }
+        Some(a) => {
+            qb.push("lower(p.name) = lower(")
+                .push_bind(a.to_string())
+                .push(")");
+        }
+    }
+    qb.push(if per_game {
+        " ORDER BY (p.toon_handle = ANY("
+    } else {
+        " ORDER BY p.match_id, (p.toon_handle = ANY("
+    })
+    .push_bind(toons.to_vec())
+    .push(if per_game {
+        ")) DESC, p.team, p.id LIMIT 1) me ON true"
+    } else {
+        ")) DESC, p.team, p.id) me ON me.match_id = m.id"
+    });
+}
+
+/// `FROM matches m` and the WHERE clause shared by the archive list, its count and the CSV export. The
+/// perspective row is only joined when a filter reads it.
+fn push_archive_from(
+    qb: &mut QueryBuilder<Postgres>,
+    f: &MatchFilter,
+    search: &filter::Search,
+    toons: &[String],
+) {
+    let account = f.account.as_deref();
+    let needs_me = account.is_some() || f.result.is_some() || f.mvp || search.needs_perspective();
+    qb.push(" FROM matches m");
+    if needs_me {
+        push_me_join(qb, account, toons, false);
+    }
+    qb.push(" WHERE true");
+    if let Some(map) = &f.map {
+        qb.push(" AND m.map = ").push_bind(map.clone());
+    }
+    if let Some(mode) = f.mode {
+        qb.push(" AND m.mode = ").push_bind(mode);
+    }
+    if let Some(hero) = &f.hero {
+        qb.push(" AND EXISTS (SELECT 1 FROM match_players h WHERE h.match_id = m.id AND h.hero = ")
+            .push_bind(hero.clone())
+            .push(")");
+    }
+    if let Some(player) = &f.player {
+        qb.push(
+            " AND EXISTS (SELECT 1 FROM match_players pl WHERE pl.match_id = m.id AND pl.toon_handle = ",
+        )
+        .push_bind(player.clone())
+        .push(")");
+    }
+    if account.is_some() {
+        qb.push(" AND me.toon_handle IS NOT NULL");
+    }
+    if let Some(result) = &f.result {
+        qb.push(" AND me.win = (")
+            .push_bind(result.clone())
+            .push(" = 'win')");
+    }
+    if f.mvp {
+        // Same row as `me` (UNIQUE (match_id, toon_handle)); served by the partial index of migration 0018.
+        qb.push(
+            " AND EXISTS (SELECT 1 FROM match_players a WHERE a.match_id = m.id
+               AND a.toon_handle = me.toon_handle
+               AND (a.data #>> '{gameStats,awards,0}') = 'EndOfMatchAwardMVPBoolean')",
+        );
+    }
+    if let Some(from) = &f.from {
+        qb.push(" AND m.played_at >= ")
+            .push_bind(from.clone())
+            .push("::timestamptz");
+    }
+    if let Some(to) = &f.to {
+        qb.push(" AND m.played_at < ")
+            .push_bind(to.clone())
+            .push("::timestamptz");
+    }
+    search.push_where(qb);
 }
 
 /// GET /api/matches/{id} — complete detail (storm-stats `{match, players}` shape).
@@ -334,10 +479,12 @@ pub async fn dim_talents(State(s): State<AppState>) -> Resp {
     Ok(Json(v))
 }
 
-/// GET /api/matches.csv — CSV export of the matches (same filters as /api/matches).
+/// GET /api/matches.csv — CSV export of the matches (same filters, perspective and paging as /api/matches;
+/// `limit` default 5,000, max 50,000).
 pub async fn matches_csv(
     State(s): State<AppState>,
     Query(f): Query<MatchFilter>,
+    Query(raw): Query<Vec<(String, String)>>,
 ) -> Result<axum::response::Response, (StatusCode, Json<J>)> {
     use std::fmt::Write;
     type Row = (
@@ -349,49 +496,20 @@ pub async fn matches_csv(
         Option<i32>,
         Option<i32>,
     );
-    let rows: Vec<Row> = sqlx::query_as(
+    let search = archive_search(&s, &f, &raw).await?;
+    let mut qb = QueryBuilder::<Postgres>::new(
         "WITH ops AS (
-                SELECT lower(jsonb_array_elements_text(value)) AS name
-                FROM app_settings WHERE key = 'operator_names'
-             )
-             SELECT m.id, m.map, m.mode, m.played_at, m.length, m.winner, m.build
-             FROM matches m
-             LEFT JOIN LATERAL (
-               SELECT p.win, p.toon_handle, (p.data #>> '{gameStats,awards,0}') AS award
-               FROM match_players p
-               WHERE p.match_id = m.id
-                 AND CASE
-                   WHEN $4::text IS NULL THEN lower(p.name) IN (SELECT name FROM ops) OR p.toon_handle = ANY($10::text[])
-                   WHEN starts_with($4, 'toon:') THEN p.toon_handle = ANY($10::text[]) AND 'toon:' || p.toon_handle = $4
-                   ELSE lower(p.name) = lower($4)
-                 END
-               ORDER BY (p.toon_handle = ANY($10::text[])) DESC, p.team, p.id
-               LIMIT 1
-             ) me ON true
-             WHERE ($1::text IS NULL OR m.map = $1)
-               AND ($2::int  IS NULL OR m.mode = $2)
-               AND ($5::text IS NULL OR EXISTS (SELECT 1 FROM match_players h
-                                                WHERE h.match_id = m.id AND h.hero = $5))
-               AND ($4::text IS NULL OR me.toon_handle IS NOT NULL)
-               AND ($6::text IS NULL OR me.win = ($6 = 'win'))
-               AND (NOT $7::bool OR me.award = 'EndOfMatchAwardMVPBoolean')
-               AND ($8::timestamptz  IS NULL OR m.played_at >= $8::timestamptz)
-               AND ($9::timestamptz  IS NULL OR m.played_at <  $9::timestamptz)
-             ORDER BY m.played_at DESC NULLS LAST LIMIT $3",
-    )
-    .bind(f.map)
-    .bind(f.mode)
-    .bind(f.limit.unwrap_or(5000).clamp(1, 50000))
-    .bind(f.account)
-    .bind(f.hero)
-    .bind(f.result)
-    .bind(f.mvp)
-    .bind(f.from)
-    .bind(f.to)
-    .bind(operator_toons(&s))
-    .fetch_all(&s.db)
-    .await
-    .map_err(db_err)?;
+            SELECT lower(jsonb_array_elements_text(value)) AS name
+            FROM app_settings WHERE key = 'operator_names'
+         )
+         SELECT m.id, m.map, m.mode, m.played_at, m.length, m.winner, m.build",
+    );
+    push_archive_from(&mut qb, &f, &search, &operator_toons(&s));
+    qb.push(" ORDER BY m.played_at DESC NULLS LAST, m.id DESC LIMIT ")
+        .push_bind(f.limit.unwrap_or(5000).clamp(1, 50000))
+        .push(" OFFSET ")
+        .push_bind(f.offset.unwrap_or(0).max(0));
+    let rows: Vec<Row> = qb.build_query_as().fetch_all(&s.db).await.map_err(db_err)?;
     let mut csv = String::from("id,map,mode,played_at,length,winner,build\n");
     for (id, map, mode, played, length, winner, build) in rows {
         let _ = writeln!(

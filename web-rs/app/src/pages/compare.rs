@@ -17,7 +17,7 @@ use crate::ui::{fetch_reference, Link, Portrait, SecHead};
 
 /// Name field + "Find" → a list of accounts to pick from. Never picks the first hit on its own.
 #[component]
-fn Picker(label: &'static str, on_pick: Callback<String>) -> impl IntoView {
+pub(crate) fn Picker(label: &'static str, on_pick: Callback<String>) -> impl IntoView {
     let q = RwSignal::new(String::new());
     let hits = RwSignal::new(None::<PlayerSearch>);
     let find = move || {
@@ -65,7 +65,9 @@ fn PlayerCard(c: Card) -> impl IntoView {
     let name = c.name.clone().unwrap_or_else(|| c.toon.clone());
     view! {
         <div class="ds-panel">
-            <div class="ds-kicker"><Link to=format!("/player/{}", uri_component(&c.toon))>{name}</Link></div>
+            <div class="ds-kicker"><Link to=format!("/player/{}", uri_component(&c.toon))>{name}</Link>
+                " · "<Link to=format!("/matches?with={}", uri_component(&c.toon))>"your games with ›"</Link>
+                " · "<Link to=format!("/matches?against={}", uri_component(&c.toon))>"against ›"</Link></div>
             <div class="ds-statline">
                 <div class="ds-stat"><span class="ds-label">"Win rate"</span><strong>{wr}<span>"%"</span></strong><small>{format!("{}–{} · {} games", c.wins, c.games.saturating_sub(c.wins), c.games)}</small></div>
                 <div class="ds-stat"><span class="ds-label">"Avg K / D / A"</span><strong>

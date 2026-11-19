@@ -167,12 +167,28 @@ pub fn games_label(n: usize) -> String {
     format!("{n} game{}", if n > 1 { "s" } else { "" })
 }
 
-/// Filters of the Matches archive, kept in the URL (so they survive the browser's back button).
+/// Stats that the archive can bound on the perspective row (`min_<key>` / `max_<key>` of `GET /api/matches`).
+pub const SEARCH_STATS: [(&str, &str); 8] = [
+    ("deaths", "Deaths"),
+    ("kills", "Kills"),
+    ("assists", "Assists"),
+    ("takedowns", "Takedowns"),
+    ("hero_damage", "Hero damage"),
+    ("healing", "Healing"),
+    ("xp", "XP"),
+    ("apm", "APM"),
+];
+
+/// Filters of the Matches archive, kept in the URL (so they survive the browser's back button). The URL uses the
+/// API's parameter names, so the query passes through unchanged.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct MatchFilter {
     pub mode: Option<i64>,
     pub map: String,
+    /// Hero played by anyone in the game (`hero`).
     pub hero: String,
+    /// Hero played by the perspective player (`my_hero`): the default hero filter of the page.
+    pub my_hero: String,
     pub account: String,
     /// `""`, `win` or `loss`.
     pub result: String,
@@ -180,6 +196,34 @@ pub struct MatchFilter {
     /// `YYYY-MM-DD`, as typed.
     pub from: String,
     pub to: String,
+    /// Toon on the perspective player's team / on the other team.
+    pub with: String,
+    pub against: String,
+    /// Game length bounds in minutes, as typed.
+    pub min_len: String,
+    pub max_len: String,
+    /// `min_<stat>` / `max_<stat>` pairs in URL order (the UI edits one stat; hand-written URLs may hold more).
+    pub bounds: Vec<(String, String)>,
+}
+
+/// `min_<stat>` / `max_<stat>` → (is minimum, stat key), for the stats of [`SEARCH_STATS`].
+pub fn bound_key(key: &str) -> Option<(bool, &'static str)> {
+    let (min, stat) = match (key.strip_prefix("min_"), key.strip_prefix("max_")) {
+        (Some(s), _) => (true, s),
+        (None, Some(s)) => (false, s),
+        _ => return None,
+    };
+    SEARCH_STATS
+        .iter()
+        .find(|(k, _)| *k == stat)
+        .map(|(k, _)| (min, *k))
+}
+
+fn stat_label(stat: &str) -> &'static str {
+    SEARCH_STATS
+        .iter()
+        .find(|(k, _)| *k == stat)
+        .map_or("", |(_, l)| *l)
 }
 
 impl MatchFilter {
@@ -192,12 +236,66 @@ impl MatchFilter {
                 .map(|n| n as i64),
             map: get("map"),
             hero: get("hero"),
+            my_hero: get("my_hero"),
             account: get("account"),
             result: get("result"),
             mvp: get("mvp") == "true",
             from: get("from"),
             to: get("to"),
+            with: get("with"),
+            against: get("against"),
+            min_len: get("min_len"),
+            max_len: get("max_len"),
+            bounds: query_pairs(search)
+                .into_iter()
+                .filter(|(k, v)| !v.is_empty() && bound_key(k).is_some())
+                .collect(),
         }
+    }
+
+    /// Value of one stat bound in the URL (`min_deaths`…), empty when absent.
+    pub fn bound(&self, key: &str) -> String {
+        self.bounds
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.clone())
+            .unwrap_or_default()
+    }
+
+    /// The stat shown in the UI's stat row: the first bounded one, else deaths.
+    pub fn bound_stat(&self) -> &'static str {
+        self.bounds
+            .iter()
+            .find_map(|(k, _)| bound_key(k).map(|(_, s)| s))
+            .unwrap_or("deaths")
+    }
+
+    /// Active filters of the "More filters" panel as removable chips: (URL parameter, label). `name` turns a toon
+    /// into a display name.
+    pub fn chips(&self, name: impl Fn(&str) -> String) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        if !self.hero.is_empty() {
+            out.push(("hero".into(), format!("Any player: {}", self.hero)));
+        }
+        if !self.with.is_empty() {
+            out.push(("with".into(), format!("With {}", name(&self.with))));
+        }
+        if !self.against.is_empty() {
+            out.push(("against".into(), format!("Against {}", name(&self.against))));
+        }
+        for (k, v) in &self.bounds {
+            if let Some((min, stat)) = bound_key(k) {
+                let op = if min { "≥" } else { "≤" };
+                out.push((k.clone(), format!("{} {op} {v}", stat_label(stat))));
+            }
+        }
+        if !self.min_len.is_empty() {
+            out.push(("min_len".into(), format!("Length ≥ {} min", self.min_len)));
+        }
+        if !self.max_len.is_empty() {
+            out.push(("max_len".into(), format!("Length ≤ {} min", self.max_len)));
+        }
+        out
     }
 
     /// Query of `GET /api/matches` (`matchesParams`, then `limit`); `from_iso` / `to_iso` are the local-midnight
@@ -233,6 +331,21 @@ impl MatchFilter {
         if let Some(d) = to_iso {
             p.push(format!("to={}", form_encode(d)));
         }
+        let search = [
+            ("my_hero", &self.my_hero),
+            ("with", &self.with),
+            ("against", &self.against),
+            ("min_len", &self.min_len),
+            ("max_len", &self.max_len),
+        ];
+        for (k, v) in search
+            .into_iter()
+            .chain(self.bounds.iter().map(|(k, v)| (k.as_str(), v)))
+        {
+            if !v.is_empty() {
+                p.push(format!("{k}={}", form_encode(v)));
+            }
+        }
         for (k, v) in extra {
             p.push(format!("{k}={}", form_encode(v)));
         }
@@ -256,6 +369,12 @@ pub fn set_param(search: &str, key: &str, value: &str) -> String {
         .map(|(k, v)| format!("{}={}", form_encode(k), form_encode(v)))
         .collect::<Vec<_>>()
         .join("&")
+}
+
+/// [`set_param`] for several keys at once (in order).
+pub fn set_params(search: &str, kv: &[(&str, &str)]) -> String {
+    kv.iter()
+        .fold(search.to_string(), |s, (k, v)| set_param(&s, k, v))
 }
 
 /// The same player the archive API used to filter this match.
@@ -430,5 +549,50 @@ mod tests {
         assert_eq!(set_param(&s, "a", ""), "b=x+y");
         assert_eq!(set_param(&s, "c", "3"), "a=1&b=x+y&c=3");
         assert_eq!(set_param("", "c", ""), "");
+    }
+
+    #[test]
+    fn the_replay_search_filters_round_trip_through_the_url() {
+        let f = MatchFilter::from_search(
+            "?map=Braxis+Holdout&my_hero=Jaina&with=1-Hero-1-2&min_deaths=9&max_deaths=&min_siege=3&max_len=15&hero=Valla",
+        );
+        assert_eq!(f.my_hero, "Jaina");
+        assert_eq!(f.bounds, vec![("min_deaths".to_string(), "9".to_string())]);
+        assert_eq!(f.bound("min_deaths"), "9");
+        assert_eq!(f.bound_stat(), "deaths");
+        assert_eq!(
+            f.api_query(None, None, &[("limit", "200"), ("offset", "200")]),
+            "map=Braxis+Holdout&hero=Valla&my_hero=Jaina&with=1-Hero-1-2&max_len=15&min_deaths=9&limit=200&offset=200"
+        );
+        let chips = f.chips(|t| {
+            if t == "1-Hero-1-2" {
+                "Friend".into()
+            } else {
+                t.into()
+            }
+        });
+        let labels: Vec<&str> = chips.iter().map(|(_, l)| l.as_str()).collect();
+        assert_eq!(
+            labels,
+            [
+                "Any player: Valla",
+                "With Friend",
+                "Deaths ≥ 9",
+                "Length ≤ 15 min"
+            ]
+        );
+        assert_eq!(chips[2].0, "min_deaths");
+        assert_eq!(MatchFilter::from_search("?max_apm=200").bound_stat(), "apm");
+        assert_eq!(bound_key("max_hero_damage"), Some((false, "hero_damage")));
+        assert_eq!(bound_key("min_len"), None);
+    }
+
+    #[test]
+    fn set_params_moves_a_bound_to_another_stat() {
+        let s = set_params(
+            "min_deaths=9&map=X",
+            &[("min_deaths", ""), ("min_kills", "9")],
+        );
+        assert_eq!(s, "map=X&min_kills=9");
     }
 }

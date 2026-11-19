@@ -395,6 +395,24 @@ pub fn fetch_operator_stats<T: DeserializeOwned + 'static>(
     })
 }
 
+/// [`fetch_operator_stats`] for a list read that also returns its `X-Total-Count` header (the Matches archive).
+/// Same tracking: reference revision, live matches, operator settings and verified toons.
+pub fn fetch_operator_stats_counted<T: DeserializeOwned + 'static>(
+    url: impl Fn() -> String + 'static,
+) -> LocalResource<Result<(T, Option<u64>), String>> {
+    let op = expect_context::<Operator>();
+    let matches = expect_context::<crate::layout::LiveBus>().matches;
+    let refresh = crate::reference::use_reference().refresh;
+    LocalResource::new(move || {
+        refresh.track();
+        matches.track();
+        op.manual.track();
+        op.toons.track();
+        let u = url();
+        async move { net::get_json_counted::<T>(&u).await }
+    })
+}
+
 /// Style that gives a tile the in-game minimap of a map (`mapArt`).
 pub fn map_art(map: &str) -> String {
     format!(
