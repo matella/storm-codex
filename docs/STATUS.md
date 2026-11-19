@@ -24,6 +24,16 @@ to the full body; Range always wins). Rechecked on the merged tree (origin/main'
 integrated locally): server fmt, strict Clippy and 517 workspace tests passed (10 ignored, throwaway
 Postgres 17); web-rs and packaging not reverified by this review pass (no web-rs or desktop changes).
 
+Merged `origin/main` (session review, `ad3da36`) to clear PR #61's merge conflict (`docs/STATUS.md`,
+`docs/spec/08-frontend.md`; both append-style, kept both sides' content). Full recheck on the merged
+tree in `storm-dev:latest` with the pinned reference dataset and a throwaway Postgres 17: fmt, strict
+Clippy (native + wasm32), actionlint and `cargo audit` (one pre-existing `chrono` unmaintained warning,
+unrelated to this PR) all passed; 530 workspace tests passed (10 ignored), 160 web-rs tests passed, all
+three Trunk release bundles built. Bundle sizes on the merged tree: app 1,016,390 B Brotli (cap
+1,250,000), overlay 217,926 B gzip, sources 181,343 B gzip (caps 300,000) — all within budget; the app
+figure moved from 996,438 B to 1,016,390 B because of the session-review page merged in from main, not
+this PR's own change. No push, release or deploy beyond `fix/web-audit-platform` itself.
+
 ## Session review (2026-11-19), branch `feat/session-review`
 
 Approved spec: `docs/specs/2026-11-19-session-review.md` (operator decisions: baseline = modes played in the
