@@ -47,7 +47,17 @@ SHELL_PUNCTUATION = set("();<>|&")
 
 def root_or_home(target):
     """True when target is /, ~ or $HOME, alone or followed by /, /* or /."""
-    t = re.sub(r"(?:/\.?|/\*|\*)+$", "", target)
+    # Strip trailing `/`, `/.` and `*` with a right-to-left scan: the former regex
+    # `(?:/\.?|/\*|\*)+$` backtracked exponentially on long `/*/*...` arguments.
+    end = len(target)
+    while end:
+        if target.endswith("/.", 0, end):
+            end -= 2
+        elif target[end - 1] in "/*":
+            end -= 1
+        else:
+            break
+    t = target[:end]
     return t in ROOT_OR_HOME or (t == "" and target.startswith("/"))
 
 
