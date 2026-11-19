@@ -1,27 +1,23 @@
 # STATUS — read first, update last
 
-## Reference repair: stale 2D replay and mounted views (2026-11-19), branch `fix/refdata-stale-views`
+## Standalone reference data downloads, desktop 0.1.2 (2026-11-19), branch `docs/standalone-reference-download`
 
-Release blocker fix on top of `c70b21a`. The 2D replay disk cache now stores only replay-derived
-geometry and the playerId → toon mapping (`{id}-replay2d-v{VIEWER_VERSION}-geom.json`); player
-metadata is merged from `match_players` on every request, so a replay opened before the first
-reference sync serves the repaired hero, even across restarts. Regression covered in
-`first_offline_replay_stays_browsable_and_is_corrected_in_place` (fails on the old handler).
-Web: `fetch_operator_stats` and the hero-attribution reads (match detail, 2D replay, Hero detail,
-Matches hero filter, Session, Player, Compare, Synergies, match insights) refetch on reference
-revision change; box mode never sets a revision. A 2D replay remounts its viewer (playback resets)
-when a new dataset activates. Browser check of the refetch not done.
+Approved spec: `docs/specs/2026-11-19-standalone-reference-download.md`. The NSIS installer no longer
+ships a reference snapshot (0.1.1 draft baseline: **110,766,415 bytes**); the standalone server
+downloads it in the background, verifies and stages artwork, and activates it atomically while keeping
+the last good generation. Replays import and stay browsable before the first sync; activation repairs
+hero attribution in place (projected matches and cached 2D replays; scouting summaries are not
+repaired, see spec notes). This PC shows sync status, an automatic-download toggle and retry.
 
-## Standalone reference packaging (2026-11-19), branch `work/standalone-ref-pack`
+Two review rounds fixed: stale 2D cache after repair, incomplete or oversized releases (completeness
+checks; caps 512 MiB download / 1 GiB expanded / 32 MiB per image), off/on during a download (epoch),
+`artwork` derived from local files (presence at startup, background hash), refused releases not
+re-downloaded, cancelled rounds not counted as failures, 2D cache hits served without parsing the model
+(p50 ~8 ms → ~0.14 ms on fixture models), and no double fetch on first load.
 
-Packaging slice of `docs/specs/2026-11-19-standalone-reference-download.md`: desktop 0.1.2 no
-longer downloads or packages a reference snapshot at build time. PostgreSQL, the web frontend,
-minimaps and optional legacy local ingestion remain; application publishing and updates are unchanged.
-The 0.1.1 draft baseline is **110,766,415 bytes**. Local resource/config checks, desktop formatting,
-and a Linux harness for the desktop supervision and backup modules passed (37 tests, one ignored).
-The full desktop test build was blocked by missing Linux GLib development files. The operator's
-Windows draft build, payload inspection, size comparison and installed acceptance are pending.
-Runtime reference sync is separate from this change.
+Docker checks on the integrated branch: see the PR. App bundle ~996 kB Brotli (cap 1,000,000, ~4 kB
+left). **Not done**: browser check of the refetch, Windows draft build, installer size comparison,
+clean offline install and 0.1.1 upgrade on MH-Home (needs the machine online).
 
 ## Standalone identity and import polish (2026-11-18), branch `fix/standalone-identity-import`
 
