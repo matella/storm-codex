@@ -380,10 +380,11 @@ pub fn build_card(input: &CardInput) -> Card {
     let (banner, verdict) = match (my_team, winner) {
         (Some(t), Some(w)) if t == w => ("VICTORY".to_string(), Verdict::Win),
         (Some(_), Some(_)) => ("DEFEAT".to_string(), Verdict::Loss),
-        (_, w) => (
-            format!("{} TEAM WINS", if w == Some(1) { "RED" } else { "BLUE" }),
+        (None, Some(w)) => (
+            format!("{} TEAM WINS", if w == 1 { "RED" } else { "BLUE" }),
             Verdict::Neutral,
         ),
+        (_, None) => ("Result unavailable".to_string(), Verdict::Neutral),
     };
     let side = |t: u8| team_label(t, my_team);
     let mut highlights = Vec::new();
@@ -868,6 +869,22 @@ mod tests {
         assert_eq!(c.teams[0].label, "Blue team");
         assert!(c.teams.iter().flat_map(|t| &t.rows).all(|r| !r.me));
         assert_eq!(c.highlights[1], "Blue won 2 of 4 team fights");
+    }
+
+    #[test]
+    fn unavailable_winner_does_not_claim_either_team_won() {
+        let mut d = detail();
+        for unknown in [Value::Null, json!(2)] {
+            d["match"]["winner"] = unknown;
+            for me in [None, Some("2-Hero-1-201")] {
+                let c = input(&d, me, false);
+                assert_eq!(
+                    (c.verdict, c.banner.as_str()),
+                    (Verdict::Neutral, "Result unavailable")
+                );
+                assert!(c.teams.iter().all(|t| !t.won));
+            }
+        }
     }
 
     #[test]

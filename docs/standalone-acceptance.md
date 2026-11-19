@@ -155,7 +155,8 @@ installer. Record the installer size.
 15. **Match card download (spec `docs/specs/2026-11-19-match-card.md`).** Offline, open a match and
     click "Save as image" (names toggle off, then on). *Expected:* a PNG named
     `storm-codex-<map>-<YYYY-MM-DD>-<id>.png` is saved where WebView2 says (Downloads or its prompt);
-    it opens, shows no player name with the toggle off. **If no file is saved**, the spec's
+    it opens, shows no player name with the toggle off. "Download started" in the app is not proof
+    of a saved file. **If no file is saved**, the spec's
     `save_card` native save-dialog fallback must be built (not built yet).
 
 ## Known limitations (v1, accepted or deferred)

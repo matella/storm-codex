@@ -410,12 +410,16 @@ const CARD_NAMES_KEY: &str = "matchCard.showNames";
 #[component]
 fn SaveCard(ctx: Arc<Ctx>) -> impl IntoView {
     let names = RwSignal::new(net::storage_get(CARD_NAMES_KEY).as_deref() == Some("1"));
+    let privacy_revision = RwSignal::new(0u64);
     let busy = RwSignal::new(false);
     let msg = RwSignal::new(None::<(String, bool)>);
     let dim = use_dim();
     let revision = crate::reference::use_reference().revision;
     let toggle = move |_| {
         let on = !names.get_untracked();
+        if !on {
+            privacy_revision.update(|r| *r = r.wrapping_add(1));
+        }
         names.set(on);
         net::storage_set(CARD_NAMES_KEY, if on { "1" } else { "0" });
     };
@@ -427,6 +431,7 @@ fn SaveCard(ctx: Arc<Ctx>) -> impl IntoView {
         msg.set(None);
         let ctx = ctx.clone();
         let show_names = names.get_untracked();
+        let started_at = privacy_revision.get_untracked();
         let rev = revision.get_untracked();
         let heroes = dim.with_untracked(|d| {
             ctx.players
@@ -455,16 +460,30 @@ fn SaveCard(ctx: Arc<Ctx>) -> impl IntoView {
                 minimap: minimap_image(&card.map),
                 heroes,
             };
-            msg.set(Some(match crate::card::save(&card, &art).await {
-                Ok(f) => (format!("Saved {f}"), false),
-                Err(e) => (format!("Could not save the image ({e})"), true),
-            }));
+            let png = crate::card::render_png(&card, &art).await;
+            // Recheck after the final await, before a download can expose the captured names.
+            // Switching them back on does not authorize the old export again.
+            let Some(current) = privacy_revision.try_get_untracked() else {
+                return;
+            };
+            let status = if show_names && current != started_at {
+                (
+                    "Download canceled because player names were turned off.".into(),
+                    false,
+                )
+            } else {
+                match png.and_then(|blob| crate::clip::download_blob(&blob, &card.file_name)) {
+                    Ok(()) => (format!("Download started: {}", card.file_name), false),
+                    Err(e) => (format!("Could not save the image ({e})"), true),
+                }
+            };
+            msg.set(Some(status));
             busy.set(false);
         });
     };
     view! {
-        <span class=move || pill(names.get()) role="switch" aria-checked=move || names.get().to_string()
-            title="Show in-game player names on the image (never the #tag)" style="margin-left: auto" on:click=toggle>"Show player names"</span>
+        <button type="button" class=move || pill(names.get()) role="switch" aria-checked=move || names.get().to_string()
+            title="Show in-game player names on the image (never the #tag)" style="margin-left: auto" on:click=toggle>"Show player names"</button>
         <button type="button" class="ds-pill" disabled=move || busy.get() on:click=save
             title=move || if busy.get() { "Rendering the image…" } else { "Save a PNG summary of this match (1200 × 675)" }>
             {move || if busy.get() { "Saving…" } else { "Save as image" }}

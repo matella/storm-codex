@@ -49,13 +49,15 @@ Pick **A**: no new dependency, nothing new on the API budget, one layout in the 
   coloured disc with initials, like `Portrait`. Pure layout maths (column positions, text truncation widths,
   number formatting, file name) in `core/card.rs` with native tests.
 - **Contents**: dimmed minimap background; map, mode, date, duration; result from the perspective player
-  (WIN/LOSS banner) or "Blue/Red team wins" if no operator account played; two team columns of 5 rows:
+  (WIN/LOSS banner) or "Blue/Red team wins" if no operator account played; "Result unavailable" when no
+  winner is known. Two team columns of 5 rows:
   portrait, hero, optional player name, K/D/A, award tag (MVP crown); end levels per team; up to 3 highlights
   already computed: MVP, "Team fights won N of M" (insights `fights`), first to 10 / first fort (match data);
   footer "Storm Codex" + game version. Perspective player's row highlighted.
 - **Privacy**: a "Show player names" toggle next to the button, **off by default**: off = heroes only, no names
   anywhere; on = in-game names without `#tag` and never toon handles. No chat text, no battle-tag, no
-  replay file name. The toggle choice is remembered in `localStorage`.
+  replay file name. The toggle is a native button and its choice is remembered in `localStorage`. Switching
+  names off before download discards an in-flight named PNG, even if names are switched back on in the meantime.
 - **File name**: `storm-codex-<map-slug>-<YYYY-MM-DD>-<id>.png`.
 - **Desktop saving**: acceptance item on MH-Home that the `<a download>` path saves a file in the installed
   app (WebView2 default download behaviour). If it does not, add one app command `save_card(png bytes)` that
@@ -75,7 +77,9 @@ Pick **A**: no new dependency, nothing new on the API budget, one layout in the 
 
 ## Tests / acceptance
 
-- Native tests for `core/card.rs` (layout, truncation, file name slug, names hidden when toggle off).
+- Native tests for `core/card.rs` (layout, truncation, file name slug, names hidden when toggle off, unknown result).
+- Browser regression: hold the card canvas `toBlob` callback, switch names off and back on, then release it.
+  No download may start. Force `URL.createObjectURL` to fail and confirm the page reports an error.
 - Browser check on 3 real games (win, loss, a game without any operator account; one with missing portraits):
   the PNG opens, text is legible at 50 % size, no player name when the toggle is off.
 - Installed standalone on MH-Home: save works offline, the file lands where the dialog/download says.
@@ -117,6 +121,7 @@ The open questions were resolved as follows:
 - The card date is the browser's local calendar day of `match.date` (ISO day as fallback); the kicker shows
   mode · day · duration, the footer the game version (`m_major.m_minor.m_revision.m_build`).
 - The button only exists once the match has loaded (the page shows "loading…" before), so there is no disabled
-  pre-load state; while rendering it is disabled and reads "Saving…".
+  pre-load state; while rendering it is disabled and reads "Saving…". Once the browser download is triggered,
+  it says "Download started", not that the PNG was saved; setup failures are surfaced instead.
 - Desktop `save_card` fallback: not built; acceptance item 15 in `docs/standalone-acceptance.md` decides it.
 - App bundle: 1,006,511 bytes Brotli (+10,727 vs 995,784), over the current 1,000,000 cap: needs PR #53 (1.25 MB).

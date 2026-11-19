@@ -13,6 +13,11 @@ names on/off, missing minimap, missing portrait): render+download about 200 ms. 
 (loss, no operator account), installed WebView2 download on MH-Home (acceptance item 15; decides the
 `save_card` fallback).
 
+Review fixes: the keyboard-operable privacy switch invalidates a named export before download;
+unknown results no longer claim a winner, and download setup failures are reported. Chromium
+verified cancellation with PNG encoding held, setup failure, and an actual 1200×675 PNG download.
+Installed WebView2 item 15 is still pending; no native fallback was added.
+
 ## CI action pins and desktop release notes (2026-11-19), branch `ci/pin-actions-release-notes`
 
 Every action in `ci.yml` is now pinned to a full commit SHA (version in a comment, Dependabot `github-actions`

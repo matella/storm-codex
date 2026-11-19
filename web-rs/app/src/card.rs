@@ -1,7 +1,7 @@
 //! Shareable match card, browser part (spec `docs/specs/2026-11-19-match-card.md`): loads the card fonts, the
 //! minimap and the hero portraits (same origin, so the canvas stays exportable), replays the display list of
-//! `storm_web_core::card::layout` on an offscreen 1200 × 675 canvas and saves it as a PNG through
-//! `clip::download_blob`. Everything is local: no upload, no share API.
+//! `storm_web_core::card::layout` on an offscreen 1200 × 675 canvas and encodes it as a PNG.
+//! Everything is local: no upload, no share API.
 
 use std::collections::HashMap;
 
@@ -310,10 +310,8 @@ pub async fn render(card: &Card, art: &Art) -> Result<web_sys::HtmlCanvasElement
     Ok(canvas)
 }
 
-/// Renders the card and starts the PNG download; returns the file name.
-pub async fn save(card: &Card, art: &Art) -> Result<String, String> {
+/// Renders and encodes the card; the caller decides whether the PNG can be downloaded.
+pub async fn render_png(card: &Card, art: &Art) -> Result<web_sys::Blob, String> {
     let canvas = render(card, art).await?;
-    let blob = to_png(&canvas).await?;
-    crate::clip::download_blob(&blob, &card.file_name);
-    Ok(card.file_name.clone())
+    to_png(&canvas).await
 }
