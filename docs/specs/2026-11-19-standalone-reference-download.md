@@ -1,6 +1,6 @@
 # Standalone reference data download
 
-Date: 2026-11-19. Draft for operator approval. This replaces the standalone-only bundled-snapshot requirement in the 2026-11-15 dataset adapter design. The HotsPatchNotes dataset remains the single reference source; PostgreSQL and the application updater are unchanged.
+Date: 2026-11-19. Approved by the operator in chat. This replaces the standalone-only bundled-snapshot requirement in the 2026-11-15 dataset adapter design. The HotsPatchNotes dataset remains the single reference source; PostgreSQL and the application updater are unchanged.
 
 ## User experience
 
@@ -14,6 +14,10 @@ Date: 2026-11-19. Draft for operator approval. This replaces the standalone-only
 - Validate against the supported schema and SHA-256 values. Stage and validate the required files before activation. Preserve the last working rows and images on interrupted, corrupt, or unsupported updates; do not mark a version complete until its required assets are durable. Ensure a restore with missing assets can recover even when the DB already holds the dataset version. Make open reference-dependent pages refresh after activation, including changes with no new patch ID.
 - Keep the box's refresh behavior and public API compatible. Keep the local bundle ingestion path for older desktop resources and tests; removing the bundle from the standard installer does not mean deleting cached rows or files.
 - Projection currently uses `dim_talents` to correct hero attribution and falls back when it is empty. Verify whether early imports need bounded correction after the first successful sync. If needed, specify an idempotent repair before shipping; refreshing reference tables alone must not leave permanently incorrect hero stats.
+
+## Status and controls
+
+Standalone-only `GET /api/standalone/reference` returns `{enabled, phase, version, revision}`. `phase` is `waiting`, `syncing`, `ready`, or `error`; the `enabled` flag is separate from whether a cached dataset is usable. `version` is the active dataset version, or null; the opaque string `revision` changes when an activation becomes visible. `PUT /api/standalone/reference` with `{enabled: bool}` persists the setting, returns status, and queues a check when enabled; `POST /api/standalone/reference/refresh` requests one check (202; disabled: 409). Reuse existing standalone Host/Origin protection; no user-controlled feed URL through HTTP. UI checks the local status, not GitHub. Keep sync errors separate from the import phase and preserve usable data while a check is running.
 
 ## Acceptance
 
