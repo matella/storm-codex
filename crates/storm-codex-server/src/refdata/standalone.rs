@@ -44,6 +44,8 @@ struct Status {
     phase: Phase,
     version: Option<String>,
     revision: String,
+    /// The active generation's artwork is complete on this PC, checked locally (no network).
+    artwork: bool,
 }
 
 /// Committed in the same transaction as the reference rows. The UUID is both the
@@ -75,6 +77,15 @@ struct View {
     status: Status,
     settings_loaded: bool,
     active: Option<Arc<Active>>,
+    /// Bumped on every preference change. A network round may only fetch or activate
+    /// while the epoch it started with is still current, even if sync was re-enabled since.
+    epoch: u64,
+}
+
+impl View {
+    fn current(&self, epoch: u64) -> bool {
+        self.status.enabled && self.epoch == epoch
+    }
 }
 
 pub(crate) struct ReferenceState {
@@ -82,10 +93,11 @@ pub(crate) struct ReferenceState {
     /// Serializes the final activation and preference writes, not downloads.
     control: tokio::sync::Mutex<()>,
     check: Notify,
+    assets: PathBuf,
 }
 
-impl Default for ReferenceState {
-    fn default() -> Self {
+impl ReferenceState {
+    pub(crate) fn new(cfg: &crate::config::Config) -> Self {
         Self {
             view: Mutex::new(View {
                 status: Status {
@@ -93,17 +105,18 @@ impl Default for ReferenceState {
                     phase: Phase::Waiting,
                     version: None,
                     revision: Uuid::new_v4().to_string(),
+                    artwork: false,
                 },
                 settings_loaded: false,
                 active: None,
+                epoch: 0,
             }),
             control: tokio::sync::Mutex::new(()),
             check: Notify::new(),
+            assets: assets_dir(cfg),
         }
     }
-}
 
-impl ReferenceState {
     fn view(&self) -> std::sync::MutexGuard<'_, View> {
         self.view.lock().unwrap_or_else(|e| e.into_inner())
     }
@@ -134,7 +147,18 @@ impl ReferenceState {
                     && Uuid::parse_str(&a.revision).is_ok_and(|id| id.to_string() == a.revision)
                     && a.images.keys().all(|path| safe_image_dest(path))
             });
+        // A restored DB can name a generation whose files were not restored with it.
+        let artwork = match &active {
+            Some(active) => {
+                let (active, root) = (active.clone(), self.assets.clone());
+                tokio::task::spawn_blocking(move || active.complete(&root))
+                    .await
+                    .unwrap_or(false)
+            }
+            None => false,
+        };
         let mut view = self.view();
+        view.status.artwork = artwork;
         if let Some(active) = active {
             view.status.revision = active.revision.clone();
             view.active = Some(Arc::new(active));
@@ -200,6 +224,9 @@ async fn set_enabled(State(app): State<AppState>, Json(body): Json<Preference>) 
         );
     }
     let mut view = state.view();
+    if view.status.enabled != body.enabled {
+        view.epoch += 1;
+    }
     view.status.enabled = body.enabled;
     if !body.enabled {
         view.status.phase = idle(&view.status);
@@ -283,8 +310,12 @@ async fn serve_image(path: PathBuf, method: &Method, headers: &HeaderMap) -> Res
     }
 }
 
+fn assets_dir(cfg: &crate::config::Config) -> PathBuf {
+    cfg.data_dir().join("reference-assets")
+}
+
 fn asset_root(app: &AppState) -> PathBuf {
-    app.cfg.data_dir().join("reference-assets")
+    assets_dir(&app.cfg)
 }
 
 pub(crate) fn spawn(app: AppState) {
@@ -330,6 +361,8 @@ async fn run(app: AppState, src: Arc<dyn load::Source>, retries: [Duration; 3]) 
                     failures = 0;
                     DAILY
                 }
+                // A preference change cancelled it; the check that change queued runs next.
+                Err(SyncError::Superseded) => DAILY,
                 Err(e) => {
                     tracing::warn!("reference sync: check failed ({e})");
                     let mut view = state.view();
@@ -377,6 +410,8 @@ enum SyncError {
     DownloadWorkerClosed,
     #[error("could not start reference download worker: {0}")]
     DownloadWorkerStart(#[source] std::io::Error),
+    #[error("reference check cancelled by a preference change")]
+    Superseded,
 }
 
 struct Prepared {
@@ -482,7 +517,7 @@ async fn bundle(app: &AppState, state: &ReferenceState, file: &Path) -> Result<(
     })
     .await??;
     if let Some(prepared) = staged {
-        activate(app, state, prepared, false).await?;
+        activate(app, state, prepared, None).await?;
     }
     Ok(())
 }
@@ -490,11 +525,12 @@ async fn bundle(app: &AppState, state: &ReferenceState, file: &Path) -> Result<(
 struct EnabledSource {
     st: Arc<crate::standalone::StandaloneState>,
     source: Arc<dyn load::Source>,
+    epoch: u64,
 }
 
 impl EnabledSource {
     fn check(&self) -> Result<(), RefdataError> {
-        if !self.st.stop_requested() && self.st.reference.view().status.enabled {
+        if !self.st.stop_requested() && self.st.reference.view().current(self.epoch) {
             Ok(())
         } else {
             Err(RefdataError::Io("reference sync disabled".into()))
@@ -527,9 +563,11 @@ async fn round(
     let Some(st) = &app.standalone else {
         return Ok(());
     };
+    let epoch = state.view().epoch;
     let src = EnabledSource {
         st: st.clone(),
         source: src,
+        epoch,
     };
     let active = state.view().active.clone();
     let root = asset_root(app);
@@ -559,9 +597,13 @@ async fn round(
             let _ = send.send(prepare());
         })
         .map_err(SyncError::DownloadWorkerStart)?;
-    let staged = recv.await.map_err(|_| SyncError::DownloadWorkerClosed)??;
+    let staged = match recv.await.map_err(|_| SyncError::DownloadWorkerClosed)? {
+        Ok(staged) => staged,
+        Err(_) if state.view().epoch != epoch => return Err(SyncError::Superseded),
+        Err(e) => return Err(e.into()),
+    };
     if let Some(prepared) = staged {
-        activate(app, state, prepared, true).await?;
+        activate(app, state, prepared, Some(epoch)).await?;
     } else {
         let mut view = state.view();
         view.status.phase = idle(&view.status);
@@ -573,10 +615,12 @@ async fn activate(
     app: &AppState,
     state: &ReferenceState,
     mut staged: Prepared,
-    network: bool,
+    // The network round's epoch; a bundle activation is not tied to the preference.
+    epoch: Option<u64>,
 ) -> Result<(), SyncError> {
-    if network && !state.view().status.enabled {
-        return Ok(());
+    let stale = || epoch.is_some_and(|e| !state.view().current(e));
+    if stale() {
+        return Err(SyncError::Superseded);
     }
     let mut tx = app.db.begin().await?;
     load::write_rows(&mut tx, &staged.rows).await?;
@@ -595,8 +639,8 @@ async fn activate(
     .execute(&mut *tx)
     .await?;
     let _guard = state.control.lock().await;
-    if network && !state.view().status.enabled {
-        return Ok(());
+    if stale() {
+        return Err(SyncError::Superseded);
     }
     staged.keep = true;
     tx.commit().await?;
@@ -609,6 +653,7 @@ async fn activate(
     view.status.version = Some(staged.active.version.clone());
     view.status.revision = staged.active.revision.clone();
     view.status.phase = Phase::Ready;
+    view.status.artwork = true;
     view.active = Some(Arc::new(staged.active.clone()));
     Ok(())
 }

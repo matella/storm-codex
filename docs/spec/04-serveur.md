@@ -297,7 +297,10 @@ empty, retry every **10 min**. Each round (`refdata::load::refresh`):
 and every 24 h. Failed checks retry after 1, 5 and 30 minutes, then return to the daily cadence.
 Manual refresh and enabling queue a check; requests coalesce and rounds never overlap. The persisted
 `app_settings.standalone_reference_enabled` defaults to true. Disabling prevents new rounds and
-activation of work still being fetched; it does not remove cached rows or assets.
+activation of work still being fetched; it does not remove cached rows or assets. Each preference
+change bumps a round epoch: a round only fetches and activates while its starting epoch is current,
+so disabling then re-enabling during a download cannot revive that round; the queued check runs
+once instead.
 
 - The manifest schema and metadata checks use the existing adapter. An unchanged version with
   complete verified local images fetches only `manifest.json`. Otherwise the worker verifies the
@@ -312,6 +315,9 @@ activation of work still being fetched; it does not remove cached rows or assets
   even with network sync disabled. A changed bundle is accepted until a network generation is
   active; then a legacy resource cannot downgrade it. A restore with missing images keeps its
   rows: the next successful check restages even the same version and publishes a new revision.
+  Startup verifies the active generation's files locally (no network, whatever the preference) and
+  reports the result as the status `artwork` flag, so cached rows with missing artwork are not
+  presented as available offline.
   Cached rows remain readable during a check or failure.
 - Activation repairs hero attribution of already projected replays in bounded batches, using stored
   talent IDs and the live correction rule. It updates the promoted hero and affected player/match

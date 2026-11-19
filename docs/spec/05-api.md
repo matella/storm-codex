@@ -222,16 +222,22 @@ in [04-serveur.md](04-serveur.md) ("Standalone import").
 
 | Request | Response |
 |---|---|
-| `GET /api/standalone/reference` | `200` with `{enabled, phase, version, revision}` |
+| `GET /api/standalone/reference` | `200` with `{enabled, phase, version, revision, artwork}` |
 | `PUT /api/standalone/reference` with `{enabled: bool}` | Persists the preference, queues a check when enabled, and returns `200` with the same shape. |
 | `POST /api/standalone/reference/refresh` | Requests one check: `202` when enabled, `409` when disabled. |
 
 These routes are standalone-only (`404` otherwise) and use the same Host/Origin checks. There is
 no request-supplied feed URL. `phase` is `waiting`, `syncing`, `ready` or `error` and is independent
 of import progress. `enabled` is independent of cached dataset usability. `version` is the active
-dataset version (a string), or `null`. `revision` is an opaque **string**: compare for equality, not
+dataset version (a string), or `null`. `artwork` is `true` only when the active dataset's managed
+image generation is complete on this PC; it is checked locally (never over the network) at startup,
+so it is `false` after restoring a database without its asset folder, for a legacy unmanaged image
+folder, or with no active dataset, even while downloads are disabled. `revision` is an opaque **string**: compare for equality, not
 ordering. It changes when an activation becomes visible, including an update with no new patch ID
 and same-version asset recovery. It does not change on a refused check or a preference toggle.
+Every preference change cancels the check in progress: a download started before sync was turned off
+never activates, even if sync is turned back on before it finishes; the check queued by re-enabling
+runs instead.
 Clients poll this local status (not GitHub) and refetch reference-dependent data when it changes.
 
 In standalone mode, operator perspective in Matches/CSV, Heroes, Maps (including early leads),

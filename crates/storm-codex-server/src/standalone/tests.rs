@@ -104,7 +104,8 @@ async fn reference_status_is_standalone_only_and_has_an_opaque_string_revision()
     assert_eq!(
         status,
         serde_json::json!({
-            "enabled": true, "phase": "waiting", "version": null, "revision": status["revision"]
+            "enabled": true, "phase": "waiting", "version": null, "revision": status["revision"],
+            "artwork": false
         })
     );
     assert!(status["revision"].as_str().is_some_and(|s| !s.is_empty()));

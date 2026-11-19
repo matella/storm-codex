@@ -125,7 +125,11 @@ pub fn ReferenceControls() -> impl IntoView {
                     ReferencePhase::Error => "Reference sync failed. Check your connection and retry.",
                 }))}
                 {move || sync.status.with(|s| s.as_ref().map(|s| match &s.version {
-                    Some(v) => format!(" Cached version: {v} (available offline)."),
+                    Some(v) if s.artwork => format!(" Cached version: {v} (available offline)."),
+                    Some(v) if s.enabled => format!(" Cached version: {v}, but its artwork is missing on this PC."),
+                    Some(v) => format!(
+                        " Cached version: {v}, but its artwork is missing on this PC. Enable automatic downloads to restore it."
+                    ),
                     None => " No cached version yet.".into(),
                 }))}
             </div>

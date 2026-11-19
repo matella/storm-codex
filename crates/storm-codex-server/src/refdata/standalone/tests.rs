@@ -319,6 +319,7 @@ async fn refresh_retains_last_good_on_failure_and_recovers_same_version_after_re
     round(&app, &st.reference, source()).await.unwrap();
     let initial = get_json(&router, STATUS).await;
     assert_eq!(initial["version"], "one");
+    assert_eq!(initial["artwork"], true);
     let (code, image) = call(&router, "GET", IMAGE, Body::empty()).await;
     assert_eq!(code, StatusCode::OK);
     assert!(!image.is_empty());
@@ -407,7 +408,10 @@ async fn refresh_retains_last_good_on_failure_and_recovers_same_version_after_re
     let st = restored.standalone.as_ref().unwrap();
     st.reference.load(&db).await;
     let router = crate::app_router(restored.clone());
-    assert_eq!(get_json(&router, STATUS).await, disabled);
+    // The rows are cached, but the artwork is not: status says so without any network check.
+    let mut missing = disabled.clone();
+    missing["artwork"] = json!(false);
+    assert_eq!(get_json(&router, STATUS).await, missing);
     assert_eq!(
         call(&router, "GET", IMAGE, Body::empty()).await.0,
         StatusCode::NOT_FOUND
@@ -438,6 +442,7 @@ async fn refresh_retains_last_good_on_failure_and_recovers_same_version_after_re
     })
     .await;
     assert_eq!(recovered["version"], updated["version"]);
+    assert_eq!(recovered["artwork"], true);
     assert!(restore_src.asked().contains(&"dataset.tar.gz".into()));
     assert_eq!(call(&router, "GET", IMAGE, Body::empty()).await.1, image);
     st.stop_import();
@@ -707,5 +712,106 @@ async fn incomplete_or_oversized_updates_keep_the_active_generation() {
         .await
         .unwrap();
     assert_eq!(get_json(&router, STATUS).await["version"], "two");
+    drop_db(db, &name).await;
+}
+
+/// Turning sync off and back on while a download is in flight cancels that round for good:
+/// re-enabling cannot revive it. The check queued by the preference change runs exactly once.
+#[tokio::test]
+async fn reenabling_during_a_download_never_revives_the_cancelled_round() {
+    struct HoldFirst {
+        files: DirSource,
+        manifests: AtomicUsize,
+        downloads: Mutex<Vec<PathBuf>>,
+        started: Notify,
+        release: Mutex<std::sync::mpsc::Receiver<()>>,
+    }
+    impl load::Source for HoldFirst {
+        fn get(&self, name: &str) -> Result<Vec<u8>, RefdataError> {
+            if name == "manifest.json" {
+                self.manifests.fetch_add(1, Ordering::SeqCst);
+            }
+            self.files.get(name)
+        }
+        fn download(&self, name: &str, file: &Path) -> Result<(), RefdataError> {
+            let first = {
+                let mut downloads = self.downloads.lock().unwrap();
+                downloads.push(file.to_owned());
+                downloads.len() == 1
+            };
+            if first {
+                self.started.notify_one();
+                self.release
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(15))
+                    .unwrap();
+            }
+            self.files.download(name, file)
+        }
+    }
+    let Some((db, name)) = isolated_db().await else {
+        return;
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = fixture_dir_copy(tmp.path());
+    let app = setup(&db, tmp.path(), Vec::new());
+    let st = app.standalone.as_ref().unwrap();
+    st.reference.load(&db).await;
+    let router = crate::app_router(app.clone());
+    set_version(&dir, "before", 1);
+    round(&app, &st.reference, Arc::new(DirSource::new(dir.clone())))
+        .await
+        .unwrap();
+    let initial = get_json(&router, STATUS).await;
+    set_version(&dir, "after", 1);
+    let (release, ready) = std::sync::mpsc::channel();
+    let source = Arc::new(HoldFirst {
+        files: DirSource::new(dir.clone()),
+        manifests: AtomicUsize::new(0),
+        downloads: Mutex::new(Vec::new()),
+        started: Notify::new(),
+        release: Mutex::new(ready),
+    });
+    let worker = tokio::spawn(run(app.clone(), source.clone(), RETRIES));
+    tokio::time::timeout(Duration::from_secs(10), source.started.notified())
+        .await
+        .unwrap();
+    // The held round staged into its own generation directory.
+    let cancelled = source.downloads.lock().unwrap()[0]
+        .parent()
+        .unwrap()
+        .to_owned();
+    let cancelled_revision = cancelled.file_name().unwrap().to_str().unwrap().to_owned();
+    for enabled in [false, true] {
+        let body = Body::from(json!({ "enabled": enabled }).to_string());
+        assert_eq!(call(&router, "PUT", STATUS, body).await.0, StatusCode::OK);
+    }
+    assert_eq!(
+        get_json(&router, STATUS).await["revision"],
+        initial["revision"]
+    );
+    release.send(()).unwrap();
+    let updated = wait_for(&router, STATUS, |v| v["version"] == "after").await;
+    assert_eq!(updated["phase"], "ready");
+    assert_eq!(updated["enabled"], true);
+    assert_eq!(updated["artwork"], true);
+    assert_ne!(updated["revision"], initial["revision"]);
+    assert_ne!(
+        updated["revision"], cancelled_revision,
+        "the cancelled round must not commit"
+    );
+    assert!(!cancelled.exists(), "the cancelled generation is discarded");
+    // Let a spurious extra check show up before counting.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(
+        source.manifests.load(Ordering::SeqCst),
+        2,
+        "the cancelled round, then exactly one new round"
+    );
+    assert_eq!(source.downloads.lock().unwrap().len(), 2);
+    assert_eq!(get_json(&router, STATUS).await, updated);
+    st.stop_import();
+    worker.await.unwrap();
     drop_db(db, &name).await;
 }

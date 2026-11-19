@@ -150,7 +150,7 @@ impl StandaloneState {
         let (commands, command_rx) = mpsc::unbounded_channel();
         StandaloneState {
             data_dir: cfg.data_dir(),
-            reference: crate::refdata::standalone::ReferenceState::default(),
+            reference: crate::refdata::standalone::ReferenceState::new(cfg),
             view: Mutex::new(View {
                 phase: Phase::Seeding,
                 folders: Vec::new(),

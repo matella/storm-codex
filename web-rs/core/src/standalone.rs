@@ -106,6 +106,9 @@ pub struct ReferenceStatus {
     pub phase: ReferencePhase,
     pub version: Option<String>,
     pub revision: String,
+    /// The active dataset's artwork is complete on this PC (absent from older servers).
+    #[serde(default)]
+    pub artwork: bool,
 }
 
 impl ReferenceStatus {
@@ -443,12 +446,14 @@ mod tests {
         )
         .unwrap();
         assert_eq!(waiting.active_revision(), None);
+        assert!(!waiting.artwork);
 
         let cached: ReferenceStatus = serde_json::from_str(
-            r#"{"enabled":false,"phase":"error","version":"data-123","revision":"restored:abc"}"#,
+            r#"{"enabled":false,"phase":"error","version":"data-123","revision":"restored:abc","artwork":true}"#,
         )
         .unwrap();
         assert_eq!(cached.active_revision(), Some("restored:abc"));
+        assert!(cached.artwork);
         assert!(!cached.enabled);
         assert_eq!(cached.phase, ReferencePhase::Error);
 
