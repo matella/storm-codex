@@ -18,7 +18,11 @@ answers `no-cache`, not `immutable`). The managed-image 304 path no longer force
 conditional hit now keeps the selected representation's own cache policy (`immutable` or `no-cache`),
 matching the `/v2` bundle middleware. Added a router-level test matrix for Range/If-Range/conditional
 negotiation across identity/br/gzip representations (206/304/416, `Content-Range` totals, `Vary`,
-`Cache-Control`) in `platform_tests.rs`.
+`Cache-Control`) in `platform_tests.rs`. Found and documented, rather than assumed: tower-http 0.7's
+ServeDir/ServeFile does not implement If-Range at all (a stale If-Range validator does not fall back
+to the full body; Range always wins). Rechecked on the merged tree (origin/main's release-notes banner
+integrated locally): server fmt, strict Clippy and 517 workspace tests passed (10 ignored, throwaway
+Postgres 17); web-rs and packaging not reverified by this review pass (no web-rs or desktop changes).
 
 ## Release notes in the desktop update banner (2026-11-19), branch `feat/update-notes`
 
