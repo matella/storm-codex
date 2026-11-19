@@ -202,27 +202,28 @@ pub fn deltas(g: &MyGame, avg: &[Option<f64>; 7]) -> [Option<f64>; 7] {
     std::array::from_fn(|i| Some(g.stats[i]? - avg[i]?))
 }
 
-/// Number of stats better than the baseline (above it; below it for deaths).
-pub fn score(d: &[Option<f64>; 7]) -> u32 {
-    d.iter()
-        .enumerate()
-        .filter(|(i, v)| v.is_some_and(|v| if *i == DEATHS { v < 0.0 } else { v > 0.0 }))
-        .count() as u32
+/// Number of displayed deltas better than the baseline; no score without a comparison.
+fn score(d: &BTreeMap<&'static str, f64>) -> Option<u32> {
+    (!d.is_empty()).then(|| {
+        d.iter()
+            .filter(|&(&stat, &v)| if stat == "deaths" { v < 0.0 } else { v > 0.0 })
+            .count() as u32
+    })
 }
 
-/// Best and worst game (indices into `games`) by `scores` (ties: KDA ratio); `None` for fewer than 2 games.
-pub fn best_worst(games: &[MyGame], scores: &[u32]) -> Option<(usize, usize)> {
-    if games.len() < 2 {
-        return None;
-    }
-    let key = |i: &usize| (scores[*i], games[*i].kda());
-    let cmp = |a: &usize, b: &usize| {
-        let (ka, kb) = (key(a), key(b));
-        ka.0.cmp(&kb.0).then(ka.1.total_cmp(&kb.1))
+/// Best and worst game (indices into `games`); at least two games must have a score.
+fn best_worst(games: &[MyGame], scores: &[Option<u32>]) -> Option<(usize, usize)> {
+    let ranked = scores
+        .iter()
+        .enumerate()
+        .filter_map(|(i, s)| Some((i, (*s)?)));
+    let cmp = |&(a, sa): &(usize, u32), &(b, sb): &(usize, u32)| {
+        sa.cmp(&sb)
+            .then_with(|| games[a].kda().total_cmp(&games[b].kda()))
     };
-    let best = (0..games.len()).max_by(cmp)?;
-    let worst = (0..games.len()).min_by(cmp)?;
-    Some((best, worst))
+    let (best, _) = ranked.clone().max_by(cmp)?;
+    let (worst, _) = ranked.min_by(cmp)?;
+    (best != worst).then_some((best, worst))
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq, Default)]
@@ -398,7 +399,7 @@ pub fn review(games: &[MyGame], id: i64) -> Option<Review> {
         } else {
             (overall, "overall")
         };
-        let d = deltas(g, &avg);
+        let d = by_stat(&deltas(g, &avg));
         scores.push(score(&d));
         out_games.push(ReviewGame {
             match_id: g.id,
@@ -412,7 +413,7 @@ pub fn review(games: &[MyGame], id: i64) -> Option<Review> {
             deaths: g.stats[DEATHS],
             assists: g.stats[2],
             award: g.award.clone(),
-            deltas: by_stat(&d),
+            deltas: d,
             baseline: which,
         });
     }
@@ -656,21 +657,22 @@ mod tests {
         let avg = [Some(5.0); 7];
         // 6 above + fewer deaths: 7
         let top = g(1, 0, "A", false, 6.0, 4.0);
-        assert_eq!(score(&deltas(&top, &avg)), 7);
+        let score_game = |game: &MyGame| score(&by_stat(&deltas(game, &avg)));
+        assert_eq!(score_game(&top), Some(7));
         // equal is neither above nor below; more deaths is worse
         let even = g(2, 10, "A", true, 5.0, 9.0);
-        assert_eq!(score(&deltas(&even, &avg)), 0);
+        assert_eq!(score_game(&even), Some(0));
         let games = [top, even.clone(), g(3, 20, "A", true, 5.0, 1.0)];
         // game 3: only deaths better → 1; game 2: 0
-        let scores: Vec<u32> = games.iter().map(|x| score(&deltas(x, &avg))).collect();
-        assert_eq!(scores, vec![7, 0, 1]);
+        let scores: Vec<_> = games.iter().map(score_game).collect();
+        assert_eq!(scores, vec![Some(7), Some(0), Some(1)]);
         assert_eq!(best_worst(&games, &scores), Some((0, 1)));
         // same score: the KDA ratio decides (a loss can be the best game)
         let tie = [g(1, 0, "A", true, 2.0, 2.0), g(2, 1, "A", false, 8.0, 2.0)];
-        assert_eq!(best_worst(&tie, &[3, 3]), Some((1, 0)));
+        assert_eq!(best_worst(&tie, &[Some(3), Some(3)]), Some((1, 0)));
         // all equal: still two different games
         let same = [even.clone(), even];
-        let (b, w) = best_worst(&same, &[0, 0]).unwrap();
+        let (b, w) = best_worst(&same, &[Some(0), Some(0)]).unwrap();
         assert_ne!(b, w);
         assert_eq!(best_worst(&games[..1], &scores[..1]), None);
     }
@@ -701,6 +703,49 @@ mod tests {
         assert_eq!(r.baseline.games, 0);
         assert!(r.games[0].deltas.is_empty());
         assert_eq!((r.prev, r.next), (None, None));
+    }
+
+    #[test]
+    fn multi_game_session_without_baseline_has_no_picks() {
+        let games = [g(1, 0, "A", true, 6.0, 1.0), g(2, 60, "B", false, 2.0, 4.0)];
+        let r = review(&games, 1).unwrap();
+        assert_eq!(r.games.len(), 2);
+        assert!(r.games.iter().all(|g| g.deltas.is_empty()));
+        assert_eq!((r.best, r.worst), (None, None));
+    }
+
+    #[test]
+    fn only_games_with_deltas_can_rank() {
+        let mut games = vec![
+            g(1, 0, "A", true, 5.0, 2.0),
+            g(2, 14_000, "A", true, 6.0, 1.0),
+            g(3, 14_060, "B", false, 2.0, 4.0),
+        ];
+        games[2].stats = [None; 7];
+        let r = review(&games, 2).unwrap();
+        assert_eq!((r.best, r.worst), (None, None));
+
+        games[2].stats[0] = Some(5.0); // a zero delta is still comparable
+        games.push(g(4, 14_120, "C", false, 0.0, 0.0));
+        games[3].stats = [None; 7];
+        let r = review(&games, 2).unwrap();
+        assert_eq!((r.best, r.worst), (Some(2), Some(3)));
+    }
+
+    #[test]
+    fn ranking_does_not_count_deltas_displayed_as_zero() {
+        let games = [
+            g(1, 0, "A", true, 5.0, 2.0),
+            g(2, 14_000, "A", true, 5.01, 2.01),
+            g(3, 14_060, "A", false, 5.0, 1.96),
+        ];
+        let r = review(&games, 2).unwrap();
+        assert!(r.games.iter().all(|g| g.deltas.values().all(|&d| d == 0.0)));
+        assert_eq!(
+            (r.best, r.worst),
+            (Some(3), Some(2)),
+            "displayed scores tie; higher KDA wins"
+        );
     }
 
     #[test]

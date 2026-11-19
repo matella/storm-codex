@@ -10,6 +10,11 @@ session, best/worst = most stats above the hero average with KDA ties, fixed 3 h
 #53** (cap 1.25 MB) merged first. Deviations listed in the spec's implementation notes (deaths count as better when
 lower; `baseline.modes` added). **Not done**: reviewer pass, installed standalone check, perf during an import.
 
+Review fixes: rank only games with comparable data, using the rounded deltas returned to the page.
+Transport and server errors no longer look like empty or missing sessions. Verified with the
+server workspace tests on throwaway PostgreSQL and Chromium against controlled HTTP responses.
+Installed standalone acceptance and the release bundle/performance checks remain pending.
+
 ## CI action pins and desktop release notes (2026-11-19), branch `ci/pin-actions-release-notes`
 
 Every action in `ci.yml` is now pinned to a full commit SHA (version in a comment, Dependabot `github-actions`

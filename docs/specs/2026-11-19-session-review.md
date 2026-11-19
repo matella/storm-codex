@@ -108,7 +108,8 @@ Deviations and readings of the spec, for the operator to confirm:
   the 7 stats **better** than the game's baseline average (same hero with ≥ 5 baseline games, else overall); best =
   highest score, worst = lowest, ties by KDA ratio ((K + A) / max(D, 1)) with no "win first" step. **Deaths count as
   better when below the average** (more deaths "above average" would otherwise rank as good); the UI colours deaths
-  the same way.
+  the same way. Only games with at least one known delta are eligible, both picks are omitted if fewer than two
+  qualify, and deltas rounded to zero do not count as better.
 - **Baseline modes**: the baseline (overall, per hero, per map) only counts the game modes played in the session.
   The response adds `baseline.modes` (not in the drafted shape) so the page can say which modes it compares.
 - **`end`** = last game start + its length (so `end − start = span_s`); the list uses the same `end`.
@@ -119,7 +120,8 @@ Deviations and readings of the spec, for the operator to confirm:
   anything else is 400 `account` (the archive's `/api/matches` returns an empty list instead).
 - **UI**: the cover is built from the review (no client-side session split any more); the title is "Tonight" for the
   latest session played today, "Last session" for the latest, "Session" for an older one; the stat-delta block
-  shows the **mean per-game delta** over the session; an unknown `?s=` shows "Session not found". Section numbers:
+  shows the **mean per-game delta** over the session; an unknown `?s=` shows "Session not found", while a fetch
+  or server failure shows "Unable to load session". Section numbers:
   01 Review, 02 games, 03 Your form.
 - **Endpoint tests** use synthetic games inserted into the shared test DB (a unique operator name appended to
   `operator_names`) rather than the committed replays: three replays cannot form sessions with a baseline, and the

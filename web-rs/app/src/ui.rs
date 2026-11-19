@@ -385,14 +385,23 @@ pub fn fetch_reference<T: DeserializeOwned + 'static>(
 pub fn fetch_operator_stats<T: DeserializeOwned + 'static>(
     url: impl Fn() -> String + 'static,
 ) -> LocalResource<Result<T, String>> {
+    fetch(operator_stats_url(url))
+}
+
+/// Track the revisions that invalidate operator statistics, including for custom reads.
+pub(crate) fn operator_stats_url(
+    url: impl Fn() -> String + 'static,
+) -> impl Fn() -> String + 'static {
     let op = expect_context::<Operator>();
     let matches = expect_context::<crate::layout::LiveBus>().matches;
-    fetch_reference(move || {
+    let refresh = crate::reference::use_reference().refresh;
+    move || {
+        refresh.track();
         matches.track();
         op.manual.track();
         op.toons.track();
         url()
-    })
+    }
 }
 
 /// Style that gives a tile the in-game minimap of a map (`mapArt`).

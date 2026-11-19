@@ -809,7 +809,7 @@ mod tests {
     /// One game of `toon` (team 0) against a filler row, for the session endpoints.
     #[allow(clippy::too_many_arguments)]
     async fn session_game(
-        db: &sqlx::PgPool,
+        db: &mut sqlx::PgConnection,
         toon: &str,
         name: &str,
         at: DateTime<Utc>,
@@ -825,7 +825,7 @@ mod tests {
         )
         .bind(format!("session-{tag}"))
         .bind(at)
-        .fetch_one(db)
+        .fetch_one(&mut *db)
         .await
         .unwrap();
         for (t, n, team, w) in [
@@ -846,7 +846,7 @@ mod tests {
             .bind(w)
             .bind(kills)
             .bind(deaths)
-            .execute(db)
+            .execute(&mut *db)
             .await
             .unwrap();
         }
@@ -860,38 +860,43 @@ mod tests {
         };
         let tag = uuid::Uuid::new_v4().simple().to_string();
         let (toon, name) = (format!("sess-{tag}"), format!("Sess{tag}"));
+        let mut fixture = state.db.begin().await.unwrap();
         // add the account to `operator_names` without dropping the other tests' names
         sqlx::query(
             "INSERT INTO app_settings (key, value) VALUES ('operator_names', jsonb_build_array($1::text))
              ON CONFLICT (key) DO UPDATE SET value = app_settings.value || EXCLUDED.value",
         )
         .bind(&name)
-        .execute(&state.db)
+        .execute(&mut *fixture)
         .await
         .unwrap();
         let t0 = chrono::TimeZone::with_ymd_and_hms(&Utc, 2021, 3, 1, 20, 0, 0).unwrap();
         let h = chrono::Duration::hours;
-        let db = &state.db;
+        let mut ids = Vec::new();
         // baseline: 5 Valla games in the 90 days before, 6 kills each
         for d in 1..=5 {
-            session_game(
-                db,
-                &toon,
-                &name,
-                t0 - chrono::Duration::days(d),
-                "Valla",
-                d % 2 == 0,
-                6,
-                3,
-            )
-            .await;
+            ids.push(
+                session_game(
+                    &mut fixture,
+                    &toon,
+                    &name,
+                    t0 - chrono::Duration::days(d),
+                    "Valla",
+                    d % 2 == 0,
+                    6,
+                    3,
+                )
+                .await,
+            );
         }
         // session 1: two games 1 h apart; session 2: 4 h later, three games
-        let s1 = session_game(db, &toon, &name, t0, "Valla", true, 9, 1).await;
-        let s1b = session_game(db, &toon, &name, t0 + h(1), "Jaina", false, 2, 6).await;
-        let s2 = session_game(db, &toon, &name, t0 + h(5), "Valla", true, 7, 2).await;
-        session_game(db, &toon, &name, t0 + h(6), "Valla", true, 4, 5).await;
-        session_game(db, &toon, &name, t0 + h(7), "Valla", false, 5, 4).await;
+        let s1 = session_game(&mut fixture, &toon, &name, t0, "Valla", true, 9, 1).await;
+        let s1b = session_game(&mut fixture, &toon, &name, t0 + h(1), "Jaina", false, 2, 6).await;
+        let s2 = session_game(&mut fixture, &toon, &name, t0 + h(5), "Valla", true, 7, 2).await;
+        ids.push(session_game(&mut fixture, &toon, &name, t0 + h(6), "Valla", true, 4, 5).await);
+        ids.push(session_game(&mut fixture, &toon, &name, t0 + h(7), "Valla", false, 5, 4).await);
+        ids.extend([s1, s1b, s2]);
+        fixture.commit().await.unwrap();
         let call = |path: String| {
             let state = state.clone();
             async move { crate::api_tests::call(&state, "GET", &path, None).await }
@@ -899,6 +904,30 @@ mod tests {
         let acc = format!("account={name}");
 
         let (st, l) = call(format!("/api/sessions?{acc}")).await;
+        let (one_st, one) = call(format!("/api/sessions?{acc}&limit=1")).await;
+        let (review_st, r) = call(format!("/api/sessions/{s1}?{acc}")).await;
+        let (review2_st, r2) = call(format!("/api/sessions/{s2}?{acc}")).await;
+        let (not_found, _) = call(format!("/api/sessions/{s1b}?{acc}")).await;
+        let (unknown_account, e) = call(format!("/api/sessions?account=nobody-{tag}")).await;
+        let (unverified_toon, _) = call(format!("/api/sessions/{s1}?account=toon%3A{toon}")).await;
+
+        // Clean up before assertions so a regression cannot leave matches or operator names behind.
+        let mut cleanup = state.db.begin().await.unwrap();
+        sqlx::query("DELETE FROM matches WHERE id = ANY($1)")
+            .bind(&ids)
+            .execute(&mut *cleanup)
+            .await
+            .unwrap();
+        sqlx::query(
+            "UPDATE app_settings SET value = value - $1::text WHERE key = 'operator_names'",
+        )
+        .bind(&name)
+        .execute(&mut *cleanup)
+        .await
+        .unwrap();
+        cleanup.commit().await.unwrap();
+        std::fs::remove_dir_all(state.cfg.archive_dir.parent().unwrap()).unwrap();
+
         assert_eq!(st, StatusCode::OK, "{l}");
         let list = l["sessions"].as_array().unwrap();
         // 5 one-game baseline sessions (a day apart) + the two sessions
@@ -909,11 +938,10 @@ mod tests {
             (Some(3), Some(2))
         );
         assert_eq!(list[1]["id"], s1);
-        let (_, one) = call(format!("/api/sessions?{acc}&limit=1")).await;
+        assert_eq!(one_st, StatusCode::OK);
         assert_eq!(one["sessions"].as_array().unwrap().len(), 1);
 
-        let (st, r) = call(format!("/api/sessions/{s1}?{acc}")).await;
-        assert_eq!(st, StatusCode::OK, "{r}");
+        assert_eq!(review_st, StatusCode::OK, "{r}");
         assert_eq!(r["record"], json!({"wins": 1, "losses": 1}));
         assert_eq!(r["games"][0]["match_id"], s1);
         assert_eq!(r["games"][0]["baseline"], "hero");
@@ -946,8 +974,7 @@ mod tests {
         assert_eq!(r["next"], s2);
         assert!(r["prev"].is_i64());
 
-        let (st, r2) = call(format!("/api/sessions/{s2}?{acc}")).await;
-        assert_eq!(st, StatusCode::OK);
+        assert_eq!(review2_st, StatusCode::OK);
         assert_eq!(r2["prev"], s1);
         assert!(r2["next"].is_null());
         assert_eq!(
@@ -955,19 +982,13 @@ mod tests {
             json!({"best_win": 2, "worst_loss": 1, "current": -1})
         );
 
+        assert_eq!(not_found, StatusCode::NOT_FOUND);
         assert_eq!(
-            call(format!("/api/sessions/{s1b}?{acc}")).await.0,
-            StatusCode::NOT_FOUND
-        );
-        let (st, e) = call(format!("/api/sessions?account=nobody-{tag}")).await;
-        assert_eq!(
-            (st, e["error"].as_str()),
+            (unknown_account, e["error"].as_str()),
             (StatusCode::BAD_REQUEST, Some("account"))
         );
         assert_eq!(
-            call(format!("/api/sessions/{s1}?account=toon%3A{toon}"))
-                .await
-                .0,
+            unverified_toon,
             StatusCode::BAD_REQUEST,
             "a toon is only an account when a folder verifies it"
         );

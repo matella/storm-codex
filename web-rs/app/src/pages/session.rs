@@ -21,8 +21,8 @@ use crate::{
     layout::LiveBus,
     matchui::{AwardTag, GameCard, Pips},
     ui::{
-        fetch_operator_stats, fetch_reference, map_art, use_operator, use_owner_toons, Link,
-        Portrait, SecHead, Tone,
+        fetch_operator_stats, fetch_reference, map_art, operator_stats_url, use_operator,
+        use_owner_toons, Link, Portrait, SecHead, Tone,
     },
 };
 
@@ -35,14 +35,15 @@ pub fn Session() -> impl IntoView {
     let latest_id = Memo::new(move |_| {
         latest
             .get()
-            .map(|r| r.ok().and_then(|l| l.sessions.first().map(|s| s.id)))
+            .map(|r| r.map(|l| l.sessions.first().map(|s| s.id)))
     });
     view! {
         <div class="ds-page">
             {move || match (chosen.get(), latest_id.get()) {
-                (Some(id), _) | (None, Some(Some(id))) => view! { <SessionView id=id /> }.into_any(),
+                (Some(id), _) | (None, Some(Ok(Some(id)))) => view! { <SessionView id=id /> }.into_any(),
                 (None, None) => view! { <div class="ds-empty" style="margin-top: 24px">"loading…"</div> }.into_any(),
-                (None, Some(None)) => view! { <NoSession /> }.into_any(),
+                (None, Some(Ok(None))) => view! { <NoSession /> }.into_any(),
+                (None, Some(Err(_))) => view! { <SessionLoadError /> }.into_any(),
             }}
             <YourForm />
         </div>
@@ -75,18 +76,34 @@ fn NoSession() -> impl IntoView {
     }
 }
 
+#[component]
+fn SessionLoadError() -> impl IntoView {
+    view! {
+        <header class="ds-cover" style="margin-top: 18px" role="alert">
+            <div class="ds-kicker">"Session"</div>
+            <h1 class="ds-title" style="cursor: default">"Unable to load session"</h1>
+            <div class="ds-subtitle" style="cursor: default">"Check your connection to Storm Codex and try again."</div>
+        </header>
+    }
+}
+
 /// One session: cover, review, games.
 #[component]
 fn SessionView(id: i64) -> impl IntoView {
-    let review = fetch_operator_stats::<Review>(move || format!("/api/sessions/{id}"));
+    let url = operator_stats_url(move || format!("/api/sessions/{id}"));
+    let review = LocalResource::new(move || {
+        let url = url();
+        async move { net::get_json_or_not_found::<Review>(&url).await }
+    });
     move || {
         let Some(res) = review.get() else {
             return view! { <div class="ds-empty" style="margin-top: 24px">"loading…"</div> }
                 .into_any();
         };
         match res {
-            Ok(r) if !r.games.is_empty() => view! { <SessionBody r=r /> }.into_any(),
-            _ => view! {
+            Ok(Some(r)) if !r.games.is_empty() => view! { <SessionBody r=r /> }.into_any(),
+            Err(_) => view! { <SessionLoadError /> }.into_any(),
+            Ok(_) => view! {
                 <header class="ds-cover" style="margin-top: 18px">
                     <div class="ds-kicker">"Session"</div>
                     <h1 class="ds-title" style="cursor: default">"Session not found"</h1>
