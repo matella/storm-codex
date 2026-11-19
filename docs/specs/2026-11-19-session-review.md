@@ -126,9 +126,11 @@ Deviations and readings of the spec, for the operator to confirm:
 - **Endpoint tests** use synthetic games inserted into the shared test DB (a unique operator name appended to
   `operator_names`) rather than the committed replays: three replays cannot form sessions with a baseline, and the
   corpus is a process-wide cache, so isolated test databases cannot be used for it.
+  The incremental refresh test models fixture cleanup by deleting two owned games and adding one in the same
+  commit; it checks those IDs and the new player row, not whole-corpus growth.
 - **Measured** (copy of the box DB, 3,492 games, release, warm, sequential loopback, idle): list p50 6.4 / p95 6.7 ms,
   review p50 6.4 / p95 6.7 ms (300 requests each). Not measured during an import.
-- **Bundle**: app 1,014,081 bytes Brotli (+18,297 vs 995,784; +18,135 vs the base commit built in the same container, 995,946; the spec estimated +10–15 kB). Over the current
-  1,000,000 cap: needs the 1,250,000 cap of PR #53 before merge.
+- **Bundle**: app 1,016,321 bytes Brotli after merging the desktop update notes, under the 1,250,000-byte cap.
+  Before integration: 1,014,081 bytes (+18,135 vs the base built in the same container, 995,946).
 - Two real sessions cross-checked against SQL on the box DB copy (record, K/D/A sums, time played, baseline games,
   wins and averages): identical.

@@ -591,7 +591,6 @@ pub async fn session_review(
 mod tests {
     use super::*;
     use logic::EarlyLeads;
-    use std::sync::Arc;
 
     fn lg(map: &str, winner: u8, my: Option<u8>, fb: Option<u8>, f10: Option<u8>) -> LeadGame {
         LeadGame {
@@ -691,19 +690,36 @@ mod tests {
         assert_eq!(r[1]["name"], "B");
     }
 
-    /// The corpus catches up with a new game without loading the old ones twice.
+    /// The corpus catches up with a new game even when other games disappear.
     #[tokio::test]
     async fn corpus_refreshes_incrementally() {
         let Some(state) = crate::api_tests::test_state(None).await else {
             return;
         };
-        let before = cache::corpus(&state.db).await.unwrap();
         let tag = uuid::Uuid::new_v4().simple().to_string();
+        let retired: Vec<i64> = sqlx::query_scalar(
+            "INSERT INTO matches (fingerprint, parser_version, data, map, mode)
+             VALUES ($1, 0, '{}', 'Test Map', 50091), ($2, 0, '{}', 'Test Map', 50091) RETURNING id",
+        )
+        .bind(format!("insights-{tag}-retired-a"))
+        .bind(format!("insights-{tag}-retired-b"))
+        .fetch_all(&state.db)
+        .await
+        .unwrap();
+        let before = cache::corpus(&state.db).await.unwrap();
+
+        // Simulate another test cleaning up its fixtures between corpus reads.
+        let mut change = state.db.begin().await.unwrap();
+        sqlx::query("DELETE FROM matches WHERE id = ANY($1)")
+            .bind(&retired)
+            .execute(&mut *change)
+            .await
+            .unwrap();
         let id: i64 = sqlx::query_scalar(
             "INSERT INTO matches (fingerprint, parser_version, data, map, mode) VALUES ($1, 0, '{}', 'Test Map', 50091) RETURNING id",
         )
         .bind(format!("insights-{tag}"))
-        .fetch_one(&state.db)
+        .fetch_one(&mut *change)
         .await
         .unwrap();
         sqlx::query(
@@ -712,19 +728,32 @@ mod tests {
         )
         .bind(id)
         .bind(format!("toon-{tag}"))
-        .execute(&state.db)
+        .execute(&mut *change)
         .await
         .unwrap();
+        change.commit().await.unwrap();
         let after = cache::corpus(&state.db).await.unwrap();
-        assert!(after.games.contains_key(&id));
-        let rows: Vec<_> = after.games[&id].players.iter().collect();
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].stats[0], Some(7.0));
-        assert_eq!(rows[0].stats[2], Some(3.0));
-        assert!(after.games.len() > before.games.len() || before.games.contains_key(&id));
-        // same version again: the same corpus, no reload
         let again = cache::corpus(&state.db).await.unwrap();
-        assert!(Arc::ptr_eq(&after, &again) || again.version != after.version);
+        sqlx::query("DELETE FROM matches WHERE id = $1")
+            .bind(id)
+            .execute(&state.db)
+            .await
+            .unwrap();
+        std::fs::remove_dir_all(state.cfg.archive_dir.parent().unwrap()).unwrap();
+
+        assert!(!before.games.contains_key(&id));
+        for retired_id in retired {
+            assert!(before.games.contains_key(&retired_id));
+            assert!(!after.games.contains_key(&retired_id));
+        }
+        // Other tests also write to this database; check only the rows we own.
+        for snapshot in [&after, &again] {
+            let rows = &snapshot.games[&id].players;
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].toon, format!("toon-{tag}"));
+            assert_eq!(rows[0].stats[0], Some(7.0));
+            assert_eq!(rows[0].stats[2], Some(3.0));
+        }
     }
 
     #[tokio::test]

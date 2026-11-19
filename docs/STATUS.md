@@ -6,14 +6,27 @@ Approved spec: `docs/specs/2026-11-19-session-review.md` (operator decisions: ba
 session, best/worst = most stats above the hero average with KDA ties, fixed 3 h gap). New `GET /api/sessions` and
 `GET /api/sessions/{id}` on the insights corpus (pure logic `insights/session.rs`); the Session page reads them
 (`?s=<id>`, previous / next links, new Review section; "Your form" unchanged). Measured on a copy of the box DB
-(3,492 games): p95 6.7 ms for both endpoints. App bundle **1,014,081 bytes Brotli**: over the 1 MB cap, **needs PR
-#53** (cap 1.25 MB) merged first. Deviations listed in the spec's implementation notes (deaths count as better when
-lower; `baseline.modes` added). **Not done**: reviewer pass, installed standalone check, perf during an import.
+(3,492 games): p95 6.7 ms for both endpoints. Deviations are listed in the spec's implementation notes
+(deaths count as better when lower; `baseline.modes` added).
 
 Review fixes: rank only games with comparable data, using the rounded deltas returned to the page.
 Transport and server errors no longer look like empty or missing sessions. Verified with the
 server workspace tests on throwaway PostgreSQL and Chromium against controlled HTTP responses.
-Installed standalone acceptance and the release bundle/performance checks remain pending.
+
+Merged `origin/main` (`b89c12d`). The incremental corpus test now checks owned IDs and player rows, not
+global growth. Deleting two fixtures while inserting one reproduced the old assertion failure; the corrected
+test and 15 parallel insights-suite runs passed. Linux PostgreSQL 17 workspace tests: 526 passed, 10 ignored;
+web tests: 159 passed. Release app: **1,016,321 bytes Brotli** (cap 1,250,000). Installed standalone acceptance
+and API latency during an import remain pending.
+
+## Release notes in the desktop update banner (2026-11-19), branch `feat/update-notes`
+
+The shell forwards latest.json `notes` (`Update::body`, trimmed, `null` when blank) in `update_status`; the web update
+banner shows them behind a collapsed "What's new" toggle as plain text (`white-space: pre-line`) plus a "Release page ↗"
+link to `desktop-vX.Y.Z` (opened in the system browser by the shell's `target=_blank` handling). Older shells without
+`notes` keep the previous banner. Checked in Docker: web-rs fmt, clippy native + wasm32, tests, app bundle size;
+desktop `cargo fmt --check` and the `updater.rs` state-machine tests in an isolated crate (no GLib in `storm-dev`).
+**Not done**: full desktop clippy/tests (Windows CI `desktop` job), seeing the banner with real notes in an installed build.
 
 ## CI action pins and desktop release notes (2026-11-19), branch `ci/pin-actions-release-notes`
 
