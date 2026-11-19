@@ -136,14 +136,39 @@ pub trait ImageFetcher: Send + Sync {
 
 /// Production fetcher: plain `ureq` GET (same HTTP crate as `refdata::load::Http`, no new
 /// dependency), capped by `Content-Length` when present and by bytes actually read either way.
+///
+/// Redirects are disabled (`max_redirects(0)`): `allowed()` only validates the request URL's
+/// host against [`ALLOWED_HOSTS`], so a 3xx response from an allowlisted host pointing at an
+/// arbitrary origin must never be followed transparently, or the allowlist guarantee would be
+/// bypassed by whatever host the redirect names. With redirects off, ureq returns the 3xx
+/// response itself instead of chasing it, and [`fetch`](ImageFetcher::fetch) treats that as an
+/// ordinary fetch failure (logged and skipped by `fetch_missing`, same as any other fetch
+/// error) rather than accepting the body. If Blizzard's CDN is ever observed to redirect in
+/// practice, re-validate the final response URL's host against `allowed()` before accepting the
+/// body instead of re-enabling redirects blindly.
 pub struct Ureq;
 
 impl ImageFetcher for Ureq {
     fn fetch(&self, url: &str, max_bytes: u64) -> Result<(Vec<u8>, String), PatchImageError> {
-        let res = ureq::get(url).call().map_err(|e| PatchImageError::Fetch {
-            url: url.to_string(),
-            detail: e.to_string(),
-        })?;
+        let res = ureq::get(url)
+            .config()
+            .max_redirects(0)
+            .build()
+            .call()
+            .map_err(|e| PatchImageError::Fetch {
+                url: url.to_string(),
+                detail: e.to_string(),
+            })?;
+        if res.status().is_redirection() {
+            return Err(PatchImageError::Fetch {
+                url: url.to_string(),
+                detail: format!(
+                    "redirect ({}) from allowlisted host refused; redirects are disabled to \
+                     preserve the host allowlist guarantee",
+                    res.status()
+                ),
+            });
+        }
         let content_type = res
             .headers()
             .get("content-type")
@@ -450,6 +475,36 @@ mod tests {
         assert_eq!(report.failed, 1);
         assert!(tmp.path().join(&good.dest).exists());
         assert!(!tmp.path().join(&bad.dest).exists());
+    }
+
+    /// Regression for the web-audit finding: a 3xx from the (would-be allowlisted) host must
+    /// not be followed to whatever origin `Location` names — [`Ureq::fetch`] must refuse the
+    /// redirect outright rather than silently returning a body fetched from a non-allowlisted
+    /// host. A real TCP server (not the `ImageFetcher` fake) is required here because the bug
+    /// lived in `ureq`'s redirect-following behaviour, which the in-memory fake can't exercise.
+    #[test]
+    fn ureq_fetch_refuses_a_redirect_instead_of_following_it_to_another_host() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut conn, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 4096];
+            let _ = conn.read(&mut buf);
+            // Redirects to a host that is not allowlisted and does not exist on the network;
+            // if `Ureq::fetch` ever followed this, the test would hang/err on DNS instead of
+            // returning the expected refusal, which would also fail the assertion below.
+            let _ = write!(
+                conn,
+                "HTTP/1.1 302 Found\r\nLocation: http://evil.example.invalid/x.png\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            );
+        });
+        let got = Ureq.fetch(&format!("http://{addr}/img.png"), 1024);
+        server.join().unwrap();
+        assert!(
+            matches!(got, Err(PatchImageError::Fetch { .. })),
+            "redirect must be refused, not followed: {got:?}"
+        );
     }
 
     #[test]
