@@ -1,6 +1,12 @@
 # STATUS — read first, update last
 
-## Local insights (2026-11-18), branch `feat/local-insights`, not merged, not deployed
+## Standalone identity and import polish (2026-11-18), branch `fix/standalone-identity-import`
+
+Approved scope: `docs/specs/2026-11-18-standalone-identity-import-polish.md`. My Identity shows the latest known name for each standard replay folder by ToonHandle and replay time; manual names remain separate. Verified handles keep older matches attributable after a rename. A flat folder without a verifiable handle does not guess its owner. Import publishes initialized counters, preserves the settled status on no-op rescans, and ignores stale poll responses.
+
+Combined Docker checks: formatting and strict Clippy passed, 476 workspace tests passed with PostgreSQL 17 (10 ignored), 149 web tests passed, and all three release bundles passed their size checks (app: 983,831 bytes Brotli). Component browser tests covered the live name update, unsaved manual edit, held poll, and stable progress panel. Installed Windows acceptance and the possible console flash on MH-Home are not verified. Nothing pushed or deployed.
+
+## Local insights (2026-11-18), merged in PR #37, not deployed
 
 Spec `docs/specs/2026-11-17-local-insights-design.md` (approved 2026-11-18, issue #34), from the hotsdash.com
 gap analysis (`docs/research/2026-11-17-hotsdash-gap-analysis.md`; operator: local only, no Twitch/Discord).
