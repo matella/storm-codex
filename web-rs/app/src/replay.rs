@@ -33,7 +33,7 @@ use storm_web_core::{
 
 use crate::{
     clip,
-    ui::{fetch, use_dim, use_talents, Avatar},
+    ui::{fetch, fetch_reference, use_dim, use_talents, Avatar},
 };
 
 const CANVAS_SIZE: f64 = 640.0;
@@ -402,11 +402,11 @@ fn TalentStrip2D(
 pub fn Replay2D(#[prop(into)] id: String) -> impl IntoView {
     let model = {
         let url = format!("/api/matches/{id}/replay2d");
-        fetch::<Model>(move || url.clone())
+        fetch_reference::<Model>(move || url.clone())
     };
     let match_data = {
         let url = format!("/api/matches/{id}");
-        fetch::<Value>(move || url.clone())
+        fetch_reference::<Value>(move || url.clone())
     };
     let settings = fetch::<Value>(|| "/api/settings".to_string());
     let talents = use_talents();

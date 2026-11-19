@@ -26,7 +26,8 @@ use crate::{
     matchui::{AwardTag, ModeTag},
     pages::match_insights::{MatchInsightsSections, Who},
     ui::{
-        fetch, map_art, use_operator, use_owner_toons, use_talents, Link, Portrait, SecHead, Tone,
+        fetch_reference, map_art, use_operator, use_owner_toons, use_talents, Link, Portrait,
+        SecHead, Tone,
     },
 };
 
@@ -420,8 +421,9 @@ pub fn MatchDetail() -> impl IntoView {
     let operator = use_operator();
     let toons = use_owner_toons();
     let talents = use_talents();
-    let attrs = fetch::<HashMap<String, String>>(|| "/api/dim/hero-attributes".to_string());
-    let data = fetch::<Value>(move || {
+    let attrs =
+        fetch_reference::<HashMap<String, String>>(|| "/api/dim/hero-attributes".to_string());
+    let data = fetch_reference::<Value>(move || {
         format!(
             "/api/matches/{}",
             uri_component(&params.read().get("id").unwrap_or_default())

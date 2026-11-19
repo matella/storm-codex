@@ -318,7 +318,10 @@ activation of work still being fetched; it does not remove cached rows or assets
   JSON (including takedowns), retaining original hero provenance and match/upload IDs. It does not
   re-decode or re-upload replays. Only the local activation transaction fences projection writes;
   neither network I/O nor staging holds that fence. Repair is idempotent and invalidates the
-  insights corpus when it changes a match.
+  insights corpus when it changes a match. The 2D replay disk cache stores only replay-derived
+  geometry and the playerId → toon mapping; player name/hero/team/win are read from
+  `match_players` on every request, so a cache entry warmed before the repair (even across a
+  restart) serves the repaired hero.
 
 `Config::validate()` (run right after `from_env()`) rejects a non-loopback `BIND_ADDR` in this mode
 ("standalone mode requires a loopback BIND_ADDR"): the IP must be exactly `127.0.0.1` or `::1`, the

@@ -7,7 +7,7 @@ use storm_web_core::{
     route::uri_component,
 };
 
-use crate::ui::{fetch, Link, Portrait, SecHead, Tone};
+use crate::ui::{fetch_reference, Link, Portrait, SecHead, Tone};
 
 fn pill(on: bool) -> &'static str {
     if on {
@@ -19,7 +19,7 @@ fn pill(on: bool) -> &'static str {
 
 #[component]
 pub fn Synergies() -> impl IntoView {
-    let data = fetch::<SynergyData>(|| "/api/synergies".to_string());
+    let data = fetch_reference::<SynergyData>(|| "/api/synergies".to_string());
     let sort = RwSignal::new(SynergySort::WinRate);
     view! {
         <div class="ds-page">

@@ -19,10 +19,7 @@ use storm_web_core::{
 
 use crate::{
     patchui::PatchEntries,
-    ui::{
-        fetch, fetch_reference, map_art, use_dim, use_talents, AggFilterBar, Link, Portrait,
-        SecHead,
-    },
+    ui::{fetch_reference, map_art, use_dim, use_talents, AggFilterBar, Link, Portrait, SecHead},
 };
 
 /// Talent build (`TierNChoice` → tree id) as steps in level order. Names come from the reference data once loaded.
@@ -113,7 +110,7 @@ pub fn Hero() -> impl IntoView {
         });
     });
 
-    let data = fetch::<HeroDetail>(move || {
+    let data = fetch_reference::<HeroDetail>(move || {
         format!(
             "/api/hero/{}?{}",
             uri_component(&name.get()),

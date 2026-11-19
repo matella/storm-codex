@@ -156,6 +156,25 @@ async fn first_offline_replay_stays_browsable_and_is_corrected_in_place() {
     .expect("the first replay is projected while the feed is offline");
     let path = format!("/api/matches/{match_id}");
     let before = get_json(&router, &path).await;
+    // Open the 2D replay before the first sync: its disk cache entry outlives the repair (and
+    // a restart), so it must not pin the pre-repair heroes.
+    fs::create_dir_all(&app.cfg.raw_cache_dir).unwrap();
+    let replay2d = format!("/api/matches/{match_id}/replay2d");
+    let hero_by_name = |v: &Value| -> std::collections::HashMap<String, Value> {
+        v["players"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| (p["name"].as_str().unwrap().to_owned(), p["hero"].clone()))
+            .collect()
+    };
+    let warm = hero_by_name(&get_json(&router, &replay2d).await);
+    let cached: Vec<_> = fs::read_dir(&app.cfg.raw_cache_dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.to_string_lossy().contains("-replay2d-"))
+        .collect();
+    assert_eq!(cached.len(), 1, "the 2D replay cache is warm");
     let revision = get_json(&router, STATUS).await["revision"].clone();
     tokio::time::timeout(Duration::from_secs(3), async {
         while offline.0.load(Ordering::SeqCst) < 4 {
@@ -237,6 +256,16 @@ async fn first_offline_replay_stays_browsable_and_is_corrected_in_place() {
         .await
         .unwrap();
         assert_eq!(p["hero"], promoted);
+    }
+    let repaired_2d = hero_by_name(&get_json(&router, &replay2d).await);
+    assert!(cached[0].exists(), "the second 2D read is a cache hit");
+    for (toon, p) in &fixed {
+        let name = p["name"].as_str().unwrap();
+        assert_eq!(warm[name], before["players"][*toon]["hero"]);
+        assert_eq!(
+            repaired_2d[name], p["hero"],
+            "2D replay serves the repaired hero"
+        );
     }
     for event in after["match"]["takedowns"].as_array().unwrap() {
         for player in std::iter::once(&event["victim"]).chain(event["killers"].as_array().unwrap())

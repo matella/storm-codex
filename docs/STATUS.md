@@ -1,5 +1,17 @@
 # STATUS — read first, update last
 
+## Reference repair: stale 2D replay and mounted views (2026-11-19), branch `fix/refdata-stale-views`
+
+Release blocker fix on top of `c70b21a`. The 2D replay disk cache now stores only replay-derived
+geometry and the playerId → toon mapping (`{id}-replay2d-v{VIEWER_VERSION}-geom.json`); player
+metadata is merged from `match_players` on every request, so a replay opened before the first
+reference sync serves the repaired hero, even across restarts. Regression covered in
+`first_offline_replay_stays_browsable_and_is_corrected_in_place` (fails on the old handler).
+Web: `fetch_operator_stats` and the hero-attribution reads (match detail, 2D replay, Hero detail,
+Matches hero filter, Session, Player, Compare, Synergies, match insights) refetch on reference
+revision change; box mode never sets a revision. A 2D replay remounts its viewer (playback resets)
+when a new dataset activates. Browser check of the refetch not done.
+
 ## Standalone reference packaging (2026-11-19), branch `work/standalone-ref-pack`
 
 Packaging slice of `docs/specs/2026-11-19-standalone-reference-download.md`: desktop 0.1.2 no

@@ -15,7 +15,7 @@ use storm_web_core::{
 use crate::{
     layout::LiveBus,
     matchui::{AwardTag, GameCard, Pips},
-    ui::{fetch, map_art, use_operator, use_owner_toons, Link, Portrait, SecHead, Tone},
+    ui::{fetch_reference, map_art, use_operator, use_owner_toons, Link, Portrait, SecHead, Tone},
 };
 
 #[component]
@@ -23,7 +23,7 @@ pub fn Session() -> impl IntoView {
     let operator = use_operator();
     let toons = use_owner_toons();
     let bus = expect_context::<LiveBus>();
-    let matches = fetch::<Vec<MatchSummary>>(move || {
+    let matches = fetch_reference::<Vec<MatchSummary>>(move || {
         bus.matches.track(); // a parsed match re-reads the list
         "/api/matches?limit=500".to_string()
     });

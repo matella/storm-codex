@@ -367,7 +367,8 @@ pub fn fetch<T: DeserializeOwned + 'static>(
     })
 }
 
-/// Re-read an active view after a standalone activation without remounting the page.
+/// Re-read an active view after a standalone activation without remounting the page: reference dimensions, and
+/// reads whose hero attribution a reference activation can repair in place (match detail, 2D replay, aggregates).
 pub fn fetch_reference<T: DeserializeOwned + 'static>(
     url: impl Fn() -> String + 'static,
 ) -> LocalResource<Result<T, String>> {
@@ -379,12 +380,13 @@ pub fn fetch_reference<T: DeserializeOwned + 'static>(
 }
 
 /// Statistics read from the current replay corpus and operator settings, not just from a filter URL.
+/// Reference activation can repair hero attribution in place, so they also follow the reference revision.
 pub fn fetch_operator_stats<T: DeserializeOwned + 'static>(
     url: impl Fn() -> String + 'static,
 ) -> LocalResource<Result<T, String>> {
     let op = expect_context::<Operator>();
     let matches = expect_context::<crate::layout::LiveBus>().matches;
-    fetch(move || {
+    fetch_reference(move || {
         matches.track();
         op.manual.track();
         op.toons.track();
