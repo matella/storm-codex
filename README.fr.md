@@ -6,7 +6,7 @@ Storm Codex transforme tes replays de Heroes of the Storm en un historique de pa
 
 ## Utiliser Storm Codex sous Windows
 
-Consulte les [versions sur GitHub](https://github.com/matella/storm-codex/releases) pour trouver un installateur `StormCodex_<version>_x64-setup.exe` publié. Si aucun installateur n’est proposé, il n’y a pas encore de version Windows publique. L’installateur embarque PostgreSQL et l’application le gère pour toi.
+Télécharge `StormCodex_<version>_x64-setup.exe` depuis les [versions sur GitHub](https://github.com/matella/storm-codex/releases) lorsqu’une version publique est disponible. Les brouillons restent réservés aux responsables du projet. L’installateur embarque PostgreSQL et l’application le gère pour toi.
 
 1. Lance Storm Codex. L’application cherche les dossiers de replays habituels du jeu et importe les fichiers `.StormReplay` des parties terminées.
 2. Si tu conserves tes replays ailleurs, ajoute le dossier dans **Admin → This PC**. Vérifie **My identity** si l’application n’a pas reconnu ton compte.
