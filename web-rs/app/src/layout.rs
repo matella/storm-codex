@@ -241,6 +241,10 @@ pub fn Layout() -> impl IntoView {
                             }
                         })
                         .collect_view()}
+                    <a href=app_href("/overlay-builder") class=move || if tab_active(app_path(&loc.pathname.get()), "/overlay-builder") { "on" } else { "" }
+                        aria-current=move || tab_active(app_path(&loc.pathname.get()), "/overlay-builder").then_some("page")>
+                        "Overlay Builder"
+                    </a>
                     <Show when=importing>
                         <a href=app_href("/welcome") class=move || if tab_active(app_path(&loc.pathname.get()), "/welcome") { "on".to_string() } else { String::new() }
                             aria-current=move || tab_active(app_path(&loc.pathname.get()), "/welcome").then_some("page")>

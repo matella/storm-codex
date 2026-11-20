@@ -6,6 +6,7 @@ mod clip;
 mod export;
 mod layout;
 mod matchui;
+mod overlay_builder;
 mod pages;
 mod patchui;
 mod reference;
@@ -62,6 +63,7 @@ fn App() -> impl IntoView {
                     <Route path=path!("cast") view=Cast />
                     <Route path=path!("scouting") view=Scouting />
                     <Route path=path!("scouting/:id") view=ScoutingReport />
+                    <Route path=path!("overlay-builder") view=overlay_builder::OverlayBuilder />
                     <Route path=path!("admin") view=Admin />
                     <Route path=path!("welcome") view=Welcome />
                     <Route path=path!("draft") view=|| view! { <Legacy to=LEGACY_REDIRECTS[0].1 /> } />

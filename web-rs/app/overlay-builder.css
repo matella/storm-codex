@@ -1,0 +1,47 @@
+/* Editor chrome only: the live preview loads the sources document and its own styles. */
+.ob-page { display: grid; gap: 1rem; }
+.ob-editor { display: grid; gap: 0.85rem; min-inline-size: 0; margin: 0; padding: 0; border: 0; }
+.ob-toolbar, .ob-fields, .ob-palette { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: end; }
+.ob-toolbar label, .ob-fields label, .ob-inspector > label { display: grid; gap: 0.25rem; }
+.ob-toolbar label, .ob-fields label { min-width: 0; }
+.ob-toolbar input, .ob-toolbar select, .ob-inspector input, .ob-inspector select {
+  border: 1px solid var(--line, #49526e); border-radius: 4px; padding: 0.4rem 0.55rem;
+  background: var(--panel, #101421); color: inherit; font: inherit; max-width: 100%; min-height: 2.2rem;
+}
+.ob-url label { flex: 1 1 28rem; }
+.ob-hint { margin: 0.4rem 0; }
+.ob-fields input[type="number"] { width: 7.5rem; }
+.ob-error { padding: 0.65rem; border: 1px solid currentColor; color: var(--bad, #ff9fac); }
+.ob-error a { color: inherit; text-decoration: underline; }
+.ob-editor button:disabled, .ob-toolbar button:disabled { opacity: 0.55; cursor: not-allowed; }
+.ob-canvas {
+  position: relative; isolation: isolate; overflow: hidden; aspect-ratio: 16 / 9;
+  container-type: inline-size; outline: 1px solid var(--line, #49526e); background: #0d1220;
+}
+.ob-canvas::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image: linear-gradient(to right, #9eb3ff33 1px, transparent 1px),
+                    linear-gradient(to bottom, #9eb3ff33 1px, transparent 1px);
+  background-size: calc(100% / 80) calc(100% / 45);
+}
+.ob-canvas iframe {
+  position: absolute; inset: 0; border: 0; width: 1920px; height: 1080px; pointer-events: none;
+  transform-origin: top left; transform: scale(tan(atan2(100cqw, 1920px)));
+}
+.ob-preview-status { position: absolute; top: 0.5rem; right: 0.5rem; padding: 0.2rem 0.45rem; background: #141b31; color: #fff; }
+.ob-handles { position: absolute; outline: 1px dashed #a6bcfa; outline-offset: -1px; }
+.ob-handles.ob-selected, .ob-handles:focus-within { outline: 2px solid #b6d3ff; outline-offset: -2px; }
+.ob-move, .ob-resize { position: absolute; touch-action: none; color: #fff; border: 0; padding: 0; }
+.ob-move {
+  display: flex; justify-content: start; align-items: start; inset: 0; background: transparent;
+  overflow: hidden; color: transparent; cursor: move; font: inherit; text-align: left;
+}
+.ob-selected .ob-move, .ob-move:hover, .ob-move:focus-visible { color: #fff; text-shadow: 0 1px 4px #000, 0 0 4px #000; }
+.ob-resize {
+  display: none; right: 0; bottom: 0; width: min(100%, 1rem); height: min(100%, 1rem);
+  background: #b6d3ff; cursor: nwse-resize;
+}
+.ob-handles:is(.ob-selected, :focus-within, :hover) .ob-resize { display: block; }
+.ob-inspector { display: grid; gap: 0.7rem; }
+.ob-inspector > label { justify-self: start; }
+.ob-sr { position: absolute; width: 1px; height: 1px; clip-path: inset(50%); overflow: hidden; white-space: nowrap; }
