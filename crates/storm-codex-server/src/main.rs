@@ -642,7 +642,9 @@ fn v2_page(path: &str) -> &'static str {
     match path.trim_end_matches('/') {
         "/cast/overlay" | "/draft/overlay" => "overlay/index.html",
         "/ticker" | "/now-playing" | "/widget" | "/queue" | "/recap" | "/stream-pool"
-        | "/patch-banner" | "/record-flash" | "/nemesis" | "/goal" => "sources/index.html",
+        | "/patch-banner" | "/record-flash" | "/nemesis" | "/goal" | "/overlay/custom" => {
+            "sources/index.html"
+        }
         _ => "app/index.html",
     }
 }
@@ -863,6 +865,8 @@ mod front_end_tests {
             ("/v2/record-flash", "sources"),
             ("/v2/nemesis", "sources"),
             ("/v2/goal", "sources"),
+            ("/v2/overlay/custom/?preview=1", "sources"),
+            ("/v2/overlay-builder", "app"),
         ] {
             let (st, cache, body) = get(path).await;
             assert_eq!(st, StatusCode::OK, "{path}");
@@ -911,6 +915,8 @@ mod front_end_tests {
             ("/record-flash", "sources"),
             ("/nemesis", "sources"),
             ("/goal", "sources"),
+            ("/overlay/custom?id=fixture", "sources"),
+            ("/overlay-builder", "app"),
             ("/v2/matches", "app"),
         ] {
             let (st, body) = get(path).await;

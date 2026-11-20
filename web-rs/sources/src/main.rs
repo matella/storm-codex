@@ -4,6 +4,8 @@
 //! answers each of those paths with this bundle's `index.html`. Port of the React sources under
 //! `web/src/pages` (the last six are new, spec `docs/specs/2026-11-20-streamer-widgets.md`).
 
+mod composition;
+mod feeds;
 mod frame;
 mod goal;
 mod nemesis;
@@ -33,6 +35,7 @@ fn main() {
         Some(Page::RecordFlash) => recordflash::mount(),
         Some(Page::Nemesis) => nemesis::mount(),
         Some(Page::Goal) => goal::mount(),
+        Some(Page::CustomOverlay) => leptos::mount::mount_to_body(composition::render),
         // not one of this bundle's sources (the cast and draft overlays are in the overlay bundle)
         _ => {}
     }

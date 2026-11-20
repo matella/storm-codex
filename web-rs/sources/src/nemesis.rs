@@ -34,7 +34,7 @@ pub struct Grudge {
 
 /// Opponent's display name as seen in the most recent game against them (`players[].name` of the
 /// `against` row), else the toon handle.
-fn opponent_name(rows: &[MatchSummary], toon: &str) -> String {
+pub(crate) fn opponent_name(rows: &[MatchSummary], toon: &str) -> String {
     rows.first()
         .and_then(|m| m.players.as_ref())
         .and_then(|ps| ps.iter().find(|p| p.toon.as_deref() == Some(toon)))
@@ -45,7 +45,7 @@ fn opponent_name(rows: &[MatchSummary], toon: &str) -> String {
 
 /// Total games and wins against `toon`, each read off `X-Total-Count` (two small `limit=1`
 /// requests: the body is not used for the count, only for `opponent_name` on the first one).
-async fn record_against(toon: &str) -> Option<(Vec<MatchSummary>, u32, u32)> {
+pub(crate) async fn record_against(toon: &str) -> Option<(Vec<MatchSummary>, u32, u32)> {
     let against = uri_component(toon);
     let (rows, total) = net::get_json_counted::<Vec<MatchSummary>>(&format!(
         "/api/matches?against={against}&limit=1"

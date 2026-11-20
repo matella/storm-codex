@@ -121,6 +121,32 @@ Replay-search paging follow-up (2026-11-19): the app bundle measured **1,010,441
 | `/admin` | Admin | **dossier**: cover (admin token or local mode), numbered sections — operator identity, **daily goal** (kind selector, target, Save/Clear — sets/clears `/api/admin/goal`, shown live on the `/goal` OBS source), upload health as tiles (per status, failures per class, parser_version, reprocess), upload tokens (new token shown once), teams (editable league) and collections; in standalone mode a last section **This PC** (see "Standalone (desktop) mode" below) |
 | `/welcome` | Welcome | **standalone (desktop) mode only** — import progress, see "Standalone (desktop) mode" below. On the box (status 404) it only says the screen belongs to the desktop app |
 
+### Custom OBS layouts and builder preview
+
+The `sources` bundle serves `/overlay/custom?id=<uuid>` (also `/v2/overlay/custom`), reading the
+named layout with the public `GET /api/overlay-layouts/{id}`. An unknown or missing UUID shows
+“Layout not found”; a failed request or invalid saved response shows “Unable to load layout”. The app
+bundle serves `/overlay-builder` at the root and under `/v2`; its in-app routing is the editor slice.
+
+Both outputs use the same transparent 1920×1080 stage. Placement uses 24 px grid cells, clips each
+widget (including shadows/animation overflow) to its rectangle, and paints by ascending z-order
+then by instance ID. The queue retains its 16:9 scene, uniformly scaled from the rectangle's top
+left; other widgets retain their native size inside the clip. The editor scales the whole iframe.
+
+The app loads `route::app_href("/overlay/custom") + "?preview=1"` in a same-origin iframe. The child
+posts `{type: "storm-overlay-preview-ready", version: 1}` to its parent and accepts complete
+`{type: "storm-overlay-preview", version: 1, widgets: [ …WidgetInstance ]}` snapshots from that
+parent only. Both check the exact origin and peer window and specify the target origin. Preview does
+not fetch a layout, read tokens, write to the API, or touch browser storage. Invalid snapshots leave
+the last good snapshot intact. IDs must be stable, unique, nonempty strings; the 100-widget limit,
+grid bounds, and per-kind settings match the saved wire contract. Changes to geometry or order keep
+widget owners; changes to settings remount that widget's content.
+
+Each composition owns its shared WebSocket, polling, and feeds. Music uses one poll (2 s if any
+widget uses Reveal, otherwise 5 s); other active live data have a 10 s safety poll. Patch banner
+acknowledgement in OBS is isolated by layout and widget UUID (`custom_overlay_patch:<layout>:<widget>`);
+preview uses only in-memory visibility, and the fixed source keeps its original key.
+
 ### Standalone OBS sources (transparent background, outside Layout)
 
 | Route | OBS use |

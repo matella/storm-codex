@@ -16,6 +16,7 @@ pub enum Page {
     RecordFlash,
     Nemesis,
     Goal,
+    CustomOverlay,
 }
 
 /// `/v2/ticker` -> `Ticker`. The `/v2` prefix and a trailing slash are optional; unknown paths give `None`.
@@ -34,6 +35,7 @@ pub fn page_of(pathname: &str) -> Option<Page> {
         "/record-flash" => Some(Page::RecordFlash),
         "/nemesis" => Some(Page::Nemesis),
         "/goal" => Some(Page::Goal),
+        "/overlay/custom" => Some(Page::CustomOverlay),
         _ => None,
     }
 }
@@ -282,6 +284,7 @@ pub fn page_title(pathname: &str) -> &'static str {
     match p {
         "/compare" => return "Compare",
         "/welcome" => return "Setup",
+        "/overlay-builder" => return "Overlay Builder",
         _ => {}
     }
     TABS.iter()
@@ -309,6 +312,14 @@ pub fn legacy_redirect(pathname: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn custom_and_builder_route_contract() {
+        for path in ["/overlay/custom", "/v2/overlay/custom/"] {
+            assert_eq!(page_of(path), Some(Page::CustomOverlay));
+        }
+        assert_eq!(page_title("/overlay-builder"), "Overlay Builder");
+    }
 
     #[test]
     fn pages_are_found_with_or_without_the_prefix() {
