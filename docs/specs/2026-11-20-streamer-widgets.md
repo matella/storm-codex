@@ -120,3 +120,40 @@ scope for this branch and untouched.
   only surfaced here with a hand-inserted test row in the throwaway DB copy; flagged for the operator rather
   than touched, since fixing it is a change to an existing, unrelated contract type outside this spec's
   approved scope.
+## Implementation notes (items 3 and 5, 2026-11-20, branch `feat/streamer-widgets-flash`)
+
+Only items 3 (personal-record flash) and 5 (nemesis/grudge-match badge) were implemented on this branch;
+items 1, 2, 4, 6 and 7 are untouched. Two deviations from the literal wording above, both because the named
+event/endpoint does not exist or does not carry the field described — the underlying behaviour (reuse an
+existing read endpoint, no backend change, react to the existing live-bus) is unchanged:
+
+- **"matches.updated event" → `match.parsed`.** The server only ever emits `match.parsed` on a new parse (see
+  `upload.rs`); there is no `matches.updated` type. Both `/record-flash` and the rest of this spec's widgets that
+  mention it reuse `frame::recent_matches`, the same hook `/ticker`/`/widget`/`/queue` already use, which refetches
+  on `match.parsed`.
+- **"`GET /api/live` for the current lobby's enemy toons" → `GET /api/lobby`.** `GET /api/live`'s view
+  (`live/state.rs::view`) deliberately never serialises a toon handle, by design (fair-play scope governs
+  *ability* visibility, not identity) — there is no toon field to read at any scope. `GET /api/lobby` (the
+  loading-screen companion, `lobby::LobbyPlayerState`) is the endpoint that already resolves `toon_handle` per
+  player, including opponents, for the operator's own build suggestions; it matches this item's own wording
+  ("the **current lobby**'s enemy toons", "during **Draft/loading**") more literally than the live feed does.
+  `/nemesis` reads it on the existing `lobby.detected`/`lobby.updated` events instead of `live.updated`.
+- The win/loss tally per opponent is two `limit=1` requests against the existing `against` filter — one plain,
+  one with `&result=win` — reading `X-Total-Count` on each (games, wins); no new aggregate endpoint.
+- Debounce key: `storm_web_core::nemesis::lobby_signature` (`content_hash` + the sorted resolved enemy toons,
+  empty until at least one opponent is resolved). The per-opponent lookups only run again when this signature
+  changes, and only on `lobby.detected`/`lobby.updated` (not the existing 10 s safety-net poll, which is not even
+  listened to), satisfying the "once per lobby, not once per live-feed tick" acceptance bullet with margin.
+- Privacy: the badge shows only the opponent's name (as already recorded in the archive, the same field the
+  app's "Played against" picker and Compare page already read) and the operator's own W–L against them — nothing
+  about the opponent beyond that, consistent with "not leaking opponent identity info beyond what Draft/cast
+  already expose". An opponent whose toon is not yet resolved (`toon_handle: null`) is silently excluded rather
+  than guessed at.
+- Measured (box DB copy, 3,503 matches, release build): `sources` bundle 199,574 bytes gzip / 165,517 bytes
+  brotli (+18,212 bytes gzip over the 181,362-byte baseline); `overlay` and `app` unchanged. Checked in headless
+  Chromium against the box DB copy: `/record-flash` shows nothing against the real newest match (no coincidental
+  record), shows "NEW RECORD · Most kills · 25" when the newest match id is mocked to the real top-kills record's
+  match id, and hides again after 8 s; `/nemesis` against a mocked `/api/lobby` roster (real toons from the
+  corpus) correctly flagged a real 0/6 opponent, correctly did not flag a real 3/3 (100%) opponent, never queried
+  the unresolved-toon opponent, and made no further request across a 10 s poll tick (debounce holds); with no
+  active lobby (`204`), `/nemesis` renders nothing.

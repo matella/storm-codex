@@ -35,6 +35,48 @@ change.
   present-but-null JSON value — see the spec's Implementation notes.
 - Not done: widgets 3/5/7, a dispatched `[Reviewer]` subagent pass (self-reviewed instead), push/PR (left to
   the operator per standing instructions).
+## Streamer widgets round 1, items 3 + 5 (2026-11-20), branch `feat/streamer-widgets-flash`, not merged
+
+Spec `docs/specs/2026-11-20-streamer-widgets.md` (approved 2026-11-20, all 7 widgets; this branch implements
+only items 3 and 5, client-only, no backend/migration change). New OBS sources in `web-rs/sources`:
+
+- `/record-flash`: flashes "NEW RECORD · <stat> (<value>)" for ~8 s when the newest game (`frame::recent_matches`,
+  the `/ticker`/`/widget`/`/queue` hook, refetched on `match.parsed`) is the top row of `GET
+  /api/records?mine=true&limit=1` for some stat (`core::insights::new_personal_record`, tested).
+- `/nemesis`: a badge per resolved opponent the operator has a grudge record against (<= 35% win rate over
+  >= 3 games, `core::nemesis::is_grudge`, tested), shown during Draft/loading. Opponent toons resolve from `GET
+  /api/lobby` (not `GET /api/live`, which never serialises toon handles — see the spec's Implementation notes),
+  per-opponent record from two `limit=1` `GET /api/matches?against=<toon>[&result=win]` calls reading
+  `X-Total-Count`; debounced to once per lobby (`core::nemesis::lobby_signature`, tested) via
+  `lobby.detected`/`lobby.updated`, not the safety-net poll. An opponent whose toon isn't resolved yet is
+  silently excluded. Shows only the opponent's name and the operator's own W–L against them.
+
+New routes registered in `web-rs/core/src/route.rs` (`Page::RecordFlash`, `Page::Nemesis`) and
+`web-rs/sources/src/main.rs`, plus the server's `v2_page()` mapping in `crates/storm-codex-server/src/main.rs`.
+Contracts updated: `docs/spec/04-serveur.md` (`WEB_DIR` routing table), `docs/spec/08-frontend.md` (OBS source
+table, `sources` crate description, bundle-size contract sentence).
+
+Checks (Docker, `storm-dev:latest`, throwaway Postgres 17 on port 55481): `cargo fmt --all -- --check`,
+`cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` (450 passed, 3 ignored,
+unrelated to this change) on the main workspace; in `web-rs`: `cargo fmt`, `cargo clippy --all-targets -- -D
+warnings` and `cargo test` (188 passed, including the new `nemesis` and `insights::new_personal_record` native
+tests), `cargo clippy --target wasm32-unknown-unknown --workspace -- -D warnings`, `trunk build --release` for
+`overlay`, `sources` and `app`. Bundle sizes: `sources` 199,574 bytes gzip / 165,517 bytes brotli (+18,212 bytes
+gzip over the 181,362-byte baseline — well inside the 300 kB budget); `overlay` unchanged 217,943 bytes gzip;
+`app` unchanged 1,046,738 bytes brotli (no app change). Browser-checked in headless Chromium against a copy of
+the box database (3,503 matches, release server): `/record-flash` is empty against the real newest match,
+flashes correctly when mocked to a real record-setting match id, and auto-hides after 8 s; `/nemesis` against a
+mocked `/api/lobby` roster (real opponent toons from the corpus) correctly flagged a real 0/6 opponent, correctly
+left a real 3/3 opponent unflagged, never queried the unresolved-toon opponent, made no extra request across a
+10 s poll tick (debounce holds), and rendered nothing with no active lobby (`204`).
+
+Self-reviewed (no delegate/subagent tool available in this session): focused on the live-feed enemy-toon
+resolution (confirmed `/api/live`'s view never carries a toon handle at any scope, hence the `/api/lobby`
+substitution above) and on not exceeding what Draft/cast already expose (badge shows only name + the operator's
+own W–L, nothing else; unresolved toons are excluded, not guessed). Deviations from the literal spec wording are
+recorded in the spec's "Implementation notes" section. Not done: patch-day banner, daily goal tracker and the
+other round-1 items (out of scope for this branch); deploy (R3, operator). Committed locally on
+`feat/streamer-widgets-flash`, not pushed.
 
 ## Merge of `origin/main` into `fix/web-audit-image-proxy` (2026-11-19)
 

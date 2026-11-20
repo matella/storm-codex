@@ -295,6 +295,17 @@ pub fn short_num(v: f64) -> String {
     }
 }
 
+/// First stat whose top row is `match_id` (`rows` is sorted best-first by the server): the
+/// `/record-flash` source's "did the newest game set a record" check. `records?mine=true` already
+/// restricts every row to the operator, so no extra ownership check is needed here.
+#[must_use]
+pub fn new_personal_record(stats: &[RecordStat], match_id: i64) -> Option<(String, f64)> {
+    stats.iter().find_map(|s| {
+        let top = s.rows.first()?;
+        (top.match_id == match_id).then(|| (s.label.clone(), top.value))
+    })
+}
+
 /// Query string of `/api/records`.
 pub fn records_query(
     mode: Option<i64>,
@@ -358,6 +369,48 @@ mod tests {
             "mode=50091&map=Sky%20Temple&mine=true"
         );
         assert_eq!(records_query(None, None, None, false), "");
+    }
+
+    #[test]
+    fn new_personal_record_finds_the_first_matching_stat() {
+        let row = |match_id, value| RecordRow {
+            value,
+            toon: "t".into(),
+            name: None,
+            hero: None,
+            map: None,
+            played_at: None,
+            match_id,
+            mine: true,
+        };
+        let stats = vec![
+            RecordStat {
+                key: "kills".into(),
+                label: "Most kills".into(),
+                rows: vec![row(10, 12.0)],
+            },
+            RecordStat {
+                key: "takedowns".into(),
+                label: "Most takedowns".into(),
+                rows: vec![row(11, 20.0)],
+            },
+        ];
+        assert_eq!(
+            new_personal_record(&stats, 11),
+            Some(("Most takedowns".to_string(), 20.0))
+        );
+        assert_eq!(new_personal_record(&stats, 999), None);
+        assert_eq!(
+            new_personal_record(
+                &[RecordStat {
+                    key: "k".into(),
+                    label: "L".into(),
+                    rows: vec![]
+                }],
+                1
+            ),
+            None
+        );
     }
 
     #[test]

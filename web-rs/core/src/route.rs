@@ -13,6 +13,8 @@ pub enum Page {
     Recap,
     StreamPool,
     PatchBanner,
+    RecordFlash,
+    Nemesis,
 }
 
 /// `/v2/ticker` -> `Ticker`. The `/v2` prefix and a trailing slash are optional; unknown paths give `None`.
@@ -28,6 +30,8 @@ pub fn page_of(pathname: &str) -> Option<Page> {
         "/recap" => Some(Page::Recap),
         "/stream-pool" => Some(Page::StreamPool),
         "/patch-banner" => Some(Page::PatchBanner),
+        "/record-flash" => Some(Page::RecordFlash),
+        "/nemesis" => Some(Page::Nemesis),
         _ => None,
     }
 }
@@ -315,6 +319,9 @@ mod tests {
         assert_eq!(page_of("/v2/recap"), Some(Page::Recap));
         assert_eq!(page_of("/v2/stream-pool"), Some(Page::StreamPool));
         assert_eq!(page_of("/v2/patch-banner/"), Some(Page::PatchBanner));
+        assert_eq!(page_of("/record-flash"), Some(Page::RecordFlash));
+        assert_eq!(page_of("/v2/nemesis/"), Some(Page::Nemesis));
+        assert_eq!(page_of("/unknown"), None);
         assert_eq!(page_of("/v2/"), None);
         assert_eq!(page_of("/v2/matches"), None);
     }
