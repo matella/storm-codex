@@ -169,4 +169,6 @@ NODE_PATH="$test_dir/node_modules" PLAYWRIGHT_BROWSERS_PATH="$test_dir/browsers"
 The script serves both builds and deterministic API/WS responses from browser routes only. It
 compares the normalized DOM and requests for populated, empty and `/v2` route variants, asserts
 legacy query precedence and clock-driven behavior, and samples a transparent background pixel.
-It does not replace real-data or real-OBS acceptance.
+For markup comparison it removes comment nodes from a detached body clone before serializing it.
+The harness first checks that this preserves literal comment-like text and element order without
+changing the live DOM. It does not replace real-data or real-OBS acceptance.

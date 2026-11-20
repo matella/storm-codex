@@ -1,5 +1,17 @@
 # STATUS — read first, update last
 
+## Overlay builder Phase A — fixed-source parity helper (2026-11-20)
+
+PR #68, CodeQL alert #19: the test helper strips comment nodes from a detached body clone,
+not from an HTML string. The Chromium regression failed with the old comparison (it removed
+literal text) and passed with the clone; it also checks that the live DOM is unchanged.
+
+`node --check web-rs/sources/tests/fixed-sources.cjs` passed. The fixed-route harness passed
+all 45 synthetic cases with Playwright 1.65.1 / Chromium 159.0.8154.6 against separate locked
+Trunk 0.22.0-beta.1 release builds of `0c33e75` and `064159e` (Rust 1.100.0). Only the test
+helper and docs changed. CodeQL was not rerun; the alert was not dismissed. No real OBS,
+live data, push, merge, or deployment.
+
 ## Overlay builder Phase A — review fixes (2026-11-20)
 
 Only the unreleased 0020 migration changed; published history has no Phase A migration. A

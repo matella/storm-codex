@@ -52,17 +52,48 @@ async function eventually(test, description) {
   throw new Error(`Timed out: ${description}`);
 }
 
+function readState() {
+  const body = document.body;
+  const clone = body.cloneNode(true);
+  const comments = document.createNodeIterator(clone, NodeFilter.SHOW_COMMENT);
+  for (let node = comments.nextNode(); node; node = comments.nextNode()) node.remove();
+  return {
+    html: clone.innerHTML,
+    bg: [document.documentElement, body].map(el => getComputedStyle(el).backgroundColor),
+    text: body.textContent.trim(),
+  };
+}
+
+async function checkNormalization(browser) {
+  const page = await browser.newPage();
+  try {
+    const [expected, original] = await page.evaluate(() => {
+      const section = document.createElement('section');
+      const style = document.createElement('style');
+      style.textContent = '/* Show the literal <!-- label --> in this example. */';
+      section.append('first ', style, ' last');
+      document.body.append(section);
+      const expected = document.body.innerHTML;
+      document.body.prepend(document.createComment('root marker'));
+      section.insertBefore(document.createComment('nested\nmarker'), style);
+      section.insertBefore(document.createComment('adjacent marker'), style);
+      return [expected, document.body.innerHTML];
+    });
+    const { html } = await page.evaluate(readState);
+    assert.equal(html, expected, 'remove comment nodes without losing text or changing order');
+    assert.equal(await page.evaluate(() => document.body.innerHTML), original, 'leave the live DOM unchanged');
+  } finally {
+    await page.close();
+  }
+}
+
 async function snapshot(browser, dir, path, expected, populated) {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, timezoneId: 'UTC' });
   const errors = [];
   const requests = [];
   let socket;
   let pending = 0;
-  const state = async () => page.evaluate(() => ({
-    html: document.body.innerHTML.replace(/<!--.*?-->/gs, ''),
-    bg: [document.documentElement, document.body].map(el => getComputedStyle(el).backgroundColor),
-    text: document.body.textContent.trim(),
-  }));
+  const state = () => page.evaluate(readState);
   try {
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
@@ -175,6 +206,8 @@ async function main() {
   assert.ok(base && candidate, 'Usage: node fixed-sources.cjs BASE_DIST CANDIDATE_DIST');
   const browser = await chromium.launch();
   try {
+    await checkNormalization(browser);
+    console.log('DOM normalization regression passed');
     for (const [path, expected] of routes) {
       for (const [url, populated] of [[path, true], [`/v2${path}`, true], [path, false]]) {
         const [before, after] = await Promise.all([base, candidate].map(dir => snapshot(browser, dir, url, expected, populated)));
