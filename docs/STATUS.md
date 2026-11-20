@@ -1,5 +1,29 @@
 # STATUS — read first, update last
 
+## Overlay builder Phase A backend (2026-11-20)
+
+Migration `0020_overlay_layouts.sql`, admin CRUD, and public UUID read are implemented, with atomic
+widget replacement, grid/catalog/settings validation, and shared `storm_web_core::overlay_layout`
+types. No new dependencies, browser routes, or changes to the ten existing source pages. See
+`docs/specs/2026-11-20-overlay-builder.md` and the living REST, schema, and backup contracts.
+
+Verified in `storm-dev:latest` with disposable PostgreSQL 17 and the pinned CI reference fixture:
+server `cargo fmt --all -- --check`, `cargo clippy --locked --offline --workspace --all-targets -- -D warnings`,
+`cargo test --locked --offline --workspace --no-fail-fast`, and server build passed. Three API tests
+failed on missing routes before implementation, then passed. Two core wire tests failed to compile
+before the type module existed, then passed (200 native web tests total). Web fmt, native and Wasm
+strict Clippy, all three `trunk build --release` builds and bundle checks passed (217,951 B overlay
+and 229,936 B sources gzip, 1,049,799 B app Brotli). Native Clippy's first run caught test-only
+`unwrap` lint; rerun passed with the repo's test allowance. Migration freeze and Python CI checks
+passed; `cargo audit` passed with the existing `chrono` maintenance warning.
+
+Real PostgreSQL supervisor tests (`postgres_it --include-ignored`) passed 24/24, including layout
+and child/settings restore plus migration of a 0019 dump. A first Linux harness run had four
+path/PID test failures; the clean rerun used Docker `--init` and a relocatable PostgreSQL prefix.
+Full-router HTTP smoke passed; 100-widget public read and admin replacement p95 were 4.99 ms and
+15.07 ms on warm loopback, respectively. Diff self-reviewed; independent review and installed
+Windows/OBS checks were not run in this worktree. No push, deploy or live database access.
+
 ## Streamer widgets round 1, combined merge (2026-11-20), branch `feat/streamer-widgets`
 
 Combined all three round-1 branches (`feat/streamer-widgets-recap` items 1/2/4/6, `feat/streamer-widgets-flash`

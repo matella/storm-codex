@@ -137,9 +137,16 @@ setting: Pages source **GitHub Actions** (no `gh-pages` branch).
 
 ## Backups
 
-`scripts/backup.sh [dest]`: `pg_dump` → timestamped `.sql.gz`, retention 14. The database is in any
-case **rebuildable from the raw archive** (re-upload / reprocess) — the backup just avoids
-a re-backfill. The raw archive (the volume's `/data/archive`) is the only irreplaceable data.
+Overlay layouts (migration 0020) are user-authored, not recoverable from the replay archive. The
+existing whole-database exports include both layout tables. Desktop data-only imports restore
+layout rows before their dependent widget rows, preserving layout UUIDs, placements and settings.
+An export made before 0020 migrates forward with empty layout tables. An older server binary
+cannot start against the migrated database; for a binary rollback, use a separate pre-0020
+backup and retain a current backup so the user-authored layouts can be recovered.
+
+`scripts/backup.sh [dest]`: `pg_dump` → timestamped `.sql.gz`, retention 14. Replay-derived data
+is **rebuildable from the raw archive** (re-upload / reprocess). Keep the raw archive (the volume's
+`/data/archive`) and a database backup for user-authored data that cannot be rebuilt.
 
 ## Standalone desktop app
 

@@ -104,3 +104,11 @@ tables, but not on each other once those land:
    across all 10 widget files (mechanical, one PR, regression-checked against the existing fixed URLs).
 2. **Phase B (parallel once A is merged)**: the custom-overlay renderer page (`sources` bundle) and the
    builder UI page (`app` bundle) — independent files, no shared-file conflict risk between them.
+
+## Phase A backend implementation notes
+
+Migration 0020 and the REST/wire contract are documented in `docs/spec/05-api.md` and
+`docs/spec/06-modele-donnees.md`. Both future clients use `storm_web_core::overlay_layout`. `PUT`
+replaces the complete widget set but keeps the layout UUID stable; this is not a patch API. The
+[storage ADR](../adr/2026-11-20-overlay-layout-persistence.md) records the approved persistence and
+access model. Widget-content changes are tracked separately from this backend slice.

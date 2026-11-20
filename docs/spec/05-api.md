@@ -38,6 +38,35 @@ routes marked 🔒 require `Authorization: Bearer` (personal upload token for up
 | `GET /api/settings` | application settings (including `operator_names`) |
 | `GET /api/goal/progress` | daily goal tracker (`docs/specs/2026-11-20-streamer-widgets.md`, widget 7), recomputed on every read, nothing stored: `{kind, target, done, reset_at}`; all four `null`/`0` when no goal is set. `kind` ∈ `wins_today`/`games_today`, counted from the operator's perspective rows (same `app_settings.operator_names` / standalone `operator_toons` as `/api/trends`) within the box's local-midnight-to-local-midnight window; `reset_at` = that window's end, UTC ISO |
 
+## Overlay layouts (`overlay_layout.rs`)
+
+| Route | Result |
+|---|---|
+| `GET /api/overlay-layouts/{id}` | Public OBS read by UUID; returns the full layout. No public listing |
+| `GET /api/admin/overlay-layouts` | Array of layout summaries, newest updated first (UUID breaks ties) |
+| `POST /api/admin/overlay-layouts` | Creates a layout; **201** with the full layout |
+| `GET /api/admin/overlay-layouts/{id}` | Returns the full layout |
+| `PUT /api/admin/overlay-layouts/{id}` | Atomically replaces name and widgets; **200** with the full layout |
+| `DELETE /api/admin/overlay-layouts/{id}` | Deletes the layout and its widgets; **204** |
+
+All admin routes, including reads, require the admin Bearer when `ADMIN_TOKEN` is configured
+(**401** otherwise); unset token keeps local open mode. Treat the public layout UUID as a sharing
+link: anyone with it can read the layout name, placement and settings. Do not put secrets in these fields.
+
+A summary is `{id, name, created_at, updated_at}` (UUID and UTC timestamp strings). The full layout
+adds `widgets: [{id, widget_type, grid_x, grid_y, grid_w, grid_h, z_order, settings}]`, ordered by
+ascending `z_order`, then UUID. `POST` and `PUT` both take `{name, widgets}` with those placement
+fields except `id`. The layout UUID and creation time survive `PUT`; widget IDs are regenerated on
+replacement. Overlaps and repeated widget types are allowed; use distinct z values when ordering matters.
+
+Names trim to 1–120 characters and cannot contain control characters after trimming. Each layout may
+contain 0–100 widgets, with rectangles contained in the 80×45 grid and signed 32-bit integer z-order.
+`settings` is an object: `widget` accepts optional `me` (string ≤120 characters, no controls),
+`now-playing` accepts optional `mini` and `reveal` (booleans), and the other eight types take `{}`.
+Valid types: `ticker`, `widget`, `queue`, `now-playing`, `recap`, `stream-pool`, `patch-banner`,
+`record-flash`, `nemesis`, `goal`. Invalid UUIDs or invalid JSON/placements return **400**; unknown
+valid UUIDs **404**; wrong content type **415**; save bodies over 64 KiB **413**.
+
 ## Local insights (`insights/`) — spec `docs/specs/2026-11-17-local-insights-design.md`
 
 Read-only, computed from the stored storm-stats JSON; no migration. Pure logic in `insights/logic.rs` (unit tests).

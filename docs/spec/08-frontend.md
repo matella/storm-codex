@@ -197,6 +197,13 @@ in an inert template; images have `referrerpolicy="no-referrer"` and `loading="l
 not copied from input. Image URLs are not proxied. One bundle per page family: the sanitiser
 (`ammonia`, about 300 kB) must never be linked into an OBS bundle.
 
+## Overlay builder shared contract (Phase A)
+
+`storm_web_core::overlay_layout` provides the ten-entry `WidgetType` catalog, 24px/80×45 grid
+constants, layout summary/detail models and the full-replacement `SaveOverlayLayout` payload.
+See `05-api.md` for endpoints and settings. The contract is shared by the future builder and OBS
+renderer; this slice registers no browser pages and does not change the fixed OBS URLs.
+
 ## Standalone (desktop) mode
 
 Contract with the server: `GET /api/standalone/status`, `GET /api/standalone/identity`, `PUT /api/standalone/folders`, `POST /api/standalone/rescan`

@@ -80,6 +80,7 @@ Design: `docs/specs/2026-11-12-standalone-installer-design.md`.
 | Local insights: `/api/players/{toon}/insights` | API p95 < 100 ms — **at the limit, operator to accept or ask for more work** | 75–100 ms (same setup; account with 2,684 games) |
 | Session review (`/api/sessions`, `/api/sessions/{id}`) | API p95 < 100 ms (spec target < 20 ms) | warm, sequential loopback: list p50 6.4 / p95 6.7 ms (300 requests, `limit` 20 and 100); review p50 6.4 / p95 6.7 ms (300 requests over the 100 latest sessions, up to 19 games each) (copy of the box DB, 3,492 games, release, 2026-11-19; idle, not during import) |
 | Insights corpus (in memory) | load in the background at startup; RAM documented | 3.3 s load, +44 MB RSS for 3,480 games (~13 kB/game) (same setup) |
+| Overlay layout API (`overlay_layout.rs`) | API p95 < 100 ms | public detail 4.99 ms, admin list 1.37 ms, admin replace 15.07 ms (100 warm sequential loopback HTTP requests each after 10 warm-ups, Linux debug server, disposable PostgreSQL 17 with one synthetic layout of 100 widgets, 2026-11-20; no concurrent import) |
 | `GET /api/goal/progress` (daily goal tracker, widget 7) | API p95 < 100 ms | 1.0 ms avg, 1.5 ms worst (25 warm loopback requests, debug server, dev Postgres with a test-fixture archive, 2026-11-20); pure, recomputed on every read — no corpus, one small join by `played_at` + `toon_handle`/`name` |
 
 Any PR that puts a budget at risk re-measures it (benches: `storm-stats-dump --bench`,

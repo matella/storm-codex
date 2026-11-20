@@ -17,6 +17,7 @@ pub mod music;
 pub mod nemesis;
 #[cfg(target_arch = "wasm32")]
 pub mod net;
+pub mod overlay_layout;
 pub mod patchnotes;
 pub mod players;
 pub mod replay2d;

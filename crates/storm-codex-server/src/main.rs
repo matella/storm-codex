@@ -17,6 +17,9 @@ mod live;
 mod lobby;
 mod manage;
 mod migrate_cmd;
+mod overlay_layout;
+#[cfg(test)]
+mod overlay_layout_tests;
 mod players;
 pub mod project;
 mod rank;
@@ -435,6 +438,7 @@ fn base_router(state: &AppState) -> Router<AppState> {
         )
         .route("/api/admin/goal", get(goal::get_goal).put(goal::put_goal))
         .route("/api/goal/progress", get(goal::progress))
+        .merge(overlay_layout::router(state))
         .route(
             "/api/teams",
             get(manage::list_teams).post(manage::create_team),
