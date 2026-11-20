@@ -65,6 +65,15 @@ the dataset may not use).
 - `cast_logo` (0013): one logo per side — `side` PK (`blue`|`red`, CHECK), `mime`, `bytes` BYTEA (≤ 512 KB),
   `updated_at` (used as the `?v=` version in `Team.logo`).
 
+## Daily goal tracker (0019)
+
+`docs/specs/2026-11-20-streamer-widgets.md`, widget 7. `app_goal`: singleton (`id=1`, `CHECK id = 1`,
+same pattern as `cast_live`/`draft_live`) — `kind` (`text`, `CHECK kind IN ('wins_today', 'games_today')`),
+`target` (`int`, `CHECK target > 0`), `created_at`. Cleared by `DELETE` (no row = no active goal), not by
+a nullable flag, so the table never holds a half-set goal. Progress itself (done count, reset instant) is
+**not stored** — `GET /api/goal/progress` recomputes it from `matches`/`match_players` on every read
+(`storm-codex-server::goal`), the same "no derived state" rule as the report status above.
+
 ## Scouting (0010)
 
 Scouting reports (spec `docs/specs/2026-09-26-rapports-scouting-design.md`). **Isolated** from the

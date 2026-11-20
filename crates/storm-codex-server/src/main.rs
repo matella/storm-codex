@@ -10,6 +10,7 @@ mod builds;
 mod cast;
 mod config;
 mod draft;
+mod goal;
 mod insights;
 mod jarvis;
 mod live;
@@ -432,6 +433,8 @@ fn base_router(state: &AppState) -> Router<AppState> {
             "/api/admin/minimap-anchors",
             axum::routing::put(manage::put_minimap_anchors),
         )
+        .route("/api/admin/goal", get(goal::get_goal).put(goal::put_goal))
+        .route("/api/goal/progress", get(goal::progress))
         .route(
             "/api/teams",
             get(manage::list_teams).post(manage::create_team),
@@ -631,12 +634,13 @@ fn base_router(state: &AppState) -> Router<AppState> {
 }
 
 /// Page of the Rust front-end for a path under `/v2` (without the prefix). The OBS sources are served by two small
-/// bundles, each kept under the 300 kB size limit: `overlay/` (cast and draft overlays) and `sources/` (session
-/// and music sources); everything else by the app (`app/`).
+/// bundles, each kept under the 300 kB size limit: `overlay/` (cast and draft overlays) and `sources/` (session,
+/// music, record-flash and nemesis sources); everything else by the app (`app/`).
 fn v2_page(path: &str) -> &'static str {
     match path.trim_end_matches('/') {
         "/cast/overlay" | "/draft/overlay" => "overlay/index.html",
-        "/ticker" | "/now-playing" | "/widget" | "/queue" => "sources/index.html",
+        "/ticker" | "/now-playing" | "/widget" | "/queue" | "/recap" | "/stream-pool"
+        | "/patch-banner" | "/record-flash" | "/nemesis" | "/goal" => "sources/index.html",
         _ => "app/index.html",
     }
 }
@@ -851,6 +855,12 @@ mod front_end_tests {
             ("/v2/now-playing", "sources"),
             ("/v2/widget", "sources"),
             ("/v2/queue", "sources"),
+            ("/v2/recap", "sources"),
+            ("/v2/stream-pool", "sources"),
+            ("/v2/patch-banner", "sources"),
+            ("/v2/record-flash", "sources"),
+            ("/v2/nemesis", "sources"),
+            ("/v2/goal", "sources"),
         ] {
             let (st, cache, body) = get(path).await;
             assert_eq!(st, StatusCode::OK, "{path}");
@@ -893,6 +903,12 @@ mod front_end_tests {
             ("/draft/overlay", "overlay"),
             ("/ticker", "sources"),
             ("/widget", "sources"),
+            ("/recap", "sources"),
+            ("/stream-pool", "sources"),
+            ("/patch-banner", "sources"),
+            ("/record-flash", "sources"),
+            ("/nemesis", "sources"),
+            ("/goal", "sources"),
             ("/v2/matches", "app"),
         ] {
             let (st, body) = get(path).await;

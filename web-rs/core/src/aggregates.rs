@@ -343,6 +343,28 @@ pub fn patch_counts(p: &PatchItem) -> String {
     s + " ›"
 }
 
+const PATCH_BANNER_WINDOW_MS: f64 = 7.0 * 24.0 * 60.0 * 60.0 * 1000.0;
+
+/// `/patch-banner`: show the banner for the latest patch when it is at most 7 real-world days old and its id
+/// differs from the last one the widget has already displayed (`last_seen_id`, the widget's own localStorage —
+/// showing it once is the acknowledgment, there is no dismiss button). `now_ms`/`live_date_ms` are epoch
+/// milliseconds; an unknown live date never shows the banner (nothing to measure the window against).
+pub fn patch_banner_visible(
+    latest_id: &str,
+    live_date_ms: Option<f64>,
+    now_ms: f64,
+    last_seen_id: Option<&str>,
+) -> bool {
+    if last_seen_id == Some(latest_id) {
+        return false;
+    }
+    let Some(live) = live_date_ms else {
+        return false;
+    };
+    let age = now_ms - live;
+    age <= PATCH_BANNER_WINDOW_MS
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -500,5 +522,45 @@ mod tests {
         assert_eq!(patch_counts(&items[0]), " ›");
         assert_eq!(patch_counts(&items[1]), "4 heroes ›");
         assert_eq!(patch_counts(&items[2]), "1 heroes · 2 maps ›");
+    }
+
+    #[test]
+    fn patch_banner_shows_once_per_patch_within_the_week() {
+        const DAY: f64 = 24.0 * 60.0 * 60.0 * 1000.0;
+        let live = 1_000_000.0;
+        // fresh, never seen: visible
+        assert!(patch_banner_visible("live:2", Some(live), live + DAY, None));
+        // right at the 7-day edge: still visible
+        assert!(patch_banner_visible(
+            "live:2",
+            Some(live),
+            live + 7.0 * DAY,
+            None
+        ));
+        // past 7 days: hidden
+        assert!(!patch_banner_visible(
+            "live:2",
+            Some(live),
+            live + 7.0 * DAY + 1.0,
+            None
+        ));
+        // already displayed (last_seen matches): hidden even within the window
+        assert!(!patch_banner_visible(
+            "live:2",
+            Some(live),
+            live + DAY,
+            Some("live:2")
+        ));
+        // a different previously-seen id does not suppress a new patch
+        assert!(patch_banner_visible(
+            "live:2",
+            Some(live),
+            live + DAY,
+            Some("live:1")
+        ));
+        // unknown live date: never shown
+        assert!(!patch_banner_visible("live:2", None, live, None));
+        // a patch that "arrives" before now (clock skew) is treated as just-published, not hidden
+        assert!(patch_banner_visible("live:2", Some(live), live - 1.0, None));
     }
 }

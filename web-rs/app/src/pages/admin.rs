@@ -2,7 +2,7 @@
 
 use leptos::{prelude::*, task::spawn_local};
 use serde_json::Value;
-use storm_web_core::net;
+use storm_web_core::{goal::GoalKind, net};
 
 use crate::{
     standalone::ThisPc,
@@ -122,6 +122,18 @@ pub fn Admin() -> impl IntoView {
             serde_json::from_str::<Value>(&body).ok()
         }
     });
+    let goal = LocalResource::new(move || {
+        let (t, open) = (token.get(), admin_open());
+        async move {
+            if t.is_empty() && !open {
+                return None;
+            }
+            let (_, body) = net::write("GET", "/api/admin/goal", None, Some(&t))
+                .await
+                .ok()?;
+            serde_json::from_str::<Value>(&body).ok()
+        }
+    });
     let teams = fetch::<Vec<Value>>(move || {
         bump.track();
         "/api/teams".to_string()
@@ -184,6 +196,9 @@ pub fn Admin() -> impl IntoView {
 
     let team_name = RwSignal::new(String::new());
     let team_league = RwSignal::new(String::new());
+    let goal_kind = RwSignal::new(None::<String>);
+    let goal_target = RwSignal::new(None::<String>);
+    let goal_msg = RwSignal::new(None::<String>);
     let coll_name = RwSignal::new(String::new());
     let create_token = move || {
         let body = serde_json::json!({ "name": token_name.get_untracked() });
@@ -223,11 +238,85 @@ pub fn Admin() -> impl IntoView {
     let reprocess = move || act("POST", "/api/admin/reprocess".into(), None, |_| {});
     let del = move |url: String| act("DELETE", url, None, refresh);
 
+    // the typed value if touched, otherwise the loaded goal (mirrors `op_value`/`save_operator` above)
+    let goal_kind_value = move || {
+        goal_kind.get().unwrap_or_else(|| {
+            goal.get()
+                .flatten()
+                .and_then(|g| g.get("kind").and_then(Value::as_str).map(str::to_string))
+                .unwrap_or_else(|| GoalKind::WinsToday.as_str().to_string())
+        })
+    };
+    let goal_target_value = move || {
+        goal_target.get().unwrap_or_else(|| {
+            goal.get()
+                .flatten()
+                .and_then(|g| g.get("target").and_then(Value::as_i64))
+                .map(|t| t.to_string())
+                .unwrap_or_default()
+        })
+    };
+    let goal_is_set = move || {
+        goal.get()
+            .flatten()
+            .is_some_and(|g| g.get("kind").is_some_and(|k| !k.is_null()))
+    };
+    let save_goal = move || {
+        if token.get_untracked().is_empty() && !admin_open() {
+            goal_msg.set(Some("⚠ enter the admin token above first".to_string()));
+            return;
+        }
+        let target: i64 = match goal_target_value().trim().parse() {
+            Ok(t) if t > 0 => t,
+            _ => {
+                goal_msg.set(Some("✗ target must be a positive integer".to_string()));
+                return;
+            }
+        };
+        let body = serde_json::json!({ "kind": goal_kind_value(), "target": target }).to_string();
+        spawn_local(async move {
+            let m = match net::write("PUT", "/api/admin/goal", Some(body), None).await {
+                Ok((s, _)) if (200..300).contains(&s) => {
+                    goal.refetch();
+                    "✓ saved".to_string()
+                }
+                Ok((401 | 403, _)) => "✗ unauthorized — check the admin token".to_string(),
+                Ok((400, _)) => "✗ invalid kind or target".to_string(),
+                Ok((s, _)) => format!("✗ save failed (HTTP {s})"),
+                Err(_) => "✗ network error — server unreachable".to_string(),
+            };
+            goal_msg.set(Some(m));
+            net::after_ms(5000, move || goal_msg.set(None));
+        });
+    };
+    let clear_goal = move || {
+        if token.get_untracked().is_empty() && !admin_open() {
+            goal_msg.set(Some("⚠ enter the admin token above first".to_string()));
+            return;
+        }
+        spawn_local(async move {
+            let m = match net::write("PUT", "/api/admin/goal", Some("{}".into()), None).await {
+                Ok((s, _)) if (200..300).contains(&s) => {
+                    goal_kind.set(None);
+                    goal_target.set(None);
+                    goal.refetch();
+                    "✓ cleared".to_string()
+                }
+                Ok((401 | 403, _)) => "✗ unauthorized — check the admin token".to_string(),
+                Ok((s, _)) => format!("✗ clear failed (HTTP {s})"),
+                Err(_) => "✗ network error — server unreachable".to_string(),
+            };
+            goal_msg.set(Some(m));
+            net::after_ms(5000, move || goal_msg.set(None));
+        });
+    };
+
     let has_health = move || health.get().flatten().is_some();
-    let n_health = Signal::derive(|| 2);
-    let n_tokens = Signal::derive(move || if has_health() { 3 } else { 2 });
-    let n_teams = Signal::derive(move || if has_health() { 4 } else { 3 });
-    let n_colls = Signal::derive(move || if has_health() { 5 } else { 4 });
+    let n_goal = Signal::derive(|| 2);
+    let n_health = Signal::derive(|| 3);
+    let n_tokens = Signal::derive(move || if has_health() { 4 } else { 3 });
+    let n_teams = Signal::derive(move || if has_health() { 5 } else { 4 });
+    let n_colls = Signal::derive(move || if has_health() { 6 } else { 5 });
     let n_this_pc = Signal::derive(move || n_colls.get() + 1);
 
     view! {
@@ -265,6 +354,28 @@ pub fn Admin() -> impl IntoView {
                         view! { <div class="amsg" style=color>{m}</div> }
                     })}
                     <p class="ahint">"Multiple accounts? Comma-separate them (e.g. matella, матella). Cyrillic / any UTF-8 is fine. Used everywhere (session, matches, widget) and by the Jarvis brief."</p>
+                </div>
+            </Sec>
+
+            <Sec num=n_goal title="Daily goal" note=ViewFn::from(|| "/goal OBS source")>
+                <div class="ds-panel">
+                    <div class="arow">
+                        <select class="ds-input" style="width: 220px" prop:value=goal_kind_value
+                            on:change=move |e| goal_kind.set(Some(event_target_value(&e)))>
+                            {GoalKind::ALL.iter().map(|k| view! {
+                                <option value=k.as_str() selected=move || goal_kind_value() == k.as_str()>{k.label()}</option>
+                            }).collect_view()}
+                        </select>
+                        <input class="ds-input" style="width: 100px" type="number" min="1" placeholder="target"
+                            prop:value=goal_target_value on:input=move |e| goal_target.set(Some(event_target_value(&e))) />
+                        <button class="ds-btn primary" on:click=move |_| save_goal()>"Save"</button>
+                        <button class="ds-btn" disabled=move || !goal_is_set() on:click=move |_| clear_goal()>"Clear"</button>
+                    </div>
+                    {move || goal_msg.get().map(|m| {
+                        let color = if m.starts_with('✓') { "color: var(--win)" } else { "color: var(--loss-soft)" };
+                        view! { <div class="amsg" style=color>{m}</div> }
+                    })}
+                    <p class="ahint">"Shown live on the \"/goal\" OBS source, resets automatically at local midnight. Clearing leaves the source blank (no placeholder box)."</p>
                 </div>
             </Sec>
 

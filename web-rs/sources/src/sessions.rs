@@ -50,12 +50,34 @@ fn Ticker() -> impl IntoView {
             })
         })
     });
+    // milestone flash: a brief glow/scale pulse + caption when the streak length just crossed 3/5/7/10 (not on
+    // every re-render with the same value — only when it actually changed), settling back to the quiet pill.
+    let flash = RwSignal::new(false);
+    let last_streak = RwSignal::new(None::<i32>);
+    Effect::new(move |_| {
+        let Some(t) = data.get() else { return };
+        let prev = last_streak.get_untracked();
+        last_streak.set(Some(t.streak));
+        if prev != Some(t.streak) && streak_milestone(t.streak).is_some() {
+            flash.set(true);
+            net::after_ms(4000, move || flash.set(false));
+        }
+    });
     view! {
         <OverlayFrame anchor=Anchor::TopRight top=250.0>
             {move || match data.get() {
                 None => view! { <div></div> }.into_any(),
-                Some(t) => view! {
-                    <div style="display:inline-flex;align-items:center;gap:9px;background:rgba(14,16,22,.92);border:1px solid var(--hairline-strong);border-radius:999px;padding:6px 13px 6px 7px;box-shadow:0 6px 20px rgba(0,0,0,.5);font-size:15px">
+                Some(t) => {
+                    let is_flash = flash.get();
+                    let tone = if t.streak > 0 { "var(--win)" } else { "var(--loss)" };
+                    let class = if is_flash {
+                        format!("ticker-pill flash {}", if t.streak > 0 { "flash-win" } else { "flash-loss" })
+                    } else {
+                        "ticker-pill".to_string()
+                    };
+                    let caption = is_flash.then(|| streak_milestone_caption(t.streak)).flatten();
+                    view! {
+                    <div class=class style="display:inline-flex;align-items:center;gap:9px;background:rgba(14,16,22,.92);border:1px solid var(--hairline-strong);border-radius:999px;padding:6px 13px 6px 7px;box-shadow:0 6px 20px rgba(0,0,0,.5);font-size:15px">
                         <Avatar hero=t.hero size=24.0 />
                         <span class="mono" style="font-weight:600">
                             <span style="color:var(--win)">{t.wins}"W"</span>
@@ -67,7 +89,9 @@ fn Ticker() -> impl IntoView {
                                 {if t.streak > 0 { format!("W{} ▲", t.streak) } else { format!("L{} ▼", -t.streak) }}
                             </span>
                         })}
+                        {caption.map(|c| view! { <span class="ticker-caption" style=format!("color:{tone}")>{c}</span> })}
                     </div>
+                    }
                 }
                 .into_any(),
             }}

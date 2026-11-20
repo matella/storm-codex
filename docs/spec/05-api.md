@@ -36,6 +36,7 @@ routes marked 🔒 require `Authorization: Bearer` (personal upload token for up
 | `GET /api/trends` | winrate/duration per build/patch |
 | `GET /api/now-playing` | Orpheus proxy (music widget) |
 | `GET /api/settings` | application settings (including `operator_names`) |
+| `GET /api/goal/progress` | daily goal tracker (`docs/specs/2026-11-20-streamer-widgets.md`, widget 7), recomputed on every read, nothing stored: `{kind, target, done, reset_at}`; all four `null`/`0` when no goal is set. `kind` ∈ `wins_today`/`games_today`, counted from the operator's perspective rows (same `app_settings.operator_names` / standalone `operator_toons` as `/api/trends`) within the box's local-midnight-to-local-midnight window; `reset_at` = that window's end, UTC ISO |
 
 ## Local insights (`insights/`) — spec `docs/specs/2026-11-17-local-insights-design.md`
 
@@ -63,6 +64,7 @@ then records 35 ms, early leads 6 ms, player insights 75–100 ms, compare 12 ms
 | Route | Role |
 |---|---|
 | `PUT /api/admin/settings` | writes `app_settings` (e.g. `operator_names`) |
+| `GET/PUT /api/admin/goal` | daily goal tracker: `GET` reads the current goal (`{kind, target}`, both `null` if none); `PUT {"kind","target"}` sets it (`kind` ∈ `wins_today`/`games_today`, `target` a positive integer, `400` otherwise); `PUT` with `kind` omitted/`null` clears it (idempotent). Single row (`app_goal`, `id=1`), upserted — never a second row |
 | `GET/POST /api/teams` · `PUT/DELETE /api/teams/{id}` | teams (+ `league` field) |
 | `GET/POST /api/collections` · `DELETE /api/collections/{id}` | match collections |
 | `POST /api/admin/tokens` · `DELETE /api/admin/tokens/{id}` | personal upload tokens (the plaintext is only shown at creation); idempotent revocation (date of the 1st revocation kept), `404` if the id does not exist |

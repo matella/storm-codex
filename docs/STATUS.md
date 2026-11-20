@@ -1,5 +1,221 @@
 # STATUS — read first, update last
 
+## Streamer widgets round 1, combined merge (2026-11-20), branch `feat/streamer-widgets`
+
+Combined all three round-1 branches (`feat/streamer-widgets-recap` items 1/2/4/6, `feat/streamer-widgets-flash`
+items 3/5, `feat/streamer-widgets-goal` item 7) onto one branch by cherry-picking their three commits
+(`4d4a9dc`, `9a85b6e`, `d9450b4`) in that order. All conflicts were in the shared routing/doc files each
+branch touched independently (`web-rs/core/src/route.rs` `Page` enum + `page_of` + its tests,
+`web-rs/sources/src/main.rs` module list + match, `crates/storm-codex-server/src/main.rs` `v2_page()` + both
+route tables + their tests, `docs/STATUS.md`, `docs/spec/04-serveur.md`, `docs/spec/08-frontend.md`,
+this spec file): resolved by combining every enum variant / match arm / table row from all three sides and
+keeping every dated section, no logic dropped from any branch.
+
+Verified independently after resolution (`storm-dev:latest`, throwaway Postgres 17 on 55450, full
+`scripts/full-check.sh` run — this is the number that matters, not the per-branch estimates in the sections
+below): `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test
+--workspace` all clean on the first run with no conflict-resolution fixes needed (no duplicate/missing match
+arms, no stray compile errors). **562 server-workspace tests passed, 0 failed, 10 ignored** (includes all 12
+`goal::` tests — midnight reset, kind switch, no-goal state, admin-token gating, upsert/clear lifecycle,
+operator-perspective progress). In `web-rs`: `cargo fmt`, `cargo clippy
+--all-targets -- -D warnings`, `cargo clippy --target wasm32-unknown-unknown --workspace -- -D warnings`, all
+clean; **198 web-rs native tests passed, 0 failed** (includes the combined `core::goal`, `core::nemesis` (6 tests) and
+`core::insights::new_personal_record` test sets, plus the combined `route.rs` test covering all seven new
+`page_of`/`v2_page` entries). All three Trunk release builds (`overlay`, `sources`, `app`) succeeded.
+
+**Final combined bundle sizes** (replaces the "re-measured once the merge's own check suite ran" placeholder
+in `docs/spec/08-frontend.md`'s Contract sentence): `overlay` **217,951 bytes gzip** (unchanged, no overlay
+code in this spec); `sources` **229,936 bytes gzip** (budget 300,000 — combined delta +48,574 bytes over the
+181,362-byte pre-widgets baseline, comfortably inside budget and smaller than the sum of the three branches'
+individually-measured deltas since they share some `core` code); `app` **1,049,799 bytes Brotli** (budget
+1,250,000 — combined delta +3,061 bytes over the 1,046,738-byte pre-widgets baseline, for the same
+shared-code reason smaller than the sum of the individual deltas).
+
+Browser-checked all seven sources in headless Chromium against a throwaway copy of the box DB
+(`storm-codex-pg`'s data restored into a scratch Postgres, release server + release Trunk build), per the
+spec's acceptance bullets: `/ticker` milestone flash fires only at streak lengths 3/5/7/10 and the pill
+reverts to its exact pre-flash markup; `/recap` and `/stream-pool` match the Session page's own
+server-computed `Review` rows for the same session; `/record-flash` is silent against the real newest match
+and fires + clears after ~8 s only when the newest match id is the real top-stat record; `/nemesis` flags
+only the real <=35%-over->=3-games opponent, excludes the unresolved-toon opponent, and makes no extra
+request within a lobby (debounce holds); `/patch-banner` shows for an unseen patch, hides on reload within 7
+days, and hides once older than 7 days; `/goal` shows live progress matching real `matches`/`match_players`
+rows, renders a blank frame with no goal set, and correctly excludes a game backdated a day for the
+midnight-reset boundary. `/ticker`, `/widget`, `/queue` and `/now-playing` were re-checked unchanged (same
+layout, same data) alongside the new sources.
+
+Self-reviewed the full combined diff (`git diff origin/main...HEAD`; no `delegate_task` tool available in
+this session to dispatch an isolated `[Reviewer]` subagent): the merged `Page` enum/`page_of`/`v2_page` and
+both server route tables are exhaustive (match arms for all 7 new variants present exactly once, no
+duplicates, confirmed by the passing combined `route.rs` test and a clean `-D warnings` clippy build which
+would flag a non-exhaustive match); the goal tracker's SQL is fully parameterized (`$1`/`$2`/`$3` binds, no
+`format!`/string interpolation of user input) and both `/api/admin/goal` routes are gated by the same
+admin-token middleware as other Admin writes (covered by `put_and_get_goal_require_admin_token_when_configured`);
+`/nemesis` and `/record-flash` stay within their stated privacy scope (opponent name + the operator's own
+W–L only, no other opponent data, unresolved toons silently excluded); no regressions found in `/ticker`,
+`/widget`, `/queue` or `/now-playing`.
+
+Not done: no `delegate_task` tool in this session, so review was self-done rather than a dispatched
+`[Reviewer]` subagent (per the operator's instruction to self-review thoroughly in that case); deploy to the
+box (R3, operator decision); PR (operator will open it). Fixed: nothing — the hand-resolved merge compiled
+and passed clean on the first run. Pushed to `origin/feat/streamer-widgets`.
+
+## Streamer widgets round 1, part A (2026-11-20), branch `feat/streamer-widgets-recap`
+
+Approved scope: `docs/specs/2026-11-20-streamer-widgets.md`, widgets **1, 2, 4, 6 only** (3/5/7 — record
+flash, nemesis badge, daily goal — are separate work, not touched here). Client-only, no backend/migration
+change.
+
+- **Streak milestone flash** (`/ticker`): a 2x glow/scale pulse + "X-game win/loss streak" caption when
+  `streak.abs()` crosses exactly 3/5/7/10, held ~4 s, then the pill settles back with its exact original
+  markup (no residual class at rest). Pure logic `streak_milestone`/`streak_milestone_caption` in
+  `core/session.rs` (native tests).
+- **Session recap** (new `/recap`) and **"played this stream" hero pool** (new `/stream-pool`): found that
+  `GET /api/sessions` / `GET /api/sessions/{id}` already exist (merged earlier with Local insights' session
+  review, not literally new) — both sources call them directly (`storm_web_core::review::Review`), reusing
+  the server's baseline-scored `best`/`worst` picks and already-sorted `heroes` rows instead of a weaker
+  client-side reimplementation.
+- **Patch-day banner** (new `/patch-banner`): reads `GET /api/patches`, shows the latest patch for up to 7
+  real-world days unless already displayed once (`localStorage` "last seen" id written by the widget itself
+  on display — there's no dismiss button since OBS sources aren't clicked).
+- Routes registered the same way as `/ticker` etc.: `web-rs/sources/src/{main,route}.rs` (`Page` enum +
+  `page_of`) and `crates/storm-codex-server/src/main.rs` (`v2_page` + both front-end test tables).
+- Verified in `storm-dev:latest` (throwaway Postgres): `cargo fmt`/clippy native+wasm32, `cargo test`
+  (550 workspace, 10 ignored; 183 web-rs native), `trunk build --release` for all three bundles. Bundle sizes:
+  `sources` 181,362 → 208,614 bytes gzip (**+27,252**, budget 300 kB); `overlay` unchanged (217,951 bytes);
+  `app` 1,046,825 → 1,047,110 bytes brotli (**+285**, budget 1.25 MB — shared `core::review` module already
+  linked for the app's Session page). `cargo audit` could not run (not installed in `storm-dev:latest`, a
+  pre-existing environment gap, not introduced here).
+- Browser-checked in headless Chromium against a copy of the box DB (3,480+ games, release server + release
+  binary): milestone flash fires exactly at a crossed threshold (synthetic 3-game win streak) and clears
+  after the hold window; recap and stream-pool match the real session's server-computed review; patch banner
+  shows for a fresh/unseen patch, hides on reload (seen) and hides once older than 7 days.
+- Self-reviewed the diff thoroughly (no `delegate_task` subagent tool available in this run); found and
+  documented (not fixed, out of scope) a latent `PatchItem.community_only: bool` deserialization trap on a
+  present-but-null JSON value — see the spec's Implementation notes.
+- Not done: widgets 3/5/7, a dispatched `[Reviewer]` subagent pass (self-reviewed instead), push/PR (left to
+  the operator per standing instructions).
+## Streamer widgets round 1, items 3 + 5 (2026-11-20), branch `feat/streamer-widgets-flash`, not merged
+
+Spec `docs/specs/2026-11-20-streamer-widgets.md` (approved 2026-11-20, all 7 widgets; this branch implements
+only items 3 and 5, client-only, no backend/migration change). New OBS sources in `web-rs/sources`:
+
+- `/record-flash`: flashes "NEW RECORD · <stat> (<value>)" for ~8 s when the newest game (`frame::recent_matches`,
+  the `/ticker`/`/widget`/`/queue` hook, refetched on `match.parsed`) is the top row of `GET
+  /api/records?mine=true&limit=1` for some stat (`core::insights::new_personal_record`, tested).
+- `/nemesis`: a badge per resolved opponent the operator has a grudge record against (<= 35% win rate over
+  >= 3 games, `core::nemesis::is_grudge`, tested), shown during Draft/loading. Opponent toons resolve from `GET
+  /api/lobby` (not `GET /api/live`, which never serialises toon handles — see the spec's Implementation notes),
+  per-opponent record from two `limit=1` `GET /api/matches?against=<toon>[&result=win]` calls reading
+  `X-Total-Count`; debounced to once per lobby (`core::nemesis::lobby_signature`, tested) via
+  `lobby.detected`/`lobby.updated`, not the safety-net poll. An opponent whose toon isn't resolved yet is
+  silently excluded. Shows only the opponent's name and the operator's own W–L against them.
+
+New routes registered in `web-rs/core/src/route.rs` (`Page::RecordFlash`, `Page::Nemesis`) and
+`web-rs/sources/src/main.rs`, plus the server's `v2_page()` mapping in `crates/storm-codex-server/src/main.rs`.
+Contracts updated: `docs/spec/04-serveur.md` (`WEB_DIR` routing table), `docs/spec/08-frontend.md` (OBS source
+table, `sources` crate description, bundle-size contract sentence).
+
+Checks (Docker, `storm-dev:latest`, throwaway Postgres 17 on port 55481): `cargo fmt --all -- --check`,
+`cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` (450 passed, 3 ignored,
+unrelated to this change) on the main workspace; in `web-rs`: `cargo fmt`, `cargo clippy --all-targets -- -D
+warnings` and `cargo test` (188 passed, including the new `nemesis` and `insights::new_personal_record` native
+tests), `cargo clippy --target wasm32-unknown-unknown --workspace -- -D warnings`, `trunk build --release` for
+`overlay`, `sources` and `app`. Bundle sizes: `sources` 199,574 bytes gzip / 165,517 bytes brotli (+18,212 bytes
+gzip over the 181,362-byte baseline — well inside the 300 kB budget); `overlay` unchanged 217,943 bytes gzip;
+`app` unchanged 1,046,738 bytes brotli (no app change). Browser-checked in headless Chromium against a copy of
+the box database (3,503 matches, release server): `/record-flash` is empty against the real newest match,
+flashes correctly when mocked to a real record-setting match id, and auto-hides after 8 s; `/nemesis` against a
+mocked `/api/lobby` roster (real opponent toons from the corpus) correctly flagged a real 0/6 opponent, correctly
+left a real 3/3 opponent unflagged, never queried the unresolved-toon opponent, made no extra request across a
+10 s poll tick (debounce holds), and rendered nothing with no active lobby (`204`).
+
+Self-reviewed (no delegate/subagent tool available in this session): focused on the live-feed enemy-toon
+resolution (confirmed `/api/live`'s view never carries a toon handle at any scope, hence the `/api/lobby`
+substitution above) and on not exceeding what Draft/cast already expose (badge shows only name + the operator's
+own W–L, nothing else; unresolved toons are excluded, not guessed). Deviations from the literal spec wording are
+recorded in the spec's "Implementation notes" section. Not done: patch-day banner, daily goal tracker and the
+other round-1 items (out of scope for this branch); deploy (R3, operator). Committed locally on
+`feat/streamer-widgets-flash`, not pushed.
+
+## Daily goal tracker (2026-11-20), branch `feat/streamer-widgets-goal`
+
+Approved scope: `docs/specs/2026-11-20-streamer-widgets.md`, item **7 only** (the one streamer widget
+needing new backend state — items 1–6 are unimplemented, no-backend-change widgets, out of scope here).
+
+**Backend**: migration `0019_app_goal.sql` adds `app_goal` (singleton, `id=1 CHECK`, `kind` ∈
+`wins_today`/`games_today`, `target` positive int, `created_at` — same pattern as `cast_live`/`draft_live`).
+New module `crates/storm-codex-server/src/goal.rs`: pure day-boundary math (`day_bounds`, injectable
+`DateTime<FixedOffset>`) and kind switch (`compute_progress`), native-tested (midnight reset across
+positive/negative offsets, kind switch, no-goal state — Rule 0's "measure, do not estimate" extends to
+testing real clock edges with an injected clock rather than trusting the logic by inspection). Routes:
+`GET`/`PUT /api/admin/goal` (admin-gated, same contract as `manage::put_settings`: `PUT` upserts the
+single row, `kind` omitted/`null` clears it idempotently, unknown `kind`/non-positive `target` → `400`)
+and `GET /api/goal/progress` (public, read-only like the other OBS endpoints; **nothing stored** —
+recomputed from `matches`/`match_players` on every read using the same operator-perspective tally as
+`manage::trends`, within the box's local-midnight-to-local-midnight window).
+
+**Admin UI**: new "Daily goal" section in `/admin` (kind selector, target input, Save/Clear), right after
+"My identity"; pure vocabulary/formatting shared with the OBS source in `web-rs/core/src/goal.rs`
+(`GoalKind`, `Progress`, `display_line`, `is_active`, native-tested: no-goal state, kind switch, JSON
+round-trip).
+
+**OBS source**: new `/goal` in the `sources` bundle (`web-rs/sources/src/goal.rs`), registered in
+`route::Page`/`page_of` and the server's `v2_page` the same way as the other session sources; polls
+`GET /api/goal/progress` every 10 s; renders a blank transparent frame when no goal is set (no
+placeholder box).
+
+**Checks**: `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings`
+clean on the main workspace; 462 workspace tests passed (0 failed, 3 ignored, throwaway Postgres 17),
+including 11 new `goal::` tests (pure + one consolidated admin-token/upsert/clear/progress endpoint
+test — `app_goal` is a true singleton, so its own lifecycle test stays sequential rather than racing
+other `#[tokio::test]`s on the shared row). `web-rs`: fmt/clippy native + wasm32 clean, 189 native tests
+passed (was 181, +8 `core::goal` tests). Trunk release builds: `overlay` unchanged 217,943 bytes gzip
+(no overlay file touched), **`sources` 185,111 bytes gzip** (was 181,362, +3,749 bytes for `/goal`, cap
+300,000), **`app` 1,050,106 bytes Brotli** (was 1,046,738, +2,996 bytes for the Admin block, cap
+1,250,000). `GET /api/goal/progress` measured at ~1.0 ms avg / 1.5 ms worst (25 warm loopback requests)
+— far under the 100 ms API p95 budget.
+
+**Browser-checked** against a copy of the running server's DB (throwaway Postgres + release server,
+`WEB_DIR` pointed at the built `web-rs/dist`): set a goal (wins today, target 1) in `/admin`, confirmed
+`/goal` showed live "1 / 1 wins today" matching a real win/loss pair inserted for the day; cleared the
+goal and confirmed `/goal` renders a blank frame (`<div></div>`, no visible box). **Midnight reset**:
+covered two ways — (a) native tests inject a `DateTime<FixedOffset>` at 23:30/00:01 local time across
+positive and negative offsets and assert the UTC day-boundary instants (this is the "test clock" the
+task asked to document: no real clock wait, `day_bounds` takes the instant as a parameter); (b) live
+proof against the real DB — inserted an extra win for the same operator timestamped `now() - 1 day` and
+confirmed `/goal` still read "1 / 5 wins today" (the target raised to 5 to distinguish it from a
+coincidental match), i.e. the local-midnight boundary correctly excluded yesterday's win from today's
+count.
+
+Self-reviewed (`[Reviewer]`, no subagent dispatch available in this session — see "Self-review" below).
+Docs updated in the same commit (Rule 0): `docs/spec/04-serveur.md` (new `goal.rs` section),
+`docs/spec/05-api.md` (the three new routes), `docs/spec/06-modele-donnees.md` (`app_goal`),
+`docs/spec/01-architecture.md` (perf budget row), `docs/spec/08-frontend.md` (`sources` bundle route
+list, `/admin` page description, bundle-size history sentence). No deviations from the approved spec.
+
+**Self-review** (admin-token gating and SQL injection focus, since no `delegate_task` tool was available
+to dispatch an isolated `[Reviewer]` subagent in this session):
+- `GET`/`PUT /api/admin/goal` both call `is_admin(&headers, &s)` before touching the database, same as
+  every other `admin.rs`/`manage.rs` handler — verified by a dedicated test
+  (`put_and_get_goal_require_admin_token_when_configured`): no token → `401`, wrong token → `401`.
+- `GET /api/goal/progress` is deliberately public (OBS sources send no token, same as `/api/now-playing`,
+  `/api/sessions`), and is read-only — it cannot be used to set or clear the goal.
+- All SQL is parameterized (`sqlx::query(...).bind(...)`): `kind` and `target` go through `$1`/`$2`
+  placeholders in both the `GET` (none needed) and `PUT` (`INSERT ... VALUES (1, $1, $2) ON CONFLICT ...`)
+  paths; the progress query binds `$1`/`$2` (day bounds) and `$3` (operator toons) the same way as
+  `manage::trends`. No `format!`/string interpolation of user input anywhere in `goal.rs`.
+- `kind` is additionally restricted by the DB `CHECK` constraint (defence in depth beyond the Rust-side
+  `GoalKind::parse` validation) and `target` by `CHECK target > 0`.
+- No `unwrap()`/`expect()` outside `#[cfg(test)]` code (`day_bounds`'s one `and_hms_opt` call uses
+  `unwrap_or_else` with a same-type fallback instead, since `clippy::expect_used`/`unwrap_used` are
+  enabled project-wide, not just for `.unwrap()`).
+- No should-fix or blocker findings from this pass.
+
+Not run: box DB validation (used a throwaway copy, never the live `storm-codex-pg` volume), deploy,
+Windows/standalone checks, a second independent reviewer pass. Committed locally on
+`feat/streamer-widgets-goal`; not pushed (operator to review before PR, per the task).
+
 ## Merge of `origin/main` into `fix/web-audit-image-proxy` (2026-11-19)
 
 Merged `origin/main` (`1c160c4`, App-slice accessibility fixes #63) into this branch as a true merge

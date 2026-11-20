@@ -4,6 +4,7 @@ pub mod aggregates;
 pub mod card;
 pub mod castctl;
 pub mod dashboard;
+pub mod goal;
 pub mod herodetail;
 pub mod heroes;
 pub mod insights;
@@ -13,6 +14,7 @@ pub mod logic;
 pub mod matchdetail;
 pub mod model;
 pub mod music;
+pub mod nemesis;
 #[cfg(target_arch = "wasm32")]
 pub mod net;
 pub mod patchnotes;

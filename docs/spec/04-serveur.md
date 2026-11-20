@@ -468,6 +468,27 @@ Heroes: `hero_units.json` (tracker unit → canonical name, 90/90), derived from
 `examples/derive_hero_units.rs`. End-to-end simulator: `examples/live_sim.rs`.
 Design: `docs/specs/2026-10-24-feed-live-en-partie-design.md`.
 
+## Daily goal tracker (`goal.rs`)
+
+`docs/specs/2026-11-20-streamer-widgets.md`, widget 7 — the one streamer widget needing new backend
+state. Migration 0019 adds `app_goal` (singleton, see `06-modele-donnees.md`). `GoalKind`
+(`wins_today`/`games_today`) and the day-boundary math (`day_bounds`, injectable `DateTime<FixedOffset>`
+so it is testable without the real clock) and the kind switch (`compute_progress`) are pure, native
+unit-tested (midnight reset across positive/negative offsets, kind switch, no-goal state); the handlers
+are a thin SQL layer on top, same shape as `manage.rs`'s settings handlers.
+
+- `GET`/`PUT /api/admin/goal` (admin-gated, same `auth::is_admin` contract as `manage::put_settings`):
+  read/set/clear the goal. `PUT` upserts the single row (never a second one); a `kind` omitted or `null`
+  clears it (idempotent); an unknown `kind` or non-positive `target` is `400`.
+- `GET /api/goal/progress` (public, read-only, like the other OBS endpoints): **not stored** — recomputed
+  from `matches`/`match_players` on every read, using the same operator-perspective tally as
+  `manage::trends` (`app_settings.operator_names` in box mode, `standalone::operator_toons` in standalone
+  mode) over the box's local-midnight-to-local-midnight window (`chrono::Local`'s offset, fixed for the
+  duration of one request). `{kind, target, done, reset_at}`, all `null`/`0` with no goal set.
+- `/goal` OBS source (`sources/`, registered in `v2_page`/`page_of` like the other session sources):
+  polls `/api/goal/progress` every 10 s; renders a blank transparent frame when `kind`/`target` are
+  `null` (no placeholder box).
+
 ## Configuration (env — `config.rs`, template: `.env.example`)
 
 | Variable | Default | Role |
@@ -477,7 +498,7 @@ Design: `docs/specs/2026-10-24-feed-live-en-partie-design.md`.
 | `ARCHIVE_DIR` | `./.archive` | raw replays (source of truth) |
 | `RAW_CACHE_DIR` / `RAW_CACHE_MAX_BYTES` | `./.raw-cache` / 5 GiB | LRU cache of dumps |
 | `ADMIN_TOKEN` | empty = **open mode** | empty: no admin auth (LAN/Tailscale self-hosting); set: Bearer required on admin writes |
-| `WEB_DIR` | empty = API only | built front-end (`web-rs/dist`: `overlay/`, `sources/`, `app/`, one Trunk output each) served by the binary. Every page answers at `/`, after the API routes: `/cast/overlay` and `/draft/overlay` get `overlay/index.html`; `/ticker`, `/now-playing`, `/widget` and `/queue` get `sources/index.html`; everything else `app/index.html` (`no-cache`, read at each request). The bundles' files are under `/v2/<bundle>/` (fingerprinted, cached for a year; a missing file-like path answers 404, never an HTML page); `/v2/...` pages still work. The Docker image sets `/app/web` |
+| `WEB_DIR` | empty = API only | built front-end (`web-rs/dist`: `overlay/`, `sources/`, `app/`, one Trunk output each) served by the binary. Every page answers at `/`, after the API routes: `/cast/overlay` and `/draft/overlay` get `overlay/index.html`; `/ticker`, `/now-playing`, `/widget`, `/queue`, `/recap`, `/stream-pool`, `/patch-banner`, `/record-flash` and `/nemesis` get `sources/index.html`; everything else `app/index.html` (`no-cache`, read at each request). The bundles' files are under `/v2/<bundle>/` (fingerprinted, cached for a year; a missing file-like path answers 404, never an HTML page); `/v2/...` pages still work. The Docker image sets `/app/web` |
 | `IMAGES_DIR` | `./.images` | vendored images, served on `/images` |
 | `PATCH_IMAGE_MAX_FILE_BYTES` | 8 MiB | per-image cap when the box fetches a Blizzard patch-note image (`refdata::patchimg`) |
 | `PATCH_IMAGE_CACHE_MAX_BYTES` | 200 MiB | total bound on `IMAGES_DIR/patch-images` (LRU-evicted; unlike the rest of `IMAGES_DIR`, which is permanent) |
