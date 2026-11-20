@@ -4,6 +4,7 @@ pub mod aggregates;
 pub mod card;
 pub mod castctl;
 pub mod dashboard;
+pub mod goal;
 pub mod herodetail;
 pub mod heroes;
 pub mod insights;

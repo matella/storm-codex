@@ -10,6 +10,7 @@ mod builds;
 mod cast;
 mod config;
 mod draft;
+mod goal;
 mod insights;
 mod jarvis;
 mod live;
@@ -432,6 +433,8 @@ fn base_router(state: &AppState) -> Router<AppState> {
             "/api/admin/minimap-anchors",
             axum::routing::put(manage::put_minimap_anchors),
         )
+        .route("/api/admin/goal", get(goal::get_goal).put(goal::put_goal))
+        .route("/api/goal/progress", get(goal::progress))
         .route(
             "/api/teams",
             get(manage::list_teams).post(manage::create_team),
@@ -637,7 +640,7 @@ fn v2_page(path: &str) -> &'static str {
     match path.trim_end_matches('/') {
         "/cast/overlay" | "/draft/overlay" => "overlay/index.html",
         "/ticker" | "/now-playing" | "/widget" | "/queue" | "/recap" | "/stream-pool"
-        | "/patch-banner" | "/record-flash" | "/nemesis" => "sources/index.html",
+        | "/patch-banner" | "/record-flash" | "/nemesis" | "/goal" => "sources/index.html",
         _ => "app/index.html",
     }
 }
@@ -857,6 +860,7 @@ mod front_end_tests {
             ("/v2/patch-banner", "sources"),
             ("/v2/record-flash", "sources"),
             ("/v2/nemesis", "sources"),
+            ("/v2/goal", "sources"),
         ] {
             let (st, cache, body) = get(path).await;
             assert_eq!(st, StatusCode::OK, "{path}");
@@ -904,6 +908,7 @@ mod front_end_tests {
             ("/patch-banner", "sources"),
             ("/record-flash", "sources"),
             ("/nemesis", "sources"),
+            ("/goal", "sources"),
             ("/v2/matches", "app"),
         ] {
             let (st, body) = get(path).await;

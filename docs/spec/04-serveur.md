@@ -468,6 +468,27 @@ Heroes: `hero_units.json` (tracker unit → canonical name, 90/90), derived from
 `examples/derive_hero_units.rs`. End-to-end simulator: `examples/live_sim.rs`.
 Design: `docs/specs/2026-10-24-feed-live-en-partie-design.md`.
 
+## Daily goal tracker (`goal.rs`)
+
+`docs/specs/2026-11-20-streamer-widgets.md`, widget 7 — the one streamer widget needing new backend
+state. Migration 0019 adds `app_goal` (singleton, see `06-modele-donnees.md`). `GoalKind`
+(`wins_today`/`games_today`) and the day-boundary math (`day_bounds`, injectable `DateTime<FixedOffset>`
+so it is testable without the real clock) and the kind switch (`compute_progress`) are pure, native
+unit-tested (midnight reset across positive/negative offsets, kind switch, no-goal state); the handlers
+are a thin SQL layer on top, same shape as `manage.rs`'s settings handlers.
+
+- `GET`/`PUT /api/admin/goal` (admin-gated, same `auth::is_admin` contract as `manage::put_settings`):
+  read/set/clear the goal. `PUT` upserts the single row (never a second one); a `kind` omitted or `null`
+  clears it (idempotent); an unknown `kind` or non-positive `target` is `400`.
+- `GET /api/goal/progress` (public, read-only, like the other OBS endpoints): **not stored** — recomputed
+  from `matches`/`match_players` on every read, using the same operator-perspective tally as
+  `manage::trends` (`app_settings.operator_names` in box mode, `standalone::operator_toons` in standalone
+  mode) over the box's local-midnight-to-local-midnight window (`chrono::Local`'s offset, fixed for the
+  duration of one request). `{kind, target, done, reset_at}`, all `null`/`0` with no goal set.
+- `/goal` OBS source (`sources/`, registered in `v2_page`/`page_of` like the other session sources):
+  polls `/api/goal/progress` every 10 s; renders a blank transparent frame when `kind`/`target` are
+  `null` (no placeholder box).
+
 ## Configuration (env — `config.rs`, template: `.env.example`)
 
 | Variable | Default | Role |

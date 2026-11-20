@@ -120,6 +120,7 @@ scope for this branch and untouched.
   only surfaced here with a hand-inserted test row in the throwaway DB copy; flagged for the operator rather
   than touched, since fixing it is a change to an existing, unrelated contract type outside this spec's
   approved scope.
+
 ## Implementation notes (items 3 and 5, 2026-11-20, branch `feat/streamer-widgets-flash`)
 
 Only items 3 (personal-record flash) and 5 (nemesis/grudge-match badge) were implemented on this branch;
@@ -157,3 +158,41 @@ existing read endpoint, no backend change, react to the existing live-bus) is un
   corpus) correctly flagged a real 0/6 opponent, correctly did not flag a real 3/3 (100%) opponent, never queried
   the unresolved-toon opponent, and made no further request across a 10 s poll tick (debounce holds); with no
   active lobby (`204`), `/nemesis` renders nothing.
+
+## Implementation notes (2026-11-20, branch `feat/streamer-widgets-goal`)
+
+Only item **7 (daily goal tracker)** is implemented on this branch; items 1–6 (streak flash, session
+recap, personal-record flash, stream pool, nemesis badge, patch-day banner) are not started. No
+deviation from the approved shape of widget 7: single-row `app_goal` table (migration `0019`), the
+admin-gated `GET`/`PUT /api/admin/goal` pair, the public read-only `GET /api/goal/progress` recomputed
+on every read, the `/admin` "Daily goal" block (kind selector, target, Save/Clear), and the `/goal`
+source polling every 10 s with a blank frame when no goal is set.
+
+One implementation detail not spelled out in the spec text: "local midnight" is the **server's** local
+time (`chrono::Local`, the box's configured timezone), not the viewer's browser timezone — the server
+has no reliable way to know the OBS browser source's timezone, and the operator and the box are
+expected to share one (home streaming setup). Pure day-boundary math lives in
+`crates/storm-codex-server/src/goal.rs` (`day_bounds`, parameterised by `DateTime<FixedOffset>` so it is
+native-tested without depending on the real clock); `web-rs/core/src/goal.rs` holds the client-side
+vocabulary (`GoalKind`, `Progress`, `display_line`) shared between the Admin block and the `/goal`
+source — the source trusts the server's `reset_at` rather than recomputing its own boundary.
+
+Measured: `sources` bundle 185,111 bytes gzip (was 181,362; +3,749 bytes), well under the 300 kB cap;
+`app` bundle 1,050,106 bytes Brotli (was 1,046,738; +2,996 bytes), under the 1.25 MB cap.
+`GET /api/goal/progress` measured ~1.0 ms avg / 1.5 ms worst (25 warm loopback requests), far under the
+100 ms API p95 budget — no change needed to `01-architecture.md`'s targets, only the new measured row.
+
+Checks run: `cargo fmt`/`clippy --workspace --all-targets -D warnings` (server workspace) and the
+`web-rs` fmt/clippy native + wasm32 sequence, all clean; 462 server workspace tests (throwaway Postgres
+17, 0 failed) including 11 new `goal::` tests (midnight reset, kind switch, no-goal state, admin-token
+gating, upsert/clear lifecycle, operator-perspective progress); 189 `web-rs` native tests (was 181, +8
+`core::goal` tests); all three Trunk release builds passed their size budgets. Browser-checked against
+a throwaway copy of the DB with a release server: goal set → `/goal` shows live progress matching real
+`matches`/`match_players` rows; goal cleared → `/goal` renders a blank `<div></div>`; a win inserted with
+`played_at = now() - 1 day` is correctly excluded from "today" (midnight-boundary proof against real
+data, alongside the native injected-clock tests). Self-reviewed (no `delegate_task` tool available in
+this session to dispatch an isolated `[Reviewer]` subagent): admin-token gating verified by test on both
+new routes, `GET /api/goal/progress` confirmed deliberately public/read-only, all SQL parameterized
+(`$1`/`$2`/`$3` binds, no `format!`/interpolation of user input), `kind`/`target` validated both
+Rust-side (`GoalKind::parse`, `target > 0`) and by the DB `CHECK` constraints (defence in depth), no
+`unwrap()`/`expect()` outside `#[cfg(test)]`. Full details in `docs/STATUS.md`.
