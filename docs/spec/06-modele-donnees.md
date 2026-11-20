@@ -79,8 +79,9 @@ a nullable flag, so the table never holds a half-set goal. Progress itself (done
 `overlay_layout` stores UUID, name, and UTC creation/update timestamps. `overlay_widget_instance`
 uses its own UUID and a foreign key with `ON DELETE CASCADE`. The `(layout_id, z_order, id)` index
 supports ordered reads and cascades. Constraints enforce the ten-type catalog, whole-cell 80×45
-bounds and object-valued JSONB settings; the API further limits names, body size, widget count and
-per-widget settings. Replacement is atomic and preserves the layout UUID. Layouts are user data,
+bounds and the per-widget JSONB settings allowlist (keys, types and the `me` length/control-character
+limits; see `05-api.md`). The constraint also applies to direct backup restores. The API further
+limits names, body size and widget count. Replacement is atomic and preserves the layout UUID. Layouts are user data,
 not reconstructable from replays; back up both tables (see `09-operations.md`). No extensions required.
 
 ## Scouting (0010)

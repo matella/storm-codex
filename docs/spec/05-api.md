@@ -63,6 +63,9 @@ Names trim to 1–120 characters and cannot contain control characters after tri
 contain 0–100 widgets, with rectangles contained in the 80×45 grid and signed 32-bit integer z-order.
 `settings` is an object: `widget` accepts optional `me` (string ≤120 characters, no controls),
 `now-playing` accepts optional `mini` and `reveal` (booleans), and the other eight types take `{}`.
+Null and unknown settings are rejected. Missing or `false` saved flags are disabled; `reveal: true`
+wins over `mini: true`. Read responses project only the listed fields. If stored widget data violates
+the wire contract, the read fails with a generic **500** rather than returning the invalid data.
 Valid types: `ticker`, `widget`, `queue`, `now-playing`, `recap`, `stream-pool`, `patch-banner`,
 `record-flash`, `nemesis`, `goal`. Invalid UUIDs or invalid JSON/placements return **400**; unknown
 valid UUIDs **404**; wrong content type **415**; save bodies over 64 KiB **413**.

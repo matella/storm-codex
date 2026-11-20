@@ -15,7 +15,9 @@ Use a UUID-addressed layout row and foreign-keyed widget rows in the existing da
 layout and its placements as one snapshot; update the existing parent to keep its URL stable.
 Reuse Admin auth for CRUD and expose only a public read by UUID, not a public enumeration endpoint.
 The response contains the layout definition, not live widget data. The UUID is a sharing link,
-not an authentication credential.
+not an authentication credential. Enforce the widget settings allowlist even on data-only restores
+that do not call the API, project public columns explicitly, and fail closed on invalid stored
+settings rather than serializing them.
 
 ## Options considered
 

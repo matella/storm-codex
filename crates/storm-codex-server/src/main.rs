@@ -18,8 +18,6 @@ mod lobby;
 mod manage;
 mod migrate_cmd;
 mod overlay_layout;
-#[cfg(test)]
-mod overlay_layout_tests;
 mod players;
 pub mod project;
 mod rank;

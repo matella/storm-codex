@@ -1,3 +1,4 @@
+use storm_web_core::overlay_layout::NowPlayingOptions;
 use storm_web_core::route::{query_has, query_value};
 
 /// Explicit last-game perspective. `None` uses the configured operator names.
@@ -25,9 +26,13 @@ pub enum NowPlayingMode {
 
 impl NowPlayingMode {
     pub fn from_search(search: &str) -> Self {
-        if query_has(search, "reveal") {
+        Self::from_flags(query_has(search, "mini"), query_has(search, "reveal"))
+    }
+
+    fn from_flags(mini: bool, reveal: bool) -> Self {
+        if reveal {
             Self::Reveal
-        } else if query_has(search, "mini") {
+        } else if mini {
             Self::Mini
         } else {
             Self::Full
@@ -41,6 +46,15 @@ impl NowPlayingMode {
         } else {
             5_000
         }
+    }
+}
+
+impl From<NowPlayingOptions> for NowPlayingMode {
+    fn from(options: NowPlayingOptions) -> Self {
+        Self::from_flags(
+            options.mini.unwrap_or(false),
+            options.reveal.unwrap_or(false),
+        )
     }
 }
 
@@ -75,6 +89,24 @@ mod tests {
     #[test]
     fn mini_flag_uses_presence_not_value() {
         assert_eq!(NowPlayingMode::from_search("?mini=0"), NowPlayingMode::Mini);
+    }
+
+    #[test]
+    fn saved_music_options_use_boolean_values_not_presence() {
+        for (mini, reveal, expected) in [
+            (None, None, NowPlayingMode::Full),
+            (Some(false), Some(false), NowPlayingMode::Full),
+            (Some(false), None, NowPlayingMode::Full),
+            (None, Some(false), NowPlayingMode::Full),
+            (Some(true), Some(false), NowPlayingMode::Mini),
+            (None, Some(true), NowPlayingMode::Reveal),
+            (Some(true), Some(true), NowPlayingMode::Reveal),
+        ] {
+            assert_eq!(
+                NowPlayingMode::from(NowPlayingOptions { mini, reveal }),
+                expected
+            );
+        }
     }
 
     #[test]

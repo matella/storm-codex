@@ -37,6 +37,7 @@ COPY --from=planner /src/recipe.json recipe.json
 RUN cargo chef cook --release -p storm-codex-server --recipe-path recipe.json
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
+COPY web-rs/core/src/overlay_layout/wire.rs web-rs/core/src/overlay_layout/wire.rs
 RUN cargo build --release -p storm-codex-server
 
 # ── 3. Runtime ──────────────────────────────────────────────────────────────

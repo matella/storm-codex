@@ -2,7 +2,8 @@
 
 use serde_json::json;
 use storm_web_core::overlay_layout::{
-    OverlayLayout, SaveOverlayLayout, WidgetType, GRID_CELL_PX, GRID_COLS, GRID_ROWS,
+    NowPlayingOptions, OverlayLayout, SaveOverlayLayout, WidgetSettings, WidgetType, GRID_CELL_PX,
+    GRID_COLS, GRID_ROWS,
 };
 
 #[test]
@@ -18,8 +19,11 @@ fn overlay_layout_wire_round_trips_and_converts_to_save_payload() {
     });
     let layout: OverlayLayout = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(
-        layout.widgets[0].placement.widget_type,
-        WidgetType::NowPlaying
+        layout.widgets[0].placement.settings,
+        WidgetSettings::NowPlaying(NowPlayingOptions {
+            mini: Some(true),
+            reveal: Some(false)
+        })
     );
     assert_eq!(serde_json::to_value(&layout).unwrap(), wire);
     let save = serde_json::to_value(SaveOverlayLayout::from(layout)).unwrap();
@@ -29,6 +33,30 @@ fn overlay_layout_wire_round_trips_and_converts_to_save_payload() {
         save["widgets"][0]["settings"],
         wire["widgets"][0]["settings"]
     );
+}
+
+#[test]
+fn shared_save_wire_rejects_invalid_settings() {
+    for (kind, settings) in [
+        ("goal", json!({"me": "Player"})),
+        ("widget", json!({"me": null})),
+        ("widget", json!({"me": "x\u{0085}y"})),
+        ("widget", json!({"me": "é".repeat(121)})),
+        ("now-playing", json!({"mini": "false"})),
+        ("now-playing", json!({"reveal": null})),
+        ("now-playing", json!({"mini": false, "extra": true})),
+        ("now-playing", json!([true, false])),
+        ("goal", json!([])),
+        ("goal", json!(null)),
+    ] {
+        let wire = json!({"name": "Scene", "widgets": [{"widget_type": kind,
+            "grid_x": 0, "grid_y": 0, "grid_w": 1, "grid_h": 1, "z_order": 0,
+            "settings": settings}]});
+        assert!(
+            serde_json::from_value::<SaveOverlayLayout>(wire).is_err(),
+            "{kind}: {settings}"
+        );
+    }
 }
 
 #[test]

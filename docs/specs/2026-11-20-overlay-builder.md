@@ -109,7 +109,10 @@ tables, but not on each other once those land:
 
 Migration 0020 and the REST/wire contract are documented in `docs/spec/05-api.md` and
 `docs/spec/06-modele-donnees.md`. Both future clients use `storm_web_core::overlay_layout`. `PUT`
-replaces the complete widget set but keeps the layout UUID stable; this is not a patch API. The
+replaces the complete widget set, keeps the layout UUID stable, and regenerates widget IDs; this
+is not a patch API. Draft IDs stay stable across local edits, not across saves. The server, editor
+and renderer share typed wire settings. The database checks the per-widget allowlist even during
+data-only restore, and reads fail closed if stored widget settings are invalid. The
 [storage ADR](../adr/2026-11-20-overlay-layout-persistence.md) records the approved persistence and
 access model. Widget-content changes are tracked separately from this backend slice.
 
@@ -124,8 +127,9 @@ must choose the same scale, clipping and shadow/animation overflow rules for pre
 Only `/widget` and `/now-playing` have URL-derived options. The adapters map `?me=` to `WidgetOptions`
 (first decoded value, then the existing configured-operator/first-player fallback) and the music flags
 to `NowPlayingMode` (full by default; flag presence selects mini or reveal; reveal wins if both occur).
-There are no new options or persistence models. The renderer can construct these types directly from
-validated instance settings rather than synthesizing query strings.
+The renderer can construct these types from validated instance settings rather than synthesizing
+query strings. For saved music settings, absent and `false` are disabled and `true` on both selects
+Reveal. This differs intentionally from flag presence on fixed URLs.
 
 **Multi-instance lifecycle.** A compositor should own the feeds above the individual views. Share
 hero dimension context (required by ticker, widget, queue, recap and stream pool), settings, match

@@ -126,7 +126,9 @@ setting: Pages source **GitHub Actions** (no `gh-pages` branch).
 - **Rust dependency cache: cargo-chef.** The `planner` stage computes a recipe of the
   workspace's dependencies; the `server` stage compiles them (`cargo chef cook`) in a layer that
   is only rebuilt if `Cargo.toml`/`Cargo.lock` change. Measured on 2026-11-07: after a
-  code-only change, full rebuild in **91 s**, `cargo chef cook` layer cached.
+  code-only change, full rebuild in **91 s**, `cargo chef cook` layer cached. The final server
+  build also copies the Serde-only overlay layout wire module from `web-rs/core`; it does not
+  add the browser crates to the server dependency graph.
 - **Non-root user** (`storm`, uid **10001**). `/data` belongs to it in the image. A
   volume created by an older (root) image is handed back to that uid by the
   `storm-codex-init` service in `docker-compose.yml` (busybox, `chown -R 10001:10001 /data`, once per
@@ -139,7 +141,9 @@ setting: Pages source **GitHub Actions** (no `gh-pages` branch).
 
 Overlay layouts (migration 0020) are user-authored, not recoverable from the replay archive. The
 existing whole-database exports include both layout tables. Desktop data-only imports restore
-layout rows before their dependent widget rows, preserving layout UUIDs, placements and settings.
+layout rows before their dependent widget rows, preserving layout UUIDs, placements and valid
+settings. An invalid widget settings row fails the staged import before promotion, leaving the
+active database untouched.
 An export made before 0020 migrates forward with empty layout tables. An older server binary
 cannot start against the migrated database; for a binary rollback, use a separate pre-0020
 backup and retain a current backup so the user-authored layouts can be recovered.

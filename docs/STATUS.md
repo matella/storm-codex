@@ -1,5 +1,27 @@
 # STATUS — read first, update last
 
+## Overlay builder Phase A — review fixes (2026-11-20)
+
+Only the unreleased 0020 migration changed; published history has no Phase A migration. A
+per-widget settings constraint protects direct writes and staged restores, public reads explicitly
+project permitted fields and fail closed on invalid stored widgets, and server and web compile
+one typed Serde wire contract without new dependencies. Valid settings keep their JSON shape.
+Saved music uses boolean values (Reveal wins when both are true); fixed URLs still use flag
+presence. Keep draft instance keys stable during edits and reconcile regenerated widget IDs on PUT.
+
+RED→GREEN: direct writes, public field projection, invalid staged restore, and shared invalid wire
+settings. The real HTTP router round-trips shared POST/GET/PUT types and regenerates widget IDs.
+Combined checks with disposable PostgreSQL 17 and the pinned reference fixture: 568 Rust tests
+passed (11 ignored), 201 web core tests, 6 source option tests, and 25 real PostgreSQL supervisor
+cases (valid restore, invalid restore leaves active data untouched, and upgrade from 0019).
+Fmt, strict native/Wasm Clippy, server build, migration freeze, Python checks and cargo-audit
+passed (existing chrono maintenance warning). Three release builds passed; 45 Chromium synthetic
+parity cases against `0c33e75`, with 217,942 B overlay gzip, 232,107 B sources gzip and 1,049,901 B
+app Brotli. Warm loopback 100-widget GET/PUT p95: 4.26/8.27 ms (100 samples each, debug server).
+Initial full checks needed the release fixture's top-level locale/checksum files, a fresh DB, and
+separate baseline/candidate targets. No image packaging, installed Windows/real OBS acceptance,
+new independent review, push, deployment, or live DB access in this pass.
+
 ## Overlay builder Phase A backend (2026-11-20)
 
 Migration `0020_overlay_layouts.sql`, admin CRUD, and public UUID read are implemented, with atomic

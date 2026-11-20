@@ -851,6 +851,35 @@ fn import_restores_data_into_a_migrated_staging_database_then_swaps() {
 
 #[test]
 #[ignore = "needs PG_BIN_DIR (Postgres 17 bin/); run with --include-ignored"]
+fn import_rejects_invalid_overlay_settings_without_promoting() {
+    let bin = required_bin();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let dump = backup_of(
+        &bin,
+        tmp.path(),
+        None,
+        "ALTER TABLE overlay_widget_instance DROP CONSTRAINT IF EXISTS overlay_widget_settings_allowlist; \
+         INSERT INTO overlay_layout (id, name) VALUES ('5ee8ca4f-5ed0-42a2-8dc4-454833b16371', 'Stream'); \
+         INSERT INTO overlay_widget_instance (layout_id, widget_type, grid_x, grid_y, grid_w, grid_h, z_order, settings) \
+         VALUES ('5ee8ca4f-5ed0-42a2-8dc4-454833b16371', 'now-playing', 0, 0, 1, 1, 0, \
+                 '{\"mini\":\"no\",\"extra\":true}')",
+    );
+    let pg = destination(&bin, tmp.path());
+    let _running = Running(&pg);
+    let error = pg
+        .stage_import(&dump, &psql_migrate(bin.clone()))
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("overlay_widget_settings_allowlist"),
+        "{error}"
+    );
+    assert_untouched(&bin, &pg);
+}
+
+#[test]
+#[ignore = "needs PG_BIN_DIR (Postgres 17 bin/); run with --include-ignored"]
 fn an_older_backup_is_migrated_forward() {
     let bin = required_bin();
     let files = migration_files();

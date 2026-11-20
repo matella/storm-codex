@@ -205,9 +205,13 @@ not copied from input. Image URLs are not proxied. One bundle per page family: t
 ## Overlay builder shared contract (Phase A)
 
 `storm_web_core::overlay_layout` provides the ten-entry `WidgetType` catalog, 24px/80×45 grid
-constants, layout summary/detail models and the full-replacement `SaveOverlayLayout` payload.
-See `05-api.md` for endpoints and settings. The contract is shared by the future builder and OBS
-renderer; this slice registers no browser pages and does not change the fixed OBS URLs.
+constants, typed `WidgetSettings`, layout summary/detail models and the full-replacement
+`SaveOverlayLayout` payload. The server compiles the same Serde-only wire contract as the future
+builder and OBS renderer. Keep instance keys stable across draft edits; `PUT` regenerates saved
+widget IDs, so reconcile the response when saving. `NowPlayingMode` converts saved boolean values;
+legacy fixed URLs still use query-flag presence. This slice registers no browser pages.
+See `05-api.md` for endpoints and settings. The Phase A review build measured 217,942 B
+`overlay` gzip, 232,107 B `sources` gzip, and 1,049,901 B `app` Brotli.
 
 ## Standalone (desktop) mode
 

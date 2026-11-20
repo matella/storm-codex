@@ -117,6 +117,174 @@ async fn overlay_layout_crud_round_trips_and_cascades() {
 }
 
 #[tokio::test]
+async fn overlay_layout_shared_wire_saves_and_decodes_public_response() {
+    use super::wire::{NowPlayingOptions, OverlayLayout, SaveOverlayLayout, WidgetSettings};
+
+    let Some(s) = test_state(None).await else {
+        return;
+    };
+    let payload = json!({"name": "Shared", "widgets": [
+        widget("goal", json!({}), 0),
+        widget("widget", json!({"me": "Zoë"}), 1),
+        widget("widget", json!({}), 2),
+        widget("now-playing", json!({}), 3),
+        widget("now-playing", json!({"mini": false}), 4),
+        widget("now-playing", json!({"mini": true, "reveal": true}), 5)
+    ]});
+    let mut draft: SaveOverlayLayout = serde_json::from_value(payload.clone()).unwrap();
+    draft.widgets[4].settings = WidgetSettings::NowPlaying(NowPlayingOptions {
+        mini: Some(false),
+        reveal: None,
+    });
+    assert_eq!(serde_json::to_value(&draft).unwrap(), payload);
+    let (status, body) = call_raw(
+        &s,
+        "POST",
+        ADMIN,
+        Some("application/json"),
+        serde_json::to_vec(&draft).unwrap(),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+    let saved: OverlayLayout = serde_json::from_slice(&body).unwrap();
+    assert_eq!(SaveOverlayLayout::from(saved.clone()), draft);
+    let public = format!("{PUBLIC}/{}", saved.summary.id);
+    let admin = format!("{ADMIN}/{}", saved.summary.id);
+    let (status, raw) = call_raw(&s, "GET", &public, None, vec![]).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        serde_json::from_slice::<OverlayLayout>(&raw).unwrap(),
+        saved
+    );
+    let (status, body) = call_raw(
+        &s,
+        "PUT",
+        &admin,
+        Some("application/json"),
+        serde_json::to_vec(&SaveOverlayLayout::from(saved.clone())).unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let replaced: OverlayLayout = serde_json::from_slice(&body).unwrap();
+    assert_eq!(replaced.summary.id, saved.summary.id);
+    for (old, new) in saved.widgets.iter().zip(&replaced.widgets) {
+        assert_ne!(old.id, new.id);
+    }
+    assert_eq!(SaveOverlayLayout::from(replaced), draft);
+    assert_eq!(
+        call(&s, "DELETE", &admin, None).await.0,
+        StatusCode::NO_CONTENT
+    );
+}
+
+#[tokio::test]
+async fn overlay_layout_storage_validates_direct_widget_settings() {
+    let Some(s) = test_state(None).await else {
+        return;
+    };
+    let mut tx = s.db.begin().await.unwrap();
+    let id: String = sqlx::query_scalar(
+        "INSERT INTO overlay_layout (name) VALUES ('Restore') RETURNING id::text",
+    )
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+    for (kind, settings, valid) in [
+        ("goal", json!({}), true),
+        ("goal", json!({"me": "Player"}), false),
+        ("goal", json!([]), false),
+        ("widget", json!({"me": "é".repeat(120)}), true),
+        ("widget", json!({"me": "é".repeat(121)}), false),
+        ("widget", json!({"me": "x\u{0085}y"}), false),
+        ("widget", json!({"me": "x\ty"}), false),
+        ("widget", json!({"me": "x\u{007f}y"}), false),
+        ("widget", json!({"me": ""}), true),
+        ("widget", json!({"me": null}), false),
+        ("now-playing", json!({}), true),
+        ("now-playing", json!({"mini": false, "reveal": true}), true),
+        ("now-playing", json!({"mini": "false"}), false),
+        ("now-playing", json!({"reveal": null}), false),
+        ("now-playing", json!({"mini": true, "extra": true}), false),
+    ] {
+        use sqlx::Acquire as _;
+        let mut row = tx.begin().await.unwrap();
+        let result = sqlx::query(
+            "INSERT INTO overlay_widget_instance
+               (layout_id, widget_type, grid_x, grid_y, grid_w, grid_h, z_order, settings)
+               VALUES ($1::text::uuid, $2, 0, 0, 1, 1, 0, $3)",
+        )
+        .bind(&id)
+        .bind(kind)
+        .bind(&settings)
+        .execute(&mut *row)
+        .await;
+        if valid {
+            result.unwrap();
+        } else {
+            let error = result.unwrap_err();
+            assert!(
+                error
+                    .as_database_error()
+                    .is_some_and(|e| e.is_check_violation()),
+                "{kind}: {settings}: {error}"
+            );
+        }
+        row.rollback().await.unwrap();
+    }
+    tx.rollback().await.unwrap();
+}
+
+#[tokio::test]
+async fn overlay_layout_read_projects_only_public_fields_and_fails_closed() {
+    let Some(s) = test_state(None).await else {
+        return;
+    };
+    // Shadow only the widget table on this connection, leaving shared test schema untouched.
+    let mut tx = s.db.begin().await.unwrap();
+    sqlx::query("CREATE TEMP TABLE overlay_widget_instance (LIKE public.overlay_widget_instance INCLUDING DEFAULTS) ON COMMIT DROP")
+        .execute(&mut *tx).await.unwrap();
+    sqlx::query("ALTER TABLE overlay_widget_instance ADD COLUMN private_note text NOT NULL DEFAULT 'internal'")
+        .execute(&mut *tx).await.unwrap();
+    let id: String = sqlx::query_scalar(
+        "INSERT INTO overlay_layout (name) VALUES ('Projection') RETURNING id::text",
+    )
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO overlay_widget_instance
+               (layout_id, widget_type, grid_x, grid_y, grid_w, grid_h, z_order, settings)
+               VALUES ($1::text::uuid, 'now-playing', 0, 0, 1, 1, 0, '{\"mini\":false}')",
+    )
+    .bind(&id)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    let layout = serde_json::to_value(super::load(&mut tx, &id).await.ok().unwrap()).unwrap();
+    let widget = &layout["widgets"][0];
+    assert_eq!(widget.as_object().unwrap().len(), 8, "{widget}");
+    assert_eq!(widget["settings"], json!({"mini": false}));
+    for settings in [
+        json!({"mini": false, "extra": "private"}),
+        json!({"mini": "private"}),
+        json!([]),
+    ] {
+        sqlx::query("UPDATE overlay_widget_instance SET settings = $1")
+            .bind(settings)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        assert!(super::load(&mut tx, &id).await.is_err());
+    }
+    tx.rollback().await.unwrap();
+}
+
+#[tokio::test]
 async fn overlay_layout_admin_routes_require_token_public_read_does_not() {
     let Some(s) = test_state(Some("test-admin")).await else {
         return;

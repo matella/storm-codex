@@ -8,8 +8,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{json, Value};
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
@@ -17,8 +16,13 @@ use uuid::Uuid;
 use crate::{auth, AppState};
 
 const BODY_LIMIT: usize = 64 * 1024;
-const MAX_WIDGETS: usize = 100;
-const MAX_TEXT_CHARS: usize = 120;
+// Compile the same Serde-only contract as storm-web-core, without its browser dependencies.
+#[path = "../../../web-rs/core/src/overlay_layout/wire.rs"]
+mod wire;
+use wire::{
+    valid_text, OverlayLayout, OverlayLayoutSummary, SaveOverlayLayout, WidgetPlacement, GRID_COLS,
+    GRID_ROWS, MAX_WIDGETS,
+};
 
 pub fn router(state: &AppState) -> Router<AppState> {
     Router::new()
@@ -51,6 +55,8 @@ enum LayoutError {
     Json(#[from] JsonRejection),
     #[error("layout not found")]
     Missing,
+    #[error("invalid stored overlay layout")]
+    InvalidStoredLayout,
     #[error("db")]
     Database(#[from] sqlx::Error),
 }
@@ -64,6 +70,7 @@ impl IntoResponse for LayoutError {
                 status => status,
             },
             Self::Missing => StatusCode::NOT_FOUND,
+            Self::InvalidStoredLayout => StatusCode::INTERNAL_SERVER_ERROR,
             Self::Database(e) => {
                 tracing::error!(%e, "overlay layouts database error");
                 StatusCode::INTERNAL_SERVER_ERROR
@@ -73,7 +80,7 @@ impl IntoResponse for LayoutError {
     }
 }
 
-#[derive(Serialize, sqlx::FromRow)]
+#[derive(sqlx::FromRow)]
 struct Summary {
     id: String,
     name: String,
@@ -81,49 +88,25 @@ struct Summary {
     updated_at: DateTime<Utc>,
 }
 
-#[derive(Serialize, sqlx::FromRow)]
-struct Layout {
-    #[serde(flatten)]
+impl From<Summary> for OverlayLayoutSummary {
+    fn from(row: Summary) -> Self {
+        Self {
+            id: row.id,
+            name: row.name,
+            created_at: row.created_at.to_rfc3339_opts(SecondsFormat::AutoSi, true),
+            updated_at: row.updated_at.to_rfc3339_opts(SecondsFormat::AutoSi, true),
+        }
+    }
+}
+
+#[derive(sqlx::FromRow)]
+struct LayoutRow {
     #[sqlx(flatten)]
     summary: Summary,
     widgets: Value,
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SaveLayout {
-    name: String,
-    widgets: Vec<Placement>,
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct Placement {
-    widget_type: WidgetType,
-    grid_x: i32,
-    grid_y: i32,
-    grid_w: i32,
-    grid_h: i32,
-    z_order: i32,
-    settings: Value,
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case")]
-enum WidgetType {
-    Ticker,
-    Widget,
-    Queue,
-    NowPlaying,
-    Recap,
-    StreamPool,
-    PatchBanner,
-    RecordFlash,
-    Nemesis,
-    Goal,
-}
-
-impl SaveLayout {
+impl SaveOverlayLayout {
     fn validate(mut self) -> Result<Self, LayoutError> {
         self.name = self.name.trim().to_owned();
         if self.name.is_empty() || !valid_text(&self.name) {
@@ -137,45 +120,25 @@ impl SaveLayout {
             ));
         }
         for widget in &self.widgets {
-            let Placement {
+            let WidgetPlacement {
                 grid_x: x,
                 grid_y: y,
                 grid_w: w,
                 grid_h: h,
                 ..
             } = *widget;
-            if !(0..80).contains(&x)
-                || !(0..45).contains(&y)
-                || !(1..=80 - x).contains(&w)
-                || !(1..=45 - y).contains(&h)
+            if !(0..GRID_COLS).contains(&x)
+                || !(0..GRID_ROWS).contains(&y)
+                || !(1..=GRID_COLS - x).contains(&w)
+                || !(1..=GRID_ROWS - y).contains(&h)
             {
                 return Err(LayoutError::Invalid(
                     "widget rectangle must fit the 80×45 grid",
                 ));
             }
-            let settings = widget
-                .settings
-                .as_object()
-                .ok_or(LayoutError::Invalid("widget settings must be an object"))?;
-            for (key, value) in settings {
-                let valid = match (&widget.widget_type, key.as_str()) {
-                    (WidgetType::Widget, "me") => value.as_str().is_some_and(valid_text),
-                    (WidgetType::NowPlaying, "mini" | "reveal") => value.is_boolean(),
-                    _ => false,
-                };
-                if !valid {
-                    return Err(LayoutError::Invalid(
-                        "unsupported widget setting or invalid value",
-                    ));
-                }
-            }
         }
         Ok(self)
     }
-}
-
-fn valid_text(s: &str) -> bool {
-    s.chars().count() <= MAX_TEXT_CHARS && !s.chars().any(char::is_control)
 }
 
 fn parse_id(id: &str) -> Result<String, LayoutError> {
@@ -184,34 +147,47 @@ fn parse_id(id: &str) -> Result<String, LayoutError> {
         .map_err(|_| LayoutError::Invalid("invalid layout id"))
 }
 
-async fn list(State(s): State<AppState>) -> Result<Json<Vec<Summary>>, LayoutError> {
-    Ok(Json(sqlx::query_as(
+async fn list(State(s): State<AppState>) -> Result<Json<Vec<OverlayLayoutSummary>>, LayoutError> {
+    let rows: Vec<Summary> = sqlx::query_as(
         "SELECT id::text, name, created_at, updated_at FROM overlay_layout ORDER BY updated_at DESC, id",
-    ).fetch_all(&s.db).await?))
+    ).fetch_all(&s.db).await?;
+    Ok(Json(rows.into_iter().map(Into::into).collect()))
 }
 
 async fn read(
     State(s): State<AppState>,
     Path(id): Path<String>,
-) -> Result<Json<Layout>, LayoutError> {
+) -> Result<Json<OverlayLayout>, LayoutError> {
     let id = parse_id(&id)?;
     Ok(Json(load(&mut *s.db.acquire().await?, &id).await?))
 }
 
 // Read parent and children from one statement snapshot, including during concurrent saves.
-async fn load(db: &mut PgConnection, id: &str) -> Result<Layout, LayoutError> {
-    sqlx::query_as(
+async fn load(db: &mut PgConnection, id: &str) -> Result<OverlayLayout, LayoutError> {
+    let row: LayoutRow = sqlx::query_as(
         "SELECT l.id::text, l.name, l.created_at, l.updated_at,
-                COALESCE((SELECT jsonb_agg(to_jsonb(w) - 'layout_id' ORDER BY w.z_order, w.id)
+                COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                              'id', w.id, 'widget_type', w.widget_type, 'grid_x', w.grid_x,
+                              'grid_y', w.grid_y, 'grid_w', w.grid_w, 'grid_h', w.grid_h,
+                              'z_order', w.z_order, 'settings', w.settings) ORDER BY w.z_order, w.id)
                           FROM overlay_widget_instance w WHERE w.layout_id = l.id), '[]'::jsonb) AS widgets
          FROM overlay_layout l WHERE l.id = $1::text::uuid",
-    ).bind(id).fetch_optional(db).await?.ok_or(LayoutError::Missing)
+    ).bind(id).fetch_optional(db).await?.ok_or(LayoutError::Missing)?;
+    // Fail closed if out-of-contract stored data ever bypasses the database constraint.
+    let widgets = serde_json::from_value(row.widgets).map_err(|_| {
+        tracing::error!(layout_id = %id, "overlay layout contains invalid stored widget data");
+        LayoutError::InvalidStoredLayout
+    })?;
+    Ok(OverlayLayout {
+        summary: row.summary.into(),
+        widgets,
+    })
 }
 
 async fn create(
     State(s): State<AppState>,
-    body: Result<Json<SaveLayout>, JsonRejection>,
-) -> Result<(StatusCode, Json<Layout>), LayoutError> {
+    body: Result<Json<SaveOverlayLayout>, JsonRejection>,
+) -> Result<(StatusCode, Json<OverlayLayout>), LayoutError> {
     Ok((
         StatusCode::CREATED,
         Json(save(&s.db, None, body?.0.validate()?).await?),
@@ -221,13 +197,17 @@ async fn create(
 async fn update(
     State(s): State<AppState>,
     Path(id): Path<String>,
-    body: Result<Json<SaveLayout>, JsonRejection>,
-) -> Result<Json<Layout>, LayoutError> {
+    body: Result<Json<SaveOverlayLayout>, JsonRejection>,
+) -> Result<Json<OverlayLayout>, LayoutError> {
     let id = parse_id(&id)?;
     Ok(Json(save(&s.db, Some(&id), body?.0.validate()?).await?))
 }
 
-async fn save(db: &PgPool, id: Option<&str>, body: SaveLayout) -> Result<Layout, LayoutError> {
+async fn save(
+    db: &PgPool,
+    id: Option<&str>,
+    body: SaveOverlayLayout,
+) -> Result<OverlayLayout, LayoutError> {
     let mut tx = db.begin().await?;
     let id: String = if let Some(id) = id {
         // Updating the parent first locks it and serializes replacement with other PUTs/deletes.
@@ -274,3 +254,7 @@ async fn delete(
     }
     Ok(StatusCode::NO_CONTENT)
 }
+
+#[cfg(test)]
+#[path = "overlay_layout_tests.rs"]
+mod overlay_layout_tests;
