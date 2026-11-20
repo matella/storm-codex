@@ -68,3 +68,9 @@ body * { box-sizing: border-box; }
   font-weight: 700;
   white-space: nowrap;
 }
+
+/* Custom OBS stage only: clip sub-scenes without changing fixed OBS sources. */
+.custom-stage { position: fixed; inset: 0 auto auto 0; width: 1920px; height: 1080px; overflow: hidden; isolation: isolate; }
+.custom-placement { position: absolute; overflow: hidden; }
+.custom-queue { position: absolute; inset: 0 auto auto 0; transform-origin: top left; }
+.custom-status { margin: 28px; color: var(--text); }

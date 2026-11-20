@@ -13,7 +13,7 @@ use storm_web_core::{
 };
 
 /// How long the flash stays up.
-const FLASH_MS: u32 = 8_000;
+pub(crate) const FLASH_MS: u32 = 8_000;
 
 pub fn mount() {
     mount_to_body(standalone);

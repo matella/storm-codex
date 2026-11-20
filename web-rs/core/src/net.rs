@@ -221,31 +221,53 @@ pub fn start_live_full(on: impl Fn(&LiveEvent) + Clone + 'static) {
     };
     let poll = on.clone();
     Interval::new(10_000, move || poll(&kind("poll"))).forget();
+    wasm_bindgen_futures::spawn_local(follow_live(on, true));
+}
+
+/// Follow the same channel with an owner-controlled lifetime and no built-in poll.
+/// `open` is emitted only on reconnect; the owner is responsible for its initial fetch.
+pub fn scoped_live_events(on: impl Fn(&str) + 'static) -> impl FnOnce() + Send + Sync {
+    let (handle, registration) = futures_util::future::AbortHandle::new_pair();
     wasm_bindgen_futures::spawn_local(async move {
-        let loc = web_sys::window().map(|w| w.location());
-        let host = loc.as_ref().and_then(|l| l.host().ok()).unwrap_or_default();
-        let wss = loc
-            .and_then(|l| l.protocol().ok())
-            .is_some_and(|p| p == "https:");
-        let url = format!("{}://{host}/ws", if wss { "wss" } else { "ws" });
-        loop {
-            if let Ok(mut ws) = WebSocket::open(&url) {
-                on(&kind("open")); // reconnected: re-read what may have been missed
-                while let Some(m) = ws.next().await {
-                    match m {
-                        Ok(Message::Text(t)) => {
-                            if let Ok(e) = serde_json::from_str::<LiveEvent>(&t) {
-                                on(&e);
-                            }
+        let _ = futures_util::future::Abortable::new(
+            follow_live(move |e| on(&e.kind), false),
+            registration,
+        )
+        .await;
+    });
+    move || handle.abort()
+}
+
+async fn follow_live(on: impl Fn(&LiveEvent), mut notify_open: bool) {
+    let loc = web_sys::window().map(|w| w.location());
+    let host = loc.as_ref().and_then(|l| l.host().ok()).unwrap_or_default();
+    let wss = loc
+        .and_then(|l| l.protocol().ok())
+        .is_some_and(|p| p == "https:");
+    let url = format!("{}://{host}/ws", if wss { "wss" } else { "ws" });
+    loop {
+        if let Ok(mut ws) = WebSocket::open(&url) {
+            if notify_open {
+                on(&LiveEvent {
+                    kind: "open".into(),
+                    ..LiveEvent::default()
+                });
+            }
+            notify_open = true;
+            while let Some(m) = ws.next().await {
+                match m {
+                    Ok(Message::Text(t)) => {
+                        if let Ok(e) = serde_json::from_str::<LiveEvent>(&t) {
+                            on(&e);
                         }
-                        Ok(_) => {}
-                        Err(_) => break,
                     }
+                    Ok(_) => {}
+                    Err(_) => break,
                 }
             }
-            TimeoutFuture::new(2_000).await;
         }
-    });
+        TimeoutFuture::new(2_000).await;
+    }
 }
 
 pub async fn fetch_draft() -> Result<crate::model::DraftState, String> {
