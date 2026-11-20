@@ -17,9 +17,9 @@ below): `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --
 --workspace` all clean on the first run with no conflict-resolution fixes needed (no duplicate/missing match
 arms, no stray compile errors). **562 server-workspace tests passed, 0 failed, 10 ignored** (includes all 12
 `goal::` tests — midnight reset, kind switch, no-goal state, admin-token gating, upsert/clear lifecycle,
-operator-perspective progress — and all 7 `nemesis::` tests). In `web-rs`: `cargo fmt`, `cargo clippy
+operator-perspective progress). In `web-rs`: `cargo fmt`, `cargo clippy
 --all-targets -- -D warnings`, `cargo clippy --target wasm32-unknown-unknown --workspace -- -D warnings`, all
-clean; **198 web-rs native tests passed, 0 failed** (includes the combined `core::goal`, `core::nemesis` and
+clean; **198 web-rs native tests passed, 0 failed** (includes the combined `core::goal`, `core::nemesis` (6 tests) and
 `core::insights::new_personal_record` test sets, plus the combined `route.rs` test covering all seven new
 `page_of`/`v2_page` entries). All three Trunk release builds (`overlay`, `sources`, `app`) succeeded.
 
