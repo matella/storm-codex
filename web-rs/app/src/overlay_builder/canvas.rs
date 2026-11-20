@@ -112,10 +112,11 @@ fn PreviewFrame(widgets: Memo<Vec<WidgetInstance>>) -> impl IntoView {
         });
         error.set(sent.is_none());
     });
+    let settled = move || ready.get() > 0 && !error.get();
     view! {
         <iframe node_ref=frame src=format!("{}?preview=1", app_href(CUSTOM))
             title="Live overlay preview" aria-hidden="true" tabindex="-1" />
-        <span class="ob-preview-status" role="status" hidden=move || ready.get() > 0 && !error.get()>
+        <span class="ob-preview-status" role="status" hidden=settled>
             {move || if error.get() { "Could not update live preview." } else { "Waiting for live preview…" }}
         </span>
     }
