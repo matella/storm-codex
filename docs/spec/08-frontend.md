@@ -154,6 +154,11 @@ workspace (`web-rs/Cargo.toml`, own lockfile), built with Trunk for `wasm32-unkn
 | `app` (`storm-web-app`) | the app, output `web-rs/dist/app` served at `/v2/app/`: `leptos_router` with a base decided at startup, `/v2` or empty (`main.rs`, `route::app_base`), top bar + live channel + toast + onboarding / what's new modals (`layout.rs`), shared pieces (`ui.rs`: shared reference data and operator names, `Portrait`, `SecHead`, `Link`, `AggFilterBar`, `fetch`), one module per page (`pages/`). CSS copied unchanged from `web/src` (`theme.css`, `ds.css`); the fonts are self-hosted (`fonts/`, `fonts.css`: latin and latin-ext woff2 of the Fontsource files React uses) |
 
 Each OBS bundle picks its page from the URL path (`route.rs`); the server routes each path to its bundle (`04-serveur.md`).
+The ten fixed `sources` pages adapt their existing frame, input feeds and URL options to frameless
+widget views (the queue retains its own 1920×1080 scene). The Phase A [implementation notes](../specs/2026-11-20-overlay-builder.md#implementation-notes--phase-a-widget-slice)
+cover the composition lifecycle, preview storage isolation, and the fixed-route browser regression.
+A same-toolchain release comparison measured **232,191 bytes gzip** for `sources` after the split,
+versus **230,027 bytes gzip** at `0c33e75` (+2,164 bytes; cap 300,000).
 
 **App.** Links are plain `<a>` with the real href including the base (`/v2/...` or none) (`ui::Link`, `route::app_href`): the router takes
 over the click, and middle-click / copy link keep working. Data of a page is read with `ui::fetch` (a `LocalResource`): it reads the

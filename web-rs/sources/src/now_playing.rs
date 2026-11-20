@@ -12,8 +12,10 @@ use storm_web_core::{
         RevealState, Track, HOLD_MS,
     },
     net,
-    route::{query_has, Anchor},
+    route::Anchor,
 };
+
+use storm_web_sources::options::NowPlayingMode;
 
 const CARD_BG: &str = "linear-gradient(135deg, rgba(18,20,28,.96), rgba(12,13,18,.96))";
 
@@ -33,27 +35,32 @@ pub fn use_now_playing(every_ms: u64) -> RwSignal<serde_json::Value> {
 }
 
 pub fn mount() {
-    mount_to_body(NowPlaying);
+    mount_to_body(standalone);
 }
 
 /// Spotify widget, top right. Default: full card (cover, title/artist/album, progress, equaliser); `?mini`:
 /// cover + title + artist; `?reveal`: a large announcement at each start of playback, then the `?mini` badge.
 /// Hidden when nothing plays or on pause.
-#[component]
-fn NowPlaying() -> impl IntoView {
-    let search = net::search();
-    let mini = query_has(&search, "mini");
-    let reveal = query_has(&search, "reveal");
-    // 2 s for reveal (quick reaction to a track change); 5 s otherwise so the live OBS source is not affected
-    let np = use_now_playing(if reveal { 2000 } else { 5000 });
+fn standalone() -> impl IntoView {
+    let mode = NowPlayingMode::from_search(&net::search());
+    let np = use_now_playing(mode.poll_ms()).read_only();
+    view! {
+        <OverlayFrame anchor=Anchor::TopRight pad=36.0>
+            {now_playing_content(mode, np)}
+        </OverlayFrame>
+    }
+}
+
+pub fn now_playing_content(
+    mode: NowPlayingMode,
+    np: ReadSignal<serde_json::Value>,
+) -> impl IntoView {
     let track = Memo::new(move |_| np.with(parse_track));
 
-    if reveal {
+    if mode == NowPlayingMode::Reveal {
         let phase = use_track_reveal(track);
         return view! {
-            <OverlayFrame anchor=Anchor::TopRight pad=36.0>
-                <RevealCard track phase />
-            </OverlayFrame>
+            <RevealCard track phase />
         }
         .into_any();
     }
@@ -79,16 +86,14 @@ fn NowPlaying() -> impl IntoView {
     let playing = Memo::new(move |_| track.with(|t| t.playing));
 
     view! {
-        <OverlayFrame anchor=Anchor::TopRight pad=36.0>
-            {move || if !playing.get() {
-                // hidden when nothing plays or on pause: empty frame (invisible OBS source)
-                view! { <span></span> }.into_any()
-            } else if mini {
-                mini_card(track).into_any()
-            } else {
-                full_card(track, prog).into_any()
-            }}
-        </OverlayFrame>
+        {move || if !playing.get() {
+            // hidden when nothing plays or on pause: empty frame (invisible OBS source)
+            view! { <span></span> }.into_any()
+        } else if mode == NowPlayingMode::Mini {
+            mini_card(track).into_any()
+        } else {
+            full_card(track, prog).into_any()
+        }}
     }
     .into_any()
 }
