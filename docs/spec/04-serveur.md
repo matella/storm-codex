@@ -297,6 +297,22 @@ records `app_settings.refdata_dataset_version`.
   and logs "images not copied". The rows stay ingested, so the version counts as current: the
   missing images are only retried with the next `datasetVersion`. The pinned release
   (`desktop/referential-pin.txt`) resolves all 91 hero and 35 map artworks.
+- **Patch-note image proxy/cache** (spec `docs/specs/2026-11-19-patch-image-proxy.md`, P1). Patch
+  HTML (`dim_patches.data.detail.content`, `patch_hero_sections.content`) can embed `<img src>`
+  pointing at Blizzard's CDN (observed host: `bnetcmsus-a.akamaihd.net`). `refdata::patchimg::rewrite`
+  runs inside `build_patch` (pure, no I/O) and replaces any such `src` with a local
+  `/images/patch-images/<sha256(url)>.<ext>` path **before** the HTML is stored — in both box and
+  standalone mode, so no stored content ever embeds a live third-party URL. `IMAGES_DIR/patch-images/`
+  is a plain subfolder, already served by the `/images` `ServeDir` (no new route). Only
+  `refdata::load::refresh` (box) actually fetches the referenced images (`patchimg::fetch_missing`,
+  capped by `PATCH_IMAGE_MAX_FILE_BYTES` and a `image/png|jpeg|gif|webp|avif` content-type allowlist,
+  atomic temp+rename write); standalone's `ingest_bundle`/`stage_bundle` stay 100% network-free, so an
+  image never fetched by the box before the bundle was trimmed is simply missing offline (broken
+  `<img>`, no request attempted) — strictly better than the previous live leak. Unlike the rest of
+  `IMAGES_DIR` (permanent, D3), `patch-images/` is a bounded cache: `raw::enforce_lru` evicts it down
+  to `PATCH_IMAGE_CACHE_MAX_BYTES` after each fetch pass. One failing image is logged and skipped,
+  same policy as the existing hero/map art fetch; it never fails the patch data write, which already
+  committed first.
 - **Archive budget** (`refdata::load::Limits::DEFAULT`, box and standalone). `dataset.tar.gz` may
   be at most **512 MiB** downloaded (the HTTP stream stops one byte past it), **1 GiB** once
   decompressed (counted at the gzip decoder, skipped entries included), and **32 MiB** per image
@@ -463,6 +479,8 @@ Design: `docs/specs/2026-10-24-feed-live-en-partie-design.md`.
 | `ADMIN_TOKEN` | empty = **open mode** | empty: no admin auth (LAN/Tailscale self-hosting); set: Bearer required on admin writes |
 | `WEB_DIR` | empty = API only | built front-end (`web-rs/dist`: `overlay/`, `sources/`, `app/`, one Trunk output each) served by the binary. Every page answers at `/`, after the API routes: `/cast/overlay` and `/draft/overlay` get `overlay/index.html`; `/ticker`, `/now-playing`, `/widget` and `/queue` get `sources/index.html`; everything else `app/index.html` (`no-cache`, read at each request). The bundles' files are under `/v2/<bundle>/` (fingerprinted, cached for a year; a missing file-like path answers 404, never an HTML page); `/v2/...` pages still work. The Docker image sets `/app/web` |
 | `IMAGES_DIR` | `./.images` | vendored images, served on `/images` |
+| `PATCH_IMAGE_MAX_FILE_BYTES` | 8 MiB | per-image cap when the box fetches a Blizzard patch-note image (`refdata::patchimg`) |
+| `PATCH_IMAGE_CACHE_MAX_BYTES` | 200 MiB | total bound on `IMAGES_DIR/patch-images` (LRU-evicted; unlike the rest of `IMAGES_DIR`, which is permanent) |
 | `REDIS_URL` / `JARVIS_CHANNEL` | empty = no emission / `jarvis:events` (box production: `storm-codex:match_completed`) | Jarvis events |
 | `REFDATA_URL` | the producer's `releases/latest/download/`; empty = off | reference dataset release (box; see above) |
 | `STANDALONE` | empty = off | `1` = standalone (installer) mode: loopback-only `BIND_ADDR` (checked at startup), independent reference sync |

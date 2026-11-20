@@ -38,6 +38,12 @@ pub struct Config {
     /// Hero portraits + map images vendored here at startup (self-sufficient,
     /// deterministic — no runtime dependency on HotsPatchNotes), served on `/images`.
     pub images_dir: PathBuf,
+    /// Per-file cap when fetching a Blizzard patch-note image (box only; see
+    /// `refdata::patchimg`). Checked against `Content-Length` and the bytes actually streamed.
+    pub patch_image_max_file_bytes: u64,
+    /// Total bound on `images_dir/patch-images` (a bounded cache, LRU-evicted — unlike the rest
+    /// of `images_dir`, which is permanent and never evicted).
+    pub patch_image_cache_max_bytes: u64,
     /// Baked/committed in-game minimaps (`assets/minimaps`), copied into `images_dir/minimaps`
     /// at startup (idempotent) → served on `/images/minimaps`. No runtime fetch.
     pub minimaps_bundle_dir: PathBuf,
@@ -94,6 +100,14 @@ impl Config {
             images_dir: PathBuf::from(
                 std::env::var("IMAGES_DIR").unwrap_or_else(|_| "./.images".into()),
             ),
+            patch_image_max_file_bytes: std::env::var("PATCH_IMAGE_MAX_FILE_BYTES")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(8 * 1024 * 1024),
+            patch_image_cache_max_bytes: std::env::var("PATCH_IMAGE_CACHE_MAX_BYTES")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(200 * 1024 * 1024),
             minimaps_bundle_dir: PathBuf::from(
                 std::env::var("MINIMAPS_BUNDLE_DIR").unwrap_or_else(|_| "assets/minimaps".into()),
             ),
@@ -208,6 +222,8 @@ mod tests {
             referential_file: None,
             ledger_file: None,
             images_dir: PathBuf::new(),
+            patch_image_max_file_bytes: 0,
+            patch_image_cache_max_bytes: 0,
             minimaps_bundle_dir: PathBuf::new(),
             orpheus_url: None,
             patch_webhook_url: None,

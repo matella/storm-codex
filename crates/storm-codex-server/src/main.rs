@@ -196,8 +196,14 @@ async fn run() -> Result<(), String> {
         tokio::spawn(async move {
             let src: Arc<dyn refdata::load::Source> = Arc::new(refdata::load::Http::new(&url));
             loop {
-                let new_patches =
-                    refdata::load::refresh(&st.db, &st.cfg.images_dir, src.clone()).await;
+                let new_patches = refdata::load::refresh(
+                    &st.db,
+                    &st.cfg.images_dir,
+                    src.clone(),
+                    st.cfg.patch_image_max_file_bytes,
+                    st.cfg.patch_image_cache_max_bytes,
+                )
+                .await;
                 for (iid, name) in new_patches {
                     let _ = st.events.send(serde_json::json!({
                         "type": "patch.new", "internalId": iid, "name": name,
@@ -940,6 +946,8 @@ pub(crate) mod api_tests {
             referential_file: None,
             ledger_file: None,
             images_dir: dir.join("images"),
+            patch_image_max_file_bytes: 8 * 1024 * 1024,
+            patch_image_cache_max_bytes: 200 * 1024 * 1024,
             minimaps_bundle_dir: dir.join("minimaps"),
             orpheus_url: None,
             patch_webhook_url: None,

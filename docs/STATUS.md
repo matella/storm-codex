@@ -1,5 +1,70 @@
 # STATUS — read first, update last
 
+## Merge of `origin/main` into `fix/web-audit-image-proxy` (2026-11-19)
+
+Merged `origin/main` (`1c160c4`, App-slice accessibility fixes #63) into this branch as a true merge
+commit (head `4e2b7e2`), resolving PR #64's CONFLICTING/DIRTY state. Conflict only in `docs/STATUS.md`
+(append-style dated sections); kept every section from both sides, newest first. `docs/spec/08-frontend.md`
+and every `web-rs/**` file auto-merged cleanly and are byte-identical to `origin/main` after the merge —
+this branch never touches `web-rs` or `08-frontend.md` (server-side only change), so there is no bundle-size
+history to fold and no stale placeholder to update there.
+
+Full CI-equivalent suite on the merged tree (`storm-dev:latest`, throwaway PostgreSQL 17 on port 55470,
+worktree-local `target/` as the dedicated target dir): `cargo fmt --all -- --check` and
+`cargo clippy --locked --workspace --all-targets -- -D warnings` passed; 550 workspace tests passed (0
+failed, 10 ignored); `web-rs` fmt/clippy native + wasm32 passed; 181 `web-rs` tests passed; all three Trunk
+release builds passed their size budgets — overlay 217,951 bytes gzip, sources 181,334 bytes gzip, **app
+1,047,110 bytes Brotli** (cap 1,250,000, unchanged from before the merge since no `web-rs` file is touched by
+this branch). Not run: real OBS, Windows installer, box DB validation, independent review, deploy. Pushed to
+`origin/fix/web-audit-image-proxy`; PR #64 not merged (operator decision).
+
+## Patch-note image proxy/cache (2026-11-19), branch `fix/web-audit-image-proxy`
+
+Approved scope: `docs/specs/2026-11-19-patch-image-proxy.md` (addendum to the web-audit-fixes spec,
+reversing its "proxying remote patch-note images" out-of-scope line for P1(a) — the rest of that spec
+is unchanged, merged in `fix/web-audit-platform`). Patch-note HTML can embed `<img src>` pointing at
+Blizzard's CDN (`bnetcmsus-a.akamaihd.net`): `refdata::patchimg::rewrite` (new, pure, unit-tested) runs
+inside `build_patch` and replaces any such `src` with a local `/images/patch-images/<hash>.<ext>` path
+**before** the HTML is stored in Postgres, in both box and standalone mode — nothing stored ever embeds
+a live third-party URL again. Only the box (`refdata::load::refresh`) actually fetches the referenced
+images (`patchimg::fetch_missing`: size cap, content-type allowlist, atomic write), capped and
+LRU-evicted (`PATCH_IMAGE_MAX_FILE_BYTES`, `PATCH_IMAGE_CACHE_MAX_BYTES`); standalone's bundle ingestion
+stays 100% network-free, so a patch image never fetched by the box before the bundle was trimmed is
+simply missing offline (broken `<img>`, no request attempted) — strictly better than the previous leak.
+No new route: `patch-images/` is a subfolder of `IMAGES_DIR`, already served by the existing `/images`
+`ServeDir`. Server-side only; no `web-rs` file touched (a local path already passes
+`sanitize.rs::url_safe` unchanged), so this cannot conflict with the separately-scoped App-slice
+audit-fix branch. Contracts updated: `docs/spec/04-serveur.md` ("Patch-note image proxy/cache", config
+table), `docs/spec/01-architecture.md` (invariants).
+
+Self-reviewed (`[Reviewer]`, no subagent dispatch available in this session): checked the host
+allowlist against userinfo/subdomain bypass tricks (exact-match only, safe), size/content-type
+enforcement order, atomic temp+rename writes, cross-patch dedup before fetch (no duplicate-fetch race),
+and attribute-order robustness of the `<img>` regex — added a test for the last one
+(`src_is_found_regardless_of_attribute_order`). No blockers found.
+
+Verified in `storm-dev:latest` with a throwaway PostgreSQL 17 (`scripts/full-check.sh`, port 55462):
+`cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` passed; new
+module unit tests (11) and the new `refdata::tests::patch_image_proxy_rewrites_blizzard_cdn_images_in_both_the_article_and_its_sections`
+integration test pass; full workspace test suite green; `web-rs` fmt/clippy/wasm/tests unaffected
+(no `web-rs` file touched) and release bundle sizes unchanged, within budget. **Not done**: real-network
+acceptance against the live `bnetcmsus-a.akamaihd.net` CDN (only a fake `ImageFetcher` was exercised);
+carrying the patch-image cache into the standalone installer's trimmed bundle (noted out of scope in
+the spec). Committed locally on `fix/web-audit-image-proxy`; not pushed, no PR opened (operator decision).
+
+### Follow-up: redirect-bypass fix (independent reviewer finding)
+
+`refdata::patchimg::Ureq::fetch` used `ureq`'s default agent, which follows up to 10 redirects
+without re-validating the effective host against the exact-match `ALLOWED_HOSTS` allowlist — a
+3xx from the allowlisted CDN host to a non-allowlisted origin would silently bypass the host
+check (size/content-type checks still applied to whatever came back, but the allowlist guarantee
+broke). Fixed by disabling redirects (`max_redirects(0)`) and treating a 3xx response as an
+ordinary fetch failure — logged and skipped, same policy as any other fetch error; one bad patch
+image does not block the others. Added `ureq_fetch_refuses_a_redirect_instead_of_following_it_to_another_host`,
+a regression test with a real TCP fake server returning a 3xx `Location` to a non-existent,
+non-allowlisted host, proving `Ureq::fetch` refuses it instead of chasing it. 12 `patchimg` unit
+tests pass (was 11).
+
 ## Web-audit fixes — App slice (2026-11-19), branch `fix/web-audit-app`, not merged, not pushed
 
 Approved scope: `docs/specs/2026-11-19-web-audit-fixes.md` ("App slice"), from `docs/research/2026-11-19-modern-web-guidance-audit.md`.

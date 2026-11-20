@@ -34,6 +34,8 @@ pub(crate) fn test_config(dir: &Path) -> Config {
         referential_file: None,
         ledger_file: None,
         images_dir: dir.join("images"),
+        patch_image_max_file_bytes: 8 * 1024 * 1024,
+        patch_image_cache_max_bytes: 200 * 1024 * 1024,
         minimaps_bundle_dir: dir.join("minimaps"),
         orpheus_url: None,
         patch_webhook_url: None,

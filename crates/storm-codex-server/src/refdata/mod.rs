@@ -13,6 +13,7 @@
 
 pub mod classify;
 pub mod load;
+pub mod patchimg;
 pub mod standalone;
 
 use serde_json::{json, Map, Value as J};
@@ -226,6 +227,9 @@ pub struct Rows {
     pub patches: Vec<PatchRow>,
     pub sections: Vec<HeroSectionRow>,
     pub images: Vec<ImageCopy>,
+    /// Blizzard patch-note images referenced by `sections`/`patches` content, rewritten to a
+    /// local path by `patchimg::rewrite` and still to be fetched (box only; see `load::refresh`).
+    pub patch_images: Vec<patchimg::ImageRef>,
 }
 
 /// `text` of a localized string (`{html, text}`), `None` when missing (never another locale).
@@ -509,10 +513,12 @@ pub fn build(ds: &Dataset) -> Result<Rows, RefdataError> {
     required("artwork", images.len())?;
     let mut patches = Vec::new();
     let mut sections = Vec::new();
+    let mut patch_images = BTreeSet::new();
     for p in list {
-        let (row, secs) = build_patch(p, &canonical)?;
+        let (row, secs, imgs) = build_patch(p, &canonical)?;
         patches.push(row);
         sections.extend(secs);
+        patch_images.extend(imgs);
     }
 
     Ok(Rows {
@@ -522,6 +528,7 @@ pub fn build(ds: &Dataset) -> Result<Rows, RefdataError> {
         patches,
         sections,
         images: images.into_iter().collect(),
+        patch_images: patch_images.into_iter().collect(),
     })
 }
 
@@ -538,7 +545,7 @@ fn required(name: &str, len: usize) -> Result<(), RefdataError> {
 fn build_patch(
     p: &J,
     canonical: &HashMap<&str, String>,
-) -> Result<(PatchRow, Vec<HeroSectionRow>), RefdataError> {
+) -> Result<(PatchRow, Vec<HeroSectionRow>, Vec<patchimg::ImageRef>), RefdataError> {
     let s = |k: &str| p.get(k).and_then(J::as_str);
     let id = s("id")
         .ok_or_else(|| RefdataError::Shape("patch without id".into()))?
@@ -586,6 +593,7 @@ fn build_patch(
     let mut hero_rows = Vec::new();
     let mut heroes = BTreeSet::new();
     let mut maps = BTreeSet::new();
+    let mut patch_images = Vec::new();
     for (order, sec) in secs.iter().enumerate() {
         let g = |k: &str| sec.get(k).and_then(J::as_str);
         let anchor = g("id").unwrap_or_default().to_string();
@@ -599,7 +607,8 @@ fn build_patch(
             _ => "General",
         };
         let verdict = classify::classify(g("text").unwrap_or_default());
-        let html = g("html").unwrap_or_default().to_string();
+        let (html, imgs) = patchimg::rewrite(g("html").unwrap_or_default());
+        patch_images.extend(imgs);
         toc.push(json!({
             "order": order, "headingLevel": level, "title": heading,
             "anchor": anchor, "sectionType": section_type,
@@ -637,7 +646,8 @@ fn build_patch(
         .and_then(|c| c.get("html"))
         .and_then(J::as_str)
         .unwrap_or_default();
-    let body = anchored_html(article, &secs);
+    let (body, body_imgs) = patchimg::rewrite(&anchored_html(article, &secs));
+    patch_images.extend(body_imgs);
 
     let detail = json!({
         "internalId": id, "patchName": name, "patchType": patch_type, "liveDate": live_date_json,
@@ -663,6 +673,7 @@ fn build_patch(
             data,
         },
         hero_rows,
+        patch_images,
     ))
 }
 

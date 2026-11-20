@@ -52,6 +52,10 @@ Design: `docs/specs/2026-11-12-standalone-installer-design.md`.
   `occurred_at`/`recorded_at`, past-tense `entity.verb` type ([07-evenements.md](07-evenements.md)).
 - **Best-effort for everything peripheral**: Redis outage, HotsPatchNotes release unreachable,
   dead webhook — the upload→parse→projection pipeline must never depend on them.
+- **No live third-party requests from stored content**: patch-note HTML never embeds a remote
+  image URL. `refdata::patchimg` rewrites any Blizzard CDN `<img src>` to a local
+  `/images/patch-images/…` path at dataset build time (box and standalone alike); only the box
+  fetches the bytes once (spec `docs/specs/2026-11-19-patch-image-proxy.md`, P1).
 - **Single reference source**: heroes/talents/maps/patches come from the HotsPatchNotes **dataset**
   (schema v1, GitHub releases) through the single `refdata` adapter, replicated into `dim_*`. Box:
   latest validated release, SHA-256 verified, refreshed every 24 h. Standalone checks the same stable
