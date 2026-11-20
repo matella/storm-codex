@@ -62,7 +62,7 @@ fn start_view_transition_fn() -> Option<js_sys::Function> {
 /// click listener on the app root runs before the router's own delegated click handling; when the API is
 /// unsupported or motion is reduced, it does nothing and the normal click (and the router's handling of it)
 /// proceeds unchanged.
-fn view_transition_click(ev: web_sys::MouseEvent) {
+fn view_transition_click(ev: web_sys::MouseEvent, navigate: impl Fn(&str, leptos_router::NavigateOptions)) {
     if ev.default_prevented()
         || ev.button() != 0
         || ev.ctrl_key()
@@ -97,9 +97,8 @@ fn view_transition_click(ev: web_sys::MouseEvent) {
     let Some(start) = start_view_transition_fn() else {
         return;
     };
-    let path = format!("{}{}", a.pathname(), a.search());
+    let path = format!("{}{}", app_path(&a.pathname()), a.search());
     ev.prevent_default();
-    let navigate = use_navigate();
     let cb = wasm_bindgen::closure::Closure::wrap(Box::new(move || {
         navigate(&path, Default::default());
     }) as Box<dyn FnMut()>);
@@ -159,8 +158,19 @@ pub fn Layout() -> impl IntoView {
             new_patch.set(true);
         }
         if let Some(text) = e.flash {
-            flash.set(Some(text));
-            net::after_ms(6000, move || flash.set(None));
+            flash.set(Some(text.clone()));
+            // Each flash gets its own 6s window from when *it* was shown. A bulk import can fire
+            // many match.parsed events within seconds of each other; without this guard, every
+            // event's timer would unconditionally clear whatever flash is on screen at the time
+            // it fires -- including a newer, unrelated message that just replaced this one -- so
+            // the toast kept flickering in and out during an import, reflowing <main> and
+            // scrolling the page on every toggle. Only clear if this timer's own message is still
+            // the one showing.
+            net::after_ms(6000, move || {
+                if flash.get_untracked().as_deref() == Some(text.as_str()) {
+                    flash.set(None);
+                }
+            });
         }
     };
     let opened = RwSignal::new(false); // has the channel connected once already
@@ -175,14 +185,19 @@ pub fn Layout() -> impl IntoView {
     });
 
     // A21: capture-phase click listener (runs before the router's own delegated click handling) for
-    // progressive-enhancement view transitions on internal navigations.
+    // progressive-enhancement view transitions on internal navigations. `use_navigate()` is called here,
+    // inside this component's render, where the Router context is live -- not inside the handler itself,
+    // which later fires as a bare DOM callback with no active reactive Owner and would panic looking up
+    // that context.
     let root_ref = NodeRef::<leptos::html::Div>::new();
+    let navigate = use_navigate();
     Effect::new(move |_| {
         let Some(el) = root_ref.get() else { return };
         let target: &web_sys::EventTarget = el.as_ref();
-        let cb = wasm_bindgen::closure::Closure::wrap(
-            Box::new(view_transition_click) as Box<dyn FnMut(web_sys::MouseEvent)>
-        );
+        let navigate = navigate.clone();
+        let cb = wasm_bindgen::closure::Closure::wrap(Box::new(move |ev: web_sys::MouseEvent| {
+            view_transition_click(ev, navigate.clone())
+        }) as Box<dyn FnMut(web_sys::MouseEvent)>);
         let _ = target.add_event_listener_with_callback_and_bool(
             "click",
             cb.as_ref().unchecked_ref(),
