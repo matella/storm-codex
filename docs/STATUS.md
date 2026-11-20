@@ -1,5 +1,65 @@
 # STATUS — read first, update last
 
+## Streamer widgets round 1, combined merge (2026-11-20), branch `feat/streamer-widgets`
+
+Combined all three round-1 branches (`feat/streamer-widgets-recap` items 1/2/4/6, `feat/streamer-widgets-flash`
+items 3/5, `feat/streamer-widgets-goal` item 7) onto one branch by cherry-picking their three commits
+(`4d4a9dc`, `9a85b6e`, `d9450b4`) in that order. All conflicts were in the shared routing/doc files each
+branch touched independently (`web-rs/core/src/route.rs` `Page` enum + `page_of` + its tests,
+`web-rs/sources/src/main.rs` module list + match, `crates/storm-codex-server/src/main.rs` `v2_page()` + both
+route tables + their tests, `docs/STATUS.md`, `docs/spec/04-serveur.md`, `docs/spec/08-frontend.md`,
+this spec file): resolved by combining every enum variant / match arm / table row from all three sides and
+keeping every dated section, no logic dropped from any branch.
+
+Verified independently after resolution (`storm-dev:latest`, throwaway Postgres 17 on 55450, full
+`scripts/full-check.sh` run — this is the number that matters, not the per-branch estimates in the sections
+below): `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test
+--workspace` all clean on the first run with no conflict-resolution fixes needed (no duplicate/missing match
+arms, no stray compile errors). **562 server-workspace tests passed, 0 failed, 10 ignored** (includes all 12
+`goal::` tests — midnight reset, kind switch, no-goal state, admin-token gating, upsert/clear lifecycle,
+operator-perspective progress — and all 7 `nemesis::` tests). In `web-rs`: `cargo fmt`, `cargo clippy
+--all-targets -- -D warnings`, `cargo clippy --target wasm32-unknown-unknown --workspace -- -D warnings`, all
+clean; **198 web-rs native tests passed, 0 failed** (includes the combined `core::goal`, `core::nemesis` and
+`core::insights::new_personal_record` test sets, plus the combined `route.rs` test covering all seven new
+`page_of`/`v2_page` entries). All three Trunk release builds (`overlay`, `sources`, `app`) succeeded.
+
+**Final combined bundle sizes** (replaces the "re-measured once the merge's own check suite ran" placeholder
+in `docs/spec/08-frontend.md`'s Contract sentence): `overlay` **217,951 bytes gzip** (unchanged, no overlay
+code in this spec); `sources` **229,936 bytes gzip** (budget 300,000 — combined delta +48,574 bytes over the
+181,362-byte pre-widgets baseline, comfortably inside budget and smaller than the sum of the three branches'
+individually-measured deltas since they share some `core` code); `app` **1,049,799 bytes Brotli** (budget
+1,250,000 — combined delta +3,061 bytes over the 1,046,738-byte pre-widgets baseline, for the same
+shared-code reason smaller than the sum of the individual deltas).
+
+Browser-checked all seven sources in headless Chromium against a throwaway copy of the box DB
+(`storm-codex-pg`'s data restored into a scratch Postgres, release server + release Trunk build), per the
+spec's acceptance bullets: `/ticker` milestone flash fires only at streak lengths 3/5/7/10 and the pill
+reverts to its exact pre-flash markup; `/recap` and `/stream-pool` match the Session page's own
+server-computed `Review` rows for the same session; `/record-flash` is silent against the real newest match
+and fires + clears after ~8 s only when the newest match id is the real top-stat record; `/nemesis` flags
+only the real <=35%-over->=3-games opponent, excludes the unresolved-toon opponent, and makes no extra
+request within a lobby (debounce holds); `/patch-banner` shows for an unseen patch, hides on reload within 7
+days, and hides once older than 7 days; `/goal` shows live progress matching real `matches`/`match_players`
+rows, renders a blank frame with no goal set, and correctly excludes a game backdated a day for the
+midnight-reset boundary. `/ticker`, `/widget`, `/queue` and `/now-playing` were re-checked unchanged (same
+layout, same data) alongside the new sources.
+
+Self-reviewed the full combined diff (`git diff origin/main...HEAD`; no `delegate_task` tool available in
+this session to dispatch an isolated `[Reviewer]` subagent): the merged `Page` enum/`page_of`/`v2_page` and
+both server route tables are exhaustive (match arms for all 7 new variants present exactly once, no
+duplicates, confirmed by the passing combined `route.rs` test and a clean `-D warnings` clippy build which
+would flag a non-exhaustive match); the goal tracker's SQL is fully parameterized (`$1`/`$2`/`$3` binds, no
+`format!`/string interpolation of user input) and both `/api/admin/goal` routes are gated by the same
+admin-token middleware as other Admin writes (covered by `put_and_get_goal_require_admin_token_when_configured`);
+`/nemesis` and `/record-flash` stay within their stated privacy scope (opponent name + the operator's own
+W–L only, no other opponent data, unresolved toons silently excluded); no regressions found in `/ticker`,
+`/widget`, `/queue` or `/now-playing`.
+
+Not done: no `delegate_task` tool in this session, so review was self-done rather than a dispatched
+`[Reviewer]` subagent (per the operator's instruction to self-review thoroughly in that case); deploy to the
+box (R3, operator decision); PR (operator will open it). Fixed: nothing — the hand-resolved merge compiled
+and passed clean on the first run. Pushed to `origin/feat/streamer-widgets`.
+
 ## Streamer widgets round 1, part A (2026-11-20), branch `feat/streamer-widgets-recap`
 
 Approved scope: `docs/specs/2026-11-20-streamer-widgets.md`, widgets **1, 2, 4, 6 only** (3/5/7 — record
