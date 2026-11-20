@@ -6,20 +6,28 @@
 use crate::frame::OverlayFrame;
 use leptos::{prelude::*, task::spawn_local};
 use storm_web_core::{
-    aggregates::{patch_banner_visible, PatchList},
+    aggregates::{patch_banner_visible, PatchItem, PatchList},
     net,
     route::Anchor,
 };
 
 pub fn mount_patch_banner() {
-    mount_to_body(PatchBanner);
+    mount_to_body(standalone);
 }
 
 const LAST_SEEN_KEY: &str = "patch_banner_last_seen";
 
-#[component]
-fn PatchBanner() -> impl IntoView {
-    let latest = RwSignal::new(None::<storm_web_core::aggregates::PatchItem>);
+fn standalone() -> impl IntoView {
+    let visible = watch_patch_banner();
+    view! {
+        <OverlayFrame anchor=Anchor::TopLeft pad=28.0>
+            {patch_banner_content(visible)}
+        </OverlayFrame>
+    }
+}
+
+fn watch_patch_banner() -> Memo<Option<PatchItem>> {
+    let latest = RwSignal::new(None::<PatchItem>);
     let fetch = move || {
         spawn_local(async move {
             if let Ok(list) = net::get_json::<PatchList>("/api/patches").await {
@@ -53,17 +61,19 @@ fn PatchBanner() -> impl IntoView {
             net::storage_set(LAST_SEEN_KEY, &p.internal_id);
         }
     });
+    visible
+}
+
+pub fn patch_banner_content(visible: Memo<Option<PatchItem>>) -> impl IntoView {
     view! {
-        <OverlayFrame anchor=Anchor::TopLeft pad=28.0>
-            {move || match visible.get() {
-                None => view! { <div></div> }.into_any(),
-                Some(p) => banner(p).into_any(),
-            }}
-        </OverlayFrame>
+        {move || match visible.get() {
+            None => view! { <div></div> }.into_any(),
+            Some(p) => banner(p).into_any(),
+        }}
     }
 }
 
-fn banner(p: storm_web_core::aggregates::PatchItem) -> impl IntoView {
+fn banner(p: PatchItem) -> impl IntoView {
     view! {
         <div style="display:inline-flex;align-items:center;gap:10px;background:rgba(14,16,22,.92);border:1px solid var(--u-nexus);border-radius:12px;padding:10px 18px;box-shadow:0 8px 30px rgba(0,0,0,.5)">
             <span style="font-size:18px">"🆕"</span>

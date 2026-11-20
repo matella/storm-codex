@@ -7,17 +7,13 @@ use crate::{
     now_playing::{use_now_playing, MusicCard},
 };
 use leptos::prelude::*;
-use storm_web_core::{
-    music::parse_track,
-    net,
-    route::{query_value, Anchor},
-    session::*,
-};
+use storm_web_core::{music::parse_track, net, route::Anchor, session::*};
+use storm_web_sources::options::WidgetOptions;
 
 // ── /ticker ────────────────────────────────────────────────────────────────────
 
 pub fn mount_ticker() {
-    mount_to_body(Ticker);
+    mount_to_body(standalone_ticker);
 }
 
 #[derive(Clone, PartialEq)]
@@ -28,11 +24,21 @@ struct TickerData {
     streak: i32,
 }
 
-#[component]
-fn Ticker() -> impl IntoView {
+fn standalone_ticker() -> impl IntoView {
     provide_dim();
-    let names = operator_names();
-    let matches = recent_matches(200);
+    let names = operator_names().read_only();
+    let matches = recent_matches(200).read_only();
+    view! {
+        <OverlayFrame anchor=Anchor::TopRight top=250.0>
+            {ticker_content(names, matches)}
+        </OverlayFrame>
+    }
+}
+
+pub fn ticker_content(
+    names: ReadSignal<Vec<String>>,
+    matches: ReadSignal<Vec<MatchSummary>>,
+) -> impl IntoView {
     // the operator's session: today (local time), else the last day played
     let data = Memo::new(move |_| {
         let names = names.get();
@@ -60,49 +66,49 @@ fn Ticker() -> impl IntoView {
         last_streak.set(Some(t.streak));
         if prev != Some(t.streak) && streak_milestone(t.streak).is_some() {
             flash.set(true);
-            net::after_ms(4000, move || flash.set(false));
+            net::after_ms(4000, move || {
+                flash.try_set(false); // the instance may have been removed
+            });
         }
     });
     view! {
-        <OverlayFrame anchor=Anchor::TopRight top=250.0>
-            {move || match data.get() {
-                None => view! { <div></div> }.into_any(),
-                Some(t) => {
-                    let is_flash = flash.get();
-                    let tone = if t.streak > 0 { "var(--win)" } else { "var(--loss)" };
-                    let class = if is_flash {
-                        format!("ticker-pill flash {}", if t.streak > 0 { "flash-win" } else { "flash-loss" })
-                    } else {
-                        "ticker-pill".to_string()
-                    };
-                    let caption = is_flash.then(|| streak_milestone_caption(t.streak)).flatten();
-                    view! {
-                    <div class=class style="display:inline-flex;align-items:center;gap:9px;background:rgba(14,16,22,.92);border:1px solid var(--hairline-strong);border-radius:999px;padding:6px 13px 6px 7px;box-shadow:0 6px 20px rgba(0,0,0,.5);font-size:15px">
-                        <Avatar hero=t.hero size=24.0 />
-                        <span class="mono" style="font-weight:600">
-                            <span style="color:var(--win)">{t.wins}"W"</span>
-                            <span style="color:var(--text-2)">"–"</span>
-                            <span style="color:var(--loss)">{t.losses}"L"</span>
+        {move || match data.get() {
+            None => view! { <div></div> }.into_any(),
+            Some(t) => {
+                let is_flash = flash.get();
+                let tone = if t.streak > 0 { "var(--win)" } else { "var(--loss)" };
+                let class = if is_flash {
+                    format!("ticker-pill flash {}", if t.streak > 0 { "flash-win" } else { "flash-loss" })
+                } else {
+                    "ticker-pill".to_string()
+                };
+                let caption = is_flash.then(|| streak_milestone_caption(t.streak)).flatten();
+                view! {
+                <div class=class style="display:inline-flex;align-items:center;gap:9px;background:rgba(14,16,22,.92);border:1px solid var(--hairline-strong);border-radius:999px;padding:6px 13px 6px 7px;box-shadow:0 6px 20px rgba(0,0,0,.5);font-size:15px">
+                    <Avatar hero=t.hero size=24.0 />
+                    <span class="mono" style="font-weight:600">
+                        <span style="color:var(--win)">{t.wins}"W"</span>
+                        <span style="color:var(--text-2)">"–"</span>
+                        <span style="color:var(--loss)">{t.losses}"L"</span>
+                    </span>
+                    {(t.streak != 0).then(|| view! {
+                        <span class="mono" style=format!("font-size:12.5px;color:{}", if t.streak > 0 { "var(--win)" } else { "var(--loss)" })>
+                            {if t.streak > 0 { format!("W{} ▲", t.streak) } else { format!("L{} ▼", -t.streak) }}
                         </span>
-                        {(t.streak != 0).then(|| view! {
-                            <span class="mono" style=format!("font-size:12.5px;color:{}", if t.streak > 0 { "var(--win)" } else { "var(--loss)" })>
-                                {if t.streak > 0 { format!("W{} ▲", t.streak) } else { format!("L{} ▼", -t.streak) }}
-                            </span>
-                        })}
-                        {caption.map(|c| view! { <span class="ticker-caption" style=format!("color:{tone}")>{c}</span> })}
-                    </div>
-                    }
+                    })}
+                    {caption.map(|c| view! { <span class="ticker-caption" style=format!("color:{tone}")>{c}</span> })}
+                </div>
                 }
-                .into_any(),
-            }}
-        </OverlayFrame>
+            }
+            .into_any(),
+        }}
     }
 }
 
 // ── /widget ────────────────────────────────────────────────────────────────────
 
 pub fn mount_widget() {
-    mount_to_body(Widget);
+    mount_to_body(standalone_widget);
 }
 
 #[derive(Clone, PartialEq)]
@@ -121,18 +127,29 @@ struct WidgetData {
 
 /// Summary of the last game from the operator's point of view (`?me=<in-game name>`, else a configured operator
 /// name, else the first player).
-#[component]
-fn Widget() -> impl IntoView {
+fn standalone_widget() -> impl IntoView {
     provide_dim();
-    let names = operator_names();
-    let matches = recent_matches(1);
-    let me_param = query_value(&net::search(), "me");
+    let names = operator_names().read_only();
+    let matches = recent_matches(1).read_only();
+    let options = WidgetOptions::from_search(&net::search());
+    view! {
+        <OverlayFrame anchor=Anchor::TopRight top=250.0>
+            {widget_content(options, names, matches)}
+        </OverlayFrame>
+    }
+}
+
+pub fn widget_content(
+    options: WidgetOptions,
+    names: ReadSignal<Vec<String>>,
+    matches: ReadSignal<Vec<MatchSummary>>,
+) -> impl IntoView {
     let data = Memo::new(move |_| {
         let names = names.get();
         matches.with(|ms| {
             let m = ms.first()?;
             let players = m.players.clone().unwrap_or_default();
-            let me = pick_operator(&players, me_param.as_deref(), &names);
+            let me = pick_operator(&players, options.me.as_deref(), &names);
             let won = me.is_some_and(|p| p.team.is_some() && m.winner == p.team);
             let (k, a, d) = me.map(kad).unwrap_or((0, 0, 0));
             let td = me.and_then(|p| p.takedowns).unwrap_or(0);
@@ -153,12 +170,10 @@ fn Widget() -> impl IntoView {
         })
     });
     view! {
-        <OverlayFrame anchor=Anchor::TopRight top=250.0>
-            {move || match data.get() {
-                None => view! { <div></div> }.into_any(),
-                Some(w) => widget_card(w).into_any(),
-            }}
-        </OverlayFrame>
+        {move || match data.get() {
+            None => view! { <div></div> }.into_any(),
+            Some(w) => widget_card(w).into_any(),
+        }}
     }
 }
 
@@ -205,7 +220,7 @@ fn widget_card(w: WidgetData) -> impl IntoView {
 // ── /queue ─────────────────────────────────────────────────────────────────────
 
 pub fn mount_queue() {
-    mount_to_body(Queue);
+    mount_to_body(standalone_queue);
 }
 
 #[derive(Clone, PartialEq)]
@@ -239,12 +254,19 @@ struct QueueData {
 
 /// Between-games panel: tonight's record, recent games, heroes played, KDA and a Jarvis line, next to framed
 /// slots for the camera and the game capture, and the music card. English UI, transparent background.
-#[component]
-fn Queue() -> impl IntoView {
+fn standalone_queue() -> impl IntoView {
     provide_dim();
-    let names = operator_names();
-    let matches = recent_matches(200);
-    let np = use_now_playing(5000);
+    let names = operator_names().read_only();
+    let matches = recent_matches(200).read_only();
+    let np = use_now_playing(5000).read_only();
+    queue_content(names, matches, np)
+}
+
+pub fn queue_content(
+    names: ReadSignal<Vec<String>>,
+    matches: ReadSignal<Vec<MatchSummary>>,
+    np: ReadSignal<serde_json::Value>,
+) -> impl IntoView {
     let data = Memo::new(move |_| {
         let names = names.get();
         matches.with(|ms| {

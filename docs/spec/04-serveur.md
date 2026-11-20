@@ -468,6 +468,13 @@ Heroes: `hero_units.json` (tracker unit → canonical name, 90/90), derived from
 `examples/derive_hero_units.rs`. End-to-end simulator: `examples/live_sim.rs`.
 Design: `docs/specs/2026-10-24-feed-live-en-partie-design.md`.
 
+## Overlay layout persistence (`overlay_layout.rs`)
+
+Migration 0020 adds the user-authored layout and widget tables. The five admin operations reuse
+`auth::is_admin` before request body extraction, while the UUID-addressed OBS read is public. Saves
+lock the parent and replace its placements in one transaction; full reads use a single statement
+snapshot. See `05-api.md` for the wire contract. No widget data fetching or live events are introduced.
+
 ## Daily goal tracker (`goal.rs`)
 
 `docs/specs/2026-11-20-streamer-widgets.md`, widget 7 — the one streamer widget needing new backend

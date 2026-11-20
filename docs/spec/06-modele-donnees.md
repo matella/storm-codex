@@ -74,6 +74,16 @@ a nullable flag, so the table never holds a half-set goal. Progress itself (done
 **not stored** — `GET /api/goal/progress` recomputes it from `matches`/`match_players` on every read
 (`storm-codex-server::goal`), the same "no derived state" rule as the report status above.
 
+## Overlay layouts (0020)
+
+`overlay_layout` stores UUID, name, and UTC creation/update timestamps. `overlay_widget_instance`
+uses its own UUID and a foreign key with `ON DELETE CASCADE`. The `(layout_id, z_order, id)` index
+supports ordered reads and cascades. Constraints enforce the ten-type catalog, whole-cell 80×45
+bounds and the per-widget JSONB settings allowlist (keys, types and the `me` length/control-character
+limits; see `05-api.md`). The constraint also applies to direct backup restores. The API further
+limits names, body size and widget count. Replacement is atomic and preserves the layout UUID. Layouts are user data,
+not reconstructable from replays; back up both tables (see `09-operations.md`). No extensions required.
+
 ## Scouting (0010)
 
 Scouting reports (spec `docs/specs/2026-09-26-rapports-scouting-design.md`). **Isolated** from the

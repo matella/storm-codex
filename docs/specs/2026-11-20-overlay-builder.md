@@ -104,3 +104,71 @@ tables, but not on each other once those land:
    across all 10 widget files (mechanical, one PR, regression-checked against the existing fixed URLs).
 2. **Phase B (parallel once A is merged)**: the custom-overlay renderer page (`sources` bundle) and the
    builder UI page (`app` bundle) — independent files, no shared-file conflict risk between them.
+
+## Phase A backend implementation notes
+
+Migration 0020 and the REST/wire contract are documented in `docs/spec/05-api.md` and
+`docs/spec/06-modele-donnees.md`. Both future clients use `storm_web_core::overlay_layout`. `PUT`
+replaces the complete widget set, keeps the layout UUID stable, and regenerates widget IDs; this
+is not a patch API. Draft IDs stay stable across local edits, not across saves. The server, editor
+and renderer share typed wire settings. The database checks the per-widget allowlist even during
+data-only restore, and reads fail closed if stored widget settings are invalid. The
+[storage ADR](../adr/2026-11-20-overlay-layout-persistence.md) records the approved persistence and
+access model. Widget-content changes are tracked separately from this backend slice.
+
+## Implementation notes — Phase A widget slice
+
+The ten `*_content` functions in `web-rs/sources/src` take reactive inputs and return only widget
+content. The fixed-page adapters still choose endpoints, WebSocket events, polling cadence and the
+outer frame. `/queue` already was a single 1920×1080 scene (camera/game slots and music included),
+so its intrinsic-size content is preserved without an extra `OverlayFrame`. A future placement host
+must choose the same scale, clipping and shadow/animation overflow rules for preview and output.
+
+Only `/widget` and `/now-playing` have URL-derived options. The adapters map `?me=` to `WidgetOptions`
+(first decoded value, then the existing configured-operator/first-player fallback) and the music flags
+to `NowPlayingMode` (full by default; flag presence selects mini or reveal; reveal wins if both occur).
+The renderer can construct these types from validated instance settings rather than synthesizing
+query strings. For saved music settings, absent and `false` are disabled and `true` on both selects
+Reveal. This differs intentionally from flag presence on fixed URLs.
+
+**Multi-instance lifecycle.** A compositor should own the feeds above the individual views. Share
+hero dimension context (required by ticker, widget, queue, recap and stream pool), settings, match
+lists by limit, latest review, and music by cadence; use one WebSocket per composition, not one per
+placement. Do not reuse the standalone polling/reconnect adapters as per-instance hooks: they assume
+document lifetime. Dispose the composition's subscriptions and timers when it ends and ignore stale
+async results (notably lobby changes during opponent lookups). Keep a separate reactive owner per
+stable instance ID. Moving or resizing should not restart timers; replacing settings may remount
+that instance. Music's progress/reveal timers already clear with their owner; an already queued
+short ticker timeout can finish but cannot write to a disposed signal. The host supplies record
+flash visibility and patch visibility, rather than having either view query or acknowledge on mount.
+
+**Preview and OBS.** The fixed patch page alone retains `patch_banner_last_seen`. A same-origin iframe
+shares local storage: preview must use in-memory acknowledgement and must not consume the fixed
+page's or a live layout's banner. Decide a per-layout/per-instance live key before composing banners.
+Prefer one `sources` document for the live canvas and one corresponding iframe for preview, not one
+iframe per widget or a second renderer. Its CSS includes document-wide rules and local fonts; do not
+load those styles into the app document. Use the same transparent 1920×1080 canvas and scale the
+preview as a whole. Preserve stable instances across draft updates; if communicating with an iframe,
+check the expected origin and window, and never send admin tokens. Test triggered content under the
+same event fixtures in both hosts, and check a real OBS Browser Source separately from Chromium
+(including scene hide/show, page refresh and alpha over underlying video). No renderer/editor was
+implemented in this slice.
+
+### Fixed-route regression
+
+The source options have native tests: `cargo test --locked -p storm-web-sources --lib` from `web-rs`.
+To compare release outputs, build `web-rs/sources` with `trunk build --release --locked` at the base
+and candidate revisions. With Playwright 1.65.1 installed in an isolated npm directory and its
+Chromium shell installed (`playwright install chromium --only-shell`), run from the repository root:
+
+```sh
+NODE_PATH="$test_dir/node_modules" PLAYWRIGHT_BROWSERS_PATH="$test_dir/browsers" \
+  node web-rs/sources/tests/fixed-sources.cjs "$base_dist" "$candidate_dist"
+```
+
+The script serves both builds and deterministic API/WS responses from browser routes only. It
+compares the normalized DOM and requests for populated, empty and `/v2` route variants, asserts
+legacy query precedence and clock-driven behavior, and samples a transparent background pixel.
+For markup comparison it removes comment nodes from a detached body clone before serializing it.
+The harness first checks that this preserves literal comment-like text and element order without
+changing the live DOM. It does not replace real-data or real-OBS acceptance.

@@ -10,21 +10,26 @@ use storm_web_core::{
 };
 
 pub fn mount_recap() {
-    mount_to_body(Recap);
+    mount_to_body(standalone);
 }
 
-#[component]
-fn Recap() -> impl IntoView {
+fn standalone() -> impl IntoView {
     provide_dim();
-    let review = latest_review();
+    let review = latest_review().read_only();
     view! {
         <OverlayFrame anchor=Anchor::BottomLeft pad=28.0>
-            {move || match review.get() {
-                None => view! { <div></div> }.into_any(),
-                Some(r) if r.record.wins + r.record.losses == 0 => view! { <div></div> }.into_any(),
-                Some(r) => recap_card(r).into_any(),
-            }}
+            {recap_content(review)}
         </OverlayFrame>
+    }
+}
+
+pub fn recap_content(review: ReadSignal<Option<Review>>) -> impl IntoView {
+    view! {
+        {move || match review.get() {
+            None => view! { <div></div> }.into_any(),
+            Some(r) if r.record.wins + r.record.losses == 0 => view! { <div></div> }.into_any(),
+            Some(r) => recap_card(r).into_any(),
+        }}
     }
 }
 

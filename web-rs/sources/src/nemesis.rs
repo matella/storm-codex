@@ -22,14 +22,14 @@ use storm_web_core::{
 };
 
 pub fn mount() {
-    mount_to_body(Nemesis);
+    mount_to_body(standalone);
 }
 
 #[derive(Clone, PartialEq)]
-struct Grudge {
-    name: String,
-    wins: u32,
-    losses: u32,
+pub struct Grudge {
+    pub name: String,
+    pub wins: u32,
+    pub losses: u32,
 }
 
 /// Opponent's display name as seen in the most recent game against them (`players[].name` of the
@@ -62,8 +62,16 @@ async fn record_against(toon: &str) -> Option<(Vec<MatchSummary>, u32, u32)> {
     Some((rows, wins, games))
 }
 
-#[component]
-fn Nemesis() -> impl IntoView {
+fn standalone() -> impl IntoView {
+    let grudges = watch_lobby();
+    view! {
+        <OverlayFrame anchor=Anchor::TopLeft top=28.0>
+            {nemesis_content(grudges)}
+        </OverlayFrame>
+    }
+}
+
+fn watch_lobby() -> ReadSignal<Vec<Grudge>> {
     let grudges = RwSignal::new(Vec::<Grudge>::new());
     // last lobby signature already looked up: debounces the per-opponent requests to once per
     // lobby instead of once per `lobby.updated`/poll tick
@@ -109,19 +117,21 @@ fn Nemesis() -> impl IntoView {
         }
     });
 
+    grudges.read_only()
+}
+
+pub fn nemesis_content(grudges: ReadSignal<Vec<Grudge>>) -> impl IntoView {
     view! {
-        <OverlayFrame anchor=Anchor::TopLeft top=28.0>
-            <div style="display:flex;flex-direction:column;gap:8px">
-                {move || grudges.get().into_iter().map(|g| view! {
-                    <div style="display:inline-flex;align-items:center;gap:9px;background:rgba(40,10,10,.92);border:1px solid var(--loss);border-radius:999px;padding:6px 14px;box-shadow:0 6px 20px rgba(0,0,0,.5);font-size:14px">
-                        <span style="font-weight:700;color:var(--loss);letter-spacing:.03em">"⚠ NEMESIS"</span>
-                        <span style="font-weight:600">{g.name.clone()}</span>
-                        <span class="mono" style="font-size:12.5px;color:var(--text-2)">
-                            <span style="color:var(--win)">{g.wins}"W"</span>"–"<span style="color:var(--loss)">{g.losses}"L"</span>
-                        </span>
-                    </div>
-                }).collect_view()}
-            </div>
-        </OverlayFrame>
+        <div style="display:flex;flex-direction:column;gap:8px">
+            {move || grudges.get().into_iter().map(|g| view! {
+                <div style="display:inline-flex;align-items:center;gap:9px;background:rgba(40,10,10,.92);border:1px solid var(--loss);border-radius:999px;padding:6px 14px;box-shadow:0 6px 20px rgba(0,0,0,.5);font-size:14px">
+                    <span style="font-weight:700;color:var(--loss);letter-spacing:.03em">"⚠ NEMESIS"</span>
+                    <span style="font-weight:600">{g.name.clone()}</span>
+                    <span class="mono" style="font-size:12.5px;color:var(--text-2)">
+                        <span style="color:var(--win)">{g.wins}"W"</span>"–"<span style="color:var(--loss)">{g.losses}"L"</span>
+                    </span>
+                </div>
+            }).collect_view()}
+        </div>
     }
 }

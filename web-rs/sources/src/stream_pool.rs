@@ -4,32 +4,40 @@
 
 use crate::frame::{latest_review, provide_dim, Avatar, OverlayFrame};
 use leptos::prelude::*;
-use storm_web_core::{review::Row, route::Anchor};
+use storm_web_core::{
+    review::{Review, Row},
+    route::Anchor,
+};
 
 pub fn mount_stream_pool() {
-    mount_to_body(StreamPool);
+    mount_to_body(standalone);
 }
 
 /// At most this many hero rows (a long session still fits a 1920x1080 OBS canvas).
 const MAX_ROWS: usize = 12;
 
-#[component]
-fn StreamPool() -> impl IntoView {
+fn standalone() -> impl IntoView {
     provide_dim();
-    let review = latest_review();
+    let review = latest_review().read_only();
     view! {
         <OverlayFrame anchor=Anchor::BottomRight pad=28.0>
-            {move || {
-                let rows: Vec<Row> = review
-                    .get()
-                    .map(|r| r.heroes.into_iter().take(MAX_ROWS).collect())
-                    .unwrap_or_default();
-                if rows.is_empty() {
-                    return view! { <div></div> }.into_any();
-                }
-                pool_card(rows).into_any()
-            }}
+            {stream_pool_content(review)}
         </OverlayFrame>
+    }
+}
+
+pub fn stream_pool_content(review: ReadSignal<Option<Review>>) -> impl IntoView {
+    view! {
+        {move || {
+            let rows: Vec<Row> = review
+                .get()
+                .map(|r| r.heroes.into_iter().take(MAX_ROWS).collect())
+                .unwrap_or_default();
+            if rows.is_empty() {
+                return view! { <div></div> }.into_any();
+            }
+            pool_card(rows).into_any()
+        }}
     }
 }
 

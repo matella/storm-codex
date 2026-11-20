@@ -784,7 +784,11 @@ fn import_restores_data_into_a_migrated_staging_database_then_swaps() {
         tmp.path(),
         None,
         "INSERT INTO app_settings VALUES ('marker', '\"new\"'); \
-         UPDATE app_settings SET value = '[\"zoe\"]' WHERE key = 'operator_names'",
+         UPDATE app_settings SET value = '[\"zoe\"]' WHERE key = 'operator_names'; \
+         INSERT INTO overlay_layout (id, name) VALUES ('5ee8ca4f-5ed0-42a2-8dc4-454833b16371', 'Stream'); \
+         INSERT INTO overlay_widget_instance (id, layout_id, widget_type, grid_x, grid_y, grid_w, grid_h, z_order, settings) \
+         VALUES ('99645c1d-46bd-4765-9bfe-3803c3a44126', '5ee8ca4f-5ed0-42a2-8dc4-454833b16371', \
+                 'now-playing', 77, 42, 3, 3, -1, '{\"mini\":true}')",
     );
     let pg = destination(&bin, tmp.path());
     let _running = Running(&pg);
@@ -811,6 +815,18 @@ fn import_restores_data_into_a_migrated_staging_database_then_swaps() {
         ),
         "[\"zoe\"]"
     );
+    // The data-only restore retains both ends of the FK and a renderer-visible setting.
+    assert_eq!(
+        psql(
+            &bin,
+            &pg,
+            APP_DATABASE,
+            "SELECT concat_ws('|', l.id, l.name, w.id, w.widget_type, w.grid_x, w.grid_y, \
+                    w.grid_w, w.grid_h, w.z_order, w.settings->>'mini') \
+             FROM overlay_layout l JOIN overlay_widget_instance w ON w.layout_id = l.id"
+        ),
+        "5ee8ca4f-5ed0-42a2-8dc4-454833b16371|Stream|99645c1d-46bd-4765-9bfe-3803c3a44126|now-playing|77|42|3|3|-1|true"
+    );
     // Schema and ledger are the app's own; everything belongs to the superuser.
     assert_eq!(
         psql(
@@ -831,6 +847,35 @@ fn import_restores_data_into_a_migrated_staging_database_then_swaps() {
         "0"
     );
     pg.finish_import().expect("finish again (idempotent)");
+}
+
+#[test]
+#[ignore = "needs PG_BIN_DIR (Postgres 17 bin/); run with --include-ignored"]
+fn import_rejects_invalid_overlay_settings_without_promoting() {
+    let bin = required_bin();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let dump = backup_of(
+        &bin,
+        tmp.path(),
+        None,
+        "ALTER TABLE overlay_widget_instance DROP CONSTRAINT IF EXISTS overlay_widget_settings_allowlist; \
+         INSERT INTO overlay_layout (id, name) VALUES ('5ee8ca4f-5ed0-42a2-8dc4-454833b16371', 'Stream'); \
+         INSERT INTO overlay_widget_instance (layout_id, widget_type, grid_x, grid_y, grid_w, grid_h, z_order, settings) \
+         VALUES ('5ee8ca4f-5ed0-42a2-8dc4-454833b16371', 'now-playing', 0, 0, 1, 1, 0, \
+                 '{\"mini\":\"no\",\"extra\":true}')",
+    );
+    let pg = destination(&bin, tmp.path());
+    let _running = Running(&pg);
+    let error = pg
+        .stage_import(&dump, &psql_migrate(bin.clone()))
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("overlay_widget_settings_allowlist"),
+        "{error}"
+    );
+    assert_untouched(&bin, &pg);
 }
 
 #[test]

@@ -1,5 +1,78 @@
 # STATUS — read first, update last
 
+## Overlay builder Phase A — fixed-source parity helper (2026-11-20)
+
+PR #68, CodeQL alert #19: the test helper strips comment nodes from a detached body clone,
+not from an HTML string. The Chromium regression failed with the old comparison (it removed
+literal text) and passed with the clone; it also checks that the live DOM is unchanged.
+
+`node --check web-rs/sources/tests/fixed-sources.cjs` passed. The fixed-route harness passed
+all 45 synthetic cases with Playwright 1.65.1 / Chromium 159.0.8154.6 against separate locked
+Trunk 0.22.0-beta.1 release builds of `0c33e75` and `064159e` (Rust 1.100.0). Only the test
+helper and docs changed. CodeQL was not rerun; the alert was not dismissed. No real OBS,
+live data, push, merge, or deployment.
+
+## Overlay builder Phase A — review fixes (2026-11-20)
+
+Only the unreleased 0020 migration changed; published history has no Phase A migration. A
+per-widget settings constraint protects direct writes and staged restores, public reads explicitly
+project permitted fields and fail closed on invalid stored widgets, and server and web compile
+one typed Serde wire contract without new dependencies. Valid settings keep their JSON shape.
+Saved music uses boolean values (Reveal wins when both are true); fixed URLs still use flag
+presence. Keep draft instance keys stable during edits and reconcile regenerated widget IDs on PUT.
+
+RED→GREEN: direct writes, public field projection, invalid staged restore, and shared invalid wire
+settings. The real HTTP router round-trips shared POST/GET/PUT types and regenerates widget IDs.
+Combined checks with disposable PostgreSQL 17 and the pinned reference fixture: 568 Rust tests
+passed (11 ignored), 201 web core tests, 6 source option tests, and 25 real PostgreSQL supervisor
+cases (valid restore, invalid restore leaves active data untouched, and upgrade from 0019).
+Fmt, strict native/Wasm Clippy, server build, migration freeze, Python checks and cargo-audit
+passed (existing chrono maintenance warning). Three release builds passed; 45 Chromium synthetic
+parity cases against `0c33e75`, with 217,942 B overlay gzip, 232,107 B sources gzip and 1,049,901 B
+app Brotli. Warm loopback 100-widget GET/PUT p95: 4.26/8.27 ms (100 samples each, debug server).
+Initial full checks needed the release fixture's top-level locale/checksum files, a fresh DB, and
+separate baseline/candidate targets. No image packaging, installed Windows/real OBS acceptance,
+new independent review, push, deployment, or live DB access in this pass.
+
+## Overlay builder Phase A backend (2026-11-20)
+
+Migration `0020_overlay_layouts.sql`, admin CRUD, and public UUID read are implemented, with atomic
+widget replacement, grid/catalog/settings validation, and shared `storm_web_core::overlay_layout`
+types. No new dependencies, browser routes, or changes to the ten existing source pages. See
+`docs/specs/2026-11-20-overlay-builder.md` and the living REST, schema, and backup contracts.
+
+Verified in `storm-dev:latest` with disposable PostgreSQL 17 and the pinned CI reference fixture:
+server `cargo fmt --all -- --check`, `cargo clippy --locked --offline --workspace --all-targets -- -D warnings`,
+`cargo test --locked --offline --workspace --no-fail-fast`, and server build passed. Three API tests
+failed on missing routes before implementation, then passed. Two core wire tests failed to compile
+before the type module existed, then passed (200 native web tests total). Web fmt, native and Wasm
+strict Clippy, all three `trunk build --release` builds and bundle checks passed (217,951 B overlay
+and 229,936 B sources gzip, 1,049,799 B app Brotli). Native Clippy's first run caught test-only
+`unwrap` lint; rerun passed with the repo's test allowance. Migration freeze and Python CI checks
+passed; `cargo audit` passed with the existing `chrono` maintenance warning.
+
+Real PostgreSQL supervisor tests (`postgres_it --include-ignored`) passed 24/24, including layout
+and child/settings restore plus migration of a 0019 dump. A first Linux harness run had four
+path/PID test failures; the clean rerun used Docker `--init` and a relocatable PostgreSQL prefix.
+Full-router HTTP smoke passed; 100-widget public read and admin replacement p95 were 4.99 ms and
+15.07 ms on warm loopback, respectively. Diff self-reviewed; independent review and installed
+Windows/OBS checks were not run in this worktree. No push, deploy or live database access.
+
+## Overlay builder Phase A — widget-content slice (2026-11-20)
+
+Extracted all ten fixed OBS views into reusable content functions with read-only inputs and typed
+`WidgetOptions` / `NowPlayingMode`. Fixed routes, CSS, frame placement, data sources and timing are
+unchanged; the queue keeps its intrinsic 1920×1080 scene. See the [implementation notes](specs/2026-11-20-overlay-builder.md#implementation-notes--phase-a-widget-slice)
+for lifecycle and preview caveats. Backend, renderer and editor are separate work.
+
+Verified on Rust 1.100.0 and Trunk 0.22.0-beta.1: formatting, native and WASM web lints, 198 core
+and 5 option tests, three release builds, and 45 synthetic Chromium parity cases against `0c33e75`
+(all ten routes, alias/query variants, populated/empty responses, event/poll timing and transparency).
+New options tests first failed for the missing typed API. `sources` measured 232,191 bytes gzip
+(base 230,027; cap 300,000); overlay 218,010 gzip and app 1,049,860 Brotli also passed. Real-data and
+actual OBS acceptance were not run; no server/DB integration suite or live service used. Diff and
+static scan reviewed inline; no separate reviewer was available in this session.
+
 ## Streamer widgets round 1, combined merge (2026-11-20), branch `feat/streamer-widgets`
 
 Combined all three round-1 branches (`feat/streamer-widgets-recap` items 1/2/4/6, `feat/streamer-widgets-flash`
