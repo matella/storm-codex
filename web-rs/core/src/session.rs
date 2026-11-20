@@ -344,6 +344,25 @@ pub fn streak_label(s: i32) -> String {
     }
 }
 
+/// The milestones the ticker's streak flash celebrates (absolute length).
+pub const STREAK_MILESTONES: [i32; 4] = [3, 5, 7, 10];
+
+/// Milestone just reached by `streak` (its absolute value exactly matches one), if any — the ticker flashes a
+/// caption on these exact lengths, not every game of a longer streak.
+pub fn streak_milestone(streak: i32) -> Option<i32> {
+    STREAK_MILESTONES.into_iter().find(|m| streak.abs() == *m)
+}
+
+/// Caption of the milestone flash: `"5-game win streak"` / `"3-game loss streak"`.
+pub fn streak_milestone_caption(streak: i32) -> Option<String> {
+    streak_milestone(streak).map(|m| {
+        format!(
+            "{m}-game {} streak",
+            if streak > 0 { "win" } else { "loss" }
+        )
+    })
+}
+
 /// JS `toFixed(1)` for a non-negative number. Rust rounds an exact tie to even (`2.25 -> "2.2"`), JS rounds it
 /// up (`"2.3"`). With one decimal an exact tie is a number whose fraction is `.25` or `.75`: the only ones
 /// exactly representable in binary (a x4 is exact, so the test has no rounding of its own).
@@ -633,5 +652,29 @@ mod tests {
         assert_eq!(kill_participation(&ps[..1], &me), None);
         let big = p("me", 0, "A", 3, 40, 2);
         assert_eq!(kill_participation(&ps, &big), Some(100));
+    }
+
+    #[test]
+    fn streak_milestones_fire_only_on_the_exact_lengths() {
+        assert_eq!(streak_milestone(0), None);
+        assert_eq!(streak_milestone(2), None);
+        assert_eq!(streak_milestone(3), Some(3));
+        assert_eq!(streak_milestone(-3), Some(3));
+        assert_eq!(streak_milestone(5), Some(5));
+        assert_eq!(streak_milestone(7), Some(7));
+        assert_eq!(streak_milestone(10), Some(10));
+        assert_eq!(streak_milestone(-10), Some(10));
+        // past the last milestone and between milestones: no flash
+        assert_eq!(streak_milestone(4), None);
+        assert_eq!(streak_milestone(11), None);
+        assert_eq!(
+            streak_milestone_caption(5).as_deref(),
+            Some("5-game win streak")
+        );
+        assert_eq!(
+            streak_milestone_caption(-7).as_deref(),
+            Some("7-game loss streak")
+        );
+        assert_eq!(streak_milestone_caption(4), None);
     }
 }

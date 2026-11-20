@@ -636,7 +636,8 @@ fn base_router(state: &AppState) -> Router<AppState> {
 fn v2_page(path: &str) -> &'static str {
     match path.trim_end_matches('/') {
         "/cast/overlay" | "/draft/overlay" => "overlay/index.html",
-        "/ticker" | "/now-playing" | "/widget" | "/queue" => "sources/index.html",
+        "/ticker" | "/now-playing" | "/widget" | "/queue" | "/recap" | "/stream-pool"
+        | "/patch-banner" => "sources/index.html",
         _ => "app/index.html",
     }
 }
@@ -851,6 +852,9 @@ mod front_end_tests {
             ("/v2/now-playing", "sources"),
             ("/v2/widget", "sources"),
             ("/v2/queue", "sources"),
+            ("/v2/recap", "sources"),
+            ("/v2/stream-pool", "sources"),
+            ("/v2/patch-banner", "sources"),
         ] {
             let (st, cache, body) = get(path).await;
             assert_eq!(st, StatusCode::OK, "{path}");
@@ -893,6 +897,9 @@ mod front_end_tests {
             ("/draft/overlay", "overlay"),
             ("/ticker", "sources"),
             ("/widget", "sources"),
+            ("/recap", "sources"),
+            ("/stream-pool", "sources"),
+            ("/patch-banner", "sources"),
             ("/v2/matches", "app"),
         ] {
             let (st, body) = get(path).await;

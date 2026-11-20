@@ -1,5 +1,41 @@
 # STATUS — read first, update last
 
+## Streamer widgets round 1, part A (2026-11-20), branch `feat/streamer-widgets-recap`
+
+Approved scope: `docs/specs/2026-11-20-streamer-widgets.md`, widgets **1, 2, 4, 6 only** (3/5/7 — record
+flash, nemesis badge, daily goal — are separate work, not touched here). Client-only, no backend/migration
+change.
+
+- **Streak milestone flash** (`/ticker`): a 2x glow/scale pulse + "X-game win/loss streak" caption when
+  `streak.abs()` crosses exactly 3/5/7/10, held ~4 s, then the pill settles back with its exact original
+  markup (no residual class at rest). Pure logic `streak_milestone`/`streak_milestone_caption` in
+  `core/session.rs` (native tests).
+- **Session recap** (new `/recap`) and **"played this stream" hero pool** (new `/stream-pool`): found that
+  `GET /api/sessions` / `GET /api/sessions/{id}` already exist (merged earlier with Local insights' session
+  review, not literally new) — both sources call them directly (`storm_web_core::review::Review`), reusing
+  the server's baseline-scored `best`/`worst` picks and already-sorted `heroes` rows instead of a weaker
+  client-side reimplementation.
+- **Patch-day banner** (new `/patch-banner`): reads `GET /api/patches`, shows the latest patch for up to 7
+  real-world days unless already displayed once (`localStorage` "last seen" id written by the widget itself
+  on display — there's no dismiss button since OBS sources aren't clicked).
+- Routes registered the same way as `/ticker` etc.: `web-rs/sources/src/{main,route}.rs` (`Page` enum +
+  `page_of`) and `crates/storm-codex-server/src/main.rs` (`v2_page` + both front-end test tables).
+- Verified in `storm-dev:latest` (throwaway Postgres): `cargo fmt`/clippy native+wasm32, `cargo test`
+  (550 workspace, 10 ignored; 183 web-rs native), `trunk build --release` for all three bundles. Bundle sizes:
+  `sources` 181,362 → 208,614 bytes gzip (**+27,252**, budget 300 kB); `overlay` unchanged (217,951 bytes);
+  `app` 1,046,825 → 1,047,110 bytes brotli (**+285**, budget 1.25 MB — shared `core::review` module already
+  linked for the app's Session page). `cargo audit` could not run (not installed in `storm-dev:latest`, a
+  pre-existing environment gap, not introduced here).
+- Browser-checked in headless Chromium against a copy of the box DB (3,480+ games, release server + release
+  binary): milestone flash fires exactly at a crossed threshold (synthetic 3-game win streak) and clears
+  after the hold window; recap and stream-pool match the real session's server-computed review; patch banner
+  shows for a fresh/unseen patch, hides on reload (seen) and hides once older than 7 days.
+- Self-reviewed the diff thoroughly (no `delegate_task` subagent tool available in this run); found and
+  documented (not fixed, out of scope) a latent `PatchItem.community_only: bool` deserialization trap on a
+  present-but-null JSON value — see the spec's Implementation notes.
+- Not done: widgets 3/5/7, a dispatched `[Reviewer]` subagent pass (self-reviewed instead), push/PR (left to
+  the operator per standing instructions).
+
 ## Merge of `origin/main` into `fix/web-audit-image-proxy` (2026-11-19)
 
 Merged `origin/main` (`1c160c4`, App-slice accessibility fixes #63) into this branch as a true merge

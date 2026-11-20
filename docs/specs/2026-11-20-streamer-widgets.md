@@ -81,3 +81,42 @@ as an OBS source).
 - Perf: the nemesis badge's per-opponent requests must not exceed the existing API p95 budget
   (`docs/spec/01-architecture.md`); debounce so a 5v5 lobby does 5 requests once per lobby, not once per
   live-feed tick.
+
+## Implementation notes (2026-11-20, branch `feat/streamer-widgets-recap`)
+
+Scope of this branch: **widgets 1, 2, 4, 6 only** (streak flash, session recap, "played this stream" hero
+pool, patch-day banner). Widgets 3, 5, 7 (personal-record flash, nemesis badge, daily goal tracker) are out of
+scope for this branch and untouched.
+
+- **`GET /api/sessions` / `GET /api/sessions/{id}` already existed** (merged earlier as part of the Local
+  insights session-review feature, `docs/specs/2026-11-19-session-review.md`, consumed by the app's Session
+  page) — this spec's premise that they're pre-existing read endpoints was correct, just not literally new
+  for this feature. `/recap` and `/stream-pool` call them directly (`storm_web_core::review::{Review,
+  SessionList, Row}`, already native-tested), which is strictly better than a client-side reimplementation:
+  the server's `best`/`worst` picks are baseline-scored, not just "most recent MVP or best KDA" as an
+  earlier draft of this branch computed client-side before this was found. No backend change either way.
+- **Streak milestones**: `streak.abs()` crossing exactly 3, 5, 7 or 10 (not every game once past a
+  threshold) triggers a 2x pulse animation (~1.2 s) plus a caption held for 4 s total, then the pill settles
+  back with no residual class — verified in Chromium (class `ticker-pill flash flash-win`/`flash-loss` with
+  a `.ticker-caption`, reverting to plain `ticker-pill` after the window). The milestone set and the glow
+  color are an implementation choice (spec gave the thresholds but not timing/animation specifics).
+- **Patch banner "acknowledgment"**: there is no dismiss button (OBS sources aren't clicked), so a display
+  counts as the acknowledgment — the widget itself writes `localStorage.patch_banner_last_seen = <id>` the
+  first time it shows a patch, so the same patch does not re-flash on a source reload within the 7-day
+  window; a *new* patch id still shows even if the previous one was "seen". Verified: fresh/unseen patch
+  visible, same patch on reload hidden, a patch older than 7 days hidden regardless of `last_seen`.
+- **Recap "best hero this session"** = the most-played hero of `Review.heroes` (server-sorted by games
+  descending already); "standout game" = `Review.best` (omitted, not a placeholder, when the server found no
+  comparable best game, e.g. a single-game session).
+- **Bundle size**: `sources` 181,362 → 208,614 bytes gzip (delta **+27,252 bytes**, well inside the 300 kB
+  budget — room remains for widgets 3/5/7 in a later branch). `overlay` unchanged (217,951 bytes). `app`
+  1,046,825 → 1,047,110 bytes brotli (delta **+285 bytes**: the shared `core` crate's `review` module was
+  already linked into `app` for the Session page; no new app page, budget untouched at 1.25 MB).
+- **Found, not fixed (out of scope)**: `storm_web_core::aggregates::PatchItem::community_only` is a plain
+  `bool`, not `Option<bool>`; a `dim_patches` row whose `data->'communityOnly'` key is present but SQL `NULL`
+  (not just absent) fails JSON deserialization of the whole `/api/patches` response, which would make
+  `/patch-banner` (and the app's own Patches/`hero_changes` pages, which share the same struct) silently stop
+  updating. Not observed on real refdata-ingested rows in production (the adapter always writes a boolean),
+  only surfaced here with a hand-inserted test row in the throwaway DB copy; flagged for the operator rather
+  than touched, since fixing it is a change to an existing, unrelated contract type outside this spec's
+  approved scope.
