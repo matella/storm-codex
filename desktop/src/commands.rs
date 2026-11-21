@@ -123,6 +123,29 @@ pub fn update_status(app: AppHandle) -> UpdateStatus {
     }
 }
 
+/// The running build's version (`Cargo.toml` / `tauri.conf.json`), for the "About" / version display.
+#[tauri::command]
+pub fn app_version(app: AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
+/// Runs one update check-and-download cycle now (manual "Check for updates" button) and returns the
+/// resulting status. A no-op (returns the unchanged status) when a cycle is already running or an
+/// update is already ready, same as the background tick.
+#[tauri::command]
+pub async fn check_for_update_now(app: AppHandle) -> Result<UpdateStatus, String> {
+    blocking(move || run_check_now(&app)).await
+}
+
+fn run_check_now(app: &AppHandle) -> Result<UpdateStatus, String> {
+    let shell = shell(app);
+    let Some(updater) = shell.updater.get() else {
+        return Err("updates are not available in this build".into());
+    };
+    updater.tick(&|m| shell.log(m));
+    Ok(updater.status())
+}
+
 #[tauri::command]
 pub async fn install_update(app: AppHandle) -> Result<(), String> {
     blocking(move || run_install(&app)).await

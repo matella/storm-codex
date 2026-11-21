@@ -3,6 +3,8 @@
 #[allow(dead_code)] // read by build.rs and the tests
 pub const APP_COMMANDS: &[&str] = &[
     "update_status",
+    "app_version",
+    "check_for_update_now",
     "install_update",
     "export_data",
     "import_data",

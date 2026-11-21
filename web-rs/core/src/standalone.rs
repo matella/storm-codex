@@ -352,6 +352,21 @@ pub fn parse_update_status(v: &Value) -> UpdateStatus {
     }
 }
 
+/// `v<version>` label shown next to the running build's version; blank (not expected, defensive) shows nothing.
+pub fn version_label(version: &str) -> Option<String> {
+    let v = version.trim();
+    (!v.is_empty()).then(|| format!("v{v}"))
+}
+
+/// Inline message after a manual "Check for updates" completes: `None` while an update is downloading or
+/// ready (its own UI already shows that), `Some` to say the app is up to date.
+pub fn check_now_message(status: &UpdateStatus) -> Option<String> {
+    match status.state {
+        UpdateState::None => Some("You're up to date.".to_string()),
+        UpdateState::Downloading | UpdateState::Ready => None,
+    }
+}
+
 /// GitHub release page of a desktop version (`desktop-vX.Y.Z`); `None` unless the version is a plain
 /// `X.Y.Z[-pre][+build]`-like string (it comes from the update manifest and ends up in a link).
 pub fn release_page_url(version: &str) -> Option<String> {
@@ -885,6 +900,38 @@ mod tests {
         assert_eq!(p("null"), UpdateStatus::default());
         assert_eq!(p(r#""ready""#), UpdateStatus::default());
         assert_eq!(p(r#"{"state":1,"version":2}"#), UpdateStatus::default());
+    }
+
+    #[test]
+    fn version_label_formats_or_hides_blank_versions() {
+        assert_eq!(version_label("0.1.3").as_deref(), Some("v0.1.3"));
+        assert_eq!(version_label("  0.1.3  ").as_deref(), Some("v0.1.3"));
+        assert_eq!(version_label(""), None);
+        assert_eq!(version_label("   "), None);
+    }
+
+    #[test]
+    fn check_now_message_only_reports_up_to_date() {
+        assert_eq!(
+            check_now_message(&UpdateStatus::default()),
+            Some("You're up to date.".to_string())
+        );
+        assert_eq!(
+            check_now_message(&UpdateStatus {
+                state: UpdateState::Downloading,
+                version: Some("1.2.0".into()),
+                notes: None,
+            }),
+            None
+        );
+        assert_eq!(
+            check_now_message(&UpdateStatus {
+                state: UpdateState::Ready,
+                version: Some("1.2.0".into()),
+                notes: None,
+            }),
+            None
+        );
     }
 
     #[test]
