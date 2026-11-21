@@ -129,9 +129,8 @@ pub fn app_version(app: AppHandle) -> String {
     app.package_info().version.to_string()
 }
 
-/// Runs one update check-and-download cycle now (manual "Check for updates" button) and returns the
-/// resulting status. A no-op (returns the unchanged status) when a cycle is already running or an
-/// update is already ready, same as the background tick.
+/// Runs one update check-and-download cycle or returns the status of an announced update.
+/// Rejects on failure or when another check is still querying the manifest.
 #[tauri::command]
 pub async fn check_for_update_now(app: AppHandle) -> Result<UpdateStatus, String> {
     blocking(move || run_check_now(&app)).await
@@ -142,8 +141,7 @@ fn run_check_now(app: &AppHandle) -> Result<UpdateStatus, String> {
     let Some(updater) = shell.updater.get() else {
         return Err("updates are not available in this build".into());
     };
-    updater.tick(&|m| shell.log(m));
-    Ok(updater.status())
+    shell.tick_updater(updater).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

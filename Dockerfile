@@ -15,6 +15,7 @@ RUN rustup target add wasm32-unknown-unknown \
     | tar -xz -C /usr/local/bin
 WORKDIR /src/web-rs
 COPY web-rs/ ./
+COPY desktop/icons/32x32.png /src/desktop/icons/32x32.png
 RUN for b in overlay sources app; do (cd "$b" && trunk build --release) || exit 1; done
 COPY scripts/precompress-web.mjs /src/precompress-web.mjs
 RUN node /src/precompress-web.mjs dist

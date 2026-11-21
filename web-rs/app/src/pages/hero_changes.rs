@@ -124,7 +124,7 @@ pub fn HeroChanges() -> impl IntoView {
                     <button type="button" class=move || pill(!timeline.get()) on:click=move |_| timeline.set(false)>"By hero"</button>
                     <button type="button" class=move || pill(timeline.get()) on:click=move |_| timeline.set(true)>"Timeline"</button>
                     <span class="ds-sep"></span>
-                    <SearchSelect options=hero_options value=hero.into() on_change=move |v| { hero.set(v); reset(); } placeholder="hero…" style="width: 160px" id="hc-heroes" />
+                    <SearchSelect options=hero_options value=hero.into() on_change=move |v| { hero.set(v); reset(); } placeholder="hero…" style="width: 160px" id="hc-heroes" clear_label="Clear hero filter" />
                     <span class="ds-sep"></span>
                     <button type="button" class=move || pill(klass.with(String::is_empty)) on:click=move |_| { klass.set(String::new()); reset(); }>"All"</button>
                     {CLASSES.iter().map(|c| view! {

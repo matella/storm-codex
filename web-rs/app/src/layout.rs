@@ -213,9 +213,8 @@ pub fn Layout() -> impl IntoView {
         }
     });
 
-    // Grouped/dropdown nav: which category (if any) is currently open. Closed on an outside
-    // click or Escape, and on picking an item (see `NavGroup`), so only one dropdown is ever
-    // open and it never lingers after navigating away.
+    // Grouped/dropdown nav: which category (if any) is currently open. Closed on outside
+    // click, Escape, leaving the group with focus, or picking an item.
     let nav_open = RwSignal::new(None::<&'static str>);
     Effect::new(move |_| {
         let Some(document) = web_sys::window().and_then(|w| w.document()) else {
@@ -242,9 +241,25 @@ pub fn Layout() -> impl IntoView {
 
         let key_cb =
             wasm_bindgen::closure::Closure::wrap(Box::new(move |ev: web_sys::KeyboardEvent| {
-                if ev.key() == "Escape" {
-                    nav_open.set(None);
+                if ev.key() != "Escape" || nav_open.get_untracked().is_none() {
+                    return;
                 }
+                // The key event originates at the focused element. Only return focus from
+                // the open disclosure, not from another trigger or the rest of the page.
+                let trigger = ev
+                    .target()
+                    .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+                    .and_then(|t| t.closest(".ds-navgroup").ok().flatten())
+                    .and_then(|g| {
+                        g.query_selector("button[aria-expanded=true]")
+                            .ok()
+                            .flatten()
+                    })
+                    .and_then(|t| t.dyn_into::<web_sys::HtmlElement>().ok());
+                if let Some(trigger) = trigger {
+                    let _ = trigger.focus();
+                }
+                nav_open.set(None);
             })
                 as Box<dyn FnMut(web_sys::KeyboardEvent)>);
         let _ =
@@ -344,12 +359,20 @@ fn NavGroup(
         items.iter().any(|&(to, _)| tab_active(p, to))
     };
     let menu_id = format!("ds-navgroup-{}", label.to_lowercase());
+    let group = NodeRef::<leptos::html::Div>::new();
     view! {
-        <div class="ds-navgroup">
+        <div class="ds-navgroup" node_ref=group on:focusout=move |ev: web_sys::FocusEvent| {
+            if open.get_untracked() != Some(label) {
+                return;
+            }
+            let next = ev.related_target().and_then(|t| t.dyn_into::<web_sys::Node>().ok());
+            if !group.get_untracked().is_some_and(|g| g.contains(next.as_ref())) {
+                open.set(None);
+            }
+        }>
             <button
                 type="button"
                 class=move || if active() { "on" } else { "" }
-                aria-haspopup="true"
                 aria-expanded=move || is_open().to_string()
                 aria-controls=menu_id.clone()
                 on:click=move |_| open.update(|o| *o = if *o == Some(label) { None } else { Some(label) })

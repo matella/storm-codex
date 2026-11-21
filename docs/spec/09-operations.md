@@ -13,7 +13,8 @@ Front-end (`web-rs/`, needs `rustup target add wasm32-unknown-unknown` and `trun
 (`/cast/overlay`, `/draft/overlay`, `/ticker`, `/widget`, `/queue` for the OBS sources), exactly as in production. The server
 reads the pages at each request, so a rebuild needs no restart.
 
-**Production:** the Docker image builds the three bundles (stage `web`, pinned Trunk), then runs
+**Production:** the Docker image builds the three bundles (stage `web`, pinned Trunk), copying the
+existing `desktop/icons/32x32.png` into the build stage for the app favicon, then runs
 `node scripts/precompress-web.mjs` (with the stage's `dist` path) to make Brotli quality 11 and gzip
 level 9 siblings next to top-level JS, CSS and WASM. Node is build-only; the image sets `WEB_DIR=/app/web`
 and ships both representations and originals. Keep them together from the same Trunk build. React was removed after
@@ -374,8 +375,17 @@ fresh migrated cluster → import.
   main window is up, then every 6 h on an `updater` thread: `check()`; an announced update is
   `download()`ed (signature verified; **not** `download_and_install`) and its bytes kept in
   memory (the installer's size, tens of MB, held until install or exit: accepted; streaming it
-  to a file is deferred); then `ready` and the tray item **Restart to update** is enabled. A check or download
-  failure returns to `none` with one log line and is retried at the next tick. `update_status`
+  to a file is deferred); then `ready`, and the shell attempts to enable the tray item **Restart to update**.
+  A check or download failure returns to `none` with one log line and can be retried manually or at the next automatic tick.
+  Manual `check_for_update_now` uses the same cycle as the scheduled check. Only one cycle may
+  check or download at a time. While a manifest check is in progress, another manual request is
+  rejected with a fixed busy message; during download it returns `downloading`, and while an update
+  is ready or installing it returns `ready` without checking again. A successful check that finds
+  no update returns `none`. Check and download failures reject the manual command with fixed
+  messages (no source details); diagnostic details remain in the existing shell log. For either path,
+  the shell logs whether tray enablement succeeded, failed, or the item was unavailable. An unavailable
+  or failed tray item does not change `ready` or prevent restarting from the in-app banner.
+  `update_status` is a passive snapshot (still `none` during the manifest check) and
   answers `{state: "none"|"downloading"|"ready", version, notes}` (camelCase JSON, the web banner's
   contract in `08-frontend.md`; `notes` is the manifest's `notes` as `Update::body`, trimmed, `null` when
   missing or blank). `install_update` (banner or tray item, same path) is refused

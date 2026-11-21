@@ -1,5 +1,54 @@
 # STATUS — read first, update last
 
+## Production audit review follow-up (2026-11-21)
+
+Stats and Tools close when focus leaves their group without moving the new focus; Escape still
+returns to the trigger only from within the open group. Matches Reset focuses **All** before
+clearing the filters and disappearing. The shell logs success, failure or absence when enabling
+**Restart to update** in the tray; the in-app `ready` state and restart action are unchanged.
+
+Real Chromium with disposable PostgreSQL 17 reproduced both 390 px keyboard exits and the Reset
+focus loss on `c7c54d4`; all 19 production UI checks and the four existing browser regressions passed
+on the rebuilt release bundle. Web native tests (201), native core and WASM workspace all-target
+Clippy, and the release app build passed. App: **1,099,710 B Brotli** (cap 1,250,000). Web rustfmt
+reports the identical two baseline view-transition differences. Desktop rustfmt and four extracted
+shell-method cases passed; native desktop Clippy/tests are blocked by missing Linux GTK/WebKit
+development packages. Windows CI, installed tray/WebView2 and real OBS were not run.
+
+## Production UI audit fixes (2026-11-21)
+
+Stats/Tools flyouts work with a pointer at 1440 and 390 px; Escape returns focus to the
+matching trigger only from inside its disclosure. Archive filters expose pressed state and
+support keyboard activation, reset and clearing. Match detail wraps its actions and Replay 2D
+controls at 390 px; both tabs measured 390 px rather than 518 px, and the PNG download worked.
+Welcome labels the scan count as processed (5/5, four real matches and one rejected replay in
+QA) and does not claim all replays were imported. All three font preloads and the existing
+Storm Codex favicon load from `/v2/app/` on root and `/v2/` page routes.
+
+Evidence: 17 RED → 17 GREEN checks in `web-rs/app/tests/production-ui.cjs` using release
+bundles, Chromium and the base-commit server with disposable PostgreSQL 17 (migration 21).
+`nav-click`, `flash-flicker`, `manual-update` and `overlay-builder` passed. Web native tests
+(198 core + 3 wire), native core and WASM workspace all-target Clippy, and all three release
+Trunk builds passed. App **1,097,922 B Brotli** (cap 1,250,000); overlay **218,047 B gzip** and
+sources **251,563 B gzip** (cap 300,000 each). Web rustfmt has the same two pre-existing
+view-transition differences as the base. No server-wide suite, production Docker image build,
+installed Windows/WebView2 or real OBS acceptance; optional polish not included.
+
+## Desktop updater check results (2026-11-21)
+
+Manual update checks now reject check/download failures with fixed messages instead of returning
+`none` and reporting "You're up to date." A manual and a scheduled attempt cannot both start a
+manifest check; a second attempt reports busy during the manifest request or `downloading` once
+an update is announced. The periodic status payload and six-hour schedule are unchanged. A
+successful download from either path enables the existing **Restart to update** tray item.
+
+Both new fake-source regressions reproduced on the base implementation and all 10 updater tests
+passed after the fix in an isolated Rust harness using the desktop lockfile dependencies (only
+the Tauri adapter was omitted). Harness Clippy and desktop formatting passed. The native desktop
+build stopped at `glib-sys` because the Linux dev image lacks `pkg-config` and the host lacks the
+GTK/WebKit development packages. Full desktop Clippy/tests, Windows CI and installed-app/OBS
+acceptance were not run.
+
 ## Web production hardening (2026-11-21)
 
 The app installs a release WASM panic hook before routing and mounting. It logs the source

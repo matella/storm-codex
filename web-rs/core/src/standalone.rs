@@ -215,7 +215,15 @@ pub fn phase_message(s: &Status) -> String {
             "Importing your replays: {} of {}. You can already browse what is imported.",
             s.done, s.total
         ),
-        Phase::Ready => "All your replays are imported. New games are added automatically.".into(),
+        Phase::Ready => {
+            let outcome = match (s.rejected.is_empty(), s.failed.is_empty()) {
+                (true, true) => "",
+                (false, true) => " Rejected replays were not imported.",
+                (true, false) => " Some replays failed to import.",
+                (false, false) => " Rejected replays were not imported, and some other replays failed to import.",
+            };
+            format!("Replay scan complete.{outcome} New games are added automatically.")
+        }
         Phase::NoFolders => {
             "No replays found: add a folder that holds your Heroes of the Storm replays.".into()
         }
