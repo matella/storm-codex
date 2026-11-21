@@ -7,7 +7,6 @@ pub enum Page {
     CastOverlay,
     DraftOverlay,
     Ticker,
-    NowPlaying,
     Widget,
     Queue,
     Recap,
@@ -26,7 +25,6 @@ pub fn page_of(pathname: &str) -> Option<Page> {
         "/cast/overlay" => Some(Page::CastOverlay),
         "/draft/overlay" => Some(Page::DraftOverlay),
         "/ticker" => Some(Page::Ticker),
-        "/now-playing" => Some(Page::NowPlaying),
         "/widget" => Some(Page::Widget),
         "/queue" => Some(Page::Queue),
         "/recap" => Some(Page::Recap),
@@ -252,6 +250,38 @@ pub const TABS: [(&str, &str); 14] = [
     ("/admin", "Admin"),
 ];
 
+/// A top-level entry of the grouped/dropdown nav: either an always-visible top-bar link, or a
+/// labelled category whose tabs live in a dropdown. Covers every `TABS` entry exactly once, so the
+/// top bar stays at a handful of items instead of 14 flat links.
+pub enum NavEntry {
+    Top(&'static str, &'static str),
+    Group(&'static str, &'static [(&'static str, &'static str)]),
+}
+
+pub const NAV_STATS: [(&str, &str); 9] = [
+    ("/matches", "Matches"),
+    ("/players", "Players"),
+    ("/heroes", "Heroes"),
+    ("/maps", "Maps"),
+    ("/records", "Records"),
+    ("/synergies", "Synergies"),
+    ("/patches", "Patch Notes"),
+    ("/trends", "Trends"),
+    ("/leagues", "Leagues"),
+];
+
+pub const NAV_TOOLS: [(&str, &str); 2] = [("/cast", "Cast"), ("/scouting", "Scouting")];
+
+/// Session and Live stay always-visible (home + the live indicator matter); Admin stays
+/// top-level (distinct, admin-gated); everything else groups under Stats/Tools dropdowns.
+pub const NAV: [NavEntry; 5] = [
+    NavEntry::Top("/", "Session"),
+    NavEntry::Top("/live", "Live"),
+    NavEntry::Group("Stats", &NAV_STATS),
+    NavEntry::Group("Tools", &NAV_TOOLS),
+    NavEntry::Top("/admin", "Admin"),
+];
+
 /// `NavLink` active rule: the home tab only on `/`, every other tab on its path and below (`/matches`,
 /// `/matches/...`, not `/matchesx`). `pathname` is the app path, without the `/v2` prefix.
 pub fn tab_active(pathname: &str, to: &str) -> bool {
@@ -326,7 +356,6 @@ mod tests {
         assert_eq!(page_of("/v2/ticker"), Some(Page::Ticker));
         assert_eq!(page_of("/v2/draft/overlay/"), Some(Page::DraftOverlay));
         assert_eq!(page_of("/cast/overlay"), Some(Page::CastOverlay));
-        assert_eq!(page_of("/v2/now-playing"), Some(Page::NowPlaying));
         assert_eq!(page_of("/v2/queue"), Some(Page::Queue));
         assert_eq!(page_of("/v2/widget"), Some(Page::Widget));
         assert_eq!(page_of("/v2/recap"), Some(Page::Recap));
@@ -426,6 +455,26 @@ mod tests {
         assert_eq!(page_title("/compare"), "Compare");
         assert_eq!(page_title("/welcome"), "Setup");
         assert_eq!(page_title("/unknown"), "Storm Codex");
+    }
+
+    #[test]
+    fn nav_covers_every_tab_exactly_once() {
+        let mut flattened: Vec<(&str, &str)> = vec![];
+        for entry in &NAV {
+            match entry {
+                NavEntry::Top(to, label) => flattened.push((*to, *label)),
+                NavEntry::Group(_, items) => flattened.extend(items.iter().copied()),
+            }
+        }
+        let mut flattened_sorted = flattened.clone();
+        flattened_sorted.sort_unstable();
+        let mut tabs_sorted = TABS.to_vec();
+        tabs_sorted.sort_unstable();
+        assert_eq!(
+            flattened_sorted, tabs_sorted,
+            "the grouped nav must cover every TABS entry exactly once"
+        );
+        assert_eq!(flattened.len(), TABS.len());
     }
 
     #[test]

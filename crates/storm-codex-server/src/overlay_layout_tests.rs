@@ -27,7 +27,7 @@ async fn overlay_layout_crud_round_trips_and_cascades() {
         ADMIN,
         Some(json!({"name": "  Stream  ", "widgets": [
             widget("widget", json!({"me": "Player"}), 5),
-            widget("now-playing", json!({"mini": true, "reveal": false}), -1),
+            widget("goal", json!({}), -1),
         ]})),
     )
     .await;
@@ -38,10 +38,7 @@ async fn overlay_layout_crud_round_trips_and_cascades() {
     let public = format!("{PUBLIC}/{id}");
     let widgets = created["widgets"].as_array().unwrap();
     assert_eq!(widgets.len(), 2);
-    assert_eq!(
-        widgets[0]["settings"],
-        json!({"mini": true, "reveal": false})
-    );
+    assert_eq!(widgets[0]["settings"], json!({}));
     assert_eq!(widgets[1]["settings"], json!({"me": "Player"}));
     assert_ne!(widgets[0]["id"], widgets[1]["id"]);
     assert_eq!(
@@ -118,7 +115,9 @@ async fn overlay_layout_crud_round_trips_and_cascades() {
 
 #[tokio::test]
 async fn overlay_layout_shared_wire_saves_and_decodes_public_response() {
-    use super::wire::{NowPlayingOptions, OverlayLayout, SaveOverlayLayout, WidgetSettings};
+    use super::wire::{
+        OverlayLayout, PlayerName, SaveOverlayLayout, WidgetOptions, WidgetSettings,
+    };
 
     let Some(s) = test_state(None).await else {
         return;
@@ -127,14 +126,13 @@ async fn overlay_layout_shared_wire_saves_and_decodes_public_response() {
         widget("goal", json!({}), 0),
         widget("widget", json!({"me": "Zoë"}), 1),
         widget("widget", json!({}), 2),
-        widget("now-playing", json!({}), 3),
-        widget("now-playing", json!({"mini": false}), 4),
-        widget("now-playing", json!({"mini": true, "reveal": true}), 5)
+        widget("ticker", json!({}), 3),
+        widget("widget", json!({"me": "DJ"}), 4),
+        widget("queue", json!({}), 5)
     ]});
     let mut draft: SaveOverlayLayout = serde_json::from_value(payload.clone()).unwrap();
-    draft.widgets[4].settings = WidgetSettings::NowPlaying(NowPlayingOptions {
-        mini: Some(false),
-        reveal: None,
+    draft.widgets[4].settings = WidgetSettings::Widget(WidgetOptions {
+        me: Some(PlayerName::try_from("DJ".to_string()).unwrap()),
     });
     assert_eq!(serde_json::to_value(&draft).unwrap(), payload);
     let (status, body) = call_raw(
@@ -205,11 +203,8 @@ async fn overlay_layout_storage_validates_direct_widget_settings() {
         ("widget", json!({"me": "x\u{007f}y"}), false),
         ("widget", json!({"me": ""}), true),
         ("widget", json!({"me": null}), false),
-        ("now-playing", json!({}), true),
-        ("now-playing", json!({"mini": false, "reveal": true}), true),
-        ("now-playing", json!({"mini": "false"}), false),
-        ("now-playing", json!({"reveal": null}), false),
-        ("now-playing", json!({"mini": true, "extra": true}), false),
+        ("ticker", json!({}), true),
+        ("ticker", json!({"extra": true}), false),
     ] {
         use sqlx::Acquire as _;
         let mut row = tx.begin().await.unwrap();
@@ -259,7 +254,7 @@ async fn overlay_layout_read_projects_only_public_fields_and_fails_closed() {
     sqlx::query(
         "INSERT INTO overlay_widget_instance
                (layout_id, widget_type, grid_x, grid_y, grid_w, grid_h, z_order, settings)
-               VALUES ($1::text::uuid, 'now-playing', 0, 0, 1, 1, 0, '{\"mini\":false}')",
+               VALUES ($1::text::uuid, 'ticker', 0, 0, 1, 1, 0, '{}')",
     )
     .bind(&id)
     .execute(&mut *tx)
@@ -268,7 +263,7 @@ async fn overlay_layout_read_projects_only_public_fields_and_fails_closed() {
     let layout = serde_json::to_value(super::load(&mut tx, &id).await.ok().unwrap()).unwrap();
     let widget = &layout["widgets"][0];
     assert_eq!(widget.as_object().unwrap().len(), 8, "{widget}");
-    assert_eq!(widget["settings"], json!({"mini": false}));
+    assert_eq!(widget["settings"], json!({}));
     for settings in [
         json!({"mini": false, "extra": "private"}),
         json!({"mini": "private"}),
@@ -391,7 +386,7 @@ async fn overlay_layout_rejects_invalid_input_without_replacing_saved_layout() {
         json!({"name": "a".repeat(121), "widgets": []}),
         json!({"name": "x\0y", "widgets": []}),
         json!({"name":"Changed", "widgets":vec![valid; 101]}),
-        json!({"name":"Changed", "widgets":[widget("now-playing", json!({"mini": "true"}), 0)]}),
+        json!({"name":"Changed", "widgets":[widget("widget", json!({"me": 5}), 0)]}),
         json!({"name":"Changed", "widgets":[widget("widget", json!({"me":"x\0y"}), 0)]}),
         json!({"name":"Changed"}),
     ] {

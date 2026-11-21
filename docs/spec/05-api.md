@@ -34,7 +34,6 @@ routes marked 🔒 require `Authorization: Bearer` (personal upload token for up
 | `GET /api/dim/heroes` · `GET /api/dim/talents` | replicated reference data |
 | `GET /api/dim/hero-attributes` | 4-letter hero attribute code → canonical parser name (`heroAttribute` from `attr.json`, storm-stats); static, no DB. Resolves draft bans, stored raw (`match.bans[t][i].hero` = `Crus`, `DEAT`…) — `dim_heroes` does not carry the `attributeId` |
 | `GET /api/trends` | winrate/duration per build/patch |
-| `GET /api/now-playing` | Orpheus proxy (music widget) |
 | `GET /api/settings` | application settings (including `operator_names`) |
 | `GET /api/goal/progress` | daily goal tracker (`docs/specs/2026-11-20-streamer-widgets.md`, widget 7), recomputed on every read, nothing stored: `{kind, target, done, reset_at}`; all four `null`/`0` when no goal is set. `kind` ∈ `wins_today`/`games_today`, counted from the operator's perspective rows (same `app_settings.operator_names` / standalone `operator_toons` as `/api/trends`) within the box's local-midnight-to-local-midnight window; `reset_at` = that window's end, UTC ISO |
 
@@ -62,11 +61,10 @@ replacement. Overlaps and repeated widget types are allowed; use distinct z valu
 Names trim to 1–120 characters and cannot contain control characters after trimming. Each layout may
 contain 0–100 widgets, with rectangles contained in the 80×45 grid and signed 32-bit integer z-order.
 `settings` is an object: `widget` accepts optional `me` (string ≤120 characters, no controls),
-`now-playing` accepts optional `mini` and `reveal` (booleans), and the other eight types take `{}`.
-Null and unknown settings are rejected. Missing or `false` saved flags are disabled; `reveal: true`
-wins over `mini: true`. Read responses project only the listed fields. If stored widget data violates
+and the other eight types take `{}`.
+Null and unknown settings are rejected. Read responses project only the listed fields. If stored widget data violates
 the wire contract, the read fails with a generic **500** rather than returning the invalid data.
-Valid types: `ticker`, `widget`, `queue`, `now-playing`, `recap`, `stream-pool`, `patch-banner`,
+Valid types: `ticker`, `widget`, `queue`, `recap`, `stream-pool`, `patch-banner`,
 `record-flash`, `nemesis`, `goal`. Invalid UUIDs or invalid JSON/placements return **400**; unknown
 valid UUIDs **404**; wrong content type **415**; save bodies over 64 KiB **413**.
 

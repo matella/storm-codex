@@ -5,7 +5,7 @@ use super::{
 use leptos::{prelude::*, web_sys};
 use storm_web_app::overlay_builder_model::Rect;
 use storm_web_core::overlay_layout::{
-    NowPlayingOptions, PlayerName, WidgetPlacement, WidgetSettings, GRID_COLS, GRID_ROWS,
+    PlayerName, WidgetPlacement, WidgetSettings, GRID_COLS, GRID_ROWS,
 };
 
 #[component]
@@ -106,23 +106,6 @@ fn Options(editor: Editor, id: String) -> impl IntoView {
                 <label for="ob-field-me">"Player name (me)"</label>
                 <input id="ob-field-me" type="text" maxlength="120" placeholder="Configured operator"
                     prop:value=move || player_name(placement) on:input=edit_name />
-            })}
-            {(widget == Some(storm_web_core::overlay_layout::WidgetType::NowPlaying)).then(|| view! {
-                <label for="ob-field-music-mode">"Music mode"</label>
-                <select id="ob-field-music-mode" prop:value=move || placement.with(|p| match &p.as_ref().map(|p| &p.settings) {
-                    Some(WidgetSettings::NowPlaying(options)) if options.reveal == Some(true) => "reveal",
-                    Some(WidgetSettings::NowPlaying(options)) if options.mini == Some(true) => "mini",
-                    _ => "full",
-                }) on:change=move |event| {
-                    let mode = event_target_value(&event);
-                    update(&|p| p.settings = WidgetSettings::NowPlaying(NowPlayingOptions {
-                        mini: (mode == "mini").then_some(true), reveal: (mode == "reveal").then_some(true),
-                    }));
-                }>
-                    <option value="full">"Full"</option>
-                    <option value="mini">"Mini"</option>
-                    <option value="reveal">"Reveal"</option>
-                </select>
             })}
         </div>
         <div class="ob-toolbar">

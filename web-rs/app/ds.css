@@ -315,6 +315,20 @@ dialog.ds-modal::backdrop { background: rgba(0,0,0,.65); backdrop-filter: blur(3
 .ds-topnav a:hover { color: var(--text); }
 .ds-topnav a.on { color: var(--text); border-bottom-color: var(--accent); }
 .ds-topnav .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-2); box-shadow: 0 0 8px var(--accent-2); }
+.ds-navgroup { position: relative; display: flex; align-items: stretch; }
+.ds-navgroup > button { display: flex; align-items: center; gap: 5px; font: 600 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted-2);
+  border: none; border-bottom: 2px solid transparent; white-space: nowrap; cursor: pointer; padding: 0; }
+.ds-navgroup > button:hover { color: var(--text); }
+.ds-navgroup > button.on { color: var(--text); border-bottom-color: var(--accent); }
+.ds-navgroup-caret { font-size: 9px; }
+.ds-navmenu { position: absolute; top: calc(100% + 8px); left: 0; margin: 0; padding: 6px; list-style: none; min-width: 180px; z-index: 30;
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: 10px; box-shadow: 0 16px 40px rgba(0,0,0,.5); }
+.ds-navmenu[hidden] { display: none; }
+.ds-navmenu li { display: block; }
+.ds-navmenu a { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 6px; font: 600 11px var(--mono); letter-spacing: .08em; text-transform: uppercase;
+  color: var(--muted-2); text-decoration: none; white-space: nowrap; }
+.ds-navmenu a:hover { color: var(--text); background: var(--panel-2); }
+.ds-navmenu a.on { color: var(--text); }
 .ds-help { margin-left: auto; width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid var(--line-2); border-radius: 50%; background: none;
   font: 600 11px var(--mono); color: var(--muted-2); cursor: pointer; flex-shrink: 0; }
 .ds-help:hover { color: var(--text); border-color: var(--accent); }

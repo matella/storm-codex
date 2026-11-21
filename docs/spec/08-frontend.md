@@ -152,14 +152,11 @@ preview uses only in-memory visibility, and the fixed source keeps its original 
 | Route | OBS use |
 |---|---|
 | `/widget?me=<name>` | post-game: W/L, hero, map, K/A/D + KP, Jarvis sentence |
-| `/queue` | between-games scene 1920×1080 (session panel, cam/game slots, music) |
+| `/queue` | between-games scene 1920×1080 (session panel, cam/game slots) |
 | `/ticker` | scrolling banner — the pill gets a brief glow/scale pulse + "X-game win/loss streak" caption when the streak length crosses 3/5/7/10 (spec `docs/specs/2026-11-20-streamer-widgets.md`, widget 1), then settles back to the quiet pill; unchanged layout at rest |
 | `/recap` | session recap card: record, streak, best hero this session, standout game (server-scored, `GET /api/sessions?limit=1` → `GET /api/sessions/{id}` `Review`, same endpoints as the app's Session page) (widget 2) |
 | `/stream-pool` | "Played this stream" hero pool: compact bar list (portrait, games, W–L) for every hero in the current session (`Review.heroes`), up to 12 rows (widget 4) |
 | `/patch-banner` | banner for the latest patch, shown for up to 7 real-world days unless already displayed once (`localStorage` "last seen" id — no dismiss button, OBS sources are not clicked); reads `GET /api/patches` (widget 6) |
-| `/now-playing` | current track (Orpheus proxy) — fuller card: cover art, album, progress |
-| `/now-playing?mini` | compact 290×68 badge: cover art + title + artist |
-| `/now-playing?reveal` | large announcement (300×408) on every playback start, held 2.6 s, then fades back to the compact badge. Polling every 2 s (the two other variants stay at 5 s). Spec `docs/specs/2026-08-29-now-playing-reveal-design.md` |
 | `/record-flash` | "NEW RECORD" flash (~8 s) when the newest game sets a personal best: `GET /api/records?mine=true&limit=1`, compared against the newest match id of `frame::recent_matches` (`match.parsed`). Spec `docs/specs/2026-11-20-streamer-widgets.md` item 3 |
 | `/nemesis` | grudge-match badge during Draft/loading: `GET /api/lobby` resolves the opponent toons (not `GET /api/live`, which never serialises toon handles — see implementation note in the spec), `GET /api/matches?against=<toon>[&result=win]&limit=1` (`X-Total-Count`) gives the operator's record against each; flagged at <= 35% over >= 3 games, debounced to once per lobby. Spec `docs/specs/2026-11-20-streamer-widgets.md` item 5 |
 | `/draft/overlay` | 1920×1080 draft overlay (state via the `draft.updated` WS), rendered by `cast/DraftScene.tsx` (`DraftScene`, `?skin=` nexus/glass/tactical/mono) — **the same component** as the `draft` scene of `/cast/overlay`. Replay mode: "Draft ready — waiting" banner while nothing is revealed, timer bar driven by the next auto-play tick (`draftOverlay.ts`); unrevealed bans dotted; player names hidden by the API until the hero is revealed |
@@ -174,13 +171,13 @@ workspace (`web-rs/Cargo.toml`, own lockfile), built with Trunk for `wasm32-unkn
 
 | Crate | Role |
 |---|---|
-| `core` (`storm-web-core`) | framework-free: wire models (`model.rs`), pure logic ported from `castState.ts` (`logic.rs`, `scenes.rs`), the match-list helpers of the session sources (`session.rs`: mode badge, awards, operator lookup, streak, session totals, Jarvis line, `toFixed`), the music track parser and the reveal state machine (`music.rs`), the lobby-toon resolution and grudge threshold for `/nemesis` (`nemesis.rs`), URL routing and query parameters (`route.rs`), hero reference data (`heroes.rs`), browser I/O (`net.rs`, wasm only: fetch, `/ws` with reconnection, 10 s poll). Native unit tests |
+| `core` (`storm-web-core`) | framework-free: wire models (`model.rs`), pure logic ported from `castState.ts` (`logic.rs`, `scenes.rs`), the match-list helpers of the session sources (`session.rs`: mode badge, awards, operator lookup, streak, session totals, Jarvis line, `toFixed`), the lobby-toon resolution and grudge threshold for `/nemesis` (`nemesis.rs`), URL routing and query parameters (`route.rs`), hero reference data (`heroes.rs`), browser I/O (`net.rs`, wasm only: fetch, `/ws` with reconnection, 10 s poll). Native unit tests |
 | `overlay` (`storm-web-overlay`) | cast and draft overlays, output `web-rs/dist/overlay` served at `/v2/overlay/`. The cast overlay with its five scenes (`ingame`, `series` + post-game slides, `lineups`, `draft`, `hide`) and the stand-alone draft overlay (Timeline view, `?skin=`); the three stylesheets are copied unchanged from `web/src/cast/` |
-| `sources` (`storm-web-sources`) | session, music and daily-goal sources, output `web-rs/dist/sources` served at `/v2/sources/`: `/ticker`, `/widget` (`?me=`), `/queue`, `/now-playing` (default card, `?mini`, `?reveal`), `/recap`, `/stream-pool`, `/patch-banner`, `/record-flash`, `/nemesis` and `/goal` (streamer widgets 1-7, spec `docs/specs/2026-11-20-streamer-widgets.md`; `/goal` polls `GET /api/goal/progress` every 10 s, blank transparent frame with no goal set). Shared tokens in `base.css` (subset of `theme.css`), the reveal stylesheet copied from `web/src/pages/now-playing-reveal.css` |
+| `sources` (`storm-web-sources`) | session and daily-goal sources, output `web-rs/dist/sources` served at `/v2/sources/`: `/ticker`, `/widget` (`?me=`), `/queue`, `/recap`, `/stream-pool`, `/patch-banner`, `/record-flash`, `/nemesis` and `/goal` (streamer widgets 1-7, spec `docs/specs/2026-11-20-streamer-widgets.md`; `/goal` polls `GET /api/goal/progress` every 10 s, blank transparent frame with no goal set). Shared tokens in `base.css` (subset of `theme.css`) |
 | `app` (`storm-web-app`) | the app, output `web-rs/dist/app` served at `/v2/app/`: `leptos_router` with a base decided at startup, `/v2` or empty (`main.rs`, `route::app_base`), top bar + live channel + toast + onboarding / what's new modals (`layout.rs`), shared pieces (`ui.rs`: shared reference data and operator names, `Portrait`, `SecHead`, `Link`, `AggFilterBar`, `fetch`), one module per page (`pages/`). CSS copied unchanged from `web/src` (`theme.css`, `ds.css`); the fonts are self-hosted (`fonts/`, `fonts.css`: latin and latin-ext woff2 of the Fontsource files React uses) |
 
 Each OBS bundle picks its page from the URL path (`route.rs`); the server routes each path to its bundle (`04-serveur.md`).
-The ten fixed `sources` pages adapt their existing frame, input feeds and URL options to frameless
+The nine fixed `sources` pages adapt their existing frame, input feeds and URL options to frameless
 widget views (the queue retains its own 1920×1080 scene). The Phase A [implementation notes](../specs/2026-11-20-overlay-builder.md#implementation-notes--phase-a-widget-slice)
 cover the composition lifecycle, preview storage isolation, and the fixed-route browser regression.
 A same-toolchain release comparison measured **232,191 bytes gzip** for `sources` after the split,
@@ -212,15 +209,14 @@ flashes "new replay" (it was a mistake in `Layout.tsx`); the "What's new" and on
 rule); the requests of `gloo-net` carry a trailing `&` after an existing query string (ignored by the server).
 
 Status: the six OBS sources are built and checked in the browser against React on real and synthetic data (normalised
-DOM identical for ticker, widget with and without MVP, queue with mixed modes / awards / two operator accounts / a streak and
-the music card, now playing default / `?mini` / `?reveal`, draft overlay with a skin, cast overlay; the reveal hold of about 2.6 s
-observed). **Use OBS Studio 31 or later (CEF Chromium 127 minimum); real-OBS acceptance is pending.**
+DOM identical for ticker, widget with and without MVP, queue with mixed modes / awards / two operator accounts / a streak,
+draft overlay with a skin, cast overlay).
+**Use OBS Studio 31 or later (CEF Chromium 127 minimum); real-OBS acceptance is pending.**
 The Latin subsets of JetBrains Mono (400/600 in `sources`, 700 in `overlay`), Cinzel (700/800) and
 Oswald (500/700) are served locally from the two bundles' `fonts/` directories, with their OFL
 licenses. Cinzel and Oswald are from Fontsource 5.3.0. No font CDN is used. Both OBS documents
 declare `lang="en"` and fall back to system fonts. The active draft slot pulses by animating only
-the opacity of a separate glow; the now-playing equaliser bars use a `--i` stagger without changing
-the reveal morph. Existing operator-supplied media URLs are unaffected.
+the opacity of a separate glow. Existing operator-supplied media URLs are unaffected.
 Contract: **OBS bundles stay <= 300 kB gzip; the app bundle stays <= 1.25 MB brotli** (cap raised from 1 MB by the operator on 2026-11-19, with 995,946 bytes used, to make room for the approved session review, match card and replay search; 911 kB on 2026-11-11, 937 kB on 2026-11-13 with the standalone screens, 943 kB on 2026-11-14 with the startup toggle, 977 kB on 2026-11-18 with the local insights pages, 982 kB with standalone folder identity, 994,513 bytes with standalone reference sync, 994,763 bytes with repair-sensitive refetches, 1,007,131 bytes with the match card after integrating desktop update notes, 1,009,761 bytes with replay search, 1,016,321 bytes with the session review after integrating desktop update notes, 1,016,390 bytes on the branch merging the web-audit platform fixes with the session review, 1,027,189 bytes with both the match card and the session review integrated together, 1,026,938 bytes with the match card, session review and web-audit platform fixes all merged together on `fix/web-audit-platform`, 1,030,208 bytes on `feat/replay-search` after merging `origin/main` and reducing the Matches page size from 200 to 100 rows (operator decision, 2026-11-19), **1,041,779 bytes after merging `origin/main` (web-audit platform fixes #61, match card #59, session review #60) into `feat/replay-search`** (overlay 217,951 bytes gzip, sources 181,343 bytes gzip); **1,046,738 bytes on `fix/web-audit-app` (web-audit App slice, this branch)** (overlay 217,943 bytes gzip, sources 181,362 bytes gzip, both unchanged); then, on three separate branches built from that baseline for the streamer-widgets spec (`docs/specs/2026-11-20-streamer-widgets.md`): **1,047,110 bytes app / 208,614 bytes sources gzip on `feat/streamer-widgets-recap`** (items 1, 2, 4, 6: streak flash, session recap, stream hero pool, patch banner), **app unchanged at 1,046,738 bytes / sources 199,574 bytes gzip on `feat/streamer-widgets-flash`** (items 3, 5: record flash, nemesis badge), and **1,050,106 bytes app / 185,111 bytes sources gzip on `feat/streamer-widgets-goal`** (item 7: Admin "Daily goal" block + `/goal` source); all three merged together and verified on `feat/streamer-widgets` (combined 7-widget build, 2026-11-20): **1,049,799 bytes app Brotli** (well under the 1.25 MB cap; combined delta over the 1,046,738-byte pre-widgets baseline is +3,061 bytes, less than the sum of the three branches' individual app deltas since the recap/flash/goal branches each linked some of the same shared `core` modules) and **229,936 bytes `sources` gzip** (combined delta +48,574 bytes over the 181,362-byte baseline, also less than the sum of the individual deltas for the same shared-code reason; still well inside the 300 kB cap); `overlay` unchanged at 217,951 bytes gzip; the server negotiates brotli; `SIZE_CODEC=br` in the script) (`scripts/check-web-rs-size.sh`, enforced in CI; `overlay` 229 kB and `sources`
 191 kB on 2026-11-11). Putting the session and music sources in the overlay bundle gave 314 kB (the view machinery is linked once per
 bundle), hence two bundles: an OBS source only loads the bundle of its family. Patch-note HTML is sanitised
@@ -230,12 +226,12 @@ not copied from input. Image URLs are not proxied. One bundle per page family: t
 
 ## Overlay builder shared contract (Phase A)
 
-`storm_web_core::overlay_layout` provides the ten-entry `WidgetType` catalog, 24px/80×45 grid
+`storm_web_core::overlay_layout` provides the nine-entry `WidgetType` catalog, 24px/80×45 grid
 constants, typed `WidgetSettings`, layout summary/detail models and the full-replacement
 `SaveOverlayLayout` payload. The server compiles the same Serde-only wire contract as the future
 builder and OBS renderer. Keep instance keys stable across draft edits; `PUT` regenerates saved
-widget IDs, so reconcile the response when saving. `NowPlayingMode` converts saved boolean values;
-legacy fixed URLs still use query-flag presence. This slice registers no browser pages.
+widget IDs, so reconcile the response when saving. Legacy fixed URLs still use query-flag presence.
+This slice registers no browser pages.
 See `05-api.md` for endpoints and settings. The Phase A review build measured 217,942 B
 `overlay` gzip, 232,107 B `sources` gzip, and 1,049,901 B `app` Brotli.
 

@@ -11,16 +11,13 @@ const opponent = { name: 'A+B Player', hero: 'Thrall', team: 1, toon: '1-Hero-1-
 const match = (id, playedAt) => ({ id, played_at: playedAt, winner: 0, length: 900, mode: 50001,
   map: 'Synthetic map', players: [operator, opponent] });
 const matches = [3, 2, 1].map(id => match(id, `2026-11-20T0${id}:00:00Z`));
-const track = { authenticated: true, current: { isPlaying: true, progressMs: 5000,
-  track: { id: 'song', name: 'Fixture track', artist: 'Fixture artist', durationMs: 180000 } } };
 const patch = { internalId: 'fixture-patch', patchName: 'Fixture patch', liveDate: '2026-11-19' };
 const lobby = { content_hash: 'lobby', me: 0, players: [{ team: 0 }, { team: 1, toon_handle: opponent.toon }] };
 
 const routes = [
   ['/ticker', '3-game win streak'], ['/widget', 'VICTORY'],
   ['/widget?me=A%2BB+Player', 'DEFEAT'], ['/widget?me=Unknown', 'VICTORY'],
-  ['/queue', 'GAME · IN QUEUE'], ['/now-playing', 'ORPHEUS'], ['/now-playing?mini=0', 'Fixture track'],
-  ['/now-playing?reveal', 'Fixture track'], ['/now-playing?mini&reveal', 'Fixture track'],
+  ['/queue', 'GAME · IN QUEUE'],
   ['/recap', 'Session recap'], ['/stream-pool', 'Played this stream'], ['/patch-banner', 'Fixture patch'],
   ['/record-flash', 'NEW RECORD'], ['/nemesis', 'NEMESIS'], ['/goal', '2 / 3 wins today'],
 ];
@@ -31,7 +28,6 @@ function fixture(url, populated) {
     case '/api/dim/heroes': return {};
     case '/api/settings': return { operator_names: [operator.name] };
     case '/api/matches': return populated ? matches.slice(0, Number(q.get('limit'))) : [];
-    case '/api/now-playing': return populated ? track : { authenticated: false };
     case '/api/sessions': return { sessions: populated ? [{ id: 3 }] : [] };
     case '/api/sessions/3': return { record: { wins: 3 }, streaks: { current: 3 },
       heroes: [{ name: 'Jaina', games: 3, wins: 3 }] };
@@ -131,8 +127,7 @@ async function snapshot(browser, dir, path, expected, populated) {
     const before = await state();
     assert.deepEqual(before.bg, ['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)'], path);
     assert.match(before.html, /width:1920px;height:1080px/, path);
-    if (!populated && !path.endsWith('/queue')) assert.equal(before.text.trim() === '' ||
-      (path.includes('reveal') && /class="npr [^"]*hidden/.test(before.html)), true, path);
+    if (!populated && !path.endsWith('/queue')) assert.equal(before.text.trim() === '', true, path);
     const firstRequests = [...requests].sort();
     let after = null;
 
@@ -156,18 +151,6 @@ async function snapshot(browser, dir, path, expected, populated) {
       socket.send(JSON.stringify({ type: 'lobby.updated' }));
       await eventually(() => pending === 0 && requests.filter(p => p === '/api/lobby').length === 2, 'lobby refetch');
       assert.equal(requests.filter(p => p.includes('against=')).length, 2, 'once per resolved lobby');
-    } else if (populated && path.startsWith('/now-playing')) {
-      const reveal = path.includes('reveal');
-      const period = reveal ? 2000 : 5000;
-      await page.clock.runFor(period - 1);
-      assert.equal(requests.filter(p => p === '/api/now-playing').length, 1);
-      await page.clock.runFor(1);
-      await eventually(() => pending === 0 && requests.filter(p => p === '/api/now-playing').length === 2, 'music poll');
-      if (reveal) {
-        await page.clock.runFor(600);
-        after = await state();
-        assert.notEqual(after.html, before.html, 'reveal folds into mini');
-      }
     } else if (populated && path === '/goal') {
       await page.clock.runFor(9999);
       assert.equal(requests.filter(p => p === '/api/goal/progress').length, 1);

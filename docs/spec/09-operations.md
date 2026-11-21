@@ -10,7 +10,7 @@ cargo run -p storm-codex-server                  # automatic migrations, :8088
 
 Front-end (`web-rs/`, needs `rustup target add wasm32-unknown-unknown` and `trunk`): `trunk build --release` in `web-rs/overlay`,
 `web-rs/sources` and `web-rs/app` (output in `web-rs/dist`), then run the server with `WEB_DIR=web-rs/dist`: every page is at `/`
-(`/cast/overlay`, `/draft/overlay`, `/ticker`, `/widget`, `/queue`, `/now-playing` for the OBS sources), exactly as in production. The server
+(`/cast/overlay`, `/draft/overlay`, `/ticker`, `/widget`, `/queue` for the OBS sources), exactly as in production. The server
 reads the pages at each request, so a rebuild needs no restart.
 
 **Production:** the Docker image builds the three bundles (stage `web`, pinned Trunk), then runs
@@ -743,7 +743,6 @@ Method and the other figures (parse, API p95): [`docs/standalone-acceptance.md`]
 |---|---|---|
 | HotsPatchNotes | box :5001 (`host.docker.internal`) | no dim_* / image refresh (already replicated data kept) |
 | Jarvis Redis | `jarvis_default` network | no event emission (parse unaffected) |
-| Orpheus | box :3010 | `/api/now-playing` empty (music widget idle) |
 
 ## Known risks & debt (audit 2026-08-03 — to redo periodically)
 

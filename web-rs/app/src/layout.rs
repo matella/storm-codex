@@ -6,7 +6,7 @@ use leptos_router::{components::Outlet, hooks::use_location, hooks::use_navigate
 use storm_web_core::{
     live::{effects, reopen_effects, Effects},
     net,
-    route::{app_href, app_path, page_title, tab_active, TABS},
+    route::{app_href, app_path, page_title, tab_active, NavEntry, NAV},
     whatsnew::{entries_since, APP_VERSION},
 };
 
@@ -216,6 +216,45 @@ pub fn Layout() -> impl IntoView {
         }
     });
 
+    // Grouped/dropdown nav: which category (if any) is currently open. Closed on an outside
+    // click or Escape, and on picking an item (see `NavGroup`), so only one dropdown is ever
+    // open and it never lingers after navigating away.
+    let nav_open = RwSignal::new(None::<&'static str>);
+    Effect::new(move |_| {
+        let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+            return;
+        };
+        let click_cb =
+            wasm_bindgen::closure::Closure::wrap(Box::new(move |ev: web_sys::MouseEvent| {
+                if nav_open.get_untracked().is_none() {
+                    return;
+                }
+                let inside = ev
+                    .target()
+                    .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+                    .and_then(|t| t.closest(".ds-navgroup").ok().flatten())
+                    .is_some();
+                if !inside {
+                    nav_open.set(None);
+                }
+            })
+                as Box<dyn FnMut(web_sys::MouseEvent)>);
+        let _ =
+            document.add_event_listener_with_callback("click", click_cb.as_ref().unchecked_ref());
+        click_cb.forget();
+
+        let key_cb =
+            wasm_bindgen::closure::Closure::wrap(Box::new(move |ev: web_sys::KeyboardEvent| {
+                if ev.key() == "Escape" {
+                    nav_open.set(None);
+                }
+            })
+                as Box<dyn FnMut(web_sys::KeyboardEvent)>);
+        let _ =
+            document.add_event_listener_with_callback("keydown", key_cb.as_ref().unchecked_ref());
+        key_cb.forget();
+    });
+
     // A6: per-route document.title (was always "Storm Codex"), and focus moved to the page heading so
     // screen readers and keyboard users get a cue that the route changed.
     Effect::new(move |_| {
@@ -239,20 +278,23 @@ pub fn Layout() -> impl IntoView {
             <header class="ds-top">
                 <Link to="/" class="ds-brand">"STORM "<b>"CODEX"</b></Link>
                 <nav class="ds-topnav" aria-label="Main">
-                    {TABS
+                    {NAV
                         .iter()
-                        .map(|&(to, label)| {
-                            let on = move || tab_active(app_path(&loc.pathname.get()), to);
-                            view! {
-                                <a href=app_href(to) class=move || if on() { "on".to_string() } else { String::new() }
-                                    aria-current=move || on().then_some("page")>
-                                    {label}
-                                    {(to == "/patches").then(|| view! {
-                                        <Show when=move || new_patch.get()>
-                                            <i class="dot" title="new patch"></i>
-                                        </Show>
-                                    })}
-                                </a>
+                        .map(|entry| match entry {
+                            NavEntry::Top(to, label) => {
+                                let (to, label) = (*to, *label);
+                                let on = move || tab_active(app_path(&loc.pathname.get()), to);
+                                view! {
+                                    <a href=app_href(to) class=move || if on() { "on".to_string() } else { String::new() }
+                                        aria-current=move || on().then_some("page")>
+                                        {label}
+                                    </a>
+                                }
+                                .into_any()
+                            }
+                            NavEntry::Group(label, items) => {
+                                view! { <NavGroup label=*label items=*items open=nav_open new_patch=new_patch /> }
+                                    .into_any()
                             }
                         })
                         .collect_view()}
@@ -280,6 +322,66 @@ pub fn Layout() -> impl IntoView {
             </main>
             <Onboarding force=tour standalone=standalone />
             <WhatsNew />
+        </div>
+    }
+}
+
+/// One category of the grouped/dropdown nav (e.g. "Stats", "Tools"): a disclosure button (ARIA
+/// Authoring Practices "Disclosure" pattern -- a plain toggle button plus a normal list of links,
+/// not a full `menu`/`menuitem` role that would need its own arrow-key model) that shows/hides a
+/// list of tabs. The trigger highlights when the current route is one of its items, so users still
+/// know where they are with the group collapsed. Closing on outside click/Escape and on picking an
+/// item is handled by the caller (`Layout`) via the shared `open` signal.
+#[component]
+fn NavGroup(
+    label: &'static str,
+    items: &'static [(&'static str, &'static str)],
+    open: RwSignal<Option<&'static str>>,
+    new_patch: RwSignal<bool>,
+) -> impl IntoView {
+    let loc = use_location();
+    let is_open = move || open.get() == Some(label);
+    let active = move || {
+        let pathname = loc.pathname.get();
+        let p = app_path(&pathname);
+        items.iter().any(|&(to, _)| tab_active(p, to))
+    };
+    let menu_id = format!("ds-navgroup-{}", label.to_lowercase());
+    view! {
+        <div class="ds-navgroup">
+            <button
+                type="button"
+                class=move || if active() { "on" } else { "" }
+                aria-haspopup="true"
+                aria-expanded=move || is_open().to_string()
+                aria-controls=menu_id.clone()
+                on:click=move |_| open.update(|o| *o = if *o == Some(label) { None } else { Some(label) })
+            >
+                {label}
+                <i class="ds-navgroup-caret" aria-hidden="true">"▾"</i>
+            </button>
+            <ul class="ds-navmenu" id=menu_id hidden=move || !is_open()>
+                {items
+                    .iter()
+                    .map(|&(to, item_label)| {
+                        let on = move || tab_active(app_path(&loc.pathname.get()), to);
+                        view! {
+                            <li>
+                                <a href=app_href(to) class=move || if on() { "on".to_string() } else { String::new() }
+                                    aria-current=move || on().then_some("page")
+                                    on:click=move |_| open.set(None)>
+                                    {item_label}
+                                    {(to == "/patches").then(|| view! {
+                                        <Show when=move || new_patch.get()>
+                                            <i class="dot" title="new patch"></i>
+                                        </Show>
+                                    })}
+                                </a>
+                            </li>
+                        }
+                    })
+                    .collect_view()}
+            </ul>
         </div>
     }
 }
@@ -345,7 +447,7 @@ fn Onboarding(force: RwSignal<bool>, standalone: Standalone) -> impl IntoView {
                         " as a Browser Source (1920×1080, transparent). Its URL is always shown at the top of "<span class="mono">"/cast"</span>
                         ". Other overlays, optional:"
                         <div class="mono" style="font-size: 11px; margin-top: 6px; line-height: 1.8">
-                            {move || { let o = net::origin(); format!("{o}{} · {o}{} · {o}{}?me=<name> · {o}{}", app_href("/queue"), app_href("/ticker"), app_href("/widget"), app_href("/now-playing")) }}
+                            {move || { let o = net::origin(); format!("{o}{} · {o}{} · {o}{}?me=<name>", app_href("/queue"), app_href("/ticker"), app_href("/widget")) }}
                         </div>
                     </Step>
                     <div style="display: flex; justify-content: flex-end; margin-top: 8px">

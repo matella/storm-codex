@@ -34,9 +34,12 @@ async function run(browser, base) {
     await page.goto(origin + base);
     await page.getByRole('heading').first().waitFor({ timeout: 20000 });
     const prefix = base === '/' ? '' : base.replace(/\/$/, '');
+    // Players, Heroes and Records now live inside the "Stats" dropdown (grouped nav): open it
+    // before each click instead of clicking a flat top-bar link directly.
     for (const [tab, heading] of [['players', 'PLAYERS'], ['heroes', 'HERO POOL'], ['records', 'THE BEST SINGLE GAMES']]) {
       const before = page.url();
-      await page.locator(`nav.ds-topnav a[href="${prefix}/${tab}"]`).first().click({ timeout: 5000 });
+      await page.locator('nav.ds-topnav .ds-navgroup button').filter({ hasText: 'Stats' }).first().click({ timeout: 5000 });
+      await page.locator(`nav.ds-topnav .ds-navmenu a[href="${prefix}/${tab}"]`).first().click({ timeout: 5000 });
       await page.waitForFunction(u => location.href !== u, before, { timeout: 5000 });
       assert.equal(new URL(page.url()).pathname, `${prefix}/${tab}`);
       await page.locator('h1').filter({ hasText: heading }).first().waitFor({ timeout: 5000 });

@@ -1,5 +1,44 @@
 # STATUS — read first, update last
 
+## Top nav grouped into dropdowns by category (2026-11-21)
+
+Replaced the 14-item flat top bar with Session/Live/Admin as always-visible links plus two
+category dropdowns -- Stats (Matches, Players, Heroes, Maps, Records, Synergies, Patch Notes,
+Trends, Leagues) and Tools (Cast, Scouting) -- via a new `NavEntry`/`NAV` structure in
+`web-rs/core/src/route.rs` (a `nav_covers_every_tab_exactly_once` test keeps it in sync with the
+existing `TABS`) and a `NavGroup` disclosure component in `web-rs/app/src/layout.rs`. Each
+dropdown trigger highlights when the active route is one of its items (A11y: ARIA Authoring
+Practices "Disclosure" pattern -- `aria-haspopup`/`aria-expanded`/`aria-controls` button plus a
+plain list of links, not a half-implemented `menu`/`menuitem` role with no arrow-key model);
+closes on outside click, Escape, or picking an item.
+
+Adapted `nav-click.cjs` to open the Stats dropdown before clicking Players/Heroes/Records
+(assertions unchanged); `flash-flicker.cjs` needed no change. `cargo fmt --check`, native
+`storm-web-core` clippy/tests (200 passed) and server-workspace `cargo test --workspace` (468
+passed, 3 ignored, plus other crates' suites, 0 failed) passed clean. Wasm clippy
+(`-p storm-web-app --target wasm32-unknown-unknown --lib --bins -- -D warnings`) passed; the
+pre-existing `--all-targets` unwrap-used failure in `overlay_builder_model.rs` is unrelated and
+already present on `origin/main`. `trunk build --release` succeeded; app bundle 1,096,444 B
+Brotli (budget 1,250,000 B; baseline on `origin/main` was 1,093,882 B, so +2,562 B from the new
+dropdown code). Both Playwright regressions pass against the new DOM. Integrated together with
+the now-playing removal below on `feat/nav-dropdown-and-remove-nowplaying`.
+
+## Removed the "now playing" (Spotify/Orpheus) music widget (2026-11-21)
+
+Operator decision: the widget was added earlier the same day as part of the overlay-builder work
+and does not fit the project (local HotS stats tracker, no third-party music integration). Removed
+entirely rather than kept behind a flag: server proxy (`GET /api/now-playing`, `ORPHEUS_URL`
+config), the standalone `/now-playing` OBS source page (`web-rs/sources/src/now_playing.rs`,
+`web-rs/core/src/music.rs`), its embed in the `/queue` scene, the `WidgetType::NowPlaying` /
+`WidgetSettings::NowPlaying` overlay-builder widget type and its editor UI, and the
+`now-playing-reveal.css` stylesheet. `overlay_widget_instance.widget_type` is DB-constrained
+(0020's inline CHECK, unreleased): migration `0021_remove_now_playing_widget.sql` drops the
+`now-playing` branch from the `widget_type` and `overlay_widget_settings_allowlist` CHECKs
+(0020 itself is left untouched — never edit an existing migration). Test fixtures that referenced
+the removed `now-playing` widget_type string now use `ticker`/`widget`/`queue` instead, exercising
+the same validation code paths. `docs/spec/04-serveur.md`, `05-api.md`, `08-frontend.md` and
+`09-operations.md` updated to drop the route/env var/API entries (Rule 0).
+
 ## Overlay builder Phase A — fixed-source parity helper (2026-11-20)
 
 PR #68, CodeQL alert #19: the test helper strips comment nodes from a detached body clone,

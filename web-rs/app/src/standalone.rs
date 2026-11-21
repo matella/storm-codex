@@ -271,7 +271,6 @@ fn obs_urls() -> Vec<(&'static str, String)> {
         ("Queue", "/queue"),
         ("Ticker", "/ticker"),
         ("Widget (add ?me=<name>)", "/widget"),
-        ("Now playing", "/now-playing"),
     ]
     .into_iter()
     .map(|(label, path)| (label, format!("{o}{}", app_href(path))))

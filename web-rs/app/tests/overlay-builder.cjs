@@ -90,7 +90,7 @@ async function run(browser, base) {
     await button('Reload layouts').click();
     await button('New layout').click();
     await label('Layout name').fill('Fixture composition');
-    assert.equal(await page.getByRole('group', {name: 'Widget palette'}).getByRole('button').count(), 10);
+    assert.equal(await page.getByRole('group', {name: 'Widget palette'}).getByRole('button').count(), 9);
     const frame = page.frames().find(frame => frame.url().includes('?preview=1'));
     assert.ok(frame);
     await frame.waitForFunction(() => typeof window.ready === 'function');
@@ -104,8 +104,7 @@ async function run(browser, base) {
     await frame.waitForFunction(() => messages.at(-1)?.widgets.length === 0);
     await button('Add Scorecard').press('Enter');
     await label('Player name (me)').fill('A+B Player');
-    await button('Add Now playing').click();
-    await label('Music mode').selectOption('reveal');
+    await button('Add Queue').click();
     await button('Add Ticker').click();
     const canvas = page.locator('.ob-canvas');
     const box = await canvas.boundingBox();
@@ -139,7 +138,7 @@ async function run(browser, base) {
     assert.equal(before.type, 'storm-overlay-preview');
     assert.equal(before.version, 1);
     assert.deepEqual(before.widgets[0].settings, { me: 'A+B Player' });
-    assert.deepEqual(before.widgets[1].settings, { reveal: true });
+    assert.deepEqual(before.widgets[1].settings, {});
     assert.ok(!JSON.stringify(before).includes(fixtureCredential));
     await status('Unsaved changes');
     await button('Save layout').click();

@@ -505,7 +505,7 @@ are a thin SQL layer on top, same shape as `manage.rs`'s settings handlers.
 | `ARCHIVE_DIR` | `./.archive` | raw replays (source of truth) |
 | `RAW_CACHE_DIR` / `RAW_CACHE_MAX_BYTES` | `./.raw-cache` / 5 GiB | LRU cache of dumps |
 | `ADMIN_TOKEN` | empty = **open mode** | empty: no admin auth (LAN/Tailscale self-hosting); set: Bearer required on admin writes |
-| `WEB_DIR` | empty = API only | built front-end (`web-rs/dist`: `overlay/`, `sources/`, `app/`, one Trunk output each) served by the binary. Every page answers at `/`, after the API routes: `/cast/overlay` and `/draft/overlay` get `overlay/index.html`; `/ticker`, `/now-playing`, `/widget`, `/queue`, `/recap`, `/stream-pool`, `/patch-banner`, `/record-flash`, `/nemesis`, `/goal` and `/overlay/custom` get `sources/index.html`; everything else (including `/overlay-builder`) gets `app/index.html` (`no-cache`, read at each request). The bundles' files are under `/v2/<bundle>/` (fingerprinted, cached for a year; a missing file-like path answers 404, never an HTML page); `/v2/...` pages still work. The Docker image sets `/app/web` |
+| `WEB_DIR` | empty = API only | built front-end (`web-rs/dist`: `overlay/`, `sources/`, `app/`, one Trunk output each) served by the binary. Every page answers at `/`, after the API routes: `/cast/overlay` and `/draft/overlay` get `overlay/index.html`; `/ticker`, `/widget`, `/queue`, `/recap`, `/stream-pool`, `/patch-banner`, `/record-flash`, `/nemesis`, `/goal` and `/overlay/custom` get `sources/index.html`; everything else (including `/overlay-builder`) gets `app/index.html` (`no-cache`, read at each request). The bundles' files are under `/v2/<bundle>/` (fingerprinted, cached for a year; a missing file-like path answers 404, never an HTML page); `/v2/...` pages still work. The Docker image sets `/app/web` |
 | `IMAGES_DIR` | `./.images` | vendored images, served on `/images` |
 | `PATCH_IMAGE_MAX_FILE_BYTES` | 8 MiB | per-image cap when the box fetches a Blizzard patch-note image (`refdata::patchimg`) |
 | `PATCH_IMAGE_CACHE_MAX_BYTES` | 200 MiB | total bound on `IMAGES_DIR/patch-images` (LRU-evicted; unlike the rest of `IMAGES_DIR`, which is permanent) |
@@ -514,7 +514,6 @@ are a thin SQL layer on top, same shape as `manage.rs`'s settings handlers.
 | `STANDALONE` | empty = off | `1` = standalone (installer) mode: loopback-only `BIND_ADDR` (checked at startup), independent reference sync |
 | `REFERENTIAL_FILE` | empty | optional legacy trimmed `referential.tar.gz` (`refdata trim`) for offline seeding in standalone mode |
 | `LEDGER_FILE` | `<ARCHIVE_DIR>/../uploaded.json` | standalone only: upload ledger of the in-process watcher (the desktop shell passes `<data>/uploaded.json`) |
-| `ORPHEUS_URL` | empty | music proxy for `/api/now-playing` |
 | `PATCH_WEBHOOK_URL` | empty | outgoing new-patch notification |
 | `AZURE_PUSH_URL` / `AZURE_PUSH_TOKEN` | empty | **dormant** (Twitch extension abandoned) |
 

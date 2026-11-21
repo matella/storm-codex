@@ -2,12 +2,9 @@
 //! Port of `web/src/pages/Ticker.tsx`, `Widget.tsx` and `Queue.tsx`; the computations live in
 //! `storm_web_core::session` (tested natively).
 
-use crate::{
-    frame::{operator_names, provide_dim, recent_matches, Avatar, OverlayFrame},
-    now_playing::{use_now_playing, MusicCard},
-};
+use crate::frame::{operator_names, provide_dim, recent_matches, Avatar, OverlayFrame};
 use leptos::prelude::*;
-use storm_web_core::{music::parse_track, net, route::Anchor, session::*};
+use storm_web_core::{net, route::Anchor, session::*};
 use storm_web_sources::options::WidgetOptions;
 
 // ── /ticker ────────────────────────────────────────────────────────────────────
@@ -253,19 +250,17 @@ struct QueueData {
 }
 
 /// Between-games panel: tonight's record, recent games, heroes played, KDA and a Jarvis line, next to framed
-/// slots for the camera and the game capture, and the music card. English UI, transparent background.
+/// slots for the camera and the game capture. English UI, transparent background.
 fn standalone_queue() -> impl IntoView {
     provide_dim();
     let names = operator_names().read_only();
     let matches = recent_matches(200).read_only();
-    let np = use_now_playing(5000).read_only();
-    queue_content(names, matches, np)
+    queue_content(names, matches)
 }
 
 pub fn queue_content(
     names: ReadSignal<Vec<String>>,
     matches: ReadSignal<Vec<MatchSummary>>,
-    np: ReadSignal<serde_json::Value>,
 ) -> impl IntoView {
     let data = Memo::new(move |_| {
         let names = names.get();
@@ -336,11 +331,10 @@ pub fn queue_content(
     view! {
         <div style="width:1920px;height:1080px;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:18px;padding:24px;box-sizing:border-box">
             {move || queue_panel(data.get())}
-            // Right column: camera and game are framed slots to drop the OBS sources into; music is built in.
-            <div style="display:grid;grid-template-rows:1fr 1fr auto;gap:18px;height:100%;min-height:0;box-sizing:border-box">
+            // Right column: camera and game are framed slots to drop the OBS sources into.
+            <div style="display:grid;grid-template-rows:1fr 1fr;gap:18px;height:100%;min-height:0;box-sizing:border-box">
                 <Frame label="CAMERA" />
                 <Frame label="GAME · IN QUEUE" />
-                {move || { let t = np.with(parse_track); let authenticated = np.with(|v| v.get("authenticated").is_some_and(|a| !matches!(a, serde_json::Value::Null | serde_json::Value::Bool(false)))); view! { <MusicCard t authenticated /> } }}
             </div>
         </div>
     }

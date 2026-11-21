@@ -2,8 +2,8 @@
 
 use serde_json::json;
 use storm_web_core::overlay_layout::{
-    NowPlayingOptions, OverlayLayout, SaveOverlayLayout, WidgetSettings, WidgetType, GRID_CELL_PX,
-    GRID_COLS, GRID_ROWS,
+    OverlayLayout, SaveOverlayLayout, WidgetSettings, WidgetType, GRID_CELL_PX, GRID_COLS,
+    GRID_ROWS,
 };
 
 #[test]
@@ -12,18 +12,15 @@ fn overlay_layout_wire_round_trips_and_converts_to_save_payload() {
         "id": "aa814195-c602-4d5a-85ae-87966d821138", "name": "My scene",
         "created_at": "2026-11-20T12:00:00Z", "updated_at": "2026-11-20T12:00:00Z",
         "widgets": [{
-            "id": "df325544-2e59-4dbb-8111-fcc8994b7d02", "widget_type": "now-playing",
+            "id": "df325544-2e59-4dbb-8111-fcc8994b7d02", "widget_type": "goal",
             "grid_x": 79, "grid_y": 44, "grid_w": 1, "grid_h": 1, "z_order": -1,
-            "settings": {"mini": true, "reveal": false}
+            "settings": {}
         }]
     });
     let layout: OverlayLayout = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(
         layout.widgets[0].placement.settings,
-        WidgetSettings::NowPlaying(NowPlayingOptions {
-            mini: Some(true),
-            reveal: Some(false)
-        })
+        WidgetSettings::Goal {}
     );
     assert_eq!(serde_json::to_value(&layout).unwrap(), wire);
     let save = serde_json::to_value(SaveOverlayLayout::from(layout)).unwrap();
@@ -42,10 +39,7 @@ fn shared_save_wire_rejects_invalid_settings() {
         ("widget", json!({"me": null})),
         ("widget", json!({"me": "x\u{0085}y"})),
         ("widget", json!({"me": "é".repeat(121)})),
-        ("now-playing", json!({"mini": "false"})),
-        ("now-playing", json!({"reveal": null})),
-        ("now-playing", json!({"mini": false, "extra": true})),
-        ("now-playing", json!([true, false])),
+        ("ticker", json!({"extra": true})),
         ("goal", json!([])),
         ("goal", json!(null)),
     ] {
@@ -65,7 +59,6 @@ fn overlay_layout_catalog_and_grid_keep_wire_names_and_size() {
         "ticker",
         "widget",
         "queue",
-        "now-playing",
         "recap",
         "stream-pool",
         "patch-banner",

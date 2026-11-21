@@ -58,7 +58,6 @@ ENV WEB_DIR=/app/web \
     RAW_CACHE_DIR=/data/raw-cache \
     IMAGES_DIR=/data/images \
     MINIMAPS_BUNDLE_DIR=/app/minimaps \
-    ORPHEUS_URL=http://host.docker.internal:3010 \
     BIND_ADDR=0.0.0.0:8088
 EXPOSE 8088
 # Non-root user. A /data volume created by an older (root) image is handed to this uid by

@@ -6,11 +6,11 @@ const { origin, date, fixture, eventually } = require('./fixed-sources.cjs');
 const dir = process.argv[2];
 const layout = { id: '430691a0-1254-4f61-9ac5-b8d6b622e125', name: 'Composition', created_at: '', updated_at: '' };
 const catalog = [['ticker', '3-game win streak'], ['widget', 'DEFEAT'], ['queue', 'GAME · IN QUEUE'],
-  ['now-playing', 'Fixture track'], ['recap', 'Session recap'], ['stream-pool', 'Played this stream'],
+  ['recap', 'Session recap'], ['stream-pool', 'Played this stream'],
   ['patch-banner', 'Fixture patch'], ['record-flash', 'NEW RECORD'], ['nemesis', 'NEMESIS'], ['goal', '2 / 3 wins today']];
 const widgets = catalog.map(([widget_type], i) => ({ id: `430691a0-1254-4f61-9ac5-b8d6b622e1${String(i).padStart(2, '0')}`,
   widget_type, grid_x: 1 + (i % 3) * 20, grid_y: 1 + Math.floor(i / 3) * 10, grid_w: 20, grid_h: 10, z_order: i,
-  settings: widget_type === 'widget' ? { me: 'A+B Player' } : widget_type === 'now-playing' ? { reveal: true } : {} }));
+  settings: widget_type === 'widget' ? { me: 'A+B Player' } : {} }));
 const byKind = (root, kind) => root.locator(`[data-widget-type="${kind}"]`).first();
 
 async function main() {
@@ -60,9 +60,8 @@ async function main() {
     await page.clock.pauseAt(date);
     await page.goto(`${origin}/overlay/custom?id=${layout.id}`);
     for (const [kind, text] of catalog) await eventually(async () => (await byKind(page, kind).textContent({ timeout: 100 })).includes(text), kind);
-    assert.equal(await page.locator('[data-widget-type]').count(), 10);
+    assert.equal(await page.locator('[data-widget-type]').count(), 9);
     assert.equal(sockets.length, 1);
-    assert.equal(requests.filter(r => r === '/api/now-playing').length, 1);
     assert.equal(requests.filter(r => r === '/api/sessions?limit=1').length, 1);
     assert.equal(requests.filter(r => r === '/api/matches?limit=1').length, 1);
     const inspect = root => byKind(root, 'queue').evaluate(el => {
@@ -86,7 +85,7 @@ async function main() {
     await byKind(page, 'patch-banner').waitFor();
     await eventually(() => byKind(page, 'nemesis').getByText('⚠ NEMESIS').isVisible(), 'reload lobby');
     assert.equal(await byKind(page, 'patch-banner').textContent(), '');
-    console.log('saved: 10 widgets, alpha, queue geometry, shared feeds, per-layout patch acknowledgement');
+    console.log('saved: 9 widgets, alpha, queue geometry, shared feeds, per-layout patch acknowledgement');
 
     for (const [label, text] of [['missing', 'Layout not found'], ['transport', 'Unable to load layout'], ['invalid', 'Unable to load layout']]) {
       mode = label; await page.reload(); await page.getByText(text, { exact: true }).waitFor();
@@ -121,7 +120,7 @@ async function main() {
     assert.equal(await root.locator('[data-widget-type]').count(), 0);
     assert.equal(requests.length, count);
     await send(widgets);
-    await eventually(() => root.locator('[data-widget-type]').count().then(n => n === 10), 'preview places ten widgets');
+    await eventually(() => root.locator('[data-widget-type]').count().then(n => n === 9), 'preview places nine widgets');
     assert.deepEqual(await inspect(root), savedGeometry);
     await eventually(() => opponentPending, 'held opponent read');
     assert.equal(sockets.length, oldSocketCount + 1);
