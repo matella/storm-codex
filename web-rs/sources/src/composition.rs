@@ -1,9 +1,6 @@
 //! The same transparent stage serves saved OBS layouts and the builder's read-only iframe.
 
-use crate::{
-    feeds::Feeds, goal, nemesis, now_playing, patch_banner, recap, recordflash, sessions,
-    stream_pool,
-};
+use crate::{feeds::Feeds, goal, nemesis, patch_banner, recap, recordflash, sessions, stream_pool};
 use leptos::{
     ev,
     prelude::*,
@@ -20,7 +17,7 @@ use storm_web_core::{
     },
     route::query_value,
 };
-use storm_web_sources::options::{NowPlayingMode, WidgetOptions};
+use storm_web_sources::options::WidgetOptions;
 
 const WIDTH: i32 = GRID_COLS * GRID_CELL_PX;
 const HEIGHT: i32 = GRID_ROWS * GRID_CELL_PX;
@@ -236,13 +233,10 @@ fn placement(
                         let y = f64::from(p.grid_h * GRID_CELL_PX) / f64::from(HEIGHT);
                         format!("transform:scale({})", x.min(y))
                     }));
-                    view! { <div class="custom-queue" style=fit>{sessions::queue_content(feeds.names, feeds.recent, feeds.track)}</div> }.into_any()
+                    view! { <div class="custom-queue" style=fit>{sessions::queue_content(feeds.names, feeds.recent)}</div> }.into_any()
                 }
                 WidgetSettings::Ticker {} => sessions::ticker_content(feeds.names, feeds.recent).into_any(),
                 WidgetSettings::Widget(o) => sessions::widget_content(WidgetOptions { me: o.me.map(Into::into) }, feeds.names, feeds.newest).into_any(),
-                WidgetSettings::NowPlaying(o) => now_playing::now_playing_content(
-                    if o.reveal == Some(true) { NowPlayingMode::Reveal } else if o.mini == Some(true) { NowPlayingMode::Mini } else { NowPlayingMode::Full }, feeds.track,
-                ).into_any(),
                 WidgetSettings::Recap {} => recap::recap_content(feeds.review).into_any(),
                 WidgetSettings::StreamPool {} => stream_pool::stream_pool_content(feeds.review).into_any(),
                 WidgetSettings::PatchBanner {} => patch_banner::patch_banner_content(visible_patch(feeds, patch_key.clone())).into_any(),
@@ -259,7 +253,6 @@ fn kind(settings: &WidgetSettings) -> &'static str {
         WidgetSettings::Queue {} => "queue",
         WidgetSettings::Ticker {} => "ticker",
         WidgetSettings::Widget(_) => "widget",
-        WidgetSettings::NowPlaying(_) => "now-playing",
         WidgetSettings::Recap {} => "recap",
         WidgetSettings::StreamPool {} => "stream-pool",
         WidgetSettings::PatchBanner {} => "patch-banner",

@@ -77,7 +77,6 @@ impl Draft {
             Ticker => (26, 5, WidgetSettings::Ticker {}),
             Widget => (20, 10, WidgetSettings::Widget(Default::default())),
             Queue => (40, 23, WidgetSettings::Queue {}),
-            NowPlaying => (17, 7, WidgetSettings::NowPlaying(Default::default())),
             Recap => (25, 14, WidgetSettings::Recap {}),
             StreamPool => (24, 9, WidgetSettings::StreamPool {}),
             PatchBanner => (24, 6, WidgetSettings::PatchBanner {}),

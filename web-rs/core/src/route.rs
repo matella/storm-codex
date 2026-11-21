@@ -7,7 +7,6 @@ pub enum Page {
     CastOverlay,
     DraftOverlay,
     Ticker,
-    NowPlaying,
     Widget,
     Queue,
     Recap,
@@ -26,7 +25,6 @@ pub fn page_of(pathname: &str) -> Option<Page> {
         "/cast/overlay" => Some(Page::CastOverlay),
         "/draft/overlay" => Some(Page::DraftOverlay),
         "/ticker" => Some(Page::Ticker),
-        "/now-playing" => Some(Page::NowPlaying),
         "/widget" => Some(Page::Widget),
         "/queue" => Some(Page::Queue),
         "/recap" => Some(Page::Recap),
@@ -326,7 +324,6 @@ mod tests {
         assert_eq!(page_of("/v2/ticker"), Some(Page::Ticker));
         assert_eq!(page_of("/v2/draft/overlay/"), Some(Page::DraftOverlay));
         assert_eq!(page_of("/cast/overlay"), Some(Page::CastOverlay));
-        assert_eq!(page_of("/v2/now-playing"), Some(Page::NowPlaying));
         assert_eq!(page_of("/v2/queue"), Some(Page::Queue));
         assert_eq!(page_of("/v2/widget"), Some(Page::Widget));
         assert_eq!(page_of("/v2/recap"), Some(Page::Recap));

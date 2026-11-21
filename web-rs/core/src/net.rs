@@ -320,18 +320,6 @@ pub async fn fetch_settings() -> Result<crate::session::Settings, String> {
     get_json("/api/settings").await
 }
 
-/// `GET /api/now-playing`, as the proxy answers it (parsed by `music::parse_track`). Like the React source,
-/// any body that is JSON is read, whatever the status.
-pub async fn fetch_now_playing() -> Result<serde_json::Value, String> {
-    let r = Request::get("/api/now-playing")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    r.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
-}
-
 /// `fmtDay` of the queue panel: a `YYYY-MM-DD` key as `Mon 09 Nov` (en-GB).
 pub fn fmt_day(key: &str) -> String {
     let mut it = key.split('-').filter_map(|p| p.parse::<f64>().ok());

@@ -424,7 +424,6 @@ fn base_router(state: &AppState) -> Router<AppState> {
         .route("/api/dim/hero-attributes", get(read::dim_hero_attributes))
         .route("/api/matches.csv", get(read::matches_csv))
         .route("/api/trends", get(manage::trends))
-        .route("/api/now-playing", get(read::now_playing))
         .route("/api/settings", get(manage::get_settings))
         .route(
             "/api/admin/settings",
@@ -637,14 +636,12 @@ fn base_router(state: &AppState) -> Router<AppState> {
 
 /// Page of the Rust front-end for a path under `/v2` (without the prefix). The OBS sources are served by two small
 /// bundles, each kept under the 300 kB size limit: `overlay/` (cast and draft overlays) and `sources/` (session,
-/// music, record-flash and nemesis sources); everything else by the app (`app/`).
+/// record-flash and nemesis sources); everything else by the app (`app/`).
 fn v2_page(path: &str) -> &'static str {
     match path.trim_end_matches('/') {
         "/cast/overlay" | "/draft/overlay" => "overlay/index.html",
-        "/ticker" | "/now-playing" | "/widget" | "/queue" | "/recap" | "/stream-pool"
-        | "/patch-banner" | "/record-flash" | "/nemesis" | "/goal" | "/overlay/custom" => {
-            "sources/index.html"
-        }
+        "/ticker" | "/widget" | "/queue" | "/recap" | "/stream-pool" | "/patch-banner"
+        | "/record-flash" | "/nemesis" | "/goal" | "/overlay/custom" => "sources/index.html",
         _ => "app/index.html",
     }
 }
@@ -856,7 +853,6 @@ mod front_end_tests {
             ("/v2/cast/overlay", "overlay"),
             ("/v2/draft/overlay", "overlay"),
             ("/v2/ticker/", "sources"),
-            ("/v2/now-playing", "sources"),
             ("/v2/widget", "sources"),
             ("/v2/queue", "sources"),
             ("/v2/recap", "sources"),
@@ -973,7 +969,6 @@ pub(crate) mod api_tests {
             patch_image_max_file_bytes: 8 * 1024 * 1024,
             patch_image_cache_max_bytes: 200 * 1024 * 1024,
             minimaps_bundle_dir: dir.join("minimaps"),
-            orpheus_url: None,
             patch_webhook_url: None,
         };
         std::fs::create_dir_all(&cfg.archive_dir).unwrap();

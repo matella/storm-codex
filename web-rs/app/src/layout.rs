@@ -345,7 +345,7 @@ fn Onboarding(force: RwSignal<bool>, standalone: Standalone) -> impl IntoView {
                         " as a Browser Source (1920×1080, transparent). Its URL is always shown at the top of "<span class="mono">"/cast"</span>
                         ". Other overlays, optional:"
                         <div class="mono" style="font-size: 11px; margin-top: 6px; line-height: 1.8">
-                            {move || { let o = net::origin(); format!("{o}{} · {o}{} · {o}{}?me=<name> · {o}{}", app_href("/queue"), app_href("/ticker"), app_href("/widget"), app_href("/now-playing")) }}
+                            {move || { let o = net::origin(); format!("{o}{} · {o}{} · {o}{}?me=<name>", app_href("/queue"), app_href("/ticker"), app_href("/widget")) }}
                         </div>
                     </Step>
                     <div style="display: flex; justify-content: flex-end; margin-top: 8px">

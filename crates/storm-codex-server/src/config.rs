@@ -47,8 +47,6 @@ pub struct Config {
     /// Baked/committed in-game minimaps (`assets/minimaps`), copied into `images_dir/minimaps`
     /// at startup (idempotent) → served on `/images/minimaps`. No runtime fetch.
     pub minimaps_bundle_dir: PathBuf,
-    /// Orpheus API (music) — proxied by `/api/now-playing` for the OBS music widget.
-    pub orpheus_url: Option<String>,
     /// Outgoing webhook (Discord/ntfy/generic) notified at each new patch. Missing = no notification.
     pub patch_webhook_url: Option<String>,
 }
@@ -111,7 +109,6 @@ impl Config {
             minimaps_bundle_dir: PathBuf::from(
                 std::env::var("MINIMAPS_BUNDLE_DIR").unwrap_or_else(|_| "assets/minimaps".into()),
             ),
-            orpheus_url: std::env::var("ORPHEUS_URL").ok().filter(|s| !s.is_empty()),
             patch_webhook_url: std::env::var("PATCH_WEBHOOK_URL")
                 .ok()
                 .filter(|s| !s.is_empty()),
@@ -225,7 +222,6 @@ mod tests {
             patch_image_max_file_bytes: 0,
             patch_image_cache_max_bytes: 0,
             minimaps_bundle_dir: PathBuf::new(),
-            orpheus_url: None,
             patch_webhook_url: None,
         }
     }

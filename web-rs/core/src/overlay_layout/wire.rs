@@ -18,7 +18,6 @@ pub enum WidgetType {
     Ticker,
     Widget,
     Queue,
-    NowPlaying,
     Recap,
     StreamPool,
     PatchBanner,
@@ -33,7 +32,6 @@ pub enum WidgetSettings {
     Ticker {},
     Widget(WidgetOptions),
     Queue {},
-    NowPlaying(NowPlayingOptions),
     Recap {},
     StreamPool {},
     PatchBanner {},
@@ -51,23 +49,6 @@ pub struct WidgetOptions {
         skip_serializing_if = "Option::is_none"
     )]
     pub me: Option<PlayerName>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-pub struct NowPlayingOptions {
-    #[serde(
-        default,
-        deserialize_with = "present",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub mini: Option<bool>,
-    #[serde(
-        default,
-        deserialize_with = "present",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub reveal: Option<bool>,
 }
 
 // Missing is allowed via `default`; explicit null is not a value of T.
@@ -157,7 +138,6 @@ impl TryFrom<PlacementWire> for WidgetPlacement {
         let settings = Value::Object(wire.settings);
         let settings = match wire.widget_type {
             WidgetType::Widget => WidgetSettings::Widget(serde_json::from_value(settings)?),
-            WidgetType::NowPlaying => WidgetSettings::NowPlaying(serde_json::from_value(settings)?),
             kind => {
                 serde_json::from_value::<Empty>(settings)?;
                 match kind {
@@ -169,7 +149,7 @@ impl TryFrom<PlacementWire> for WidgetPlacement {
                     WidgetType::RecordFlash => WidgetSettings::RecordFlash {},
                     WidgetType::Nemesis => WidgetSettings::Nemesis {},
                     WidgetType::Goal => WidgetSettings::Goal {},
-                    WidgetType::Widget | WidgetType::NowPlaying => unreachable!(),
+                    WidgetType::Widget => unreachable!(),
                 }
             }
         };

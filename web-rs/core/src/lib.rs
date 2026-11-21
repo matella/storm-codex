@@ -13,7 +13,6 @@ pub mod livegame;
 pub mod logic;
 pub mod matchdetail;
 pub mod model;
-pub mod music;
 pub mod nemesis;
 #[cfg(target_arch = "wasm32")]
 pub mod net;

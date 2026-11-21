@@ -1,5 +1,21 @@
 # STATUS — read first, update last
 
+## Removed the "now playing" (Spotify/Orpheus) music widget (2026-11-21)
+
+Operator decision: the widget was added earlier the same day as part of the overlay-builder work
+and does not fit the project (local HotS stats tracker, no third-party music integration). Removed
+entirely rather than kept behind a flag: server proxy (`GET /api/now-playing`, `ORPHEUS_URL`
+config), the standalone `/now-playing` OBS source page (`web-rs/sources/src/now_playing.rs`,
+`web-rs/core/src/music.rs`), its embed in the `/queue` scene, the `WidgetType::NowPlaying` /
+`WidgetSettings::NowPlaying` overlay-builder widget type and its editor UI, and the
+`now-playing-reveal.css` stylesheet. `overlay_widget_instance.widget_type` is DB-constrained
+(0020's inline CHECK, unreleased): migration `0021_remove_now_playing_widget.sql` drops the
+`now-playing` branch from the `widget_type` and `overlay_widget_settings_allowlist` CHECKs
+(0020 itself is left untouched — never edit an existing migration). Test fixtures that referenced
+the removed `now-playing` widget_type string now use `ticker`/`widget`/`queue` instead, exercising
+the same validation code paths. `docs/spec/04-serveur.md`, `05-api.md`, `08-frontend.md` and
+`09-operations.md` updated to drop the route/env var/API entries (Rule 0).
+
 ## Overlay builder Phase A — fixed-source parity helper (2026-11-20)
 
 PR #68, CodeQL alert #19: the test helper strips comment nodes from a detached body clone,

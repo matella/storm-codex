@@ -5,7 +5,6 @@ use crate::{
     recordflash::FLASH_MS,
 };
 use leptos::{prelude::*, task::spawn_local};
-use serde_json::Value;
 use std::{future::Future, time::Duration};
 use storm_web_core::{
     aggregates::{PatchItem, PatchList},
@@ -25,7 +24,6 @@ pub struct Feeds {
     pub recent: ReadSignal<Vec<MatchSummary>>,
     pub newest: ReadSignal<Vec<MatchSummary>>,
     pub review: ReadSignal<Option<Review>>,
-    pub track: ReadSignal<Value>,
     pub progress: ReadSignal<Progress>,
     pub patch: ReadSignal<Option<PatchItem>>,
     pub flash: ReadSignal<Option<(String, f64)>>,
@@ -37,8 +35,6 @@ const NAMES: u16 = 2;
 const RECENT: u16 = 4;
 const NEWEST: u16 = 8;
 const REVIEW: u16 = 16;
-const TRACK: u16 = 32;
-const REVEAL: u16 = 64;
 const GOAL: u16 = 128;
 const PATCH: u16 = 256;
 const LOBBY: u16 = 512;
@@ -53,10 +49,7 @@ impl Feeds {
                     bits | match &w.placement.settings {
                         WidgetSettings::Ticker {} => DIM | NAMES | RECENT,
                         WidgetSettings::Widget(_) => DIM | NAMES | NEWEST,
-                        WidgetSettings::Queue {} => DIM | NAMES | RECENT | TRACK,
-                        WidgetSettings::NowPlaying(o) => {
-                            TRACK | if o.reveal == Some(true) { REVEAL } else { 0 }
-                        }
+                        WidgetSettings::Queue {} => DIM | NAMES | RECENT,
                         WidgetSettings::Recap {} | WidgetSettings::StreamPool {} => DIM | REVIEW,
                         WidgetSettings::PatchBanner {} => PATCH,
                         WidgetSettings::RecordFlash {} => NEWEST | RECORD,
@@ -72,7 +65,6 @@ impl Feeds {
         let recent = RwSignal::new(Vec::new());
         let newest = RwSignal::new(Vec::new());
         let review = RwSignal::new(None);
-        let track = RwSignal::new(Value::Null);
         let progress = RwSignal::new(Progress::default());
         let patch = RwSignal::new(None);
         let lobby = RwSignal::new(None);
@@ -99,7 +91,6 @@ impl Feeds {
                 None => Some(None),
             }
         });
-        let load_track = refresh(track, async || net::fetch_now_playing().await.ok());
         let load_progress = refresh(progress, async || {
             net::get_json("/api/goal/progress").await.ok()
         });
@@ -134,9 +125,6 @@ impl Feeds {
             if bits & REVIEW != 0 {
                 load_review()
             }
-            if bits & TRACK != 0 {
-                load_track()
-            }
             if bits & GOAL != 0 {
                 load_progress()
             }
@@ -169,19 +157,12 @@ impl Feeds {
             }
         });
         poll(demand, EVENTS | GOAL, |_| 10_000, request);
-        poll(
-            demand,
-            TRACK | REVEAL,
-            |bits| if bits & REVEAL != 0 { 2_000 } else { 5_000 },
-            move |_| load_track(),
-        );
 
         Self {
             names: names.read_only(),
             recent: recent.read_only(),
             newest: newest.read_only(),
             review: review.read_only(),
-            track: track.read_only(),
             progress: progress.read_only(),
             patch: patch.read_only(),
             flash: watch_record(demand, newest.read_only()),

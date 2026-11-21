@@ -17,8 +17,7 @@ pub fn mount() {
     mount_to_body(standalone);
 }
 
-/// Re-reads `/api/goal/progress` every [`POLL_MS`]; a failed read keeps the last answer (same
-/// behaviour as `now_playing::use_now_playing`).
+/// Re-reads `/api/goal/progress` every [`POLL_MS`]; a failed read keeps the last answer.
 fn use_progress() -> RwSignal<Progress> {
     let progress = RwSignal::new(Progress::default());
     let fetch = move || {
