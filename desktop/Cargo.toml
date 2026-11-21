@@ -1,6 +1,6 @@
 [package]
 name = "storm-codex-desktop"
-version = "0.1.4"
+version = "0.1.5"
 description = "Storm Codex standalone desktop app: Tauri shell supervising Postgres and the server"
 edition = "2021"
 license = "MIT"
