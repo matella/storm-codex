@@ -289,7 +289,7 @@ pub async fn trends(State(s): State<AppState>) -> Result<Json<J>, (StatusCode, J
             GROUP BY m.build
          ) t",
     )
-    .bind(crate::standalone::operator_toons(&s))
+    .bind(crate::standalone::operator_toons(&s).await)
     .fetch_one(&s.db)
     .await
     .map_err(db_err)?;

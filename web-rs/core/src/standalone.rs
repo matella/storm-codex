@@ -31,6 +31,9 @@ pub struct FolderIdentity {
     pub toon: Option<String>,
     pub name: Option<String>,
     pub aliases: Vec<String>,
+    /// `true` when this toon is in the persisted confirmed set (absent from older servers).
+    #[serde(default)]
+    pub confirmed: bool,
 }
 
 /// One choice per verified toon, plus the manual names (which keep name-based matching).

@@ -63,7 +63,7 @@ pub async fn list_matches(
     let search = archive_search(&s, &f, &raw).await?;
     let limit = f.limit.unwrap_or(50).clamp(1, 200);
     let offset = f.offset.unwrap_or(0).max(0);
-    let toons = operator_toons(&s);
+    let toons = operator_toons(&s).await;
     // One statement gives the count and page the same snapshot, including for an empty page.
     // Materialize only the matching IDs and sort keys; expand players only after LIMIT/OFFSET.
     let mut list = QueryBuilder::<Postgres>::new(
@@ -129,7 +129,7 @@ async fn archive_search(
     })?;
     if search.needs_perspective()
         && f.account.as_deref().is_none_or(str::is_empty)
-        && operator_toons(s).is_empty()
+        && operator_toons(s).await.is_empty()
     {
         let names: bool = sqlx::query_scalar(
             "SELECT EXISTS (SELECT 1 FROM app_settings
@@ -358,7 +358,7 @@ pub async fn list_heroes(State(s): State<AppState>, Query(f): Query<MatchFilter>
     .bind(f.to)
     .bind(f.mine)
     .bind(f.account)
-    .bind(operator_toons(&s))
+    .bind(operator_toons(&s).await)
     .fetch_one(&s.db)
     .await
     .map_err(db_err)?;
@@ -410,7 +410,7 @@ pub async fn hero_detail(
     .bind(f.to)
     .bind(f.mine)
     .bind(f.account)
-    .bind(operator_toons(&s))
+    .bind(operator_toons(&s).await)
     .fetch_one(&s.db)
     .await
     .map_err(db_err)?;
@@ -442,7 +442,7 @@ pub async fn synergies(State(s): State<AppState>) -> Resp {
                 GROUP BY en.hero HAVING count(*) >= 3) e)
          )",
     )
-    .bind(operator_toons(&s))
+    .bind(operator_toons(&s).await)
     .fetch_one(&s.db)
     .await
     .map_err(db_err)?;
@@ -509,7 +509,7 @@ pub async fn matches_csv(
          )
          SELECT m.id, m.map, m.mode, m.played_at, m.length, m.winner, m.build",
     );
-    push_archive_from(&mut qb, &f, &search, &operator_toons(&s));
+    push_archive_from(&mut qb, &f, &search, &operator_toons(&s).await);
     qb.push(" ORDER BY m.played_at DESC NULLS LAST, m.id DESC LIMIT ")
         .push_bind(f.limit.unwrap_or(5000).clamp(1, 50000))
         .push(" OFFSET ")
@@ -575,7 +575,7 @@ pub async fn list_maps(State(s): State<AppState>, Query(f): Query<MatchFilter>) 
     .bind(f.to)
     .bind(f.mine)
     .bind(f.account)
-    .bind(operator_toons(&s))
+    .bind(operator_toons(&s).await)
     .fetch_one(&s.db)
     .await
     .map_err(db_err)?;
