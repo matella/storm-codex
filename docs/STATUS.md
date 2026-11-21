@@ -1,5 +1,14 @@
 # STATUS — read first, update last
 
+## Top nav dropdown styling fix (2026-11-21)
+
+The top bar's link rules (`.ds-topnav a`, `a:hover`, `a.on`) also matched the links inside the Stats/Tools
+dropdowns, so the active dropdown item got the bar's 2px purple underline. Scoped them to top-level links
+(`.ds-topnav > a`) in `web-rs/app/ds.css`; style only, no contract change. Checked in the browser on the local
+server (1440 px, 900 px, 375 px): dropdown items navigate, active item has no underline, top-level links and the
+active group trigger keep theirs, no top-bar overflow at 900 px. `nav-click.cjs` not re-run (no Playwright on
+this PC); its selectors do not depend on the changed rules.
+
 ## Standalone confirmed identity (2026-11-21)
 
 Added a persisted "confirmed" account source of "me" alongside live replay-folder detection and

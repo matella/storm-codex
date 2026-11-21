@@ -310,10 +310,12 @@ dialog.ds-modal::backdrop { background: rgba(0,0,0,.65); backdrop-filter: blur(3
 .ds-brand { font: 800 17px var(--display); letter-spacing: .16em; color: var(--text); text-decoration: none; white-space: nowrap; }
 .ds-brand b { color: var(--accent-2); font-weight: 800; }
 .ds-topnav { display: flex; gap: 18px; height: 100%; align-items: stretch; }
-.ds-topnav a { display: flex; align-items: center; gap: 5px; font: 600 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted-2);
+/* Top-level links only (`>`): the dropdown links (.ds-navmenu a) have their own style and must not
+   get the bar's 2px underline. */
+.ds-topnav > a { display: flex; align-items: center; gap: 5px; font: 600 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted-2);
   text-decoration: none; border-bottom: 2px solid transparent; white-space: nowrap; }
-.ds-topnav a:hover { color: var(--text); }
-.ds-topnav a.on { color: var(--text); border-bottom-color: var(--accent); }
+.ds-topnav > a:hover { color: var(--text); }
+.ds-topnav > a.on { color: var(--text); border-bottom-color: var(--accent); }
 .ds-topnav .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-2); box-shadow: 0 0 8px var(--accent-2); }
 .ds-navgroup { position: relative; display: flex; align-items: stretch; }
 .ds-navgroup > button { display: flex; align-items: center; gap: 5px; font: 600 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted-2);
