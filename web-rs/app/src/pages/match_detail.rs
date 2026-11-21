@@ -483,7 +483,7 @@ fn SaveCard(ctx: Arc<Ctx>) -> impl IntoView {
     };
     view! {
         <button type="button" class=move || pill(names.get()) role="switch" aria-checked=move || names.get().to_string()
-            title="Show in-game player names on the image (never the #tag)" style="margin-left: auto" on:click=toggle>"Show player names"</button>
+            title="Show in-game player names on the image (never the #tag)" on:click=toggle>"Show player names"</button>
         <button type="button" class="ds-pill" disabled=move || busy.get() on:click=save
             title=move || if busy.get() { "Rendering the image…" } else { "Save a PNG summary of this match (1200 × 675)" }>
             {move || if busy.get() { "Saving…" } else { "Save as image" }}

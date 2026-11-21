@@ -933,7 +933,7 @@ fn Viewer(
                 </div>
             })}
             <div style="display: flex; gap: 18px; flex-wrap: wrap">
-                <div style="flex: 1 1 360px">
+                <div style="flex: 1 1 360px; min-width: 0">
                     <div node_ref=cal_ref on:pointermove=on_cal_move on:pointerup=move |_| dragging.set(None) on:pointerleave=move |_| dragging.set(None)
                         style=move || { let (w, h) = canvas_dims(); format!("position: relative; width: min(100%, 560px); aspect-ratio: {w} / {h}; border-radius: 8px; overflow: hidden; background: linear-gradient(135deg, #1a1d2a, #232636)") }>
                         <canvas node_ref=canvas_ref width=move || canvas_dims().0 height=move || canvas_dims().1 style="position: absolute; inset: 0; width: 100%; height: 100%"></canvas>
@@ -979,7 +979,7 @@ fn Viewer(
                     <div node_ref=feed_ref style="max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px">{feed_buttons}</div>
                 </div>
             </div>
-            <div style="display: flex; align-items: center; gap: 10px; margin-top: 10px">
+            <div style="display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap">
                 <button type="button" class="pill on" aria-label=move || if playing.get() { "pause" } else { "play" } disabled=move || recording.get()
                     on:click=move |_| playing.update(|p| *p = !*p)
                     style="min-width: 28px; text-align: center; font-family: inherit; line-height: inherit">{move || if playing.get() { "⏸" } else { "▶" }}</button>
@@ -988,7 +988,7 @@ fn Viewer(
                     on:change=move |e| speed.set(event_target_value(&e).parse().unwrap_or(1.0))>
                     {SPEEDS.iter().map(|s| { let s = *s; view! { <option value=s.to_string() selected=move || speed.get() == s>{format!("{s}×")}</option> } }).collect_view()}
                 </select>
-                <input type="range" min="0" max=duration.to_string() step="0.1" aria-label="replay time" style="flex: 1" disabled=move || recording.get()
+                <input type="range" min="0" max=duration.to_string() step="0.1" aria-label="replay time" style="flex: 1 1 100px; min-width: 0" disabled=move || recording.get()
                     aria-valuetext=move || fmt_clock(t.get())
                     prop:value=move || t.get().to_string()
                     on:input=move |e| { playing.set(false); t.set(event_target_value(&e).parse().unwrap_or(0.0)); } />

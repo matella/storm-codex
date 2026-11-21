@@ -71,7 +71,7 @@ fn Body() -> impl IntoView {
                 <div class="wpct">{move || read(status, |s| format!("{}% · {} of {} replays", progress_percent(s.done, s.total), s.done, s.total))}</div>
             </div>
             <div class="wtiles">
-                {tile(move || read(status, |s| format!("{}/{}", s.done, s.total)), "imported")}
+                {tile(move || read(status, |s| format!("{}/{}", s.done, s.total)), "processed")}
                 {tile(move || read(status, |s| s.duplicates.to_string()), "already known")}
                 {tile(move || rejected.with(Vec::len).to_string(), "rejected")}
                 {tile(move || failed.with(Vec::len).to_string(), "failed")}

@@ -8,6 +8,17 @@ design (spec `docs/specs/2026-09-27-design-dossier-app-design.md`): tokens in `w
 Mono, `unicode-range`) — no Google Fonts request from the app. The `body` keeps its original font: OBS sources do not change.
 UI language: **English**.
 
+## Production UI audit fixes (0.1.4)
+
+- Stats and Tools are plain link disclosures, not ARIA menus. Both accept pointer input at desktop
+  and compact widths. Escape closes the disclosure and restores its trigger only if focus was in it.
+- Archive mode, outcome and MVP filters are native buttons with URL-driven `aria-pressed` states.
+  Reset and text-filter clearing work from the keyboard; clearing returns focus to the input.
+- Match tabs and export actions wrap on narrow screens. Replay 2D controls stay in the viewport;
+  intrinsically wide score tables scroll within their own region, not the document.
+- The app shell's font preloads use the canonical app **asset** base `/v2/app/`, independent of the
+  current page path. Trunk fingerprints the existing desktop 32px PNG as the app favicon.
+
 ## Web-audit App slice (2026-11-19, branch `fix/web-audit-app`)
 
 Spec `docs/specs/2026-11-19-web-audit-fixes.md` ("App slice"), approved. Fixes A1–A23 scoped to the web app
@@ -249,8 +260,9 @@ deserialisation, `progress_percent`, `phase_message`, `redirects_to_welcome`, `p
   `seeding`, `importing`, `no-folders` or `disk-full`, the app navigates to `/welcome`. The decision is taken once per session
   (redirected, or already `ready`): the user can leave the page and is never sent back.
 - **Nav.** An "Import" tab after the regular tabs while the phase is not `ready` (from the last status read).
-- **`/welcome`.** Progress bar (`progress_percent(done, total)`), `phase_message` text, tiles imported `done/total`, already known
-  (duplicates), rejected, failed; collapsible lists of rejected replays (file — reason) and failed uploads. The progress panel stays
+- **`/welcome`.** Progress bar (`progress_percent(done, total)`), `phase_message` text, tiles processed `done/total`, already known
+  (duplicates), rejected, failed; completion reports that the scan finished and notes any rejected
+  or failed replays. There is no derived success total: duplicates and resumed work also count as processed; collapsible lists of rejected replays (file — reason) and failed uploads. The progress panel stays
   mounted across status updates, preserving the bar animation and expanded lists. `no-folders` and
   `disk-full` are states, not errors: `no-folders` shows the folder editor ("No replays found: add a folder…"), `disk-full`
   shows free vs needed space in human units (`human_bytes`, binary multiples labelled KB/MB/GB) and a "Rescan now" button;

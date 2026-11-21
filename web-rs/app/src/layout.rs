@@ -242,9 +242,25 @@ pub fn Layout() -> impl IntoView {
 
         let key_cb =
             wasm_bindgen::closure::Closure::wrap(Box::new(move |ev: web_sys::KeyboardEvent| {
-                if ev.key() == "Escape" {
-                    nav_open.set(None);
+                if ev.key() != "Escape" || nav_open.get_untracked().is_none() {
+                    return;
                 }
+                // The key event originates at the focused element. Only return focus from
+                // the open disclosure, not from another trigger or the rest of the page.
+                let trigger = ev
+                    .target()
+                    .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+                    .and_then(|t| t.closest(".ds-navgroup").ok().flatten())
+                    .and_then(|g| {
+                        g.query_selector("button[aria-expanded=true]")
+                            .ok()
+                            .flatten()
+                    })
+                    .and_then(|t| t.dyn_into::<web_sys::HtmlElement>().ok());
+                if let Some(trigger) = trigger {
+                    let _ = trigger.focus();
+                }
+                nav_open.set(None);
             })
                 as Box<dyn FnMut(web_sys::KeyboardEvent)>);
         let _ =
@@ -349,7 +365,6 @@ fn NavGroup(
             <button
                 type="button"
                 class=move || if active() { "on" } else { "" }
-                aria-haspopup="true"
                 aria-expanded=move || is_open().to_string()
                 aria-controls=menu_id.clone()
                 on:click=move |_| open.update(|o| *o = if *o == Some(label) { None } else { Some(label) })

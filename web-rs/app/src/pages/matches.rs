@@ -222,28 +222,34 @@ pub fn Matches() -> impl IntoView {
                         {MODES.iter().map(|&(label, m)| {
                             let set = move |k: &'static str, v: String| set_param_url.with_value(|f| f(k, v));
                             view! {
-                                <span class=move || pill(filter.with(|f| f.mode == m)) on:click=move |_| set("mode", m.map(|x| x.to_string()).unwrap_or_default())>{label}</span>
+                                <button type="button" class=move || pill(filter.with(|f| f.mode == m))
+                                    aria-pressed=move || filter.with(|f| f.mode == m).to_string()
+                                    on:click=move |_| set("mode", m.map(|x| x.to_string()).unwrap_or_default())>{label}</button>
                             }
                         }).collect_view()}
                         <span class="ds-sep"></span>
                         {[("", "W+L"), ("win", "Wins"), ("loss", "Losses")].into_iter().map(|(r, label)| {
                             let set = move |k: &'static str, v: String| set_param_url.with_value(|f| f(k, v));
-                            view! { <span class=move || pill(filter.with(|f| f.result == r)) on:click=move |_| set("result", r.to_string())>{label}</span> }
+                            view! { <button type="button" class=move || pill(filter.with(|f| f.result == r))
+                                aria-pressed=move || filter.with(|f| f.result == r).to_string()
+                                on:click=move |_| set("result", r.to_string())>{label}</button> }
                         }).collect_view()}
                         {
                             let set = move |k: &'static str, v: String| set_param_url.with_value(|f| f(k, v));
-                            view! { <span class=move || pill(filter.with(|f| f.mvp)) on:click=move |_| set("mvp", if filter.with_untracked(|f| f.mvp) { String::new() } else { "true".into() })>"👑 MVP"</span> }
+                            view! { <button type="button" class=move || pill(filter.with(|f| f.mvp))
+                                aria-pressed=move || filter.with(|f| f.mvp).to_string()
+                                on:click=move |_| set("mvp", if filter.with_untracked(|f| f.mvp) { String::new() } else { "true".into() })>"👑 MVP"</button> }
                         }
                     </div>
                     <div class="ds-pills">
                         {
                             let set = move |k: &'static str, v: String| set_param_url.with_value(|f| f(k, v));
-                            view! { <SearchSelect id="dl-map" style="width: 170px" placeholder="search map…" options=map_options
+                            view! { <SearchSelect id="dl-map" clear_label="Clear map filter" style="width: 170px" placeholder="search map…" options=map_options
                                 value=Signal::derive(move || filter.with(|f| f.map.clone())) on_change=move |v| set("map", v) /> }
                         }
                         {
                             let set = move |k: &'static str, v: String| set_param_url.with_value(|f| f(k, v));
-                            view! { <SearchSelect id="dl-hero" style="width: 170px" placeholder="my hero…" options=hero_options
+                            view! { <SearchSelect id="dl-hero" clear_label="Clear my hero filter" style="width: 170px" placeholder="my hero…" options=hero_options
                                 value=Signal::derive(move || filter.with(|f| f.my_hero.clone())) on_change=move |v| set("my_hero", v) /> }
                         }
                         {
@@ -270,7 +276,7 @@ pub fn Matches() -> impl IntoView {
                             view! { <label>"to "<input type="date" class="ds-input" prop:value=move || filter.with(|f| f.to.clone()) on:input=move |e| set("to", event_target_value(&e)) /></label> }
                         }
                         <Show when=active>
-                            <span class="ds-pill" on:click=move |_| reset()>"✕ reset"</span>
+                            <button type="button" class="ds-pill" on:click=move |_| reset()>"✕ reset"</button>
                         </Show>
                         <span style="margin-left: auto; display: flex; gap: 6px">
                             <a href=move || format!("/api/matches.csv?{}", export_q("5000")) class="ds-btn">"CSV ↓"</a>
@@ -282,7 +288,7 @@ pub fn Matches() -> impl IntoView {
                         <div class="ds-pills">
                             {
                                 let set = move |k: &'static str, v: String| set_param_url.with_value(|f| f(k, v));
-                                view! { <SearchSelect id="dl-anyhero" style="width: 190px" placeholder="any player's hero…" options=hero_options
+                                view! { <SearchSelect id="dl-anyhero" clear_label="Clear any player’s hero filter" style="width: 190px" placeholder="any player's hero…" options=hero_options
                                     value=Signal::derive(move || filter.with(|f| f.hero.clone())) on_change=move |v| set("hero", v) /> }
                             }
                             <select class="ds-input" aria-label="stat" on:change=move |e| {

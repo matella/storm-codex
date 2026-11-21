@@ -13,7 +13,8 @@ Front-end (`web-rs/`, needs `rustup target add wasm32-unknown-unknown` and `trun
 (`/cast/overlay`, `/draft/overlay`, `/ticker`, `/widget`, `/queue` for the OBS sources), exactly as in production. The server
 reads the pages at each request, so a rebuild needs no restart.
 
-**Production:** the Docker image builds the three bundles (stage `web`, pinned Trunk), then runs
+**Production:** the Docker image builds the three bundles (stage `web`, pinned Trunk), copying the
+existing `desktop/icons/32x32.png` into the build stage for the app favicon, then runs
 `node scripts/precompress-web.mjs` (with the stage's `dist` path) to make Brotli quality 11 and gzip
 level 9 siblings next to top-level JS, CSS and WASM. Node is build-only; the image sets `WEB_DIR=/app/web`
 and ships both representations and originals. Keep them together from the same Trunk build. React was removed after

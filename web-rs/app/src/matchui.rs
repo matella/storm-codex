@@ -92,22 +92,26 @@ pub fn SearchSelect(
     placeholder: &'static str,
     #[prop(into)] style: String,
     id: &'static str,
+    clear_label: &'static str,
 ) -> impl IntoView {
+    let input_ref = NodeRef::<leptos::html::Input>::new();
     let pad = move || {
         if value.with(String::is_empty) {
             String::new()
         } else {
-            "; padding-right: 20px".to_string()
+            "; padding-right: 28px".to_string()
         }
     };
     view! {
         <span style="position: relative; display: inline-flex; align-items: center">
-            <input list=id class="ds-input" prop:value=move || value.get() placeholder=placeholder
+            <input node_ref=input_ref list=id class="ds-input" prop:value=move || value.get() placeholder=placeholder
                 style=move || format!("{style}{}", pad())
                 on:input=move |e| on_change(event_target_value(&e)) />
             <Show when=move || !value.with(String::is_empty)>
-                <span on:click=move |_| on_change(String::new()) title="clear"
-                    style="position: absolute; right: 6px; cursor: pointer; color: var(--text-2); font-size: 11px; line-height: 1">"✕"</span>
+                <button type="button" aria-label=clear_label title=clear_label on:click=move |_| {
+                    if let Some(input) = input_ref.get() { let _ = input.focus(); }
+                    on_change(String::new());
+                } style="position: absolute; right: 4px; cursor: pointer; background: none; border: 0; padding: 4px; color: var(--text-2); font-size: 11px; line-height: 1">"✕"</button>
             </Show>
             <datalist id=id>
                 {move || options.get().into_iter().map(|o| view! { <option value=o></option> }).collect_view()}
