@@ -136,6 +136,7 @@ pub fn Layout() -> impl IntoView {
     provide_context(bus);
     let online = RwSignal::new(false);
     let flash = RwSignal::new(None::<String>);
+    let flash_generation = RwSignal::new(0u32);
     let new_patch = RwSignal::new(false);
     let tour = RwSignal::new(false);
 
@@ -158,16 +159,12 @@ pub fn Layout() -> impl IntoView {
             new_patch.set(true);
         }
         if let Some(text) = e.flash {
-            flash.set(Some(text.clone()));
-            // Each flash gets its own 6s window from when *it* was shown. A bulk import can fire
-            // many match.parsed events within seconds of each other; without this guard, every
-            // event's timer would unconditionally clear whatever flash is on screen at the time
-            // it fires -- including a newer, unrelated message that just replaced this one -- so
-            // the toast kept flickering in and out during an import, reflowing <main> and
-            // scrolling the page on every toggle. Only clear if this timer's own message is still
-            // the one showing.
+            // Identical messages still have distinct lifetimes (e.g. replays on the same map).
+            let generation = flash_generation.get_untracked().wrapping_add(1);
+            flash_generation.set(generation);
+            flash.set(Some(text));
             net::after_ms(6000, move || {
-                if flash.get_untracked().as_deref() == Some(text.as_str()) {
+                if flash_generation.get_untracked() == generation {
                     flash.set(None);
                 }
             });

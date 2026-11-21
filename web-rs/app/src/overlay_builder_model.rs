@@ -193,7 +193,7 @@ mod tests {
     }
 
     #[test]
-    fn save_uses_layer_order_without_sending_client_keys() {
+    fn save_uses_layer_order_without_sending_client_keys() -> Result<(), serde_json::Error> {
         let mut draft = Draft::default();
         assert!(draft.add("draft-1".into(), WidgetType::Goal, 0, 0));
         assert!(draft.add("draft-2".into(), WidgetType::Ticker, 0, 0));
@@ -206,9 +206,10 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["draft-2", "draft-1"]
         );
-        let payload = serde_json::to_value(draft.payload()).unwrap();
+        let payload = serde_json::to_value(draft.payload())?;
         assert_eq!(payload["widgets"][1]["z_order"], 1);
         assert!(payload["widgets"][1].get("id").is_none());
+        Ok(())
     }
 
     #[test]

@@ -75,6 +75,23 @@ fn App() -> impl IntoView {
 }
 
 fn main() {
+    #[cfg(target_arch = "wasm32")]
+    std::panic::set_hook(Box::new(|info| {
+        // A panic payload can contain user data. Report only the source location, locally.
+        let message = match info.location() {
+            Some(location) => {
+                let file = location.file().rsplit(['/', '\\']).next().unwrap_or("");
+                format!(
+                    "Storm Codex WASM panic at {file}:{}:{}",
+                    location.line(),
+                    location.column()
+                )
+            }
+            None => "Storm Codex WASM panic (location unavailable)".to_string(),
+        };
+        web_sys::console::error_1(&message.into());
+    }));
+
     // served at `/v2/...` (next to React) or at the root (after the switch): decided by the page that was loaded
     storm_web_core::route::init_base(&storm_web_core::net::pathname());
     let root = leptos::prelude::document()

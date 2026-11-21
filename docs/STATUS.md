@@ -1,5 +1,27 @@
 # STATUS — read first, update last
 
+## Web production hardening (2026-11-21)
+
+The app installs a release WASM panic hook before routing and mounting. It logs the source
+filename, line and column to the local console without the panic payload or telemetry. In a
+throwaway Trunk release build, an induced panic produced only an `unreachable` trap before the
+change and also logged `Storm Codex WASM panic at main.rs:95:5` after it, with no payload. The
+normal release build has no panic trigger and measured **1,097,393 bytes Brotli** (limit 1,250,000).
+
+Live toast expiries now compare event generations, not display text. The Chromium regression
+failed on `6e0a0c0` when the first same-map timer expired, then passed and confirmed the replacement
+lasts its full six seconds. Real clicks with a mocked Tauri bridge cover version, pending/current,
+check rejection, ready/restart, install rejection and retry; without a bridge the banner is absent.
+The overlay-builder serialization test still checks the same payload and now returns errors instead
+of unwrapping; WASM workspace `--all-targets` Clippy failed at the old unwrap and now passes.
+
+Checks: native workspace Clippy and tests (isolated PostgreSQL), web core Clippy/tests, app model
+library Clippy/tests, WASM workspace all-targets Clippy, and release Chromium `flash-flicker`,
+`manual-update`, `nav-click` and `overlay-builder` passed. Web workspace rustfmt reports the same
+two pre-existing view-transition formatting differences as `6e0a0c0`; left unchanged. No Windows
+WebView2/installer or OBS run. Follow-up: the existing updater logs check/download errors and can
+return `none` for them, which the manual UI displays as "You're up to date." No backend change here.
+
 ## Manual "check for updates" + version display (2026-11-21)
 
 Two new desktop Tauri commands: `app_version` (the running build's `package_info().version`)
