@@ -195,7 +195,7 @@ pub async fn records(State(s): State<AppState>, Query(q): Query<RecordsQuery>) -
     let limit = q.limit.unwrap_or(5).clamp(1, 20) as usize;
     let corpus = cache::corpus(&s.db).await.map_err(db_err)?;
     let ops = operator_names(&s.db).await.map_err(db_err)?;
-    let toons = crate::standalone::operator_toons(&s);
+    let toons = crate::standalone::operator_toons(&s).await;
     Ok(Json(
         json!({ "stats": top_records(&corpus, &ops, &toons, &q, limit) }),
     ))
@@ -287,7 +287,7 @@ pub async fn early_leads(State(s): State<AppState>, Query(q): Query<AggQuery>) -
     let (from, to) = (date(&q.from)?, date(&q.to)?);
     let corpus = cache::corpus(&s.db).await.map_err(db_err)?;
     let ops = operator_names(&s.db).await.map_err(db_err)?;
-    let toons = crate::standalone::operator_toons(&s);
+    let toons = crate::standalone::operator_toons(&s).await;
     let account = q.account.as_deref().map(str::to_lowercase);
     let restrict = q.mine || account.is_some();
     let games: Vec<LeadGame> = corpus
@@ -551,7 +551,7 @@ async fn session_games(
     account: Option<&str>,
 ) -> Result<Vec<super::session::MyGame>, Err> {
     let ops = operator_names(&s.db).await.map_err(db_err)?;
-    let toons = crate::standalone::operator_toons(s);
+    let toons = crate::standalone::operator_toons(s).await;
     let who = super::session::Perspective {
         ops: &ops,
         toons: &toons,

@@ -1350,7 +1350,7 @@ async fn folder_identity_follows_completed_live_replay_and_restart() {
     assert_eq!(lookup(before.clone(), &second_folder)["name"], "Second");
     assert_eq!(
         lookup(before, &flat),
-        json!({"folder": flat, "toon": null, "name": null, "aliases": []})
+        json!({"folder": flat, "toon": null, "name": null, "aliases": [], "confirmed": false})
     );
 
     std::fs::copy(&fixture, live_folder.join("live.StormReplay")).unwrap();
@@ -1426,4 +1426,101 @@ async fn folder_identity_follows_completed_live_replay_and_restart() {
     .await;
     server.await.unwrap().unwrap();
     crate::refdata::tests::drop_db(db, &db_name).await;
+}
+
+// ── Confirmed identity (docs/specs/2026-11-21-standalone-confirmed-identity.md) ─────────────
+
+/// Confirm → survives the folder being dropped from the effective list → unconfirm removes it;
+/// both endpoints are admin-gated like `PUT /api/admin/settings`; an empty toon is rejected.
+#[tokio::test]
+async fn confirmed_identity_persists_is_admin_gated_and_rejects_an_empty_toon() {
+    let tmp = tempfile::tempdir().unwrap();
+    let Some(mut state) = crate::api_tests::test_state(Some("secret")).await else {
+        return;
+    };
+    let mut cfg = (*state.cfg).clone();
+    cfg.standalone = true;
+    cfg.archive_dir = tmp.path().join("archive");
+    std::fs::create_dir_all(&cfg.archive_dir).unwrap();
+    let name = format!("test-standalone-{}", uuid::Uuid::new_v4());
+    state.standalone = Some(Arc::new(
+        StandaloneState::new(&cfg)
+            .with_detector(Vec::new)
+            .with_token_name(name)
+            .without_upkeep(),
+    ));
+    state.cfg = Arc::new(cfg);
+
+    // A numeric id unique to this run: `confirmed_identity.toon` is a table shared by every test
+    // run against the same database.
+    let id = SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos()
+        % 1_000_000_000;
+    let toon = format!("1-Hero-1-{id}");
+    let folder = tmp
+        .path()
+        .join("Heroes of the Storm")
+        .join("Accounts")
+        .join("1")
+        .join(&toon)
+        .join("Replays")
+        .join("Multiplayer");
+    state.standalone.as_ref().unwrap().set_folders(&[folder]);
+    let router = app(&state);
+    let body = serde_json::json!({ "toon": toon }).to_string();
+
+    // unauthenticated confirm is rejected
+    let req = Request::post("/api/admin/identity/confirm")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(body.clone()))
+        .unwrap();
+    assert_eq!(send(&router, req).await.0, StatusCode::UNAUTHORIZED);
+
+    // an empty toon is rejected (404), even with a valid token
+    let req = Request::post("/api/admin/identity/confirm")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::AUTHORIZATION, "Bearer secret")
+        .body(Body::from(serde_json::json!({ "toon": "  " }).to_string()))
+        .unwrap();
+    assert_eq!(send(&router, req).await.0, StatusCode::NOT_FOUND);
+
+    // confirm, authenticated
+    let req = Request::post("/api/admin/identity/confirm")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::AUTHORIZATION, "Bearer secret")
+        .body(Body::from(body))
+        .unwrap();
+    assert_eq!(send(&router, req).await.0, StatusCode::OK);
+    assert!(crate::standalone::operator_toons(&state)
+        .await
+        .contains(&toon));
+
+    // dropping the folder from the effective list does not drop the confirmed toon
+    state.standalone.as_ref().unwrap().set_folders(&[]);
+    assert!(crate::standalone::operator_toons(&state)
+        .await
+        .contains(&toon));
+
+    // unconfirm, unauthenticated is rejected
+    let path = format!("/api/admin/identity/confirm/{toon}");
+    let req = Request::delete(&path).body(Body::empty()).unwrap();
+    assert_eq!(send(&router, req).await.0, StatusCode::UNAUTHORIZED);
+
+    // unconfirm, authenticated
+    let req = Request::delete(&path)
+        .header(header::AUTHORIZATION, "Bearer secret")
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(send(&router, req).await.0, StatusCode::OK);
+    assert!(!crate::standalone::operator_toons(&state)
+        .await
+        .contains(&toon));
+
+    sqlx::query("DELETE FROM confirmed_identity WHERE toon = $1")
+        .bind(&toon)
+        .execute(&state.db)
+        .await
+        .unwrap();
 }

@@ -268,7 +268,7 @@ pub async fn progress(State(s): State<AppState>) -> (StatusCode, Json<Progress>)
     )
     .bind(start)
     .bind(end)
-    .bind(crate::standalone::operator_toons(&s))
+    .bind(crate::standalone::operator_toons(&s).await)
     .fetch_one(&s.db)
     .await;
     let (wins_today, games_today) = match tallies {

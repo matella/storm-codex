@@ -1,5 +1,41 @@
 # STATUS — read first, update last
 
+## Standalone confirmed identity (2026-11-21)
+
+Added a persisted "confirmed" account source of "me" alongside live replay-folder detection and
+manual names (`docs/specs/2026-11-21-standalone-confirmed-identity.md`). Migration 0022 adds
+`confirmed_identity(toon, confirmed_at)`. `crate::standalone::operator_toons` is now `async` and
+unions the live folders' toons with every persisted confirmed toon (sorted, deduplicated); all 14
+call sites (`goal.rs`, `insights/api.rs` x3, `lobby/api.rs` x2, `manage.rs`, `read.rs` x7) await it
+mechanically, no other behaviour change. New admin-gated standalone routes `POST
+/api/admin/identity/confirm` and `DELETE /api/admin/identity/confirm/{toon}` (same gating as `PUT
+/api/admin/settings`); `GET /api/standalone/identity` now also reports `confirmed` per folder row.
+The Welcome page's `FolderIdentities` component shows an "Add to My Identity" / "Added to My
+Identity ✓" + "Remove" toggle per detected toon, with an optimistic update that reverts on a
+non-2xx response.
+
+Evidence: 3 native unit tests on the pure union/dedup helper, 1 new server integration test
+through `crate::api_tests`/`standalone::tests` (confirm survives the folder being dropped, admin
+gating on both routes, an empty toon is rejected with 404), and a new Playwright regression
+(`web-rs/app/tests/confirmed-identity.cjs`) covering the toggle, its persistence across a reload,
+and the 401 revert — alongside the existing `nav-click`, `flash-flicker`, `manual-update`,
+`production-ui` and `overlay-builder` regressions.
+
+Verification (`storm-dev:latest`, disposable PostgreSQL 17): `cargo fmt --all -- --check` and
+`cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo test --workspace
+--no-fail-fast` **572 passed, 0 failed, 11 ignored** (includes the new native union tests and the
+new `standalone::tests` integration test). `web-rs`: native clippy clean; WASM clippy
+(`--target wasm32-unknown-unknown --workspace -- -D warnings`) clean; `cargo test` **201 passed, 0
+failed**; `trunk build --release` succeeded for `overlay`, `sources` and `app`. Bundle sizes:
+overlay **218,047 B gzip**, sources **251,563 B gzip** (cap 300,000 each, unaffected), app
+**1,101,416 B Brotli** (cap 1,250,000). `web-rs` `cargo fmt --all -- --check` still reports only
+the pre-existing, unrelated `layout.rs` view-transition formatting difference noted in earlier
+STATUS entries. Playwright: the new `confirmed-identity.cjs` passed, alongside the existing
+`nav-click`, `flash-flicker`, `manual-update` and `overlay-builder` regressions (all re-run and
+green); `production-ui.cjs` was not run (it needs a disposable standalone server seeded with the
+four specific replay fixtures, not exercised in this pass). `scripts/check-migrations.sh
+origin/main` confirms no existing migration was touched.
+
 ## Production audit review follow-up (2026-11-21)
 
 Stats and Tools close when focus leaves their group without moving the new focus; Escape still

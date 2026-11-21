@@ -15,8 +15,8 @@
 
 use std::path::PathBuf;
 
-use axum::extract::{DefaultBodyLimit, Request, State};
-use axum::http::{header, StatusCode};
+use axum::extract::{DefaultBodyLimit, Path, Request, State};
+use axum::http::{header, HeaderMap, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
@@ -36,6 +36,11 @@ pub fn router() -> Router<AppState> {
         )
         .route("/api/standalone/rescan", post(rescan))
         .route("/api/standalone/shutdown", post(shutdown))
+        .route("/api/admin/identity/confirm", post(confirm_identity))
+        .route(
+            "/api/admin/identity/confirm/{toon}",
+            axum::routing::delete(unconfirm_identity),
+        )
 }
 
 pub(crate) fn error(code: StatusCode, message: String) -> Response {
@@ -128,6 +133,71 @@ async fn identity(State(state): State<AppState>) -> Response {
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "could not read replay folder identity".into(),
+            )
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct ConfirmBody {
+    toon: String,
+}
+
+/// `POST /api/admin/identity/confirm` (admin) — adds `toon` to the persisted confirmed set
+/// (idempotent). `404` if `toon` is empty; no other validation (the server only ever sees toons
+/// it itself produced and displayed).
+async fn confirm_identity(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<ConfirmBody>,
+) -> Response {
+    if state.standalone.is_none() {
+        return not_found();
+    }
+    if !crate::manage::is_admin(&headers, &state) {
+        return error(StatusCode::UNAUTHORIZED, "admin token requis".into());
+    }
+    let toon = body.toon.trim();
+    if toon.is_empty() {
+        return not_found();
+    }
+    match super::identity::confirm(&state.db, toon).await {
+        Ok(()) => StatusCode::OK.into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, "confirming an identity");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "could not confirm the identity".into(),
+            )
+        }
+    }
+}
+
+/// `DELETE /api/admin/identity/confirm/{toon}` (admin) — removes `toon` from the persisted
+/// confirmed set (idempotent: removing an unconfirmed toon stays a success). `404` if `toon` is
+/// empty.
+async fn unconfirm_identity(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(toon): Path<String>,
+) -> Response {
+    if state.standalone.is_none() {
+        return not_found();
+    }
+    if !crate::manage::is_admin(&headers, &state) {
+        return error(StatusCode::UNAUTHORIZED, "admin token requis".into());
+    }
+    let toon = toon.trim();
+    if toon.is_empty() {
+        return not_found();
+    }
+    match super::identity::unconfirm(&state.db, toon).await {
+        Ok(()) => StatusCode::OK.into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, "unconfirming an identity");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "could not unconfirm the identity".into(),
             )
         }
     }

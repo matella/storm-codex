@@ -169,17 +169,102 @@ pub fn use_account_options() -> Memo<Vec<(String, String)>> {
 #[component]
 pub fn FolderIdentities() -> impl IntoView {
     let folders = expect_context::<Operator>().folders;
+    let pending = RwSignal::new(None::<String>);
+    let errors = RwSignal::new(std::collections::HashMap::<String, String>::new());
+
+    let set_confirmed = move |toon: String, confirmed: bool| {
+        folders.update(|fs| {
+            for f in fs
+                .iter_mut()
+                .filter(|f| f.toon.as_deref() == Some(toon.as_str()))
+            {
+                f.confirmed = confirmed;
+            }
+        });
+    };
+
+    let toggle = move |toon: String, currently_confirmed: bool| {
+        if pending.get_untracked().is_some() {
+            return;
+        }
+        pending.set(Some(toon.clone()));
+        errors.update(|e| {
+            e.remove(&toon);
+        });
+        set_confirmed(toon.clone(), !currently_confirmed);
+        spawn_local(async move {
+            let result = if currently_confirmed {
+                net::write(
+                    "DELETE",
+                    &format!(
+                        "/api/admin/identity/confirm/{}",
+                        storm_web_core::route::uri_component(&toon)
+                    ),
+                    None,
+                    None,
+                )
+                .await
+            } else {
+                let body = serde_json::json!({ "toon": toon }).to_string();
+                net::write("POST", "/api/admin/identity/confirm", Some(body), None).await
+            };
+            match result {
+                Ok((s, _)) if (200..300).contains(&s) => {}
+                Ok((s, _)) => {
+                    set_confirmed(toon.clone(), currently_confirmed);
+                    errors.update(|e| {
+                        e.insert(toon.clone(), format!("Could not save (HTTP {s})."));
+                    });
+                }
+                Err(_) => {
+                    set_confirmed(toon.clone(), currently_confirmed);
+                    errors.update(|e| {
+                        e.insert(
+                            toon.clone(),
+                            "Could not save: the local server did not answer.".into(),
+                        );
+                    });
+                }
+            }
+            pending.set(None);
+        });
+    };
+
     view! {
         <div class="sa-sub">"Automatically detected by replay folder"</div>
         {move || folders.with(|folders| {
             if folders.is_empty() {
                 return view! { <div class="sa-none">"No folder identities available yet."</div> }.into_any();
             }
-            folders.iter().map(|f| view! {
-                <div class="sa-folder">
-                    <span class="mono">{f.folder.clone()}</span>
-                    <span>{f.name.clone().unwrap_or_else(|| "Owner not detected".into())}</span>
-                </div>
+            folders.iter().map(|f| {
+                let toon = f.toon.clone();
+                let confirmed = f.confirmed;
+                let error = toon.as_ref().and_then(|t| errors.with(|e| e.get(t).cloned()));
+                view! {
+                    <div class="sa-folder">
+                        <span class="mono">{f.folder.clone()}</span>
+                        <span>{f.name.clone().unwrap_or_else(|| "Owner not detected".into())}</span>
+                        {toon.map(|t| {
+                            let busy_toon = t.clone();
+                            let click_toon = t.clone();
+                            view! {
+                                <span class="sa-identity-toggle">
+                                    {if confirmed {
+                                        view! { <span class="sa-ok">"Added to My Identity ✓"</span> }.into_any()
+                                    } else {
+                                        ().into_any()
+                                    }}
+                                    <button class="ds-btn"
+                                        disabled=move || pending.with(|p| p.as_deref() == Some(busy_toon.as_str()))
+                                        on:click=move |_| toggle(click_toon.clone(), confirmed)>
+                                        {if confirmed { "Remove" } else { "Add to My Identity" }}
+                                    </button>
+                                </span>
+                            }
+                        })}
+                        {error.map(|e| view! { <span class="sa-err">{e}</span> })}
+                    </div>
+                }
             }).collect_view().into_any()
         })}
     }

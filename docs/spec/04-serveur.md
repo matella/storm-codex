@@ -142,10 +142,12 @@ awaited for at most 10 s (then aborted) before the HTTP server drains and `run()
 | Route | Answer |
 |---|---|
 | `GET /api/standalone/status` | `{phase, folders, extraFolders, total, done, duplicates, rejected: [{file, reason}], failed: [file], freeBytes, neededBytes, dataDir, version, reprocessTotal, reprocessDone}` — `phase` ∈ `seeding`, `importing`, `ready`, `no-folders`, `disk-full`, `error`; `folders` = effective folders (detected + replay folders found under each extra); `extraFolders` = the extra folders exactly as saved (the raw list `PUT /folders` replaces, loaded from `app_settings` before the server listens — so already right during `seeding` — and updated on each `PUT`; a refused `PUT` (400) changes nothing; `[]` when none) — clients edit this list, never `folders`; `freeBytes`/`neededBytes` `null` before the first disk gate; `dataDir` = parent of `ARCHIVE_DIR`; `version` = server crate version; `reprocessTotal` / `reprocessDone` = background re-process after a parser bump (step 1) |
-| `GET /api/standalone/identity` | `[{folder, toon, name, aliases}]` in effective-folder order. Unresolved folders have `toon: null`, `name: null`, and `aliases: []`. Read-only; never changes manual names. |
-| `PUT /api/standalone/folders` | body `{folders: [path]}` replaces the extra folders (send `extraFolders` ± one path). Each must be an existing plain local directory (no UNC, device or verbatim path; saved entries failing that rule are dropped on load, so a restored backup cannot point the watcher at a share), else **400** `{error: "not an existing folder: …"}`; more than 64 entries → **400** `{error: "too many folders …"}`, a body over 64 KiB → **413**; only directory listings are read. Saved and queued, then the worker applies the resolved folders and runs a scan; answers the current status with the newly saved `extraFolders`, without advancing the phase itself. If the queue is closed, **503** `{error: …}`; the saved list is kept for restart |
+| `GET /api/standalone/identity` | `[{folder, toon, name, aliases, confirmed}]` in effective-folder order. Unresolved folders have `toon: null`, `name: null`, and `aliases: []`; `confirmed` is `true` when the folder's toon is in the persisted confirmed set (below). Read-only; never changes manual names. |
+| `PUT /api/standalone/folders` | body `{folders: [path]}` replaces the extra folders (send `extraFolders` ± one path). Each must be an existing plain local directory (no UNC, device or verbatim path; saved entries failing that rule are dropped on load, so a restored backup cannot point the watcher at a share), else **400** `{error: "not an existing folder: …"}`; more than 64 entries → **400** `{error: "too many folders …"}`, a body over 64 KiB → **413**; only directory listings are read. Saved
 | `POST /api/standalone/rescan` | **202**; re-detects the folders (a HotS replay folder created since, e.g. after the first game or for a new account, is picked up and watched), then checks for pending work. **503** `{error: …}` if the worker queue is closed |
 | `POST /api/standalone/shutdown` | **202**; same graceful shutdown as Ctrl-C (used by the desktop shell before it stops Postgres) |
+| `POST /api/admin/identity/confirm` 🔒 | body `{toon}` — idempotent upsert into `confirmed_identity` (`docs/specs/2026-11-21-standalone-confirmed-identity.md`); admin-gated like `PUT /api/admin/settings`. **404** if `toon` is empty; no other validation (the server only ever sees toons it itself produced and displayed) |
+| `DELETE /api/admin/identity/confirm/{toon}` 🔒 | idempotent delete from `confirmed_identity`; same admin gating. **404** if `toon` is empty |
 
 The routes are unauthenticated (loopback-only server, single user, no `ADMIN_TOKEN`, so the
 whole API is in open mode). In standalone mode every request to **any** route (the whole API,
@@ -178,6 +180,16 @@ handles. `GET /api/standalone/identity` reads `players::names::name_history` for
 latest nonblank name by `matches.played_at` (undated last, equal last-seen time ties by name), with all
 nonblank historical aliases. Reads see committed projections, including after a no-op backfill,
 restart, or a live replay accepted before parsing completed; no identity state is written by imports.
+
+**Confirmed identity** (`docs/specs/2026-11-21-standalone-confirmed-identity.md`): a third,
+persisted source of "me" alongside live folder detection and manual names. Migration 0022 adds
+`confirmed_identity(toon TEXT PRIMARY KEY, confirmed_at TIMESTAMPTZ)`. `standalone::operator_toons`
+(`crate::standalone::operator_toons`, now `async`) is the sorted, deduplicated union of the live
+folders' toons and every row of `confirmed_identity` — a confirmed toon stays "me" even after its
+replay folder is removed or renamed. Saving is explicit per account (the Welcome page's "Add to My
+Identity" button, never automatic), so a shared PC's detected-but-unconfirmed accounts are not
+silently added. All call sites (`goal.rs`, `insights/api.rs`, `lobby/api.rs`, `manage.rs`,
+`read.rs`) await it; no behaviour change beyond the extra persisted toons.
 
 The app uses verified toons across renames plus separately saved manual `operator_names`. The old
 standalone heuristic and migration 0003 shared that setting with the manual editor, so neither old
