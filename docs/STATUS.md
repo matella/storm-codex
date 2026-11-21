@@ -1,5 +1,24 @@
 # STATUS — read first, update last
 
+## Production UI audit fixes (2026-11-21)
+
+Stats/Tools flyouts work with a pointer at 1440 and 390 px; Escape returns focus to the
+matching trigger only from inside its disclosure. Archive filters expose pressed state and
+support keyboard activation, reset and clearing. Match detail wraps its actions and Replay 2D
+controls at 390 px; both tabs measured 390 px rather than 518 px, and the PNG download worked.
+Welcome labels the scan count as processed (5/5, four real matches and one rejected replay in
+QA) and does not claim all replays were imported. All three font preloads and the existing
+Storm Codex favicon load from `/v2/app/` on root and `/v2/` page routes.
+
+Evidence: 17 RED → 17 GREEN checks in `web-rs/app/tests/production-ui.cjs` using release
+bundles, Chromium and the base-commit server with disposable PostgreSQL 17 (migration 21).
+`nav-click`, `flash-flicker`, `manual-update` and `overlay-builder` passed. Web native tests
+(198 core + 3 wire), native core and WASM workspace all-target Clippy, and all three release
+Trunk builds passed. App **1,097,922 B Brotli** (cap 1,250,000); overlay **218,047 B gzip** and
+sources **251,563 B gzip** (cap 300,000 each). Web rustfmt has the same two pre-existing
+view-transition differences as the base. No server-wide suite, production Docker image build,
+installed Windows/WebView2 or real OBS acceptance; optional polish not included.
+
 ## Web production hardening (2026-11-21)
 
 The app installs a release WASM panic hook before routing and mounting. It logs the source
