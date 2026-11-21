@@ -13,10 +13,11 @@ use storm_web_core::{
     net,
     route::app_href,
     standalone::{
-        autostart_args, autostart_error, backup_outcome, error_message, extras_with,
-        extras_without, parse_autostart, parse_update_status, poll_ms, redirects_to_welcome,
-        release_page_url, reloads_after, update_failed_message, BackupAction, BackupOutcome,
-        Status, StatusRequests, UpdateState, UpdateStatus, GET_AUTOSTART, SET_AUTOSTART,
+        autostart_args, autostart_error, backup_outcome, check_now_message, error_message,
+        extras_with, extras_without, parse_autostart, parse_update_status, poll_ms,
+        redirects_to_welcome, release_page_url, reloads_after, update_failed_message,
+        version_label, BackupAction, BackupOutcome, Status, StatusRequests, UpdateState,
+        UpdateStatus, GET_AUTOSTART, SET_AUTOSTART,
     },
 };
 
@@ -261,6 +262,7 @@ pub const CSS: &str = r#"
 .sa-privacy{margin:14px 0 0;font-weight:600}
 .sa-update{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 16px;background:rgba(93,202,165,.1);border-bottom:1px solid rgba(93,202,165,.35);font-size:13px}
 .sa-update-notes{flex-basis:100%;white-space:pre-line;margin:0;line-height:1.5}
+.sa-version{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 16px;border-bottom:1px solid var(--line);font-size:13px}
 "#;
 
 /// OBS browser-source URLs, built from the running origin (never a fixed port).
@@ -500,16 +502,23 @@ fn Backup() -> impl IntoView {
     })
 }
 
-/// "Restart to update" banner of the desktop shell: polls `update_status` every 60 s when `window.__TAURI__`
-/// exists; outside the shell it renders nothing and never polls. The button is disabled while `install_update`
-/// runs (one call per click sequence); a failure is shown inline and the button comes back.
+/// Version display and update controls of the desktop shell, rendered once, globally: always shows the running
+/// build's version (`app_version`, fetched once on mount) and, while no update is ready, a "Check for updates"
+/// button (`check_for_update_now`) with a brief busy state and an inline "You're up to date" confirmation when
+/// nothing was found. Once an update is ready it shows the existing "Restart to update" banner instead. Polls
+/// `update_status` every 60 s when `window.__TAURI__` exists; outside the shell it renders nothing and never
+/// polls or fetches.
 #[component]
 pub fn UpdateBanner() -> impl IntoView {
+    let shell = tauri_invoke().is_some();
     let update = RwSignal::new(UpdateStatus::default());
+    let version = RwSignal::new(None::<String>);
     let busy = RwSignal::new(false);
+    let checking = RwSignal::new(false);
     let failure = RwSignal::new(None::<String>);
+    let check_message = RwSignal::new(None::<String>);
     let show_notes = RwSignal::new(false);
-    if tauri_invoke().is_some() {
+    if shell {
         let check = move || {
             spawn_local(async move {
                 if let Ok(v) = invoke("update_status").await {
@@ -519,6 +528,11 @@ pub fn UpdateBanner() -> impl IntoView {
         };
         check();
         use_interval(60_000, check);
+        spawn_local(async move {
+            if let Ok(v) = invoke("app_version").await {
+                version.set(v.as_str().map(str::to_string));
+            }
+        });
     }
     let install = move |_| {
         if busy.get_untracked() {
@@ -534,9 +548,40 @@ pub fn UpdateBanner() -> impl IntoView {
             }
         })
     };
+    let check_now = move |_| {
+        if checking.get_untracked() {
+            return;
+        }
+        checking.set(true);
+        check_message.set(None);
+        failure.set(None);
+        spawn_local(async move {
+            match invoke("check_for_update_now").await {
+                Ok(v) => {
+                    let status = parse_update_status(&v);
+                    check_message.set(check_now_message(&status));
+                    update.set(status);
+                }
+                Err(reason) => failure.set(Some(update_failed_message(&reason))),
+            }
+            checking.set(false);
+        });
+    };
     view! {
+        <style>{CSS}</style>
+        <Show when=move || shell && update.with(|u| u.state != UpdateState::Ready)>
+            <div class="sa-version">
+                {move || version.get().and_then(|v| version_label(&v)).map(|l| view! {
+                    <span class="mono">"Storm Codex "{l}</span>
+                })}
+                <button class="ds-btn small" disabled=move || checking.get() on:click=check_now>
+                    {move || if checking.get() { "Checking…" } else { "Check for updates" }}
+                </button>
+                {move || check_message.get().map(|m| view! { <span class="sa-none">{m}</span> })}
+                {move || failure.get().map(|m| view! { <span class="sa-err">{m}</span> })}
+            </div>
+        </Show>
         <Show when=move || update.with(|u| u.state == UpdateState::Ready)>
-            <style>{CSS}</style>
             <div class="sa-update">
                 <span>{move || match update.with(|u| u.version.clone()) {
                     Some(v) => format!("Storm Codex {v} is ready to install."),

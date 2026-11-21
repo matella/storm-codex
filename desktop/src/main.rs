@@ -141,6 +141,8 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             commands::update_status,
+            commands::app_version,
+            commands::check_for_update_now,
             commands::install_update,
             commands::export_data,
             commands::import_data,

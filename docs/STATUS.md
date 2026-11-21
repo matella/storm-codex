@@ -1,5 +1,37 @@
 # STATUS — read first, update last
 
+## Manual "check for updates" + version display (2026-11-21)
+
+Two new desktop Tauri commands: `app_version` (the running build's `package_info().version`)
+and `check_for_update_now` (runs one `Updater::tick` cycle on a blocking task and returns the
+resulting `UpdateStatus`, same pattern as `install_update`'s `blocking()` helper). Both are
+registered in `command_names.rs`/`main.rs` alongside the existing commands.
+
+`web-rs/core/src/standalone.rs` gained two pure, unit-tested helpers: `version_label` (`v<ver>`,
+blank-safe) and `check_now_message` (an inline "You're up to date." only when the check result
+is `UpdateState::None`; `Downloading`/`Ready` show their own UI instead). `UpdateBanner` in
+`web-rs/app/src/standalone.rs` (rendered once, globally, in `layout.rs`) now always shows the
+running version plus a "Check for updates" button while no update is ready; the existing
+"Restart to update" banner takes over once one is. Still gated behind
+`tauri_invoke().is_some()`, so browsers and the box deployment render and poll nothing new.
+
+Checks: `cargo fmt --check` (root workspace) passed. `cargo clippy --workspace --all-targets -D
+warnings` (server workspace, unaffected) passed. `web-rs`: `cargo clippy --target
+wasm32-unknown-unknown --workspace -D warnings` (CI's exact command) passed; `cargo clippy
+--all-targets -D warnings` (native) passed for `storm-web-core` (201 tests, incl. 2 new:
+`version_label_formats_or_hides_blank_versions`, `check_now_message_only_reports_up_to_date`);
+`cargo test` passed (201 + 3 overlay-wire tests). `storm-web-app`'s own `--all-targets` clippy
+hits a pre-existing unrelated `unwrap()` in a test (`overlay_builder_model.rs:210`, reproduced
+on a fresh `origin/main` clone before this change) — out of scope here. `trunk build --release`
+for `web-rs/app` succeeded; app bundle 1,096,126 B Brotli (budget 1,250,000 B).
+
+Desktop: `cargo check` and `cargo clippy --all-targets -D warnings` both need GTK/WebKit dev
+packages installed in the Linux Docker image (not present by default; installed ad hoc for this
+session) — both then succeed, with the one pre-existing, unrelated `set_session_ending` dead-code
+warning that also reproduces on an unmodified clone (Windows-only session code, dead on Linux).
+No desktop Playwright/manual run; no Windows CI build; re-verified together with the nav-dropdown
++ now-playing removal (PR #72, already merged) on this integration branch.
+
 ## Top nav grouped into dropdowns by category (2026-11-21)
 
 Replaced the 14-item flat top bar with Session/Live/Admin as always-visible links plus two
