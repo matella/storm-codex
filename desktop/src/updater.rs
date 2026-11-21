@@ -1,4 +1,4 @@
-//! In-app updates: `None -> Downloading -> Ready(version)`.
+//! In-app updates: `None -> Checking -> Downloading -> Ready(version)`.
 //!
 //! At startup (once the window is up) and every 6 h the shell asks the update endpoint; an
 //! announced update is downloaded in the background (`Update::download`, signature checked)
@@ -65,13 +65,25 @@ pub trait UpdateSource: Send + Sync {
 }
 
 /// Version and notes of the update being handled.
+#[derive(Clone)]
 struct Announced {
     version: String,
     notes: Option<String>,
 }
 
+impl Announced {
+    fn status(&self, state: &'static str) -> UpdateStatus {
+        UpdateStatus {
+            state,
+            version: Some(self.version.clone()),
+            notes: self.notes.clone(),
+        }
+    }
+}
+
 enum Phase<P> {
     None,
+    Checking,
     Downloading(Announced),
     Ready {
         update: Announced,
@@ -101,6 +113,24 @@ pub enum InstallOutcome {
     Failed(String),
 }
 
+/// Safe to return over IPC: source errors are logged separately, never embedded here.
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+pub enum CheckError {
+    #[error("an update check is already in progress")]
+    Busy,
+    #[error("update check failed")]
+    CheckFailed,
+    #[error("update download failed")]
+    DownloadFailed,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum TickOutcome {
+    Status(UpdateStatus),
+    /// This tick made a new update ready; notify the tray.
+    Downloaded(UpdateStatus),
+}
+
 pub struct Updater<U: UpdateSource> {
     source: U,
     phase: Mutex<Phase<U::Pending>>,
@@ -121,37 +151,44 @@ impl<U: UpdateSource> Updater<U> {
     }
 
     pub fn status(&self) -> UpdateStatus {
-        let phase = self.lock();
-        let (state, update) = match &*phase {
-            Phase::None => return UpdateStatus::none(),
-            Phase::Downloading(a) => ("downloading", a),
+        match &*self.lock() {
+            Phase::None | Phase::Checking => UpdateStatus::none(),
+            Phase::Downloading(update) => update.status("downloading"),
             // Installing reads as ready: the banner button stays disabled meanwhile.
-            Phase::Ready { update, .. } | Phase::Installing(update) => ("ready", update),
-        };
-        UpdateStatus {
-            state,
-            version: Some(update.version.clone()),
-            notes: update.notes.clone(),
+            Phase::Ready { update, .. } | Phase::Installing(update) => update.status("ready"),
         }
     }
 
-    /// One check: `None -> Downloading -> Ready`. Returns the version when an update became
-    /// ready during this tick. Does nothing while an update is ready or installing. A failure
-    /// returns to `None` and is reported through `log`.
-    pub fn tick(&self, log: &dyn Fn(&str)) -> Option<String> {
-        if !matches!(*self.lock(), Phase::None) {
-            return None;
+    /// Run one cycle, or respond from the current phase without starting a second one.
+    /// Return the result of this attempt, not a later snapshot of the shared state.
+    pub fn tick(&self, log: &dyn Fn(&str)) -> Result<TickOutcome, CheckError> {
+        {
+            let mut phase = self.lock();
+            match &*phase {
+                Phase::None => *phase = Phase::Checking,
+                Phase::Checking => return Err(CheckError::Busy),
+                Phase::Downloading(update) => {
+                    return Ok(TickOutcome::Status(update.status("downloading")));
+                }
+                Phase::Ready { update, .. } | Phase::Installing(update) => {
+                    return Ok(TickOutcome::Status(update.status("ready")));
+                }
+            }
         }
         let info = match self.source.check() {
             Ok(Some(info)) => info,
-            Ok(None) => return None,
+            Ok(None) => {
+                *self.lock() = Phase::None;
+                return Ok(TickOutcome::Status(UpdateStatus::none()));
+            }
             Err(e) => {
                 log(&format!("update check failed: {e}"));
-                return None;
+                *self.lock() = Phase::None;
+                return Err(CheckError::CheckFailed);
             }
         };
-        let announced = || Announced {
-            version: info.version.clone(),
+        let announced = Announced {
+            version: info.version,
             notes: info
                 .notes
                 .as_deref()
@@ -159,25 +196,29 @@ impl<U: UpdateSource> Updater<U> {
                 .filter(|n| !n.is_empty())
                 .map(str::to_string),
         };
-        *self.lock() = Phase::Downloading(announced());
+        *self.lock() = Phase::Downloading(announced.clone());
         match self.source.download(&info.pending) {
             Ok(bytes) => {
                 log(&format!(
                     "update {} downloaded ({} bytes), ready to install",
-                    info.version,
+                    announced.version,
                     bytes.len()
                 ));
+                let status = announced.status("ready");
                 *self.lock() = Phase::Ready {
-                    update: announced(),
+                    update: announced,
                     pending: info.pending,
                     bytes,
                 };
-                Some(info.version)
+                Ok(TickOutcome::Downloaded(status))
             }
             Err(e) => {
-                log(&format!("update {} download failed: {e}", info.version));
+                log(&format!(
+                    "update {} download failed: {e}",
+                    announced.version
+                ));
                 *self.lock() = Phase::None;
-                None
+                Err(CheckError::DownloadFailed)
             }
         }
     }
@@ -276,10 +317,11 @@ mod tests {
         install: Vec<Result<(), String>>,
     }
 
-    /// A scripted source; `download` can be held until the test releases it.
+    /// A scripted source; the first check or the download can be held by the test.
     struct FakeSource {
         script: StdMutex<Script>,
         calls: Arc<StdMutex<Vec<String>>>,
+        hold_check: StdMutex<Option<(Sender<()>, Receiver<()>)>>,
         hold_download: Option<(Sender<()>, StdMutex<Receiver<()>>)>,
     }
 
@@ -288,6 +330,7 @@ mod tests {
             Self {
                 script: StdMutex::new(script),
                 calls: calls.clone(),
+                hold_check: StdMutex::new(None),
                 hold_download: None,
             }
         }
@@ -301,6 +344,11 @@ mod tests {
         fn check(&self) -> Result<Option<UpdateInfo<String>>, String> {
             self.call("check");
             let next = self.script.lock().expect("script").check.remove(0);
+            let gate = self.hold_check.lock().expect("check gate").take();
+            if let Some((entered, release)) = gate {
+                entered.send(()).expect("entered");
+                release.recv().expect("release");
+            }
             // `"<version>|<notes>"` announces notes with the version.
             next.map(|v| {
                 v.map(|spec| {
@@ -337,6 +385,66 @@ mod tests {
     fn no_log(_: &str) {}
 
     #[test]
+    fn a_manifest_check_in_flight_does_not_start_another_or_report_up_to_date() {
+        let calls = calls();
+        let (entered_tx, entered_rx) = channel();
+        let (release_tx, release_rx) = channel();
+        let mut source = FakeSource::new(
+            Script {
+                check: vec![Ok(None), Ok(None)],
+                ..Default::default()
+            },
+            &calls,
+        );
+        source.hold_check = StdMutex::new(Some((entered_tx, release_rx)));
+        let updater = Arc::new(Updater::new(source));
+        let ticker = {
+            let updater = updater.clone();
+            std::thread::spawn(move || updater.tick(&no_log))
+        };
+        entered_rx.recv().expect("manifest check started");
+        let status = updater.status();
+        let concurrent = updater.tick(&no_log);
+        release_tx.send(()).expect("release");
+        let finished = ticker.join().expect("join");
+
+        assert_eq!(status, UpdateStatus::none()); // polling retains the old payload
+        assert_eq!(*calls.lock().expect("calls"), ["check"]);
+        assert_eq!(concurrent, Err(CheckError::Busy));
+        assert_eq!(finished, Ok(TickOutcome::Status(UpdateStatus::none())));
+        assert_eq!(updater.tick(&no_log), finished);
+    }
+
+    #[test]
+    fn manual_check_rejects_check_and_download_failures_without_source_details() {
+        let updater = Updater::new(FakeSource::new(
+            Script {
+                check: vec![
+                    Err("private endpoint detail".into()),
+                    Ok(Some("0.2.0".into())),
+                    Ok(None),
+                ],
+                download: vec![Err("private download detail".into())],
+                ..Default::default()
+            },
+            &calls(),
+        ));
+        let check = updater.tick(&no_log).map_err(|e| e.to_string());
+        let download = updater.tick(&no_log).map_err(|e| e.to_string());
+        assert_eq!(
+            [check, download],
+            [
+                Err("update check failed".into()),
+                Err("update download failed".into())
+            ],
+        );
+        assert_eq!(
+            updater.tick(&no_log),
+            Ok(TickOutcome::Status(UpdateStatus::none()))
+        );
+    }
+
+    #[test]
     fn update_state_machine_none_to_downloading_to_ready() {
         let calls = calls();
         let (entered_tx, entered_rx) = channel();
@@ -357,26 +465,26 @@ mod tests {
             std::thread::spawn(move || updater.tick(&no_log))
         };
         entered_rx.recv().expect("download started");
-        assert_eq!(
-            updater.status(),
-            UpdateStatus {
-                state: "downloading",
-                version: Some("0.2.0".into()),
-                notes: None
-            }
-        );
+        let downloading = UpdateStatus {
+            state: "downloading",
+            version: Some("0.2.0".into()),
+            notes: None,
+        };
+        assert_eq!(updater.status(), downloading);
+        assert_eq!(updater.tick(&no_log), Ok(TickOutcome::Status(downloading)));
         release_tx.send(()).expect("release");
-        assert_eq!(ticker.join().expect("join"), Some("0.2.0".into()));
+        let ready = UpdateStatus {
+            state: "ready",
+            version: Some("0.2.0".into()),
+            notes: None,
+        };
         assert_eq!(
-            updater.status(),
-            UpdateStatus {
-                state: "ready",
-                version: Some("0.2.0".into()),
-                notes: None
-            }
+            ticker.join().expect("join"),
+            Ok(TickOutcome::Downloaded(ready.clone()))
         );
-        // While ready, later ticks do not check again.
-        assert_eq!(updater.tick(&no_log), None);
+        assert_eq!(updater.status(), ready);
+        // While ready, later ticks do not check again or notify the tray again.
+        assert_eq!(updater.tick(&no_log), Ok(TickOutcome::Status(ready)));
         assert_eq!(
             *calls.lock().expect("calls"),
             ["check", "download(pending-0.2.0)"]
@@ -400,7 +508,7 @@ mod tests {
             },
             &calls,
         ));
-        updater.tick(&no_log);
+        updater.tick(&no_log).expect("tick");
         let json = serde_json::to_value(updater.status()).expect("json");
         assert_eq!(
             json,
@@ -424,7 +532,7 @@ mod tests {
             },
             &calls,
         ));
-        updater.tick(&no_log);
+        updater.tick(&no_log).expect("tick");
         assert_eq!(updater.status().notes, None);
     }
 
@@ -446,12 +554,22 @@ mod tests {
         ));
         let lines = StdMutex::new(Vec::<String>::new());
         let log = |m: &str| lines.lock().expect("lines").push(m.to_string());
-        assert_eq!(updater.tick(&log), None);
+        assert_eq!(updater.tick(&log), Err(CheckError::CheckFailed));
         assert_eq!(updater.status().state, "none");
-        assert_eq!(updater.tick(&log), None);
+        assert_eq!(updater.tick(&log), Err(CheckError::DownloadFailed));
         assert_eq!(updater.status().state, "none");
-        assert_eq!(updater.tick(&log), None); // up to date: no log
-        assert_eq!(updater.tick(&log), Some("0.2.0".into()));
+        assert_eq!(
+            updater.tick(&log),
+            Ok(TickOutcome::Status(UpdateStatus::none()))
+        ); // up to date: no log
+        assert_eq!(
+            updater.tick(&log),
+            Ok(TickOutcome::Downloaded(UpdateStatus {
+                state: "ready",
+                version: Some("0.2.0".into()),
+                notes: None
+            }))
+        );
         assert_eq!(updater.status().state, "ready");
         let lines = lines.into_inner().expect("lines");
         assert_eq!(lines.len(), 3, "{lines:?}");
@@ -479,7 +597,7 @@ mod tests {
             updater.install(stop),
             InstallOutcome::Refused(Refused::NotReady)
         );
-        updater.tick(&no_log);
+        updater.tick(&no_log).expect("tick");
         assert_eq!(
             updater.install(|| {
                 *stopped.lock().expect("stopped") = true;
@@ -510,7 +628,7 @@ mod tests {
             },
             &calls,
         )));
-        updater.tick(&no_log);
+        updater.tick(&no_log).expect("tick");
         let order = calls.clone();
         let (in_stop_tx, in_stop_rx) = channel();
         let (go_tx, go_rx) = channel::<()>();
@@ -556,7 +674,7 @@ mod tests {
             },
             &calls,
         ));
-        updater.tick(&no_log);
+        updater.tick(&no_log).expect("tick");
         match updater.install(|| Ok(())) {
             InstallOutcome::Failed(msg) => {
                 assert!(msg.contains("0.2.0"), "{msg}");
@@ -573,7 +691,7 @@ mod tests {
             },
             &calls,
         ));
-        updater.tick(&no_log);
+        updater.tick(&no_log).expect("tick");
         assert!(matches!(
             updater.install(|| Err("Postgres did not stop".into())),
             InstallOutcome::Failed(m) if m.contains("Postgres did not stop")

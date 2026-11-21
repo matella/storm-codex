@@ -28,7 +28,7 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
 use crate::lifecycle::{Lifecycle, StopOutcome};
 use crate::supervise::{Stack, StopBudget};
-use crate::updater::{TauriSource, Updater};
+use crate::updater::{CheckError, TauriSource, TickOutcome, UpdateStatus, Updater};
 
 const MAIN: &str = "main";
 const LOADING: &str = "loading";
@@ -62,6 +62,19 @@ impl Shell {
             return;
         };
         log_to(dir, msg);
+    }
+
+    fn tick_updater(&self, updater: &Updater<TauriSource>) -> Result<UpdateStatus, CheckError> {
+        match updater.tick(&|m| self.log(m))? {
+            TickOutcome::Status(status) => Ok(status),
+            TickOutcome::Downloaded(status) => {
+                if let Some(item) = self.restart_item.get() {
+                    let _ = item.set_enabled(true);
+                }
+                self.log("update ready: tray item enabled");
+                Ok(status)
+            }
+        }
     }
 }
 
@@ -268,12 +281,8 @@ fn start_updater(app: &AppHandle, shell: &Arc<Shell>) {
     let spawned = std::thread::Builder::new()
         .name("updater".into())
         .spawn(move || loop {
-            if let Some(version) = updater.tick(&|m| shell.log(m)) {
-                shell.log(&format!("update {version} ready: tray item enabled"));
-                if let Some(item) = shell.restart_item.get() {
-                    let _ = item.set_enabled(true);
-                }
-            }
+            // Failures were logged by the updater, and a busy cycle needs no scheduled retry.
+            let _ = shell.tick_updater(&updater);
             std::thread::sleep(updater::CHECK_INTERVAL);
         });
     if let Err(e) = spawned {

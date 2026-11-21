@@ -19,6 +19,21 @@ sources **251,563 B gzip** (cap 300,000 each). Web rustfmt has the same two pre-
 view-transition differences as the base. No server-wide suite, production Docker image build,
 installed Windows/WebView2 or real OBS acceptance; optional polish not included.
 
+## Desktop updater check results (2026-11-21)
+
+Manual update checks now reject check/download failures with fixed messages instead of returning
+`none` and reporting "You're up to date." A manual and a scheduled attempt cannot both start a
+manifest check; a second attempt reports busy during the manifest request or `downloading` once
+an update is announced. The periodic status payload and six-hour schedule are unchanged. A
+successful download from either path enables the existing **Restart to update** tray item.
+
+Both new fake-source regressions reproduced on the base implementation and all 10 updater tests
+passed after the fix in an isolated Rust harness using the desktop lockfile dependencies (only
+the Tauri adapter was omitted). Harness Clippy and desktop formatting passed. The native desktop
+build stopped at `glib-sys` because the Linux dev image lacks `pkg-config` and the host lacks the
+GTK/WebKit development packages. Full desktop Clippy/tests, Windows CI and installed-app/OBS
+acceptance were not run.
+
 ## Web production hardening (2026-11-21)
 
 The app installs a release WASM panic hook before routing and mounting. It logs the source
