@@ -1,8 +1,3 @@
-// Regression for the import-flash flicker: layout.rs scheduled an independent 6s clear timer per
-// match.parsed event with no cancellation, so a burst of events during a bulk import (each
-// replacing the flash text) let an *earlier* event's timer wipe a *later*, still-fresh message --
-// the toast kept disappearing and reappearing, reflowing <main> and scrolling the page. This test
-// drives the real /ws channel with a rapid burst and samples flash visibility continuously.
 // Usage: node web-rs/app/tests/flash-flicker.cjs APP_DIST
 const assert = require('node:assert/strict');
 const { join } = require('node:path');
@@ -21,58 +16,57 @@ async function main() {
       localStorage.setItem('onboarding_done', '1');
       localStorage.setItem('whatsnew_seen', '9999-01-01');
     });
-    let server;
-    await page.routeWebSocket('**/ws', ws => {
-      server = ws;
-      ws.onMessage(() => {});
-    });
+    let connected;
+    const socket = new Promise(resolve => { connected = resolve; });
+    await page.routeWebSocket('**/ws', connected);
     await page.route('**/*', async route => {
       const url = new URL(route.request().url());
       if (url.origin !== origin) return route.abort();
       if (url.pathname.startsWith('/api/')) {
+        if (url.pathname === '/api/standalone/status') return route.fulfill({ status: 404 });
+        if (url.pathname === '/api/sessions') return route.fulfill({ json: { sessions: [] } });
         if (url.pathname === '/api/settings') return route.fulfill({ json: { operator_names: [] } });
         return route.fulfill({ json: [], headers: { 'x-total-count': '0' } });
       }
       const asset = url.pathname.startsWith('/v2/app/') ? url.pathname.slice(8) : 'index.html';
       return route.fulfill({ path: join(dist, asset) });
     });
+    const now = new Date('2026-01-01T00:00:00Z');
+    await page.clock.install({ time: now });
     await page.goto(origin + '/');
     await page.getByRole('heading').first().waitFor({ timeout: 20000 });
-    await page.waitForTimeout(500);
-    assert.ok(server, '/ws did not connect');
+    await page.clock.pauseAt(new Date(now.getTime() + 60_000));
+    let socketTimeout;
+    const ws = await Promise.race([socket, new Promise((_, reject) => {
+      socketTimeout = setTimeout(() => reject(new Error('/ws did not connect')), 5000);
+    })]).finally(() => clearTimeout(socketTimeout));
+    const toast = page.locator('.ds-flash');
+    async function parseMatch(map) {
+      // The mounted session's refetch acknowledges each event even when the text is identical.
+      const refetch = page.waitForRequest(/\/api\/sessions\?/, { timeout: 5000 });
+      ws.send(JSON.stringify({ type: 'match.parsed', map }));
+      await refetch;
+      assert.equal(await toast.textContent(), `● new replay — ${map} added`);
+    }
 
-    // Burst: 4 match.parsed events, 1s apart (well inside the old 6s timer window). Sample flash
-    // text right after each send and again at steady intervals through the old stale-timer
-    // window so a premature clear from an earlier event's timer is visible either way.
-    const maps = ['Cursed Hollow', 'Dragon Shire', 'Towers of Doom', 'Sky Temple'];
-    const samples = [];
-    for (const map of maps) {
-      server.send(JSON.stringify({ type: 'match.parsed', map }));
-      for (let i = 0; i < 4; i++) {
-        await page.waitForTimeout(250);
-        samples.push(await page.locator('.ds-flash').innerText().catch(() => null));
-      }
-    }
-    // Keep sampling past the last send through the old per-event timer window.
-    for (let i = 0; i < 20; i++) {
-      await page.waitForTimeout(250);
-      samples.push(await page.locator('.ds-flash').innerText().catch(() => null));
-    }
-    // Any sample from right after the 2nd send through steady-state (covers every one of the old
-    // per-event 6s timers deriving from the earlier events) must show text, never go empty --
-    // that gap is exactly the "disappears and reappears" flicker during a bulk import.
-    const duringBurstWindow = samples.slice(4, 28);
-    assert.ok(duringBurstWindow.every(s => !!s), `flash went empty mid-burst: ${JSON.stringify(samples)}`);
-    // It must still clear eventually (not a permanent toast).
-    assert.ok(samples.slice(28).some(s => !s), `flash never cleared: ${JSON.stringify(samples)}`);
+    await parseMatch('Dragon Shire');  // t = 0
+    await page.clock.runFor(1000);
+    await parseMatch('Cursed Hollow'); // t = 1s
+    await page.clock.runFor(2000);
+    await parseMatch('Cursed Hollow'); // t = 3s (identical text)
+    await page.clock.runFor(3000);     // t = 6s (unrelated expiry)
+    assert.equal(await toast.isVisible(), true, 'an unrelated timer cleared the newer toast');
+    await page.clock.runFor(1000);     // t = 7s (first Cursed Hollow expiry)
+    assert.equal(await toast.isVisible(), true, 'the first identical toast timer cleared the newer toast');
+    await page.clock.runFor(1999);
+    assert.equal(await toast.isVisible(), true, 'the repeat toast did not get a full 6 seconds');
+    await page.clock.runFor(1);        // t = 9s (repeat expiry)
+    assert.equal(await toast.count(), 0, 'the repeat toast never cleared');
     assert.deepEqual(errors, []);
-
-    console.log('flash-flicker: burst of imports shows one continuous toast, clears once at the end');
+    console.log('flash-flicker: distinct and identical replacements each get a full 6 seconds');
   } finally {
     await browser.close().catch(() => {});
   }
 }
 
-main()
-  .then(() => process.exit(0))
-  .catch(e => { console.error(e); process.exit(1); });
+main().catch(error => { console.error(error); process.exitCode = 1; });

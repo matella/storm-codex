@@ -333,6 +333,10 @@ deserialisation, `progress_percent`, `phase_message`, `redirects_to_welcome`, `p
   (read defensively with `Reflect`, never panics), the app calls the Tauri command `update_status` at startup and every 60 s; it
   answers `{state: "none" | "downloading" | "ready", version: string | null, notes: string | null}` (`parse_update_status`: any
   other shape or state = `none`; `notes` is optional, absent from older shells, and a blank or non-string value counts as none).
+  While an update is not ready, `app_version` supplies the running version and **Check for updates**
+  calls `check_for_update_now`. The button is disabled while the call is pending. A `none` response
+  shows "You're up to date.", an invocation rejection shows an inline error and allows retry, and
+  `ready` replaces the check controls with the install banner.
   On `ready` the banner shows the version and a **Restart to update** button that calls `invoke('install_update')`. With notes,
   a **What's new** toggle (collapsed by default, `aria-expanded`) shows them under the banner as a plain text node
   (`white-space: pre-line`, never parsed as HTML). With a version, a **Release page ↗** link (`target=_blank`, which the shell
@@ -344,6 +348,19 @@ deserialisation, `progress_percent`, `phase_message`, `redirects_to_welcome`, `p
   is the rejection string, an `Error`'s `message`, or the value as JSON) and re-enables the button. A call resolving with
   `undefined` counts as success.
   Without `window.__TAURI__` (browser, box) nothing is rendered and nothing polls.
+
+## App diagnostics and interaction checks
+
+- The WASM app installs a panic hook before routing and mounting, including in release. It logs the
+  Rust source filename (no directory path), line and column to the local browser or WebView console.
+  It does not log the panic payload or send telemetry, and does not prevent the WASM trap.
+- Each live notification gets six seconds from the latest event, even when the text repeats (for
+  example, two replays on the same map). Earlier timeouts cannot clear the current notification.
+- Against a `web-rs/app` release build, run `node web-rs/app/tests/flash-flicker.cjs web-rs/dist/app`
+  and `node web-rs/app/tests/manual-update.cjs web-rs/dist/app` from the repo root with Playwright
+  and Chromium installed. The former mocks `/ws` and advances the browser clock; the latter uses
+  real clicks with a mocked Tauri bridge and verifies the controls are absent without it. Neither
+  test talks to a live updater or validates the Windows installer.
 
 ## Loading (bundles)
 
