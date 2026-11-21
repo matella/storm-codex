@@ -86,6 +86,34 @@ for (const width of [1440, 390]) {
   }
 }
 
+for (const [key, destination] of [['Tab', 'Tools'], ['Shift+Tab', 'Live']]) {
+  checks[`390px Stats focus out with ${key}`] = async page => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await archive(page);
+    const nav = page.getByRole('navigation', { name: 'Main' });
+    const trigger = nav.getByRole('button', { name: 'Stats', exact: true });
+    const next = key === 'Tab'
+      ? nav.getByRole('button', { name: destination, exact: true })
+      : nav.getByRole('link', { name: destination, exact: true });
+    await tabTo(page, trigger);
+    await page.keyboard.press('Enter');
+    assert.equal(await trigger.getAttribute('aria-expanded'), 'true');
+    const menu = nav.locator('#' + await trigger.getAttribute('aria-controls'));
+    if (key === 'Tab') {
+      for (const link of await menu.getByRole('link').all()) {
+        await page.keyboard.press('Tab');
+        assert.ok(await active(link), 'Tab follows the open disclosure links');
+        assert.equal(await trigger.getAttribute('aria-expanded'), 'true');
+      }
+    }
+    await page.keyboard.press(key);
+    assert.ok(await active(next), `${key} should leave focus on ${destination}`);
+    await snapshot(page, `nav-390-focus-out-${key}`);
+    assert.equal(await trigger.getAttribute('aria-expanded'), 'false', `${key} should close the disclosure`);
+    assert.equal(await menu.isVisible(), false);
+  };
+}
+
 checks['archive keyboard'] = async page => {
   await archive(page);
   await page.getByRole('heading', { name: 'Matches', exact: true }).focus();
@@ -110,9 +138,15 @@ checks['archive keyboard'] = async page => {
     assert.equal(await rows.count(), expected);
   }
   await snapshot(page, 'archive-filters');
-  await tabTo(page, page.getByRole('button', { name: /reset/i }));
+  const reset = page.getByRole('button', { name: /reset/i });
+  await tabTo(page, reset);
   await page.keyboard.press('Enter');
   await page.waitForURL(origin + '/matches');
+
+  await reset.waitFor({ state: 'detached' });
+  const all = page.locator('main').getByRole('button', { name: 'All', exact: true });
+  assert.equal(await all.getAttribute('aria-pressed'), 'true');
+  assert.ok(await active(all), 'Reset should leave focus on the All mode filter');
 
   await page.goto(origin + '/matches?map=Silver+City');
   const input = page.getByPlaceholder('search map…');

@@ -375,16 +375,17 @@ fresh migrated cluster → import.
   main window is up, then every 6 h on an `updater` thread: `check()`; an announced update is
   `download()`ed (signature verified; **not** `download_and_install`) and its bytes kept in
   memory (the installer's size, tens of MB, held until install or exit: accepted; streaming it
-  to a file is deferred); then `ready` and the tray item **Restart to update** is enabled. A check or download
-  failure returns to `none` with one log line and can be retried manually or at the next automatic tick.
+  to a file is deferred); then `ready`, and the shell attempts to enable the tray item **Restart to update**.
+  A check or download failure returns to `none` with one log line and can be retried manually or at the next automatic tick.
   Manual `check_for_update_now` uses the same cycle as the scheduled check. Only one cycle may
   check or download at a time. While a manifest check is in progress, another manual request is
   rejected with a fixed busy message; during download it returns `downloading`, and while an update
   is ready or installing it returns `ready` without checking again. A successful check that finds
   no update returns `none`. Check and download failures reject the manual command with fixed
-  messages (no source details); diagnostic details remain in the existing shell log. Either path
-  enables the tray item when it downloads an update. `update_status` is a passive snapshot (still
-  `none` during the manifest check) and
+  messages (no source details); diagnostic details remain in the existing shell log. For either path,
+  the shell logs whether tray enablement succeeded, failed, or the item was unavailable. An unavailable
+  or failed tray item does not change `ready` or prevent restarting from the in-app banner.
+  `update_status` is a passive snapshot (still `none` during the manifest check) and
   answers `{state: "none"|"downloading"|"ready", version, notes}` (camelCase JSON, the web banner's
   contract in `08-frontend.md`; `notes` is the manifest's `notes` as `Update::body`, trimmed, `null` when
   missing or blank). `install_update` (banner or tray item, same path) is refused

@@ -68,10 +68,13 @@ impl Shell {
         match updater.tick(&|m| self.log(m))? {
             TickOutcome::Status(status) => Ok(status),
             TickOutcome::Downloaded(status) => {
-                if let Some(item) = self.restart_item.get() {
-                    let _ = item.set_enabled(true);
+                match self.restart_item.get().map(|item| item.set_enabled(true)) {
+                    Some(Ok(())) => self.log("update ready: tray item enabled"),
+                    Some(Err(err)) => {
+                        self.log(&format!("update ready: failed to enable tray item: {err}"));
+                    }
+                    None => self.log("update ready: tray item unavailable"),
                 }
-                self.log("update ready: tray item enabled");
                 Ok(status)
             }
         }

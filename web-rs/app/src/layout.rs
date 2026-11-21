@@ -213,9 +213,8 @@ pub fn Layout() -> impl IntoView {
         }
     });
 
-    // Grouped/dropdown nav: which category (if any) is currently open. Closed on an outside
-    // click or Escape, and on picking an item (see `NavGroup`), so only one dropdown is ever
-    // open and it never lingers after navigating away.
+    // Grouped/dropdown nav: which category (if any) is currently open. Closed on outside
+    // click, Escape, leaving the group with focus, or picking an item.
     let nav_open = RwSignal::new(None::<&'static str>);
     Effect::new(move |_| {
         let Some(document) = web_sys::window().and_then(|w| w.document()) else {
@@ -360,8 +359,17 @@ fn NavGroup(
         items.iter().any(|&(to, _)| tab_active(p, to))
     };
     let menu_id = format!("ds-navgroup-{}", label.to_lowercase());
+    let group = NodeRef::<leptos::html::Div>::new();
     view! {
-        <div class="ds-navgroup">
+        <div class="ds-navgroup" node_ref=group on:focusout=move |ev: web_sys::FocusEvent| {
+            if open.get_untracked() != Some(label) {
+                return;
+            }
+            let next = ev.related_target().and_then(|t| t.dyn_into::<web_sys::Node>().ok());
+            if !group.get_untracked().is_some_and(|g| g.contains(next.as_ref())) {
+                open.set(None);
+            }
+        }>
             <button
                 type="button"
                 class=move || if active() { "on" } else { "" }

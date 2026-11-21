@@ -67,7 +67,12 @@ pub fn Matches() -> impl IntoView {
     let set_param_url = StoredValue::new_local(move |k: &str, v: String| {
         set_params_url.with_value(|f| f(vec![(k.to_string(), v)]))
     });
+    let all_modes = NodeRef::<leptos::html::Button>::new();
     let reset = move || {
+        // Reset disappears when the URL filters clear. Move focus while it is still mounted.
+        if let Some(button) = all_modes.get_untracked() {
+            let _ = button.focus();
+        }
         let path = loc.pathname.get_untracked();
         nav.with_value(|nav| {
             nav(
@@ -223,6 +228,7 @@ pub fn Matches() -> impl IntoView {
                             let set = move |k: &'static str, v: String| set_param_url.with_value(|f| f(k, v));
                             view! {
                                 <button type="button" class=move || pill(filter.with(|f| f.mode == m))
+                                    node_ref=if m.is_none() { all_modes } else { NodeRef::new() }
                                     aria-pressed=move || filter.with(|f| f.mode == m).to_string()
                                     on:click=move |_| set("mode", m.map(|x| x.to_string()).unwrap_or_default())>{label}</button>
                             }

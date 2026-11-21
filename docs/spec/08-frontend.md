@@ -11,13 +11,17 @@ UI language: **English**.
 ## Production UI audit fixes (0.1.4)
 
 - Stats and Tools are plain link disclosures, not ARIA menus. Both accept pointer input at desktop
-  and compact widths. Escape closes the disclosure and restores its trigger only if focus was in it.
+  and compact widths. Leaving a group with Tab or Shift+Tab closes its disclosure without moving
+  focus away from the destination. Escape closes the disclosure and restores its trigger only if
+  focus was in it.
 - Archive mode, outcome and MVP filters are native buttons with URL-driven `aria-pressed` states.
-  Reset and text-filter clearing work from the keyboard; clearing returns focus to the input.
+  Reset moves focus to the always-present **All** mode button before clearing the filters and
+  disappearing. Clearing a text filter returns focus to its input.
 - Match tabs and export actions wrap on narrow screens. Replay 2D controls stay in the viewport;
   intrinsically wide score tables scroll within their own region, not the document.
 - The app shell's font preloads use the canonical app **asset** base `/v2/app/`, independent of the
   current page path. Trunk fingerprints the existing desktop 32px PNG as the app favicon.
+- The review follow-up's app release bundle measured 1,099,710 bytes Brotli against the 1,250,000-byte cap.
 
 ## Web-audit App slice (2026-11-19, branch `fix/web-audit-app`)
 

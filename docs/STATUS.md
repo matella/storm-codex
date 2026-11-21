@@ -1,5 +1,20 @@
 # STATUS — read first, update last
 
+## Production audit review follow-up (2026-11-21)
+
+Stats and Tools close when focus leaves their group without moving the new focus; Escape still
+returns to the trigger only from within the open group. Matches Reset focuses **All** before
+clearing the filters and disappearing. The shell logs success, failure or absence when enabling
+**Restart to update** in the tray; the in-app `ready` state and restart action are unchanged.
+
+Real Chromium with disposable PostgreSQL 17 reproduced both 390 px keyboard exits and the Reset
+focus loss on `c7c54d4`; all 19 production UI checks and the four existing browser regressions passed
+on the rebuilt release bundle. Web native tests (201), native core and WASM workspace all-target
+Clippy, and the release app build passed. App: **1,099,710 B Brotli** (cap 1,250,000). Web rustfmt
+reports the identical two baseline view-transition differences. Desktop rustfmt and four extracted
+shell-method cases passed; native desktop Clippy/tests are blocked by missing Linux GTK/WebKit
+development packages. Windows CI, installed tray/WebView2 and real OBS were not run.
+
 ## Production UI audit fixes (2026-11-21)
 
 Stats/Tools flyouts work with a pointer at 1440 and 390 px; Escape returns focus to the
