@@ -1417,6 +1417,40 @@ mod tests {
     }
 
     #[test]
+    fn failed_stop_rolls_back_and_restarts_after_late_server_exit() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tempfile::tempdir().unwrap();
+        let log = Log::default();
+        let mut host = FakeHost::new(&log);
+        host.honours_shutdown = false;
+        host.failed_kill = Some(AfterFailedKill::Exited);
+        let (mut stack, _host) = stack_with_archive(host, tmp.path(), Some(b"old"));
+        log.lock().unwrap().clear();
+
+        let err =
+            import_into(&mut stack, &good_backup(src.path()), plenty).expect_err("stop fails");
+        assert_eq!(err, "the server could not be stopped: fake kill failure");
+        assert_eq!(
+            entries(&log),
+            [
+                "db.stage(PGDMP-import)".to_string(),
+                "server.migrate".to_string(),
+                format!("server.shutdown({SERVER_PORT})"),
+                "server.kill".to_string(),
+                "db.discard".to_string(),
+                "server.spawn".to_string(),
+            ]
+        );
+        assert!(!stack.staging_exists().unwrap());
+        assert_eq!(archive_tree(&stack.data().archive()), old_archive());
+        assert_eq!(
+            std::fs::read(stack.data().ledger()).unwrap(),
+            b"{\"ledger\":1}"
+        );
+        assert_clean(tmp.path());
+    }
+
+    #[test]
     fn failed_promote_puts_the_archive_back_drops_the_stage_and_restarts() {
         let tmp = tempfile::tempdir().unwrap();
         let src = tempfile::tempdir().unwrap();

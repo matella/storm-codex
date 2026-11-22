@@ -1,5 +1,15 @@
 # STATUS — read first, update last
 
+## Restart after a late server exit during backup rollback
+
+If stopping the server fails during backup import, rollback can now restart it once a nonblocking
+status check confirms the retained child exited. A live child or an unreadable status still blocks
+restart and leaves the child available for a later stop. The rollback regression failed before the
+fix and passed after; live and unknown states also passed. The isolated offline Linux desktop
+harness passed 47 tests and strict Clippy, with one real-Postgres round-trip ignored. The harness
+used cached `errno` 0.3.14 and `zip` 9.7.3; the repository lockfile was unchanged. Full Tauri and
+Windows installer checks were not run.
+
 ## Retain unconfirmed desktop shutdowns for retry
 
 A failed stop retains the stack and server child handle. A later caller retries instead of

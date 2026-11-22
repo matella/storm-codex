@@ -468,8 +468,14 @@ fresh migrated cluster → import.
        deduplicated by content hash); the raw cache is kept (keyed by content). `archive.old`
        and the journal are removed and the server restarted on the same stack and port
        (`Stack::restart_server`); the command returns once `/api/health` answers.
-    6. **Failure during the commit.** Which side of the rename transaction a `promote_import`
-       error happened on is read back (`staging_exists`):
+    6. **Failure during the commit.** If stopping the server fails, the import aborts before
+       swapping the archive or promoting the database. Rollback attempts to remove the journal
+       and discard staging before restart. Restart checks the retained child without waiting:
+       only a confirmed exit allows the handle to be cleared and a replacement started. A live
+       child or an unreadable exit status blocks restart and leaves the handle available for a
+       later stop attempt.
+       Which side of the rename transaction a `promote_import` error happened on is read back
+       (`staging_exists`):
        - **before the rename** (staging database still there): `archive.old` is put back, the
          staging database dropped, the journal removed, the server restarted; the message says
          nothing was changed. If putting `archive.old` back fails, the server stays stopped and
