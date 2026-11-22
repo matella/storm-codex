@@ -142,7 +142,7 @@ pub(super) async fn mutate_ex<T>(
     } else {
         sync_draft(s, sync == DraftSync::Align).await
     };
-    // the series is persisted even if the draft write failed; either failure answers 500 (R24)
+    // the series save is attempted even if the draft write failed; either failure answers 500 (R24)
     persist(s, &out.1, version)
         .await
         .map_err(|_| persist_failed())?;

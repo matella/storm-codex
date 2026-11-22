@@ -371,9 +371,8 @@ async fn run_parse(
 /// If `match_id` is the game of the open lobby, the companion switches to debrief. The matching
 /// (`lier_match` reads `match_players`) runs on a copy, **outside** the lobby lock, so `GET /api/lobby`,
 /// `GET /api/live` and the lobby inputs are never held behind it. The link is then applied under a
-/// brief write lock as a compare-and-swap: only if the lobby is still the one that was matched (same
-/// `content_hash`) and still unlinked — a lobby replaced meanwhile (next game, same ten players) is
-/// never stamped with this match. The persistence stays under that lock (one upsert), like every
+/// brief write lock as a compare-and-swap: only if the lobby has the same `content_hash` and is still
+/// unlinked. A replacement with a different hash is never stamped with this match. The persistence stays under that lock (one upsert), like every
 /// other `lobby_live` write (`muter` in `lobby/api.rs`): saving outside it could let this snapshot
 /// overwrite a concurrent hero/map/team input. Rank readings are attached and `lobby.updated` is
 /// broadcast after the lock is released.

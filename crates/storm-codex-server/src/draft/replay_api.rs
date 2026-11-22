@@ -194,55 +194,45 @@ async fn mutate(
     }
 }
 
-/// After a manual action during auto playback, the next tick restarts from a full interval.
-async fn rearm_if_playing(s: &AppState) {
-    let playing = {
-        let mut d = s.draft.write().await;
-        if d.replay.playing {
-            let ms = d.replay.interval_ms;
-            d.replay.next_at_ms = Some(now_ms() + i64::from(ms));
-        }
-        d.replay.playing
-    };
-    if playing {
+/// Updates the timer and its deadline together under the draft write lock, before persistence.
+fn sync_timer(s: &AppState, r: &mut ReplayState) {
+    if r.playing {
+        r.next_at_ms = Some(now_ms() + i64::from(r.interval_ms));
         start_timer(s);
+    } else {
+        r.next_at_ms = None;
+        cancel_timer(s);
     }
 }
 
 /// POST /api/draft/replay/next — reveals the next phase.
 pub async fn next(State(s): State<AppState>) -> Resp {
-    let r = mutate(&s, |d| {
+    mutate(&s, |d| {
         d.reveal_phase()?;
-        if d.is_complete() {
-            d.replay.playing = false;
-            d.replay.next_at_ms = None;
-        }
+        d.replay.playing &= !d.is_complete();
+        sync_timer(&s, &mut d.replay);
         Ok(())
     })
-    .await;
-    if r.0 == StatusCode::OK {
-        rearm_if_playing(&s).await;
-    }
-    r
+    .await
 }
 
 /// POST /api/draft/replay/back — undoes the last revealed phase.
 pub async fn back(State(s): State<AppState>) -> Resp {
-    let r = mutate(&s, |d| d.back_phase()).await;
-    if r.0 == StatusCode::OK {
-        rearm_if_playing(&s).await;
-    }
-    r
+    mutate(&s, |d| {
+        d.back_phase()?;
+        sync_timer(&s, &mut d.replay);
+        Ok(())
+    })
+    .await
 }
 
 /// POST /api/draft/replay/reset — goes back to step 0 of the current game (paused).
 pub async fn reset(State(s): State<AppState>) -> Resp {
-    cancel_timer(&s);
     mutate(&s, |d| {
         d.replay.current.ok_or(DraftError::NoGame)?;
         d.reset();
         d.replay.playing = false;
-        d.replay.next_at_ms = None;
+        sync_timer(&s, &mut d.replay);
         Ok(())
     })
     .await
@@ -256,15 +246,25 @@ pub struct IndexBody {
 /// POST /api/draft/replay/select — prepares game `index` of the queue; an active cast series
 /// imposes its format (M5, `select_game_with`).
 pub async fn select(State(s): State<AppState>, Json(b): Json<IndexBody>) -> Resp {
-    cancel_timer(&s);
     let over = series_format(&s).await;
-    mutate(&s, |d| d.select_game_with(b.index, over)).await
+    mutate(&s, |d| {
+        d.select_game_with(b.index, over)?;
+        cancel_timer(&s);
+        Ok(())
+    })
+    .await
 }
 
 /// DELETE /api/draft/replay/queue/{i}
 pub async fn remove(State(s): State<AppState>, Path(i): Path<usize>) -> Resp {
-    cancel_timer(&s);
-    mutate(&s, |d| d.remove_game(i)).await
+    mutate(&s, |d| {
+        d.remove_game(i)?;
+        if !d.replay.playing {
+            cancel_timer(&s);
+        }
+        Ok(())
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -285,10 +285,12 @@ pub struct FearlessBody {
 
 /// POST /api/draft/replay/fearless — re-prepares the current game (its series bans change).
 pub async fn fearless(State(s): State<AppState>, Json(b): Json<FearlessBody>) -> Resp {
-    cancel_timer(&s);
     let over = series_format(&s).await;
     mutate(&s, |d| {
         d.set_fearless_with(b.value, over);
+        if !d.replay.playing {
+            cancel_timer(&s);
+        }
         Ok(())
     })
     .await
@@ -311,31 +313,21 @@ pub async fn play(State(s): State<AppState>, Json(b): Json<PlayBody>) -> Resp {
             Json(json!({ "error": "bad_interval" })),
         );
     }
-    let r = mutate(&s, |d| {
-        if let Some(ms) = b.interval_ms {
-            d.replay.interval_ms = ms;
-        }
+    mutate(&s, |d| {
         if b.playing {
             d.replay.current.ok_or(DraftError::NoGame)?;
             if d.is_complete() {
                 return Err(DraftError::Complete);
             }
-            d.replay.next_at_ms = Some(now_ms() + i64::from(d.replay.interval_ms));
-        } else {
-            d.replay.next_at_ms = None;
+        }
+        if let Some(ms) = b.interval_ms {
+            d.replay.interval_ms = ms;
         }
         d.replay.playing = b.playing;
+        sync_timer(&s, &mut d.replay);
         Ok(())
     })
-    .await;
-    if r.0 == StatusCode::OK {
-        if b.playing {
-            start_timer(&s);
-        } else {
-            cancel_timer(&s);
-        }
-    }
-    r
+    .await
 }
 
 #[cfg(test)]
@@ -432,5 +424,47 @@ mod tests {
         assert!(d.replay.fearless);
         assert_eq!(d.format, Format::Standard);
         assert!(d.series_bans.is_empty());
+    }
+
+    #[tokio::test]
+    async fn failed_replay_saves_still_start_rearm_and_cancel_the_timer() {
+        let Some(st) = test_state(None).await else {
+            return;
+        };
+        st.draft.write().await.add_game(game("probe"));
+        st.db.close().await;
+
+        let mut previous_timer = None;
+        for (action, body, playing) in [
+            (
+                "play",
+                Some(json!({"playing": true, "interval_ms": 3_600_000})),
+                true,
+            ),
+            ("next", None, true),
+            ("back", None, true),
+            ("play", Some(json!({"playing": false})), false),
+        ] {
+            let (code, body) =
+                call(&st, "POST", &format!("/api/draft/replay/{action}"), body).await;
+            assert_eq!(
+                (code, body["error"].as_str()),
+                (StatusCode::INTERNAL_SERVER_ERROR, Some("persist_failed"))
+            );
+            let draft = st.draft.read().await;
+            let timer = st.replay_timer.lock().unwrap();
+            if let Some(handle) = timer.as_ref() {
+                assert!(!handle.is_finished());
+            }
+            let timer_id = timer.as_ref().map(tokio::task::JoinHandle::id);
+            assert_eq!(draft.replay.playing, playing);
+            assert_eq!(draft.replay.next_at_ms.is_some(), playing);
+            assert_eq!(timer_id.is_some(), playing);
+            assert_ne!(
+                timer_id, previous_timer,
+                "{action} did not change the timer"
+            );
+            previous_timer = timer_id;
+        }
     }
 }
