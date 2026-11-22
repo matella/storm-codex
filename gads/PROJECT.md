@@ -36,8 +36,9 @@ working, and already-applied SQL migrations are never edited, even for comments.
 ## What the project is
 A complete renovation of Stats of the Storm (HotS stats tracker): open-source Rust crates
 (`storm-replay` decoding, `storm-stats` analysis), a single `storm-codex-server` server (axum +
-Postgres + WS) on the box, a Rust (Leptos, wasm) SPA with the Nexus Codex design system, an OBS stream widget, Jarvis
-integration (Redis events) and the existing `client-rs` uploader (Hots-Overlay repo).
+Postgres + WS) on the box, a Rust (Leptos, wasm) SPA with the Nexus Codex design system, an OBS stream
+widget, and the existing `client-rs` uploader (Hots-Overlay repo). Fully local: no external event
+emitter (the former Jarvis/Redis integration was removed, 2026-11-21 — see docs/STATUS.md).
 
 ## Hard rules
 1. **One plan per milestone** (0→6 in the spec), in order; each milestone has a measurable
@@ -51,9 +52,7 @@ integration (Redis events) and the existing `client-rs` uploader (Hots-Overlay r
 5. **3 data tiers**: archived raw replay (source of truth); Postgres = complete
    projection (`parser_version` everywhere, idempotent re-process); dump decoded on the fly + LRU
    cache. Never any mass pre-decoding.
-6. Events to Jarvis: spine invariants (schema_version, correlation_id/causation_id,
-   occurred_at/recorded_at, past-tense `entity.verb`).
-7. The hero/talent/map/patch reference data comes from the HotsPatchNotes **dataset** (schema v1, GitHub releases),
+6. The hero/talent/map/patch reference data comes from the HotsPatchNotes **dataset** (schema v1, GitHub releases),
    through the single `refdata` adapter, replicated into `dim_*`. Box: latest validated release, verified, refreshed
    every 24 h. Standalone: no reference data in the default installer; keep legacy local snapshots
    supported and reuse the same adapter for runtime sync (approved spec 2026-11-19).
@@ -76,7 +75,6 @@ local dependency on the other projects. Milestone 0 is ideally done **on the Win
 | Blizzard/heroprotocol | public GitHub | generation of the protocol tables (milestones 0–1) |
 | matella Hots-Overlay | GitHub (private) | milestone 3 — adapt `client-rs` (backfill mode, re-pointing) |
 | matella HeroesOfTheStormPatchNotes | GitHub (public) | reference data consumed as **dataset releases** (schema v1, `refdata` adapter); the clone is only useful to read the producer's code |
-| Jarvis | **not on GitHub** (box remote only) | milestone 5 — the connector is written from the Mac/box; nothing to clone on the PC |
 
 The committed replay corpus and public CI do not require maintainer infrastructure.
 
