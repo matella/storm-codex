@@ -11,8 +11,13 @@
 # nothing is committed or pushed back to main, so this workflow cannot create a push loop and cannot affect
 # what a real release later tags.
 #
+# UNSIGNED on purpose: the installer never gets TAURI_SIGNING_PRIVATE_KEY and bundle.createUpdaterArtifacts
+# is forced off for this run only. The preview exists to click through new features and installer mechanics,
+# not the updater chain — that stays covered by release-desktop.yml's manual dry run. This keeps the
+# production signing key out of every single main push instead of just real/dry-run releases.
+#
 # Deliberately duplicates release-desktop.yml's pinned-tool and packaging steps instead of extracting a shared
-# workflow: this file can misbehave without any risk to the signed, user-facing release pipeline.
+# workflow: this file can misbehave without any risk to the signed, user-facing release pipeline or its secrets.
 name: auto-draft-desktop
 on:
   push:
@@ -48,18 +53,29 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           $committed = (Get-Content desktop/tauri.conf.json -Raw | ConvertFrom-Json).version
           if ($committed -notmatch '^\d+\.\d+\.\d+$') { throw "tauri.conf.json version '$committed' is not X.Y.Z" }
+          $committedVersion = [version]$committed
           $tags = gh api --paginate "repos/$($env:REPOSITORY)/releases?per_page=100" --jq `
             '.[] | select(.draft == false and .prerelease == false) | .tag_name'
           $published = @()
           foreach ($t in $tags) {
-            if ($t -match '^desktop-v(\d+)\.(\d+)\.(\d+)$') {
-              $published += [version]"$($Matches[1]).$($Matches[2]).$($Matches[3])"
+            # Reject anything not exactly canonical X.Y.Z (no leading zeros) so an odd historical tag can't
+            # silently misparse; a tag component too large for [int] is caught and skipped, not thrown.
+            if ($t -match '^desktop-v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
+              try {
+                $published += [version]"$($Matches[1]).$($Matches[2]).$($Matches[3])"
+              } catch {
+                Write-Warning "skipping unparseable release tag '$t': $_"
+              }
             }
           }
-          $committedVersion = [version]$committed
           if ($published.Count -gt 0) {
             $latest = $published | Sort-Object | Select-Object -Last 1
-            $bumped = [version]"$($latest.Major).$($latest.Minor).$($latest.Build + 1)"
+            try {
+              $bumped = [version]"$($latest.Major).$($latest.Minor).$($latest.Build + 1)"
+            } catch {
+              Write-Warning "latest published $latest has no representable next patch, falling back to committed version: $_"
+              $bumped = $committedVersion
+            }
           } else {
             $bumped = $committedVersion
           }
@@ -71,27 +87,26 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           $conf = Get-Content desktop/tauri.conf.json -Raw | ConvertFrom-Json
           $conf.version = $env:PREVIEW_VERSION
+          $conf.bundle.createUpdaterArtifacts = $false # unsigned preview: see the file header
           ($conf | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath desktop/tauri.conf.json -Encoding utf8NoBOM
-          # desktop/Cargo.toml's own [package] version, so the later `cargo update --precise` has a matching
-          # manifest version to pin the lockfile entry to (same two-file sync the real release process does).
-          (Get-Content desktop/Cargo.toml -Raw) -replace '(?m)^version = "[\d.]+"', "version = `"$env:PREVIEW_VERSION`"" |
-            Set-Content -LiteralPath desktop/Cargo.toml -Encoding utf8NoBOM
+          # desktop/Cargo.toml's [package] version only (scoped to that section, not every "version = ..."
+          # line in the file, so a dependency table entry can never be touched by accident). An instance
+          # Regex with an explicit count=1 — NOT the static [regex]::Replace(...,...,1) overload, whose 4th
+          # positional int silently coerces to RegexOptions.IgnoreCase and would replace every match.
+          $cargoToml = Get-Content desktop/Cargo.toml -Raw
+          $pkgVersionRegex = [regex]::new('(?ms)^\[package\](.*?)^version = "[\d.]+"')
+          $evaluator = [System.Text.RegularExpressions.MatchEvaluator]{
+            param($m) "[package]$($m.Groups[1].Value)version = `"$env:PREVIEW_VERSION`""
+          }
+          $updated = $pkgVersionRegex.Replace($cargoToml, $evaluator, 1)
+          if ($updated -eq $cargoToml) { throw "did not find a [package] version line to update in desktop/Cargo.toml" }
+          $updated | Set-Content -LiteralPath desktop/Cargo.toml -Encoding utf8NoBOM
+          # No `cargo update` step: the later `cargo tauri build` run (no --locked) syncs desktop/Cargo.lock's
+          # own path-dependency entry to this manifest version automatically, no registry/network access needed.
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch, 2026-10-16
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           targets: wasm32-unknown-unknown
-      - name: cargo update --offline (sync desktop/Cargo.lock to the preview version)
-        working-directory: desktop
-        run: cargo update --offline -p storm-codex-desktop --precise $env:PREVIEW_VERSION
-      - name: refuse placeholders (updater public key, signing secret)
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        run: |
-          $pubkey = (Get-Content desktop/tauri.conf.json -Raw | ConvertFrom-Json).plugins.updater.pubkey
-          if (-not $pubkey -or $pubkey.StartsWith('PLACEHOLDER')) {
-            throw "plugins.updater.pubkey in desktop/tauri.conf.json is still a placeholder"
-          }
-          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) { throw "repository secret TAURI_SIGNING_PRIVATE_KEY is not set" }
       - name: Postgres 17 binaries (pinned, SHA-256 checked) + VC++ runtime (app-local)
         run: ./scripts/fetch-postgres.ps1
       - name: install Trunk (pinned prebuilt, committed SHA-256)
@@ -144,35 +159,46 @@ jobs:
           ./scripts/check-pe-imports.ps1 -Path target/release/storm-codex-server.exe -List
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           ./scripts/check-pe-imports.ps1 -Path target/postgres/bin, target/postgres/lib -ResolveDir target/postgres/bin
-      - name: installer (tauri build, signed)
+      - name: installer (tauri build, unsigned preview)
         working-directory: desktop
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: cargo tauri build --config tauri.bundle.conf.json
-      - name: release assets (installer, .sig) — named "-auto" so it can never be mistaken for a real release
+      - name: release assets (installer only — unsigned, no updater artifact) named "-auto"
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           $setup = @(Get-ChildItem desktop/target/release/bundle/nsis -Filter '*-setup.exe')
           if ($setup.Count -ne 1) { throw "expected exactly one NSIS installer, found $($setup.Count)" }
-          $sigFile = "$($setup[0].FullName).sig"
-          if (-not (Test-Path -LiteralPath $sigFile)) { throw "missing updater signature $sigFile" }
           $name = "StormCodex_$($env:PREVIEW_VERSION)-auto_x64-setup.exe"
           New-Item -ItemType Directory -Path out | Out-Null
           Copy-Item -LiteralPath $setup[0].FullName -Destination "out/$name"
-          Copy-Item -LiteralPath $sigFile -Destination "out/$name.sig"
           $mb = [math]::Round((Get-Item "out/$name").Length / 1MB, 1)
-          "Preview installer ``$name``: $mb MB" >> $env:GITHUB_STEP_SUMMARY
+          "Preview installer ``$name`` (unsigned): $mb MB" >> $env:GITHUB_STEP_SUMMARY
       - name: replace the previous auto-draft (fixed tag, always overwritten, never --latest)
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          gh release view $env:AUTO_TAG *> $null
+          $previousExists = ($LASTEXITCODE -eq 0)
+          if ($previousExists) {
+            $isDraft = (gh release view $env:AUTO_TAG --json isDraft --jq '.isDraft')
+            if ($isDraft -ne 'true') {
+              throw "release at tag '$($env:AUTO_TAG)' exists and is NOT a draft — refusing to touch it"
+            }
+          }
           $PSNativeCommandUseErrorActionPreference = $true
-          gh release delete $env:AUTO_TAG --yes --cleanup-tag 2>$null
+          if ($previousExists) {
+            gh release delete $env:AUTO_TAG --yes --cleanup-tag
+          }
+          # Best-effort: a dangling tag ref can outlive a release object (e.g. a prior run's --cleanup-tag
+          # failing after the release delete succeeded). Absence is the success case, so errors are ignored.
+          # (gh api, not `git push --delete`: persist-credentials is off, so git has no push credential.)
+          $PSNativeCommandUseErrorActionPreference = $false
+          gh api -X DELETE "repos/$($env:GH_REPO)/git/refs/tags/$($env:AUTO_TAG)" *> $null
+          $PSNativeCommandUseErrorActionPreference = $true
           $files = (Get-ChildItem out).FullName
           $body = "Automatic preview build from the latest push to main ($($env:GITHUB_SHA.Substring(0,7))).`n`n" +
-            "**Not a real release**: never signed-and-served to installed apps, never on the download page, " +
+            "**Not a real release**: unsigned, never served to installed apps, never on the download page, " +
             "and this tag is overwritten by every push to main. For a real release, push a ``desktop-vX.Y.Z`` tag."
           gh release create $env:AUTO_TAG @files --draft --target $env:GITHUB_SHA `
             --title "Storm Codex $($env:PREVIEW_VERSION) (auto preview build, not published)" --notes $body

@@ -2,15 +2,25 @@
 
 ## Auto-draft desktop preview on every push to main (2026-11-22)
 
-New `.github/workflows/auto-draft-desktop.yml`: on every push to `main`, builds the same signed
-Windows installer as `release-desktop.yml`'s manual dry run and publishes it to a fixed draft tag
-`desktop-main-auto`, deleting and recreating that one release each time. Never a `desktop-v*` tag,
-always `--draft`, never `--latest` — invisible to installed apps and the download page. The
-previewed version is auto-computed (committed `tauri.conf.json` version, or latest published
-`desktop-v*` + 1 patch) and applied only to that run's checkout, never committed back to `main`.
-Cutting a real release is unchanged: still a human pushing a `desktop-vX.Y.Z` tag. Not yet verified
-against a live run (first real trigger is this PR's merge to `main`); verify the draft appears,
-is not `--latest`, and does not affect `desktop-v0.1.5` before relying on it.
+New `.github/workflows/auto-draft-desktop.yml`: on every push to `main`, builds an **unsigned**
+Windows installer (no `TAURI_SIGNING_PRIVATE_KEY`/`_PASSWORD`, `bundle.createUpdaterArtifacts`
+forced off for that run) and publishes it to a fixed draft tag `desktop-main-auto`, checking it's
+actually a draft before deleting and recreating it each time. Never a `desktop-v*` tag, always
+`--draft`, never `--latest` — invisible to installed apps and the download page. The previewed
+version is auto-computed (committed `tauri.conf.json` version, or latest published `desktop-v*` +
+1 patch, with malformed/overflow tags skipped rather than crashing the job) and applied only to
+that run's checkout (`desktop/Cargo.toml`'s `[package]` version only, via an instance-regex
+`count=1` replace — not the static `[regex]::Replace` 4-arg overload, whose int silently coerces
+to `RegexOptions.IgnoreCase`), never committed back to `main`. No `cargo update` step: the lockfile
+syncs itself on the unlocked `cargo tauri build`. Cutting a real release is unchanged: still a
+human pushing a `desktop-vX.Y.Z` tag. Reviewed (Codex, `gpt-6.2-sol`) at the first draft — BLOCK on
+7 points (signing-key exposure, first-run `gh release delete` throwing with nothing to delete,
+unscoped Cargo.toml regex, no lockfile-cache step, malformed-tag parsing, non-atomic concurrency,
+missing non-draft guard) — all fixed except the concurrency-atomicity point, accepted as residual
+risk for a non-critical preview feature (worst case: a stale or briefly-missing preview, never a
+wrong/unsafe one). Not yet verified against a live Actions run (first real trigger is this PR's
+merge to `main`); verify the draft appears, is unsigned, is not `--latest`, and does not affect
+`desktop-v0.1.5` before relying on it.
 
 ## Custom overlay widget fitting (2026-11-22)
 
