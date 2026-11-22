@@ -13,7 +13,7 @@ POST /api/upload(-raw)  [personal Bearer token]
   → file dedup (uploads.fingerprint = SHA-256 of the content) → 409 duplicate
   → parse in a pool (Semaphore = number of cores, spawn_blocking off the HTTP thread)
   → Postgres projection (project.rs) + uploads.match_id link
-  → WS `match.parsed` + (opt-in) Jarvis Redis PUBLISH + (dormant) Azure push
+  → WS `match.parsed` + (dormant) Azure push
 ```
 
 - **Response semantics**: `parsed` / `409 duplicate` / `parse_failed` if the result arrives
@@ -521,7 +521,6 @@ are a thin SQL layer on top, same shape as `manage.rs`'s settings handlers.
 | `IMAGES_DIR` | `./.images` | vendored images, served on `/images` |
 | `PATCH_IMAGE_MAX_FILE_BYTES` | 8 MiB | per-image cap when the box fetches a Blizzard patch-note image (`refdata::patchimg`) |
 | `PATCH_IMAGE_CACHE_MAX_BYTES` | 200 MiB | total bound on `IMAGES_DIR/patch-images` (LRU-evicted; unlike the rest of `IMAGES_DIR`, which is permanent) |
-| `REDIS_URL` / `JARVIS_CHANNEL` | empty = no emission / `jarvis:events` (box production: `storm-codex:match_completed`) | Jarvis events |
 | `REFDATA_URL` | the producer's `releases/latest/download/`; empty = off | reference dataset release (box; see above) |
 | `STANDALONE` | empty = off | `1` = standalone (installer) mode: loopback-only `BIND_ADDR` (checked at startup), independent reference sync |
 | `REFERENTIAL_FILE` | empty | optional legacy trimmed `referential.tar.gz` (`refdata trim`) for offline seeding in standalone mode |

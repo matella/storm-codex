@@ -30,7 +30,7 @@ rebuild the bundles with `trunk build --release` if `web-rs/` changed.
 
 ## Self-hosted server
 
-- `docker-compose.yml` is the maintainer's deployment example. It serves the Rust/Wasm frontend and API, persists replay archives and reference assets under `/data`, and uses PostgreSQL. For a separate installation, configure your own volumes, network, and credentials; the optional Jarvis network must not be assumed to exist.
+- `docker-compose.yml` is the maintainer's deployment example. It serves the Rust/Wasm frontend and API, persists replay archives and reference assets under `/data`, and uses PostgreSQL. For a separate installation, configure your own volumes, network, and credentials.
 - Keep PostgreSQL private and treat the app as trusted-network software. Open Admin mode is for local use only. For remote access, use a trusted VPN or an authenticated HTTPS reverse proxy and configure admin and upload credentials. See [SECURITY.md](../../SECURITY.md).
 - Keep secrets outside the repository. After an update, verify `/api/health`, check the app and archive access, and keep the previous image tag available for rollback.
 
@@ -302,7 +302,7 @@ fresh migrated cluster → import.
   environment (`env_clear`) and gets only these plus, when the shell has them, `SystemRoot` and
   `windir` (Winsock/CNG/COM need them), `TEMP`, `TMP`, `USERPROFILE` (`std::env::temp_dir()`; the
   server extracts the referential and decodes cast replays there), `PATH` (system DLL search)
-  and `RUST_LOG`. Nothing else of the shell's environment reaches it (`REDIS_URL`, `ADMIN_TOKEN`,
+  and `RUST_LOG`. Nothing else of the shell's environment reaches it (`ADMIN_TOKEN`,
   `AZURE_PUSH_*`, a parent `DATABASE_URL`, ...); `LOCALAPPDATA`/`APPDATA` are not passed (every
   data path is explicit; the replay folders come from the Documents known-folder API). Tested by
   `server_env_is_an_allow_list` and `child_process_inherits_no_unlisted_variable` (runs
@@ -752,7 +752,6 @@ Method and the other figures (parse, API p95): [`docs/standalone-acceptance.md`]
 | Service | Where | If missing |
 |---|---|---|
 | HotsPatchNotes | box :5001 (`host.docker.internal`) | no dim_* / image refresh (already replicated data kept) |
-| Jarvis Redis | `jarvis_default` network | no event emission (parse unaffected) |
 
 ## Known risks & debt (audit 2026-08-03 — to redo periodically)
 

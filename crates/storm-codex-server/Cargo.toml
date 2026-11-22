@@ -29,7 +29,6 @@ hex = "0.4"
 # Patch classifier port (refdata::classify); already in the workspace via storm-stats.
 regex = "1"
 rand = "0.8"
-redis = { version = "1", features = ["tokio-comp"] }
 uuid = { version = "1", features = ["v4"] }
 ureq = { version = "3", features = ["json"] }
 flate2 = "1"
