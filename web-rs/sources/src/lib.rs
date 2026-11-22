@@ -1,3 +1,4 @@
-//! Typed options shared by the standalone sources and future composition hosts.
+//! Pure helpers for the OBS sources.
 
+pub mod fit;
 pub mod options;
