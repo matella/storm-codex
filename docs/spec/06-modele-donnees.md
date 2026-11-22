@@ -23,8 +23,9 @@ index allows only one row with no `ended_at`. No windows are deleted by the API.
 
 `match_session_overrides` has one row per `match_id` (FK to `matches`, cascade on match deletion).
 A missing row uses the time window; a row with `NULL` `manual_session_id` forces automatic grouping;
-a non-null FK explicitly pins that match to a manual window. Reprocessing that retains the match ID
-preserves the override. Neither operation rewrites replay data, the projection, or statistics.
+a non-null FK explicitly pins that match to a manual window. When reprocessing replaces a match
+with the same replay fingerprint, the projection transaction moves the override to the new match ID.
+Editing an assignment does not rewrite replay data, the projection, or statistics.
 
 ## Manual definitions (0001, 0004)
 

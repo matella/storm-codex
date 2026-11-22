@@ -200,7 +200,8 @@ Session metadata is read from the database on each request. Start/end transition
 and use its clock; an open window survives process restarts. Admin writes use the existing Bearer guard
 on `/api/sessions`; standalone retains the application-wide loopback Host/Origin checks. No new service,
 configuration, or WebSocket event: the dashboard refreshes immediately after its writes and OBS recap
-also refreshes on its 10-second poll.
+also refreshes on its 10-second poll. Reprojection of the same replay fingerprint preserves any
+explicit assignment when the match row is replaced, including forced automatic grouping.
 
 **Operator identity on a player's PC.** From each effective folder ending in
 `Heroes of the Storm/Accounts/<account>/<toon>/Replays/Multiplayer`, use the exact projected

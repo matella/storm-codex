@@ -67,13 +67,24 @@ pub fn recent_matches(limit: u32) -> RwSignal<Vec<MatchSummary>> {
 }
 
 /// The operator's latest session review (`GET /api/sessions?limit=1` then `GET /api/sessions/{id}`, same
-/// endpoints as the app's Session page), re-read after every `match.parsed` event — same pattern as `/widget`
-/// and `/queue`. `None` until loaded, when there is no session, or on a read failure (the last value is kept).
+/// endpoints as the app's Session page). Both sources refresh on `match.parsed`; the recap also refreshes
+/// on connection and on the safety-net poll. Failed reads keep the last value.
 pub fn latest_review(automatic: bool) -> RwSignal<Option<storm_web_core::review::Review>> {
     let review = RwSignal::new(None);
+    let generation = RwSignal::new(0u64);
     let fetch = move || {
+        let Some(current) = generation.try_update(|latest| {
+            *latest += 1;
+            *latest
+        }) else {
+            return;
+        };
         spawn_local(async move {
-            if let Some(r) = fetch_review(automatic).await {
+            let result = fetch_review(automatic).await;
+            if generation.try_get_untracked() != Some(current) {
+                return;
+            }
+            if let Some(r) = result {
                 review.set(r);
             }
         })

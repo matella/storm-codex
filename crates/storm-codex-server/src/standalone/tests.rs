@@ -1213,6 +1213,65 @@ async fn outdated_replays_are_reprocessed_with_progress() {
     assert_eq!(status.reprocess_done, status.reprocess_total, "{status:?}");
 }
 
+#[tokio::test]
+async fn reprocessing_preserves_explicit_session_overrides() {
+    let Some((db, db_name)) = crate::refdata::tests::isolated_db().await else {
+        return;
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = test_config(tmp.path());
+    let path = Config::archive_entry("override-reprocess");
+    std::fs::create_dir_all(&cfg.archive_dir).unwrap();
+    let replay = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../storm-replay/tests/data/2026-05-27 22.37.45 Industrial District.StormReplay");
+    std::fs::copy(replay, cfg.archived_file(&path)).unwrap();
+    let state = crate::test_app_state(cfg, db.clone());
+    let upload_id: i64 = sqlx::query_scalar(
+        "INSERT INTO uploads (filename, fingerprint, archived_path, status)
+         VALUES ('old.StormReplay', 'override-reprocess', $1, 'pending') RETURNING id",
+    )
+    .bind(&path)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    let match_id = || {
+        sqlx::query_scalar::<_, i64>("SELECT match_id FROM uploads WHERE id = $1")
+            .bind(upload_id)
+            .fetch_one(&db)
+    };
+    assert!(crate::admin::reprocess_one(&state, upload_id, &path).await);
+    let mut id = match_id().await.unwrap();
+    let session_id: i64 =
+        sqlx::query_scalar("INSERT INTO manual_sessions (started_at) VALUES (now()) RETURNING id")
+            .fetch_one(&db)
+            .await
+            .unwrap();
+
+    for target in [Some(session_id), None] {
+        sqlx::query(
+            "INSERT INTO match_session_overrides (match_id, manual_session_id) VALUES ($1, $2)
+             ON CONFLICT (match_id) DO UPDATE SET manual_session_id = excluded.manual_session_id",
+        )
+        .bind(id)
+        .bind(target)
+        .execute(&db)
+        .await
+        .unwrap();
+
+        assert!(crate::admin::reprocess_one(&state, upload_id, &path).await);
+        let replacement_id = match_id().await.unwrap();
+        assert_ne!(id, replacement_id, "the committed match must be replaced");
+        let overrides: Vec<(i64, Option<i64>)> =
+            sqlx::query_as("SELECT match_id, manual_session_id FROM match_session_overrides")
+                .fetch_all(&db)
+                .await
+                .unwrap();
+        assert_eq!(overrides, [(replacement_id, target)]);
+        id = replacement_id;
+    }
+    crate::refdata::tests::drop_db(db, &db_name).await;
+}
+
 async fn setting(state: &AppState, key: &str) -> Option<serde_json::Value> {
     sqlx::query_scalar("SELECT value FROM app_settings WHERE key = $1")
         .bind(key)

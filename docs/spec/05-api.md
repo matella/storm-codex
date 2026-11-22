@@ -92,9 +92,10 @@ anchor start; `prefer_open=true` on the list puts the visible open window first 
 `automatic_only=true` on both GETs ignores all manual metadata and overrides (legacy OBS stream pool).
 For nonempty sessions, `start`, `end` and duration still describe games, not the window. For an empty
 manual session, `start=opened_at`, `end=closed_at ?? opened_at`, zero play/span/counts and no averages
-or picks. The manual baseline ends at `opened_at` and explicitly excludes all members, even if moved
-from before that cutoff. Account filters restrict every game and omit manual sessions with no games
-for the selected account (detail then returns 404).
+or picks. Both session types use the same baseline: `to` is the first game's start (exclusive),
+`from` is 90 days earlier (inclusive), and members are excluded. With no games, `to` falls back to
+`opened_at` and there are no modes or baseline games. Account filters restrict every game and omit
+manual sessions with no games for the selected account (detail then returns 404).
 
 | Manual session route | Contract |
 |---|---|

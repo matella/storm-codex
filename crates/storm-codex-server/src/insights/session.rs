@@ -472,8 +472,7 @@ pub fn review(games: &[MyGame], sessions: &[Group<'_>], id: i64) -> Option<Revie
     let session = &group.games;
     let start = session.first().map_or(group.start, |g| g.played_at);
     let end = group.end();
-    let cutoff = group.start;
-    let from = cutoff - Duration::days(BASELINE_DAYS);
+    let from = start - Duration::days(BASELINE_DAYS);
     let members: HashSet<_> = session.iter().map(|g| g.id).collect();
     let modes: Vec<Option<i32>> = {
         let set: HashSet<Option<i32>> = session.iter().map(|g| g.mode).collect();
@@ -485,7 +484,7 @@ pub fn review(games: &[MyGame], sessions: &[Group<'_>], id: i64) -> Option<Revie
         .iter()
         .filter(|g| {
             g.played_at >= from
-                && g.played_at < cutoff
+                && g.played_at < start
                 && modes.contains(&g.mode)
                 && !members.contains(&g.id)
         })
@@ -977,10 +976,28 @@ mod tests {
     }
 
     #[test]
+    fn identical_manual_and_automatic_membership_has_the_same_baseline() {
+        let games = [g(1, 0, "A", true, 2.0, 1.0), g(2, DAY, "A", true, 6.0, 1.0)];
+        let automatic = groups(&games, &[], &HashMap::new(), false);
+        let windows = [window(-1, -DAY, Some(2 * DAY))];
+        let overrides = HashMap::from([(1, None)]);
+        let manual = groups(&games, &windows, &overrides, false);
+        let a = super::review(&games, &automatic, 2).unwrap();
+        let m = super::review(&games, &manual, -1).unwrap();
+        let a = serde_json::to_value(a).unwrap();
+        let m = serde_json::to_value(m).unwrap();
+        assert_eq!(a["baseline"]["games"], 1);
+        assert_eq!(a["baseline"]["to"], serde_json::json!(at(DAY)));
+        assert_eq!(m["baseline"], a["baseline"]);
+        assert_eq!(m["games"], a["games"]);
+    }
+
+    #[test]
     fn a_game_moved_in_from_before_the_window_is_not_in_its_own_baseline() {
         let games = [
+            g(2, -DAY, "A", true, 2.0, 1.0),
             g(1, 0, "A", true, 10.0, 1.0),
-            g(2, DAY, "A", true, 2.0, 1.0),
+            g(4, DAY, "A", true, 50.0, 1.0),
             g(3, 3 * DAY, "A", true, 6.0, 1.0),
         ];
         let windows = [window(-1, 3 * DAY, Some(4 * DAY))];

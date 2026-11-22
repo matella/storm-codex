@@ -148,7 +148,8 @@ After a successful write the list, selector and review are re-read; failures are
 optimistic changes. Hosted writes reuse the token saved in Admin. `?account=<name or toon:handle>`
 keeps navigation scoped and hides mutation controls and unfiltered recent form. The standalone and
 composed OBS recap use the same preferred session and refresh on match events or the 10-second poll;
-empty recap is blank. Stream pool explicitly keeps its legacy automatic-only review; other sources are unchanged.
+empty recap is blank. The standalone source ignores responses superseded by a newer refresh.
+Stream pool explicitly keeps its legacy automatic-only review; other sources are unchanged.
 
 ### Custom OBS layouts and builder preview
 
