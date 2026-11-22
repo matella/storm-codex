@@ -239,6 +239,11 @@ async fn run_parse(
             .await
     {
         tracing::error!("upload {upload_id}: parse attempt not recorded: {e}");
+        return Outcome {
+            status: "error".into(),
+            match_id: None,
+            error_class: Some("db".into()),
+        };
     }
     let path = archived.clone();
     // catch_unwind via spawn_blocking: a worker panic does not bring the server down

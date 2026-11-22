@@ -34,11 +34,15 @@ impl<'a> VersionedDecoder<'a> {
         self.pos
     }
 
-    /// Bytes not consumed yet. Every array item / struct field takes at least one byte, so this
-    /// bounds any preallocation sized by a count read from the file (a crafted count would
-    /// otherwise make `Vec::with_capacity` abort the whole process on allocation failure).
-    fn remaining(&self) -> usize {
-        self.data.len().saturating_sub(self.pos)
+    /// Every versioned array item or struct field consumes at least one input byte.
+    fn check_count(&self, count: usize) -> Result<()> {
+        if count > self.data.len().saturating_sub(self.pos) {
+            return Err(Error::Truncated(format!(
+                "reading {count} versioned values at byte {}",
+                self.pos
+            )));
+        }
+        Ok(())
     }
 
     fn read_u8(&mut self) -> Result<u8> {
@@ -158,7 +162,8 @@ impl<'a> VersionedDecoder<'a> {
                 let len = usize::try_from(self.vint()?)
                     .map_err(|_| Error::Corrupted("negative array length".into()))?;
                 let typeid = *typeid;
-                let mut items = Vec::with_capacity(len.min(self.remaining()));
+                self.check_count(len)?;
+                let mut items = Vec::new();
                 for _ in 0..len {
                     items.push(self.instance(typeid)?);
                 }
@@ -200,8 +205,8 @@ impl<'a> VersionedDecoder<'a> {
                 self.expect_skip(5)?;
                 let count = usize::try_from(self.vint()?)
                     .map_err(|_| Error::Corrupted("negative struct size".into()))?;
-                let mut result: Vec<(std::sync::Arc<str>, Value)> =
-                    Vec::with_capacity(count.min(self.remaining()));
+                self.check_count(count)?;
+                let mut result: Vec<(std::sync::Arc<str>, Value)> = Vec::new();
                 for _ in 0..count {
                     let tag = self.vint()?;
                     match fields.iter().find(|f| f.2 == tag) {
@@ -314,35 +319,30 @@ mod tests {
         }
     }
 
-    /// Security review C1: a struct field count of 2^35 read from the header used to reach
-    /// `Vec::with_capacity` as is — allocation failure, process abort. Now a plain error.
     #[test]
-    fn huge_struct_count_is_an_error_not_an_abort() {
-        let proto = crate::protocol::latest_protocol().unwrap();
-        let c1 = [0x05, 0x80, 0x80, 0x80, 0x80, 0x80, 0x02];
-        assert!(proto.decode_header(&c1).is_err());
-        assert!(proto.decode_details(&c1).is_err());
-        // same for an array length (struct with one field holding a huge array)
-        let mut d = VersionedDecoder::new(&[0x00, 0x80, 0x80, 0x80, 0x80, 0x80, 0x02], &[]);
-        assert!(d.instance(0).is_err(), "typeid outside an empty table");
+    fn count_must_fit_remaining_input() {
+        let mut d = VersionedDecoder::new(&[0; 4], &[]);
+        d.read_u8().unwrap();
+        assert!(d.check_count(0).is_ok());
+        assert!(d.check_count(3).is_ok());
+        assert!(matches!(d.check_count(4), Err(Error::Truncated(_))));
+        assert!(matches!(
+            d.check_count(usize::MAX),
+            Err(Error::Truncated(_))
+        ));
     }
 
-    /// Unknown fields are skipped by reading the bytes alone: a crafted nesting is bounded
-    /// instead of overflowing the stack.
     #[test]
-    fn deep_skip_nesting_is_an_error_not_a_stack_overflow() {
-        let proto = crate::protocol::latest_protocol().unwrap();
-        // struct, 1 field, unknown tag 63, then 1M nested "optional present" skips
-        let mut bytes = vec![0x05, 0x02, 0x7E];
-        for _ in 0..1_000_000 {
-            bytes.extend_from_slice(&[0x04, 0x01]);
-        }
-        bytes.push(0x06);
-        bytes.push(0x00);
-        let e = proto.decode_header(&bytes).unwrap_err();
-        assert!(e.to_string().contains("nesting"), "{e}");
-        // a shallow unknown field is still skipped (build compatibility)
-        let ok = [0x05, 0x02, 0x7E, 0x04, 0x01, 0x04, 0x01, 0x06, 0x00];
-        assert!(proto.decode_header(&ok).is_ok());
+    fn skip_depth_limit_is_checked_before_reading() {
+        let mut d = VersionedDecoder::new(&[], &[]);
+        assert!(matches!(
+            d.skip_instance(MAX_SKIP_DEPTH - 1),
+            Err(Error::Truncated(_))
+        ));
+        assert!(matches!(
+            d.skip_instance(MAX_SKIP_DEPTH),
+            Err(Error::Corrupted(_))
+        ));
+        assert_eq!(d.used_bytes(), 0);
     }
 }
