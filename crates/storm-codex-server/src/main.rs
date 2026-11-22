@@ -54,9 +54,13 @@ pub struct AppState {
     /// Series of the cast control room (singleton, persisted in `cast_live`).
     pub cast: Arc<RwLock<cast::Series>>,
     /// Version of the in-memory cast state (assigned under the write-lock of each mutation) and
-    /// last version written to the database: an older snapshot never overwrites a more recent one.
+    /// a non-blocking hint of the last version written to the database (authoritative value lives
+    /// in the `cast_save_tx` saver task): an older snapshot never overwrites a more recent one.
     pub cast_version: Arc<std::sync::atomic::AtomicU64>,
-    pub cast_saved: Arc<tokio::sync::Mutex<u64>>,
+    pub cast_saved: Arc<std::sync::atomic::AtomicU64>,
+    /// Hands cast snapshots to the single task that writes `cast_live` (`cast::store::spawn_saver`),
+    /// serialising those writes without holding a lock across the DB round trip.
+    pub cast_save_tx: tokio::sync::mpsc::Sender<cast::store::SaveRequest>,
     /// Current live lobby (singleton, persisted in `lobby_live`). `None` = no lobby.
     pub lobby: Arc<RwLock<Option<lobby::LobbyState>>>,
     /// Game in progress (live feed, in memory, disposable). `None` = none.
@@ -173,6 +177,8 @@ async fn run() -> Result<(), String> {
     } else {
         None
     };
+    let cast_saved: Arc<std::sync::atomic::AtomicU64> = Arc::default();
+    let cast_save_tx = cast::store::spawn_saver(db.clone(), cast_saved.clone());
     let state = AppState {
         cfg: Arc::new(cfg),
         db,
@@ -181,7 +187,8 @@ async fn run() -> Result<(), String> {
         draft: Arc::new(RwLock::new(draft)),
         cast: Arc::new(RwLock::new(cast_initial)),
         cast_version: Arc::default(),
-        cast_saved: Arc::default(),
+        cast_save_tx,
+        cast_saved,
         lobby: Arc::new(RwLock::new(lobby_initial)),
         live: Arc::new(RwLock::new(None)),
         replay_timer: Arc::default(),
@@ -771,6 +778,8 @@ async fn health(State(state): State<AppState>) -> (StatusCode, Json<serde_json::
 #[cfg(test)]
 pub(crate) fn test_app_state(cfg: Config, db: PgPool) -> AppState {
     let (events, _) = tokio::sync::broadcast::channel(64);
+    let cast_saved: Arc<std::sync::atomic::AtomicU64> = Arc::default();
+    let cast_save_tx = cast::store::spawn_saver(db.clone(), cast_saved.clone());
     AppState {
         cfg: Arc::new(cfg),
         db,
@@ -778,7 +787,8 @@ pub(crate) fn test_app_state(cfg: Config, db: PgPool) -> AppState {
         events,
         cast: Arc::new(RwLock::new(cast::Series::new())),
         cast_version: Arc::default(),
-        cast_saved: Arc::default(),
+        cast_save_tx,
+        cast_saved,
         lobby: Arc::new(RwLock::new(None)),
         live: Arc::new(RwLock::new(None)),
         replay_timer: Arc::default(),

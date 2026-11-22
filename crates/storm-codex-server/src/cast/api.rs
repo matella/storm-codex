@@ -1,7 +1,7 @@
 //! REST routes of the cast control room. Each mutation takes the write-lock only once (on a
 //! copy: an error never changes the state), then persists and broadcasts `cast.updated` on the WS
 //! (the clients refetch `GET /api/cast`). Open mode like `/api/draft`, no auth.
-use super::{lineup, store, CastError, LineupMode, MapStatus, Scene, Series, Team};
+use super::{lineup, CastError, LineupMode, MapStatus, Scene, Series, Team};
 use crate::draft::{Format, Side};
 use crate::AppState;
 use axum::{
@@ -28,15 +28,26 @@ fn next_version(s: &AppState) -> u64 {
 
 /// Writes `snapshot` (the state produced by the mutation of version `v`), unless a more
 /// recent version is already in the database: two concurrent persistences can never end on the old
-/// state (writes serialised by `cast_saved`, which holds the last written version).
+/// state. Ordering is enforced by `AppState.cast_save_tx`'s single saver task (one write to
+/// `cast_live` in flight at a time, processed in arrival order — see `store::spawn_saver`), not by
+/// holding a lock across the write's `.await` here: `cast_saved` is only a non-blocking "already
+/// known stale" hint, safe to read without any guard spanning the DB round trip.
 async fn save_versioned(s: &AppState, snapshot: &Series, v: u64) -> Result<(), sqlx::Error> {
-    let mut last = s.cast_saved.lock().await;
-    if v <= *last {
+    if v <= s.cast_saved.load(std::sync::atomic::Ordering::SeqCst) {
         return Ok(());
     }
-    store::save(&s.db, snapshot).await?;
-    *last = v;
-    Ok(())
+    let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+    if s.cast_save_tx
+        .send((snapshot.clone(), v, reply_tx))
+        .await
+        .is_err()
+    {
+        // Saver task gone (shutdown): nothing left to persist to.
+        return Ok(());
+    }
+    reply_rx
+        .await
+        .unwrap_or_else(|_| Err(sqlx::Error::Protocol("cast saver task ended".into())))
 }
 
 /// Persists the mutation's snapshot then broadcasts `cast.updated` (always, even if the write
@@ -611,6 +622,7 @@ pub async fn get_lineup(State(s): State<AppState>, Query(q): Query<LineupQuery>)
 mod tests {
     use super::*;
     use crate::api_tests::{call, call_raw, test_state};
+    use crate::cast::store;
     use serde_json::json;
     use std::time::{Duration, Instant};
 
