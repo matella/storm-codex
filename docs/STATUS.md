@@ -22,14 +22,21 @@ round's fix (signing exposure, first-run delete-nothing, regex scope, malformed 
 delete/cleanup-tag, fail-closed existence check, case-sensitive tag match) — see PR #90 for the
 full history. One residual risk accepted by design: the publish step isn't atomic (a cancelled
 mid-publish run could leave the draft briefly missing or stale) — acceptable for a non-critical
-preview that's replaced on the very next push. First live run (merge commit, PR #90) **failed**:
-`gh release create ... --notes $body` corrupted its argv on Windows because `$body` contained
-literal backtick characters (from double-backtick-escaped markdown code spans) — PowerShell's
-native-command argument encoding mangled it, surfacing as gh's own "no matches found for `D`"
-(part of the Windows asset path, not the notes text, got misparsed). Fixed in PR #91 the same way
-`release-desktop.yml` already avoids this: write the body to a temp file first and pass
-`--notes-file <path>`, never an inline string containing backticks. Verify the next push produces
-a working draft before considering this fully done.
+preview that's replaced on the very next push. First live run (merge commit, PR #90) **failed**
+with gh reporting "no matches found for `D`"; PR #91 misdiagnosed it as `--notes $body` corrupting
+its argv on a literal backtick and switched to `--notes-file` (still correct practice, kept, but
+not the actual bug) — the **next** real push failed identically. Real root cause: `$files =
+(Get-ChildItem out).FullName` collapses to a plain *string* (not an array) whenever `out` has
+exactly one file, true for this unsigned preview (no `.sig`/`.json`, unlike `release-desktop.yml`'s
+`out` which always has 2+). Splatting `@files` on that scalar string enumerates it **character by
+character** — `gh.exe`'s first positional argument after the tag became the single character `D`
+(the installer path's drive letter). Fixed in PR #92 by wrapping the whole property-access
+expression: `$files = @((Get-ChildItem out).FullName)`, forcing an array regardless of item count —
+verified both the bug and the fix with a mocked `gh` function recording its exact argv in `pwsh`
+(70 single-character arguments before, one clean path argument after). `release-desktop.yml` has
+the identical `(Get-ChildItem out).FullName` pattern but is safe today only because its `out`
+always has 2+ files; worth the same `@(...)` fix defensively at some point, not done here to keep
+this fix scoped to the workflow it actually broke. Verify the next push produces a working draft.
 
 ## Custom overlay widget fitting (2026-11-22)
 
