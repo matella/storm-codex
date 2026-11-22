@@ -70,7 +70,10 @@ Spec `docs/specs/2026-11-19-web-audit-fixes.md` ("App slice"), approved. Fixes A
   detected via `js_sys::Reflect`; the pinned `web-sys` has no typed binding for this newly-available API yet) and
   `prefers-reduced-motion` is not `reduce`, intercepts an internal `<a href>` click and performs the navigation
   inside `startViewTransition`'s callback; unsupported browsers and the reduced-motion case fall through to the
-  router's normal click handling, unchanged.
+  router's normal click handling, unchanged. Since 2026-11-22 the same listener first hands any same-origin link
+  outside the app's routes (`storm_web_core::route::is_app_route`: outside the base, `/api/...`, `/images/...`,
+  or an OBS-source page) to the browser as a full load, in every browser: neither it nor the router may treat an
+  export or API link as an in-app navigation. Export anchors also carry `download` (CSV, pack `.md`/`.xlsx`).
 
 ### Verified
 
@@ -377,6 +380,15 @@ deserialisation, `progress_percent`, `phase_message`, `redirects_to_welcome`, `p
   and Chromium installed. The former mocks `/ws` and advances the browser clock; the latter uses
   real clicks with a mocked Tauri bridge and verifies the controls are absent without it. Neither
   test talks to a live updater or validates the Windows installer.
+- Work that can outlive its page (anything after an `.await`, a timer, a window listener) must not read a
+  signal or run a `Callback` of that page unguarded: in Leptos 0.8 reading a disposed signal, `with_value` on a
+  disposed `StoredValue` or `run` on a disposed `Callback` panics, and the release build aborts. Use `try_*`
+  (`try_get_untracked`, `try_run`, `try_with_value`), an `on_cleanup` alive flag (`ui::use_interval`), or remove
+  the listener in `on_cleanup`. Setting a disposed signal is a harmless no-op. A scouting upload batch keeps
+  sending the dropped files after the page is left. `node web-rs/app/tests/navigate-away.cjs web-rs/dist/app` covers the CSV export
+  download (both bases), a bare `/api/` link, and leaving Players (search debounce), a scouting report (upload),
+  Welcome (manual-names save) and the cast draft replay panel (key shortcuts) mid-flight; each scenario then
+  checks for a panic and that router navigation still works.
 
 ## Loading (bundles)
 

@@ -99,7 +99,9 @@ pub fn Players() -> impl IntoView {
         generation.update(|g| *g += 1);
         let mine = generation.get_untracked();
         net::after_ms(250, move || {
-            if generation.get_untracked() != mine {
+            // The page may have been left meanwhile: its signals are then disposed, and reading one panics
+            // (aborting the release build). A disposed `generation` reads as `None` and stops here.
+            if generation.try_get_untracked() != Some(mine) {
                 return;
             }
             let t = text.get_untracked();

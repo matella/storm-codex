@@ -209,6 +209,27 @@ pub fn app_path_in<'a>(base: &str, pathname: &'a str) -> &'a str {
     }
 }
 
+/// Whether the app's router owns a same-origin link to `pathname` (served under `base`): inside the base, and not
+/// the API, the image store, or a page of another bundle (the OBS sources of [`page_of`]). Anything else is a real
+/// document the browser must load itself (an export download, a JSON view, an OBS source), never an in-app
+/// navigation. A dot does not make a path a file here: hero pages such as `/hero/E.T.C.` are app routes.
+pub fn is_app_route(base: &str, pathname: &str) -> bool {
+    let path = if base.is_empty() {
+        pathname
+    } else {
+        match pathname.strip_prefix(base) {
+            Some("") => "/",
+            Some(rest) if rest.starts_with('/') => rest,
+            _ => return false,
+        }
+    };
+    let under = |prefix: &str| {
+        path.strip_prefix(prefix)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+    };
+    !under("/api") && !under("/images") && page_of(path).is_none()
+}
+
 /// `encodeURIComponent`: everything but `A-Za-z0-9 - _ . ! ~ * ' ( )` is percent-encoded (UTF-8).
 pub fn uri_component(s: &str) -> String {
     let mut out = String::new();
@@ -428,6 +449,41 @@ mod tests {
             frame_position(Anchor::TopRight, 28.0, left),
             "top:28px;left:5.5px"
         );
+    }
+
+    #[test]
+    fn app_routes_exclude_the_api_images_and_other_bundles() {
+        for base in ["", "/v2"] {
+            let at = |p: &str| format!("{base}{p}");
+            for page in [
+                "/",
+                "/matches",
+                "/players",
+                "/scouting/3",
+                "/overlay-builder",
+                "/hero/E.T.C.",
+                "/apiary",
+            ] {
+                assert!(is_app_route(base, &at(page)), "{base} {page}");
+            }
+            for other in [
+                "/api",
+                "/api/matches.csv",
+                "/api/matches",
+                "/api/scouting/3/pack.md",
+                "/images/heroes/abathur.png",
+                "/cast/overlay",
+                "/ticker",
+                "/overlay/custom",
+            ] {
+                assert!(!is_app_route(base, &at(other)), "{base} {other}");
+            }
+        }
+        assert!(is_app_route("/v2", "/v2"));
+        // outside the `/v2` base: the API (or any page) at the root is not the router's
+        assert!(!is_app_route("/v2", "/api/matches.csv"));
+        assert!(!is_app_route("/v2", "/matches"));
+        assert!(!is_app_route("/v2", "/v2x/matches"));
     }
 
     #[test]
