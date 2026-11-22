@@ -19,6 +19,20 @@ end, history, failed write shown without change. Not run: hosted admin-token flo
 (covered by the server test only), OBS recap in a browser, representative-corpus latency (smoke:
 p95 < 4 ms on 8 games), standalone/desktop and Windows acceptance.
 
+
+**PR #94 independent review follow-up:** merged current `origin/main`, preserving both status intros
+above the common body. Reprojection moves explicit manual and forced-automatic assignments to the
+replacement match ID in the projection transaction. Both session types use the first game's start as
+the exclusive baseline cutoff. Standalone OBS review refreshes discard superseded responses.
+
+Offline `storm-dev:latest` with disposable PostgreSQL 17.10: workspace tests reported 600 passed,
+0 failed, 11 ignored; web native tests reported 210 passed, 0 failed. Workspace, web native and
+wasm32 strict clippy passed. All three release bundles built within budget: app 1,116,562 B Brotli,
+sources 261,074 B gzip, overlay 217,757 B gzip. The reprocessing and two baseline regressions each
+passed in isolation. Chromium with intercepted API/WS traffic reproduced the old recap repaint before
+the guard (0 passed, 1 failed) and passed with it (1 passed, 0 failed). The optional full refdata
+release and supervisor-local PostgreSQL binaries were not supplied; no real OBS run.
+
 ## Server: no lock across DB I/O, round 2 — insights cache, lobby link, draft persistence (2026-11-22)
 
 Three Medium concurrency findings fixed with the pattern PR #84 set for cast (branch

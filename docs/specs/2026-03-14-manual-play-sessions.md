@@ -11,7 +11,7 @@ Product scope approved by the operator in chat: start, end, and rename a manual 
 
 ## Persistence and API
 
-- Add a new migration for manual session windows, titles, and match-assignment overrides. Enforce only one open window in the database (including concurrent starts). Explicit automatic grouping is distinct from clearing an override. Reuse stable match identity so replays remain assigned across reprocessing where the underlying match is retained. Use additive changes and no new service or dependency.
+- Add a new migration for manual session windows, titles, and match-assignment overrides. Enforce only one open window in the database (including concurrent starts). Explicit automatic grouping is distinct from clearing an override. Preserve explicit assignments across reprocessing for the same replay fingerprint, even when the match ID changes. Use additive changes and no new service or dependency.
 - Keep existing session GET routes and fields compatible. Add metadata needed to distinguish open/manual sessions and display names. Reuse existing admin authorization for writes; local standalone works without a new login, and a configured hosted admin token still gates mutations. Return a conflict if a second session is already running and a not-found or validation error for invalid/ineligible match or target IDs. Update the living server, data-model, API, and frontend contracts with the exact routes and shapes alongside the implementation.
 
 ## Acceptance
@@ -27,4 +27,3 @@ Product scope approved by the operator in chat: start, end, and rename a manual 
 - Deviations/additions: `GET /api/sessions/manual` (assignment targets, includes empty windows); `prefer_open=true` and `automatic_only=true` query flags (the latter keeps the stream-pool OBS source on its legacy review); assignments accept `{kind:"window"}` to clear an override.
 - Server-backed OBS recap reads the preferred (open) session through a new `recap` feed; other OBS sources are unchanged.
 - Verification: see `docs/STATUS.md`. Latency was only smoke-measured on an 8-game fixture; no representative-corpus p95 yet.
-
