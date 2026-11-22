@@ -320,9 +320,13 @@ fresh migrated cluster → import.
   a hidden top-level window (a GUI process gets no console-control event); from
   `WM_QUERYENDSESSION` on, every stop uses the `SessionEnd` budget (cleared if the session end
   is cancelled).
-- **One stop, every caller waits (`lifecycle.rs`).** The stack is stopped once; any other caller
-  (startup failure, Quit, exit hooks, session end, which run on different threads) blocks until
-  that stop has finished, so the process never exits mid-stop. A stop requested while the stack
+- **Serialized stop attempts (`lifecycle.rs`).** Other callers wait for the active attempt.
+  A failed stop only confirms Postgres is left running if the server itself was confirmed down
+  first; if the server kill also fails, Postgres is left running too and is recovered the same
+  way as a hard kill of the shell (`Postgres::start` finds it is ours on the next launch).
+  A failed attempt retains the stack for retry; a failed server stop retains the child handle
+  and does not proceed to Postgres. The in-app updater requires a confirmed stop before handing
+  off to the installer. A stop requested while the stack
   is still starting waits for the start, then stops what was started, and the window is not
   opened.
 - **Hard kill of the shell.** The server is in a kill-on-close job object, so it dies with the
@@ -464,8 +468,14 @@ fresh migrated cluster → import.
        deduplicated by content hash); the raw cache is kept (keyed by content). `archive.old`
        and the journal are removed and the server restarted on the same stack and port
        (`Stack::restart_server`); the command returns once `/api/health` answers.
-    6. **Failure during the commit.** Which side of the rename transaction a `promote_import`
-       error happened on is read back (`staging_exists`):
+    6. **Failure during the commit.** If stopping the server fails, the import aborts before
+       swapping the archive or promoting the database. Rollback attempts to remove the journal
+       and discard staging before restart. Restart checks the retained child without waiting:
+       only a confirmed exit allows the handle to be cleared and a replacement started. A live
+       child or an unreadable exit status blocks restart and leaves the handle available for a
+       later stop attempt.
+       Which side of the rename transaction a `promote_import` error happened on is read back
+       (`staging_exists`):
        - **before the rename** (staging database still there): `archive.old` is put back, the
          staging database dropped, the journal removed, the server restarted; the message says
          nothing was changed. If putting `archive.old` back fails, the server stays stopped and
@@ -481,6 +491,8 @@ fresh migrated cluster → import.
        A swap whose rollback rename fails too (the replays only in `archive.old`) also keeps
        the journal and the staging database and leaves the server stopped: the next start
        rolls back. Only the cases that really changed nothing say "nothing was changed".
+       While an import journal remains, another import is refused before changing any staging
+       data. Restart Storm Codex to finish recovery before retrying.
     **Another PC or user profile.** The rows keep the `archived_path` they were exported
     with (absolute on data archived before the standalone app, e.g.
     `C:\Users\<old user>\…\archive\<sha>.StormReplay`); the server resolves every archived
@@ -658,6 +670,28 @@ the "Quit it first" message and leaves it running; installing over an app killed
 replaces `postgres\`; the uninstaller shows the "Delete the application data" box unticked and
 keeps `%LOCALAPPDATA%\com.matella.stormcodex` when left unticked; the payload includes Postgres,
 web assets and minimaps but no `referential.tar.gz`; installer size and first start are measured.
+
+**Auto-draft preview** (`auto-draft-desktop.yml`, every push to `main`): a fully automatic version
+of the dry run above, so a near-next-version installer is one click away without a manual
+`workflow_dispatch`. Still never reaches users: it always publishes to the **fixed tag**
+`desktop-main-auto` (never `desktop-v*`), always as `--draft`, and before replacing that one
+release it checks it's actually a draft (refuses to touch a non-draft at that tag) then
+deletes+recreates it, so it never accumulates and never collides with a real tag. **Unsigned on
+purpose** — it never receives `TAURI_SIGNING_PRIVATE_KEY`/`_PASSWORD` and forces
+`bundle.createUpdaterArtifacts` off for that run, so the production signing key's exposure isn't
+multiplied by every push to `main` (the preview is for installer mechanics and new features, not
+the updater chain — that stays covered by the manual dry run above). The previewed version is the
+higher of the committed `desktop/tauri.conf.json` version or one patch above the latest
+**published** `desktop-v*` release — applied only to that run's checkout
+(`desktop/tauri.conf.json`'s `version`, and `desktop/Cargo.toml`'s `[package]` version scoped so a
+dependency table entry is never touched), never committed or pushed back to `main`: this workflow
+cannot create a push loop and cannot influence what a real release later tags. `desktop/Cargo.lock`
+is not touched by a manual `cargo update` step — the later `cargo tauri build` (no `--locked`)
+syncs its own path-dependency entry automatically, no registry/network access needed. It
+duplicates `release-desktop.yml`'s pinned-tool and packaging steps rather than sharing a workflow,
+so it can misbehave or be edited without any risk to the signed, user-facing pipeline or its
+secrets. Cutting a real release (below) is unaffected and still requires a human pushing a
+`desktop-vX.Y.Z` tag.
 
 **Supply-chain rules of the release job** (it holds `contents: write` and the signing key):
 - every action pinned to a full commit SHA with the version in a comment (`actions/checkout`

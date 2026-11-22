@@ -29,6 +29,126 @@ the new guards: disabling the draft saver's version check fails `saver_never_wri
 dropping the cache generation check fails `invalidate_during_a_reload_is_neither_blocked_nor_lost`; dropping
 the `content_hash` comparison fails `a_lobby_replaced_during_the_link_is_not_stamped`. Docs: `04-serveur.md`
 (draft versioned persistence + R24, insights corpus concurrency), `05-api.md` (draft R24, lobby link CAS).
+## Auto-draft desktop preview on every push to main (2026-11-22)
+
+New `.github/workflows/auto-draft-desktop.yml`: on every push to `main`, builds an **unsigned**
+Windows installer (no `TAURI_SIGNING_PRIVATE_KEY`/`_PASSWORD`, `bundle.createUpdaterArtifacts`
+forced off for that run) and publishes it to a fixed draft tag `desktop-main-auto`, replacing it
+each time after verifying via structured `gh api --paginate .../releases` data (case-sensitive
+tag match, not CLI error-text parsing) that it's actually a draft before deleting it. Never a
+`desktop-v*` tag, always `--draft`, never `--latest` — invisible to installed apps and the
+download page, and `gh api` itself throws loudly on any ambiguous lookup failure rather than
+guessing. The previewed version is auto-computed (committed `tauri.conf.json` version, or latest
+published `desktop-v*` + 1 patch, malformed/overflow tags skipped not crashed) and applied only to
+that run's checkout — `desktop/Cargo.toml`'s `[package]` version alone, via a section-bounded
+instance regex that can't cross into a dependency table even if indented — never committed back to
+`main`, so this cannot create a push loop or affect what a real release later tags.
+`desktop/Cargo.lock` isn't touched by a manual command: the unlocked `cargo tauri build` syncs its
+own path-dependency entry. Cutting a real release is unchanged: still a human pushing a
+`desktop-vX.Y.Z` tag. Went through 4 rounds of independent review (Codex, `gpt-6.2-sol`) before
+merge, each round finding and fixing a real mutation-safety or correctness gap in the previous
+round's fix (signing exposure, first-run delete-nothing, regex scope, malformed tags, split
+delete/cleanup-tag, fail-closed existence check, case-sensitive tag match) — see PR #90 for the
+full history. One residual risk accepted by design: the publish step isn't atomic (a cancelled
+mid-publish run could leave the draft briefly missing or stale) — acceptable for a non-critical
+preview that's replaced on the very next push. First live run (merge commit, PR #90) **failed**
+with gh reporting "no matches found for `D`"; PR #91 misdiagnosed it as `--notes $body` corrupting
+its argv on a literal backtick and switched to `--notes-file` (still correct practice, kept, but
+not the actual bug) — the **next** real push failed identically. Real root cause: `$files =
+(Get-ChildItem out).FullName` collapses to a plain *string* (not an array) whenever `out` has
+exactly one file, true for this unsigned preview (no `.sig`/`.json`, unlike `release-desktop.yml`'s
+`out` which always has 2+). Splatting `@files` on that scalar string enumerates it **character by
+character** — `gh.exe`'s first positional argument after the tag became the single character `D`
+(the installer path's drive letter). Fixed in PR #92 by wrapping the whole property-access
+expression: `$files = @((Get-ChildItem out).FullName)`, forcing an array regardless of item count —
+verified both the bug and the fix with a mocked `gh` function recording its exact argv in `pwsh`
+(70 single-character arguments before, one clean path argument after). `release-desktop.yml` has
+the identical `(Get-ChildItem out).FullName` pattern but is safe today only because its `out`
+always has 2+ files; worth the same `@(...)` fix defensively at some point, not done here to keep
+this fix scoped to the workflow it actually broke. Verify the next push produces a working draft.
+
+## Custom overlay widget fitting (2026-11-22)
+
+Each non-queue placement now measures its own unscaled content and refits on content or grid
+size changes in both the builder preview and the saved overlay. Queue and standalone sources
+retain their existing rendering. Release `sources`: 259,326 bytes gzip, up 4,401 from the
+same-toolchain baseline and below the 300,000-byte cap.
+
+Offline checks passed: formatting, native Clippy and tests (210 core, 7 sources), workspace
+wasm32 Clippy and wasm32 test compilation. Headless Chromium with local fixtures verified all
+eight non-queue kinds at three box sizes, two-tab preview/saved parity for stream pool, recap and
+goal, and live stream-pool refitting (1 → 12 → 0 → 1 heroes without reload). The queue screenshot
+matched the baseline, and the fixed-source browser regression passed. No live server or OBS run.
+
+## Replay decoder hardening (PR #85)
+
+Versioned struct and array counts are checked against remaining input; decoded collections
+are not preallocated from file-supplied counts. Bitarray allocation and unknown-field nesting
+are bounded. MPQ streams are capped at 256 MiB each; stored and decoded sector lengths are
+checked, and each sector writes into the same bounded output buffer. Migration 0023 records
+upload parse attempts before decoding and stops startup recovery at three recorded attempts.
+The worker now retries transient bookkeeping failures in place while holding its parse permit.
+If the write cannot be confirmed after the bounded retries, the decoder does not run and the
+archived upload remains pending for startup recovery. Resume tests use separate migrated databases.
+
+Local verification in `storm-dev:latest` with disposable PostgreSQL 17: formatting and strict
+workspace Clippy passed; workspace tests: 579 passed, 0 failed, 11 ignored. The accepted-upload
+regression recovered from an injected PostgreSQL failure without restart, and the startup
+recovery and scouting isolation tests passed in the same run. All 21 MPQ streams from the three
+committed replays matched nom-mpq byte for byte. Release smoke benchmark: decode + stats median
+78.9 ms (p95 104.0 ms, three replays). The Python heroprotocol cross-check was not run offline;
+the upstream MPQ archive-table parser still needs hardening.
+
+## Restart after a late server exit during backup rollback
+
+If stopping the server fails during backup import, rollback can now restart it once a nonblocking
+status check confirms the retained child exited. A live child or an unreadable status still blocks
+restart and leaves the child available for a later stop. The rollback regression failed before the
+fix and passed after; live and unknown states also passed. The isolated offline Linux desktop
+harness passed 47 tests and strict Clippy, with one real-Postgres round-trip ignored. The harness
+used cached `errno` 0.3.14 and `zip` 9.7.3; the repository lockfile was unchanged. Full Tauri and
+Windows installer checks were not run.
+
+## Retain unconfirmed desktop shutdowns for retry
+
+A failed stop retains the stack and server child handle. A later caller retries instead of
+reporting that nothing is running, and PostgreSQL is stopped only after server exit is confirmed.
+Both shutdown regressions failed before the changes and passed after; the isolated Linux desktop
+harness passed 45 tests, with one real-Postgres round-trip ignored. No Windows installer run.
+
+## Preserve pending backup import recovery
+
+Another restore is refused while an import journal remains, before removing working files or
+staging a new database. Restarting Storm Codex can still recover the original replay archive.
+The double-swap-failure regression now checks that a retry makes no staging calls and that
+startup restores the original archive. The regression failed before the guard and passed after
+it; the isolated Linux harness ran 37 backup/supervision tests (one real-Postgres test ignored).
+The packaged Windows app was not exercised.
+
+## Web: CSV export and navigate-away crashes fixed (2026-11-22, branch `fix/web-crash-and-csv-export`)
+
+Two release-build front-end bugs from the web review, both reproduced first against an unmodified
+`origin/main` release build (`web-rs/app/tests/navigate-away.cjs`: 8/8 scenarios fail there, 8/8 pass after).
+- **CSV export (H1).** "CSV ↓" on Matches had no `download`, so the A21 view-transition click listener (and,
+  without it, the router itself) treated `/api/matches.csv?...` as an in-app route: URL changed, no request,
+  router "Not found." page. The anchor now has `download`, and the layout listener hands every same-origin link
+  outside the app's routes (`route::is_app_route`: `/api/`, `/images/`, OBS-source pages, outside the base) to
+  the browser as a full load, so a future API link without `download` cannot regress the same way.
+- **Disposed reads after navigation (H2).** Reading a disposed signal or running a disposed `Callback` panics
+  in Leptos 0.8 and aborts the release WASM (`Storm Codex WASM panic at traits.rs:361/394`). Guarded with
+  `try_*`: Players search debounce, Welcome manual-names save, every async action of the scouting report
+  (upload loop, side/delete, plan import, patch, pack copy, delete-report navigation, HTML export). The upload
+  loop now keeps sending the dropped files after the page is left (before, the panic killed it after the
+  first file). The repo-wide sweep found one more: the cast draft replay panel's Space/Backspace window
+  listener was never removed and panicked on the next key press after leaving; it is now removed in
+  `on_cleanup`. Other `spawn_local`/timer sites only set signals, already use `try_*`/alive flags, or live in
+  the layout (app lifetime); OBS bundles mount once per page. In these runs navigation kept working after
+  the abort, so the reported full freeze was not reproduced; the panic and the killed upload loop were.
+
+App bundle 1,104,867 bytes Brotli (origin/main 1,104,258), overlay 218,047 / sources 254,939 bytes gzip.
+PR #86. The shared CI audit failure was addressed by updating `url` to 2.5.9
+(RUSTSEC-2026-0592) and its required `form_urlencoded` dependency to 1.2.3 in
+all four affected lockfiles. Root `cargo audit` and locked resolution pass.
 
 ## Removed the Jarvis/Redis event emitter (2026-11-22)
 

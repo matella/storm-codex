@@ -4,12 +4,12 @@ Source of truth: `crates/storm-codex-server/migrations/` (embedded, run at start
 by `sqlx::migrate!`). Strategy: **JSONB for the lossless projection** (idempotent
 re-process) + **promoted scalar columns** for the hot filter/sort axes (indexed).
 
-## Core (0001, 0002)
+## Core (0001, 0002, 0023)
 
 | Table | Role | Key points |
 |---|---|---|
 | `upload_tokens` | personal upload tokens | `token_hash` = hex SHA-256 (never the plaintext); `revoked_at` |
-| `uploads` | 1 row per received file (traceability) | `fingerprint` (content, UNIQUE), `archived_path` (see "Archived paths"), `status` ∈ pending/parsed/duplicate/parse_failed, `error_class`/`error_msg`, `parser_version`, `match_id` → matches (0002) |
+| `uploads` | 1 row per received file (traceability) | `fingerprint` (content, UNIQUE), `archived_path` (see "Archived paths"), `status` ∈ pending/parsed/duplicate/parse_failed, `error_class`/`error_msg`, `parser_version`, `match_id` → matches (0002); **`parse_attempts`** (migration 0023, `INT NOT NULL DEFAULT 0`) = parses started by the upload path or the startup resume, incremented **before** each parse — a row the startup resume finds `pending` with `parse_attempts >= 3` is marked `parse_failed` / `error_class = too_many_attempts` instead of being re-parsed (see `04-serveur.md`, "Resume at startup") |
 | `matches` | projection of a game | `fingerprint` (game, UNIQUE), promoted scalars (build, mode, map, length, played_at, winner, first_*), **`data` = complete storm-stats `match` object** (except the heroes in `takedowns`: played hero, see `04-serveur.md` § Played-hero correction), `parser_version` |
 | `match_players` | 10 rows per match | promoted scalars (hero, team, win, kills…), **`data` = complete `player` object** — `hero` and the heroes copied into `deaths`/`takedowns` = played hero (talents), original in `heroCorrectedFrom` —, UNIQUE (match_id, toon_handle), CASCADE; **`hotkey_profile`** (migration 0015) = `SUserOptionsEvent.m_hotkeyProfile`, the player's hotkey profile name (index on `lower(btrim(…))`); NULL until the replay is re-processed (`PARSER_VERSION` 3); **`apm`** (migration 0016, `DOUBLE PRECISION`) = the player's SCmdEvents ÷ game minutes (`matches.length`), NULL until re-processed (`PARSER_VERSION` 4) or unknown duration; **`match_players_mvp_idx`** (migration 0018) = partial index `(match_id, toon_handle)` on the rows whose first award (`data #>> '{gameStats,awards,0}'`) is `EndOfMatchAwardMVPBoolean`: the archive's MVP filter reads it instead of detoasting `data` per game |
 | `players` | aggregated player reference | `toon_handle` PK, `last_name`, `names` (JSONB aliases) — denormalised, best-effort, derivable from `match_players`. **Neither `last_name` nor the order of `names` is chronological** (UPSERT in processing order): the current name and the order of names come from the **dated history** `match_players.name` × `matches.played_at` (`players/names.rs`; NULL `played_at` = oldest) |

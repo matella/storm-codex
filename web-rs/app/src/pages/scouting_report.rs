@@ -781,9 +781,17 @@ fn Games(
                 .collect(),
         );
         let id = r.get_untracked().id;
+        // Uploads keep going if the page is left (or re-rendered) meanwhile: the queue then updates nothing, and the
+        // possibly disposed `on_changed` is skipped (`try_run`) instead of panicking.
         spawn_local(async move {
             for (i, f) in list.iter().enumerate() {
-                let set = move |s: String| queue.update(|q| q[i].1 = s);
+                let set = move |s: String| {
+                    queue.update(|q| {
+                        if let Some(row) = q.get_mut(i) {
+                            row.1 = s;
+                        }
+                    })
+                };
                 set("uploading…".to_string());
                 let state = match net::read_file_bytes(f).await {
                     Err(_) => "network error".to_string(),
@@ -816,7 +824,7 @@ fn Games(
                     }
                 };
                 set(state);
-                on_changed.run(());
+                on_changed.try_run(());
             }
         });
     };
@@ -842,10 +850,10 @@ fn Games(
             .await
             {
                 if !(200..300).contains(&s) {
-                    flash.run(format!("✗ HTTP {s}"));
+                    flash.try_run(format!("✗ HTTP {s}"));
                 }
             }
-            on_changed.run(());
+            on_changed.try_run(());
         });
     });
     let delete = Callback::new(move |g: ScoutGame| {
@@ -867,10 +875,10 @@ fn Games(
             .await
             {
                 if !(200..300).contains(&s) {
-                    flash.run(format!("✗ HTTP {s}"));
+                    flash.try_run(format!("✗ HTTP {s}"));
                 }
             }
-            on_changed.run(());
+            on_changed.try_run(());
         });
     });
     let cls = |s: &str| {
@@ -1083,7 +1091,7 @@ fn ImportModal(r: Signal<Report>, on_close: Callback<()>, on_done: Callback<()>)
                                 .map(|w| format!("⚠ {w}")),
                         );
                         result.set(Some((true, lines)));
-                        on_done.run(());
+                        on_done.try_run(());
                     } else {
                         let why = if s == 401 {
                             "unauthorized — set the admin token in Admin".to_string()
@@ -1163,6 +1171,8 @@ pub fn ScoutingReport() -> impl IntoView {
     // the last loaded report, kept while a refresh is in flight
     let report = Memo::new(move |_| data.get().and_then(Result::ok));
     let r = Signal::derive(move || report.get().unwrap_or_default());
+    // The async actions below may finish after the page was left: their callbacks and stored values are then
+    // disposed, and running/reading one panics (aborting the release build). `try_run`/`try_with_value` skip them.
     let patch = Callback::new(move |body: Value| {
         let rid = r.get_untracked().id;
         spawn_local(async move {
@@ -1175,12 +1185,14 @@ pub fn ScoutingReport() -> impl IntoView {
             .await
             {
                 Ok((401, _)) => {
-                    flash.run("✗ unauthorized — set the admin token in Admin".to_string())
+                    flash.try_run("✗ unauthorized — set the admin token in Admin".to_string());
                 }
-                Ok((s, _)) if !(200..300).contains(&s) => flash.run(format!("✗ HTTP {s}")),
+                Ok((s, _)) if !(200..300).contains(&s) => {
+                    flash.try_run(format!("✗ HTTP {s}"));
+                }
                 _ => {}
             }
-            refresh.run(());
+            refresh.try_run(());
         });
     });
     let copy_pack = move || {
@@ -1199,7 +1211,7 @@ pub fn ScoutingReport() -> impl IntoView {
                 Ok((_, t)) => net::copy_text(&t).await.map(|()| t.encode_utf16().count()),
                 Err(e) => Err(e),
             };
-            flash.run(match done {
+            flash.try_run(match done {
                 Ok(n) => format!("✓ pack copied ({} k characters) — paste it into ChatGPT, Claude or your local model", (n as f64 / 1000.0 + 0.5).floor() as i64),
                 Err(_) => "✗ could not copy — use Download .md instead".to_string(),
             });
@@ -1216,11 +1228,15 @@ pub fn ScoutingReport() -> impl IntoView {
         spawn_local(async move {
             match net::write("DELETE", &format!("/api/scouting/{}", rep.id), None, None).await {
                 Ok((s, _)) if (200..300).contains(&s) => {
-                    refresh.run(());
-                    nav.with_value(|n| n("/scouting", Default::default()));
+                    refresh.try_run(());
+                    nav.try_with_value(|n| n("/scouting", Default::default()));
                 }
-                Ok((s, _)) => flash.run(format!("✗ HTTP {s}")),
-                Err(e) => flash.run(format!("✗ {e}")),
+                Ok((s, _)) => {
+                    flash.try_run(format!("✗ HTTP {s}"));
+                }
+                Err(e) => {
+                    flash.try_run(format!("✗ {e}"));
+                }
             }
         });
     };
@@ -1272,17 +1288,18 @@ pub fn ScoutingReport() -> impl IntoView {
                 .collect()
         });
         spawn_local(async move {
-            match crate::export::export_report(&rep, &info).await {
-                Ok(s) => flash.run(format!(
+            let done = match crate::export::export_report(&rep, &info).await {
+                Ok(s) => format!(
                     "✓ {} saved ({} KB, {}/{} portraits, {} maps) — send it to your team",
                     s.file_name,
                     (s.bytes as f64 / 1024.0).round(),
                     s.portraits,
                     s.heroes,
                     s.maps
-                )),
-                Err(_) => flash.run("✗ export failed".to_string()),
-            }
+                ),
+                Err(_) => "✗ export failed".to_string(),
+            };
+            flash.try_run(done);
             exporting.set(false);
         });
     };

@@ -5,8 +5,11 @@ use leptos::{
     ev,
     prelude::*,
     task::spawn_local,
-    wasm_bindgen::{JsCast, JsValue},
-    web_sys::js_sys::{Array, Object, Reflect, JSON},
+    wasm_bindgen::{closure::Closure, JsCast, JsValue},
+    web_sys::{
+        js_sys::{Array, Object, Reflect, JSON},
+        ResizeObserver, ResizeObserverEntry,
+    },
 };
 use storm_web_core::{
     aggregates::patch_banner_visible,
@@ -17,7 +20,7 @@ use storm_web_core::{
     },
     route::query_value,
 };
-use storm_web_sources::options::WidgetOptions;
+use storm_web_sources::{fit::scale_to_fit, options::WidgetOptions};
 
 const WIDTH: i32 = GRID_COLS * GRID_CELL_PX;
 const HEIGHT: i32 = GRID_ROWS * GRID_CELL_PX;
@@ -226,24 +229,69 @@ fn placement(
     };
     view! {
         <div class="custom-placement" style=style data-widget-type=move || settings.with(|s| s.as_ref().map(kind))>
-            {move || settings.get().map(|s| match s {
-                WidgetSettings::Queue {} => {
-                    let fit = move || row.with(|p| p.as_ref().map(|p| {
-                        let x = f64::from(p.grid_w * GRID_CELL_PX) / f64::from(WIDTH);
-                        let y = f64::from(p.grid_h * GRID_CELL_PX) / f64::from(HEIGHT);
-                        format!("transform:scale({})", x.min(y))
-                    }));
-                    view! { <div class="custom-queue" style=fit>{sessions::queue_content(feeds.names, feeds.recent, feeds.voice)}</div> }.into_any()
-                }
-                WidgetSettings::Ticker {} => sessions::ticker_content(feeds.names, feeds.recent).into_any(),
-                WidgetSettings::Widget(o) => sessions::widget_content(WidgetOptions { me: o.me.map(Into::into) }, feeds.names, feeds.newest).into_any(),
-                WidgetSettings::Recap {} => recap::recap_content(feeds.review).into_any(),
-                WidgetSettings::StreamPool {} => stream_pool::stream_pool_content(feeds.review).into_any(),
-                WidgetSettings::PatchBanner {} => patch_banner::patch_banner_content(visible_patch(feeds, patch_key.clone())).into_any(),
-                WidgetSettings::RecordFlash {} => recordflash::record_flash_content(feeds.flash).into_any(),
-                WidgetSettings::Nemesis {} => nemesis::nemesis_content(feeds.grudges).into_any(),
-                WidgetSettings::Goal {} => goal::goal_content(feeds.progress).into_any(),
+            {move || settings.get().map(|s| {
+                let content = match s {
+                    WidgetSettings::Queue {} => {
+                        let fit = move || row.with(|p| p.as_ref().map(|p| {
+                            let x = f64::from(p.grid_w * GRID_CELL_PX) / f64::from(WIDTH);
+                            let y = f64::from(p.grid_h * GRID_CELL_PX) / f64::from(HEIGHT);
+                            format!("transform:scale({})", x.min(y))
+                        }));
+                        return view! { <div class="custom-queue" style=fit>{sessions::queue_content(feeds.names, feeds.recent, feeds.voice)}</div> }.into_any();
+                    }
+                    WidgetSettings::Ticker {} => sessions::ticker_content(feeds.names, feeds.recent).into_any(),
+                    WidgetSettings::Widget(o) => sessions::widget_content(WidgetOptions { me: o.me.map(Into::into) }, feeds.names, feeds.newest).into_any(),
+                    WidgetSettings::Recap {} => recap::recap_content(feeds.review).into_any(),
+                    WidgetSettings::StreamPool {} => stream_pool::stream_pool_content(feeds.review).into_any(),
+                    WidgetSettings::PatchBanner {} => patch_banner::patch_banner_content(visible_patch(feeds, patch_key.clone())).into_any(),
+                    WidgetSettings::RecordFlash {} => recordflash::record_flash_content(feeds.flash).into_any(),
+                    WidgetSettings::Nemesis {} => nemesis::nemesis_content(feeds.grudges).into_any(),
+                    WidgetSettings::Goal {} => goal::goal_content(feeds.progress).into_any(),
+                };
+                fitted_content(content, move || row.with(|p| p.as_ref().map(|p| (
+                    f64::from(p.grid_w * GRID_CELL_PX), f64::from(p.grid_h * GRID_CELL_PX),
+                )))).into_any()
             })}
+        </div>
+    }
+}
+
+fn fitted_content(
+    content: impl IntoView,
+    bounds: impl Fn() -> Option<(f64, f64)> + Send + 'static,
+) -> impl IntoView {
+    let node = NodeRef::<leptos::html::Div>::new();
+    let measured = RwSignal::new((0.0, 0.0));
+    node.on_load(move |element| {
+        // The wrapper has no padding or border. Its layout size is independent of both
+        // the placement's clip and the transform, so scaling cannot trigger another resize.
+        let callback = Closure::<dyn FnMut(Array)>::new(move |entries: Array| {
+            if let Some(entry) = entries.get(0).dyn_ref::<ResizeObserverEntry>() {
+                let rect = entry.content_rect();
+                measured.try_set((rect.width(), rect.height()));
+            }
+        });
+        if let Ok(observer) = ResizeObserver::new(callback.as_ref().unchecked_ref()) {
+            observer.observe(&element);
+            let observer = StoredValue::new_local((observer, callback));
+            on_cleanup(move || {
+                observer.with_value(|(observer, _callback)| observer.disconnect());
+            });
+        }
+    });
+    let transform = move || {
+        let size = measured.get();
+        let scale = bounds()
+            .and_then(|bounds| scale_to_fit(bounds, size))
+            .unwrap_or(0.0);
+        format!("scale({scale})")
+    };
+    view! {
+        <div node_ref=node
+            style="position:absolute;top:0;left:0;width:max-content;display:flex;flex-direction:column;transform-origin:top left"
+            style:transform=transform
+        >
+            {content}
         </div>
     }
 }

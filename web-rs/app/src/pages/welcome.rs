@@ -113,7 +113,8 @@ fn Identity() -> impl IntoView {
             let m = match net::write("PUT", "/api/admin/settings", Some(body), None).await {
                 Ok((s, _)) if (200..300).contains(&s) => {
                     operator.set(names);
-                    if typed.get_untracked() == draft {
+                    // the page may have been left during the request (disposed draft: nothing to clear)
+                    if typed.try_get_untracked() == Some(draft) {
                         typed.set(None);
                     }
                     "✓ Saved.".to_string()
