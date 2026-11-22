@@ -674,7 +674,14 @@ pub fn recover_import(data: &DataDir, db: &dyn crate::supervise::Db) -> Result<(
     let journal = root.join(IMPORT_JOURNAL);
     let staged = db.staging_exists().map_err(|e| e.to_string())?;
     let archive = data.archive();
-    if journal.exists() {
+    // Matches the pending-import guard in `import_into_with`: any stat error other than
+    // not-found is treated the same as "a journal exists" so the two never disagree.
+    let journal_exists = match std::fs::symlink_metadata(&journal) {
+        Ok(_) => true,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => false,
+        Err(e) => return Err(format!("cannot check for a pending backup import: {e}")),
+    };
+    if journal_exists {
         if staged {
             unswap_dir(&archive).map_err(|e| e.to_string())?;
             remove_file_if_exists(&journal)?;
@@ -755,6 +762,13 @@ fn import_into_with(
     check_local_path(source)?;
     let data = stack.data().clone();
     let root = data_root(&data);
+    // A pending import owns the staging database and archive.old until startup recovers it.
+    // Staging another backup could erase the evidence recovery uses to decide whether to roll back.
+    match std::fs::symlink_metadata(root.join(IMPORT_JOURNAL)) {
+        Ok(_) => return Err("a previous backup import still needs recovery; restart Storm Codex before importing another backup".into()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) => return Err(format!("cannot check for pending backup import recovery: {e}")),
+    }
     let work = root.join(IMPORT_WORK);
     let clean = |work: &Path| -> Result<(), String> {
         if work.exists() {
@@ -1403,6 +1417,40 @@ mod tests {
     }
 
     #[test]
+    fn failed_stop_rolls_back_and_restarts_after_late_server_exit() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tempfile::tempdir().unwrap();
+        let log = Log::default();
+        let mut host = FakeHost::new(&log);
+        host.honours_shutdown = false;
+        host.failed_kill = Some(AfterFailedKill::Exited);
+        let (mut stack, _host) = stack_with_archive(host, tmp.path(), Some(b"old"));
+        log.lock().unwrap().clear();
+
+        let err =
+            import_into(&mut stack, &good_backup(src.path()), plenty).expect_err("stop fails");
+        assert_eq!(err, "the server could not be stopped: fake kill failure");
+        assert_eq!(
+            entries(&log),
+            [
+                "db.stage(PGDMP-import)".to_string(),
+                "server.migrate".to_string(),
+                format!("server.shutdown({SERVER_PORT})"),
+                "server.kill".to_string(),
+                "db.discard".to_string(),
+                "server.spawn".to_string(),
+            ]
+        );
+        assert!(!stack.staging_exists().unwrap());
+        assert_eq!(archive_tree(&stack.data().archive()), old_archive());
+        assert_eq!(
+            std::fs::read(stack.data().ledger()).unwrap(),
+            b"{\"ledger\":1}"
+        );
+        assert_clean(tmp.path());
+    }
+
+    #[test]
     fn failed_promote_puts_the_archive_back_drops_the_stage_and_restarts() {
         let tmp = tempfile::tempdir().unwrap();
         let src = tempfile::tempdir().unwrap();
@@ -1509,6 +1557,15 @@ mod tests {
         assert!(tmp.path().join(IMPORT_JOURNAL).exists());
         assert!(host.staged.load(std::sync::atomic::Ordering::SeqCst));
         assert!(!stack.data().archive().exists());
+        assert_eq!(archive_tree(&tmp.path().join("archive.old")), old_archive());
+        // A retry before restart must not touch the pending transaction, even with a valid backup.
+        log.lock().unwrap().clear();
+        let retry = import_into(&mut stack, &good_backup(src.path()), plenty)
+            .expect_err("recovery must finish before another import");
+        assert!(retry.contains("restart Storm Codex"), "{retry}");
+        assert!(entries(&log).is_empty());
+        assert!(tmp.path().join(IMPORT_JOURNAL).exists());
+        assert!(host.staged.load(std::sync::atomic::Ordering::SeqCst));
         assert_eq!(archive_tree(&tmp.path().join("archive.old")), old_archive());
         // The next start rolls back.
         drop(stack);

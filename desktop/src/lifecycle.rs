@@ -3,9 +3,8 @@
 //!
 //! - A stop requested while the stack is still starting waits for the start to finish, then
 //!   stops what was started (the startup thread is told not to open the window).
-//! - The stack is stopped once; every other caller blocks until that stop has **finished**
-//!   (a caller returning early would let the process exit, closing the job object, in the
-//!   middle of the server's ledger flush or before `pg_ctl stop`).
+//! - Stop attempts are serialized. A caller waits for the active attempt and retries if it
+//!   failed, rather than exiting in the middle of shutdown or assuming the stack stopped.
 //! - Once Windows has announced the end of the session, any stop uses the short
 //!   [`StopBudget::SessionEnd`], whichever thread runs it.
 
@@ -96,8 +95,8 @@ impl<S: Stoppable> Lifecycle<S> {
         self.lock().session_ending = ending;
     }
 
-    /// Stops the stack once. Waits for an in-progress start, and for a stop already run by
-    /// another caller, so it never returns before the stack is fully stopped.
+    /// Waits for startup or an in-progress stop. Retains a failed stack so another caller
+    /// can retry rather than reporting that nothing is running.
     pub fn stop(&self, budget: StopBudget) -> StopOutcome<S::Error> {
         let mut st = self.lock();
         st.stop_requested = true;
@@ -118,8 +117,16 @@ impl<S: Stoppable> Lifecycle<S> {
         };
         drop(st);
         let result = stack.stop(budget);
-        drop(stack);
-        self.lock().stopping = false;
+        let retry = if result.is_err() {
+            Some(stack)
+        } else {
+            drop(stack);
+            None
+        };
+        let mut st = self.lock();
+        st.stack = retry;
+        st.stopping = false;
+        drop(st);
         self.changed.notify_all();
         StopOutcome::Stopped(budget, result)
     }
@@ -216,6 +223,39 @@ mod tests {
         assert!(matches!(
             first,
             StopOutcome::Stopped(StopBudget::Full, Ok(()))
+        ));
+    }
+
+    #[test]
+    fn failed_stop_is_retried_and_never_counted_as_nothing_running() {
+        struct FailsTwice(u8);
+        impl Stoppable for FailsTwice {
+            type Error = &'static str;
+            fn stop(&mut self, _budget: StopBudget) -> Result<(), Self::Error> {
+                if self.0 == 0 {
+                    return Ok(());
+                }
+                self.0 -= 1;
+                Err("still running")
+            }
+        }
+
+        let life = Lifecycle::new();
+        assert!(life.finish_start(Some(FailsTwice(2))));
+        for _ in 0..2 {
+            assert!(matches!(
+                life.stop(StopBudget::Full),
+                StopOutcome::Stopped(_, Err("still running"))
+            ));
+        }
+        assert!(life.with_running(|_| ()).is_none());
+        assert!(matches!(
+            life.stop(StopBudget::Full),
+            StopOutcome::Stopped(_, Ok(()))
+        ));
+        assert!(matches!(
+            life.stop(StopBudget::Full),
+            StopOutcome::NothingRunning
         ));
     }
 

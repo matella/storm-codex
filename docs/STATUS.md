@@ -1,5 +1,31 @@
 # STATUS — read first, update last
 
+## Restart after a late server exit during backup rollback
+
+If stopping the server fails during backup import, rollback can now restart it once a nonblocking
+status check confirms the retained child exited. A live child or an unreadable status still blocks
+restart and leaves the child available for a later stop. The rollback regression failed before the
+fix and passed after; live and unknown states also passed. The isolated offline Linux desktop
+harness passed 47 tests and strict Clippy, with one real-Postgres round-trip ignored. The harness
+used cached `errno` 0.3.14 and `zip` 9.7.3; the repository lockfile was unchanged. Full Tauri and
+Windows installer checks were not run.
+
+## Retain unconfirmed desktop shutdowns for retry
+
+A failed stop retains the stack and server child handle. A later caller retries instead of
+reporting that nothing is running, and PostgreSQL is stopped only after server exit is confirmed.
+Both shutdown regressions failed before the changes and passed after; the isolated Linux desktop
+harness passed 45 tests, with one real-Postgres round-trip ignored. No Windows installer run.
+
+## Preserve pending backup import recovery
+
+Another restore is refused while an import journal remains, before removing working files or
+staging a new database. Restarting Storm Codex can still recover the original replay archive.
+The double-swap-failure regression now checks that a retry makes no staging calls and that
+startup restores the original archive. The regression failed before the guard and passed after
+it; the isolated Linux harness ran 37 backup/supervision tests (one real-Postgres test ignored).
+The packaged Windows app was not exercised.
+
 ## Web: CSV export and navigate-away crashes fixed (2026-11-22, branch `fix/web-crash-and-csv-export`)
 
 Two release-build front-end bugs from the web review, both reproduced first against an unmodified
