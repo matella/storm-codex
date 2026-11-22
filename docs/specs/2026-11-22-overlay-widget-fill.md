@@ -1,7 +1,9 @@
 # Overlay builder: widgets fill their placed box
 
 Date: 2026-11-22 · Status: **approved** by the operator in chat (2026-11-22: uniform scale, the
-operator's own recommended option).
+operator's own recommended option). **Amended 2026-11-22**: a fixed per-kind size table does not
+work (see Implementation notes) — replaced with runtime measurement before the implementation
+dispatch below ran any code, so no prior version of this design was ever committed as code.
 
 ## Problem
 
@@ -21,39 +23,54 @@ kind rendered by `composition.rs::placement`: ticker, widget, recap, stream-pool
 record-flash, nemesis, goal (8 remaining of the 9 non-queue-exempt kinds; queue keeps its existing
 code path unchanged).
 
-Each of these 8 widgets has a fixed intrinsic design size today (its natural rendered box at 1x,
-e.g. a pill or card's natural width/height with no responsive CSS) — call it `(iw, ih)`. Add a
-`natural_size(&WidgetSettings) -> (f64, f64)` helper (or a per-kind constant table) in
-`composition.rs` reporting each kind's current intrinsic pixel size, measured from its existing
-CSS (no CSS changes — this reads sizes that already exist, it does not redesign any widget).
-Generalize the existing `fit` closure (currently queue-only, scaling against the fixed 1920x1080
-`WIDTH`/`HEIGHT`) into one shared helper used for every kind:
+Each of these 8 widgets renders content whose size can depend on live data (e.g. stream-pool's
+height grows with the number of heroes shown) — there is no fixed per-kind intrinsic size that is
+always correct. Instead, measure each instance's **actual unscaled rendered size** at runtime:
+render its content once, unscaled, inside an off-screen or zero-opacity measuring pass (e.g. a
+hidden sibling, or the real node observed via `ResizeObserver`/`getBoundingClientRect` on mount and
+on every content update), then apply:
 
 ```
-scale = min(grid_w*GRID_CELL_PX / iw, grid_h*GRID_CELL_PX / ih)
+scale = min(grid_w*GRID_CELL_PX / measured_w, grid_h*GRID_CELL_PX / measured_h)
 ```
 
-Wrap every widget's content in a scaled inner `<div>` (`transform:scale({scale});transform-origin:
-top left`), sized to its own natural `(iw, ih)` before the transform, inside the existing
-`.custom-placement` box (which stays the real grid-cell size and keeps `overflow:hidden` as a
-backstop for any rounding at the edges). This mirrors Queue's existing pattern exactly, just
-generalized to a per-kind natural size instead of the one fixed 1920x1080 case.
+to a `transform:scale({scale});transform-origin:top left` wrapper around the same content, inside
+the existing `.custom-placement` box (still the real grid-cell size, `overflow:hidden` stays as a
+backstop for rounding at the edges). Re-measure and re-derive `scale` whenever the content's
+natural size could have changed (new data, not just a resize of the placement box, which is already
+handled by the existing `grid_w`/`grid_h` reactive style). Queue is exempt and unchanged: its content
+is already a fixed 1920x1080 design, so its existing fixed-constant `fit` closure is correct as is
+and does not need runtime measurement.
 
 No change to `WidgetSettings`, the wire contract, migrations, the builder's placement/resize
 logic, or any fixed OBS source URL (`/ticker`, `/widget`, etc. keep their current unscaled
 rendering — this only changes the **custom-overlay composition renderer** and its preview, i.e.
 layouts built in `/overlay-builder` and viewed at `/overlay/custom?id=`).
 
+## Implementation notes (2026-11-22)
+
+The first implementation attempt found that a static per-kind `(iw, ih)` table (as originally
+drafted above) cannot be correct: Chromium measured the real `stream-pool` widget at 270×85 CSS px
+with one hero shown and 270×481 with twelve — the same widget kind, two different natural sizes
+depending on live data. Any other data-driven widget (recap, ticker, goal, etc.) can have the same
+property. The design above was amended to measure actual rendered size at runtime instead of a
+fixed table, before any code was written against the old table-based design, so there is no
+regression to reconcile.
+
 ## Acceptance
 
-- Every one of the 8 widget kinds, placed at a box smaller than its natural size, than larger than
-  its natural size, and than its natural aspect ratio, renders fully visible and centered-by-origin
-  with no clipping and no empty margin beyond what the aspect mismatch requires.
+- Every one of the 8 widget kinds, placed at a box smaller than its measured size, than larger
+  than its measured size, and than its measured aspect ratio, renders fully visible and
+  centered-by-origin with no clipping and no empty margin beyond what the aspect mismatch
+  requires. For a widget whose content size changes live (e.g. stream-pool's hero count), the
+  scale updates to match without a page reload.
 - Queue's existing behavior is pixel-identical to before (regression check against current code).
 - The builder's live preview (same renderer, iframe) reflects the same scaling as the real OBS
   output for an unchanged layout.
 - No bundle-size budget change expected (reuses existing `sources`-bundle code, no new dependency).
-- Native tests for the new scale-factor helper (exact fit, under, over, non-matching aspect ratio).
+- Native tests for the new scale-factor helper (exact fit, under, over, non-matching aspect ratio)
+  using measured dimensions as fixed inputs to the pure scale-factor function (the measuring
+  itself is a DOM concern, not unit-testable in `cargo test`).
 - Browser-checked: a layout with at least 3 non-queue widget kinds at non-default box sizes,
   compared between the builder preview and a second tab opening the real `/overlay/custom?id=`
   URL.
