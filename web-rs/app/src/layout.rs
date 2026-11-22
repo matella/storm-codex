@@ -6,7 +6,7 @@ use leptos_router::{components::Outlet, hooks::use_location, hooks::use_navigate
 use storm_web_core::{
     live::{effects, reopen_effects, Effects},
     net,
-    route::{app_href, app_path, page_title, tab_active, NavEntry, NAV},
+    route::{app_base, app_href, app_path, is_app_route, page_title, tab_active, NavEntry, NAV},
     whatsnew::{entries_since, APP_VERSION},
 };
 
@@ -61,7 +61,7 @@ fn start_view_transition_fn() -> Option<js_sys::Function> {
 /// A21: same-document view transitions on internal navigations, as progressive enhancement. A capture-phase
 /// click listener on the app root runs before the router's own delegated click handling; when the API is
 /// unsupported or motion is reduced, it does nothing and the normal click (and the router's handling of it)
-/// proceeds unchanged.
+/// proceeds unchanged. Same-origin links outside the app's routes are always handed to the browser (see below).
 fn view_transition_click(
     ev: web_sys::MouseEvent,
     navigate: impl Fn(&str, leptos_router::NavigateOptions),
@@ -95,6 +95,16 @@ fn view_transition_click(
     // same-origin check: HtmlAnchorElement resolves `.origin()` against the current document
     let page_origin = web_sys::window().and_then(|w| w.location().origin().ok());
     if page_origin.as_deref() != Some(a.origin().as_str()) {
+        return;
+    }
+    // A same-origin link outside the app's routes (`/api/...` exports, OBS sources) is a real document: load it as
+    // the browser would. Merely returning is not enough, because the router's own click handling would still take
+    // it over as an in-app navigation (blank page, no request) unless the link carries `download`/`target`.
+    if !is_app_route(app_base(), &a.pathname()) {
+        ev.prevent_default();
+        if let Some(w) = web_sys::window() {
+            let _ = w.location().assign(&a.href());
+        }
         return;
     }
     let Some(start) = start_view_transition_fn() else {
