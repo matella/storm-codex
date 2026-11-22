@@ -318,8 +318,10 @@ dialog.ds-modal::backdrop { background: rgba(0,0,0,.65); backdrop-filter: blur(3
 .ds-topnav > a.on { color: var(--text); border-bottom-color: var(--accent); }
 .ds-topnav .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-2); box-shadow: 0 0 8px var(--accent-2); }
 .ds-navgroup { position: relative; display: flex; align-items: stretch; }
-.ds-navgroup > button { display: flex; align-items: center; gap: 5px; font: 600 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted-2);
-  border: none; border-bottom: 2px solid transparent; white-space: nowrap; cursor: pointer; background: none; padding: 0; }
+/* A1-style reset (see button.ds-btn/.ds-pill/.ds-help above): without appearance:none some browsers still
+   paint the native button box (light-gray fill/bevel) through the background:none override. */
+.ds-navgroup > button { appearance: none; display: flex; align-items: center; gap: 5px; font: 600 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted-2);
+  border: none; border-bottom: 2px solid transparent; white-space: nowrap; cursor: pointer; background: none; padding: 0; font-family: inherit; text-align: inherit; }
 .ds-navgroup > button:hover { color: var(--text); }
 .ds-navgroup > button.on { color: var(--text); border-bottom-color: var(--accent); }
 .ds-navgroup-caret { font-size: 9px; }

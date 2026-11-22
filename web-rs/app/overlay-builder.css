@@ -14,9 +14,16 @@
 .ob-error { padding: 0.65rem; border: 1px solid currentColor; color: var(--bad, #ff9fac); }
 .ob-error a { color: inherit; text-decoration: underline; }
 .ob-editor button:disabled, .ob-toolbar button:disabled { opacity: 0.55; cursor: not-allowed; }
+/* Checkerboard/alpha-grid affordance (issue #56 item 2): standard transparency pattern from
+   design/image-editing tools, so the canvas reads as "this is the transparent OBS layer" rather
+   than a plain bright panel. Visual only; widgets and the live preview still paint over it. */
 .ob-canvas {
   position: relative; isolation: isolate; overflow: hidden; aspect-ratio: 16 / 9;
   container-type: inline-size; outline: 1px solid var(--line, #49526e); background: #0d1220;
+  background-image: linear-gradient(45deg, #141b31 25%, transparent 25%, transparent 75%, #141b31 75%),
+                     linear-gradient(45deg, #141b31 25%, transparent 25%, transparent 75%, #141b31 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 10px 10px;
 }
 .ob-canvas::after {
   content: ""; position: absolute; inset: 0; pointer-events: none;
