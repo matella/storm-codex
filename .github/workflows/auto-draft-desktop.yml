@@ -1,0 +1,216 @@
+# Auto-draft desktop build on every push to main — a safe, always-current preview installer.
+# Never served to installed apps and never shown on the download page: the tag `desktop-main-auto` is fixed
+# (not `desktop-v*`) and the release this creates is always `--draft` (see release-desktop.yml's comment and
+# docs/spec/09-operations.md, "Releasing the desktop app" — the updater and pages.yml only ever resolve the
+# latest **non-draft** `desktop-v*` release). This exists purely so a near-next-version Windows installer is
+# one click away in Releases without a manual `workflow_dispatch`, while the real, user-visible release still
+# requires a human pushing a `desktop-vX.Y.Z` tag by hand.
+#
+# The displayed version auto-advances (current committed desktop/tauri.conf.json version, or one patch above
+# the latest published desktop-v* release if that's higher) but is applied ONLY to this runner's checkout —
+# nothing is committed or pushed back to main, so this workflow cannot create a push loop and cannot affect
+# what a real release later tags.
+#
+# UNSIGNED on purpose: the installer never gets TAURI_SIGNING_PRIVATE_KEY and bundle.createUpdaterArtifacts
+# is forced off for this run only. The preview exists to click through new features and installer mechanics,
+# not the updater chain — that stays covered by release-desktop.yml's manual dry run. This keeps the
+# production signing key out of every single main push instead of just real/dry-run releases.
+#
+# Deliberately duplicates release-desktop.yml's pinned-tool and packaging steps instead of extracting a shared
+# workflow: this file can misbehave without any risk to the signed, user-facing release pipeline or its secrets.
+name: auto-draft-desktop
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write # create/delete the draft release (GITHUB_TOKEN)
+concurrency:
+  group: auto-draft-desktop
+  cancel-in-progress: true # a newer push to main supersedes an in-flight preview build
+env:
+  AUTO_TAG: "desktop-main-auto"
+  TAURI_CLI_VERSION: "2.12.4"
+  TAURI_CLI_SHA256: "3e8687fb184bd7f10ebd8642f7715f79f4a605c0694c142a21507e8a24dc0f8b"
+  TRUNK_VERSION: "0.22.0-beta.1"
+  TRUNK_SHA256: "5324764f6a7d130753e9087e3713a8c3398d7c4cef2985a698042de91b8d3f51"
+  RUST_TOOLCHAIN: "1.94.0"
+jobs:
+  draft:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (Node 24)
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # tags: need the latest published desktop-v* to compute the next preview version
+      - name: compute preview version (committed version, or latest published + 1 patch)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $committed = (Get-Content desktop/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ($committed -notmatch '^\d+\.\d+\.\d+$') { throw "tauri.conf.json version '$committed' is not X.Y.Z" }
+          $committedVersion = [version]$committed
+          $tags = gh api --paginate "repos/$($env:REPOSITORY)/releases?per_page=100" --jq `
+            '.[] | select(.draft == false and .prerelease == false) | .tag_name'
+          $published = @()
+          foreach ($t in $tags) {
+            # Reject anything not exactly canonical X.Y.Z (no leading zeros) so an odd historical tag can't
+            # silently misparse; a tag component too large for [int] is caught and skipped, not thrown.
+            if ($t -match '^desktop-v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
+              try {
+                $published += [version]"$($Matches[1]).$($Matches[2]).$($Matches[3])"
+              } catch {
+                Write-Warning "skipping unparseable release tag '$t': $_"
+              }
+            }
+          }
+          if ($published.Count -gt 0) {
+            $latest = $published | Sort-Object | Select-Object -Last 1
+            try {
+              $bumped = [version]"$($latest.Major).$($latest.Minor).$($latest.Build + 1)"
+            } catch {
+              Write-Warning "latest published $latest has no representable next patch, falling back to committed version: $_"
+              $bumped = $committedVersion
+            }
+          } else {
+            $bumped = $committedVersion
+          }
+          # Use whichever is higher: an already-bumped committed version is not overridden with a smaller guess.
+          $next = if ($committedVersion -gt $bumped) { $committedVersion } else { $bumped }
+          "PREVIEW_VERSION=$next" >> $env:GITHUB_ENV
+      - name: apply preview version to this checkout only (never committed)
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $conf = Get-Content desktop/tauri.conf.json -Raw | ConvertFrom-Json
+          $conf.version = $env:PREVIEW_VERSION
+          $conf.bundle.createUpdaterArtifacts = $false # unsigned preview: see the file header
+          ($conf | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath desktop/tauri.conf.json -Encoding utf8NoBOM
+          # desktop/Cargo.toml's [package] version only (scoped to that section, not every "version = ...
+          # line in the file, so a dependency table entry can never be touched by accident — the lazy
+          # `(.*?)` cannot cross a later `^[` section header, so a malformed/missing [package] version
+          # genuinely fails to match instead of silently landing on a dependency's version). An instance
+          # Regex with an explicit count=1 — NOT the static [regex]::Replace(...,...,1) overload, whose 4th
+          # positional int silently coerces to RegexOptions.IgnoreCase and would replace every match.
+          $cargoToml = Get-Content desktop/Cargo.toml -Raw
+          $pkgVersionRegex = [regex]::new('(?ms)^\[package\]\r?\n((?:(?!^[ \t]*\[).)*?)^version = "[\d.]+"')
+          if (-not $pkgVersionRegex.IsMatch($cargoToml)) {
+            throw "did not find a [package] version line to update in desktop/Cargo.toml"
+          }
+          $evaluator = [System.Text.RegularExpressions.MatchEvaluator]{
+            param($m) "[package]`n$($m.Groups[1].Value)version = `"$env:PREVIEW_VERSION`""
+          }
+          # Comparing before/after text would wrongly report "no match" when the preview version already
+          # equals the committed one (a legitimate no-op) — IsMatch above is the real presence check.
+          $updated = $pkgVersionRegex.Replace($cargoToml, $evaluator, 1)
+          $updated | Set-Content -LiteralPath desktop/Cargo.toml -Encoding utf8NoBOM
+          # No `cargo update` step: the later `cargo tauri build` run (no --locked) syncs desktop/Cargo.lock's
+          # own path-dependency entry to this manifest version automatically, no registry/network access needed.
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch, 2026-10-16
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: wasm32-unknown-unknown
+      - name: Postgres 17 binaries (pinned, SHA-256 checked) + VC++ runtime (app-local)
+        run: ./scripts/fetch-postgres.ps1
+      - name: install Trunk (pinned prebuilt, committed SHA-256)
+        run: |
+          if ($env:TRUNK_SHA256 -notmatch '^[0-9a-f]{64}$') { throw "TRUNK_SHA256 is missing or not 64 lowercase hex characters" }
+          $url = "https://github.com/trunk-rs/trunk/releases/download/v$env:TRUNK_VERSION/trunk-x86_64-pc-windows-msvc.zip"
+          $zip = Join-Path $env:RUNNER_TEMP 'trunk.zip'
+          Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+          $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $env:TRUNK_SHA256) { throw "trunk.zip SHA-256 mismatch: expected $env:TRUNK_SHA256, actual $actual" }
+          $dir = Join-Path $env:RUNNER_TEMP 'trunk'
+          Expand-Archive -LiteralPath $zip -DestinationPath $dir
+          $dir >> $env:GITHUB_PATH
+      - name: install tauri-cli (pinned prebuilt, committed SHA-256)
+        run: |
+          if ($env:TAURI_CLI_SHA256 -notmatch '^[0-9a-f]{64}$') { throw "TAURI_CLI_SHA256 is missing or not 64 lowercase hex characters" }
+          $url = "https://github.com/tauri-apps/tauri/releases/download/tauri-cli-v$env:TAURI_CLI_VERSION/cargo-tauri-x86_64-pc-windows-msvc.zip"
+          $zip = Join-Path $env:RUNNER_TEMP 'cargo-tauri.zip'
+          Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+          $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $env:TAURI_CLI_SHA256) { throw "cargo-tauri.zip SHA-256 mismatch: expected $env:TAURI_CLI_SHA256, actual $actual" }
+          $dir = Join-Path $env:RUNNER_TEMP 'cargo-tauri'
+          Expand-Archive -LiteralPath $zip -DestinationPath $dir
+          if (-not (Test-Path (Join-Path $dir 'cargo-tauri.exe'))) { throw "cargo-tauri.exe not found in the archive" }
+          $dir >> $env:GITHUB_PATH
+      - name: tauri-cli version
+        run: |
+          $v = cargo tauri --version
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          if ($v -notmatch [regex]::Escape($env:TAURI_CLI_VERSION)) { throw "cargo tauri --version gave '$v', expected $env:TAURI_CLI_VERSION" }
+      - name: web bundles (overlay, sources, app → web-rs/dist)
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          foreach ($b in 'overlay', 'sources', 'app') {
+            Push-Location "web-rs/$b"
+            trunk build --release
+            Pop-Location
+          }
+      - name: precompress web bundles (shipped with originals in web/)
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          node --test scripts/test-precompress-web.mjs
+          node scripts/precompress-web.mjs
+      - name: server (release, static CRT)
+        env:
+          RUSTFLAGS: "-C target-feature=+crt-static"
+        run: cargo build --release --locked -p storm-codex-server
+      - name: bundled binaries find their VC++ runtime (server imports none)
+        run: |
+          ./scripts/check-pe-imports.ps1 -Path target/release/storm-codex-server.exe -List
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          ./scripts/check-pe-imports.ps1 -Path target/postgres/bin, target/postgres/lib -ResolveDir target/postgres/bin
+      - name: installer (tauri build, unsigned preview)
+        working-directory: desktop
+        run: cargo tauri build --config tauri.bundle.conf.json
+      - name: release assets (installer only — unsigned, no updater artifact) named "-auto"
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $setup = @(Get-ChildItem desktop/target/release/bundle/nsis -Filter '*-setup.exe')
+          if ($setup.Count -ne 1) { throw "expected exactly one NSIS installer, found $($setup.Count)" }
+          $name = "StormCodex_$($env:PREVIEW_VERSION)-auto_x64-setup.exe"
+          New-Item -ItemType Directory -Path out | Out-Null
+          Copy-Item -LiteralPath $setup[0].FullName -Destination "out/$name"
+          $mb = [math]::Round((Get-Item "out/$name").Length / 1MB, 1)
+          "Preview installer ``$name`` (unsigned): $mb MB" >> $env:GITHUB_STEP_SUMMARY
+      - name: replace the previous auto-draft (fixed tag, always overwritten, never --latest)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          # Structured-data lookup (same `gh api --paginate` pattern as the version-compute step), not a
+          # `gh release view`/error-text match: a CLI message like "release not found" is not a stable
+          # contract, and this never has to guess "ambiguous failure" vs "genuinely absent" — gh api itself
+          # throws loudly on auth/network/rate-limit failures instead of silently falling through.
+          $allReleases = gh api --paginate "repos/$($env:GH_REPO)/releases?per_page=100" | ConvertFrom-Json
+          # -ceq, not -eq: PowerShell's -eq is case-insensitive, so a stray differently-cased tag could
+          # otherwise pass this guard while `gh release delete`/the ref path below resolve the literal
+          # lowercase $env:AUTO_TAG — acting on two different releases.
+          $previous = $allReleases | Where-Object { $_.tag_name -ceq $env:AUTO_TAG } | Select-Object -First 1
+          if ($previous) {
+            if (-not $previous.draft) {
+              throw "release at tag '$($env:AUTO_TAG)' exists and is NOT a draft — refusing to touch it"
+            }
+            gh release delete $env:AUTO_TAG --yes # no --cleanup-tag: ref cleanup is handled separately below
+          }
+          # Best-effort tag-ref cleanup, run unconditionally (not just after a delete above): a dangling ref
+          # can outlive its release object from an earlier run (e.g. a partial failure). Absence is success,
+          # so failures here are swallowed. If this fails, `gh release create` below attaches to whatever
+          # commit the stale ref already points at instead of $env:GITHUB_SHA — not fatal for a preview
+          # that's replaced on the very next push, but not "guaranteed fresh" either.
+          # (gh api, not `git push --delete`: persist-credentials is off, so git has no push credential.)
+          $PSNativeCommandUseErrorActionPreference = $false
+          gh api -X DELETE "repos/$($env:GH_REPO)/git/refs/tags/$($env:AUTO_TAG)" *> $null
+          $PSNativeCommandUseErrorActionPreference = $true
+          $files = (Get-ChildItem out).FullName
+          $body = "Automatic preview build from the latest push to main ($($env:GITHUB_SHA.Substring(0,7))).`n`n" +
+            "**Not a real release**: unsigned, never served to installed apps, never on the download page, " +
+            "and this tag is overwritten by every push to main. For a real release, push a ``desktop-vX.Y.Z`` tag."
+          gh release create $env:AUTO_TAG @files --draft --target $env:GITHUB_SHA `
+            --title "Storm Codex $($env:PREVIEW_VERSION) (auto preview build, not published)" --notes $body

@@ -1,5 +1,30 @@
 # STATUS — read first, update last
 
+## Auto-draft desktop preview on every push to main (2026-11-22)
+
+New `.github/workflows/auto-draft-desktop.yml`: on every push to `main`, builds an **unsigned**
+Windows installer (no `TAURI_SIGNING_PRIVATE_KEY`/`_PASSWORD`, `bundle.createUpdaterArtifacts`
+forced off for that run) and publishes it to a fixed draft tag `desktop-main-auto`, replacing it
+each time after verifying via structured `gh api --paginate .../releases` data (case-sensitive
+tag match, not CLI error-text parsing) that it's actually a draft before deleting it. Never a
+`desktop-v*` tag, always `--draft`, never `--latest` — invisible to installed apps and the
+download page, and `gh api` itself throws loudly on any ambiguous lookup failure rather than
+guessing. The previewed version is auto-computed (committed `tauri.conf.json` version, or latest
+published `desktop-v*` + 1 patch, malformed/overflow tags skipped not crashed) and applied only to
+that run's checkout — `desktop/Cargo.toml`'s `[package]` version alone, via a section-bounded
+instance regex that can't cross into a dependency table even if indented — never committed back to
+`main`, so this cannot create a push loop or affect what a real release later tags.
+`desktop/Cargo.lock` isn't touched by a manual command: the unlocked `cargo tauri build` syncs its
+own path-dependency entry. Cutting a real release is unchanged: still a human pushing a
+`desktop-vX.Y.Z` tag. Went through 4 rounds of independent review (Codex, `gpt-6.2-sol`) before
+merge, each round finding and fixing a real mutation-safety or correctness gap in the previous
+round's fix (signing exposure, first-run delete-nothing, regex scope, malformed tags, split
+delete/cleanup-tag, fail-closed existence check, case-sensitive tag match) — see PR #90 for the
+full history. One residual risk accepted by design: the publish step isn't atomic (a cancelled
+mid-publish run could leave the draft briefly missing or stale) — acceptable for a non-critical
+preview that's replaced on the very next push. Verify on the first live run after merge: the draft
+appears, is unsigned, is not `--latest`, and `desktop-v0.1.5` is untouched.
+
 ## Custom overlay widget fitting (2026-11-22)
 
 Each non-queue placement now measures its own unscaled content and refits on content or grid

@@ -671,6 +671,28 @@ replaces `postgres\`; the uninstaller shows the "Delete the application data" bo
 keeps `%LOCALAPPDATA%\com.matella.stormcodex` when left unticked; the payload includes Postgres,
 web assets and minimaps but no `referential.tar.gz`; installer size and first start are measured.
 
+**Auto-draft preview** (`auto-draft-desktop.yml`, every push to `main`): a fully automatic version
+of the dry run above, so a near-next-version installer is one click away without a manual
+`workflow_dispatch`. Still never reaches users: it always publishes to the **fixed tag**
+`desktop-main-auto` (never `desktop-v*`), always as `--draft`, and before replacing that one
+release it checks it's actually a draft (refuses to touch a non-draft at that tag) then
+deletes+recreates it, so it never accumulates and never collides with a real tag. **Unsigned on
+purpose** — it never receives `TAURI_SIGNING_PRIVATE_KEY`/`_PASSWORD` and forces
+`bundle.createUpdaterArtifacts` off for that run, so the production signing key's exposure isn't
+multiplied by every push to `main` (the preview is for installer mechanics and new features, not
+the updater chain — that stays covered by the manual dry run above). The previewed version is the
+higher of the committed `desktop/tauri.conf.json` version or one patch above the latest
+**published** `desktop-v*` release — applied only to that run's checkout
+(`desktop/tauri.conf.json`'s `version`, and `desktop/Cargo.toml`'s `[package]` version scoped so a
+dependency table entry is never touched), never committed or pushed back to `main`: this workflow
+cannot create a push loop and cannot influence what a real release later tags. `desktop/Cargo.lock`
+is not touched by a manual `cargo update` step — the later `cargo tauri build` (no `--locked`)
+syncs its own path-dependency entry automatically, no registry/network access needed. It
+duplicates `release-desktop.yml`'s pinned-tool and packaging steps rather than sharing a workflow,
+so it can misbehave or be edited without any risk to the signed, user-facing pipeline or its
+secrets. Cutting a real release (below) is unaffected and still requires a human pushing a
+`desktop-vX.Y.Z` tag.
+
 **Supply-chain rules of the release job** (it holds `contents: write` and the signing key):
 - every action pinned to a full commit SHA with the version in a comment (`actions/checkout`
   v7.0.1, Node 24; `dtolnay/rust-toolchain` at the commit of its `stable` branch tip on 2026-11-14 — the
