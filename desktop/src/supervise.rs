@@ -29,7 +29,7 @@ const PASSWORD_FILE: &str = "pg-password";
 
 /// The only variables of the shell's own environment passed to the server (allow-list: the
 /// child starts from an empty environment). Everything else, the server configuration
-/// variables included (`REDIS_URL`, `ADMIN_TOKEN`, `AZURE_PUSH_*`, `DATABASE_URL`, ...), never
+/// variables included (`ADMIN_TOKEN`, `AZURE_PUSH_*`, `DATABASE_URL`, ...), never
 /// reaches it.
 /// - `SystemRoot`, `windir`: Windows system components (Winsock, CNG/crypto, COM) locate
 ///   their files through them; networking fails without `SystemRoot`.
@@ -260,7 +260,7 @@ impl Default for Timings {
 
 /// The server's whole environment: standalone mode, loopback bind, data paths under the data
 /// root, bundled resources, plus the [`SERVER_ENV_PASSTHROUGH`] variables found by `inherited`
-/// (the shell's environment in production). `REDIS_URL` and `ADMIN_TOKEN` are never set.
+/// (the shell's environment in production). `ADMIN_TOKEN` is never set.
 pub fn server_env(
     resource_dir: &Path,
     data: &DataDir,
@@ -1155,7 +1155,7 @@ mod tests {
     }
 
     #[test]
-    fn env_has_no_redis_and_is_loopback() {
+    fn env_has_no_secrets_and_is_loopback() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let log = Log::default();
         let (stack, host) = start(FakeHost::new(&log), tmp.path());
@@ -1170,7 +1170,6 @@ mod tests {
         assert_eq!(cmd.exe, Path::new("C:/res").join(SERVER_EXE));
         assert_eq!(get("STANDALONE").as_deref(), Some("1"));
         assert_eq!(get("BIND_ADDR"), Some(format!("127.0.0.1:{SERVER_PORT}")));
-        assert!(get("REDIS_URL").is_none());
         assert!(get("ADMIN_TOKEN").is_none());
         let data = DataDir::new(tmp.path().to_path_buf());
         let path = |p: PathBuf| Some(p.to_string_lossy().into_owned());
@@ -1243,12 +1242,7 @@ mod tests {
                 assert!(!v.to_string_lossy().starts_with("parent-"), "{k}");
             }
         }
-        for leak in [
-            "REDIS_URL",
-            "ADMIN_TOKEN",
-            "AZURE_PUSH_TOKEN",
-            "JARVIS_CHANNEL",
-        ] {
+        for leak in ["ADMIN_TOKEN", "AZURE_PUSH_TOKEN"] {
             assert!(env.iter().all(|(k, _)| *k != leak), "{leak} leaked");
         }
         assert_eq!(
@@ -1268,12 +1262,7 @@ mod tests {
     fn child_process_inherits_no_unlisted_variable() {
         use std::process::Stdio;
         // SAFETY (edition 2021: safe fn): test-only variables, no other test reads them.
-        for k in [
-            "REDIS_URL",
-            "ADMIN_TOKEN",
-            "AZURE_PUSH_TOKEN",
-            "STORM_CODEX_LEAK_PROBE",
-        ] {
+        for k in ["ADMIN_TOKEN", "AZURE_PUSH_TOKEN", "STORM_CODEX_LEAK_PROBE"] {
             std::env::set_var(k, "leaked-secret");
         }
         let system_root = std::env::var_os("SystemRoot").expect("SystemRoot");

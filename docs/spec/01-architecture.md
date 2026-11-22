@@ -6,11 +6,11 @@
 Gaming PC ──client-rs (Hots-Overlay)──► storm-codex-server (box :5102)
                 POST /api/upload-raw          │ axum + Postgres + WS
                                               │
-        ┌───────────────┬─────────────────────┼──────────────────┬──────────────┐
-        ▼               ▼                     ▼                  ▼              ▼
-   Rust SPA        OBS overlays         Jarvis Redis        HotsPatchNotes   raw archive
-   (served by      (/widget /queue      (PUBLISH match      dataset releases (.StormReplay,
-    the binary)     /draft/overlay…)     completed)          → dim_*)         source of truth)
+        ┌───────────────┬─────────────────────┼──────────────────┐
+        ▼               ▼                     ▼                  ▼
+   Rust SPA        OBS overlays         HotsPatchNotes       raw archive
+   (served by      (/widget /queue      dataset releases    (.StormReplay,
+    the binary)     /draft/overlay…)    → dim_*)             source of truth)
 ```
 
 A **single binary** (`storm-codex-server`) serves the API, the built front-end and the overlays.
@@ -48,9 +48,10 @@ Design: `docs/specs/2026-11-12-standalone-installer-design.md`.
   tolerance (`tools/parity-harness/tolerances.json`, [03-storm-stats.md](03-storm-stats.md)).
 - **Idempotence**: re-uploading/re-processing a replay never creates a duplicate
   (two-level fingerprints, see [04-serveur.md](04-serveur.md)).
-- **Jarvis spine events**: `schema_version`, `correlation_id`/`causation_id`,
-  `occurred_at`/`recorded_at`, past-tense `entity.verb` type ([07-evenements.md](07-evenements.md)).
-- **Best-effort for everything peripheral**: Redis outage, HotsPatchNotes release unreachable,
+- **Spine event invariants** (kept for the Azure push, dormant): `schema_version`,
+  `correlation_id`/`causation_id`, `occurred_at`/`recorded_at`, past-tense `entity.verb` type
+  ([07-evenements.md](07-evenements.md)).
+- **Best-effort for everything peripheral**: HotsPatchNotes release unreachable,
   dead webhook — the upload→parse→projection pipeline must never depend on them.
 - **No live third-party requests from stored content**: patch-note HTML never embeds a remote
   image URL. `refdata::patchimg` rewrites any Blizzard CDN `<img src>` to a local

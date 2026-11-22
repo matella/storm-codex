@@ -7,7 +7,7 @@ behaviour, and to **update in the same commit** as the change.
 ## Maintenance rule (what keeps the spec "living")
 
 > **Any commit that changes a contract documented here updates the matching section.**
-> An added/changed endpoint → `05-api.md`. A migration → `06-modele-donnees.md`. A WS/Redis
+> An added/changed endpoint → `05-api.md`. A migration → `06-modele-donnees.md`. A WS
 > event → `07-evenements.md`. An SPA page/route → `08-frontend.md`. An env variable or
 > a deployment step → `04-serveur.md` / `09-operations.md`.
 > The code remains the source of truth for details; the living spec documents the **contract and
@@ -33,7 +33,7 @@ behaviour, and to **update in the same commit** as the change.
 4. [Server](04-serveur.md) — upload→parse→projection pipeline, env config, reference data
 5. [API](05-api.md) — REST + WebSocket reference
 6. [Data model](06-modele-donnees.md) — Postgres schema (migrations)
-7. [Events](07-evenements.md) — WS `/ws` and Jarvis contract (Redis)
+7. [Events](07-evenements.md) — WS `/ws` contract
 8. [Frontend](08-frontend.md) — SPA pages, OBS overlays
 9. [Operations](09-operations.md) — dev, box deployment, CI, backups, pitfalls, **standalone
    desktop app** (bundled Postgres, Tauri shell, installer, updater, release); its acceptance

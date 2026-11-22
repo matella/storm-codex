@@ -19,9 +19,6 @@ pub struct Config {
     /// Folder of the built front-end (`web-rs/dist`, Leptos): `overlay/` (cast and draft overlays), `sources/` (session
     /// and music sources) and `app/`, one Trunk output each. Every page answers at `/`; empty = serves only the API.
     pub web_dir: Option<PathBuf>,
-    /// Jarvis Redis (optional); missing = no event emission.
-    pub redis_url: Option<String>,
-    pub jarvis_channel: String,
     /// Post-game push to the Twitch Azure EBS (optional).
     pub azure_push_url: Option<String>,
     pub azure_push_token: Option<String>,
@@ -72,9 +69,6 @@ impl Config {
                 .ok()
                 .map(PathBuf::from)
                 .filter(|p| p.is_dir()),
-            redis_url: std::env::var("REDIS_URL").ok().filter(|s| !s.is_empty()),
-            jarvis_channel: std::env::var("JARVIS_CHANNEL")
-                .unwrap_or_else(|_| "jarvis:events".into()),
             azure_push_url: std::env::var("AZURE_PUSH_URL")
                 .ok()
                 .filter(|s| !s.is_empty()),
@@ -210,8 +204,6 @@ mod tests {
             raw_cache_max_bytes: 0,
             admin_token: None,
             web_dir: None,
-            redis_url: None,
-            jarvis_channel: String::new(),
             azure_push_url: None,
             azure_push_token: None,
             refdata_url: None,

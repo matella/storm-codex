@@ -1,5 +1,59 @@
 # STATUS — read first, update last
 
+## Removed the Jarvis/Redis event emitter (2026-11-22)
+
+Dropped the optional Jarvis (Redis pub/sub) event emitter per the approved spec
+(`docs/specs/2026-11-21-remove-jarvis-redis.md`): `crates/storm-codex-server/src/jarvis.rs`, its
+`mod jarvis;`, the `redis = "1"` dependency, `AppConfig::redis_url`/`jarvis_channel` and all call
+sites (`upload.rs`'s best-effort `tokio::spawn` emission, both test fixtures in `main.rs` and
+`standalone/tests.rs`), `test_jarvis.py`, `REDIS_URL`/`JARVIS_CHANNEL` from `.env.example` /
+`crates/storm-codex-server/.env.example` / `docker-compose.yml` (including the `jarvis` external
+network block on the `server` service), and the `JARVIS_CHANNEL` entry in `desktop/src/supervise.rs`'s
+env-leak allowlist test (`ADMIN_TOKEN`/`AZURE_PUSH_TOKEN` checks kept). The dormant Azure push used
+the same `hots.match.completed` event builder as the Jarvis emitter; `match_completed_event` moved
+from the deleted `jarvis.rs` into `azure.rs` (its only remaining caller), unit tests included —
+`REDIS_URL` also dropped from `supervise.rs`'s leak-check lists and doc comments since the var no
+longer exists server-side. The cosmetic "Jarvis" butler brief line
+(`web-rs/core/src/session.rs::jarvis_phrase`, rendered in the OBS session widget and
+`web-rs/sources/src/sessions.rs`) is explicitly out of scope and untouched — it is a deterministic
+local flavor string, not an integration.
+
+Docs updated in the same commit (Rule 0): `docs/spec/01-architecture.md` (architecture diagram and
+spine-invariants bullet), `04-serveur.md` (pipeline line, env-var table), `07-evenements.md` (the
+whole "Jarvis (Redis pub/sub)" section dropped, title updated), `09-operations.md` (external-dependency
+table row, self-hosted-server note, desktop env-passthrough doc comment), `docs/spec/README.md`
+(contents entry, maintenance-rule sentence). `docs/STATUS-historique.md`, `docs/runbooks/*`,
+`docs/research/*`, `docs/plans/2026-06-12-jalon5-stream-jarvis.md`, and the dated `docs/specs/2026-06-*`
+/ `2026-11-12-standalone-installer-design.md` design docs are historical record and were left untouched,
+per the spec. `docker-compose.dev.yml`'s local-dev `redis` service and `gads/PROJECT.md`'s narrative
+mentions of the former Jarvis integration are also outside the spec's listed scope (only
+`docker-compose.yml` and the docs above are named) and were left as is.
+
+Verification (`storm-dev:latest`, disposable PostgreSQL 17 on port 55440): `cargo fmt --all -- --check`
+and `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo test --workspace
+--no-fail-fast` **471 passed, 1 failed, 3 ignored** — the failure
+(`goal::endpoint_tests::put_goal_lifecycle_and_progress_from_operator_perspective`, "only today's win
+counts") reproduces identically on an unmodified fresh `origin/main` clone (same commit, same DB), so
+it is a pre-existing, unrelated flake (date/timezone-boundary sensitive), not caused by this change.
+`web-rs`: native clippy clean (2 pre-existing unrelated `unused_dependency` warnings on `core/Cargo.toml`
+for `gloo-net`/`gloo-timers`, not touched here); `cargo test` **201 passed, 0 failed** (includes
+`session::tests::jarvis_is_deterministic_and_follows_the_context`, confirming the cosmetic phrase is
+unaffected); WASM clippy (`--target wasm32-unknown-unknown --workspace -- -D warnings`) clean; `trunk
+build --release` succeeded for `overlay`, `sources` and `app`. Bundle sizes: overlay **218,047 B
+gzip**, sources **251,563 B gzip** (cap 300,000 each, unaffected), app **1,101,479 B Brotli** (cap
+1,250,000, unaffected — server-only change). Desktop: with GTK/WebKit/pkg-config dev packages
+installed ad hoc in the Linux `storm-dev` image for this session, `cargo fmt -- --check` passed;
+`cargo clippy --all-targets -- -D warnings` reproduces the one pre-existing, unrelated
+`set_session_ending` dead-code warning (Windows-only session code, dead on Linux); `cargo test`
+**59 passed, 1 ignored** (needs `PG_BIN_DIR`), including the updated `env_has_no_secrets_and_is_loopback`
+and `server_env_is_an_allow_list` (now checking only `ADMIN_TOKEN`/`AZURE_PUSH_TOKEN` for leaks) —
+the Windows-only `child_process_inherits_no_unlisted_variable` was correctly skipped on Linux (`#[cfg(windows)]`).
+Final grep of the whole repo for `jarvis`/`redis` (case-insensitive) outside historical docs, the
+cosmetic `jarvis_phrase`/`Jarvis"` widget text, the already-applied migration comment
+(`crates/storm-codex-server/migrations/0003_app_settings.sql`), `docker-compose.dev.yml`, and
+unrelated false positives ("VC++ redistributable") confirms no remaining reference. Committed locally
+on branch `remove/jarvis-redis`; not pushed, no PR opened (operator decision pending).
+
 ## Top nav dropdown styling fix (2026-11-21)
 
 The top bar's link rules (`.ds-topnav a`, `a:hover`, `a.on`) also matched the links inside the Stats/Tools

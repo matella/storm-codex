@@ -3,7 +3,8 @@
 //! (`AZURE_PUSH_URL`/`AZURE_PUSH_TOKEN`). **Not tested against the real EBS**: code ready,
 //! integration to validate in the evening with the box. Best-effort: never affects the parse.
 
-use serde_json::Value as J;
+use chrono::Utc;
+use serde_json::{json, Value as J};
 
 /// POST `event` to Azure in the background (spawn_blocking: ureq is synchronous).
 pub fn push(url: String, token: Option<String>, event: J) {
@@ -17,4 +18,115 @@ pub fn push(url: String, token: Option<String>, event: J) {
             Err(e) => tracing::warn!("Azure push failed: {e}"),
         }
     });
+}
+
+/// Builds the `hots.match.completed` event (spine invariants) from a projected match, for the
+/// Azure push above.
+pub fn match_completed_event(match_id: i64, out: &storm_stats::Output) -> J {
+    let now = Utc::now().to_rfc3339();
+    let m = out.match_.as_ref();
+    let map = m.and_then(|m| m.get("map")).cloned().unwrap_or(J::Null);
+    let mode = m.and_then(|m| m.get("mode")).cloned().unwrap_or(J::Null);
+    let length = m.and_then(|m| m.get("length")).cloned().unwrap_or(J::Null);
+    let winner = m.and_then(|m| m.get("winner")).cloned().unwrap_or(J::Null);
+
+    // summarised players (hero, team, win, KDA)
+    let players: Vec<J> = out
+        .players
+        .as_ref()
+        .map(|ps| {
+            ps.values()
+                .map(|p| {
+                    let g = p.get("gameStats");
+                    let gi = |k: &str| g.and_then(|g| g.get(k)).and_then(J::as_f64).unwrap_or(0.0);
+                    json!({
+                        "hero": p.get("hero").cloned().unwrap_or(J::Null),
+                        "name": p.get("name").cloned().unwrap_or(J::Null),
+                        "team": p.get("team").cloned().unwrap_or(J::Null),
+                        "win": p.get("win").cloned().unwrap_or(J::Null),
+                        "kda": { "kills": gi("SoloKill"), "deaths": gi("Deaths"), "takedowns": gi("Takedowns") },
+                        "heroDamage": gi("HeroDamage"),
+                        "healing": gi("Healing"),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    json!({
+        "schema_version": 1,
+        "type": "hots.match.completed",
+        "correlation_id": uuid::Uuid::new_v4().to_string(),
+        "causation_id": uuid::Uuid::new_v4().to_string(),
+        "occurred_at": now,   // end of game (≈ time of the parse, single source)
+        "recorded_at": now,
+        "data": {
+            "match_id": match_id,
+            "map": map,
+            "mode": mode,
+            "length": length,
+            "winner": winner,
+            "players": players,
+        }
+    })
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+    use serde_json::Map;
+
+    fn fake_output() -> storm_stats::Output {
+        let match_: Map<String, J> = serde_json::from_value(json!({
+            "map": "Sky Temple", "mode": 50101, "length": 900.5, "winner": 1,
+        }))
+        .unwrap();
+        let players: Map<String, J> = serde_json::from_value(json!({
+            "1-Hero-1-111": { "hero": "Jaina", "name": "Alice", "team": 0, "win": false,
+                "gameStats": {"SoloKill": 3.0, "Deaths": 2.0, "Takedowns": 7.0,
+                               "HeroDamage": 40000.0, "Healing": 0.0} },
+            "1-Hero-1-222": { "hero": "Yrel", "name": "Bob", "team": 1, "win": true,
+                "gameStats": {"SoloKill": 1.0, "Deaths": 0.0, "Takedowns": 9.0,
+                               "HeroDamage": 15000.0, "Healing": 30000.0} },
+        }))
+        .unwrap();
+        storm_stats::Output {
+            hotkey_profiles: Default::default(),
+            actions: Default::default(),
+            status: 1,
+            match_: Some(match_),
+            players: Some(players),
+        }
+    }
+
+    /// Spine invariants (hard rule no. 6): schema_version, past-tense `entity.verb` type,
+    /// correlation/causation, occurred_at/recorded_at RFC3339.
+    #[test]
+    fn evenement_respecte_les_invariants_spine() {
+        let ev = match_completed_event(42, &fake_output());
+        assert_eq!(ev["schema_version"], 1);
+        assert_eq!(ev["type"], "hots.match.completed");
+        for id in ["correlation_id", "causation_id"] {
+            uuid::Uuid::parse_str(ev[id].as_str().expect(id)).expect("uuid valide");
+        }
+        for ts in ["occurred_at", "recorded_at"] {
+            chrono::DateTime::parse_from_rfc3339(ev[ts].as_str().expect(ts)).expect("rfc3339");
+        }
+    }
+
+    #[test]
+    fn data_resume_le_match_et_les_joueurs() {
+        let ev = match_completed_event(42, &fake_output());
+        let d = &ev["data"];
+        assert_eq!(d["match_id"], 42);
+        assert_eq!(d["map"], "Sky Temple");
+        assert_eq!(d["winner"], 1);
+        let players = d["players"].as_array().expect("players");
+        assert_eq!(players.len(), 2);
+        let bob = players.iter().find(|p| p["name"] == "Bob").expect("Bob");
+        assert_eq!(bob["win"], true);
+        assert_eq!(bob["kda"]["takedowns"], 9.0);
+        assert_eq!(bob["healing"], 30000.0);
+    }
 }

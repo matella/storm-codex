@@ -25,8 +25,6 @@ pub(crate) fn test_config(dir: &Path) -> Config {
         raw_cache_max_bytes: 64 * 1024 * 1024,
         admin_token: None,
         web_dir: None,
-        redis_url: None,
-        jarvis_channel: "test".into(),
         azure_push_url: None,
         azure_push_token: None,
         refdata_url: None,

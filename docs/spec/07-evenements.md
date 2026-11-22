@@ -1,4 +1,4 @@
-# Events — WebSocket `/ws` and Jarvis contract
+# Events — WebSocket `/ws`
 
 ## WebSocket `/ws` (internal broadcast — site, OBS overlays)
 
@@ -18,37 +18,7 @@ Adding an event type = adding it to this table.
 
 Standalone reference activation uses the opaque string `revision` in the local
 `GET /api/standalone/reference` status as the refetch signal, even when the patch IDs did not
-change. It does not emit `patch.new` or a Jarvis event.
-
-## Jarvis (Redis pub/sub) — `jarvis.rs`
-
-Opt-in (empty `REDIS_URL` = no-op; best-effort: a Redis outage never breaks the parse).
-Production channel on the box: `storm-codex:match_completed` (`JARVIS_CHANNEL`).
-
-Event `hots.match.completed`, **spine** invariants respected:
-
-```json
-{
-  "schema_version": 1,
-  "type": "hots.match.completed",
-  "correlation_id": "<uuid>", "causation_id": "<uuid>",
-  "occurred_at": "<rfc3339>", "recorded_at": "<rfc3339>",
-  "data": {
-    "match_id": 123, "map": "…", "mode": 50101, "length": 536.2, "winner": 1,
-    "players": [ { "hero", "name", "team", "win",
-                   "kda": {"kills","deaths","takedowns"}, "heroDamage", "healing" } ]
-  }
-}
-```
-
-⚠️ **Jarvis boundary**: the spine's Event model only accepts **one dot** in the type — the
-bridge on the Jarvis side (`jarvis/ingest/hots_matches.py`, Jarvis repo) adapts
-`hots.match.completed` → `hots.match_completed` at ingestion. Do not "fix" the emitter:
-the two-dot format is the spine invariant on the storm-codex side; the adaptation belongs to the
-consumer.
-
-Downstream chain (Jarvis repo): bridge → the spine's `events` table → French-language brief worker
-(`jarvis/notify/hots_brief.py`, operator perspective via `HOTS_PLAYER_NAME`) → ntfy.
+change. It does not emit `patch.new`.
 
 ## "New patch" webhook (outgoing, optional)
 

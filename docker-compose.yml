@@ -1,7 +1,7 @@
 # storm-codex production deployment (box). Dedicated Postgres + the server (front-end included).
 # Non-invasive deployment: new ports, reads the HotsPatchNotes dataset releases, DOES NOT TOUCH the
-# Jarvis Redis or the overlay while `REDIS_URL`/`AZURE_*` are not set (push = opt-in,
-# best-effort, absent = no emission). The actual switchover (see runbook) sets these variables.
+# overlay while `AZURE_*` is not set (push = opt-in, best-effort, absent = no emission).
+# The actual switchover (see runbook) sets this variable.
 #
 # Box: rsync the repo → `docker compose up -d --build`. Secrets in the box's .env (never committed).
 services:
@@ -45,8 +45,8 @@ services:
     ports:
       - "${STORM_CODEX_PORT:-8088}:8088"
     environment:
-      # unique container name (not the 'postgres' alias: it collides with jarvis-postgres
-      # on the shared jarvis_default network).
+      # unique container name (not the 'postgres' alias, to avoid colliding with another
+      # Postgres container on the host network).
       DATABASE_URL: postgres://storm:${POSTGRES_PASSWORD:-storm}@storm-codex-pg:5432/storm_codex
       # empty/absent = open mode (local self-hosting); set = admin auth by Bearer.
       ADMIN_TOKEN: ${ADMIN_TOKEN:-}
@@ -54,8 +54,6 @@ services:
       # Default = the producer's latest release; empty = no refresh.
       REFDATA_URL: ${REFDATA_URL:-https://github.com/matella/HeroesOfTheStormPatchNotes/releases/latest/download/}
       # opt-in push (empty at initial deployment; set at switchover)
-      REDIS_URL: ${REDIS_URL:-}
-      JARVIS_CHANNEL: ${JARVIS_CHANNEL:-storm-codex:match_completed}
       AZURE_PUSH_URL: ${AZURE_PUSH_URL:-}
       AZURE_PUSH_TOKEN: ${AZURE_PUSH_TOKEN:-}
       RAW_CACHE_MAX_BYTES: ${RAW_CACHE_MAX_BYTES:-5368709120}
@@ -63,17 +61,11 @@ services:
       - "host.docker.internal:host-gateway"
     networks:
       - default
-      # Jarvis network (external): lets the match event be published on jarvis-redis.
-      # Only enabled if present; non-invasive (storm-codex only PUBLISHes a dedicated channel).
-      - jarvis
     volumes:
       - storm-codex-data:/data
 
 networks:
   default:
-  jarvis:
-    external: true
-    name: jarvis_default
 
 volumes:
   storm-codex-pgdata:
