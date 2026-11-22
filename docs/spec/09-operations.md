@@ -439,7 +439,9 @@ fresh migrated cluster → import.
   - **Import (`import_data()`).** The shell opens the native open dialog, refuses a non-local
     path as above, then always asks for an explicit OK in a native confirmation ("replaces all
     Storm Codex data on this PC", naming the replays already there if any). Then
-    (`backup::import_into`):
+    (`backup::import_into`): if either `import-journal` or `archive.old` already exists, refuse
+    before creating or changing any import work files or staging database. A leftover
+    `archive.old` without a pending import must be moved aside before retrying.
     1. **Private copy.** The chosen file is copied (exact size read first; refused if it
        changes meanwhile; free space ≥ its size + 1 GiB) to `<data>/import-work/backup.zip`;
        everything below reads only that copy, so the file cannot be swapped between the check
@@ -456,11 +458,13 @@ fresh migrated cluster → import.
        new with exact declared sizes).
     4. **Staged restore** while the server keeps running (`Postgres::stage_import`, see below).
        A refused or failed restore (a backup from a newer app included) changes nothing.
-    5. **Commit.** `<data>/import-journal` written, server stopped (graceful, `Full` budget;
-       Postgres stays up), `archive` → `archive.old` and the unpacked folder → `archive`
-       (renames, retried briefly; refused if an `archive.old` already exists, which is never
-       deleted blindly), then `promote_import`: staging database settings reset, staging check
-       run again, `storm_codex` → `storm_codex_previous` and `storm_codex_import` →
+    5. **Commit.** `<data>/import-journal` records `staging`, then the server is stopped
+       (graceful, `Full` budget; Postgres stays up). After rechecking that `archive.old` is
+       absent, the journal advances to `swapping` before renaming `archive` → `archive.old`
+       and the unpacked folder → `archive` (renames retried briefly). The journal advances to
+       `swapped` only after both renames succeed, before `promote_import`: staging database
+       settings reset, staging check run again, `storm_codex` → `storm_codex_previous` and
+       `storm_codex_import` →
        `storm_codex` in **one transaction**, then `finish_import` (previous database and any
        leftover `storm_import` role dropped). Then the upload **ledger (`uploaded.json`) is
        reset**: it lists what the replaced database had imported, and a stale entry would make
@@ -500,9 +504,14 @@ fresh migrated cluster → import.
     06-modele-donnees), so the raw dump, the 2D viewer, the resume of `pending` uploads and
     re-processing find the restored replays. No row is rewritten.
     7. **Crash recovery** (`backup::recover_import`, every start, after Postgres and before
-       the server): journal + staging database → not promoted: roll back (`archive.old` put
-       back, journal removed, staging dropped); journal without staging database → promoted:
-       complete it (`finish_import`, ledger reset, `archive.old` and journal removed); no
+       the server): journal + staging database → not promoted. A `staging` journal leaves both
+       archive paths alone. Only `swapped` authorizes deleting the imported archive and restoring
+       `archive.old`. During `swapping`, if `archive.old` exists, it can be restored into a
+       missing or empty archive; if the live archive is non-empty, startup stops and preserves
+       both rather than assuming the swap completed. A legacy unphased journal with `archive.old`
+       present also stops startup, since it cannot prove which archive is current. After safe
+       rollback, the journal is removed and staging dropped. Journal without staging database →
+       promoted: complete it (`finish_import`, ledger reset, `archive.old` and journal removed); no
        journal → a staging database is an orphan (dropped), and an `archive.old` next to an
        **empty** `archive` is put back (one next to a non-empty `archive` is left alone and must
        be removed by hand). `import-work` is removed. A recovery failure stops the startup with

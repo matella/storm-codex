@@ -1,5 +1,19 @@
 # STATUS — read first, update last
 
+## Desktop backup crash recovery (issue #89 P2)
+
+Import now refuses an existing `archive.old` before touching import work or staging. Startup
+uses the journal phase to distinguish an untouched archive from a completed swap. An ambiguous
+swap preserves both archives and stops startup instead of risking replay loss. Promoted import
+cleanup and no-journal recovery are unchanged. P3 items are untouched.
+
+Offline in `storm-dev:latest`: root and desktop formatting passed. The full desktop Clippy and
+test builds stopped at the missing `pkg-config` for the GTK dependencies (no desktop tests ran).
+An isolated backup/supervision/lifecycle harness passed strict Clippy and 50 tests (0 failed,
+1 ignored); with disposable PostgreSQL 17, all 51 passed (0 failed, 0 ignored). Three targeted
+regressions failed as expected with the old implementation and passed with the fix. Windows/Tauri
+was not exercised.
+
 ## Auto-draft desktop preview on every push to main (2026-11-22)
 
 New `.github/workflows/auto-draft-desktop.yml`: on every push to `main`, builds an **unsigned**
