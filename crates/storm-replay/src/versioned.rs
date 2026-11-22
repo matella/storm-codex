@@ -6,6 +6,11 @@ use crate::error::{Error, Result};
 use crate::typeinfo::TypeInfo;
 use crate::value::Value;
 
+/// Maximum nesting of `skip_instance` (unknown fields of a newer build). The skip is driven by
+/// the bytes alone, so without a bound a crafted stream nests it until the stack overflows
+/// (process abort); real replays nest a handful of levels.
+const MAX_SKIP_DEPTH: u32 = 64;
+
 pub struct VersionedDecoder<'a> {
     data: &'a [u8],
     pos: usize,
@@ -27,6 +32,13 @@ impl<'a> VersionedDecoder<'a> {
 
     pub fn used_bytes(&self) -> usize {
         self.pos
+    }
+
+    /// Bytes not consumed yet. Every array item / struct field takes at least one byte, so this
+    /// bounds any preallocation sized by a count read from the file (a crafted count would
+    /// otherwise make `Vec::with_capacity` abort the whole process on allocation failure).
+    fn remaining(&self) -> usize {
+        self.data.len().saturating_sub(self.pos)
     }
 
     fn read_u8(&mut self) -> Result<u8> {
@@ -98,7 +110,7 @@ impl<'a> VersionedDecoder<'a> {
                     .as_int()
                     .ok_or_else(|| Error::Corrupted("svaruint32 non entier".into()));
             }
-            self.skip_instance()?;
+            self.skip_instance(0)?;
             return Err(Error::Corrupted(format!("svaruint32: unknown tag {tag}")));
         }
         self.instance(typeid)?
@@ -146,7 +158,7 @@ impl<'a> VersionedDecoder<'a> {
                 let len = usize::try_from(self.vint()?)
                     .map_err(|_| Error::Corrupted("negative array length".into()))?;
                 let typeid = *typeid;
-                let mut items = Vec::with_capacity(len.min(4096));
+                let mut items = Vec::with_capacity(len.min(self.remaining()));
                 for _ in 0..len {
                     items.push(self.instance(typeid)?);
                 }
@@ -179,7 +191,7 @@ impl<'a> VersionedDecoder<'a> {
                     }
                     None => {
                         // reference: unknown tag → skip + empty struct (build compatibility)
-                        self.skip_instance()?;
+                        self.skip_instance(0)?;
                         Value::Struct(Vec::new())
                     }
                 }
@@ -188,7 +200,8 @@ impl<'a> VersionedDecoder<'a> {
                 self.expect_skip(5)?;
                 let count = usize::try_from(self.vint()?)
                     .map_err(|_| Error::Corrupted("negative struct size".into()))?;
-                let mut result: Vec<(std::sync::Arc<str>, Value)> = Vec::with_capacity(count);
+                let mut result: Vec<(std::sync::Arc<str>, Value)> =
+                    Vec::with_capacity(count.min(self.remaining()));
                 for _ in 0..count {
                     let tag = self.vint()?;
                     match fields.iter().find(|f| f.2 == tag) {
@@ -205,7 +218,7 @@ impl<'a> VersionedDecoder<'a> {
                                 result.push((name, v));
                             }
                         }
-                        None => self.skip_instance()?, // unknown field (build compatibility)
+                        None => self.skip_instance(0)?, // unknown field (build compatibility)
                     }
                 }
                 Value::Struct(result)
@@ -213,13 +226,20 @@ impl<'a> VersionedDecoder<'a> {
         })
     }
 
-    fn skip_instance(&mut self) -> Result<()> {
+    fn skip_instance(&mut self, depth: u32) -> Result<()> {
+        if depth >= MAX_SKIP_DEPTH {
+            return Err(Error::Corrupted(format!(
+                "skip: nesting deeper than {MAX_SKIP_DEPTH} at byte {} (versioned)",
+                self.pos
+            )));
+        }
+        let depth = depth + 1;
         let skip = self.read_u8()?;
         match skip {
             0 => {
                 let len = self.vint()?;
                 for _ in 0..len {
-                    self.skip_instance()?;
+                    self.skip_instance(depth)?;
                 }
             }
             1 => {
@@ -234,18 +254,18 @@ impl<'a> VersionedDecoder<'a> {
             }
             3 => {
                 self.vint()?;
-                self.skip_instance()?;
+                self.skip_instance(depth)?;
             }
             4 => {
                 if self.read_u8()? != 0 {
-                    self.skip_instance()?;
+                    self.skip_instance(depth)?;
                 }
             }
             5 => {
                 let len = self.vint()?;
                 for _ in 0..len {
                     self.vint()?;
-                    self.skip_instance()?;
+                    self.skip_instance(depth)?;
                 }
             }
             6 => {
@@ -292,5 +312,37 @@ mod tests {
             let mut d = VersionedDecoder::new(bytes, &[]);
             assert_eq!(d.vint().unwrap(), *expected, "bytes {bytes:?}");
         }
+    }
+
+    /// Security review C1: a struct field count of 2^35 read from the header used to reach
+    /// `Vec::with_capacity` as is — allocation failure, process abort. Now a plain error.
+    #[test]
+    fn huge_struct_count_is_an_error_not_an_abort() {
+        let proto = crate::protocol::latest_protocol().unwrap();
+        let c1 = [0x05, 0x80, 0x80, 0x80, 0x80, 0x80, 0x02];
+        assert!(proto.decode_header(&c1).is_err());
+        assert!(proto.decode_details(&c1).is_err());
+        // same for an array length (struct with one field holding a huge array)
+        let mut d = VersionedDecoder::new(&[0x00, 0x80, 0x80, 0x80, 0x80, 0x80, 0x02], &[]);
+        assert!(d.instance(0).is_err(), "typeid outside an empty table");
+    }
+
+    /// Unknown fields are skipped by reading the bytes alone: a crafted nesting is bounded
+    /// instead of overflowing the stack.
+    #[test]
+    fn deep_skip_nesting_is_an_error_not_a_stack_overflow() {
+        let proto = crate::protocol::latest_protocol().unwrap();
+        // struct, 1 field, unknown tag 63, then 1M nested "optional present" skips
+        let mut bytes = vec![0x05, 0x02, 0x7E];
+        for _ in 0..1_000_000 {
+            bytes.extend_from_slice(&[0x04, 0x01]);
+        }
+        bytes.push(0x06);
+        bytes.push(0x00);
+        let e = proto.decode_header(&bytes).unwrap_err();
+        assert!(e.to_string().contains("nesting"), "{e}");
+        // a shallow unknown field is still skipped (build compatibility)
+        let ok = [0x05, 0x02, 0x7E, 0x04, 0x01, 0x04, 0x01, 0x06, 0x00];
+        assert!(proto.decode_header(&ok).is_ok());
     }
 }

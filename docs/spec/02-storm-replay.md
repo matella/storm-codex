@@ -15,6 +15,17 @@ Crate: `crates/storm-replay` (public library, MIT). Showcase: its `README.md`.
   upload failures (`error_class`).
 - **Raw streams**: `battlelobby_raw()`, `tracker_events_raw()`, `game_events_raw()` return the
   undecoded bytes (live simulator, tests).
+- **Hostile input** (security review 2026-11-22): any byte sequence gives `Ok` or `Err`, never a
+  panic, an allocation abort or a stack overflow (the server decodes uploads in-process; an abort
+  is not caught by `spawn_blocking` and takes the whole server down).
+  - A preallocation sized by a count read from the file is bounded by the bytes left
+    (`versioned.rs` struct/array counts — C1 was a 2^35 struct count in the header;
+    `bitpacked.rs` big bitarrays).
+  - Skipping unknown fields (versioned) is limited to 64 nested levels (`MAX_SKIP_DEPTH`).
+  - **Zip-bomb guard**: embedded files are read by `mpq.rs` (port of nom-mpq's
+    `read_mpq_file_sector`, bounds-checked) and inflated through a `Read::take` budget of
+    `MAX_STREAM_BYTES` = **256 MiB per stream**; a larger declared or actual decompressed size is
+    `Error::MissingStream`. nom-mpq still parses the archive tables. Real streams are a few MB.
 
 ## Chunked decoding (`StreamDecoder`)
 
@@ -56,4 +67,9 @@ heavy consumer (~×1.6 on Windows). Real archive: 2,821/2,821 decoded (22 builds
 `tests/mini_corpus.rs` on the committed replays in `tests/data/` (public CI without the private
 corpus). The full corpus lives on the NAS/box (`fetch-corpus`). `tests/stream_decoder.rs`:
 chunked decoding (4 KB, pseudo-random sizes, byte by byte) equals whole decoding;
-random bytes never cause a panic.
+random bytes never cause a panic. `src/mpq.rs` unit tests: byte parity with nom-mpq on every
+stream of the committed replays, cap enforced while inflating. `crates/storm-stats/tests/decoder_robustness.rs`
+(H2): ~270 mutations of the header, `replay.details` and `replay.initData` of every committed replay
+(targeted flips, the C1 payload, huge counts, deep unknown-field nesting, seeded random flips),
+each run through `Replay::from_bytes` + `storm_stats::process_replay` **in a child process** (the
+test binary re-invoked) so an abort is pinned on its case; any crash or hang fails the test.

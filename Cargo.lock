@@ -2163,6 +2163,8 @@ name = "storm-replay"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bzip2-rs",
+ "flate2",
  "mimalloc",
  "nom-mpq",
  "serde_json",
@@ -2185,6 +2187,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "mimalloc",
+ "nom-mpq",
  "regex",
  "serde_json",
  "storm-replay",

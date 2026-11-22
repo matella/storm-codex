@@ -1,5 +1,40 @@
 # STATUS — read first, update last
 
+## Replay decoder hardening — security review C1, H1, H2 (2026-11-22)
+
+Branch `fix/replay-decoder-hardening` (committed locally, not pushed, no PR).
+
+- **C1 (critical) — allocation abort + crash loop.** `versioned.rs` passed a struct field count
+  read from the file straight to `Vec::with_capacity`: a 7-byte header patch (`05 80 80 80 80 80 02`,
+  count 2^35) aborted the whole server (`memory allocation of 1924145348608 bytes failed`, SIGABRT —
+  not a panic, so `spawn_blocking` cannot catch it), and since the upload row is `pending` before the
+  parse, `resume_pending` re-parsed it and crashed again at **every** restart (reproduced on
+  unmodified `origin/main`: 3 restarts, 3 crashes). Fixed: struct/array preallocations are bounded by
+  the bytes left (`bitpacked.rs` big bitarrays too); unknown-field skipping is limited to 64 nested
+  levels — a crafted `replay.details` nesting overflowed the stack (also a process abort, found by
+  the new fuzz test, not in the review). Defence in depth: migration **0023** `uploads.parse_attempts`,
+  incremented before every parse; the startup resume gives up after 3 interrupted attempts
+  (`parse_failed` / `too_many_attempts`). Verified with the attempt counter alone on top of the old
+  decoder: crash, crash, crash, then the row is given up and the server stays up.
+- **H1 — zip bomb.** nom-mpq inflates with `read_to_end` and no limit: a 4.7 MB upload expanding to
+  4 GiB got the server OOM-killed (2 GiB container) and left a `pending` row. Embedded files are now
+  read by `storm-replay/src/mpq.rs` (bounds-checked port of nom-mpq's sector reader) through a
+  `Read::take` budget, `MAX_STREAM_BYTES` = 256 MiB per stream; byte parity with nom-mpq on every
+  stream of the committed replays. `flate2`/`bzip2-rs` become direct dependencies of storm-replay
+  (same versions already in the tree via nom-mpq, no new crate in `Cargo.lock`).
+- **H2 — test gap.** `crates/storm-stats/tests/decoder_robustness.rs`: 272 mutations of header /
+  `replay.details` / `replay.initData` over the 4 committed replays, each in a child process. On the
+  old decoder it reports 24 crashing cases (C1 allocation aborts + stack overflows); now 0.
+
+Docs (Rule 0): `docs/spec/02-storm-replay.md` (hostile-input contract, tests), `04-serveur.md`
+(attempt cap, `too_many_attempts` class), `06-modele-donnees.md` (0023). Decode bench on the 3
+committed replays (release, 5 interleaved runs): median 73–75 ms both before and after — unchanged.
+
+Follow-ups (not done): nom-mpq's own archive-table parser still has `assert!`/`unwrap()`/unchecked
+slicing on malformed MPQ headers (panics, caught by `spawn_blocking`, not aborts); worst-case memory
+is now 256 MiB per stream × concurrent parses; the heroprotocol crosscheck (`tools/crosscheck_streams.py`)
+was not rerun (stream bytes proven identical to nom-mpq instead).
+
 ## Removed the Jarvis/Redis event emitter (2026-11-22)
 
 Dropped the optional Jarvis (Redis pub/sub) event emitter per the approved spec

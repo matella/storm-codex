@@ -19,7 +19,8 @@ POST /api/upload(-raw)  [personal Bearer token]
 - **Response semantics**: `parsed` / `409 duplicate` / `parse_failed` if the result arrives
   within ≤ 2 s; otherwise `202 accepted` (pool saturated — backfill), the result arrives over WS.
 - **Classified failures** (`uploads.error_class` + `reject_class()`): storm-replay classes (io,
-  decoding…) and storm-stats statuses (unsupported_map, stats_failure/-2, unverified_build/-7…) —
+  decoding…) and storm-stats statuses (unsupported_map, stats_failure/-2, unverified_build/-7…),
+  plus `too_many_attempts` (startup resume gave up, see "Attempt cap") —
   exhaustive, visible in `GET /api/admin/uploads`.
 - **Body limited to 64 MB** (`DefaultBodyLimit`): the axum default (2 MB) silently rejected long
   replays (> 2 MB) with a 413 and made the uploader loop.
@@ -30,6 +31,13 @@ POST /api/upload(-raw)  [personal Bearer token]
   memory; uploads left `pending` (restart before the parse finished) are re-queued at startup
   from their archive. The client never resends an accepted file; without this resume they stayed
   stuck.
+- **Attempt cap** (migration 0023, security review C1 defence in depth): `run_parse` increments
+  `uploads.parse_attempts` **before** parsing, so an attempt that kills the whole process (an
+  allocation abort is not a panic: `spawn_blocking` does not catch it) is still counted. At
+  startup, a `pending` row with `parse_attempts >= MAX_PARSE_ATTEMPTS` (3) is marked
+  `parse_failed`, `error_class = too_many_attempts` (logged at `warn`) instead of being resumed —
+  one bad file can no longer crash the server at every restart. `POST /api/admin/reprocess`
+  retries such a row by hand like any `parse_failed` upload.
 - **Status writes logged**: a failure to write `uploads.status` (parsed or
   parse_failed) is logged at `error`, never swallowed.
 

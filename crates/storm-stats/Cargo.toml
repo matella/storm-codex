@@ -21,6 +21,9 @@ fast-alloc = ["dep:mimalloc"]
 
 [dev-dependencies]
 anyhow = "1"
+# tests/decoder_robustness.rs: rewrites embedded files of the committed replays (already a
+# dependency of storm-replay, same version).
+nom-mpq = "2"
 
 [lints]
 workspace = true

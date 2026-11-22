@@ -20,6 +20,7 @@
 mod attributes;
 mod bitpacked;
 mod error;
+mod mpq;
 mod protocol;
 mod stream;
 mod typeinfo;
@@ -28,6 +29,7 @@ mod versioned;
 
 pub use attributes::{AttributeValue, Attributes};
 pub use error::{Error, Result};
+pub use mpq::MAX_STREAM_BYTES;
 pub use protocol::{StreamKind, LATEST_BUILD};
 pub use stream::StreamDecoder;
 pub use value::Value;
@@ -145,12 +147,9 @@ impl Replay {
         self.fallback
     }
 
+    /// Decompressed embedded file, capped at [`MAX_STREAM_BYTES`] (zip-bomb guard, see `mpq.rs`).
     fn stream(&self, name: &'static str) -> Result<Vec<u8>> {
-        let (_, data) = self
-            .mpq
-            .read_mpq_file_sector(name, false, &self.bytes)
-            .map_err(|e| Error::MissingStream(name, format!("{e:?}")))?;
-        Ok(data)
+        mpq::read_file(&self.mpq, &self.bytes, name)
     }
 
     /// Raw `replay.details` (the whole `m_playerList`, cache handles…).
