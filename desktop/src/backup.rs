@@ -791,8 +791,8 @@ fn complete_import(data: &DataDir) -> Result<(), String> {
 /// cut short, then removes the work folder.
 /// - journal and staging database: not promoted. Roll back an authorized archive move, leave
 ///   the archive alone before the move, and stop startup if rollback cannot be safely done;
-/// - journal, no staging database: promoted, so complete it (finish, ledger reset,
-///   `archive.old` removed, journal removed);
+/// - journal, no staging database: promoted. Verify the replacement archive before finishing
+///   cleanup; stop startup and preserve the recovery files if the swap cannot be confirmed;
 /// - no journal: a staging database is an orphan (dropped); an `archive.old` next to an empty
 ///   `archive` is put back; an `archive.old` next to a non-empty `archive` is left alone.
 pub fn recover_import(data: &DataDir, db: &dyn crate::supervise::Db) -> Result<(), String> {
@@ -813,6 +813,24 @@ pub fn recover_import(data: &DataDir, db: &dyn crate::supervise::Db) -> Result<(
             remove_journal(&journal)?;
             db.discard_import().map_err(|e| e.to_string())?;
         } else {
+            // Database promotion can survive a power loss even if the replacement rename
+            // does not. Startup may have recreated an empty live archive in its place.
+            let replacement = root.join(IMPORT_WORK).join(ARCHIVE_ENTRY);
+            let unconfirmed = |reason: &str| {
+                format!(
+                    "cannot verify the imported replay archive ({}): {reason}; \
+                     cleanup was not run. Restart Storm Codex or seek support if this persists",
+                    archive.display()
+                )
+            };
+            if !has_files(&archive) {
+                return Err(unconfirmed("no files were found in the live archive"));
+            }
+            match std::fs::symlink_metadata(&replacement) {
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                Ok(_) => return Err(unconfirmed("the unpacked archive is still in import-work")),
+                Err(e) => return Err(unconfirmed(&format!("cannot check import-work: {e}"))),
+            }
             db.finish_import().map_err(|e| e.to_string())?;
             complete_import(data)?;
         }
@@ -2028,6 +2046,42 @@ mod tests {
         assert_eq!(archive_tree(&stack.data().archive()), new_archive());
         assert!(!stack.data().ledger().exists(), "the ledger is reset");
         assert_clean(tmp.path());
+    }
+
+    #[test]
+    fn promotion_with_a_missing_archive_swap_blocks_startup_and_keeps_both_trees() {
+        for phase in [JOURNAL_SWAP_READY, JOURNAL_SWAPPED] {
+            let tmp = tempfile::tempdir().unwrap();
+            let root = tmp.path();
+            let data = DataDir::new(root.to_path_buf());
+            let archive = data.archive();
+            let old = old_dir(&archive);
+            let replacement = root.join(IMPORT_WORK).join(ARCHIVE_ENTRY);
+            let journal = root.join(IMPORT_JOURNAL);
+            write(&old.join("aa/old.StormReplay"), b"old");
+            write(&replacement.join("bb/new.StormReplay"), b"new");
+            write(&journal, phase);
+            write(&data.ledger(), b"{}");
+            // Promotion and the first rename survived, but the second rename did not.
+            // Startup will create the missing live archive; the fake DB has no staging DB.
+            assert!(!archive.exists());
+            let log = Log::default();
+            let (stack, _) = start(FakeHost::new(&log), root);
+            assert!(matches!(
+                stack,
+                Err(crate::supervise::StartError::ImportRecovery(ref msg))
+                    if msg.contains("seek support")
+            ));
+            assert!(!entries(&log)
+                .iter()
+                .any(|step| step == "db.finish" || step == "server.spawn"));
+            assert!(archive.is_dir());
+            assert!(archive_tree(&archive).is_empty());
+            assert_eq!(archive_tree(&old), old_archive());
+            assert_eq!(archive_tree(&replacement), new_archive());
+            assert_eq!(std::fs::read(journal).unwrap(), phase);
+            assert!(data.ledger().exists());
+        }
     }
 
     #[test]

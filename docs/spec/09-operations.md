@@ -480,7 +480,11 @@ fresh migrated cluster → import.
        before the journal is removed, and journal removal before dropping staging. This orders
        the filesystem changes against database promotion even on power loss on filesystems
        that honor these flushes. Windows has no equivalent directory flush in this implementation:
-       it has app-crash recovery, but does not guarantee the same ordering after power loss.
+       PostgreSQL promotion and the first archive rename can survive power loss while the
+       second rename does not. Without a recovery check, startup could silently delete both
+       replay trees and serve an empty archive. Recovery now requires positive evidence in the
+       live archive before destructive cleanup (see step 7). Full Windows power-loss durability,
+       including equivalent ordering barriers, remains unimplemented and is a follow-up candidate.
     6. **Failure during the commit.** If stopping the server fails, the import aborts before
        swapping the archive or promoting the database. Rollback attempts to remove the journal
        and discard staging before restart. Restart checks the retained child without waiting:
@@ -523,8 +527,13 @@ fresh migrated cluster → import.
        can restore `archive.old` only into a missing or empty archive; an unphased journal with
        `archive.old` present cannot prove which archive is current. After safe rollback, the
        journal is removed and staging dropped. Journal without staging database → promoted:
-       complete it (`finish_import`, ledger reset, `archive.old` and journal removed); no journal
-       → a staging database is an orphan (dropped), and an `archive.old` next to an **empty**
+       before cleanup, require files in the live `archive` and no unpacked archive still at
+       `import-work/archive`. This is a sanity check, not a completeness or integrity proof.
+       If the check fails (including for a legitimately empty archive, which the journal cannot
+       distinguish from one recreated at startup), refuse to start and keep `archive.old`,
+       `import-work`, and the journal for assisted recovery. Otherwise finish the import
+       (`finish_import`, ledger reset, `archive.old` and journal removed). No journal → a
+       staging database is an orphan (dropped), and an `archive.old` next to an **empty**
        `archive` is put back (one next to a non-empty `archive` is left alone). `import-work`
        is removed after successful recovery.
 
