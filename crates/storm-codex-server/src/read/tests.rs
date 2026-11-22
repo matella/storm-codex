@@ -339,6 +339,92 @@ async fn replay_search_filters_on_the_perspective_row() {
     drop_db(db, &db_name).await;
 }
 
+/// `GET /api/matches` and `/api/matches.csv` each call `operator_toons` exactly once per request.
+/// Before this fix, `archive_search` queried it a second time right after `list_matches`/
+/// `matches_csv` already had (once per request when the query needs a perspective and has no
+/// `account`, as `my_hero=` below does): 2 round trips to `confirmed_identity` per request instead
+/// of 1. Proven with the same counting-view technique as
+/// `page_and_count_use_the_same_snapshot_during_import` above: wrap the real table in a view
+/// backed by a volatile counter function, so every executed `SELECT ... FROM confirmed_identity`
+/// is counted regardless of how many call sites triggered it.
+#[tokio::test]
+async fn list_matches_and_csv_query_operator_toons_only_once() {
+    let Some(mut state) = test_state(None).await else {
+        return;
+    };
+    let (db, db_name) = isolated_db().await.unwrap();
+    state.db = db.clone();
+    sqlx::query("UPDATE app_settings SET value = $1 WHERE key = 'operator_names'")
+        .bind(json!(["Me"]))
+        .execute(&db)
+        .await
+        .unwrap();
+    insert_match(&db, None, &[row("1-Hero-1-20", "Me", 0, "Jaina")]).await;
+    // A view's row-dependent WHERE filter never runs when the base table has 0 rows (no row to
+    // filter), so seed one dummy row to guarantee the filter function actually executes on every
+    // call; its toon never matches the "Me" operator_names perspective used below, so it has no
+    // effect on the returned data, only on observability of the query count.
+    sqlx::raw_sql(
+        "ALTER TABLE confirmed_identity RENAME TO fixture_confirmed_identity;
+         INSERT INTO fixture_confirmed_identity (toon) VALUES ('unused-dummy-toon');
+         CREATE TABLE operator_toons_query_counter (n int NOT NULL);
+         INSERT INTO operator_toons_query_counter VALUES (0);
+         CREATE FUNCTION count_operator_toons_query() RETURNS boolean
+           LANGUAGE sql VOLATILE AS $$
+             UPDATE operator_toons_query_counter SET n = n + 1; SELECT true; $$;
+         CREATE VIEW confirmed_identity AS
+           SELECT * FROM fixture_confirmed_identity WHERE count_operator_toons_query();",
+    )
+    .execute(&db)
+    .await
+    .unwrap();
+    let count = || {
+        let db = db.clone();
+        async move {
+            sqlx::query_scalar::<_, i32>("SELECT n FROM operator_toons_query_counter")
+                .fetch_one(&db)
+                .await
+                .unwrap()
+        }
+    };
+
+    // A perspective-needing filter with no `account`: before the fix, this is the path where
+    // `archive_search` additionally queried `operator_toons` itself.
+    let before = count().await;
+    let (status, list) = call(&state, "GET", "/api/matches?my_hero=Jaina", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(list.as_array().unwrap().len(), 1, "unaffected by the fix");
+    assert_eq!(
+        count().await - before,
+        1,
+        "list_matches must fetch operator_toons exactly once per request"
+    );
+
+    let before = count().await;
+    let (status, bytes) = call_raw(
+        &state,
+        "GET",
+        "/api/matches.csv?my_hero=Jaina",
+        None,
+        vec![],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        String::from_utf8(bytes).unwrap().lines().count(),
+        2,
+        "unaffected by the fix"
+    );
+    assert_eq!(
+        count().await - before,
+        1,
+        "matches_csv must fetch operator_toons exactly once per request"
+    );
+
+    drop(state);
+    drop_db(db, &db_name).await;
+}
+
 #[tokio::test]
 async fn page_and_count_use_the_same_snapshot_during_import() {
     use std::time::Duration;

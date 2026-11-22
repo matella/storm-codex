@@ -3,7 +3,7 @@ name = "storm-web-sources"
 version = "0.0.0"
 edition = "2021"
 publish = false
-description = "Session and music OBS sources of the Rust front-end (ticker, widget, queue, now playing): one small bundle."
+description = "Session and music OBS sources of the Rust front-end (ticker, widget, queue): one small bundle."
 
 [lints]
 workspace = true
