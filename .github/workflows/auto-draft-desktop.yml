@@ -208,11 +208,16 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $false
           gh api -X DELETE "repos/$($env:GH_REPO)/git/refs/tags/$($env:AUTO_TAG)" *> $null
           $PSNativeCommandUseErrorActionPreference = $true
-          $files = (Get-ChildItem out).FullName
-          # --notes-file, not inline --notes: a literal backtick character in an argument value gets
-          # mangled by PowerShell's native-command argument encoding on Windows (confirmed live — the
-          # first real run failed with "no matches found for `D`" from a corrupted argv). The real
-          # release-desktop.yml avoids this the same way.
+          # @(...) wraps the WHOLE property-access expression, not just Get-ChildItem's result: PowerShell
+          # collapses a single-item collection's .FullName to a plain string, and splatting `@` on a scalar
+          # string enumerates it character-by-character (confirmed live — this unsigned preview's `out`
+          # always has exactly one file, no `.sig`/`.json`, unlike release-desktop.yml's always-two-or-more;
+          # "no matches found for `D`" was gh.exe choking on the drive-letter character the path got split
+          # into). This was the actual bug behind two earlier failed attempts (see docs/STATUS.md).
+          $files = @((Get-ChildItem out).FullName)
+          # --notes-file, not inline --notes: avoids relying on PowerShell's native-command argument
+          # encoding for a multi-line string with markdown backticks — kept from the first (wrong) fix
+          # attempt below because it's still correct practice, even though it wasn't the real bug.
           $notesPath = Join-Path $env:RUNNER_TEMP 'auto-draft-notes.md'
           $body = "Automatic preview build from the latest push to main ($($env:GITHUB_SHA.Substring(0,7)))." +
             "`n`n**Not a real release**: unsigned, never served to installed apps, never on the download " +
