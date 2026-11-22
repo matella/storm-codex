@@ -1,5 +1,18 @@
 # STATUS — read first, update last
 
+## Custom overlay widget fitting (2026-11-22)
+
+Each non-queue placement now measures its own unscaled content and refits on content or grid
+size changes in both the builder preview and the saved overlay. Queue and standalone sources
+retain their existing rendering. Release `sources`: 259,326 bytes gzip, up 4,401 from the
+same-toolchain baseline and below the 300,000-byte cap.
+
+Offline checks passed: formatting, native Clippy and tests (210 core, 7 sources), workspace
+wasm32 Clippy and wasm32 test compilation. Headless Chromium with local fixtures verified all
+eight non-queue kinds at three box sizes, two-tab preview/saved parity for stream pool, recap and
+goal, and live stream-pool refitting (1 → 12 → 0 → 1 heroes without reload). The queue screenshot
+matched the baseline, and the fixed-source browser regression passed. No live server or OBS run.
+
 ## Replay decoder hardening (PR #85)
 
 Versioned struct and array counts are checked against remaining input; decoded collections
