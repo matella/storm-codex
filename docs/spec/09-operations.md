@@ -671,6 +671,20 @@ replaces `postgres\`; the uninstaller shows the "Delete the application data" bo
 keeps `%LOCALAPPDATA%\com.matella.stormcodex` when left unticked; the payload includes Postgres,
 web assets and minimaps but no `referential.tar.gz`; installer size and first start are measured.
 
+**Auto-draft preview** (`auto-draft-desktop.yml`, every push to `main`): a fully automatic version
+of the dry run above, so a near-next-version installer is one click away without a manual
+`workflow_dispatch`. Still never reaches users: it always publishes to the **fixed tag**
+`desktop-main-auto` (never `desktop-v*`), always as `--draft`, and deletes+recreates that one
+release on every push (`gh release delete ... --cleanup-tag` then `gh release create`), so it never
+accumulates and never collides with a real tag. The previewed version is the higher of the
+committed `desktop/tauri.conf.json` version or one patch above the latest **published** `desktop-v*`
+release — applied only to that run's checkout (`desktop/tauri.conf.json`, synced into
+`desktop/Cargo.lock` via `cargo update --offline`), never committed or pushed back to `main`: this
+workflow cannot create a push loop and cannot influence what a real release later tags. It
+duplicates `release-desktop.yml`'s pinned-tool and packaging steps rather than sharing a workflow,
+so it can misbehave or be edited without any risk to the signed, user-facing pipeline. Cutting a
+real release (below) is unaffected and still requires a human pushing a `desktop-vX.Y.Z` tag.
+
 **Supply-chain rules of the release job** (it holds `contents: write` and the signing key):
 - every action pinned to a full commit SHA with the version in a comment (`actions/checkout`
   v7.0.1, Node 24; `dtolnay/rust-toolchain` at the commit of its `stable` branch tip on 2026-11-14 — the

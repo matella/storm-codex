@@ -1,5 +1,17 @@
 # STATUS — read first, update last
 
+## Auto-draft desktop preview on every push to main (2026-11-22)
+
+New `.github/workflows/auto-draft-desktop.yml`: on every push to `main`, builds the same signed
+Windows installer as `release-desktop.yml`'s manual dry run and publishes it to a fixed draft tag
+`desktop-main-auto`, deleting and recreating that one release each time. Never a `desktop-v*` tag,
+always `--draft`, never `--latest` — invisible to installed apps and the download page. The
+previewed version is auto-computed (committed `tauri.conf.json` version, or latest published
+`desktop-v*` + 1 patch) and applied only to that run's checkout, never committed back to `main`.
+Cutting a real release is unchanged: still a human pushing a `desktop-vX.Y.Z` tag. Not yet verified
+against a live run (first real trigger is this PR's merge to `main`); verify the draft appears,
+is not `--latest`, and does not affect `desktop-v0.1.5` before relying on it.
+
 ## Custom overlay widget fitting (2026-11-22)
 
 Each non-queue placement now measures its own unscaled content and refits on content or grid
