@@ -26,10 +26,21 @@ as "doesn't exist," which could fail open past a transient API error — now cla
 "release not found" message specifically and throws on anything else; the `[package]`-scoped regex
 compared before/after text to detect "no match," which misfired when the preview version already
 equals the committed one (legitimate no-op) — now uses `.IsMatch()` as the real presence check, and
-the capture group itself is bounded so it cannot cross a later `^[` section header. All three
-fixed and locally verified in `pwsh` (regex edge cases, PowerShell syntax parse). Not yet verified
-against a live Actions run (first real trigger is this PR's merge to `main`); verify the draft
-appears, is unsigned, is not `--latest`, and does not affect `desktop-v0.1.5` before relying on it.
+the capture group itself is bounded so it cannot cross a later `^[` section header. Round 3 BLOCK
+on the same two mutation-safety points, both re-opened by the round-2 fix itself: the "release not
+found" text match was still trusting a CLI error string rather than structured data, so a
+different unrelated failure containing that phrase could still fail open — replaced with the same
+`gh api --paginate .../releases` pattern already used for published tags, filtered by `tag_name`
+in PowerShell, so existence/draft status come from parsed JSON and `gh api` itself throws loudly
+on auth/network/rate-limit failures instead of silently falling through; and `(?!^\[)`'s section
+boundary only recognized a `[` at column one, so an indented `  [dependencies.foo]` table header
+could still be crossed if `[package]` ever lacked a version line — widened to `(?!^[ \t]*\[)`.
+Also corrected an overclaiming comment ("re-tags either way" on the best-effort ref cleanup — a
+failed cleanup instead leaves `gh release create` attached to whatever commit the stale ref
+already points at, not fatal for a preview replaced on the next push, but not guaranteed-fresh).
+All fixed and locally verified in `pwsh`. Not yet verified against a live Actions run (first real
+trigger is this PR's merge to `main`); verify the draft appears, is unsigned, is not `--latest`,
+and does not affect `desktop-v0.1.5` before relying on it.
 
 ## Custom overlay widget fitting (2026-11-22)
 

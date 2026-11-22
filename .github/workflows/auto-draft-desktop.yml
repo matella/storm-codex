@@ -96,7 +96,7 @@ jobs:
           # Regex with an explicit count=1 — NOT the static [regex]::Replace(...,...,1) overload, whose 4th
           # positional int silently coerces to RegexOptions.IgnoreCase and would replace every match.
           $cargoToml = Get-Content desktop/Cargo.toml -Raw
-          $pkgVersionRegex = [regex]::new('(?ms)^\[package\]\r?\n((?:(?!^\[).)*?)^version = "[\d.]+"')
+          $pkgVersionRegex = [regex]::new('(?ms)^\[package\]\r?\n((?:(?!^[ \t]*\[).)*?)^version = "[\d.]+"')
           if (-not $pkgVersionRegex.IsMatch($cargoToml)) {
             throw "did not find a [package] version line to update in desktop/Cargo.toml"
           }
@@ -183,28 +183,24 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          $PSNativeCommandUseErrorActionPreference = $false
-          $viewOutput = gh release view $env:AUTO_TAG --json isDraft 2>&1
-          $viewExit = $LASTEXITCODE
           $PSNativeCommandUseErrorActionPreference = $true
-          if ($viewExit -eq 0) {
-            $previousExists = $true
-            if (-not ($viewOutput | ConvertFrom-Json).isDraft) {
+          # Structured-data lookup (same `gh api --paginate` pattern as the version-compute step), not a
+          # `gh release view`/error-text match: a CLI message like "release not found" is not a stable
+          # contract, and this never has to guess "ambiguous failure" vs "genuinely absent" — gh api itself
+          # throws loudly on auth/network/rate-limit failures instead of silently falling through.
+          $allReleases = gh api --paginate "repos/$($env:GH_REPO)/releases?per_page=100" | ConvertFrom-Json
+          $previous = $allReleases | Where-Object { $_.tag_name -eq $env:AUTO_TAG } | Select-Object -First 1
+          if ($previous) {
+            if (-not $previous.draft) {
               throw "release at tag '$($env:AUTO_TAG)' exists and is NOT a draft — refusing to touch it"
             }
-          } elseif ("$viewOutput" -match 'release not found') {
-            $previousExists = $false # genuinely nothing to replace — the expected first-ever-run case
-          } else {
-            # Any other failure (auth, rate limit, API outage, ...) is ambiguous: a non-draft release could
-            # be hiding behind it. Fail the job loudly instead of guessing and risking a mutation.
-            throw "could not determine whether '$($env:AUTO_TAG)' already exists: $viewOutput"
-          }
-          if ($previousExists) {
             gh release delete $env:AUTO_TAG --yes # no --cleanup-tag: ref cleanup is handled separately below
           }
           # Best-effort tag-ref cleanup, run unconditionally (not just after a delete above): a dangling ref
           # can outlive its release object from an earlier run (e.g. a partial failure). Absence is success,
-          # so failures here are swallowed — `gh release create` below re-tags the ref either way.
+          # so failures here are swallowed. If this fails, `gh release create` below attaches to whatever
+          # commit the stale ref already points at instead of $env:GITHUB_SHA — not fatal for a preview
+          # that's replaced on the very next push, but not "guaranteed fresh" either.
           # (gh api, not `git push --delete`: persist-credentials is off, so git has no push credential.)
           $PSNativeCommandUseErrorActionPreference = $false
           gh api -X DELETE "repos/$($env:GH_REPO)/git/refs/tags/$($env:AUTO_TAG)" *> $null
