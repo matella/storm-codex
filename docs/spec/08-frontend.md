@@ -159,8 +159,13 @@ bundle serves `/overlay-builder` at the root and under `/v2`; its in-app routing
 
 Both outputs use the same transparent 1920×1080 stage. Placement uses 24 px grid cells, clips each
 widget (including shadows/animation overflow) to its rectangle, and paints by ascending z-order
-then by instance ID. The queue retains its 16:9 scene, uniformly scaled from the rectangle's top
-left; other widgets retain their native size inside the clip. The editor scales the whole iframe.
+then by instance ID. Queue keeps its fixed 1920×1080 scene and existing fit. For every other
+widget instance, a `ResizeObserver` measures the unscaled layout box on mount and when its
+content changes size. The renderer scales uniformly from the rectangle's top left by the smaller
+of the width and height ratios, refitting when either the measurement or the placement changes.
+Empty widgets stay blank, and any extra space from an aspect-ratio mismatch stays on the right
+or bottom. The editor scales the whole iframe; fixed single-widget OBS routes are unchanged.
+The widget-fill release measured 259,326 bytes gzip for `sources` (254,925 before; cap 300,000).
 
 The app loads `route::app_href("/overlay/custom") + "?preview=1"` in a same-origin iframe. The child
 posts `{type: "storm-overlay-preview-ready", version: 1}` to its parent and accepts complete
