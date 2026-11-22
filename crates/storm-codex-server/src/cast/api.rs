@@ -42,8 +42,9 @@ async fn save_versioned(s: &AppState, snapshot: &Series, v: u64) -> Result<(), s
         .await
         .is_err()
     {
-        // Saver task gone (shutdown): nothing left to persist to.
-        return Ok(());
+        // Saver task gone (shutdown): nothing left to persist to. Treat the same as any other
+        // write failure (R24) rather than silently reporting success for an unpersisted write.
+        return Err(sqlx::Error::Protocol("cast saver task ended".into()));
     }
     reply_rx
         .await
@@ -1615,6 +1616,11 @@ mod tests {
     }
 
     /// Item 1: an older snapshot (lower version) written after a more recent one is ignored.
+    /// This exercises `save_versioned`'s `cast_saved` fast-path short-circuit (never reaches the
+    /// saver task at all for the stale writes below) — it is NOT a test of the saver task's own
+    /// `v <= last` ordering guard under real concurrency; `interleaved_mutations_persist_and_sync_latest_state`
+    /// below is the one that proves the saver stays correct when two sends race past this
+    /// short-circuit at nearly the same version.
     #[tokio::test]
     async fn older_snapshot_never_overwrites_newer_one() {
         let _g = DB_LOCK.lock().await;
