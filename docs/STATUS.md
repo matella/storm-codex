@@ -4,43 +4,26 @@
 
 New `.github/workflows/auto-draft-desktop.yml`: on every push to `main`, builds an **unsigned**
 Windows installer (no `TAURI_SIGNING_PRIVATE_KEY`/`_PASSWORD`, `bundle.createUpdaterArtifacts`
-forced off for that run) and publishes it to a fixed draft tag `desktop-main-auto`, checking it's
-actually a draft before deleting and recreating it each time. Never a `desktop-v*` tag, always
-`--draft`, never `--latest` — invisible to installed apps and the download page. The previewed
-version is auto-computed (committed `tauri.conf.json` version, or latest published `desktop-v*` +
-1 patch, with malformed/overflow tags skipped rather than crashing the job) and applied only to
-that run's checkout (`desktop/Cargo.toml`'s `[package]` version only, via an instance-regex
-`count=1` replace — not the static `[regex]::Replace` 4-arg overload, whose int silently coerces
-to `RegexOptions.IgnoreCase`), never committed back to `main`. No `cargo update` step: the lockfile
-syncs itself on the unlocked `cargo tauri build`. Cutting a real release is unchanged: still a
-human pushing a `desktop-vX.Y.Z` tag. Reviewed twice (Codex, `gpt-6.2-sol`): round 1 BLOCK on 7
-points (signing-key exposure, first-run `gh release delete` throwing with nothing to delete,
-unscoped Cargo.toml regex, no lockfile-cache step, malformed-tag parsing, non-atomic concurrency,
-missing non-draft guard) — all fixed except the concurrency-atomicity point, accepted as residual
-risk for a non-critical preview feature (worst case: a stale or briefly-missing preview, never a
-wrong/unsafe one). Round 2 BLOCK on 3 fresh points found in those fixes: `--cleanup-tag` on the
-same `gh release delete` call as the release deletion meant a ref-cleanup failure aborted before
-`gh release create` ran — split into a plain `delete` plus an always-run, failure-swallowed `gh api
--X DELETE` on the tag ref; the non-draft existence check treated *any* `gh release view` failure
-as "doesn't exist," which could fail open past a transient API error — now classifies by the
-"release not found" message specifically and throws on anything else; the `[package]`-scoped regex
-compared before/after text to detect "no match," which misfired when the preview version already
-equals the committed one (legitimate no-op) — now uses `.IsMatch()` as the real presence check, and
-the capture group itself is bounded so it cannot cross a later `^[` section header. Round 3 BLOCK
-on the same two mutation-safety points, both re-opened by the round-2 fix itself: the "release not
-found" text match was still trusting a CLI error string rather than structured data, so a
-different unrelated failure containing that phrase could still fail open — replaced with the same
-`gh api --paginate .../releases` pattern already used for published tags, filtered by `tag_name`
-in PowerShell, so existence/draft status come from parsed JSON and `gh api` itself throws loudly
-on auth/network/rate-limit failures instead of silently falling through; and `(?!^\[)`'s section
-boundary only recognized a `[` at column one, so an indented `  [dependencies.foo]` table header
-could still be crossed if `[package]` ever lacked a version line — widened to `(?!^[ \t]*\[)`.
-Also corrected an overclaiming comment ("re-tags either way" on the best-effort ref cleanup — a
-failed cleanup instead leaves `gh release create` attached to whatever commit the stale ref
-already points at, not fatal for a preview replaced on the next push, but not guaranteed-fresh).
-All fixed and locally verified in `pwsh`. Not yet verified against a live Actions run (first real
-trigger is this PR's merge to `main`); verify the draft appears, is unsigned, is not `--latest`,
-and does not affect `desktop-v0.1.5` before relying on it.
+forced off for that run) and publishes it to a fixed draft tag `desktop-main-auto`, replacing it
+each time after verifying via structured `gh api --paginate .../releases` data (case-sensitive
+tag match, not CLI error-text parsing) that it's actually a draft before deleting it. Never a
+`desktop-v*` tag, always `--draft`, never `--latest` — invisible to installed apps and the
+download page, and `gh api` itself throws loudly on any ambiguous lookup failure rather than
+guessing. The previewed version is auto-computed (committed `tauri.conf.json` version, or latest
+published `desktop-v*` + 1 patch, malformed/overflow tags skipped not crashed) and applied only to
+that run's checkout — `desktop/Cargo.toml`'s `[package]` version alone, via a section-bounded
+instance regex that can't cross into a dependency table even if indented — never committed back to
+`main`, so this cannot create a push loop or affect what a real release later tags.
+`desktop/Cargo.lock` isn't touched by a manual command: the unlocked `cargo tauri build` syncs its
+own path-dependency entry. Cutting a real release is unchanged: still a human pushing a
+`desktop-vX.Y.Z` tag. Went through 4 rounds of independent review (Codex, `gpt-6.2-sol`) before
+merge, each round finding and fixing a real mutation-safety or correctness gap in the previous
+round's fix (signing exposure, first-run delete-nothing, regex scope, malformed tags, split
+delete/cleanup-tag, fail-closed existence check, case-sensitive tag match) — see PR #90 for the
+full history. One residual risk accepted by design: the publish step isn't atomic (a cancelled
+mid-publish run could leave the draft briefly missing or stale) — acceptable for a non-critical
+preview that's replaced on the very next push. Verify on the first live run after merge: the draft
+appears, is unsigned, is not `--latest`, and `desktop-v0.1.5` is untouched.
 
 ## Custom overlay widget fitting (2026-11-22)
 

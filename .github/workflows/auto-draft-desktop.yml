@@ -189,7 +189,10 @@ jobs:
           # contract, and this never has to guess "ambiguous failure" vs "genuinely absent" — gh api itself
           # throws loudly on auth/network/rate-limit failures instead of silently falling through.
           $allReleases = gh api --paginate "repos/$($env:GH_REPO)/releases?per_page=100" | ConvertFrom-Json
-          $previous = $allReleases | Where-Object { $_.tag_name -eq $env:AUTO_TAG } | Select-Object -First 1
+          # -ceq, not -eq: PowerShell's -eq is case-insensitive, so a stray differently-cased tag could
+          # otherwise pass this guard while `gh release delete`/the ref path below resolve the literal
+          # lowercase $env:AUTO_TAG — acting on two different releases.
+          $previous = $allReleases | Where-Object { $_.tag_name -ceq $env:AUTO_TAG } | Select-Object -First 1
           if ($previous) {
             if (-not $previous.draft) {
               throw "release at tag '$($env:AUTO_TAG)' exists and is NOT a draft — refusing to touch it"
