@@ -89,17 +89,23 @@ jobs:
           $conf.version = $env:PREVIEW_VERSION
           $conf.bundle.createUpdaterArtifacts = $false # unsigned preview: see the file header
           ($conf | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath desktop/tauri.conf.json -Encoding utf8NoBOM
-          # desktop/Cargo.toml's [package] version only (scoped to that section, not every "version = ..."
-          # line in the file, so a dependency table entry can never be touched by accident). An instance
+          # desktop/Cargo.toml's [package] version only (scoped to that section, not every "version = ...
+          # line in the file, so a dependency table entry can never be touched by accident — the lazy
+          # `(.*?)` cannot cross a later `^[` section header, so a malformed/missing [package] version
+          # genuinely fails to match instead of silently landing on a dependency's version). An instance
           # Regex with an explicit count=1 — NOT the static [regex]::Replace(...,...,1) overload, whose 4th
           # positional int silently coerces to RegexOptions.IgnoreCase and would replace every match.
           $cargoToml = Get-Content desktop/Cargo.toml -Raw
-          $pkgVersionRegex = [regex]::new('(?ms)^\[package\](.*?)^version = "[\d.]+"')
-          $evaluator = [System.Text.RegularExpressions.MatchEvaluator]{
-            param($m) "[package]$($m.Groups[1].Value)version = `"$env:PREVIEW_VERSION`""
+          $pkgVersionRegex = [regex]::new('(?ms)^\[package\]\r?\n((?:(?!^\[).)*?)^version = "[\d.]+"')
+          if (-not $pkgVersionRegex.IsMatch($cargoToml)) {
+            throw "did not find a [package] version line to update in desktop/Cargo.toml"
           }
+          $evaluator = [System.Text.RegularExpressions.MatchEvaluator]{
+            param($m) "[package]`n$($m.Groups[1].Value)version = `"$env:PREVIEW_VERSION`""
+          }
+          # Comparing before/after text would wrongly report "no match" when the preview version already
+          # equals the committed one (a legitimate no-op) — IsMatch above is the real presence check.
           $updated = $pkgVersionRegex.Replace($cargoToml, $evaluator, 1)
-          if ($updated -eq $cargoToml) { throw "did not find a [package] version line to update in desktop/Cargo.toml" }
           $updated | Set-Content -LiteralPath desktop/Cargo.toml -Encoding utf8NoBOM
           # No `cargo update` step: the later `cargo tauri build` run (no --locked) syncs desktop/Cargo.lock's
           # own path-dependency entry to this manifest version automatically, no registry/network access needed.
@@ -178,20 +184,27 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           $PSNativeCommandUseErrorActionPreference = $false
-          gh release view $env:AUTO_TAG *> $null
-          $previousExists = ($LASTEXITCODE -eq 0)
-          if ($previousExists) {
-            $isDraft = (gh release view $env:AUTO_TAG --json isDraft --jq '.isDraft')
-            if ($isDraft -ne 'true') {
+          $viewOutput = gh release view $env:AUTO_TAG --json isDraft 2>&1
+          $viewExit = $LASTEXITCODE
+          $PSNativeCommandUseErrorActionPreference = $true
+          if ($viewExit -eq 0) {
+            $previousExists = $true
+            if (-not ($viewOutput | ConvertFrom-Json).isDraft) {
               throw "release at tag '$($env:AUTO_TAG)' exists and is NOT a draft — refusing to touch it"
             }
+          } elseif ("$viewOutput" -match 'release not found') {
+            $previousExists = $false # genuinely nothing to replace — the expected first-ever-run case
+          } else {
+            # Any other failure (auth, rate limit, API outage, ...) is ambiguous: a non-draft release could
+            # be hiding behind it. Fail the job loudly instead of guessing and risking a mutation.
+            throw "could not determine whether '$($env:AUTO_TAG)' already exists: $viewOutput"
           }
-          $PSNativeCommandUseErrorActionPreference = $true
           if ($previousExists) {
-            gh release delete $env:AUTO_TAG --yes --cleanup-tag
+            gh release delete $env:AUTO_TAG --yes # no --cleanup-tag: ref cleanup is handled separately below
           }
-          # Best-effort: a dangling tag ref can outlive a release object (e.g. a prior run's --cleanup-tag
-          # failing after the release delete succeeded). Absence is the success case, so errors are ignored.
+          # Best-effort tag-ref cleanup, run unconditionally (not just after a delete above): a dangling ref
+          # can outlive its release object from an earlier run (e.g. a partial failure). Absence is success,
+          # so failures here are swallowed — `gh release create` below re-tags the ref either way.
           # (gh api, not `git push --delete`: persist-credentials is off, so git has no push credential.)
           $PSNativeCommandUseErrorActionPreference = $false
           gh api -X DELETE "repos/$($env:GH_REPO)/git/refs/tags/$($env:AUTO_TAG)" *> $null

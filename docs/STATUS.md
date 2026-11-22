@@ -13,14 +13,23 @@ that run's checkout (`desktop/Cargo.toml`'s `[package]` version only, via an ins
 `count=1` replace — not the static `[regex]::Replace` 4-arg overload, whose int silently coerces
 to `RegexOptions.IgnoreCase`), never committed back to `main`. No `cargo update` step: the lockfile
 syncs itself on the unlocked `cargo tauri build`. Cutting a real release is unchanged: still a
-human pushing a `desktop-vX.Y.Z` tag. Reviewed (Codex, `gpt-6.2-sol`) at the first draft — BLOCK on
-7 points (signing-key exposure, first-run `gh release delete` throwing with nothing to delete,
+human pushing a `desktop-vX.Y.Z` tag. Reviewed twice (Codex, `gpt-6.2-sol`): round 1 BLOCK on 7
+points (signing-key exposure, first-run `gh release delete` throwing with nothing to delete,
 unscoped Cargo.toml regex, no lockfile-cache step, malformed-tag parsing, non-atomic concurrency,
 missing non-draft guard) — all fixed except the concurrency-atomicity point, accepted as residual
 risk for a non-critical preview feature (worst case: a stale or briefly-missing preview, never a
-wrong/unsafe one). Not yet verified against a live Actions run (first real trigger is this PR's
-merge to `main`); verify the draft appears, is unsigned, is not `--latest`, and does not affect
-`desktop-v0.1.5` before relying on it.
+wrong/unsafe one). Round 2 BLOCK on 3 fresh points found in those fixes: `--cleanup-tag` on the
+same `gh release delete` call as the release deletion meant a ref-cleanup failure aborted before
+`gh release create` ran — split into a plain `delete` plus an always-run, failure-swallowed `gh api
+-X DELETE` on the tag ref; the non-draft existence check treated *any* `gh release view` failure
+as "doesn't exist," which could fail open past a transient API error — now classifies by the
+"release not found" message specifically and throws on anything else; the `[package]`-scoped regex
+compared before/after text to detect "no match," which misfired when the preview version already
+equals the committed one (legitimate no-op) — now uses `.IsMatch()` as the real presence check, and
+the capture group itself is bounded so it cannot cross a later `^[` section header. All three
+fixed and locally verified in `pwsh` (regex edge cases, PowerShell syntax parse). Not yet verified
+against a live Actions run (first real trigger is this PR's merge to `main`); verify the draft
+appears, is unsigned, is not `--latest`, and does not affect `desktop-v0.1.5` before relying on it.
 
 ## Custom overlay widget fitting (2026-11-22)
 
