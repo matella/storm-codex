@@ -85,7 +85,9 @@ Design: `docs/specs/2026-11-12-standalone-installer-design.md`.
 | `GET /api/goal/progress` (daily goal tracker, widget 7) | API p95 < 100 ms | 1.0 ms avg, 1.5 ms worst (25 warm loopback requests, debug server, dev Postgres with a test-fixture archive, 2026-11-20); pure, recomputed on every read — no corpus, one small join by `played_at` + `toon_handle`/`name` |
 
 Any PR that puts a budget at risk re-measures it (benches: `storm-stats-dump --bench`,
-`backfill_bench.py`).
+`backfill_bench.py`). PR #85's bounded MPQ reader measured 78.9 ms median (104.0 ms p95)
+for decode + stats on the three committed replays in a Linux release build. This small smoke
+benchmark is not a full-corpus performance measurement.
 
 ## Locked decisions (operator — do not reopen without them)
 

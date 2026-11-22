@@ -6,6 +6,11 @@ use crate::error::{Error, Result};
 use crate::typeinfo::TypeInfo;
 use crate::value::Value;
 
+/// Maximum nesting of `skip_instance` (unknown fields of a newer build). The skip is driven by
+/// the bytes alone, so without a bound a crafted stream nests it until the stack overflows
+/// (process abort); real replays nest a handful of levels.
+const MAX_SKIP_DEPTH: u32 = 64;
+
 pub struct VersionedDecoder<'a> {
     data: &'a [u8],
     pos: usize,
@@ -27,6 +32,17 @@ impl<'a> VersionedDecoder<'a> {
 
     pub fn used_bytes(&self) -> usize {
         self.pos
+    }
+
+    /// Every versioned array item or struct field consumes at least one input byte.
+    fn check_count(&self, count: usize) -> Result<()> {
+        if count > self.data.len().saturating_sub(self.pos) {
+            return Err(Error::Truncated(format!(
+                "reading {count} versioned values at byte {}",
+                self.pos
+            )));
+        }
+        Ok(())
     }
 
     fn read_u8(&mut self) -> Result<u8> {
@@ -98,7 +114,7 @@ impl<'a> VersionedDecoder<'a> {
                     .as_int()
                     .ok_or_else(|| Error::Corrupted("svaruint32 non entier".into()));
             }
-            self.skip_instance()?;
+            self.skip_instance(0)?;
             return Err(Error::Corrupted(format!("svaruint32: unknown tag {tag}")));
         }
         self.instance(typeid)?
@@ -146,7 +162,8 @@ impl<'a> VersionedDecoder<'a> {
                 let len = usize::try_from(self.vint()?)
                     .map_err(|_| Error::Corrupted("negative array length".into()))?;
                 let typeid = *typeid;
-                let mut items = Vec::with_capacity(len.min(4096));
+                self.check_count(len)?;
+                let mut items = Vec::new();
                 for _ in 0..len {
                     items.push(self.instance(typeid)?);
                 }
@@ -179,7 +196,7 @@ impl<'a> VersionedDecoder<'a> {
                     }
                     None => {
                         // reference: unknown tag → skip + empty struct (build compatibility)
-                        self.skip_instance()?;
+                        self.skip_instance(0)?;
                         Value::Struct(Vec::new())
                     }
                 }
@@ -188,7 +205,8 @@ impl<'a> VersionedDecoder<'a> {
                 self.expect_skip(5)?;
                 let count = usize::try_from(self.vint()?)
                     .map_err(|_| Error::Corrupted("negative struct size".into()))?;
-                let mut result: Vec<(std::sync::Arc<str>, Value)> = Vec::with_capacity(count);
+                self.check_count(count)?;
+                let mut result: Vec<(std::sync::Arc<str>, Value)> = Vec::new();
                 for _ in 0..count {
                     let tag = self.vint()?;
                     match fields.iter().find(|f| f.2 == tag) {
@@ -205,7 +223,7 @@ impl<'a> VersionedDecoder<'a> {
                                 result.push((name, v));
                             }
                         }
-                        None => self.skip_instance()?, // unknown field (build compatibility)
+                        None => self.skip_instance(0)?, // unknown field (build compatibility)
                     }
                 }
                 Value::Struct(result)
@@ -213,13 +231,20 @@ impl<'a> VersionedDecoder<'a> {
         })
     }
 
-    fn skip_instance(&mut self) -> Result<()> {
+    fn skip_instance(&mut self, depth: u32) -> Result<()> {
+        if depth >= MAX_SKIP_DEPTH {
+            return Err(Error::Corrupted(format!(
+                "skip: nesting deeper than {MAX_SKIP_DEPTH} at byte {} (versioned)",
+                self.pos
+            )));
+        }
+        let depth = depth + 1;
         let skip = self.read_u8()?;
         match skip {
             0 => {
                 let len = self.vint()?;
                 for _ in 0..len {
-                    self.skip_instance()?;
+                    self.skip_instance(depth)?;
                 }
             }
             1 => {
@@ -234,18 +259,18 @@ impl<'a> VersionedDecoder<'a> {
             }
             3 => {
                 self.vint()?;
-                self.skip_instance()?;
+                self.skip_instance(depth)?;
             }
             4 => {
                 if self.read_u8()? != 0 {
-                    self.skip_instance()?;
+                    self.skip_instance(depth)?;
                 }
             }
             5 => {
                 let len = self.vint()?;
                 for _ in 0..len {
                     self.vint()?;
-                    self.skip_instance()?;
+                    self.skip_instance(depth)?;
                 }
             }
             6 => {
@@ -292,5 +317,32 @@ mod tests {
             let mut d = VersionedDecoder::new(bytes, &[]);
             assert_eq!(d.vint().unwrap(), *expected, "bytes {bytes:?}");
         }
+    }
+
+    #[test]
+    fn count_must_fit_remaining_input() {
+        let mut d = VersionedDecoder::new(&[0; 4], &[]);
+        d.read_u8().unwrap();
+        assert!(d.check_count(0).is_ok());
+        assert!(d.check_count(3).is_ok());
+        assert!(matches!(d.check_count(4), Err(Error::Truncated(_))));
+        assert!(matches!(
+            d.check_count(usize::MAX),
+            Err(Error::Truncated(_))
+        ));
+    }
+
+    #[test]
+    fn skip_depth_limit_is_checked_before_reading() {
+        let mut d = VersionedDecoder::new(&[], &[]);
+        assert!(matches!(
+            d.skip_instance(MAX_SKIP_DEPTH - 1),
+            Err(Error::Truncated(_))
+        ));
+        assert!(matches!(
+            d.skip_instance(MAX_SKIP_DEPTH),
+            Err(Error::Corrupted(_))
+        ));
+        assert_eq!(d.used_bytes(), 0);
     }
 }

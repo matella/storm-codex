@@ -15,6 +15,16 @@ Crate: `crates/storm-replay` (public library, MIT). Showcase: its `README.md`.
   upload failures (`error_class`).
 - **Raw streams**: `battlelobby_raw()`, `tracker_events_raw()`, `game_events_raw()` return the
   undecoded bytes (live simulator, tests).
+- **Input limits** (security review):
+  - `versioned.rs` rejects struct/array counts greater than the remaining bytes and grows decoded
+    collections only when values are read. `bitpacked.rs` bounds bitarray allocation by input size.
+  - Skipping unknown fields (versioned) is limited to 64 nested levels (`MAX_SKIP_DEPTH`).
+  - **MPQ stream bounds**: `mpq.rs` rejects declared sizes above `MAX_STREAM_BYTES` (**256 MiB
+    per stream**) and validates sector offsets and lengths. A full sector must decode to the
+    archive's sector size; the final sector must decode to the remaining declared bytes. Raw
+    bytes must match their expected length too. Decoding writes directly into one bounded output
+    buffer, with a one-byte probe for overlong output. Length mismatches are `Error::MissingStream`.
+    nom-mpq still parses the archive tables. Real streams are a few MB.
 
 ## Chunked decoding (`StreamDecoder`)
 
@@ -56,4 +66,6 @@ heavy consumer (~×1.6 on Windows). Real archive: 2,821/2,821 decoded (22 builds
 `tests/mini_corpus.rs` on the committed replays in `tests/data/` (public CI without the private
 corpus). The full corpus lives on the NAS/box (`fetch-corpus`). `tests/stream_decoder.rs`:
 chunked decoding (4 KB, pseudo-random sizes, byte by byte) equals whole decoding;
-random bytes never cause a panic.
+random bytes never cause a panic. `src/mpq.rs` unit tests: byte parity with nom-mpq on every
+stream of the committed replays and the output cap with a small compressed fixture.
+`src/versioned.rs` tests the count and nesting boundaries directly.

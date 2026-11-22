@@ -957,6 +957,14 @@ pub(crate) mod api_tests {
             .run(&db)
             .await
             .expect("migrations");
+        Some(test_state_with_db(url, db, admin_token))
+    }
+
+    pub(crate) fn test_state_with_db(
+        url: String,
+        db: PgPool,
+        admin_token: Option<&str>,
+    ) -> AppState {
         let dir = std::env::temp_dir().join(format!("storm-codex-test-{}", uuid::Uuid::new_v4()));
         let cfg = config::Config {
             database_url: url,
@@ -980,7 +988,7 @@ pub(crate) mod api_tests {
         };
         std::fs::create_dir_all(&cfg.archive_dir).unwrap();
         std::fs::create_dir_all(&cfg.raw_cache_dir).unwrap();
-        Some(super::test_app_state(cfg, db))
+        super::test_app_state(cfg, db)
     }
 
     pub(crate) fn app(state: &AppState) -> Router {

@@ -94,7 +94,15 @@ impl<'a> BitReader<'a> {
     /// big integer; DO NOT replace with successive `read_bits` calls: the placement of the
     /// fragments depends on the buffer's alignment and does not compose).
     pub fn read_bits_big(&mut self, bits: u64) -> Result<Vec<u8>> {
-        let nbytes = bits.div_ceil(8) as usize;
+        let nbytes = usize::try_from(bits.div_ceil(8))
+            .map_err(|_| Error::Corrupted(format!("bitarray of {bits} bits")))?;
+        // the length comes from the file: check it fits in the input before allocating
+        if nbytes > self.data.len().saturating_sub(self.used) + 1 {
+            return Err(Error::Truncated(format!(
+                "reading {bits} bits (big integer) at byte {}",
+                self.used
+            )));
+        }
         let mut out = vec![0u8; nbytes];
         let mut resultbits: u64 = 0;
         while resultbits != bits {

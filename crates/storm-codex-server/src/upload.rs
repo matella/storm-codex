@@ -219,6 +219,36 @@ impl Outcome {
     }
 }
 
+/// Parse attempts after which [`resume_pending`] stops re-parsing an upload left `pending`
+/// (migration 0023). Count the attempt before starting the decoder so it survives a restart.
+pub(crate) const MAX_PARSE_ATTEMPTS: i32 = 3;
+
+/// Retry bookkeeping, not the decode. Keep the original worker and its permit throughout.
+async fn record_parse_attempt(db: &sqlx::PgPool, upload_id: i64) -> bool {
+    let mut delays_ms = [250, 500].into_iter();
+    loop {
+        let write =
+            sqlx::query("UPDATE uploads SET parse_attempts = parse_attempts + 1 WHERE id = $1")
+                .bind(upload_id)
+                .execute(db);
+        let error = match tokio::time::timeout(Duration::from_secs(1), write).await {
+            Ok(Ok(result)) if result.rows_affected() == 1 => return true,
+            Ok(Ok(_)) => {
+                tracing::error!(upload_id, "cannot record parse attempt: upload row missing");
+                return false;
+            }
+            Ok(Err(error)) => error.to_string(),
+            Err(error) => error.to_string(),
+        };
+        let Some(delay) = delays_ms.next() else {
+            tracing::error!(upload_id, %error, "parse attempt not confirmed after retries; leaving upload pending");
+            return false;
+        };
+        tracing::warn!(upload_id, %error, "parse attempt not confirmed; retrying bookkeeping");
+        tokio::time::sleep(Duration::from_millis(delay)).await;
+    }
+}
+
 /// CPU-bound parse (spawn_blocking) + projection + `uploads` update. Broadcasts the WS event.
 async fn run_parse(
     state: AppState,
@@ -226,6 +256,14 @@ async fn run_parse(
     archived: PathBuf,
     _permit: tokio::sync::OwnedSemaphorePermit,
 ) -> Outcome {
+    // An attempt that aborts the process must already be recorded.
+    if !record_parse_attempt(&state.db, upload_id).await {
+        return Outcome {
+            status: "error".into(),
+            match_id: None,
+            error_class: Some("db".into()),
+        };
+    }
     let path = archived.clone();
     // catch_unwind via spawn_blocking: a worker panic does not bring the server down
     let parsed = tokio::task::spawn_blocking(move || {
@@ -384,12 +422,32 @@ async fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<(
 /// Resumes at startup the uploads left `pending`: a `202 accepted` queues the parse
 /// in memory only, so a restart before the end left them stuck (the
 /// client does not resend an accepted file). The archived file is the source of truth;
-/// `project_match` is idempotent. Returns the number of uploads queued again.
+/// `project_match` is idempotent. An upload already attempted [`MAX_PARSE_ATTEMPTS`] times
+/// (each one ended by the process dying) is marked `parse_failed` / `too_many_attempts`
+/// instead. Returns the number of uploads queued again.
 pub(crate) async fn resume_pending(state: &AppState) -> Result<usize, sqlx::Error> {
+    let given_up: Vec<(i64, i32)> = sqlx::query_as(
+        "UPDATE uploads SET status = 'parse_failed', error_class = 'too_many_attempts',
+                error_msg = 'parse interrupted ' || parse_attempts || ' times (process died)',
+                parsed_at = now()
+         WHERE status = 'pending' AND archived_path IS NOT NULL AND parse_attempts >= $1
+         RETURNING id, parse_attempts",
+    )
+    .bind(MAX_PARSE_ATTEMPTS)
+    .fetch_all(&state.db)
+    .await?;
+    for (upload_id, attempts) in given_up {
+        tracing::warn!(
+            "upload {upload_id}: {attempts} interrupted parse attempts, marked parse_failed \
+             (too_many_attempts) instead of being resumed"
+        );
+    }
     let rows: Vec<(i64, String)> = sqlx::query_as(
         "SELECT id, archived_path FROM uploads
-         WHERE status = 'pending' AND archived_path IS NOT NULL ORDER BY id",
+         WHERE status = 'pending' AND archived_path IS NOT NULL AND parse_attempts < $1
+         ORDER BY id",
     )
+    .bind(MAX_PARSE_ATTEMPTS)
     .fetch_all(&state.db)
     .await?;
     let n = rows.len();
@@ -522,12 +580,122 @@ mod tests {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod resume_tests {
-    use crate::api_tests::test_state;
+    use crate::api_tests::{app, test_state_with_db};
+    use crate::refdata::tests::{drop_db, isolated_db};
+    use crate::AppState;
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+    };
+    use std::time::Duration;
+    use tower::ServiceExt;
+
+    // Startup scans every pending row and parsing writes match/player rows. Neither should
+    // run against other integration tests' uploads or fixtures.
+    async fn isolated_state() -> Option<(AppState, String)> {
+        let url = std::env::var("DATABASE_URL").ok()?;
+        let (db, name) = isolated_db().await.unwrap();
+        Some((test_state_with_db(url, db, None), name))
+    }
+
+    fn committed_replay(name: &str) -> Vec<u8> {
+        let dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../storm-replay/tests/data");
+        std::fs::read(dir.join(name)).expect("committed replay")
+    }
+
+    async fn upload_row(db: &sqlx::PgPool, id: i64) -> (String, Option<String>, i32) {
+        sqlx::query_as("SELECT status, error_class, parse_attempts FROM uploads WHERE id = $1")
+            .bind(id)
+            .fetch_one(db)
+            .await
+            .unwrap()
+    }
+
+    async fn wait_for_upload(db: &sqlx::PgPool, id: i64) -> (String, Option<String>, i32) {
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                let row = upload_row(db, id).await;
+                if row.0 != "pending" {
+                    return row;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .expect("upload remained pending")
+    }
+
+    #[tokio::test]
+    async fn accepted_upload_recovers_from_transient_attempt_write_error() {
+        let Some((state, db_name)) = isolated_state().await else {
+            return;
+        };
+        let token = "upload-retry-test";
+        sqlx::query("INSERT INTO upload_tokens (name, token_hash) VALUES ('retry', $1)")
+            .bind(super::sha256_hex(token.as_bytes()))
+            .execute(&state.db)
+            .await
+            .unwrap();
+        // nextval survives rollback, so only the first bookkeeping UPDATE fails.
+        sqlx::raw_sql(
+            "CREATE SEQUENCE attempt_writes;
+             CREATE FUNCTION fail_first_attempt_write() RETURNS trigger LANGUAGE plpgsql AS $$
+             BEGIN
+                 IF nextval('attempt_writes') = 1 THEN
+                     RAISE EXCEPTION 'transient test failure' USING ERRCODE = '40001';
+                 END IF;
+                 RETURN NEW;
+             END; $$;
+             CREATE TRIGGER fail_first_attempt_write BEFORE UPDATE OF parse_attempts ON uploads
+                 FOR EACH ROW EXECUTE FUNCTION fail_first_attempt_write();",
+        )
+        .execute(&state.db)
+        .await
+        .unwrap();
+        let permit = state
+            .parse_sem
+            .clone()
+            .acquire_many_owned(state.parse_sem.available_permits().try_into().unwrap())
+            .await
+            .unwrap();
+        let bytes = committed_replay("2026-05-27 22.37.45 Industrial District.StormReplay");
+        let response = app(&state)
+            .oneshot(
+                Request::post("/api/upload-raw")
+                    .header("authorization", format!("Bearer {token}"))
+                    .body(Body::from(bytes))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let id = sqlx::query_scalar("SELECT id FROM uploads")
+            .fetch_one(&state.db)
+            .await
+            .unwrap();
+        assert_eq!(upload_row(&state.db, id).await, ("pending".into(), None, 0));
+        drop(permit);
+
+        assert_eq!(
+            wait_for_upload(&state.db, id).await,
+            ("parsed".into(), None, 1)
+        );
+        let writes: i64 = sqlx::query_scalar("SELECT last_value FROM attempt_writes")
+            .fetch_one(&state.db)
+            .await
+            .unwrap();
+        assert_eq!(
+            writes, 2,
+            "one failed write, then one recorded parse attempt"
+        );
+        drop_db(state.db, &db_name).await;
+    }
 
     /// An upload left `pending` (202 then restart) is resumed and parsed at startup.
     #[tokio::test]
     async fn pending_upload_is_resumed_and_parsed() {
-        let Some(state) = test_state(None).await else {
+        let Some((state, db_name)) = isolated_state().await else {
             return;
         };
         let replay = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -551,21 +719,11 @@ mod resume_tests {
         .await
         .unwrap();
 
-        let n = super::resume_pending(&state).await.unwrap();
-        assert!(n >= 1, "the pending upload must be queued again");
-        let mut status = String::new();
-        for _ in 0..100 {
-            status = sqlx::query_scalar("SELECT status FROM uploads WHERE id = $1")
-                .bind(id)
-                .fetch_one(&state.db)
-                .await
-                .unwrap();
-            if status != "pending" {
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        }
-        assert_eq!(status, "parsed");
+        assert_eq!(super::resume_pending(&state).await.unwrap(), 1);
+        assert_eq!(
+            wait_for_upload(&state.db, id).await,
+            ("parsed".into(), None, 1)
+        );
         // no temporary file left next to the archive
         let leftovers = std::fs::read_dir(&state.cfg.archive_dir)
             .unwrap()
@@ -578,5 +736,63 @@ mod resume_tests {
             })
             .count();
         assert_eq!(leftovers, 0);
+        drop_db(state.db, &db_name).await;
+    }
+
+    /// Security review C1 (defence in depth): an upload whose parse kept killing the process is
+    /// given up after `MAX_PARSE_ATTEMPTS` instead of being re-parsed at every startup; below the
+    /// limit it is still resumed, and every parse attempt is counted.
+    #[tokio::test]
+    async fn pending_upload_is_given_up_after_max_attempts() {
+        let Some((state, db_name)) = isolated_state().await else {
+            return;
+        };
+        let replay = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../storm-replay/tests/data/2024-10-07 22.29.55 Industrial District.StormReplay");
+        let bytes = std::fs::read(&replay).expect("committed replay");
+        let hash = super::sha256_hex(&bytes);
+        let archived = state.cfg.archive_dir.join(format!("{hash}.StormReplay"));
+        super::write_atomic(&archived, &bytes).await.unwrap();
+        // the same content under a second fingerprint: one row at the limit, one just below
+        let exhausted_fp = format!("{hash}-exhausted");
+        for fp in [&hash, &exhausted_fp] {
+            sqlx::query("DELETE FROM uploads WHERE fingerprint = $1")
+                .bind(fp)
+                .execute(&state.db)
+                .await
+                .unwrap();
+        }
+        let insert = |fp: String, attempts: i32| {
+            let db = state.db.clone();
+            let path = archived.to_string_lossy().into_owned();
+            async move {
+                sqlx::query_scalar::<_, i64>(
+                    "INSERT INTO uploads (filename, fingerprint, archived_path, status, parse_attempts)
+                     VALUES ('attempts.StormReplay', $1, $2, 'pending', $3) RETURNING id",
+                )
+                .bind(fp)
+                .bind(path)
+                .bind(attempts)
+                .fetch_one(&db)
+                .await
+                .unwrap()
+            }
+        };
+        let exhausted = insert(exhausted_fp, super::MAX_PARSE_ATTEMPTS).await;
+        let retried = insert(hash.clone(), super::MAX_PARSE_ATTEMPTS - 1).await;
+
+        assert_eq!(super::resume_pending(&state).await.unwrap(), 1);
+
+        let cap = super::MAX_PARSE_ATTEMPTS;
+        let given_up = ("parse_failed".into(), Some("too_many_attempts".into()), cap);
+        let parsed = ("parsed".into(), None, cap);
+        assert_eq!(upload_row(&state.db, exhausted).await, given_up);
+        assert_eq!(wait_for_upload(&state.db, retried).await, parsed);
+
+        // A second startup leaves both rows alone.
+        assert_eq!(super::resume_pending(&state).await.unwrap(), 0);
+        assert_eq!(upload_row(&state.db, exhausted).await, given_up);
+        assert_eq!(upload_row(&state.db, retried).await, parsed);
+        drop_db(state.db, &db_name).await;
     }
 }
