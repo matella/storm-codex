@@ -21,6 +21,7 @@ use storm_web_core::{
 #[derive(Clone, Copy)]
 pub struct Feeds {
     pub names: ReadSignal<Vec<String>>,
+    pub voice: ReadSignal<storm_web_core::session::BriefVoice>,
     pub recent: ReadSignal<Vec<MatchSummary>>,
     pub newest: ReadSignal<Vec<MatchSummary>>,
     pub review: ReadSignal<Option<Review>>,
@@ -62,6 +63,7 @@ impl Feeds {
         let dim = RwSignal::new(Dim::default());
         provide_context(dim);
         let names = RwSignal::new(Vec::new());
+        let voice = RwSignal::new(storm_web_core::session::BriefVoice::default());
         let recent = RwSignal::new(Vec::new());
         let newest = RwSignal::new(Vec::new());
         let review = RwSignal::new(None);
@@ -77,6 +79,9 @@ impl Feeds {
         });
         let load_names = refresh(names, async || {
             net::fetch_settings().await.ok().map(|s| s.operator_names)
+        });
+        let load_voice = refresh(voice, async || {
+            net::fetch_settings().await.ok().map(|s| s.brief_voice)
         });
         let load_recent = refresh(recent, async || net::fetch_matches(200).await.ok());
         let load_newest = refresh(newest, async || net::fetch_matches(1).await.ok());
@@ -114,7 +119,8 @@ impl Feeds {
                 load_dim()
             }
             if bits & NAMES != 0 {
-                load_names()
+                load_names();
+                load_voice();
             }
             if bits & RECENT != 0 {
                 load_recent()
@@ -160,6 +166,7 @@ impl Feeds {
 
         Self {
             names: names.read_only(),
+            voice: voice.read_only(),
             recent: recent.read_only(),
             newest: newest.read_only(),
             review: review.read_only(),

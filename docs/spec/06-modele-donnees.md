@@ -46,7 +46,10 @@ the dataset may not use).
 ## Settings & draft (0003, 0008)
 
 - `app_settings` (JSONB key/value): first use `operator_names` — the operator's
-  accounts, to display THEIR perspective (session, matches, widget, Jarvis brief).
+  accounts, to display THEIR perspective (session, matches, widget, Jarvis brief). `brief_voice`
+  (`docs/specs/2026-11-21-butler-brief-full-fledged.md`): `"fr"` (default) / `"en"` / `"off"`,
+  the voice of the Jarvis butler brief on `/queue` (`Off` disables the line entirely). No new
+  migration — `app_settings` is a plain key/value table, a new settings key is just a new row.
 - `draft_live`: singleton (id=1, CHECK) — the whole draft simulator state as JSONB
   (config, picks/bans, fearless history), timestamped.
 

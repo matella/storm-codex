@@ -35,6 +35,18 @@ pub fn operator_names() -> RwSignal<Vec<String>> {
     names
 }
 
+/// Jarvis butler brief voice (`app_settings.brief_voice`, read once), `Fr` (the default) until
+/// loaded so the brief renders immediately rather than waiting a round trip.
+pub fn brief_voice() -> RwSignal<storm_web_core::session::BriefVoice> {
+    let voice = RwSignal::new(storm_web_core::session::BriefVoice::default());
+    spawn_local(async move {
+        if let Ok(s) = net::fetch_settings().await {
+            voice.set(s.brief_voice);
+        }
+    });
+    voice
+}
+
 /// The `limit` most recent matches, re-read after every `match.parsed` event. A failed read keeps the last list.
 pub fn recent_matches(limit: u32) -> RwSignal<Vec<MatchSummary>> {
     let list = RwSignal::new(Vec::<MatchSummary>::new());

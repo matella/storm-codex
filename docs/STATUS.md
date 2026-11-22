@@ -52,7 +52,58 @@ Final grep of the whole repo for `jarvis`/`redis` (case-insensitive) outside his
 cosmetic `jarvis_phrase`/`Jarvis"` widget text, the already-applied migration comment
 (`crates/storm-codex-server/migrations/0003_app_settings.sql`), `docker-compose.dev.yml`, and
 unrelated false positives ("VC++ redistributable") confirms no remaining reference. Committed locally
-on branch `remove/jarvis-redis`; not pushed, no PR opened (operator decision pending).
+on branch `remove/jarvis-redis`; merged as PR #81.
+
+## Butler brief, full-fledged (2026-11-22)
+
+Implemented `docs/specs/2026-11-21-butler-brief-full-fledged.md` (issue #79, APPROVED): expanded
+`jarvis_phrase` (`web-rs/core/src/session.rs`) from 7 to 10 priority-ordered trigger buckets —
+MVP this game (win or loss) · beat the tracked nemesis (win) · win streak >= 3 · session-best KDA
+tonight (win) · no-death win · >= 15-takedown win · plain win · loss streak <= -3 · high-death
+loss (>= 8) · plain loss. New signature `jarvis_phrase(won, hero, deaths, takedowns, streak, mvp,
+beat_nemesis, session_best_kda, map, voice) -> Option<String>`; `map`, when known, is spliced into
+one extra variant per bucket (appended only when present, so the no-map variant count and its
+`seed % len` pick are unchanged from before this change — the old buckets' exact output is
+unregressed). New `BriefVoice` enum (`Fr` default / `En` / `Off`) on `Settings` /
+`app_settings.brief_voice`, read by `PUT /api/admin/settings` (new optional `brief_voice` field,
+`400` on an unrecognised value) and exposed on `/admin` (new selector next to operator names). The
+English bank (`jarvis_*_en` functions) is written fresh, not translated. Two new pure helpers:
+`is_session_best_kda` (compares the session's most recent game's KDA against every earlier game
+this session; `false` with fewer than two games — nothing yet to call "best") and `beat_nemesis`
+(toon-set intersection, same shape as `nemesis::enemy_toons`). `/queue`'s `queue_content` gained a
+`voice: ReadSignal<BriefVoice>` parameter (also threaded through the custom-overlay composition
+and `Feeds`); its MVP flag reads `award_label(...).mvp`, map reads `MatchSummary.map`, but
+`beat_nemesis` is always called with an empty enemy-toon slice and no nemesis toon: `/queue` has
+no live `/api/lobby` subscription (only `/nemesis` does) and no persisted "current nemesis", so per
+the spec's own guidance the trigger degrades to always-`false` rather than adding a new live
+dependency for one line. `/widget` is untouched behaviourally (same Fr-only, no-mvp/nemesis/kda/map
+call, just adapted to the new signature) — spec scope was `/queue` only.
+
+Evidence: unit tests per new bucket (MVP win/loss, nemesis beaten — both outranking a win streak,
+session-best KDA — outranking no-death/big-takedowns, map splice, `Off` always `None`, En is a
+distinct phrase bank) plus the pre-existing bucket tests rewritten to the new signature and
+asserting the same text as before (regression check). `is_session_best_kda` and `beat_nemesis` each
+have their own dedicated tests.
+
+Verification (`storm-dev:latest`, disposable PostgreSQL 17): main workspace `cargo fmt --all --
+--check` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo test
+--workspace --no-fail-fast` **572 passed, 0 failed, 11 ignored** (fresh disposable Postgres — a
+reused one accumulates `operator_names` across runs via its `||` merge and makes the pre-existing
+`goal` test flaky; unrelated to this change). `web-rs`: `cargo fmt --all -- --check` clean; native
+`cargo clippy -- -D warnings` clean (206 `storm-web-core` tests + 3 `overlay_layout_wire` pass);
+`cargo clippy --target wasm32-unknown-unknown --workspace -- -D warnings` clean; `trunk build
+--release` succeeded for `overlay`, `sources` and `app`. Bundle sizes, before -> after (same
+`storm-dev:latest` toolchain, same commands, before = `origin/main` `e8bf926`): `app` **1,070,627 B
+-> 1,073,151 B Brotli** (+2,524 B; cap 1,250,000), `sources` **241,311 B -> 244,685 B gzip**
+(+3,374 B; cap 300,000, unaffected budget: the two phrase banks are modest and bounded), `overlay`
+unaffected (not touched by this feature). New Playwright regression
+(`web-rs/sources/tests/butler-brief.cjs`, mocked `/api/settings` + `/api/matches`, no real
+server/DB) against the built `sources` dist: `/queue` renders the MVP line with French wording by
+default, the MVP line with no French wording once `brief_voice` is switched to `en`, and no
+`— Jarvis` line at all (while the rest of the panel still renders) when it is `off` — **OK**.
+
+PR #82.
+
 
 ## Top nav dropdown styling fix (2026-11-21)
 

@@ -233,7 +233,7 @@ fn placement(
                         let y = f64::from(p.grid_h * GRID_CELL_PX) / f64::from(HEIGHT);
                         format!("transform:scale({})", x.min(y))
                     }));
-                    view! { <div class="custom-queue" style=fit>{sessions::queue_content(feeds.names, feeds.recent)}</div> }.into_any()
+                    view! { <div class="custom-queue" style=fit>{sessions::queue_content(feeds.names, feeds.recent, feeds.voice)}</div> }.into_any()
                 }
                 WidgetSettings::Ticker {} => sessions::ticker_content(feeds.names, feeds.recent).into_any(),
                 WidgetSettings::Widget(o) => sessions::widget_content(WidgetOptions { me: o.me.map(Into::into) }, feeds.names, feeds.newest).into_any(),

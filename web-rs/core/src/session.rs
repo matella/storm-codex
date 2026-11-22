@@ -40,6 +40,20 @@ pub struct MatchSummary {
 #[serde(default)]
 pub struct Settings {
     pub operator_names: Vec<String>,
+    pub brief_voice: BriefVoice,
+}
+
+/// Voice of the Jarvis butler brief (`app_settings.brief_voice`, `PUT /api/admin/settings`):
+/// `Fr` (default, zero behaviour change for an existing install) and `En` are separate
+/// hand-written phrase banks (idiom, not a 1:1 translation); `Off` disables the brief line
+/// entirely (`jarvis_phrase` returns `None`, `/queue` simply omits it).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BriefVoice {
+    #[default]
+    Fr,
+    En,
+    Off,
 }
 
 /// `modeBadge`: short label and CSS class of a game mode (official storm-stats codes).
@@ -221,60 +235,383 @@ pub fn match_operator<'a>(players: &'a [MatchPlayer], names: &[String]) -> Optio
     })
 }
 
-/// `jarvisPhrase`: deterministic French butler line (variant picked from `takedowns + deaths`).
+/// `jarvisPhrase`: deterministic butler line, one of 10 priority-ordered trigger buckets (first
+/// match wins; a game can only match one, so the order encodes "most noteworthy wins/losses
+/// first"), variant picked from `takedowns + deaths` (no RNG — same inputs always produce the
+/// same line, so it's testable and replayable), no I/O. `None` when `voice` is `Off`.
+///
+/// Priority, highest first: MVP this game (win or loss) · beat the tracked nemesis (win) · win
+/// streak >= 3 · session-best KDA tonight (win) · no-death win · >= 15-takedown win · plain win ·
+/// loss streak <= -3 · high-death loss (>= 8) · plain loss. `map`, when known, is spliced into
+/// roughly a third of each bucket's variants instead of being its own tier (16 maps x 10
+/// categories would dilute the phrase bank for little payoff).
+#[allow(clippy::too_many_arguments)]
 pub fn jarvis_phrase(
     won: bool,
     hero: Option<&str>,
     deaths: u32,
     takedowns: u32,
     streak: i32,
-) -> String {
+    mvp: bool,
+    beat_nemesis: bool,
+    session_best_kda: bool,
+    map: Option<&str>,
+    voice: BriefVoice,
+) -> Option<String> {
+    if voice == BriefVoice::Off {
+        return None;
+    }
     let seed = (takedowns + deaths) as usize;
     let pick = |v: Vec<String>| v[seed % v.len()].clone();
-    let h = hero.unwrap_or("ce héros");
+    let fr = voice == BriefVoice::Fr;
+    let h = hero.unwrap_or(if fr { "ce héros" } else { "that hero" });
+    let m = map.filter(|m| !m.is_empty());
+
+    if mvp {
+        return Some(pick(if fr {
+            jarvis_mvp_fr(won, h, m)
+        } else {
+            jarvis_mvp_en(won, h, m)
+        }));
+    }
     if won {
+        if beat_nemesis {
+            return Some(pick(if fr {
+                jarvis_nemesis_fr(h, m)
+            } else {
+                jarvis_nemesis_en(h, m)
+            }));
+        }
         if streak >= 3 {
-            return pick(vec![
-                format!("Et de {streak}, monsieur. La soirée vous appartient."),
-                format!("Série de {streak}. Difficile de faire mieux."),
-                format!("{streak} d'affilée — je note la domination."),
-            ]);
+            return Some(pick(if fr {
+                jarvis_streak_win_fr(streak, m)
+            } else {
+                jarvis_streak_win_en(streak, m)
+            }));
+        }
+        if session_best_kda {
+            return Some(pick(if fr {
+                jarvis_best_kda_fr(h, m)
+            } else {
+                jarvis_best_kda_en(h, m)
+            }));
         }
         if deaths == 0 {
-            return pick(vec![
-                "Aucune mort. Une partie de maître, monsieur.".into(),
-                "Zéro mort — proprement exécuté.".into(),
-            ]);
+            return Some(pick(if fr {
+                jarvis_no_death_fr(m)
+            } else {
+                jarvis_no_death_en(m)
+            }));
         }
         if takedowns >= 15 {
-            return pick(vec![
-                format!("Démonstration. {h} était intenable."),
-                format!("{takedowns} participations — la carte vous a appartenu."),
-            ]);
+            return Some(pick(if fr {
+                jarvis_big_takedowns_fr(h, takedowns, m)
+            } else {
+                jarvis_big_takedowns_en(h, takedowns, m)
+            }));
         }
-        return pick(vec![
-            format!("Victoire nette. {h} a fait le travail."),
-            "Bien joué, monsieur. On enchaîne ?".into(),
-            "Une de plus au compteur.".into(),
-        ]);
+        return Some(pick(if fr {
+            jarvis_plain_win_fr(h, m)
+        } else {
+            jarvis_plain_win_en(h, m)
+        }));
     }
     if streak <= -3 {
-        return pick(vec![
-            "Série difficile, monsieur. Gardons la tête froide.".into(),
-            format!("{} revers d'affilée — une pause, peut-être ?", streak.abs()),
-        ]);
+        return Some(pick(if fr {
+            jarvis_streak_loss_fr(streak)
+        } else {
+            jarvis_streak_loss_en(streak)
+        }));
     }
     if deaths >= 8 {
-        return pick(vec![
-            "Trop de morts, monsieur. On respire au prochain.".into(),
-            format!("{deaths} morts — la prudence paiera la prochaine fois."),
-        ]);
+        return Some(pick(if fr {
+            jarvis_high_death_fr(deaths)
+        } else {
+            jarvis_high_death_en(deaths)
+        }));
     }
-    pick(vec![
+    Some(pick(if fr {
+        jarvis_plain_loss_fr(h)
+    } else {
+        jarvis_plain_loss_en(h)
+    }))
+}
+
+fn jarvis_mvp_fr(won: bool, h: &str, m: Option<&str>) -> Vec<String> {
+    let mut v = if won {
+        vec![
+            format!("MVP avec {h}. Rien à ajouter, monsieur."),
+            "MVP. Le trophée vous revient ce soir.".into(),
+        ]
+    } else {
+        vec![
+            "MVP malgré la défaite, mes hommages, monsieur.".into(),
+            "La défaite n'enlève rien à votre MVP.".into(),
+        ]
+    };
+    if let Some(map) = m {
+        v.push(if won {
+            format!("MVP sur {map}, monsieur. Une partie pour les annales.")
+        } else {
+            format!("MVP sur {map}, même dans la défaite. Chapeau, monsieur.")
+        });
+    }
+    v
+}
+
+fn jarvis_mvp_en(won: bool, h: &str, m: Option<&str>) -> Vec<String> {
+    let mut v = if won {
+        vec![
+            format!("MVP on {h}. Nothing more to say, sir."),
+            "MVP. The crown's yours tonight.".into(),
+        ]
+    } else {
+        vec![
+            "MVP in a losing effort — my compliments, sir.".into(),
+            "The loss takes nothing away from that MVP.".into(),
+        ]
+    };
+    if let Some(map) = m {
+        v.push(if won {
+            format!("MVP on {map}, sir. One for the highlight reel.")
+        } else {
+            format!("MVP on {map}, even in defeat. Hats off, sir.")
+        });
+    }
+    v
+}
+
+fn jarvis_nemesis_fr(h: &str, m: Option<&str>) -> Vec<String> {
+    let mut v = vec![
+        "Le compte est réglé, monsieur. Némésis vaincue.".into(),
+        format!("Enfin. {h} a fait tomber la némésis ce soir."),
+    ];
+    if let Some(map) = m {
+        v.push(format!(
+            "Némésis vaincue sur {map}. Douce revanche, monsieur."
+        ));
+    }
+    v
+}
+
+fn jarvis_nemesis_en(h: &str, m: Option<&str>) -> Vec<String> {
+    let mut v = vec![
+        "Score settled, sir. The nemesis falls.".into(),
+        format!("Finally. {h} put the nemesis down tonight."),
+    ];
+    if let Some(map) = m {
+        v.push(format!("Nemesis beaten on {map}. Sweet revenge, sir."));
+    }
+    v
+}
+
+fn jarvis_streak_win_fr(streak: i32, m: Option<&str>) -> Vec<String> {
+    let mut v = vec![
+        format!("Et de {streak}, monsieur. La soirée vous appartient."),
+        format!("Série de {streak}. Difficile de faire mieux."),
+        format!("{streak} d'affilée — je note la domination."),
+    ];
+    if let Some(map) = m {
+        v.push(format!(
+            "{streak} d'affilée, la dernière sur {map} — je note la domination."
+        ));
+    }
+    v
+}
+
+fn jarvis_streak_win_en(streak: i32, m: Option<&str>) -> Vec<String> {
+    let mut v = vec![
+        format!("That's {streak}, sir. The night is yours."),
+        format!("{streak}-game streak. Hard to top that."),
+        format!("{streak} in a row — domination noted."),
+    ];
+    if let Some(map) = m {
+        v.push(format!(
+            "{streak} in a row, the latest on {map} — domination noted."
+        ));
+    }
+    v
+}
+
+fn jarvis_best_kda_fr(h: &str, m: Option<&str>) -> Vec<String> {
+    let mut v = vec![
+        "Meilleure KDA de la soirée, monsieur. On progresse.".into(),
+        format!("{h} signe le meilleur ratio de la session."),
+        "Record personnel de la soirée, monsieur.".into(),
+    ];
+    if let Some(map) = m {
+        v.push(format!(
+            "Record de la soirée sur {map} — difficile de faire mieux."
+        ));
+    }
+    v
+}
+
+fn jarvis_best_kda_en(h: &str, m: Option<&str>) -> Vec<String> {
+    let mut v = vec![
+        "Best KDA of the night, sir. We're trending up.".into(),
+        format!("{h} just posted the session's best ratio."),
+        "Tonight's personal best, sir.".into(),
+    ];
+    if let Some(map) = m {
+        v.push(format!("Tonight's best, on {map} no less — hard to top."));
+    }
+    v
+}
+
+fn jarvis_no_death_fr(m: Option<&str>) -> Vec<String> {
+    let mut v = vec![
+        "Aucune mort. Une partie de maître, monsieur.".into(),
+        "Zéro mort — proprement exécuté.".into(),
+    ];
+    if let Some(map) = m {
+        v.push(format!("Zéro mort sur {map}. Une leçon, monsieur."));
+    }
+    v
+}
+
+fn jarvis_no_death_en(m: Option<&str>) -> Vec<String> {
+    let mut v = vec![
+        "No deaths. A masterclass, sir.".into(),
+        "Zero deaths — cleanly done.".into(),
+    ];
+    if let Some(map) = m {
+        v.push(format!("Not a single death on {map}. A lesson, sir."));
+    }
+    v
+}
+
+fn jarvis_big_takedowns_fr(h: &str, takedowns: u32, m: Option<&str>) -> Vec<String> {
+    let mut v = vec![
+        format!("Démonstration. {h} était intenable."),
+        format!("{takedowns} participations — la carte vous a appartenu."),
+    ];
+    if let Some(map) = m {
+        v.push(format!(
+            "{takedowns} participations sur {map}. Une masterclass, monsieur."
+        ));
+    }
+    v
+}
+
+fn jarvis_big_takedowns_en(h: &str, takedowns: u32, m: Option<&str>) -> Vec<String> {
+    let mut v = vec![
+        format!("Dominant. {h} was unstoppable."),
+        format!("{takedowns} takedowns — you owned the map."),
+    ];
+    if let Some(map) = m {
+        v.push(format!(
+            "{takedowns} takedowns on {map}. A masterclass, sir."
+        ));
+    }
+    v
+}
+
+fn jarvis_plain_win_fr(h: &str, m: Option<&str>) -> Vec<String> {
+    let mut v = vec![
+        format!("Victoire nette. {h} a fait le travail."),
+        "Bien joué, monsieur. On enchaîne ?".into(),
+        "Une de plus au compteur.".into(),
+    ];
+    if let Some(map) = m {
+        v.push(format!("Une victoire de plus sur {map}, monsieur."));
+    }
+    v
+}
+
+fn jarvis_plain_win_en(h: &str, m: Option<&str>) -> Vec<String> {
+    let mut v = vec![
+        format!("Clean win. {h} did the job."),
+        "Well played, sir. Shall we go again?".into(),
+        "One more for the tally.".into(),
+    ];
+    if let Some(map) = m {
+        v.push(format!("Another win on {map}, sir."));
+    }
+    v
+}
+
+fn jarvis_streak_loss_fr(streak: i32) -> Vec<String> {
+    vec![
+        "Série difficile, monsieur. Gardons la tête froide.".into(),
+        format!("{} revers d'affilée — une pause, peut-être ?", streak.abs()),
+    ]
+}
+
+fn jarvis_streak_loss_en(streak: i32) -> Vec<String> {
+    vec![
+        "A rough stretch, sir. Let's keep a clear head.".into(),
+        format!("{} losses in a row — maybe a short break?", streak.abs()),
+    ]
+}
+
+fn jarvis_high_death_fr(deaths: u32) -> Vec<String> {
+    vec![
+        "Trop de morts, monsieur. On respire au prochain.".into(),
+        format!("{deaths} morts — la prudence paiera la prochaine fois."),
+    ]
+}
+
+fn jarvis_high_death_en(deaths: u32) -> Vec<String> {
+    vec![
+        "Too many deaths, sir. Let's breathe before the next one.".into(),
+        format!("{deaths} deaths — caution will pay off next time."),
+    ]
+}
+
+fn jarvis_plain_loss_fr(h: &str) -> Vec<String> {
+    vec![
         format!("Défaite serrée. {h} méritait mieux."),
         "On rebondit à la prochaine, monsieur.".into(),
         "Pas cette fois — mais la nuit est jeune.".into(),
-    ])
+    ]
+}
+
+fn jarvis_plain_loss_en(h: &str) -> Vec<String> {
+    vec![
+        format!("Close loss. {h} deserved better."),
+        "We bounce back next one, sir.".into(),
+        "Not this time — but the night is young.".into(),
+    ]
+}
+
+/// True when the most recent game (`games[0]`) has personal KDA (same formula as
+/// `session_totals`: assists = takedowns - kills, KDA = (K+A)/D, else K+A when deathless)
+/// strictly better than or equal to every other game already played this session — "session-best
+/// KDA tonight" for the Jarvis brief. Requires at least one earlier game to compare against
+/// (`false` for a session's first game: nothing yet to call it "best" against).
+#[must_use]
+pub fn is_session_best_kda(games: &[OpGame]) -> bool {
+    if games.len() < 2 {
+        return false;
+    }
+    let Some(first) = games.first() else {
+        return false;
+    };
+    fn kda_of(me: &MatchPlayer) -> f64 {
+        let (k, a, d) = kad(me);
+        let ka = (k + a) as f64;
+        if d > 0 {
+            ka / d as f64
+        } else {
+            ka
+        }
+    }
+    let best = kda_of(first.me);
+    games[1..].iter().all(|g| kda_of(g.me) <= best)
+}
+
+/// Toon-set intersection: did the operator just beat the tracked nemesis this game — the same
+/// opponent-resolution logic as `nemesis::enemy_toons` (did the enemy roster contain the one toon
+/// currently flagged as a grudge match), applied to an already-finished game instead of a live
+/// lobby. `false` without a win, without a tracked nemesis, or when the nemesis wasn't in this
+/// game's enemy roster.
+#[must_use]
+pub fn beat_nemesis(won: bool, enemy_toons: &[String], nemesis_toon: Option<&str>) -> bool {
+    let Some(nemesis) = nemesis_toon else {
+        return false;
+    };
+    won && enemy_toons.iter().any(|t| t == nemesis)
 }
 
 /// One game of the operator, most recent first in every list.
@@ -548,35 +885,354 @@ mod tests {
     }
 
     #[test]
-    fn jarvis_is_deterministic_and_follows_the_context() {
+    fn jarvis_is_deterministic_and_follows_the_context_fr() {
+        // Same priority order and text as before the trigger expansion (mvp/nemesis/best_kda
+        // false, no map, Fr voice) — regression check that the old buckets are unchanged.
         assert_eq!(
-            jarvis_phrase(true, Some("Valla"), 0, 4, 0),
-            "Aucune mort. Une partie de maître, monsieur."
+            jarvis_phrase(
+                true,
+                Some("Valla"),
+                0,
+                4,
+                0,
+                false,
+                false,
+                false,
+                None,
+                BriefVoice::Fr
+            ),
+            Some("Aucune mort. Une partie de maître, monsieur.".to_string())
         );
         assert_eq!(
-            jarvis_phrase(true, Some("Valla"), 0, 5, 0),
-            "Zéro mort — proprement exécuté."
+            jarvis_phrase(
+                true,
+                Some("Valla"),
+                0,
+                5,
+                0,
+                false,
+                false,
+                false,
+                None,
+                BriefVoice::Fr
+            ),
+            Some("Zéro mort — proprement exécuté.".to_string())
         );
         assert_eq!(
-            jarvis_phrase(true, None, 3, 15, 0),
-            "Démonstration. ce héros était intenable."
+            jarvis_phrase(
+                true,
+                None,
+                3,
+                15,
+                0,
+                false,
+                false,
+                false,
+                None,
+                BriefVoice::Fr
+            ),
+            Some("Démonstration. ce héros était intenable.".to_string())
         );
         assert_eq!(
-            jarvis_phrase(true, None, 3, 4, 4),
-            "Série de 4. Difficile de faire mieux."
+            jarvis_phrase(
+                true,
+                None,
+                3,
+                4,
+                4,
+                false,
+                false,
+                false,
+                None,
+                BriefVoice::Fr
+            ),
+            Some("Série de 4. Difficile de faire mieux.".to_string())
         );
         assert_eq!(
-            jarvis_phrase(false, None, 9, 3, 0),
-            "Trop de morts, monsieur. On respire au prochain."
+            jarvis_phrase(
+                false,
+                None,
+                9,
+                3,
+                0,
+                false,
+                false,
+                false,
+                None,
+                BriefVoice::Fr
+            ),
+            Some("Trop de morts, monsieur. On respire au prochain.".to_string())
         );
         assert_eq!(
-            jarvis_phrase(false, Some("Valla"), 1, 3, -3),
-            "Série difficile, monsieur. Gardons la tête froide."
+            jarvis_phrase(
+                false,
+                Some("Valla"),
+                1,
+                3,
+                -3,
+                false,
+                false,
+                false,
+                None,
+                BriefVoice::Fr
+            ),
+            Some("Série difficile, monsieur. Gardons la tête froide.".to_string())
         );
         assert_eq!(
-            jarvis_phrase(false, Some("Valla"), 1, 2, 0),
-            "Défaite serrée. Valla méritait mieux."
+            jarvis_phrase(
+                false,
+                Some("Valla"),
+                1,
+                2,
+                0,
+                false,
+                false,
+                false,
+                None,
+                BriefVoice::Fr
+            ),
+            Some("Défaite serrée. Valla méritait mieux.".to_string())
         );
+    }
+
+    #[test]
+    fn jarvis_mvp_outranks_every_other_win_or_loss_trigger() {
+        // win, streak >= 3 AND mvp: mvp wins
+        let won = jarvis_phrase(
+            true,
+            Some("Valla"),
+            0,
+            4,
+            5,
+            true,
+            false,
+            false,
+            None,
+            BriefVoice::Fr,
+        );
+        assert!(won.unwrap().contains("MVP"));
+        // loss, mvp still produces a line (worth noting even in defeat)
+        let lost = jarvis_phrase(
+            false,
+            Some("Valla"),
+            1,
+            2,
+            0,
+            true,
+            false,
+            false,
+            None,
+            BriefVoice::Fr,
+        );
+        assert!(lost.unwrap().to_lowercase().contains("mvp"));
+    }
+
+    #[test]
+    fn jarvis_beat_nemesis_outranks_streak_but_needs_a_win() {
+        let line = jarvis_phrase(
+            true,
+            Some("Valla"),
+            1,
+            4,
+            5,
+            false,
+            true,
+            false,
+            None,
+            BriefVoice::Fr,
+        )
+        .unwrap();
+        assert!(
+            line.to_lowercase().contains("némésis") || line.to_lowercase().contains("revanche")
+        );
+        // beat_nemesis ignored on a loss: falls through to the usual loss buckets
+        assert_eq!(
+            jarvis_phrase(
+                false,
+                Some("Valla"),
+                1,
+                2,
+                0,
+                false,
+                true,
+                false,
+                None,
+                BriefVoice::Fr
+            ),
+            Some("Défaite serrée. Valla méritait mieux.".to_string())
+        );
+    }
+
+    #[test]
+    fn jarvis_session_best_kda_outranks_no_death_and_takedowns_but_needs_a_win() {
+        let line = jarvis_phrase(
+            true,
+            Some("Valla"),
+            1,
+            4,
+            0,
+            false,
+            false,
+            true,
+            None,
+            BriefVoice::Fr,
+        )
+        .unwrap();
+        assert!(line.contains("session") || line.contains("soirée") || line.contains("Record"));
+        // ignored on a loss
+        assert_eq!(
+            jarvis_phrase(
+                false,
+                Some("Valla"),
+                1,
+                2,
+                0,
+                false,
+                false,
+                true,
+                None,
+                BriefVoice::Fr
+            ),
+            Some("Défaite serrée. Valla méritait mieux.".to_string())
+        );
+    }
+
+    #[test]
+    fn jarvis_map_is_spliced_into_one_variant_per_bucket_when_known() {
+        // plain win: 3 variants with no map, a 4th (map-aware) appended when the map is known —
+        // seed 3 lands on that appended slot (`3 % 4 == 3`) without disturbing the no-map indices
+        // (`3 % 3 == 0`, still the original first variant).
+        let line = jarvis_phrase(
+            true,
+            Some("Valla"),
+            3,
+            0,
+            0,
+            false,
+            false,
+            false,
+            Some("Cursed Hollow"),
+            BriefVoice::Fr,
+        )
+        .unwrap();
+        assert!(line.contains("Cursed Hollow"));
+        let no_map = jarvis_phrase(
+            true,
+            Some("Valla"),
+            3,
+            0,
+            0,
+            false,
+            false,
+            false,
+            None,
+            BriefVoice::Fr,
+        )
+        .unwrap();
+        assert!(!no_map.contains("Cursed Hollow"));
+        // empty map string treated as absent (same as no map: 3 variants, index 0)
+        let empty_map = jarvis_phrase(
+            true,
+            Some("Valla"),
+            3,
+            0,
+            0,
+            false,
+            false,
+            false,
+            Some(""),
+            BriefVoice::Fr,
+        )
+        .unwrap();
+        assert_eq!(empty_map, no_map);
+    }
+
+    #[test]
+    fn jarvis_off_voice_is_always_none() {
+        assert_eq!(
+            jarvis_phrase(
+                true,
+                Some("Valla"),
+                0,
+                20,
+                5,
+                true,
+                true,
+                true,
+                Some("Braxis"),
+                BriefVoice::Off
+            ),
+            None
+        );
+        assert_eq!(
+            jarvis_phrase(
+                false,
+                None,
+                10,
+                0,
+                -5,
+                false,
+                false,
+                false,
+                None,
+                BriefVoice::Off
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn jarvis_en_voice_is_a_fresh_phrase_bank_not_a_translation() {
+        let line = jarvis_phrase(
+            true,
+            Some("Valla"),
+            0,
+            5,
+            0,
+            false,
+            false,
+            false,
+            None,
+            BriefVoice::En,
+        )
+        .unwrap();
+        // no French words leak into the English bank
+        assert!(!line.contains("monsieur") && !line.contains("Zéro"));
+        assert_eq!(line, "Zero deaths — cleanly done.");
+    }
+
+    #[test]
+    fn session_best_kda_needs_a_comparison_and_the_top_game() {
+        let names = vec!["me".to_string()];
+        // first game of the session: nothing to compare against yet
+        let ms = vec![m(1, "2026-11-10", 0, p("me", 0, "A", 10, 20, 0))];
+        let all = operator_games(&ms, &names, |s| s.to_string());
+        assert!(!is_session_best_kda(&all));
+
+        // two games, the most recent (first in the list) has the better KDA
+        let ms2 = vec![
+            m(2, "2026-11-10", 0, p("me", 0, "A", 10, 20, 1)), // KDA 20
+            m(1, "2026-11-10", 0, p("me", 0, "A", 1, 2, 1)),   // KDA 2
+        ];
+        let all2 = operator_games(&ms2, &names, |s| s.to_string());
+        assert!(is_session_best_kda(&all2));
+
+        // the most recent is worse than an earlier game: not the session best
+        let ms3 = vec![
+            m(2, "2026-11-10", 0, p("me", 0, "A", 1, 2, 1)), // KDA 2
+            m(1, "2026-11-10", 0, p("me", 0, "A", 10, 20, 1)), // KDA 20
+        ];
+        let all3 = operator_games(&ms3, &names, |s| s.to_string());
+        assert!(!is_session_best_kda(&all3));
+    }
+
+    #[test]
+    fn beat_nemesis_needs_a_win_and_a_tracked_toon_in_the_enemy_roster() {
+        let enemies = vec!["foe-a".to_string(), "foe-b".to_string()];
+        assert!(beat_nemesis(true, &enemies, Some("foe-a")));
+        assert!(!beat_nemesis(false, &enemies, Some("foe-a"))); // loss: no credit
+        assert!(!beat_nemesis(true, &enemies, Some("foe-z"))); // not in this roster
+        assert!(!beat_nemesis(true, &enemies, None)); // no tracked nemesis
     }
 
     #[test]
