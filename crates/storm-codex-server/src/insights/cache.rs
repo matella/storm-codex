@@ -146,7 +146,22 @@ pub fn team(v: Option<i32>) -> Option<u8> {
     v.and_then(|t| u8::try_from(t).ok()).filter(|t| *t < 2)
 }
 
+#[cfg(test)]
+tokio::task_local! {
+    /// Test seam: a task scoped with a barrier waits on it at the top of `version()`, so a test can
+    /// prove two cache hits are inside the version check at the same time (not serialised).
+    /// One-shot: only the first `version()` of the task waits.
+    static VERSION_GATE: std::cell::Cell<Option<Arc<tokio::sync::Barrier>>>;
+    /// Test seam: a task scoped with `(entered, release)` signals `entered` at the top of `load()`
+    /// and waits for `release`, holding a reload in flight for as long as the test needs.
+    static LOAD_GATE: (Arc<tokio::sync::Notify>, Arc<tokio::sync::Notify>);
+}
+
 async fn version(db: &PgPool) -> Result<Version, sqlx::Error> {
+    #[cfg(test)]
+    if let Ok(Some(b)) = VERSION_GATE.try_with(std::cell::Cell::take) {
+        b.wait().await;
+    }
     let (count, max_id, parser_sum): (i64, i64, i64) = sqlx::query_as(
         "SELECT count(*), COALESCE(max(id), 0), COALESCE(sum(parser_version), 0)::bigint FROM matches",
     )
@@ -190,6 +205,11 @@ const BATCH: usize = 20;
 
 /// Loads the games `ids` into `c`, `BATCH` games at a time.
 async fn load(db: &PgPool, c: &mut Corpus, ids: &[i64]) -> Result<(), sqlx::Error> {
+    #[cfg(test)]
+    if let Ok((entered, release)) = LOAD_GATE.try_with(Clone::clone) {
+        entered.notify_one();
+        release.notified().await;
+    }
     for chunk in ids.chunks(BATCH) {
         let grows: Vec<GRow> = sqlx::query_as(
             "SELECT id, map, mode, played_at, winner, first_fort, COALESCE(parser_version, 0), length,
@@ -303,23 +323,71 @@ pub fn diff(have: &HashMap<i64, i32>, want: &HashMap<i64, i32>) -> (Vec<i64>, Ve
     (gone, load)
 }
 
-fn slot() -> &'static Mutex<Arc<Corpus>> {
-    static S: OnceLock<Mutex<Arc<Corpus>>> = OnceLock::new();
-    S.get_or_init(|| Mutex::new(Arc::new(Corpus::default())))
+/// The published corpus and its generation. Only ever locked briefly (clone or swap an `Arc`), never
+/// across a database round trip: cache hits run concurrently.
+struct Slot {
+    /// Bumped by `invalidate`: a reload that began under an older generation is not published.
+    generation: u64,
+    corpus: Arc<Corpus>,
+}
+
+fn slot() -> &'static std::sync::Mutex<Slot> {
+    static S: OnceLock<std::sync::Mutex<Slot>> = OnceLock::new();
+    S.get_or_init(|| {
+        std::sync::Mutex::new(Slot {
+            generation: 0,
+            corpus: Arc::new(Corpus::default()),
+        })
+    })
+}
+
+/// Held for the whole of a reload (version re-check, id scan, `load`): only one reload runs at a time.
+/// Requests that find the corpus up to date never take it.
+fn refresh_guard() -> &'static Mutex<()> {
+    static R: OnceLock<Mutex<()>> = OnceLock::new();
+    R.get_or_init(|| Mutex::new(()))
+}
+
+/// `(generation, corpus)` currently published. A poisoned lock only means a panic elsewhere while
+/// swapping an `Arc`: the value is still consistent, so keep serving it.
+fn snapshot() -> (u64, Arc<Corpus>) {
+    let s = slot()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    (s.generation, s.corpus.clone())
+}
+
+#[cfg(test)]
+async fn published() -> Arc<Corpus> {
+    snapshot().1
 }
 
 /// Reference hero repairs preserve match IDs and parser versions, so those edits are not
-/// detectable by the normal incremental version check.
+/// detectable by the normal incremental version check. Never waits for an in-flight reload: it bumps
+/// the generation, so that reload (which may have read pre-repair games) is not published.
 pub(crate) async fn invalidate() {
-    *slot().lock().await = Arc::new(Corpus::default());
+    let mut s = slot()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    s.generation += 1;
+    s.corpus = Arc::new(Corpus::default());
 }
 
-/// The corpus, up to date with the database.
+/// The corpus, up to date with the database. The version check and the reload run without the
+/// published-corpus lock; `refresh_guard` keeps reloads one at a time, and the result is swapped in
+/// under a brief lock unless `invalidate` ran meanwhile.
 pub async fn corpus(db: &PgPool) -> Result<Arc<Corpus>, sqlx::Error> {
-    let mut guard = slot().lock().await;
     let v = version(db).await?;
-    if guard.version == v {
-        return Ok(guard.clone());
+    let (_, cur) = snapshot();
+    if cur.version == v {
+        return Ok(cur);
+    }
+    let _reload = refresh_guard().lock().await;
+    // another reload may have finished while we waited: re-check against the database now
+    let (generation, cur) = snapshot();
+    let v = version(db).await?;
+    if cur.version == v {
+        return Ok(cur);
     }
     // the ids read here are exactly what the new corpus holds, whatever is committed meanwhile
     let want: HashMap<i64, i32> =
@@ -328,13 +396,13 @@ pub async fn corpus(db: &PgPool) -> Result<Arc<Corpus>, sqlx::Error> {
             .await?
             .into_iter()
             .collect();
-    let have: HashMap<i64, i32> = guard
+    let have: HashMap<i64, i32> = cur
         .games
         .iter()
         .map(|(id, g)| (*id, g.parser_version))
         .collect();
     let (gone, missing) = diff(&have, &want);
-    let mut next = Corpus::clone(&guard);
+    let mut next = Corpus::clone(&cur);
     for id in &gone {
         next.games.remove(id);
     }
@@ -347,8 +415,14 @@ pub async fn corpus(db: &PgPool) -> Result<Arc<Corpus>, sqlx::Error> {
         loaded = missing.len(),
         "insights corpus refreshed"
     );
-    *guard = Arc::new(next);
-    Ok(guard.clone())
+    let next = Arc::new(next);
+    let mut s = slot()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if s.generation == generation {
+        s.corpus = next.clone();
+    }
+    Ok(next)
 }
 
 /// Loads the corpus in the background at startup, so the first visit of Records or Maps does not wait for it.
@@ -367,6 +441,7 @@ pub fn warm_up(db: PgPool) {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 
@@ -388,5 +463,74 @@ mod tests {
         assert_eq!(team(Some(2)), None);
         assert_eq!(team(Some(-1)), None);
         assert_eq!(team(None), None);
+    }
+
+    /// M4: two requests that both hit an up-to-date corpus must be able to run their version
+    /// check at the same time. Each one waits at a 2-party barrier inside `version()`: if the
+    /// corpus lock is held across that query, the second never gets in and both stall.
+    #[tokio::test]
+    async fn concurrent_cache_hits_are_not_serialised() {
+        let Some(state) = crate::api_tests::test_state(None).await else {
+            return;
+        };
+        corpus(&state.db).await.unwrap();
+        let gate = Arc::new(tokio::sync::Barrier::new(2));
+        let hit = || {
+            let db = state.db.clone();
+            tokio::spawn(VERSION_GATE.scope(Some(gate.clone()).into(), async move {
+                corpus(&db).await.map(|_| ())
+            }))
+        };
+        let (a, b) = (hit(), hit());
+        let (abort_a, abort_b) = (a.abort_handle(), b.abort_handle());
+        let both = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            (a.await, b.await)
+        })
+        .await;
+        // never leave a stalled task holding the process-wide corpus for the other tests
+        abort_a.abort();
+        abort_b.abort();
+        let (a, b) = both.expect("two cache hits were serialised behind the corpus lock");
+        a.unwrap().unwrap();
+        b.unwrap().unwrap();
+    }
+
+    /// M4: a reference-data invalidation that lands while a reload is in flight must neither wait
+    /// for that reload nor be undone by it (the reload started from pre-repair games).
+    #[tokio::test]
+    async fn invalidate_during_a_reload_is_neither_blocked_nor_lost() {
+        let Some(state) = crate::api_tests::test_state(None).await else {
+            return;
+        };
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Notify::new());
+        // another test may refresh the shared corpus between `invalidate` and our reload: retry
+        let reload = 'attempt: {
+            for _ in 0..5 {
+                invalidate().await;
+                let db = state.db.clone();
+                let mut reload = tokio::spawn(
+                    LOAD_GATE.scope((entered.clone(), release.clone()), async move {
+                        corpus(&db).await
+                    }),
+                );
+                tokio::select! {
+                    () = entered.notified() => break 'attempt reload,
+                    r = &mut reload => { r.unwrap().unwrap(); }
+                }
+            }
+            panic!("could not hold a reload in flight");
+        };
+        let abort = reload.abort_handle();
+        let inv = tokio::time::timeout(std::time::Duration::from_secs(5), invalidate()).await;
+        release.notify_one();
+        let loaded = tokio::time::timeout(std::time::Duration::from_secs(30), reload).await;
+        abort.abort();
+        inv.expect("invalidate() blocked behind an in-flight reload");
+        let loaded = loaded.expect("reload stalled").unwrap().unwrap();
+        assert!(
+            !Arc::ptr_eq(&loaded, &published().await),
+            "a reload begun before invalidate() was published after it"
+        );
     }
 }

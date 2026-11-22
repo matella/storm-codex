@@ -38,6 +38,11 @@ POST /api/upload(-raw)  [personal Bearer token]
 - **Insights corpus warm-up** (`insights::cache::warm_up`): spawned at startup, loads the in-memory corpus of the
   local insights in the background (see `05-api.md`, "Local insights"; it also serves the session review `/api/sessions`);
   failures are logged, never fatal.
+- **Insights corpus concurrency** (`insights::cache::corpus`): the version check runs without any lock and an
+  up-to-date corpus is returned as a shared `Arc`, so cache hits run concurrently. A reload (id scan + `load`)
+  holds only a refresh guard (one reload at a time; waiters re-check the version once it is free) and publishes
+  its result under a brief lock. `invalidate` (reference hero repair) never waits for a reload: it bumps a
+  generation, and a reload begun under an older generation is not published.
 
 - **Graceful shutdown**: Ctrl-C or SIGTERM (`docker stop`) — or, in standalone mode,
   `POST /api/standalone/shutdown` → the server stops accepting connections
@@ -429,7 +434,18 @@ Discord-compatible format); `internalId` is the dataset id.
 **Pure, zero-I/O** engine (`mod.rs`): a format = ordered list of steps `{order, action}`;
 `first_pick: Side` decouples the order (First/Second) from the visual side (blue/red). Authoritative
 singleton state in memory (`AppState.draft`), **persisted** in `draft_live` (JSONB, id=1),
-reloaded at startup. Each mutation broadcasts `draft.updated` on `/ws`.
+reloaded at startup. Each mutation broadcasts `draft.updated` on `/ws`. **Versioned persistence**
+(same pattern as cast): `api::persist` copies the state and takes its version (`AppState.draft_version`)
+together under the draft read lock, so versions follow the order of the states, then hands the snapshot
+to a single dedicated saver task (`AppState.draft_save_tx`, spawned by `draft::store::spawn_saver`) that
+writes `draft_live` one request at a time and skips a snapshot not newer than the last one it wrote:
+concurrent mutations, the cast → draft sync and the auto-play timer's ticks can never leave an older
+draft in the database, and no lock is held across the database round trip. Write failure → the route
+answers `500 persist_failed` (R24, same contract as cast: the state stays applied in memory and
+`draft.updated` is broadcast; same v2-fails-then-v1-succeeds edge case). An auto-play tick has no
+caller: its write failure is logged and the next tick or mutation retries. A cast mutation with draft
+sync answers `500 persist_failed` if either the series or the draft write failed (the series is
+persisted in both cases).
 Design: `docs/specs/2026-06-19-draft-simulator-design.md`.
 **Draft from a replay** (`draft/replay.rs`, `schema_version` 2): `DraftState.replay` (`#[serde(default)]`,
 so v1 states reload) carries the queue of loaded Custom games (`LoadedGame`: script of the 16 steps,

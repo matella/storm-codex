@@ -86,8 +86,9 @@ pub(super) enum DraftSync {
 
 /// Copies the **current** cast state (re-read under read-lock while the draft's write-lock is
 /// held) into the draft, then persists the draft: a more recent concurrent mutation cannot
-/// be overwritten by the snapshot of an older one. Never both write-locks together.
-pub(super) async fn sync_draft(s: &AppState, align: bool) {
+/// be overwritten by the snapshot of an older one. Never both write-locks together. Draft write
+/// failure → `Err` (the cast route answers `500 persist_failed`, R24).
+pub(super) async fn sync_draft(s: &AppState, align: bool) -> Result<(), sqlx::Error> {
     {
         let mut d = s.draft.write().await;
         let c = s.cast.read().await;
@@ -96,7 +97,7 @@ pub(super) async fn sync_draft(s: &AppState, align: bool) {
             d.align_to_series(c.format);
         }
     }
-    crate::draft::api::persist(s).await;
+    crate::draft::api::persist(s).await
 }
 
 fn series_json(s: &Series) -> Resp {
@@ -136,12 +137,16 @@ pub(super) async fn mutate_ex<T>(
         *g = next.clone();
         ((v, next), next_version(s))
     };
-    if sync != DraftSync::No {
-        sync_draft(s, sync == DraftSync::Align).await;
-    }
+    let draft_saved = if sync == DraftSync::No {
+        Ok(())
+    } else {
+        sync_draft(s, sync == DraftSync::Align).await
+    };
+    // the series is persisted even if the draft write failed; either failure answers 500 (R24)
     persist(s, &out.1, version)
         .await
         .map_err(|_| persist_failed())?;
+    draft_saved.map_err(|_| persist_failed())?;
     Ok(out)
 }
 
@@ -1692,7 +1697,7 @@ mod tests {
             c.score_override = Some([3, 1]);
             c.blue.name = "Newer".into();
         }
-        sync_draft(&state, false).await;
+        sync_draft(&state, false).await.unwrap();
         let d = state.draft.read().await;
         assert_eq!((d.score, d.blue.name.as_str()), ([3, 1], "Newer"));
     }

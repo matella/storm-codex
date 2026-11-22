@@ -1,7 +1,7 @@
 //! REST routes of the draft from a replay + auto playback timer. Each mutation takes the
 //! write-lock only once (so a manual "Next" and a tick never collide),
-//! persists, then broadcasts `draft.updated`. Open mode like the rest of `/api/draft`.
-use super::api::{persist, series_format};
+//! persists, then broadcasts `draft.updated` (write failure → `500 persist_failed`, R24). Open mode like the rest of `/api/draft`.
+use super::api::{persist, persist_failed, series_format};
 use super::replay_extract::{loaded_game_from_output, ReplayError};
 use super::{DraftError, ReplayState};
 use crate::AppState;
@@ -69,7 +69,8 @@ fn start_timer(s: &AppState) {
                 d.replay.next_at_ms = d.replay.playing.then(|| now_ms() + i64::from(ms));
                 !d.replay.playing
             };
-            persist(&st).await;
+            // a failed write is already logged by `persist`; the next tick or mutation retries
+            let _ = persist(&st).await;
             if stop {
                 return;
             }
@@ -153,7 +154,9 @@ pub async fn load(State(s): State<AppState>, headers: HeaderMap, bytes: Bytes) -
                 d.add_game_with(g, over);
                 d.public().replay
             };
-            persist(&s).await;
+            if persist(&s).await.is_err() {
+                return persist_failed();
+            }
             (
                 StatusCode::CREATED,
                 Json(serde_json::to_value(r).unwrap_or(J::Null)),
@@ -183,10 +186,10 @@ async fn mutate(
         f(&mut d).map(|()| d.public().replay)
     };
     match res {
-        Ok(r) => {
-            persist(s).await;
-            ok_state(&r)
-        }
+        Ok(r) => match persist(s).await {
+            Ok(()) => ok_state(&r),
+            Err(_) => persist_failed(),
+        },
         Err(e) => conflict(e),
     }
 }

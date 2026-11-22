@@ -1,5 +1,35 @@
 # STATUS — read first, update last
 
+## Server: no lock across DB I/O, round 2 — insights cache, lobby link, draft persistence (2026-11-22)
+
+Three Medium concurrency findings fixed with the pattern PR #84 set for cast (branch
+`fix/server-lock-across-io-round2`, committed locally, not pushed, no PR):
+
+- **Insights corpus** (`insights/cache.rs`): the global mutex was held across the version query, the id
+  scan and `load()`, serialising every insights endpoint. Now the version check runs lock-free and a hit
+  returns the published `Arc`; a refresh guard keeps reloads one at a time (waiters re-check the version);
+  the result is swapped in under a brief `std::sync::Mutex`. `invalidate()` no longer waits for a reload:
+  it bumps a generation and a reload begun before it is not published.
+- **Lobby link on upload** (`upload.rs::link_lobby`, extracted from `run_parse`): `lier_match` runs on a
+  copy outside the lobby lock and `rank::attach_to_match` after it; the link is applied as a
+  compare-and-swap (same `content_hash`, still unlinked). Deviation from the review's wording: the single
+  `lobby_live` upsert stays under the brief write lock, like every other lobby write (`muter`), because
+  saving outside it would let this snapshot overwrite a concurrent hero/map/team input (the M6 bug class).
+- **Draft persistence** (`draft/api.rs::persist`, new `draft::store::spawn_saver`): snapshot + version taken
+  together under the read lock, written by a single saver task that skips non-newer versions. Draft routes
+  (and `/api/draft/replay/*`, and cast mutations with draft sync) now answer `500 persist_failed` on a write
+  failure (R24, same as cast) instead of a silent 200; the auto-play tick only logs.
+
+Proof: each regression test failed on the old code (draft: 20/20 rounds of 16 concurrent writers left an
+older snapshot in `draft_live`; draft save failure answered 200; `GET /api/lobby` and a lobby replacement
+timed out behind a held `match_players` lock; two cache hits deadlocked on a 2-party barrier inside
+`version()`; `invalidate()` timed out behind a held reload) and passes on the new code. Fault injection on
+the new guards: disabling the draft saver's version check fails `saver_never_writes_an_older_snapshot_after_a_newer_one`
+(the route-level race test alone does not catch it — single-task arrival order already fixes most of it);
+dropping the cache generation check fails `invalidate_during_a_reload_is_neither_blocked_nor_lost`; dropping
+the `content_hash` comparison fails `a_lobby_replaced_during_the_link_is_not_stamped`. Docs: `04-serveur.md`
+(draft versioned persistence + R24, insights corpus concurrency), `05-api.md` (draft R24, lobby link CAS).
+
 ## Removed the Jarvis/Redis event emitter (2026-11-22)
 
 Dropped the optional Jarvis (Redis pub/sub) event emitter per the approved spec

@@ -51,6 +51,13 @@ pub struct AppState {
     pub events: broadcast::Sender<serde_json::Value>,
     /// Authoritative state of the draft simulator (singleton, persisted in `draft_live`).
     pub draft: Arc<RwLock<draft::DraftState>>,
+    /// Version of each draft snapshot handed to the saver (taken under the draft read lock, with
+    /// the snapshot itself, so versions follow the order of the states).
+    pub draft_version: Arc<std::sync::atomic::AtomicU64>,
+    /// Hands draft snapshots to the single task that writes `draft_live`
+    /// (`draft::store::spawn_saver`): an older snapshot never overwrites a more recent one, and no
+    /// lock is held across the DB round trip.
+    pub draft_save_tx: tokio::sync::mpsc::Sender<draft::store::SaveRequest>,
     /// Series of the cast control room (singleton, persisted in `cast_live`).
     pub cast: Arc<RwLock<cast::Series>>,
     /// Version of the in-memory cast state (assigned under the write-lock of each mutation) and
@@ -179,12 +186,15 @@ async fn run() -> Result<(), String> {
     };
     let cast_saved: Arc<std::sync::atomic::AtomicU64> = Arc::default();
     let cast_save_tx = cast::store::spawn_saver(db.clone(), cast_saved.clone());
+    let draft_save_tx = draft::store::spawn_saver(db.clone());
     let state = AppState {
         cfg: Arc::new(cfg),
         db,
         parse_sem: Arc::new(Semaphore::new(cores)),
         events,
         draft: Arc::new(RwLock::new(draft)),
+        draft_version: Arc::default(),
+        draft_save_tx,
         cast: Arc::new(RwLock::new(cast_initial)),
         cast_version: Arc::default(),
         cast_save_tx,
@@ -780,6 +790,7 @@ pub(crate) fn test_app_state(cfg: Config, db: PgPool) -> AppState {
     let (events, _) = tokio::sync::broadcast::channel(64);
     let cast_saved: Arc<std::sync::atomic::AtomicU64> = Arc::default();
     let cast_save_tx = cast::store::spawn_saver(db.clone(), cast_saved.clone());
+    let draft_save_tx = draft::store::spawn_saver(db.clone());
     AppState {
         cfg: Arc::new(cfg),
         db,
@@ -797,6 +808,8 @@ pub(crate) fn test_app_state(cfg: Config, db: PgPool) -> AppState {
             draft::Side::Blue,
             "Sky Temple".into(),
         ))),
+        draft_version: Arc::default(),
+        draft_save_tx,
         standalone: None,
     }
 }
