@@ -237,7 +237,7 @@ fn placement(
                 }
                 WidgetSettings::Ticker {} => sessions::ticker_content(feeds.names, feeds.recent).into_any(),
                 WidgetSettings::Widget(o) => sessions::widget_content(WidgetOptions { me: o.me.map(Into::into) }, feeds.names, feeds.newest).into_any(),
-                WidgetSettings::Recap {} => recap::recap_content(feeds.review).into_any(),
+                WidgetSettings::Recap {} => recap::recap_content(feeds.recap).into_any(),
                 WidgetSettings::StreamPool {} => stream_pool::stream_pool_content(feeds.review).into_any(),
                 WidgetSettings::PatchBanner {} => patch_banner::patch_banner_content(visible_patch(feeds, patch_key.clone())).into_any(),
                 WidgetSettings::RecordFlash {} => recordflash::record_flash_content(feeds.flash).into_any(),

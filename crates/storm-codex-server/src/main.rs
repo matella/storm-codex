@@ -402,8 +402,20 @@ fn base_router(state: &AppState) -> Router<AppState> {
         .route("/api/records", get(insights::api::records))
         .route("/api/maps/early-leads", get(insights::api::early_leads))
         .route("/api/compare", get(insights::api::compare))
-        .route("/api/sessions", get(insights::api::sessions))
-        .route("/api/sessions/{id}", get(insights::api::session_review))
+        .route(
+            "/api/sessions",
+            get(insights::api::sessions).post(insights::api::start_session),
+        )
+        .route("/api/sessions/manual", get(insights::api::session_windows))
+        .route(
+            "/api/sessions/{id}",
+            get(insights::api::session_review).patch(insights::api::rename_session),
+        )
+        .route("/api/sessions/{id}/end", post(insights::api::end_session))
+        .route(
+            "/api/sessions/assignments/{id}",
+            axum::routing::put(insights::api::assign_session),
+        )
         .route("/api/players/search", get(players::api::search))
         .route("/api/players/{toon}", get(read::get_player))
         .route("/api/players/{toon}/identity", get(players::api::identity))

@@ -1,5 +1,24 @@
 # STATUS — read first, update last
 
+## Manual play sessions (`feat/manual-play-sessions`, local, not pushed)
+
+Spec `docs/specs/2026-03-14-manual-play-sessions.md`. Migration 0024 (`manual_sessions`,
+`match_session_overrides`); start / end / rename / per-match assignment under `/api/sessions`
+(admin-guarded in hosted mode); negative manual IDs; `prefer_open` and `automatic_only` flags;
+Session dashboard controls, empty-session cover, grouping form per game card; server-backed OBS
+recap follows the preferred session (stream pool stays automatic-only). Contracts updated in
+`docs/spec/04, 05, 06, 08`.
+
+Verified in `storm-dev:latest` with a disposable PostgreSQL 17 (fresh DB): `cargo test --workspace`
+all passed (588 passed, 0 failed across the workspace; DB tests running); `cargo clippy --workspace --all-targets -- -D warnings`
+clean; `web-rs`: fmt, native and wasm32 clippy `-D warnings` clean, `cargo test` passed;
+`trunk build --release` of overlay/sources/app OK; sizes 1,116,562 B app Brotli (cap 1,250,000),
+218,086 / 256,177 B gzip overlay / sources (cap 300,000). Browser pass (Chromium, release server,
+8-game seeded DB): start, reload, rename (keyboard, 80-char error), move a match with Tab+Enter,
+end, history, failed write shown without change. Not run: hosted admin-token flow in the browser
+(covered by the server test only), OBS recap in a browser, representative-corpus latency (smoke:
+p95 < 4 ms on 8 games), standalone/desktop and Windows acceptance.
+
 ## Replay decoder hardening (PR #85)
 
 Versioned struct and array counts are checked against remaining input; decoded collections

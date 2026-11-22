@@ -539,10 +539,231 @@ pub async fn player_insights(State(s): State<AppState>, Path(toon): Path<String>
 
 // ── Session review ───────────────────────────────────────────────────────────
 
+use super::session::{self, Window};
+
 #[derive(Deserialize)]
 pub struct SessionsQuery {
     account: Option<String>,
     limit: Option<i64>,
+    prefer_open: Option<bool>,
+    automatic_only: Option<bool>,
+}
+
+async fn manual_windows(s: &AppState) -> Result<Vec<Window>, Err> {
+    type Row = (i64, DateTime<Utc>, Option<DateTime<Utc>>, Option<String>);
+    let rows = sqlx::query_as::<_, Row>(
+        "SELECT -id, started_at, ended_at, name FROM manual_sessions ORDER BY started_at, id",
+    )
+    .fetch_all(&s.db)
+    .await
+    .map_err(db_err)?;
+    Ok(rows
+        .into_iter()
+        .map(|(id, start, end, name)| Window {
+            id,
+            start,
+            end,
+            name,
+        })
+        .collect())
+}
+
+async fn session_assignments(
+    s: &AppState,
+    q: &SessionsQuery,
+) -> Result<(Vec<Window>, HashMap<i64, Option<i64>>), Err> {
+    if q.automatic_only == Some(true) {
+        return Ok((Vec::new(), HashMap::new()));
+    }
+    // Read overrides first: their targets are guaranteed to exist in the later window read.
+    let rows = sqlx::query_as::<_, (i64, Option<i64>)>(
+        "SELECT match_id, -manual_session_id FROM match_session_overrides",
+    )
+    .fetch_all(&s.db)
+    .await
+    .map_err(db_err)?;
+    Ok((manual_windows(s).await?, rows.into_iter().collect()))
+}
+
+/// Manual targets, including empty historical windows, for the operator's management UI.
+pub async fn session_windows(State(s): State<AppState>, Query(q): Query<SessionsQuery>) -> Resp {
+    require_default_view(&q)?;
+    let sessions: Vec<J> = manual_windows(&s)
+        .await?
+        .into_iter()
+        .rev()
+        .map(|w| {
+            let mut item = json!(w.meta());
+            item["id"] = json!(w.id);
+            item
+        })
+        .collect();
+    Ok(Json(json!({ "sessions": sessions })))
+}
+
+fn require_default_view(q: &SessionsQuery) -> Result<(), Err> {
+    if q.account.is_some() {
+        Err(bad("account_read_only"))
+    } else {
+        Ok(())
+    }
+}
+
+fn session_error(status: StatusCode, error: &str) -> Err {
+    (status, Json(json!({"error": error})))
+}
+
+// Serialize window transitions, including a start racing an end. Take timestamps after acquiring
+// the lock so a later window cannot begin before the previous one ends.
+async fn lock_session_windows(s: &AppState) -> Result<sqlx::Transaction<'_, sqlx::Postgres>, Err> {
+    let mut tx = s.db.begin().await.map_err(db_err)?;
+    sqlx::query("LOCK TABLE manual_sessions IN SHARE ROW EXCLUSIVE MODE")
+        .execute(&mut *tx)
+        .await
+        .map_err(db_err)?;
+    Ok(tx)
+}
+
+pub async fn start_session(
+    State(s): State<AppState>,
+    Query(q): Query<SessionsQuery>,
+) -> Result<(StatusCode, Json<J>), Err> {
+    require_default_view(&q)?;
+    let mut tx = lock_session_windows(&s).await?;
+    let id: Option<i64> = sqlx::query_scalar(
+        "INSERT INTO manual_sessions (started_at)
+         SELECT greatest(clock_timestamp(), max(ended_at)) FROM manual_sessions
+         ON CONFLICT ((true)) WHERE ended_at IS NULL DO NOTHING RETURNING -id",
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(db_err)?;
+    tx.commit().await.map_err(db_err)?;
+    let id = id.ok_or_else(|| session_error(StatusCode::CONFLICT, "session_already_open"))?;
+    Ok((StatusCode::CREATED, Json(json!({ "id": id }))))
+}
+
+pub async fn end_session(
+    State(s): State<AppState>,
+    Path(id): Path<i64>,
+    Query(q): Query<SessionsQuery>,
+) -> Resp {
+    require_default_view(&q)?;
+    let stored = stored_session_id(id)?;
+    let mut tx = lock_session_windows(&s).await?;
+    let found: Option<i64> = sqlx::query_scalar(
+        "UPDATE manual_sessions SET ended_at = coalesce(ended_at, greatest(started_at, clock_timestamp()))
+         WHERE id = $1 RETURNING -id",
+    ).bind(stored).fetch_optional(&mut *tx).await.map_err(db_err)?;
+    tx.commit().await.map_err(db_err)?;
+    found
+        .map(|id| Json(json!({ "id": id })))
+        .ok_or_else(|| session_error(StatusCode::NOT_FOUND, "not_found"))
+}
+
+fn stored_session_id(id: i64) -> Result<i64, Err> {
+    id.checked_neg()
+        .filter(|&id| id > 0)
+        .ok_or_else(|| bad("manual_session_id"))
+}
+
+#[derive(Deserialize)]
+pub struct SessionName {
+    name: Option<String>,
+}
+
+pub async fn rename_session(
+    State(s): State<AppState>,
+    Path(id): Path<i64>,
+    Query(q): Query<SessionsQuery>,
+    Json(body): Json<SessionName>,
+) -> Resp {
+    require_default_view(&q)?;
+    let stored = stored_session_id(id)?;
+    let name = body
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|n| !n.is_empty());
+    if name.is_some_and(|n| n.chars().count() > 80 || n.contains('\0')) {
+        return Err(bad("session_name"));
+    }
+    let found: Option<i64> =
+        sqlx::query_scalar("UPDATE manual_sessions SET name = $2 WHERE id = $1 RETURNING -id")
+            .bind(stored)
+            .bind(name)
+            .fetch_optional(&s.db)
+            .await
+            .map_err(db_err)?;
+    found
+        .map(|id| Json(json!({ "id": id })))
+        .ok_or_else(|| session_error(StatusCode::NOT_FOUND, "not_found"))
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Assignment {
+    Manual { session_id: i64 },
+    Automatic,
+    Window,
+}
+
+pub async fn assign_session(
+    State(s): State<AppState>,
+    Path(id): Path<i64>,
+    Query(q): Query<SessionsQuery>,
+    Json(body): Json<Assignment>,
+) -> Resp {
+    require_default_view(&q)?;
+    let toons = crate::standalone::operator_toons(&s).await;
+    let target = match body {
+        Assignment::Manual { session_id } => {
+            let stored = stored_session_id(session_id)?;
+            let exists: bool =
+                sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM manual_sessions WHERE id = $1)")
+                    .bind(stored)
+                    .fetch_one(&s.db)
+                    .await
+                    .map_err(db_err)?;
+            if !exists {
+                return Err(session_error(
+                    StatusCode::NOT_FOUND,
+                    "manual_session_not_found",
+                ));
+            }
+            Some(stored)
+        }
+        _ => None,
+    };
+    // Test eligibility on the same statement snapshot as the write, not on the cached corpus.
+    let action = match body {
+        Assignment::Window => "DELETE FROM match_session_overrides WHERE match_id IN (SELECT id FROM eligible) RETURNING match_id",
+        _ => "INSERT INTO match_session_overrides (match_id, manual_session_id)
+              SELECT id, $3 FROM eligible ON CONFLICT (match_id) DO UPDATE SET manual_session_id = excluded.manual_session_id RETURNING match_id",
+    };
+    let sql = format!(
+        "WITH {OPS}, eligible AS (
+        SELECT m.id FROM matches m WHERE m.id = $1 AND m.played_at IS NOT NULL AND EXISTS (
+            SELECT 1 FROM match_players p WHERE p.match_id = m.id
+              AND (p.toon_handle = ANY($2) OR lower(p.name) IN (SELECT name FROM ops))
+        )
+    ), applied AS ({action}) SELECT EXISTS (SELECT 1 FROM eligible)"
+    );
+    let query = sqlx::query_scalar::<_, bool>(sqlx::AssertSqlSafe(sql))
+        .bind(id)
+        .bind(&toons);
+    let query = if matches!(body, Assignment::Window) {
+        query
+    } else {
+        query.bind(target)
+    };
+    if !query.fetch_one(&s.db).await.map_err(db_err)? {
+        return Err(session_error(
+            StatusCode::NOT_FOUND,
+            "eligible_match_not_found",
+        ));
+    }
+    Ok(Json(json!({ "match_id": id })))
 }
 
 /// The operator's dated games (or one account's), oldest first; 400 `account` on an unknown account.
@@ -568,19 +789,23 @@ async fn session_games(
 pub async fn sessions(State(s): State<AppState>, Query(q): Query<SessionsQuery>) -> Resp {
     let limit = q.limit.unwrap_or(20).clamp(1, 100) as usize;
     let games = session_games(&s, q.account.as_deref()).await?;
+    let (windows, overrides) = session_assignments(&s, &q).await?;
+    let groups = session::groups(&games, &windows, &overrides, q.account.is_some());
     Ok(Json(
-        json!({ "sessions": super::session::list(&games, limit) }),
+        json!({ "sessions": session::list(&groups, limit, q.prefer_open == Some(true)) }),
     ))
 }
 
-/// GET /api/sessions/{id}?account= — one session against the 90 days before it; 404 unless `id` starts a session.
+/// GET /api/sessions/{id}?account= — one session against the 90 days before it.
 pub async fn session_review(
     State(s): State<AppState>,
     Path(id): Path<i64>,
     Query(q): Query<SessionsQuery>,
 ) -> Resp {
     let games = session_games(&s, q.account.as_deref()).await?;
-    match super::session::review(&games, id) {
+    let (windows, overrides) = session_assignments(&s, &q).await?;
+    let groups = session::groups(&games, &windows, &overrides, q.account.is_some());
+    match session::review(&games, &groups, id) {
         Some(r) => Ok(Json(json!(r))),
         None => Err((StatusCode::NOT_FOUND, Json(json!({ "error": "not_found" })))),
     }
@@ -591,6 +816,37 @@ pub async fn session_review(
 mod tests {
     use super::*;
     use logic::EarlyLeads;
+
+    #[tokio::test]
+    async fn manual_session_starts_empty_and_rejects_a_second_start() {
+        use crate::api_tests::{call, test_state};
+        let Some(s) = test_state(None).await else {
+            return;
+        };
+        let (a, b) = tokio::join!(
+            call(&s, "POST", "/api/sessions", None),
+            call(&s, "POST", "/api/sessions", None),
+        );
+        let (created, conflict) = if a.0 == StatusCode::CREATED {
+            (a, b)
+        } else {
+            (b, a)
+        };
+        assert_eq!(created.0, StatusCode::CREATED);
+        assert_eq!(conflict.0, StatusCode::CONFLICT);
+        let id = created.1["id"].as_i64().unwrap();
+        assert!(id < 0);
+        let detail = format!("/api/sessions/{id}");
+        let (status, review) = call(&s, "GET", &detail, None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(review["open"], true);
+        assert_eq!(review["games"], json!([]));
+        assert_eq!(review["baseline"]["averages"], json!({}));
+        assert_eq!(
+            call(&s, "POST", &format!("{detail}/end"), None).await.0,
+            StatusCode::OK
+        );
+    }
 
     fn lg(map: &str, winner: u8, my: Option<u8>, fb: Option<u8>, f10: Option<u8>) -> LeadGame {
         LeadGame {
@@ -880,6 +1136,237 @@ mod tests {
             .unwrap();
         }
         id
+    }
+
+    #[tokio::test]
+    async fn manual_assignment_reads_late_games_and_enforces_perspective() {
+        use crate::api_tests::{app, call, test_state, test_state_with_db};
+        use axum::{body::Body, http::Request};
+        use tower::ServiceExt;
+        let Some(s) = test_state(None).await else {
+            return;
+        };
+        let hosted = test_state_with_db(
+            s.cfg.database_url.clone(),
+            s.db.clone(),
+            Some("fixture-admin"),
+        );
+        for (method, path) in [
+            ("POST", "/api/sessions"),
+            ("POST", "/api/sessions/-1/end"),
+            ("PATCH", "/api/sessions/-1"),
+            ("PUT", "/api/sessions/assignments/1"),
+        ] {
+            assert_eq!(
+                call(&hosted, method, path, None).await.0,
+                StatusCode::UNAUTHORIZED
+            );
+        }
+        let tag = uuid::Uuid::new_v4().simple().to_string();
+        let name = format!("Manual{tag}");
+        let other = format!("Other{tag}");
+        // Far in the past: unfiltered reads see every operator game, including other tests' fixtures.
+        let start = "2001-03-04T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        let end = start + chrono::Duration::hours(1);
+        let mut tx = s.db.begin().await.unwrap();
+        let first: i64 = sqlx::query_scalar(
+            "INSERT INTO manual_sessions (started_at, ended_at) VALUES ($1, $2) RETURNING -id",
+        )
+        .bind(start)
+        .bind(end)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        let second: i64 = sqlx::query_scalar(
+            "INSERT INTO manual_sessions (started_at, ended_at) VALUES ($1, $2) RETURNING -id",
+        )
+        .bind(end + chrono::Duration::days(1))
+        .bind(end + chrono::Duration::days(2))
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        // PostgreSQL stores timestamps to the microsecond; seed exactly at its stored edges.
+        let (start, end): (DateTime<Utc>, DateTime<Utc>) =
+            sqlx::query_as("SELECT started_at, ended_at FROM manual_sessions WHERE id = $1")
+                .bind(-first)
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+        sqlx::query("INSERT INTO app_settings (key, value) VALUES ('operator_names', jsonb_build_array($1::text, $2::text))
+            ON CONFLICT (key) DO UPDATE SET value = app_settings.value || EXCLUDED.value")
+            .bind(&name).bind(&other).execute(&mut *tx).await.unwrap();
+        let before = session_game(
+            &mut tx,
+            &tag,
+            &name,
+            start - chrono::Duration::minutes(1),
+            "Valla",
+            false,
+            13,
+            2,
+        )
+        .await;
+        let baseline = session_game(
+            &mut tx,
+            &tag,
+            &name,
+            start - chrono::Duration::days(1),
+            "Valla",
+            true,
+            3,
+            2,
+        )
+        .await;
+        let at_start = session_game(&mut tx, &tag, &name, start, "Valla", true, 9, 2).await;
+        let at_end = session_game(&mut tx, &tag, &name, end, "Valla", false, 2, 2).await;
+        let other_id = session_game(&mut tx, &other, &other, start, "Jaina", true, 1, 2).await;
+        let stranger = session_game(&mut tx, "stranger", &tag, start, "Jaina", true, 1, 2).await;
+        tx.commit().await.unwrap();
+        let detail = format!("/api/sessions/{first}");
+        let assignment = |id| format!("/api/sessions/assignments/{id}");
+        let ids = |r: &J| {
+            r["games"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|m| m["match_id"].as_i64().unwrap())
+                .collect::<Vec<_>>()
+        };
+        let (status, review) = call(&s, "GET", &format!("{detail}?account={name}"), None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(ids(&review), [at_start]); // late ingestion; start included, end excluded, other account absent
+        assert_eq!(
+            call(
+                &s,
+                "GET",
+                &format!("/api/sessions/{second}?account={name}"),
+                None
+            )
+            .await
+            .0,
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            call(&s, "PATCH", &detail, Some(json!({"name": "é".repeat(81)})))
+                .await
+                .0,
+            StatusCode::BAD_REQUEST
+        );
+        let req = Request::patch(&detail)
+            .header("authorization", "Bearer fixture-admin")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"name":"  Evening  "}"#))
+            .unwrap();
+        assert_eq!(
+            app(&hosted).oneshot(req).await.unwrap().status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            call(&hosted, "GET", &detail, None).await.1["name"],
+            "Evening"
+        );
+        let assign = |id| Some(json!({"kind":"manual", "session_id": id}));
+        assert_eq!(
+            call(&s, "PUT", &assignment(stranger), assign(first))
+                .await
+                .0,
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            call(&s, "PUT", &assignment(at_start), assign(i64::MIN + 1))
+                .await
+                .0,
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            call(
+                &s,
+                "PUT",
+                &format!("{}?account={name}", assignment(at_start)),
+                assign(second)
+            )
+            .await
+            .0,
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            call(&s, "PUT", &assignment(before), assign(first)).await.0,
+            StatusCode::OK
+        );
+        let review = call(&s, "GET", &format!("{detail}?account={name}"), None)
+            .await
+            .1;
+        assert_eq!(ids(&review), [before, at_start]);
+        assert_eq!(review["baseline"]["games"], 1);
+        assert_eq!(review["baseline"]["averages"]["kills"], 3.0);
+        assert_eq!(
+            call(&s, "PUT", &assignment(at_start), assign(second))
+                .await
+                .0,
+            StatusCode::OK
+        );
+        assert_eq!(
+            ids(&call(&s, "GET", &format!("/api/sessions/{second}"), None)
+                .await
+                .1),
+            [at_start]
+        );
+        assert_eq!(
+            ids(&call(&s, "GET", &format!("{detail}?account={name}"), None)
+                .await
+                .1),
+            [before]
+        );
+        assert_eq!(
+            call(
+                &s,
+                "PUT",
+                &assignment(at_start),
+                Some(json!({"kind":"automatic"}))
+            )
+            .await
+            .0,
+            StatusCode::OK
+        );
+        assert_eq!(
+            ids(&call(
+                &s,
+                "GET",
+                &format!("/api/sessions/{at_start}?account={name}"),
+                None
+            )
+            .await
+            .1),
+            [at_start, at_end]
+        );
+        assert_eq!(
+            call(
+                &s,
+                "PUT",
+                &assignment(at_start),
+                Some(json!({"kind":"window"}))
+            )
+            .await
+            .0,
+            StatusCode::OK
+        );
+        assert_eq!(
+            ids(&call(&s, "GET", &format!("{detail}?account={name}"), None)
+                .await
+                .1),
+            [before, at_start]
+        );
+
+        sqlx::query("DELETE FROM matches WHERE id = ANY($1)")
+            .bind(&[before, baseline, at_start, at_end, other_id, stranger][..])
+            .execute(&s.db)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM manual_sessions WHERE id = ANY($1)")
+            .bind(&[-first, -second][..])
+            .execute(&s.db)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

@@ -69,32 +69,40 @@ pub fn recent_matches(limit: u32) -> RwSignal<Vec<MatchSummary>> {
 /// The operator's latest session review (`GET /api/sessions?limit=1` then `GET /api/sessions/{id}`, same
 /// endpoints as the app's Session page), re-read after every `match.parsed` event — same pattern as `/widget`
 /// and `/queue`. `None` until loaded, when there is no session, or on a read failure (the last value is kept).
-pub fn latest_review() -> RwSignal<Option<storm_web_core::review::Review>> {
-    use storm_web_core::review::{Review, SessionList};
-    let review = RwSignal::new(None::<Review>);
+pub fn latest_review(automatic: bool) -> RwSignal<Option<storm_web_core::review::Review>> {
+    let review = RwSignal::new(None);
     let fetch = move || {
         spawn_local(async move {
-            let Ok(list) = net::get_json::<SessionList>("/api/sessions?limit=1").await else {
-                return;
-            };
-            let Some(id) = list.sessions.first().map(|s| s.id) else {
-                review.set(None);
-                return;
-            };
-            if let Ok(Some(r)) =
-                net::get_json_or_not_found::<Review>(&format!("/api/sessions/{id}")).await
-            {
-                review.set(Some(r));
+            if let Some(r) = fetch_review(automatic).await {
+                review.set(r);
             }
         })
     };
     fetch();
     net::start_live_events(move |ev| {
-        if ev == "match.parsed" {
+        if ev == "match.parsed" || (!automatic && matches!(ev, "poll" | "open")) {
             fetch()
         }
     });
     review
+}
+
+pub async fn fetch_review(automatic: bool) -> Option<Option<storm_web_core::review::Review>> {
+    use storm_web_core::review::SessionList;
+    let query = if automatic {
+        "automatic_only=true"
+    } else {
+        "prefer_open=true"
+    };
+    let list = net::get_json::<SessionList>(&format!("/api/sessions?limit=1&{query}"))
+        .await
+        .ok()?;
+    match list.sessions.first() {
+        Some(s) => net::get_json_or_not_found(&format!("/api/sessions/{}?{query}", s.id))
+            .await
+            .ok(),
+        None => Some(None),
+    }
 }
 
 /// OBS canvas 1920x1080, transparent: every source shares the same frame, so alignment and uniform scaling are

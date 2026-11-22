@@ -83,6 +83,32 @@ Team indices are 0 = blue, 1 = red; times are game seconds.
 | `GET /api/sessions?account=&limit=` | `{sessions:[{id, start, end, games, wins}]}`, newest first; `limit` 20 (1–100). A **session** = the operator's dated games (perspective row as in `/api/matches`: a verified toon first, then a name in `operator_names`, ties by team then row id; `account` = a name of `operator_names` or `toon:<handle>` of a verified folder) split where two consecutive game **starts** are more than 3 h apart (exactly 3 h stays one session). `id` = first match id; `end` = last start + last game length. Games without `played_at` are ignored. 400 `account` on an unknown account. Spec `docs/specs/2026-11-19-session-review.md` |
 | `GET /api/sessions/{id}?account=` | `{id, start, end, span_s, played_s, games:[{match_id, played_at, hero, map, mode, win, length, kills, deaths, assists, award, deltas:{stat: value}, baseline: "hero"\|"overall"}], record:{wins, losses}, streaks:{best_win, worst_loss, current (> 0 wins, < 0 losses)}, best, worst (match ids, both null with fewer than two games with nonempty `deltas`), heroes / maps:[{name, games, wins, base_games, base_wins, small_sample (< 5 baseline games)}] (most played first), baseline:{from, to, modes, games, wins, averages:{stat: value}, small_sample (< 20 games)}, prev, next}` (`prev` older / `next` newer session id or null). **Baseline** = the operator's games in the 90 days before the session start **in the game modes played in the session** (`modes`). Stats: kills, deaths, assists (takedowns − kills), hero_damage, siege_damage, healing, experience; `deltas` = value − baseline average of the same hero when it has ≥ 5 baseline games, else of the whole baseline (1 decimal; absent without a baseline value). **Best / worst** = most / fewest rounded deltas better than that average (positive; negative for deaths), ranking only games with deltas, ties by KDA ratio ((K + A) / max(D, 1)). 404 `not_found` unless `id` starts a session for that perspective; 400 `account` |
 
+**Manual play sessions** (`docs/specs/2026-03-14-manual-play-sessions.md`). Both GET responses add
+`manual: bool`, `open: bool`, `name: string|null`, `opened_at: timestamp|null`, `closed_at: timestamp|null`.
+Automatic IDs remain positive anchors; manual IDs are negative and stable. Manual membership is resolved
+first: explicit override, else the window `[opened_at, closed_at)` (unbounded until closed), else the
+existing automatic grouping on the remaining games. History is ordered by window opening / automatic
+anchor start; `prefer_open=true` on the list puts the visible open window first without changing `prev`/`next`.
+`automatic_only=true` on both GETs ignores all manual metadata and overrides (legacy OBS stream pool).
+For nonempty sessions, `start`, `end` and duration still describe games, not the window. For an empty
+manual session, `start=opened_at`, `end=closed_at ?? opened_at`, zero play/span/counts and no averages
+or picks. The manual baseline ends at `opened_at` and explicitly excludes all members, even if moved
+from before that cutoff. Account filters restrict every game and omit manual sessions with no games
+for the selected account (detail then returns 404).
+
+| Manual session route | Contract |
+|---|---|
+| `GET /api/sessions/manual` | `{sessions:[{id, manual, open, name, opened_at, closed_at}]}`, latest window first, including empty windows; used for assignment targets |
+| `POST /api/sessions` 🔒 | No body → `201 {id}`; `409 session_already_open` when a window is open |
+| `POST /api/sessions/{id}/end` 🔒 | No body → `200 {id}`; idempotent for a previously closed manual window |
+| `PATCH /api/sessions/{id}` 🔒 | `{name: string|null}` → `200 {id}`; trim Unicode whitespace; blank or null restores the default label; >80 characters or NUL → `400 session_name` |
+| `PUT /api/sessions/assignments/{match_id}` 🔒 | `{kind:"manual",session_id:<negative id>}`, `{kind:"automatic"}`, or `{kind:"window"}` (clear override); → `200 {match_id}`; `404 eligible_match_not_found` for non-operator, undated or absent matches; `404 manual_session_not_found` for an absent target |
+
+Mutations use the existing admin Bearer guard in hosted mode. Manual-only paths reject an `account`
+query with `400 account_read_only`; writes requiring a window ID reject nonnegative IDs and the
+unrepresentable `i64` minimum with `400 manual_session_id`. End and rename return `404 not_found` for
+an absent window. Error codes are returned in `{error}` unless rejected by standard request extraction.
+
 **Corpus** (`insights/cache.rs`): records, early leads, personal insights and the session review read an in-memory extract of every game (game length, per-player stats and first award,
 compact deaths with interned toons, early leads, level lead), not the JSON per request (one pass over `match_players.data` detoasts
 ~8 kB a row: 12 s for records on the box's 3,480 games). Each request first reads a version of `matches` (count, max id, sum of `parser_version`; no JSON): unchanged → the same corpus; otherwise the corpus is diffed against `matches` by `(id, parser_version)`: deleted or re-processed games are dropped, missing ones loaded (out-of-order ids included); games are shared (`Arc`) between refreshes. Loaded 20 games per round trip and warmed up in the background at startup

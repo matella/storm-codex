@@ -19,3 +19,12 @@ Product scope approved by the operator in chat: start, end, and rename a manual 
 - Server tests: open empty session, persistence/readback, duplicate start, end, title validation, exact interval edges, late ingestion, move between manual sessions and forced automatic grouping, one membership, baseline exclusion, automatic 3 h boundary, unauthorized mutation, and operator perspective filtering. Use disposable PostgreSQL.
 - Browser: start from the dashboard, reload, rename, move a match from a session, end, revisit history, and see truthful error states. Check keyboard interaction and test the release bundle. Keep existing Brotli/gzip size limits and record affected GET latency against a representative fixture if available.
 - Out of scope: historical split and merge, deleting sessions or matches, player accounts, session sync to external services, changing the three-hour policy, and changing scoring or styling the rest of the dashboard.
+
+## Implementation notes (2026-11-22)
+
+- Status: implemented on `feat/manual-play-sessions`, not merged. Migration `0024_manual_play_sessions.sql`; exact routes and shapes live in `docs/spec/05-api.md`.
+- Manual IDs are the negated `manual_sessions.id` (negative), so they cannot collide with positive automatic anchors. `/api/sessions` joins the guarded write prefixes in `auth.rs`.
+- Deviations/additions: `GET /api/sessions/manual` (assignment targets, includes empty windows); `prefer_open=true` and `automatic_only=true` query flags (the latter keeps the stream-pool OBS source on its legacy review); assignments accept `{kind:"window"}` to clear an override.
+- Server-backed OBS recap reads the preferred (open) session through a new `recap` feed; other OBS sources are unchanged.
+- Verification: see `docs/STATUS.md`. Latency was only smoke-measured on an 8-game fixture; no representative-corpus p95 yet.
+

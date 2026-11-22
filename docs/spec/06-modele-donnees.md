@@ -15,6 +15,17 @@ re-process) + **promoted scalar columns** for the hot filter/sort axes (indexed)
 | `players` | aggregated player reference | `toon_handle` PK, `last_name`, `names` (JSONB aliases) — denormalised, best-effort, derivable from `match_players`. **Neither `last_name` nor the order of `names` is chronological** (UPSERT in processing order): the current name and the order of names come from the **dated history** `match_players.name` × `matches.played_at` (`players/names.rs`; NULL `played_at` = oldest) |
 | `player_links` | "same person" decisions (0011) | `(toon_a, toon_b)` PK with `CHECK toon_a < toon_b` (ordered pair, one row per pair), `status` ∈ confirmed/dismissed, `decided_at`. Suggestions are computed on demand, never stored. No `CREATE EXTENSION` |
 
+## Manual play sessions (0024)
+
+`manual_sessions` stores a positive identity (negated at the API boundary), a UTC `started_at`, nullable
+`ended_at` and nullable `name` (1–80 characters when set; the API trims whitespace). A partial unique
+index allows only one row with no `ended_at`. No windows are deleted by the API.
+
+`match_session_overrides` has one row per `match_id` (FK to `matches`, cascade on match deletion).
+A missing row uses the time window; a row with `NULL` `manual_session_id` forces automatic grouping;
+a non-null FK explicitly pins that match to a manual window. Reprocessing that retains the match ID
+preserves the override. Neither operation rewrites replay data, the projection, or statistics.
+
 ## Manual definitions (0001, 0004)
 
 `teams` (roster JSONB of ToonHandles + `league` text column — 0004), `leagues` (legacy,

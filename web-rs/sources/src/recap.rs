@@ -15,7 +15,7 @@ pub fn mount_recap() {
 
 fn standalone() -> impl IntoView {
     provide_dim();
-    let review = latest_review().read_only();
+    let review = latest_review(false).read_only();
     view! {
         <OverlayFrame anchor=Anchor::BottomLeft pad=28.0>
             {recap_content(review)}

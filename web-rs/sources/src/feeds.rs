@@ -14,7 +14,7 @@ use storm_web_core::{
     nemesis::{enemy_toons, is_grudge, lobby_signature, Lobby},
     net,
     overlay_layout::{WidgetInstance, WidgetSettings},
-    review::{Review, SessionList},
+    review::Review,
     session::MatchSummary,
 };
 
@@ -25,6 +25,7 @@ pub struct Feeds {
     pub recent: ReadSignal<Vec<MatchSummary>>,
     pub newest: ReadSignal<Vec<MatchSummary>>,
     pub review: ReadSignal<Option<Review>>,
+    pub recap: ReadSignal<Option<Review>>,
     pub progress: ReadSignal<Progress>,
     pub patch: ReadSignal<Option<PatchItem>>,
     pub flash: ReadSignal<Option<(String, f64)>>,
@@ -40,18 +41,20 @@ const GOAL: u16 = 128;
 const PATCH: u16 = 256;
 const LOBBY: u16 = 512;
 const RECORD: u16 = 1024;
-const EVENTS: u16 = RECENT | NEWEST | REVIEW | PATCH | LOBBY;
+const RECAP: u16 = 32;
+const EVENTS: u16 = RECENT | NEWEST | REVIEW | RECAP | PATCH | LOBBY;
 
 impl Feeds {
     pub fn new(widgets: ReadSignal<Vec<WidgetInstance>>) -> Self {
         let demand = Memo::new(move |_| {
-            widgets.with(|all| {
-                all.iter().fold(0, |bits, w| {
+            widgets.with(|widgets| {
+                widgets.iter().fold(0u16, |bits, w| {
                     bits | match &w.placement.settings {
                         WidgetSettings::Ticker {} => DIM | NAMES | RECENT,
                         WidgetSettings::Widget(_) => DIM | NAMES | NEWEST,
                         WidgetSettings::Queue {} => DIM | NAMES | RECENT,
-                        WidgetSettings::Recap {} | WidgetSettings::StreamPool {} => DIM | REVIEW,
+                        WidgetSettings::Recap {} => DIM | RECAP,
+                        WidgetSettings::StreamPool {} => DIM | REVIEW,
                         WidgetSettings::PatchBanner {} => PATCH,
                         WidgetSettings::RecordFlash {} => NEWEST | RECORD,
                         WidgetSettings::Nemesis {} => LOBBY,
@@ -67,6 +70,7 @@ impl Feeds {
         let recent = RwSignal::new(Vec::new());
         let newest = RwSignal::new(Vec::new());
         let review = RwSignal::new(None);
+        let recap = RwSignal::new(None);
         let progress = RwSignal::new(Progress::default());
         let patch = RwSignal::new(None);
         let lobby = RwSignal::new(None);
@@ -85,17 +89,8 @@ impl Feeds {
         });
         let load_recent = refresh(recent, async || net::fetch_matches(200).await.ok());
         let load_newest = refresh(newest, async || net::fetch_matches(1).await.ok());
-        let load_review = refresh(review, async || {
-            let list = net::get_json::<SessionList>("/api/sessions?limit=1")
-                .await
-                .ok()?;
-            match list.sessions.first() {
-                Some(s) => net::get_json_or_not_found(&format!("/api/sessions/{}", s.id))
-                    .await
-                    .ok(),
-                None => Some(None),
-            }
-        });
+        let load_review = refresh(review, || crate::frame::fetch_review(true));
+        let load_recap = refresh(recap, || crate::frame::fetch_review(false));
         let load_progress = refresh(progress, async || {
             net::get_json("/api/goal/progress").await.ok()
         });
@@ -131,6 +126,9 @@ impl Feeds {
             if bits & REVIEW != 0 {
                 load_review()
             }
+            if bits & RECAP != 0 {
+                load_recap()
+            }
             if bits & GOAL != 0 {
                 load_progress()
             }
@@ -151,7 +149,7 @@ impl Feeds {
             if live.get() {
                 let stop = net::scoped_live_events(move |event| {
                     let bits = match event {
-                        "match.parsed" => RECENT | NEWEST | REVIEW,
+                        "match.parsed" => RECENT | NEWEST | REVIEW | RECAP,
                         "patch.new" => PATCH,
                         "lobby.detected" | "lobby.updated" => LOBBY,
                         "open" => EVENTS,
@@ -170,6 +168,7 @@ impl Feeds {
             recent: recent.read_only(),
             newest: newest.read_only(),
             review: review.read_only(),
+            recap: recap.read_only(),
             progress: progress.read_only(),
             patch: patch.read_only(),
             flash: watch_record(demand, newest.read_only()),

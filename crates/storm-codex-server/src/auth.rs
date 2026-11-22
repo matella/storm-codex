@@ -32,7 +32,7 @@ pub fn is_admin(headers: &HeaderMap, configured: Option<&str>) -> bool {
 /// goes on air in OBS. With `ADMIN_TOKEN`, they require the admin Bearer like the rest
 /// of the write API; in open mode, nothing changes. Reads (GET/HEAD) stay free:
 /// the OBS overlays do not send a token.
-const GUARDED_PREFIXES: [&str; 3] = ["/api/cast", "/api/draft", "/api/lobby"];
+const GUARDED_PREFIXES: [&str; 4] = ["/api/cast", "/api/draft", "/api/lobby", "/api/sessions"];
 
 pub fn is_guarded_write(method: &axum::http::Method, path: &str) -> bool {
     use axum::http::Method;
