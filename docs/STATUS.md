@@ -19,6 +19,57 @@ committed replays matched nom-mpq byte for byte. Release smoke benchmark: decode
 78.9 ms (p95 104.0 ms, three replays). The Python heroprotocol cross-check was not run offline;
 the upstream MPQ archive-table parser still needs hardening.
 
+## Restart after a late server exit during backup rollback
+
+If stopping the server fails during backup import, rollback can now restart it once a nonblocking
+status check confirms the retained child exited. A live child or an unreadable status still blocks
+restart and leaves the child available for a later stop. The rollback regression failed before the
+fix and passed after; live and unknown states also passed. The isolated offline Linux desktop
+harness passed 47 tests and strict Clippy, with one real-Postgres round-trip ignored. The harness
+used cached `errno` 0.3.14 and `zip` 9.7.3; the repository lockfile was unchanged. Full Tauri and
+Windows installer checks were not run.
+
+## Retain unconfirmed desktop shutdowns for retry
+
+A failed stop retains the stack and server child handle. A later caller retries instead of
+reporting that nothing is running, and PostgreSQL is stopped only after server exit is confirmed.
+Both shutdown regressions failed before the changes and passed after; the isolated Linux desktop
+harness passed 45 tests, with one real-Postgres round-trip ignored. No Windows installer run.
+
+## Preserve pending backup import recovery
+
+Another restore is refused while an import journal remains, before removing working files or
+staging a new database. Restarting Storm Codex can still recover the original replay archive.
+The double-swap-failure regression now checks that a retry makes no staging calls and that
+startup restores the original archive. The regression failed before the guard and passed after
+it; the isolated Linux harness ran 37 backup/supervision tests (one real-Postgres test ignored).
+The packaged Windows app was not exercised.
+
+## Web: CSV export and navigate-away crashes fixed (2026-11-22, branch `fix/web-crash-and-csv-export`)
+
+Two release-build front-end bugs from the web review, both reproduced first against an unmodified
+`origin/main` release build (`web-rs/app/tests/navigate-away.cjs`: 8/8 scenarios fail there, 8/8 pass after).
+- **CSV export (H1).** "CSV ↓" on Matches had no `download`, so the A21 view-transition click listener (and,
+  without it, the router itself) treated `/api/matches.csv?...` as an in-app route: URL changed, no request,
+  router "Not found." page. The anchor now has `download`, and the layout listener hands every same-origin link
+  outside the app's routes (`route::is_app_route`: `/api/`, `/images/`, OBS-source pages, outside the base) to
+  the browser as a full load, so a future API link without `download` cannot regress the same way.
+- **Disposed reads after navigation (H2).** Reading a disposed signal or running a disposed `Callback` panics
+  in Leptos 0.8 and aborts the release WASM (`Storm Codex WASM panic at traits.rs:361/394`). Guarded with
+  `try_*`: Players search debounce, Welcome manual-names save, every async action of the scouting report
+  (upload loop, side/delete, plan import, patch, pack copy, delete-report navigation, HTML export). The upload
+  loop now keeps sending the dropped files after the page is left (before, the panic killed it after the
+  first file). The repo-wide sweep found one more: the cast draft replay panel's Space/Backspace window
+  listener was never removed and panicked on the next key press after leaving; it is now removed in
+  `on_cleanup`. Other `spawn_local`/timer sites only set signals, already use `try_*`/alive flags, or live in
+  the layout (app lifetime); OBS bundles mount once per page. In these runs navigation kept working after
+  the abort, so the reported full freeze was not reproduced; the panic and the killed upload loop were.
+
+App bundle 1,104,867 bytes Brotli (origin/main 1,104,258), overlay 218,047 / sources 254,939 bytes gzip.
+PR #86. The shared CI audit failure was addressed by updating `url` to 2.5.9
+(RUSTSEC-2026-0592) and its required `form_urlencoded` dependency to 1.2.3 in
+all four affected lockfiles. Root `cargo audit` and locked resolution pass.
+
 ## Removed the Jarvis/Redis event emitter (2026-11-22)
 
 Dropped the optional Jarvis (Redis pub/sub) event emitter per the approved spec

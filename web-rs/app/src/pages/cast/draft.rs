@@ -591,8 +591,9 @@ fn ReplayPanel(ready: Memo<bool>, d: Memo<DraftState>) -> impl IntoView {
     let complete = move || ready.get() && d.with(|x| x.cursor >= x.steps.len());
     let playing = move || rs.with(|r| r.playing);
 
-    // shortcuts: Space = Next, Backspace = Back (outside input fields)
-    let _ = window_event_listener(ev::keydown, move |e: ev::KeyboardEvent| {
+    // shortcuts: Space = Next, Backspace = Back (outside input fields). Removed with the panel: a window listener
+    // outlives its component, and reading the panel's disposed signals from a later key press would panic.
+    let keys = window_event_listener(ev::keydown, move |e: ev::KeyboardEvent| {
         use leptos::wasm_bindgen::JsCast;
         if let Some(t) = e
             .target()
@@ -619,6 +620,7 @@ fn ReplayPanel(ready: Memo<bool>, d: Memo<DraftState>) -> impl IntoView {
             _ => {}
         }
     });
+    on_cleanup(move || keys.remove());
 
     let file_input = NodeRef::<leptos::html::Input>::new();
     view! {

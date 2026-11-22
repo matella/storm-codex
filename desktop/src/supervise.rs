@@ -122,6 +122,8 @@ pub enum StopError {
 pub enum RestartError {
     #[error("the server is still running")]
     StillRunning,
+    #[error("the server's exit could not be confirmed: {0}")]
+    ExitUnconfirmed(#[source] io::Error),
     #[error("the stack is stopped")]
     Stopped,
     #[error(transparent)]
@@ -403,13 +405,18 @@ impl Stack {
     }
 
     /// Starts the server again after [`stop_server`](Self::stop_server) (Postgres kept
-    /// running), same command and port, and waits until it is healthy.
+    /// running), same command and port, and waits until it is healthy. A child retained
+    /// after a failed stop is cleared only once its exit is confirmed.
     pub fn restart_server(&mut self) -> Result<(), RestartError> {
         if self.stopped {
             return Err(RestartError::Stopped);
         }
-        if self.server.is_some() {
-            return Err(RestartError::StillRunning);
+        if let Some(server) = self.server.as_mut() {
+            match server.try_wait() {
+                Ok(Some(_)) => self.server = None,
+                Ok(None) => return Err(RestartError::StillRunning),
+                Err(e) => return Err(RestartError::ExitUnconfirmed(e)),
+            }
         }
         let Some(cmd) = self.cmd.clone() else {
             return Err(RestartError::Stopped);
@@ -529,18 +536,16 @@ impl Stack {
         if self.stopped {
             return Ok(());
         }
-        let server = self.stop_server(budget);
-        // Postgres is stopped even when the server stop reported an error: the server process
-        // is gone either way (killed), and leaving Postgres running helps nobody.
+        self.stop_server(budget)?;
         self.db.stop().map_err(StopError::Postgres)?;
         self.stopped = true;
-        server
+        Ok(())
     }
 
     /// Stops the server only (Postgres keeps running): `POST /api/standalone/shutdown`, wait
     /// for the exit until the budget's deadline (counted from before the request), then kill.
     pub fn stop_server(&mut self, budget: StopBudget) -> Result<(), StopError> {
-        let Some(mut server) = self.server.take() else {
+        let Some(server) = self.server.as_mut() else {
             return Ok(());
         };
         let (limit, io_timeout) = match budget {
@@ -556,13 +561,18 @@ impl Stack {
         let _ = self.host.request_shutdown(self.port, io_timeout.min(limit));
         loop {
             match server.try_wait() {
-                Ok(Some(_)) => return Ok(()),
+                Ok(Some(_)) => break,
                 Ok(None) if std::time::Instant::now() < deadline => {
                     std::thread::sleep(self.timings.poll)
                 }
-                _ => return server.kill().map_err(StopError::Server),
+                _ => {
+                    server.kill().map_err(StopError::Server)?;
+                    break;
+                }
             }
         }
+        self.server = None;
+        Ok(())
     }
 }
 
@@ -847,16 +857,28 @@ pub(crate) mod fakes {
         }
     }
 
+    #[derive(Clone, Copy)]
+    pub enum AfterFailedKill {
+        Running,
+        Exited,
+        Unknown,
+    }
+
     struct FakeChild {
         log: Log,
         shutdown_requested: Arc<AtomicBool>,
         honours_shutdown: bool,
         exits_at_once: bool,
+        failed_kill: Option<AfterFailedKill>,
         killed: bool,
+        wait_fails: bool,
     }
 
     impl ServerChild for FakeChild {
         fn try_wait(&mut self) -> io::Result<Option<String>> {
+            if self.wait_fails {
+                return Err(io::Error::other("fake wait failure"));
+            }
             let exited = self.killed
                 || self.exits_at_once
                 || (self.honours_shutdown && self.shutdown_requested.load(Ordering::SeqCst));
@@ -864,6 +886,12 @@ pub(crate) mod fakes {
         }
         fn kill(&mut self) -> io::Result<()> {
             push(&self.log, "server.kill");
+            if let Some(state) = self.failed_kill.take() {
+                // The failed kill did not confirm exit; the next poll observes this state.
+                self.killed = matches!(state, AfterFailedKill::Exited);
+                self.wait_fails = matches!(state, AfterFailedKill::Unknown);
+                return Err(io::Error::other("fake kill failure"));
+            }
             self.killed = true;
             Ok(())
         }
@@ -874,6 +902,7 @@ pub(crate) mod fakes {
         pub healthy: bool,
         pub honours_shutdown: bool,
         pub exits_at_once: bool,
+        pub failed_kill: Option<AfterFailedKill>,
         pub fail_stage: bool,
         pub fail_promote: bool,
         pub fail_promote_after_rename: bool,
@@ -891,6 +920,7 @@ pub(crate) mod fakes {
                 healthy: true,
                 honours_shutdown: true,
                 exits_at_once: false,
+                failed_kill: None,
                 fail_stage: false,
                 fail_promote: false,
                 fail_promote_after_rename: false,
@@ -931,7 +961,9 @@ pub(crate) mod fakes {
                 shutdown_requested: flag,
                 honours_shutdown: self.honours_shutdown,
                 exits_at_once: self.exits_at_once,
+                failed_kill: self.failed_kill,
                 killed: false,
+                wait_fails: false,
             }))
         }
         fn health_ok(&self, _port: u16) -> bool {
@@ -1072,6 +1104,75 @@ mod tests {
         // Idempotent.
         stack.stop().expect("stop again");
         assert_eq!(entries(&log).len(), 2);
+    }
+
+    #[test]
+    fn stop_retries_a_failed_server_kill_before_confirming_shutdown() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let log = Log::default();
+        let mut host = FakeHost::new(&log);
+        host.honours_shutdown = false;
+        host.failed_kill = Some(AfterFailedKill::Running);
+        let (stack, _) = start(host, tmp.path());
+        let mut stack = stack.expect("start");
+        log.lock().expect("log").clear();
+        assert!(matches!(
+            stack.stop_with(StopBudget::SessionEnd),
+            Err(StopError::Server(_))
+        ));
+        // Postgres is only stopped once the server is confirmed down.
+        assert!(!entries(&log).contains(&"db.stop".to_string()));
+        stack.stop_with(StopBudget::SessionEnd).expect("retry");
+        assert_eq!(
+            entries(&log)
+                .iter()
+                .filter(|entry| *entry == "server.kill")
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn restart_retains_the_child_when_exit_is_unconfirmed() {
+        for state in [AfterFailedKill::Running, AfterFailedKill::Unknown] {
+            let tmp = tempfile::tempdir().expect("tempdir");
+            let log = Log::default();
+            let mut host = FakeHost::new(&log);
+            host.honours_shutdown = false;
+            host.failed_kill = Some(state);
+            let (stack, _) = start(host, tmp.path());
+            let mut stack = stack.expect("start");
+            log.lock().expect("log").clear();
+            let budget = StopBudget::SessionEnd;
+            assert!(matches!(stack.stop_with(budget), Err(StopError::Server(_))));
+
+            let err = stack.restart_server().expect_err("restart must be refused");
+            match state {
+                AfterFailedKill::Running => assert!(matches!(err, RestartError::StillRunning)),
+                AfterFailedKill::Unknown => {
+                    assert!(matches!(err, RestartError::ExitUnconfirmed(_)))
+                }
+                AfterFailedKill::Exited => unreachable!(),
+            }
+            assert_eq!(
+                entries(&log),
+                [
+                    format!("server.shutdown({SERVER_PORT})"),
+                    "server.kill".into()
+                ]
+            );
+
+            // The retained child still needs to be stopped before Postgres.
+            stack.stop_with(budget).expect("retry stop");
+            assert_eq!(
+                &entries(&log)[2..],
+                [
+                    format!("server.shutdown({SERVER_PORT})"),
+                    "server.kill".into(),
+                    "db.stop".into()
+                ]
+            );
+        }
     }
 
     #[test]

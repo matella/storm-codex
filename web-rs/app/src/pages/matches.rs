@@ -285,7 +285,7 @@ pub fn Matches() -> impl IntoView {
                             <button type="button" class="ds-pill" on:click=move |_| reset()>"✕ reset"</button>
                         </Show>
                         <span style="margin-left: auto; display: flex; gap: 6px">
-                            <a href=move || format!("/api/matches.csv?{}", export_q("5000")) class="ds-btn">"CSV ↓"</a>
+                            <a href=move || format!("/api/matches.csv?{}", export_q("5000")) class="ds-btn" download>"CSV ↓"</a>
                             <a href=move || format!("/api/matches?{}", export_q("5000")) class="ds-btn" target="_blank" rel="noreferrer">"JSON ↓"</a>
                         </span>
                     </div>
