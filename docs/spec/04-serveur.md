@@ -33,9 +33,13 @@ POST /api/upload(-raw)  [personal Bearer token]
   stuck.
 - **Attempt cap** (migration 0023, security review C1 defence in depth): `run_parse` increments
   `uploads.parse_attempts` **before** parsing, so an attempt that kills the whole process (an
-  allocation abort is not a panic: `spawn_blocking` does not catch it) is still counted. If
-  recording the attempt fails, the decoder is not started and the row remains pending. At
-  startup, a `pending` row with `parse_attempts >= MAX_PARSE_ATTEMPTS` (3) is marked
+  allocation abort is not a panic: `spawn_blocking` does not catch it) is still counted. The
+  worker keeps its parse permit and retries a failed bookkeeping write twice (250 ms, then
+  500 ms backoff; 1 s timeout per write). The decoder never starts without a confirmed update.
+  If all writes fail, the worker logs the failure, releases the permit, and leaves the archived
+  upload pending for startup recovery; there is no ongoing sweep. A timeout or lost connection
+  after a commit can conservatively overcount attempts if a write is retried. At startup, a
+  `pending` row with `parse_attempts >= MAX_PARSE_ATTEMPTS` (3) is marked
   `parse_failed`, `error_class = too_many_attempts` (logged at `warn`) instead of being resumed.
   `POST /api/admin/reprocess` retries such a row by hand like any `parse_failed` upload.
 - **Status writes logged**: a failure to write `uploads.status` (parsed or

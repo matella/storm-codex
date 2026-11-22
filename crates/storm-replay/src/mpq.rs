@@ -1,12 +1,9 @@
 //! Bounded reading of an embedded MPQ file — port of `nom_mpq::MPQ::read_mpq_file_sector`
 //! (nom-mpq 2.0.14, MIT) with a hard cap on the decompressed size.
 //!
-//! nom-mpq inflates every sector with `read_to_end` and no limit: a few MB of zlib/bzip2 in an
-//! uploaded replay can expand to several GB and get the whole server OOM-killed (zip bomb).
-//! Here every sector is inflated through a `Read::take` bounded by what is left of the
-//! [`MAX_STREAM_BYTES`] budget, and the slicing of the sector table is bounds-checked (nom-mpq
-//! indexes it directly and panics on a corrupted offset). The archive tables themselves are still
-//! parsed by `nom_mpq::parser::parse`.
+//! The declared size is capped before allocating the output. Each sector is read directly
+//! into its expected span of that buffer, with a one-byte probe for excess output. The sector
+//! table is bounds-checked; the archive tables are still parsed by `nom_mpq::parser::parse`.
 
 use crate::error::{Error, Result};
 use std::io::Read;
@@ -48,10 +45,11 @@ pub(crate) fn read_file_capped(
         .block_table_entries
         .get(hash_entry.block_table_index as usize)
         .ok_or_else(|| err("block table index out of range".into()))?;
-    if block.flags & MPQ_FILE_EXISTS == 0 || block.archived_size == 0 {
+    if block.flags & MPQ_FILE_EXISTS == 0 {
         return Ok(Vec::new());
     }
-    if block.size as usize > cap {
+    let size = block.size as usize;
+    if size > cap {
         return Err(err(format!(
             "declared size {} B exceeds the {cap} B cap",
             block.size
@@ -67,84 +65,107 @@ pub(crate) fn read_file_capped(
         .ok_or_else(|| err("file data beyond the end of the archive".into()))?;
     let compressed = block.flags & MPQ_FILE_COMPRESS != 0;
 
-    if block.flags & MPQ_FILE_SINGLE_UNIT != 0 {
-        // compressed only when that saves at least a byte
-        if compressed && block.size > block.archived_size {
-            return decompress(file_data, cap).map_err(err);
-        }
-        return copy_capped(file_data, cap).map_err(err);
+    // Uncompressed files have no sector offset table. A compressed single unit is
+    // stored raw whenever compressing would not save space.
+    if !compressed || block.flags & MPQ_FILE_SINGLE_UNIT != 0 || file_data.is_empty() {
+        let mut out = Vec::new();
+        append_sector(&mut out, file_data, size, compressed).map_err(err)?;
+        return Ok(out);
     }
 
-    // Multi-sector file: table of `sectors + 1` u32 offsets (+1 with a CRC), then the sectors.
-    let sector_size = 512u64
-        .checked_shl(u32::from(mpq.archive_header.sector_size_shift))
-        .filter(|&s| s > 0)
-        .ok_or_else(|| err("invalid sector size shift".into()))?;
-    let mut sectors = (u64::from(block.size) / sector_size) as usize + 1;
+    // Multi-sector file: `sectors + 1` u32 offsets (+1 with a CRC), then the sectors.
+    let sector_size = sector_size(mpq.archive_header.sector_size_shift).map_err(err)?;
+    let sectors = size.div_ceil(sector_size);
     let crc = block.flags & MPQ_FILE_SECTOR_CRC != 0;
-    if crc {
-        sectors += 1;
-    }
+    let table_len = 4 * (sectors + 1 + usize::from(crc));
     let table = file_data
-        .get(..4 * (sectors + 1))
+        .get(..table_len)
         .ok_or_else(|| err("sector table beyond the file data".into()))?;
-    let positions: Vec<usize> = table
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .map(|c| u32::from_le_bytes(*c) as usize)
-        .collect();
-    let total_sectors = positions.len() - 1 - usize::from(crc);
+    let offsets = table.as_chunks::<4>().0;
+    let offset = |index| u32::from_le_bytes(offsets[index]) as usize;
+    let start = offset(0);
+    let end = offset(sectors);
+    if start < table_len
+        || start > end
+        || end > file_data.len()
+        || offset(sectors + usize::from(crc)) != file_data.len()
+    {
+        return Err(err("invalid sector table bounds".into()));
+    }
     let mut out = Vec::new();
-    let mut sector_bytes_left = block.size as usize;
-    for window in positions[..=total_sectors].windows(2) {
+    // Reserve once for this stream, not once per sector.
+    out.try_reserve_exact(size)
+        .map_err(|e| err(format!("output allocation: {e}")))?;
+    for i in 0..sectors {
         let sector = file_data
-            .get(window[0]..window[1])
-            .ok_or_else(|| err(format!("sector {}..{} out of range", window[0], window[1])))?;
-        let budget = cap - out.len();
-        let mut data = if compressed && sector_bytes_left > sector.len() {
-            decompress(sector, budget).map_err(err)?
-        } else {
-            copy_capped(sector, budget).map_err(err)?
-        };
-        sector_bytes_left = sector_bytes_left.saturating_sub(data.len());
-        out.append(&mut data);
+            .get(offset(i)..offset(i + 1))
+            .filter(|_| offset(i + 1) <= end)
+            .ok_or_else(|| err(format!("sector {i} out of range")))?;
+        let expected = sector_size.min(size - out.len());
+        append_sector(&mut out, sector, expected, true).map_err(err)?;
     }
     Ok(out)
 }
 
-fn copy_capped(data: &[u8], cap: usize) -> std::result::Result<Vec<u8>, String> {
-    if data.len() > cap {
-        return Err(format!("data exceeds the {cap} B cap"));
-    }
-    Ok(data.to_vec())
+fn sector_size(shift: u16) -> std::result::Result<usize, String> {
+    1usize
+        .checked_shl(9 + u32::from(shift))
+        .ok_or_else(|| "invalid sector size shift".into())
 }
 
-/// Inflates one sector (first byte = compression type) into at most `cap` bytes.
-fn decompress(input: &[u8], cap: usize) -> std::result::Result<Vec<u8>, String> {
+fn append_sector(
+    out: &mut Vec<u8>,
+    input: &[u8],
+    expected: usize,
+    compressed: bool,
+) -> std::result::Result<(), String> {
+    if input.len() == expected {
+        out.try_reserve_exact(expected)
+            .map_err(|e| format!("output allocation: {e}"))?;
+        out.extend_from_slice(input);
+        return Ok(());
+    }
+    if !compressed || input.is_empty() || input.len() > expected {
+        return Err(format!(
+            "invalid stored length: {} B for {expected} B sector",
+            input.len()
+        ));
+    }
+    out.try_reserve_exact(expected)
+        .map_err(|e| format!("output allocation: {e}"))?;
+    let start = out.len();
+    out.resize(start + expected, 0);
+    decompress(input, &mut out[start..])
+}
+
+/// Inflates one sector directly into its expected output span.
+fn decompress(input: &[u8], out: &mut [u8]) -> std::result::Result<(), String> {
     let (&kind, rest) = input
         .split_first()
         .ok_or_else(|| "empty compressed sector".to_owned())?;
-    let mut out = Vec::new();
-    // one byte past the cap to tell "exactly cap" from "more than cap"
-    let limit = cap as u64 + 1;
-    let read = match kind {
-        COMPRESSION_PLAINTEXT | OTHER_COMPRESSION_PLAINTEXT => return copy_capped(rest, cap),
-        COMPRESSION_ZLIB => flate2::read::ZlibDecoder::new(rest)
-            .take(limit)
-            .read_to_end(&mut out),
-        COMPRESSION_BZ2 => bzip2_rs::DecoderReader::new(rest)
-            .take(limit)
-            .read_to_end(&mut out),
-        other => return Err(format!("unsupported compression type {other}")),
-    };
-    read.map_err(|e| format!("decompression: {e}"))?;
-    if out.len() > cap {
-        return Err(format!(
-            "decompressed size exceeds the {cap} B cap (zip bomb guard)"
-        ));
+    match kind {
+        COMPRESSION_PLAINTEXT | OTHER_COMPRESSION_PLAINTEXT => read_exact_sector(rest, out),
+        COMPRESSION_ZLIB => read_exact_sector(flate2::read::ZlibDecoder::new(rest), out),
+        COMPRESSION_BZ2 => read_exact_sector(bzip2_rs::DecoderReader::new(rest), out),
+        other => Err(format!("unsupported compression type {other}")),
     }
-    Ok(out)
+}
+
+fn read_exact_sector(mut reader: impl Read, out: &mut [u8]) -> std::result::Result<(), String> {
+    reader
+        .read_exact(out)
+        .map_err(|e| format!("decompression: {e}"))?;
+    // Read at most one more byte to detect overlong output or a decoder error at EOF.
+    match reader
+        .read(&mut [0])
+        .map_err(|e| format!("decompression: {e}"))?
+    {
+        0 => Ok(()),
+        _ => Err(format!(
+            "decompressed sector exceeds its expected {} B",
+            out.len()
+        )),
+    }
 }
 
 #[cfg(test)]
@@ -159,21 +180,15 @@ mod tests {
         e.finish().unwrap()
     }
 
-    /// The cap is enforced while inflating, whatever the size the archive declares.
     #[test]
-    fn decompress_stops_at_the_cap() {
-        let bomb = zlib(&vec![0u8; 1 << 20]);
-        assert!(bomb.len() < 4096, "zeros compress well");
-        let e = decompress(&bomb, 64 << 10).unwrap_err();
-        assert!(e.contains("zip bomb"), "{e}");
-        assert_eq!(
-            decompress(&bomb, 1 << 20).unwrap().len(),
-            1 << 20,
-            "exactly the cap"
-        );
-        assert!(copy_capped(&[0; 10], 9).is_err());
-        assert!(decompress(&[], 10).is_err());
-        assert!(decompress(&[99, 1, 2], 10).is_err());
+    fn decompress_requires_exact_output_length() {
+        let plain = b"A small sector with ordinary text. A small sector with ordinary text.";
+        let compressed = zlib(plain);
+        let mut out = [0; 128];
+        decompress(&compressed, &mut out[..plain.len()]).unwrap();
+        assert_eq!(&out[..plain.len()], plain);
+        assert!(decompress(&compressed, &mut out[..plain.len() - 1]).is_err());
+        assert!(decompress(&compressed, &mut out[..plain.len() + 1]).is_err());
     }
 
     /// Same bytes as nom-mpq for every stream of every committed replay (port parity).

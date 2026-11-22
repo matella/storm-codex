@@ -4,12 +4,20 @@
 
 Versioned struct and array counts are checked against remaining input; decoded collections
 are not preallocated from file-supplied counts. Bitarray allocation and unknown-field nesting
-are bounded. MPQ stream decompression is capped at 256 MiB per stream. Migration 0023 records
-upload parse attempts before decoding and stops automatic retries after three interrupted attempts.
+are bounded. MPQ streams are capped at 256 MiB each; stored and decoded sector lengths are
+checked, and each sector writes into the same bounded output buffer. Migration 0023 records
+upload parse attempts before decoding and stops startup recovery at three recorded attempts.
+The worker now retries transient bookkeeping failures in place while holding its parse permit.
+If the write cannot be confirmed after the bounded retries, the decoder does not run and the
+archived upload remains pending for startup recovery. Resume tests use separate migrated databases.
 
-Local verification: formatting and 23 locked replay/stats tests passed, including normal fixture
-coverage, MPQ stream parity, and count, nesting, and decompression limit checks. The upstream
-MPQ archive-table parser still needs hardening. GitHub CI covers the server database tests.
+Local verification in `storm-dev:latest` with disposable PostgreSQL 17: formatting and strict
+workspace Clippy passed; workspace tests: 579 passed, 0 failed, 11 ignored. The accepted-upload
+regression recovered from an injected PostgreSQL failure without restart, and the startup
+recovery and scouting isolation tests passed in the same run. All 21 MPQ streams from the three
+committed replays matched nom-mpq byte for byte. Release smoke benchmark: decode + stats median
+78.9 ms (p95 104.0 ms, three replays). The Python heroprotocol cross-check was not run offline;
+the upstream MPQ archive-table parser still needs hardening.
 
 ## Removed the Jarvis/Redis event emitter (2026-11-22)
 

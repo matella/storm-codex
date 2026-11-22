@@ -19,10 +19,12 @@ Crate: `crates/storm-replay` (public library, MIT). Showcase: its `README.md`.
   - `versioned.rs` rejects struct/array counts greater than the remaining bytes and grows decoded
     collections only when values are read. `bitpacked.rs` bounds bitarray allocation by input size.
   - Skipping unknown fields (versioned) is limited to 64 nested levels (`MAX_SKIP_DEPTH`).
-  - **Zip-bomb guard**: embedded files are read by `mpq.rs` (port of nom-mpq's
-    `read_mpq_file_sector`, bounds-checked) and inflated through a `Read::take` budget of
-    `MAX_STREAM_BYTES` = **256 MiB per stream**; a larger declared or actual decompressed size is
-    `Error::MissingStream`. nom-mpq still parses the archive tables. Real streams are a few MB.
+  - **MPQ stream bounds**: `mpq.rs` rejects declared sizes above `MAX_STREAM_BYTES` (**256 MiB
+    per stream**) and validates sector offsets and lengths. A full sector must decode to the
+    archive's sector size; the final sector must decode to the remaining declared bytes. Raw
+    bytes must match their expected length too. Decoding writes directly into one bounded output
+    buffer, with a one-byte probe for overlong output. Length mismatches are `Error::MissingStream`.
+    nom-mpq still parses the archive tables. Real streams are a few MB.
 
 ## Chunked decoding (`StreamDecoder`)
 
