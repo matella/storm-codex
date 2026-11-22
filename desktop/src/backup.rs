@@ -674,7 +674,14 @@ pub fn recover_import(data: &DataDir, db: &dyn crate::supervise::Db) -> Result<(
     let journal = root.join(IMPORT_JOURNAL);
     let staged = db.staging_exists().map_err(|e| e.to_string())?;
     let archive = data.archive();
-    if journal.exists() {
+    // Matches the pending-import guard in `import_into_with`: any stat error other than
+    // not-found is treated the same as "a journal exists" so the two never disagree.
+    let journal_exists = match std::fs::symlink_metadata(&journal) {
+        Ok(_) => true,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => false,
+        Err(e) => return Err(format!("cannot check for a pending backup import: {e}")),
+    };
+    if journal_exists {
         if staged {
             unswap_dir(&archive).map_err(|e| e.to_string())?;
             remove_file_if_exists(&journal)?;

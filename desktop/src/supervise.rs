@@ -1098,6 +1098,8 @@ mod tests {
             stack.stop_with(StopBudget::SessionEnd),
             Err(StopError::Server(_))
         ));
+        // Postgres is only stopped once the server is confirmed down.
+        assert!(!entries(&log).contains(&"db.stop".to_string()));
         stack.stop_with(StopBudget::SessionEnd).expect("retry");
         assert_eq!(
             entries(&log)

@@ -321,6 +321,9 @@ fresh migrated cluster → import.
   `WM_QUERYENDSESSION` on, every stop uses the `SessionEnd` budget (cleared if the session end
   is cancelled).
 - **Serialized stop attempts (`lifecycle.rs`).** Other callers wait for the active attempt.
+  A failed stop only confirms Postgres is left running if the server itself was confirmed down
+  first; if the server kill also fails, Postgres is left running too and is recovered the same
+  way as a hard kill of the shell (`Postgres::start` finds it is ours on the next launch).
   A failed attempt retains the stack for retry; a failed server stop retains the child handle
   and does not proceed to Postgres. The in-app updater requires a confirmed stop before handing
   off to the installer. A stop requested while the stack
