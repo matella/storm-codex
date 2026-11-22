@@ -1,18 +1,52 @@
 //! REST routes of the draft. Each mutation takes the write-lock, persists, then broadcasts `draft.updated`
-//! on the WS (the clients refetch `GET /api/draft`). Open mode (local self-hosting), no auth.
-use crate::draft::{store, DraftState, Format, Side, TeamInfo};
+//! on the WS (the clients refetch `GET /api/draft`). Write failure → `500 persist_failed` (R24, like
+//! cast: the state stays applied in memory and is broadcast). Open mode (local self-hosting), no auth.
+use crate::draft::{DraftState, Format, Side, TeamInfo};
 use crate::AppState;
 use axum::{extract::State, http::StatusCode, Json};
 use serde::Deserialize;
 use serde_json::{json, Value as J};
+use std::sync::atomic::Ordering;
 
-/// Persists the current state + broadcasts the real-time event.
-pub(crate) async fn persist(s: &AppState) {
-    let snapshot = { s.draft.read().await.clone() };
-    if let Err(e) = store::save(&s.db, &snapshot).await {
+type Resp = (StatusCode, Json<J>);
+
+/// Persists the current state + broadcasts the real-time event (always, even if the write fails:
+/// the in-memory state has changed). The snapshot and its version are taken together under the read
+/// lock — no mutation can run in between, concurrent readers copy the same state — so versions follow
+/// the order of the states; the single saver task (`store::spawn_saver`) then never lets an older
+/// snapshot overwrite a newer one, whatever order concurrent persists reach it in. Write error →
+/// `Err` (the routes answer `500 persist_failed`, R24).
+pub(crate) async fn persist(s: &AppState) -> Result<(), sqlx::Error> {
+    let (snapshot, v) = {
+        let d = s.draft.read().await;
+        let v = s.draft_version.fetch_add(1, Ordering::SeqCst) + 1;
+        (d.clone(), v)
+    };
+    let res = save_versioned(s, snapshot, v).await;
+    if let Err(e) = &res {
         tracing::error!("draft save: {e}");
     }
     let _ = s.events.send(json!({ "type": "draft.updated" }));
+    res
+}
+
+/// Hands `snapshot` (version `v`) to the saver task and waits for its verdict.
+async fn save_versioned(s: &AppState, snapshot: DraftState, v: u64) -> Result<(), sqlx::Error> {
+    let gone = || sqlx::Error::Protocol("draft saver task ended".into());
+    let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+    if s.draft_save_tx.send((snapshot, v, reply_tx)).await.is_err() {
+        // Saver task gone (shutdown): an unpersisted write is a failure (R24), never a silent success.
+        return Err(gone());
+    }
+    reply_rx.await.unwrap_or_else(|_| Err(gone()))
+}
+
+/// R24: the database write failed — state applied in memory and broadcast, but not persisted.
+pub(crate) fn persist_failed() -> Resp {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "error": "persist_failed" })),
+    )
 }
 
 /// Format imposed by the cast series when it is active (`None` otherwise). The cast lock is
@@ -22,7 +56,7 @@ pub(crate) async fn series_format(s: &AppState) -> Option<Format> {
     c.active.then_some(c.format)
 }
 
-fn series_active() -> (StatusCode, Json<J>) {
+fn series_active() -> Resp {
     (
         StatusCode::CONFLICT,
         Json(json!({ "error": "series_active" })),
@@ -54,7 +88,10 @@ pub struct ConfigBody {
 ///
 /// Active cast series: teams, nicknames, Bo (copied from the series) and format belong to the
 /// series — the body's `blue`/`red`/`bo` are ignored and `format` forced; map and first_pick stay free.
-pub async fn config(State(s): State<AppState>, Json(b): Json<ConfigBody>) -> Json<DraftState> {
+pub async fn config(
+    State(s): State<AppState>,
+    Json(b): Json<ConfigBody>,
+) -> Result<Json<DraftState>, Resp> {
     let forced = series_format(&s).await;
     let prev = { s.draft.read().await.clone() };
     let mut d = DraftState::new(forced.unwrap_or(b.format), b.first_pick, b.map);
@@ -79,8 +116,8 @@ pub async fn config(State(s): State<AppState>, Json(b): Json<ConfigBody>) -> Jso
         ..prev.replay
     };
     *s.draft.write().await = d;
-    persist(&s).await;
-    get_draft(State(s)).await
+    persist(&s).await.map_err(|_| persist_failed())?;
+    Ok(get_draft(State(s)).await)
 }
 
 #[derive(Deserialize)]
@@ -89,13 +126,13 @@ pub struct HeroBody {
 }
 
 /// POST /api/draft/action — assigns a hero to the current step.
-pub async fn action(State(s): State<AppState>, Json(b): Json<HeroBody>) -> (StatusCode, Json<J>) {
+pub async fn action(State(s): State<AppState>, Json(b): Json<HeroBody>) -> Resp {
     let res = { s.draft.write().await.apply(&b.hero) };
     match res {
-        Ok(()) => {
-            persist(&s).await;
-            (StatusCode::OK, Json(json!({ "ok": true })))
-        }
+        Ok(()) => match persist(&s).await {
+            Ok(()) => (StatusCode::OK, Json(json!({ "ok": true }))),
+            Err(_) => persist_failed(),
+        },
         Err(e) => (
             StatusCode::CONFLICT,
             Json(json!({ "error": format!("{e:?}") })),
@@ -104,13 +141,13 @@ pub async fn action(State(s): State<AppState>, Json(b): Json<HeroBody>) -> (Stat
 }
 
 /// POST /api/draft/undo
-pub async fn undo(State(s): State<AppState>) -> (StatusCode, Json<J>) {
+pub async fn undo(State(s): State<AppState>) -> Resp {
     let res = { s.draft.write().await.undo() };
     match res {
-        Ok(()) => {
-            persist(&s).await;
-            (StatusCode::OK, Json(json!({ "ok": true })))
-        }
+        Ok(()) => match persist(&s).await {
+            Ok(()) => (StatusCode::OK, Json(json!({ "ok": true }))),
+            Err(_) => persist_failed(),
+        },
         Err(e) => (
             StatusCode::CONFLICT,
             Json(json!({ "error": format!("{e:?}") })),
@@ -119,10 +156,10 @@ pub async fn undo(State(s): State<AppState>) -> (StatusCode, Json<J>) {
 }
 
 /// POST /api/draft/reset
-pub async fn reset(State(s): State<AppState>) -> Json<DraftState> {
+pub async fn reset(State(s): State<AppState>) -> Result<Json<DraftState>, Resp> {
     s.draft.write().await.reset();
-    persist(&s).await;
-    get_draft(State(s)).await
+    persist(&s).await.map_err(|_| persist_failed())?;
+    Ok(get_draft(State(s)).await)
 }
 
 #[derive(Deserialize)]
@@ -135,10 +172,10 @@ pub struct UnavailableBody {
 pub async fn unavailable(
     State(s): State<AppState>,
     Json(b): Json<UnavailableBody>,
-) -> Json<DraftState> {
+) -> Result<Json<DraftState>, Resp> {
     s.draft.write().await.set_unavailable(&b.hero, b.value);
-    persist(&s).await;
-    get_draft(State(s)).await
+    persist(&s).await.map_err(|_| persist_failed())?;
+    Ok(get_draft(State(s)).await)
 }
 
 #[derive(Deserialize)]
@@ -151,7 +188,7 @@ pub struct ScoreBody {
 pub async fn score(
     State(s): State<AppState>,
     Json(b): Json<ScoreBody>,
-) -> Result<Json<DraftState>, (StatusCode, Json<J>)> {
+) -> Result<Json<DraftState>, Resp> {
     if series_format(&s).await.is_some() {
         return Err(series_active());
     }
@@ -159,7 +196,7 @@ pub async fn score(
         let mut d = s.draft.write().await;
         d.score = [b.blue, b.red];
     }
-    persist(&s).await;
+    persist(&s).await.map_err(|_| persist_failed())?;
     Ok(get_draft(State(s)).await)
 }
 
@@ -174,7 +211,7 @@ pub struct TeamsBody {
 pub async fn teams(
     State(s): State<AppState>,
     Json(b): Json<TeamsBody>,
-) -> Result<Json<DraftState>, (StatusCode, Json<J>)> {
+) -> Result<Json<DraftState>, Resp> {
     if series_format(&s).await.is_some() {
         return Err(series_active());
     }
@@ -183,22 +220,22 @@ pub async fn teams(
         d.blue = b.blue;
         d.red = b.red;
     }
-    persist(&s).await;
+    persist(&s).await.map_err(|_| persist_failed())?;
     Ok(get_draft(State(s)).await)
 }
 
 /// POST /api/draft/series/next — closes the current game, accumulates the fearless bans, restarts.
-pub async fn series_next(State(s): State<AppState>) -> Json<DraftState> {
+pub async fn series_next(State(s): State<AppState>) -> Result<Json<DraftState>, Resp> {
     s.draft.write().await.start_next_game();
-    persist(&s).await;
-    get_draft(State(s)).await
+    persist(&s).await.map_err(|_| persist_failed())?;
+    Ok(get_draft(State(s)).await)
 }
 
 /// POST /api/draft/series/new — new series (clears the history + the series bans).
-pub async fn series_new(State(s): State<AppState>) -> Json<DraftState> {
+pub async fn series_new(State(s): State<AppState>) -> Result<Json<DraftState>, Resp> {
     s.draft.write().await.new_series();
-    persist(&s).await;
-    get_draft(State(s)).await
+    persist(&s).await.map_err(|_| persist_failed())?;
+    Ok(get_draft(State(s)).await)
 }
 
 #[cfg(test)]
@@ -304,5 +341,73 @@ mod tests {
             ),
             (Some("fearless"), Some("Mine"), Some(3))
         );
+    }
+
+    /// M6: concurrent mutations must leave the **latest** state in `draft_live`, never the snapshot
+    /// of an older mutation that happened to be written last. Runs against a private copy of
+    /// `draft_live` (own schema via `search_path`) so the other tests writing the shared singleton
+    /// row cannot interfere; many rounds of concurrent writers make the old write race show up.
+    #[tokio::test]
+    async fn concurrent_draft_mutations_persist_the_latest_state() {
+        let Some(base) = test_state(None).await else {
+            return;
+        };
+        let (db, schema) = crate::draft::store::test_support::private_draft_live(&base.db).await;
+        let state = crate::test_app_state((*base.cfg).clone(), db);
+        let mut stale = 0;
+        for round in 0..20u8 {
+            let writers: Vec<_> = (0..16u8)
+                .map(|i| {
+                    let st = state.clone();
+                    tokio::spawn(async move {
+                        call(
+                            &st,
+                            "POST",
+                            "/api/draft/score",
+                            Some(json!({"blue": i, "red": round})),
+                        )
+                        .await
+                        .0
+                    })
+                })
+                .collect();
+            for w in writers {
+                assert_eq!(w.await.unwrap(), StatusCode::OK);
+            }
+            let mem = state.draft.read().await.score;
+            let saved = crate::draft::store::load(&state.db).await.unwrap().score;
+            if saved != mem {
+                stale += 1;
+            }
+        }
+        crate::draft::store::test_support::drop_private(&base.db, &schema).await;
+        assert_eq!(
+            stale, 0,
+            "rounds where draft_live kept an older snapshot than memory"
+        );
+    }
+
+    /// M6 / R24 (same contract as cast): a failed `draft_live` write answers
+    /// `500 persist_failed`; the mutation stays applied in memory and `draft.updated` is broadcast.
+    #[tokio::test]
+    async fn failed_draft_save_answers_500_persist_failed_but_applies_and_broadcasts() {
+        let Some(state) = test_state(None).await else {
+            return;
+        };
+        state.db.close().await;
+        let mut rx = state.events.subscribe();
+        let (st, v) = call(
+            &state,
+            "POST",
+            "/api/draft/score",
+            Some(json!({"blue": 2, "red": 1})),
+        )
+        .await;
+        assert_eq!(
+            (st, v["error"].as_str()),
+            (StatusCode::INTERNAL_SERVER_ERROR, Some("persist_failed"))
+        );
+        assert_eq!(state.draft.read().await.score, [2, 1]);
+        assert_eq!(rx.recv().await.unwrap(), json!({"type": "draft.updated"}));
     }
 }

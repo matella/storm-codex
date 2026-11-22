@@ -338,32 +338,7 @@ async fn run_parse(
                 tracing::error!("upload {upload_id}: parsed status not written: {e}");
             }
 
-            // If this match is the game of the open lobby, the companion switches to debrief. Lock
-            // held for the read (`lier_match` queries `match_players` under this lock), the
-            // mutation and the persistence (same pattern as `muter` in `lobby/api.rs`): the
-            // WS broadcast happens after the explicit `drop`.
-            let mut lobby_lie = false;
-            let mut guard = state.lobby.write().await;
-            if let Some(st) = guard.as_mut() {
-                if crate::lobby::lier_match(&state.db, st, match_id).await {
-                    if let Err(e) = crate::lobby::store::save(&state.db, st).await {
-                        tracing::error!("lobby save: {e}");
-                    }
-                    // pending rank readings of this session (the lobby hash = session id)
-                    if let Err(e) =
-                        crate::rank::attach_to_match(&state.db, &st.content_hash, match_id).await
-                    {
-                        tracing::error!("rank attach: {e}");
-                    }
-                    lobby_lie = true;
-                }
-            }
-            drop(guard);
-            if lobby_lie {
-                let _ = state
-                    .events
-                    .send(serde_json::json!({ "type": "lobby.updated" }));
-            }
+            link_lobby(&state, match_id).await;
 
             // real-time push (milestone 3 T5)
             let _ = state.events.send(serde_json::json!({
@@ -391,6 +366,44 @@ async fn run_parse(
             }
         }
     }
+}
+
+/// If `match_id` is the game of the open lobby, the companion switches to debrief. The matching
+/// (`lier_match` reads `match_players`) runs on a copy, **outside** the lobby lock, so `GET /api/lobby`,
+/// `GET /api/live` and the lobby inputs are never held behind it. The link is then applied under a
+/// brief write lock as a compare-and-swap: only if the lobby has the same `content_hash` and is still
+/// unlinked. A replacement with a different hash is never stamped with this match. The persistence stays under that lock (one upsert), like every
+/// other `lobby_live` write (`muter` in `lobby/api.rs`): saving outside it could let this snapshot
+/// overwrite a concurrent hero/map/team input. Rank readings are attached and `lobby.updated` is
+/// broadcast after the lock is released.
+async fn link_lobby(state: &AppState, match_id: i64) {
+    let Some(mut candidate) = state.lobby.read().await.clone() else {
+        return;
+    };
+    if !crate::lobby::lier_match(&state.db, &mut candidate, match_id).await {
+        return;
+    }
+    let session = {
+        let mut guard = state.lobby.write().await;
+        let Some(st) = guard
+            .as_mut()
+            .filter(|st| st.content_hash == candidate.content_hash && st.match_id.is_none())
+        else {
+            return;
+        };
+        st.match_id = Some(match_id);
+        if let Err(e) = crate::lobby::store::save(&state.db, st).await {
+            tracing::error!("lobby save: {e}");
+        }
+        st.content_hash.clone()
+    };
+    // pending rank readings of this session (the lobby hash = session id)
+    if let Err(e) = crate::rank::attach_to_match(&state.db, &session, match_id).await {
+        tracing::error!("rank attach: {e}");
+    }
+    let _ = state
+        .events
+        .send(serde_json::json!({ "type": "lobby.updated" }));
 }
 
 async fn mark_failed(db: &sqlx::PgPool, upload_id: i64, class: &str, msg: &str) {
@@ -794,5 +807,150 @@ mod resume_tests {
         assert_eq!(upload_row(&state.db, exhausted).await, given_up);
         assert_eq!(upload_row(&state.db, retried).await, parsed);
         drop_db(state.db, &db_name).await;
+    }
+}
+
+/// M5 (lock across I/O, round 2): linking a parsed match to the open lobby must not hold the lobby
+/// write lock across its database round trips, and must not stamp a lobby that was replaced while
+/// the link was being computed. The linking query is held back deterministically by an
+/// `ACCESS EXCLUSIVE` lock on `match_players` taken from another connection.
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod lobby_link_tests {
+    use super::link_lobby;
+    use crate::api_tests::{call, test_state};
+    use crate::lobby::{LobbyPlayerState, LobbyState};
+    use crate::players::testutil::{insert_match, row, uid};
+    use axum::http::StatusCode;
+    use std::time::Duration;
+
+    fn lobby(tags: &[String], hash: &str) -> LobbyState {
+        let mut st = LobbyState::unreadable(chrono::Utc::now().to_rfc3339());
+        st.status = None;
+        st.content_hash = hash.into();
+        st.players = tags
+            .iter()
+            .map(|t| {
+                let (name, disc) = t.split_once('#').unwrap();
+                LobbyPlayerState {
+                    name: name.into(),
+                    discriminant: disc.into(),
+                    battletag: t.clone(),
+                    team: None,
+                    team_manual: false,
+                    toon_handle: None,
+                    history: None,
+                }
+            })
+            .collect();
+        st
+    }
+
+    /// A match whose two players carry the BattleTags returned (fresh names: shared database).
+    async fn tagged_match(db: &sqlx::PgPool) -> (i64, Vec<String>) {
+        let (a, b) = (format!("a{}", &uid()[..10]), format!("b{}", &uid()[..10]));
+        let (ta, tb) = (format!("toon-{}", uid()), format!("toon-{}", uid()));
+        let id = insert_match(
+            db,
+            None,
+            &[row(&ta, &a, 0, "Valla"), row(&tb, &b, 1, "Uther")],
+        )
+        .await;
+        sqlx::query(
+            "UPDATE match_players SET data = data || '{\"tag\":\"1234\"}' WHERE match_id = $1",
+        )
+        .bind(id)
+        .execute(db)
+        .await
+        .unwrap();
+        (id, vec![format!("{a}#1234"), format!("{b}#1234")])
+    }
+
+    /// Blocks `lier_match`'s read of `match_players` until the returned transaction ends, then
+    /// waits until a backend is actually parked on that lock.
+    async fn hold_match_players(db: &sqlx::PgPool) -> sqlx::Transaction<'static, sqlx::Postgres> {
+        let mut tx = db.begin().await.unwrap();
+        sqlx::query("LOCK TABLE match_players IN ACCESS EXCLUSIVE MODE")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        tx
+    }
+
+    async fn wait_link_query_blocked(db: &sqlx::PgPool) {
+        for _ in 0..500 {
+            let n: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM pg_stat_activity
+                 WHERE wait_event_type = 'Lock' AND query LIKE '%name || ''#'' || (data ->> ''tag'')%'",
+            )
+            .fetch_one(db)
+            .await
+            .unwrap();
+            if n > 0 {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("the lobby link query never reached the match_players lock");
+    }
+
+    #[tokio::test]
+    async fn lobby_reads_are_not_blocked_while_a_match_is_being_linked() {
+        let Some(state) = test_state(None).await else {
+            return;
+        };
+        let (match_id, tags) = tagged_match(&state.db).await;
+        *state.lobby.write().await = Some(lobby(&tags, &format!("h-{}", uid())));
+        let tx = hold_match_players(&state.db).await;
+        let link = {
+            let st = state.clone();
+            tokio::spawn(async move { link_lobby(&st, match_id).await })
+        };
+        wait_link_query_blocked(&state.db).await;
+        let read = tokio::time::timeout(
+            Duration::from_secs(2),
+            call(&state, "GET", "/api/lobby", None),
+        )
+        .await;
+        tx.rollback().await.unwrap();
+        link.await.unwrap();
+        let (st, _) = read.expect("GET /api/lobby blocked behind the lobby link's DB round trips");
+        assert_eq!(st, StatusCode::OK);
+        // the link still lands once the database answers
+        assert_eq!(
+            state.lobby.read().await.as_ref().unwrap().match_id,
+            Some(match_id)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_lobby_replaced_during_the_link_is_not_stamped() {
+        let Some(state) = test_state(None).await else {
+            return;
+        };
+        let (match_id, tags) = tagged_match(&state.db).await;
+        *state.lobby.write().await = Some(lobby(&tags, &format!("old-{}", uid())));
+        let tx = hold_match_players(&state.db).await;
+        let link = {
+            let st = state.clone();
+            tokio::spawn(async move { link_lobby(&st, match_id).await })
+        };
+        wait_link_query_blocked(&state.db).await;
+        // a new lobby blob (same ten players, next game) arrives while the link is in flight
+        let new_hash = format!("new-{}", uid());
+        let replaced = tokio::time::timeout(Duration::from_secs(2), async {
+            *state.lobby.write().await = Some(lobby(&tags, &new_hash));
+        })
+        .await;
+        tx.rollback().await.unwrap();
+        link.await.unwrap();
+        replaced.expect("lobby replacement blocked behind the lobby link's DB round trips");
+        let g = state.lobby.read().await;
+        let cur = g.as_ref().unwrap();
+        assert_eq!(cur.content_hash, new_hash);
+        assert_eq!(
+            cur.match_id, None,
+            "the replaced lobby must not inherit the old link"
+        );
     }
 }
