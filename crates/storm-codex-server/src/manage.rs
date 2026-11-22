@@ -47,9 +47,24 @@ pub async fn get_settings(State(s): State<AppState>) -> Result<Json<J>, (StatusC
 #[derive(Deserialize)]
 pub struct SettingsPatch {
     operator_names: Vec<String>,
+    /// Jarvis butler brief voice (`docs/specs/2026-11-21-butler-brief-full-fledged.md`):
+    /// `"fr"` (default) / `"en"` / `"off"`, case-insensitive. Omitted keeps the current value.
+    #[serde(default)]
+    brief_voice: Option<String>,
 }
 
-/// PUT /api/admin/settings (admin) — updates the list of operator names.
+fn normalize_brief_voice(raw: &str) -> Option<&'static str> {
+    match raw.trim().to_lowercase().as_str() {
+        "fr" => Some("fr"),
+        "en" => Some("en"),
+        "off" => Some("off"),
+        _ => None,
+    }
+}
+
+/// PUT /api/admin/settings (admin) — updates the list of operator names and, when present, the
+/// Jarvis butler brief voice (`brief_voice`: `fr` / `en` / `off`, case-insensitive; `400` on an
+/// unknown value; omitted leaves the stored value untouched).
 pub async fn put_settings(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -66,8 +81,18 @@ pub async fn put_settings(
             names.push(n);
         }
     }
+    let voice = match b.brief_voice.as_deref().map(normalize_brief_voice) {
+        None => None,
+        Some(Some(v)) => Some(v),
+        Some(None) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "brief_voice must be fr, en or off"})),
+            );
+        }
+    };
     let value = serde_json::to_value(&names).unwrap_or_else(|_| serde_json::json!([]));
-    match sqlx::query(
+    if let Err(e) = sqlx::query(
         "INSERT INTO app_settings (key, value) VALUES ('operator_names', $1)
          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
     )
@@ -75,15 +100,25 @@ pub async fn put_settings(
     .execute(&s.db)
     .await
     {
-        Ok(_) => (
-            StatusCode::OK,
-            Json(serde_json::json!({"operator_names": names})),
-        ),
-        Err(e) => {
-            let (c, j) = db_err(e);
-            (c, j)
+        return db_err(e);
+    }
+    if let Some(voice) = voice {
+        let voice_value = serde_json::to_value(voice).unwrap_or_else(|_| serde_json::json!("fr"));
+        if let Err(e) = sqlx::query(
+            "INSERT INTO app_settings (key, value) VALUES ('brief_voice', $1)
+             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+        )
+        .bind(&voice_value)
+        .execute(&s.db)
+        .await
+        {
+            return db_err(e);
         }
     }
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({"operator_names": names})),
+    )
 }
 
 /// PUT /api/admin/minimap-anchors (admin) — persists the minimap calibration anchors per map

@@ -2,7 +2,9 @@
 //! Port of `web/src/pages/Ticker.tsx`, `Widget.tsx` and `Queue.tsx`; the computations live in
 //! `storm_web_core::session` (tested natively).
 
-use crate::frame::{operator_names, provide_dim, recent_matches, Avatar, OverlayFrame};
+use crate::frame::{
+    brief_voice, operator_names, provide_dim, recent_matches, Avatar, OverlayFrame,
+};
 use leptos::prelude::*;
 use storm_web_core::{net, route::Anchor, session::*};
 use storm_web_sources::options::WidgetOptions;
@@ -151,7 +153,21 @@ pub fn widget_content(
             let (k, a, d) = me.map(kad).unwrap_or((0, 0, 0));
             let td = me.and_then(|p| p.takedowns).unwrap_or(0);
             let hero = me.and_then(|p| p.hero.clone());
-            let phrase = jarvis_phrase(won, hero.as_deref(), d, td, 0);
+            // `/widget` is unaffected by the trigger expansion (spec: `/queue` only) — same Fr-only,
+            // no-mvp/nemesis/best-kda/map behaviour as before, just adapted to the new signature.
+            let phrase = jarvis_phrase(
+                won,
+                hero.as_deref(),
+                d,
+                td,
+                0,
+                false,
+                false,
+                false,
+                None,
+                BriefVoice::Fr,
+            )
+            .unwrap_or_default();
             Some(WidgetData {
                 won,
                 kp: me.and_then(|p| kill_participation(&players, p)),
@@ -254,16 +270,19 @@ struct QueueData {
 fn standalone_queue() -> impl IntoView {
     provide_dim();
     let names = operator_names().read_only();
+    let voice = brief_voice().read_only();
     let matches = recent_matches(200).read_only();
-    queue_content(names, matches)
+    queue_content(names, matches, voice)
 }
 
 pub fn queue_content(
     names: ReadSignal<Vec<String>>,
     matches: ReadSignal<Vec<MatchSummary>>,
+    voice: ReadSignal<BriefVoice>,
 ) -> impl IntoView {
     let data = Memo::new(move |_| {
         let names = names.get();
+        let voice = voice.get();
         matches.with(|ms| {
             let all = operator_games(ms, &names, net::local_day);
             let (games, is_today) = session_games(&all, &net::today_local());
@@ -272,6 +291,13 @@ pub fn queue_content(
             let results: Vec<bool> = games.iter().map(|g| g.won).collect();
             let streak = current_streak(&results);
             let n = games.len();
+            // `/queue` has no live lobby subscription (that is `/nemesis`'s `GET /api/lobby`
+            // feed) and no persisted "current nemesis" toon, so threading a real nemesis check
+            // through here would mean adding a new live dependency just for this one line — per
+            // the spec, the trigger degrades to always-false instead (the toon-intersection
+            // logic itself, `beat_nemesis`, is implemented and unit tested for when a nemesis
+            // toon becomes available here, see docs/specs/2026-11-21-butler-brief-full-fledged.md).
+            let best_kda = is_session_best_kda(&games);
             QueueData {
                 label: if is_today || n == 0 {
                     "TODAY'S SESSION"
@@ -316,13 +342,19 @@ pub fn queue_content(
                     .take(10)
                     .collect(),
                 totals: session_totals(&games),
-                jarvis: games.first().map(|g| {
+                jarvis: games.first().and_then(|g| {
+                    let mvp = award_label(g.me.award.as_deref()).is_some_and(|a| a.mvp);
                     jarvis_phrase(
                         g.won,
                         g.me.hero.as_deref(),
                         g.me.deaths.unwrap_or(0),
                         g.me.takedowns.unwrap_or(0),
                         streak,
+                        mvp,
+                        beat_nemesis(g.won, &[], None),
+                        best_kda,
+                        g.m.map.as_deref(),
+                        voice,
                     )
                 }),
             }

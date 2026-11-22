@@ -149,6 +149,8 @@ pub fn Admin() -> impl IntoView {
     let new_token = RwSignal::new(None::<String>);
     let op_names = RwSignal::new(None::<String>);
     let op_msg = RwSignal::new(None::<String>);
+    let brief_voice = RwSignal::new(None::<String>);
+    let brief_msg = RwSignal::new(None::<String>);
     let operator = use_operator();
     // the typed value if touched, otherwise the loaded settings
     let op_value = move || {
@@ -165,6 +167,21 @@ pub fn Admin() -> impl IntoView {
                     })
                 })
                 .unwrap_or_default()
+        })
+    };
+    // same "typed draft, else loaded value" pattern as `op_value` — defaults to "fr" (the server's
+    // default too) so a fresh install shows the current behaviour pre-selected.
+    let brief_voice_value = move || {
+        brief_voice.get().unwrap_or_else(|| {
+            settings
+                .get()
+                .and_then(Result::ok)
+                .and_then(|s| {
+                    s.get("brief_voice")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                })
+                .unwrap_or_else(|| "fr".to_string())
         })
     };
     let save_operator = move || {
@@ -191,6 +208,35 @@ pub fn Admin() -> impl IntoView {
             };
             op_msg.set(Some(m));
             net::after_ms(5000, move || op_msg.set(None));
+        });
+    };
+    let save_brief_voice = move || {
+        if token.get_untracked().is_empty() && !admin_open() {
+            brief_msg.set(Some("⚠ enter the admin token above first".to_string()));
+            return;
+        }
+        // the same PUT always re-sends the current operator names (the server treats the two
+        // fields independently, but the admin page has a single Save-all contract for this call).
+        let names: Vec<String> = op_value()
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        let voice = brief_voice_value();
+        let body = serde_json::json!({ "operator_names": names, "brief_voice": voice }).to_string();
+        spawn_local(async move {
+            let m = match net::write("PUT", "/api/admin/settings", Some(body), None).await {
+                Ok((s, _)) if (200..300).contains(&s) => {
+                    settings.refetch();
+                    "✓ saved".to_string()
+                }
+                Ok((401 | 403, _)) => "✗ unauthorized — check the admin token".to_string(),
+                Ok((400, _)) => "✗ invalid voice".to_string(),
+                Ok((s, _)) => format!("✗ save failed (HTTP {s})"),
+                Err(_) => "✗ network error — server unreachable".to_string(),
+            };
+            brief_msg.set(Some(m));
+            net::after_ms(5000, move || brief_msg.set(None));
         });
     };
 
@@ -354,6 +400,21 @@ pub fn Admin() -> impl IntoView {
                         view! { <div class="amsg" style=color>{m}</div> }
                     })}
                     <p class="ahint">"Multiple accounts? Comma-separate them (e.g. matella, матella). Cyrillic / any UTF-8 is fine. Used everywhere (session, matches, widget) and by the Jarvis brief."</p>
+                    <div class="arow" style="margin-top: 14px">
+                        <span class="ds-label" style="margin: 0">"Jarvis brief voice"</span>
+                        <select class="ds-input" style="width: 140px" prop:value=brief_voice_value
+                            on:change=move |e| brief_voice.set(Some(event_target_value(&e)))>
+                            <option value="fr" selected=move || brief_voice_value() == "fr">"Français"</option>
+                            <option value="en" selected=move || brief_voice_value() == "en">"English"</option>
+                            <option value="off" selected=move || brief_voice_value() == "off">"Off"</option>
+                        </select>
+                        <button class="ds-btn primary" on:click=move |_| save_brief_voice()>"Save"</button>
+                    </div>
+                    {move || brief_msg.get().map(|m| {
+                        let color = if m.starts_with('✓') { "color: var(--win)" } else { "color: var(--loss-soft)" };
+                        view! { <div class="amsg" style=color>{m}</div> }
+                    })}
+                    <p class="ahint">"Voice of the post-game line on the \"/queue\" OBS source (\"/widget\" is unaffected, still French). \"Off\" removes the line entirely. Default: Français."</p>
                 </div>
             </Sec>
 

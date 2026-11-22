@@ -62,7 +62,10 @@ fn start_view_transition_fn() -> Option<js_sys::Function> {
 /// click listener on the app root runs before the router's own delegated click handling; when the API is
 /// unsupported or motion is reduced, it does nothing and the normal click (and the router's handling of it)
 /// proceeds unchanged.
-fn view_transition_click(ev: web_sys::MouseEvent, navigate: impl Fn(&str, leptos_router::NavigateOptions)) {
+fn view_transition_click(
+    ev: web_sys::MouseEvent,
+    navigate: impl Fn(&str, leptos_router::NavigateOptions),
+) {
     if ev.default_prevented()
         || ev.button() != 0
         || ev.ctrl_key()
@@ -194,7 +197,8 @@ pub fn Layout() -> impl IntoView {
         let navigate = navigate.clone();
         let cb = wasm_bindgen::closure::Closure::wrap(Box::new(move |ev: web_sys::MouseEvent| {
             view_transition_click(ev, navigate.clone())
-        }) as Box<dyn FnMut(web_sys::MouseEvent)>);
+        })
+            as Box<dyn FnMut(web_sys::MouseEvent)>);
         let _ = target.add_event_listener_with_callback_and_bool(
             "click",
             cb.as_ref().unchecked_ref(),

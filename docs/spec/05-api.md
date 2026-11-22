@@ -34,7 +34,7 @@ routes marked 🔒 require `Authorization: Bearer` (personal upload token for up
 | `GET /api/dim/heroes` · `GET /api/dim/talents` | replicated reference data |
 | `GET /api/dim/hero-attributes` | 4-letter hero attribute code → canonical parser name (`heroAttribute` from `attr.json`, storm-stats); static, no DB. Resolves draft bans, stored raw (`match.bans[t][i].hero` = `Crus`, `DEAT`…) — `dim_heroes` does not carry the `attributeId` |
 | `GET /api/trends` | winrate/duration per build/patch |
-| `GET /api/settings` | application settings (including `operator_names`) |
+| `GET /api/settings` | application settings (including `operator_names` and `brief_voice`: `fr` (default) / `en` / `off`, the Jarvis butler brief voice on `/queue`) |
 | `GET /api/goal/progress` | daily goal tracker (`docs/specs/2026-11-20-streamer-widgets.md`, widget 7), recomputed on every read, nothing stored: `{kind, target, done, reset_at}`; all four `null`/`0` when no goal is set. `kind` ∈ `wins_today`/`games_today`, counted from the operator's perspective rows (same `app_settings.operator_names` / standalone `operator_toons` as `/api/trends`) within the box's local-midnight-to-local-midnight window; `reset_at` = that window's end, UTC ISO |
 
 ## Overlay layouts (`overlay_layout.rs`)
@@ -93,7 +93,7 @@ then records 35 ms, early leads 6 ms, player insights 75–100 ms, compare 12 ms
 
 | Route | Role |
 |---|---|
-| `PUT /api/admin/settings` | writes `app_settings` (e.g. `operator_names`) |
+| `PUT /api/admin/settings` | writes `app_settings`: `operator_names` (always sent) and, when present, `brief_voice` (`fr`/`en`/`off`, case-insensitive; omitted leaves the stored value unchanged; unknown value → `400`) |
 | `GET/PUT /api/admin/goal` | daily goal tracker: `GET` reads the current goal (`{kind, target}`, both `null` if none); `PUT {"kind","target"}` sets it (`kind` ∈ `wins_today`/`games_today`, `target` a positive integer, `400` otherwise); `PUT` with `kind` omitted/`null` clears it (idempotent). Single row (`app_goal`, `id=1`), upserted — never a second row |
 | `GET/POST /api/teams` · `PUT/DELETE /api/teams/{id}` | teams (+ `league` field) |
 | `GET/POST /api/collections` · `DELETE /api/collections/{id}` | match collections |
