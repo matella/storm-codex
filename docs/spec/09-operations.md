@@ -320,9 +320,10 @@ fresh migrated cluster → import.
   a hidden top-level window (a GUI process gets no console-control event); from
   `WM_QUERYENDSESSION` on, every stop uses the `SessionEnd` budget (cleared if the session end
   is cancelled).
-- **One stop, every caller waits (`lifecycle.rs`).** The stack is stopped once; any other caller
-  (startup failure, Quit, exit hooks, session end, which run on different threads) blocks until
-  that stop has finished, so the process never exits mid-stop. A stop requested while the stack
+- **Serialized stop attempts (`lifecycle.rs`).** Other callers wait for the active attempt.
+  A failed attempt retains the stack for retry; a failed server stop retains the child handle
+  and does not proceed to Postgres. The in-app updater requires a confirmed stop before handing
+  off to the installer. A stop requested while the stack
   is still starting waits for the start, then stops what was started, and the window is not
   opened.
 - **Hard kill of the shell.** The server is in a kill-on-close job object, so it dies with the

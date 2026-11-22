@@ -1,5 +1,12 @@
 # STATUS — read first, update last
 
+## Retain unconfirmed desktop shutdowns for retry
+
+A failed stop retains the stack and server child handle. A later caller retries instead of
+reporting that nothing is running, and PostgreSQL is stopped only after server exit is confirmed.
+Both shutdown regressions failed before the changes and passed after; the isolated Linux desktop
+harness passed 45 tests, with one real-Postgres round-trip ignored. No Windows installer run.
+
 ## Preserve pending backup import recovery
 
 Another restore is refused while an import journal remains, before removing working files or

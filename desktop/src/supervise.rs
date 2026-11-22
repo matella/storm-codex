@@ -529,18 +529,16 @@ impl Stack {
         if self.stopped {
             return Ok(());
         }
-        let server = self.stop_server(budget);
-        // Postgres is stopped even when the server stop reported an error: the server process
-        // is gone either way (killed), and leaving Postgres running helps nobody.
+        self.stop_server(budget)?;
         self.db.stop().map_err(StopError::Postgres)?;
         self.stopped = true;
-        server
+        Ok(())
     }
 
     /// Stops the server only (Postgres keeps running): `POST /api/standalone/shutdown`, wait
     /// for the exit until the budget's deadline (counted from before the request), then kill.
     pub fn stop_server(&mut self, budget: StopBudget) -> Result<(), StopError> {
-        let Some(mut server) = self.server.take() else {
+        let Some(server) = self.server.as_mut() else {
             return Ok(());
         };
         let (limit, io_timeout) = match budget {
@@ -556,13 +554,18 @@ impl Stack {
         let _ = self.host.request_shutdown(self.port, io_timeout.min(limit));
         loop {
             match server.try_wait() {
-                Ok(Some(_)) => return Ok(()),
+                Ok(Some(_)) => break,
                 Ok(None) if std::time::Instant::now() < deadline => {
                     std::thread::sleep(self.timings.poll)
                 }
-                _ => return server.kill().map_err(StopError::Server),
+                _ => {
+                    server.kill().map_err(StopError::Server)?;
+                    break;
+                }
             }
         }
+        self.server = None;
+        Ok(())
     }
 }
 
@@ -852,6 +855,7 @@ pub(crate) mod fakes {
         shutdown_requested: Arc<AtomicBool>,
         honours_shutdown: bool,
         exits_at_once: bool,
+        kill_fails_once: bool,
         killed: bool,
     }
 
@@ -864,6 +868,9 @@ pub(crate) mod fakes {
         }
         fn kill(&mut self) -> io::Result<()> {
             push(&self.log, "server.kill");
+            if std::mem::take(&mut self.kill_fails_once) {
+                return Err(io::Error::other("fake kill failure"));
+            }
             self.killed = true;
             Ok(())
         }
@@ -874,6 +881,7 @@ pub(crate) mod fakes {
         pub healthy: bool,
         pub honours_shutdown: bool,
         pub exits_at_once: bool,
+        pub kill_fails_once: bool,
         pub fail_stage: bool,
         pub fail_promote: bool,
         pub fail_promote_after_rename: bool,
@@ -891,6 +899,7 @@ pub(crate) mod fakes {
                 healthy: true,
                 honours_shutdown: true,
                 exits_at_once: false,
+                kill_fails_once: false,
                 fail_stage: false,
                 fail_promote: false,
                 fail_promote_after_rename: false,
@@ -931,6 +940,7 @@ pub(crate) mod fakes {
                 shutdown_requested: flag,
                 honours_shutdown: self.honours_shutdown,
                 exits_at_once: self.exits_at_once,
+                kill_fails_once: self.kill_fails_once,
                 killed: false,
             }))
         }
@@ -1072,6 +1082,30 @@ mod tests {
         // Idempotent.
         stack.stop().expect("stop again");
         assert_eq!(entries(&log).len(), 2);
+    }
+
+    #[test]
+    fn stop_retries_a_failed_server_kill_before_confirming_shutdown() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let log = Log::default();
+        let mut host = FakeHost::new(&log);
+        host.honours_shutdown = false;
+        host.kill_fails_once = true;
+        let (stack, _) = start(host, tmp.path());
+        let mut stack = stack.expect("start");
+        log.lock().expect("log").clear();
+        assert!(matches!(
+            stack.stop_with(StopBudget::SessionEnd),
+            Err(StopError::Server(_))
+        ));
+        stack.stop_with(StopBudget::SessionEnd).expect("retry");
+        assert_eq!(
+            entries(&log)
+                .iter()
+                .filter(|entry| *entry == "server.kill")
+                .count(),
+            2
+        );
     }
 
     #[test]
