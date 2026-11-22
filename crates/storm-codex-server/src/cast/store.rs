@@ -1,6 +1,9 @@
 //! Persistence of the cast series (singleton `cast_live`, id=1). Runtime queries, like `draft::store`.
 use super::Series;
 use sqlx::PgPool;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use tokio::sync::{mpsc, oneshot};
 
 /// Decodes a persisted state. `None` on any error (non-object, `players` array of the wrong
 /// length, unknown enum value…): startup must never fail.
@@ -58,4 +61,37 @@ pub async fn save(db: &PgPool, series: &Series) -> Result<(), sqlx::Error> {
     .execute(db)
     .await
     .map(|_| ())
+}
+
+/// One `save_versioned` request: a snapshot at version `v`, replying on `.2` once handled.
+pub type SaveRequest = (Series, u64, oneshot::Sender<Result<(), sqlx::Error>>);
+
+/// Spawns the single task that actually writes `cast_live`. Persistence of this singleton row
+/// is serialised by construction — one task, one write in flight at a time, processed strictly in
+/// the order requests arrive on the channel — instead of a `tokio::Mutex` guard held across the
+/// write's `.await`: callers hand off their snapshot and await a oneshot reply, so a slow DB round
+/// trip for one writer never holds a lock other callers must acquire just to compare a version
+/// number. `last_hint` lets callers skip the channel round trip entirely for an obviously-stale
+/// version (updated by this task after each successful write; purely an optimisation, the task's
+/// own `last` is authoritative). The task ends when every `SaveRequest` sender (held by
+/// `AppState`) is dropped.
+pub fn spawn_saver(db: PgPool, last_hint: Arc<AtomicU64>) -> mpsc::Sender<SaveRequest> {
+    let (tx, mut rx) = mpsc::channel::<SaveRequest>(64);
+    tokio::spawn(async move {
+        let mut last = 0u64;
+        while let Some((snapshot, v, reply)) = rx.recv().await {
+            let res = if v <= last {
+                Ok(())
+            } else {
+                let r = save(&db, &snapshot).await;
+                if r.is_ok() {
+                    last = v;
+                    last_hint.store(v, Ordering::SeqCst);
+                }
+                r
+            };
+            let _ = reply.send(res);
+        }
+    });
+    tx
 }

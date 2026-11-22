@@ -644,7 +644,7 @@ pub(super) fn process_unit_died(
         .and_then(|o| o.get_mut(&uid))
         .and_then(J::as_object_mut)
     {
-        s.insert("destroyedLoop".into(), gameloop_j.clone());
+        s.insert("destroyedLoop".into(), gameloop_j);
         s.insert(
             "destroyed".into(),
             jnum(loops_to_seconds(gameloop - loop_game_start)),

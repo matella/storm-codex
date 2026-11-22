@@ -452,9 +452,12 @@ unreadable state (non-object, `players` ≠ 5, unknown scene/format/side/status)
 inactive series, startup never fails. Each mutation: a single write lock on a copy (a
 `CastError` changes nothing), then persistence and `cast.updated` broadcast on `/ws`. **Versioned
 persistence**: each mutation gets a version (`AppState.cast_version`, assigned under the write lock) and
-persists **its own** snapshot; writes are serialised (`AppState.cast_saved` = last version written)
-and a snapshot older than the last one written is ignored — two concurrent mutations can never
-leave the old state in the database. Write failure → the route answers `500 persist_failed` (R24; the state stays
+persists **its own** snapshot; writes to `cast_live` are serialised by a single dedicated saver task
+(`AppState.cast_save_tx`, spawned by `cast::store::spawn_saver`) that processes one request at a
+time in arrival order — callers hand off their snapshot and await a reply, so no lock is held across
+the database round trip. A snapshot older than the last one the saver task has written is ignored
+(`AppState.cast_saved`, a non-blocking hint of that last version, mirrored into memory after each
+successful write): two concurrent mutations can never leave the old state in the database. Write failure → the route answers `500 persist_failed` (R24; the state stays
 applied in memory and `cast.updated` is broadcast; edge case: if the v2 save fails and then a concurrent v1 save succeeds, the database keeps v1 and memory v2 — the v2 caller received `500 persist_failed`, consistent with R24, a restart would reload v1). **Draft sync** (`api::sync_draft`): re-reads the
 **current** cast state under a read lock while the draft write lock is held (never both write locks),
 so that a more recent mutation is not overwritten by the snapshot of an older one. Loading

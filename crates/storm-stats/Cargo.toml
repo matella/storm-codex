@@ -13,7 +13,6 @@ storm-replay = { version = "0.1", path = "../storm-replay" }
 # preserve_order: JS objects are ordered by insertion — the `for..in` over
 # non-numeric keys (Warhead Junction nukes…) must follow that order, not the sorted order.
 serde_json = { version = "1", features = ["preserve_order"] }
-thiserror = "2"
 regex = "1"
 mimalloc = { version = "0.1", optional = true }
 

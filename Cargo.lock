@@ -2188,7 +2188,6 @@ dependencies = [
  "regex",
  "serde_json",
  "storm-replay",
- "thiserror",
 ]
 
 [[package]]

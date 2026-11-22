@@ -518,7 +518,7 @@ pub(super) fn obj_unit_born(
         // parser.js:1359-1405
         let team = js_number(get(event, &["m_controlPlayerId"])) - 11.0;
         let e = json!({
-            "tag": tag_j, "rtag": rtag_j, "loop": gameloop_j.clone(),
+            "tag": tag_j, "rtag": rtag_j, "loop": gameloop_j,
             "x": x_j, "y": y_j, "team": jnum(team), "time": jnum(secs),
             "type": get(event, &["m_unitTypeName"]).cloned().unwrap_or(J::Null),
         });
@@ -542,8 +542,8 @@ pub(super) fn obj_unit_born(
         if both_empty {
             st.wave_id = Some(st.wave_id.unwrap_or(f64::NAN) + 1.0);
             obj_arr_mut(match_, "waves")?.push(json!({
-                "initLoop": gameloop_j.clone(), "initTime": jnum(secs),
-                "scores": [{"0": 0, "1": 0, "loop": gameloop_j.clone(), "time": jnum(secs)}],
+                "initLoop": gameloop_j, "initTime": jnum(secs),
+                "scores": [{"0": 0, "1": 0, "loop": gameloop_j, "time": jnum(secs)}],
                 "endLoop": {"0": 0, "1": 0}, "endTime": {"0": 0, "1": 0},
             }));
         } else {
@@ -553,7 +553,7 @@ pub(super) fn obj_unit_born(
                 .ok_or_else(|| Abort::Throw("wave.scores absent".into()))?
                 .push(json!({
                     "0": jnum(s0), "1": jnum(s1),
-                    "loop": gameloop_j.clone(), "time": jnum(secs),
+                    "loop": gameloop_j, "time": jnum(secs),
                 }));
         }
         st.wave_units
@@ -619,7 +619,7 @@ pub(super) fn obj_unit_born(
     } else if t == u("NeutralPayload") {
         // parser.js:1462-1475
         obj_arr_mut(match_, "events")?.push(json!({
-            "loop": gameloop_j.clone(), "born": jnum(secs), "id": unit_uid(event),
+            "loop": gameloop_j, "born": jnum(secs), "id": unit_uid(event),
             "control": [{"team": -1, "loop": gameloop_j, "time": jnum(secs)}],
         }));
     }
@@ -785,7 +785,7 @@ pub(super) fn obj_unit_died(
                             .and_then(J::as_object_mut)
                             .ok_or_else(|| Abort::Throw("events[eventIdx] absent".into()))?;
                         ev.insert("duration".into(), cs.max_duration.map_or(J::Null, jnum));
-                        ev.insert("endLoop".into(), gameloop_j.clone());
+                        ev.insert("endLoop".into(), gameloop_j);
                         ev.insert("end".into(), jnum(secs));
                         cs.active = false;
                         cs.units = Map::new();
@@ -870,13 +870,13 @@ pub(super) fn obj_unit_died(
                 wave.get_mut("startScore")
                     .and_then(J::as_object_mut)
                     .ok_or_else(|| Abort::Throw("startScore non-objet".into()))?
-                    .insert(other_key.clone(), J::from(100));
+                    .insert(other_key, J::from(100));
             }
             let wave = wave_mut(match_, st.wave_id)?;
             wave.get_mut("endLoop")
                 .and_then(J::as_object_mut)
                 .ok_or_else(|| Abort::Throw("wave.endLoop absent".into()))?
-                .insert(team_key.clone(), gameloop_j.clone());
+                .insert(team_key.clone(), gameloop_j);
             wave.get_mut("endTime")
                 .and_then(J::as_object_mut)
                 .ok_or_else(|| Abort::Throw("wave.endTime absent".into()))?
@@ -988,7 +988,7 @@ pub(super) fn obj_unit_owner_change(
                 .and_then(J::as_array_mut)
                 .ok_or_else(|| Abort::Throw("shrines absent".into()))?
                 .push(json!({
-                    "loop": gameloop_j.clone(), "team": jnum(team), "time": jnum(secs),
+                    "loop": gameloop_j, "team": jnum(team), "time": jnum(secs),
                 }));
         } else if eq(&st.dragon) && control > 0.0 && control != 11.0 && control != 12.0 {
             let d = st
@@ -1042,7 +1042,7 @@ pub(super) fn obj_unit_owner_change(
         if let Some(side) = side {
             let team = if control == 0.0 { -1.0 } else { control - 11.0 };
             obj_arr_mut(match_, "beacons")?.push(json!({
-                "team": jnum(team), "loop": gameloop_j.clone(), "side": side, "time": jnum(secs),
+                "team": jnum(team), "loop": gameloop_j, "side": side, "time": jnum(secs),
             }));
         }
     }
@@ -1059,7 +1059,7 @@ pub(super) fn obj_unit_owner_change(
                     .and_then(J::as_array_mut)
                     .ok_or_else(|| Abort::Throw("payload.control absent".into()))?
                     .push(json!({
-                        "team": jnum(team), "loop": gameloop_j.clone(), "time": jnum(secs),
+                        "team": jnum(team), "loop": gameloop_j, "time": jnum(secs),
                     }));
             }
         }
@@ -1185,7 +1185,7 @@ pub(super) fn obj_cleanup(
                 "duration".into(),
                 jnum(loops_to_seconds(loop_length - spider_loop)),
             );
-            ev.insert("endLoop".into(), loop_length_j.clone());
+            ev.insert("endLoop".into(), loop_length_j);
             ev.insert("end".into(), jnum(end_secs));
         }
     } else if is_map(match_, "Volskaya") {
