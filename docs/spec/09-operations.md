@@ -481,6 +481,8 @@ fresh migrated cluster → import.
        A swap whose rollback rename fails too (the replays only in `archive.old`) also keeps
        the journal and the staging database and leaves the server stopped: the next start
        rolls back. Only the cases that really changed nothing say "nothing was changed".
+       While an import journal remains, another import is refused before changing any staging
+       data. Restart Storm Codex to finish recovery before retrying.
     **Another PC or user profile.** The rows keep the `archived_path` they were exported
     with (absolute on data archived before the standalone app, e.g.
     `C:\Users\<old user>\…\archive\<sha>.StormReplay`); the server resolves every archived

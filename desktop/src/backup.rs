@@ -755,6 +755,13 @@ fn import_into_with(
     check_local_path(source)?;
     let data = stack.data().clone();
     let root = data_root(&data);
+    // A pending import owns the staging database and archive.old until startup recovers it.
+    // Staging another backup could erase the evidence recovery uses to decide whether to roll back.
+    match std::fs::symlink_metadata(root.join(IMPORT_JOURNAL)) {
+        Ok(_) => return Err("a previous backup import still needs recovery; restart Storm Codex before importing another backup".into()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) => return Err(format!("cannot check for pending backup import recovery: {e}")),
+    }
     let work = root.join(IMPORT_WORK);
     let clean = |work: &Path| -> Result<(), String> {
         if work.exists() {
@@ -1509,6 +1516,15 @@ mod tests {
         assert!(tmp.path().join(IMPORT_JOURNAL).exists());
         assert!(host.staged.load(std::sync::atomic::Ordering::SeqCst));
         assert!(!stack.data().archive().exists());
+        assert_eq!(archive_tree(&tmp.path().join("archive.old")), old_archive());
+        // A retry before restart must not touch the pending transaction, even with a valid backup.
+        log.lock().unwrap().clear();
+        let retry = import_into(&mut stack, &good_backup(src.path()), plenty)
+            .expect_err("recovery must finish before another import");
+        assert!(retry.contains("restart Storm Codex"), "{retry}");
+        assert!(entries(&log).is_empty());
+        assert!(tmp.path().join(IMPORT_JOURNAL).exists());
+        assert!(host.staged.load(std::sync::atomic::Ordering::SeqCst));
         assert_eq!(archive_tree(&tmp.path().join("archive.old")), old_archive());
         // The next start rolls back.
         drop(stack);

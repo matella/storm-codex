@@ -1,5 +1,14 @@
 # STATUS — read first, update last
 
+## Preserve pending backup import recovery
+
+Another restore is refused while an import journal remains, before removing working files or
+staging a new database. Restarting Storm Codex can still recover the original replay archive.
+The double-swap-failure regression now checks that a retry makes no staging calls and that
+startup restores the original archive. The regression failed before the guard and passed after
+it; the isolated Linux harness ran 37 backup/supervision tests (one real-Postgres test ignored).
+The packaged Windows app was not exercised.
+
 ## Removed the Jarvis/Redis event emitter (2026-11-22)
 
 Dropped the optional Jarvis (Redis pub/sub) event emitter per the approved spec
