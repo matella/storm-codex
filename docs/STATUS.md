@@ -2,17 +2,16 @@
 
 ## Desktop backup crash recovery (issue #89 P2)
 
-Import now refuses an existing `archive.old` before touching import work or staging. Startup
-uses the journal phase to distinguish an untouched archive from a completed swap. An ambiguous
-swap preserves both archives and stops startup instead of risking replay loss. Promoted import
-cleanup and no-journal recovery are unchanged. P3 items are untouched.
+PR #96 review round 2: import refuses a pre-existing `archive.old` and records `swap-ready`
+before moving either archive. An interrupted, unpromoted import rolls back whether zero, one,
+or both renames ran. Unix directory syncs order the journal and archive moves before database
+promotion. Windows does not have the same power-loss guarantee. Ambiguous older journals still
+preserve both archives for assisted recovery. P3 items are untouched.
 
-Offline in `storm-dev:latest`: root and desktop formatting passed. The full desktop Clippy and
-test builds stopped at the missing `pkg-config` for the GTK dependencies (no desktop tests ran).
-An isolated backup/supervision/lifecycle harness passed strict Clippy and 50 tests (0 failed,
-1 ignored); with disposable PostgreSQL 17, all 51 passed (0 failed, 0 ignored). Three targeted
-regressions failed as expected with the old implementation and passed with the fix. Windows/Tauri
-was not exercised.
+In the isolated Linux backup/supervision/lifecycle harness with PostgreSQL 17.10: 54 passed,
+0 failed, 0 ignored, including the real Postgres roundtrip and three commit-path interruption
+tests. The second-rename regression reproduced the startup failure on the previous PR head.
+Harness strict Clippy and desktop formatting passed. Full Tauri and Windows tests were not run.
 
 ## Auto-draft desktop preview on every push to main (2026-11-22)
 

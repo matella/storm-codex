@@ -460,9 +460,10 @@ fresh migrated cluster → import.
        A refused or failed restore (a backup from a newer app included) changes nothing.
     5. **Commit.** `<data>/import-journal` records `staging`, then the server is stopped
        (graceful, `Full` budget; Postgres stays up). After rechecking that `archive.old` is
-       absent, the journal advances to `swapping` before renaming `archive` → `archive.old`
-       and the unpacked folder → `archive` (renames retried briefly). The journal advances to
-       `swapped` only after both renames succeed, before `promote_import`: staging database
+       absent, the journal advances to `swap-ready` before renaming `archive` → `archive.old`
+       and the unpacked folder → `archive` (renames retried briefly). This phase records intent,
+       not completion: no journal update is required after either rename. Only after both
+       renames and their durability barriers succeed does `promote_import` run: staging database
        settings reset, staging check run again, `storm_codex` → `storm_codex_previous` and
        `storm_codex_import` →
        `storm_codex` in **one transaction**, then `finish_import` (previous database and any
@@ -472,6 +473,14 @@ fresh migrated cluster → import.
        deduplicated by content hash); the raw cache is kept (keyed by content). `archive.old`
        and the journal are removed and the server restarted on the same stack and port
        (`Stack::restart_server`); the command returns once `/api/health` answers.
+       **App crash vs. power loss.** A synced temp file and atomic journal replacement keep
+       the previous or new phase readable after an app crash. On Unix, the unpacked archive
+       directories are synced bottom-up, and both affected parent directories (one if shared)
+       are synced after each journal or archive rename, before proceeding. Rollback is synced
+       before the journal is removed, and journal removal before dropping staging. This orders
+       the filesystem changes against database promotion even on power loss on filesystems
+       that honor these flushes. Windows has no equivalent directory flush in this implementation:
+       it has app-crash recovery, but does not guarantee the same ordering after power loss.
     6. **Failure during the commit.** If stopping the server fails, the import aborts before
        swapping the archive or promoting the database. Rollback attempts to remove the journal
        and discard staging before restart. Restart checks the retained child without waiting:
@@ -481,8 +490,8 @@ fresh migrated cluster → import.
        Which side of the rename transaction a `promote_import` error happened on is read back
        (`staging_exists`):
        - **before the rename** (staging database still there): `archive.old` is put back, the
-         staging database dropped, the journal removed, the server restarted; the message says
-         nothing was changed. If putting `archive.old` back fails, the server stays stopped and
+         journal removed, the staging database dropped, and the server restarted; the message
+         says nothing was changed. If putting `archive.old` back fails, the server stays stopped and
          the error says to restart Storm Codex (the journal makes the next start roll back);
        - **after the rename committed** (the imported database is the app's): **never rolled
          back**. The import is completed (`finish_import`, ledger reset, `archive.old` and
@@ -492,9 +501,10 @@ fresh migrated cluster → import.
        - **state unreadable**: everything (journal, staging, `archive.old`) is left as is, the
          server stays stopped, and the error says to restart Storm Codex, whose recovery
          decides.
-       A swap whose rollback rename fails too (the replays only in `archive.old`) also keeps
-       the journal and the staging database and leaves the server stopped: the next start
-       rolls back. Only the cases that really changed nothing say "nothing was changed".
+       A swap that fails and leaves `archive.old` in place (for example, a failed rollback
+       rename or directory sync) also keeps the journal and the staging database and leaves the
+       server stopped: the next start rolls back. Only the cases that really changed nothing
+       say "nothing was changed".
        While an import journal remains, another import is refused before changing any staging
        data. Restart Storm Codex to finish recovery before retrying.
     **Another PC or user profile.** The rows keep the `archived_path` they were exported
@@ -505,17 +515,25 @@ fresh migrated cluster → import.
     re-processing find the restored replays. No row is rewritten.
     7. **Crash recovery** (`backup::recover_import`, every start, after Postgres and before
        the server): journal + staging database → not promoted. A `staging` journal leaves both
-       archive paths alone. Only `swapped` authorizes deleting the imported archive and restoring
-       `archive.old`. During `swapping`, if `archive.old` exists, it can be restored into a
-       missing or empty archive; if the live archive is non-empty, startup stops and preserves
-       both rather than assuming the swap completed. A legacy unphased journal with `archive.old`
-       present also stops startup, since it cannot prove which archive is current. After safe
-       rollback, the journal is removed and staging dropped. Journal without staging database →
-       promoted: complete it (`finish_import`, ledger reset, `archive.old` and journal removed); no
-       journal → a staging database is an orphan (dropped), and an `archive.old` next to an
-       **empty** `archive` is put back (one next to a non-empty `archive` is left alone and must
-       be removed by hand). `import-work` is removed. A recovery failure stops the startup with
-       "an interrupted import could not be finished or rolled back".
+       archive paths alone. With `swap-ready`, no `archive.old` means the first rename never
+       happened or rollback already put the old archive back. If `archive.old` exists, it is
+       restored, replacing the imported archive (or the empty folder created by startup after
+       only the first rename). Recovery rolls back rather than promoting an uncommitted import.
+       Previous journal formats remain readable: `swapped` also permits rollback; `swapping`
+       can restore `archive.old` only into a missing or empty archive; an unphased journal with
+       `archive.old` present cannot prove which archive is current. After safe rollback, the
+       journal is removed and staging dropped. Journal without staging database → promoted:
+       complete it (`finish_import`, ledger reset, `archive.old` and journal removed); no journal
+       → a staging database is an orphan (dropped), and an `archive.old` next to an **empty**
+       `archive` is put back (one next to a non-empty `archive` is left alone). `import-work`
+       is removed after successful recovery.
+
+       **If startup is blocked:** check `logs/desktop.log` for "an interrupted import could not
+       be finished or rolled back". Resolve any file lock or permissions error and retry. For an
+       ambiguous older journal or an unexplained mismatch after power loss, stop the app and
+       bundled Postgres, preserve a copy of the entire data root (including the database, journal,
+       and both archives), and seek assisted recovery or restore a known-good backup. Do not
+       delete the journal or either archive to bypass the check.
     8. **Port during the commit.** While the server is stopped (seconds) another local program
        could bind the server port; the restart then fails its health check and the error names
        the log. Accepted: the window is short, the data is already committed, and the next start

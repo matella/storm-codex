@@ -472,7 +472,22 @@ pub fn unpack(
     if dumps != 1 {
         return Err(BackupError::Invalid("no db.dump".into()));
     }
+    #[cfg(unix)]
+    sync_archive_dirs(archive_out)?;
     Ok(())
+}
+
+/// The unpacked files are already synced; persist their directory entries before moving the tree.
+#[cfg(unix)]
+fn sync_archive_dirs(dir: &Path) -> Result<(), BackupError> {
+    for entry in std::fs::read_dir(dir).map_err(io_err(dir))? {
+        let entry = entry.map_err(io_err(dir))?;
+        let path = entry.path();
+        if entry.file_type().map_err(io_err(&path))?.is_dir() {
+            sync_archive_dirs(&path)?;
+        }
+    }
+    sync_dir(dir)
 }
 
 /// True when `dir` holds at least one file (any depth).
@@ -546,6 +561,8 @@ pub const IMPORT_WORK: &str = "import-work";
 /// is committed or rolled back: [`recover_import`] reads it at the next start.
 pub const IMPORT_JOURNAL: &str = "import-journal";
 const JOURNAL_STAGING: &[u8] = b"staging\n";
+const JOURNAL_SWAP_READY: &[u8] = b"swap-ready\n";
+// Read-only phases from earlier implementations.
 const JOURNAL_SWAPPING: &[u8] = b"swapping\n";
 const JOURNAL_SWAPPED: &[u8] = b"swapped\n";
 const JOURNAL_LEGACY: &[u8] = b"import in progress\n";
@@ -598,6 +615,36 @@ fn require_no_old_archive(target: &Path) -> Result<(), BackupError> {
     }
 }
 
+#[cfg(unix)]
+fn sync_dir(dir: &Path) -> Result<(), BackupError> {
+    File::open(dir)
+        .and_then(|file| file.sync_all())
+        .map_err(io_err(dir))
+}
+
+// Windows supports process-crash recovery, but without an equivalent directory flush here
+// the durability/order of the renames after power loss is not guaranteed (operations spec).
+#[cfg(not(unix))]
+fn sync_dir(_dir: &Path) -> Result<(), BackupError> {
+    Ok(())
+}
+
+fn parent_dir(path: &Path) -> &Path {
+    path.parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."))
+}
+
+fn sync_rename(from: &Path, to: &Path) -> Result<(), BackupError> {
+    let source = parent_dir(from);
+    let dest = parent_dir(to);
+    sync_dir(dest)?;
+    if source != dest {
+        sync_dir(source)?;
+    }
+    Ok(())
+}
+
 /// `std::fs::rename`, retried a few times: an antivirus or indexer may hold a file briefly.
 pub fn rename_retrying(from: &Path, to: &Path) -> io::Result<()> {
     let mut attempt = 0;
@@ -615,8 +662,8 @@ pub fn rename_retrying(from: &Path, to: &Path) -> io::Result<()> {
 
 /// Swaps folder `new` in as `target`, keeping the replaced folder as `<target>.old` (removed
 /// once the import is committed, put back by [`unswap_dir`] otherwise). Refused when
-/// `<target>.old` already exists (never overwritten). On failure `target` is as before, unless
-/// putting it back failed too: then `target` is missing and only `<target>.old` holds it.
+/// `<target>.old` already exists (never overwritten). If installing `new` fails, try to put
+/// the previous folder back. A sync failure can leave a rename in effect.
 pub fn swap_dir(
     new: &Path,
     target: &Path,
@@ -626,9 +673,13 @@ pub fn swap_dir(
     let old = old_dir(target);
     std::fs::create_dir_all(target).map_err(io_err(target))?;
     rename(target, &old).map_err(io_err(target))?;
+    sync_rename(target, &old)?;
     if let Err(e) = rename(new, target) {
         return match rename(&old, target) {
-            Ok(()) => Err(io_err(target)(e)),
+            Ok(()) => {
+                sync_rename(&old, target)?;
+                Err(io_err(target)(e))
+            }
             Err(back) => Err(io_err(target)(io::Error::new(
                 e.kind(),
                 format!(
@@ -638,20 +689,23 @@ pub fn swap_dir(
             ))),
         };
     }
-    Ok(())
+    sync_rename(new, target)
 }
 
 /// Undoes [`swap_dir`]: `<target>.old` goes back to `target` (the folder there, the imported
 /// one, is removed). Nothing to do without `<target>.old`.
 pub fn unswap_dir(target: &Path) -> Result<(), BackupError> {
     let old = old_dir(target);
-    if !old.exists() {
+    if !old.try_exists().map_err(io_err(&old))? {
         return Ok(());
     }
-    if target.exists() {
-        std::fs::remove_dir_all(target).map_err(io_err(target))?;
+    match std::fs::remove_dir_all(target) {
+        Ok(()) => sync_dir(parent_dir(target))?,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) => return Err(io_err(target)(e)),
     }
-    rename_retrying(&old, target).map_err(io_err(&old))
+    rename_retrying(&old, target).map_err(io_err(&old))?;
+    sync_rename(&old, target)
 }
 
 fn remove_file_if_exists(path: &Path) -> Result<(), String> {
@@ -668,7 +722,19 @@ fn write_journal(journal: &Path, work: &Path, phase: &[u8]) -> Result<(), Backup
     file.write_all(phase).map_err(io_err(&pending))?;
     file.sync_all().map_err(io_err(&pending))?;
     drop(file);
-    rename_retrying(&pending, journal).map_err(io_err(journal))
+    rename_retrying(&pending, journal).map_err(io_err(journal))?;
+    sync_rename(&pending, journal)
+}
+
+fn remove_journal(journal: &Path) -> Result<(), String> {
+    let root = parent_dir(journal);
+    // Persist rollback (or promoted cleanup) before deleting its recovery record, even if
+    // a previous attempt renamed the archive back but crashed before syncing the directory.
+    sync_dir(root).map_err(|e| e.to_string())?;
+    remove_file_if_exists(journal)?;
+    // Recovery uses "journal without staging" to identify a promotion. Don't discard staging
+    // until the journal cannot reappear after power loss.
+    sync_dir(root).map_err(|e| e.to_string())
 }
 
 fn recover_staged_archive(journal: &Path, archive: &Path) -> Result<(), BackupError> {
@@ -676,7 +742,9 @@ fn recover_staged_archive(journal: &Path, archive: &Path) -> Result<(), BackupEr
     let invalid = |message| io_err(journal)(io::Error::new(io::ErrorKind::InvalidData, message));
     match std::fs::read(journal).map_err(io_err(journal))?.as_slice() {
         JOURNAL_STAGING => Ok(()),
-        JOURNAL_SWAPPED => unswap_dir(archive),
+        // Swap-ready is written only after checking archive.old was absent. Its presence
+        // proves the first rename happened; rollback works with zero, one or both done.
+        JOURNAL_SWAP_READY | JOURNAL_SWAPPED => unswap_dir(archive),
         phase @ (JOURNAL_SWAPPING | JOURNAL_LEGACY) => {
             match std::fs::symlink_metadata(&old) {
                 Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
@@ -700,7 +768,9 @@ fn recover_staged_archive(journal: &Path, archive: &Path) -> Result<(), BackupEr
                 }
                 Err(e) => return Err(io_err(archive)(e)),
             }
-            rename_retrying(&old, archive).map_err(io_err(&old))
+            sync_dir(parent_dir(archive))?;
+            rename_retrying(&old, archive).map_err(io_err(&old))?;
+            sync_rename(&old, archive)
         }
         _ => Err(invalid("unknown backup import phase")),
     }
@@ -714,13 +784,13 @@ fn complete_import(data: &DataDir) -> Result<(), String> {
     if old.exists() {
         std::fs::remove_dir_all(&old).map_err(|e| format!("{}: {e}", old.display()))?;
     }
-    remove_file_if_exists(&data_root(data).join(IMPORT_JOURNAL))
+    remove_journal(&data_root(data).join(IMPORT_JOURNAL))
 }
 
 /// Startup step (Postgres up, server not started): finishes or rolls back an import a crash
 /// cut short, then removes the work folder.
-/// - journal and staging database: not promoted. Undo a confirmed swap, leave the archive
-///   alone before the swap, and stop startup if an interrupted swap cannot be safely undone;
+/// - journal and staging database: not promoted. Roll back an authorized archive move, leave
+///   the archive alone before the move, and stop startup if rollback cannot be safely done;
 /// - journal, no staging database: promoted, so complete it (finish, ledger reset,
 ///   `archive.old` removed, journal removed);
 /// - no journal: a staging database is an orphan (dropped); an `archive.old` next to an empty
@@ -740,7 +810,7 @@ pub fn recover_import(data: &DataDir, db: &dyn crate::supervise::Db) -> Result<(
     if journal_exists {
         if staged {
             recover_staged_archive(&journal, &archive).map_err(|e| e.to_string())?;
-            remove_file_if_exists(&journal)?;
+            remove_journal(&journal)?;
             db.discard_import().map_err(|e| e.to_string())?;
         } else {
             db.finish_import().map_err(|e| e.to_string())?;
@@ -748,6 +818,8 @@ pub fn recover_import(data: &DataDir, db: &dyn crate::supervise::Db) -> Result<(
         }
     } else {
         if staged {
+            // A previous process may have unlinked the journal but crashed before syncing it.
+            sync_dir(&root).map_err(|e| e.to_string())?;
             db.discard_import().map_err(|e| e.to_string())?;
         }
         if old_dir(&archive).exists() && !has_files(&archive) {
@@ -889,7 +961,9 @@ fn commit(stack: &mut Stack, work: &Path, data: &DataDir, rename: Rename) -> Res
     let _ = std::fs::remove_file(&dump);
     let journal = data_root(data).join(IMPORT_JOURNAL);
     let discard = |stack: &Stack, e: String| -> String {
-        let _ = remove_file_if_exists(&journal);
+        if let Err(j) = remove_journal(&journal) {
+            return format!("{e}; removing the import journal failed: {j}");
+        }
         match stack.discard_import() {
             Ok(()) => e,
             Err(d) => format!("{e}; dropping the staged import failed: {d}"),
@@ -907,24 +981,16 @@ fn commit(stack: &mut Stack, work: &Path, data: &DataDir, rename: Rename) -> Res
     }
     let archive = data.archive();
     let swap = require_no_old_archive(&archive)
-        .and_then(|()| write_journal(&journal, work, JOURNAL_SWAPPING))
+        .and_then(|()| write_journal(&journal, work, JOURNAL_SWAP_READY))
         .map(|()| swap_dir(&work.join(ARCHIVE_ENTRY), &archive, rename));
-    if matches!(swap, Ok(Ok(()))) {
-        write_journal(&journal, work, JOURNAL_SWAPPED).map_err(|e| {
-            format!(
-                "the replay folder was replaced, but the swap could not be recorded ({e}); \
-                 the server is stopped and both archives were kept"
-            )
-        })?;
-    }
     let committed = match swap {
         Err(e) => Err(discard(stack, e.to_string())),
-        // Both renames back failed: the replays are only in `archive.old`. Journal and staging
-        // kept, server left stopped: the next start puts the folder back (rollback).
-        Ok(Err(e)) if !archive.exists() && old_dir(&archive).exists() => {
+        // A rename or sync failed and the previous archive is still saved (or unreadable).
+        // Don't promote or discard staging; the next start rolls back with the journal.
+        Ok(Err(e)) if require_no_old_archive(&archive).is_err() => {
             return Err(format!(
-                "the replay folder could not be replaced and the previous one could not be put \
-                 back ({e}); the server is stopped: restart Storm Codex to finish the rollback"
+                "the replay folder swap could not finish safely ({e}); the server is stopped: \
+                 restart Storm Codex to finish the rollback"
             ));
         }
         Ok(Err(e)) => Err(discard(
@@ -1749,8 +1815,103 @@ mod tests {
             .collect()
     }
 
+    /// Interrupt the real commit path without running its error handling or cleanup.
+    fn crash_during_commit_swap(renames_done: usize) {
+        use std::sync::atomic::Ordering::SeqCst;
+
+        #[derive(Debug)]
+        struct Interrupted;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let log = Log::default();
+        let (mut stack, host) = stack_with_archive(FakeHost::new(&log), root, Some(b"old"));
+        let data = stack.data().clone();
+        let archive = data.archive();
+        let old = old_dir(&archive);
+        let work = root.join(IMPORT_WORK);
+        std::fs::create_dir(&work).unwrap();
+        prepare(&good_backup(src.path()), &work, root, &plenty).unwrap();
+        log.lock().unwrap().clear();
+
+        let calls = std::cell::Cell::new(0);
+        let rename = |from: &Path, to: &Path| {
+            if renames_done == 0 {
+                std::panic::panic_any(Interrupted);
+            }
+            std::fs::rename(from, to)?;
+            calls.set(calls.get() + 1);
+            if calls.get() == renames_done {
+                std::panic::panic_any(Interrupted);
+            }
+            Ok(())
+        };
+        let fault = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            commit(&mut stack, &work, &data, &rename)
+        }));
+        assert!(fault.unwrap_err().is::<Interrupted>());
+        assert_eq!(calls.get(), renames_done);
+        assert_eq!(
+            entries(&log),
+            [
+                "db.stage(PGDMP-import)".to_string(),
+                "server.migrate".to_string(),
+                format!("server.shutdown({SERVER_PORT})"),
+            ]
+        );
+        assert!(host.staged.load(SeqCst));
+        match renames_done {
+            0 => {
+                assert!(!old.exists());
+                assert_eq!(archive_tree(&archive), old_archive());
+            }
+            1 => {
+                assert_eq!(archive_tree(&old), old_archive());
+                assert!(!archive.exists());
+            }
+            2 => {
+                assert_eq!(archive_tree(&old), old_archive());
+                assert_eq!(archive_tree(&archive), new_archive());
+                assert!(!work.join(ARCHIVE_ENTRY).exists());
+            }
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            std::fs::read(root.join(IMPORT_JOURNAL)).unwrap(),
+            JOURNAL_SWAP_READY
+        );
+        drop(stack);
+
+        let restart_log = Log::default();
+        let restart_host = FakeHost::new(&restart_log);
+        restart_host.staged.store(true, SeqCst);
+        let (restarted, restart_host) = start(restart_host, root);
+        let restarted = restarted.expect("startup rolls back the interrupted swap");
+        assert_eq!(recovery_steps(&restart_log), ["db.discard"]);
+        assert!(!restart_host.staged.load(SeqCst));
+        assert_eq!(archive_tree(&restarted.data().archive()), old_archive());
+        assert!(restarted.data().ledger().exists());
+        assert_clean(root);
+    }
+
     #[test]
-    fn crash_after_the_swap_before_the_promote_is_rolled_back_at_start() {
+    fn crash_after_swap_ready_before_first_rename_is_rolled_back_at_start() {
+        crash_during_commit_swap(0);
+    }
+
+    #[test]
+    fn crash_between_archive_renames_is_rolled_back_at_start() {
+        crash_during_commit_swap(1);
+    }
+
+    #[test]
+    fn crash_right_after_second_rename_before_old_marker_boundary_is_rolled_back_at_start() {
+        crash_during_commit_swap(2);
+    }
+
+    #[test]
+    fn a_legacy_swapped_marker_still_allows_rollback() {
         let tmp = tempfile::tempdir().unwrap();
         let (stack, log) = crashed(
             tmp.path(),
@@ -1766,7 +1927,7 @@ mod tests {
     }
 
     #[test]
-    fn crash_in_the_middle_of_the_swap_is_rolled_back_at_start() {
+    fn the_old_swapping_marker_can_restore_a_missing_archive() {
         let tmp = tempfile::tempdir().unwrap();
         let (stack, log) = crashed(tmp.path(), Some(JOURNAL_SWAPPING), true, None, Some(b"old"));
         assert_eq!(recovery_steps(&log), ["db.discard"]);
@@ -1833,7 +1994,7 @@ mod tests {
     }
 
     #[test]
-    fn commit_records_swapped_before_a_promoted_import_can_need_startup_cleanup() {
+    fn commit_retains_swap_ready_if_a_promoted_import_needs_startup_cleanup() {
         let tmp = tempfile::tempdir().unwrap();
         let src = tempfile::tempdir().unwrap();
         let log = Log::default();
@@ -1849,7 +2010,7 @@ mod tests {
         assert!(!stack.staging_exists().unwrap());
         assert_eq!(
             std::fs::read(tmp.path().join(IMPORT_JOURNAL)).unwrap(),
-            JOURNAL_SWAPPED
+            JOURNAL_SWAP_READY
         );
     }
 
@@ -1858,7 +2019,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let (stack, log) = crashed(
             tmp.path(),
-            Some(JOURNAL_SWAPPED),
+            Some(JOURNAL_SWAP_READY),
             false,
             Some(b"new"),
             Some(b"old"),
