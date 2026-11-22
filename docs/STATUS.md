@@ -22,14 +22,21 @@ round's fix (signing exposure, first-run delete-nothing, regex scope, malformed 
 delete/cleanup-tag, fail-closed existence check, case-sensitive tag match) — see PR #90 for the
 full history. One residual risk accepted by design: the publish step isn't atomic (a cancelled
 mid-publish run could leave the draft briefly missing or stale) — acceptable for a non-critical
-preview that's replaced on the very next push. First live run (merge commit, PR #90) **failed**:
-`gh release create ... --notes $body` corrupted its argv on Windows because `$body` contained
-literal backtick characters (from double-backtick-escaped markdown code spans) — PowerShell's
-native-command argument encoding mangled it, surfacing as gh's own "no matches found for `D`"
-(part of the Windows asset path, not the notes text, got misparsed). Fixed in PR #91 the same way
-`release-desktop.yml` already avoids this: write the body to a temp file first and pass
-`--notes-file <path>`, never an inline string containing backticks. Verify the next push produces
-a working draft before considering this fully done.
+preview that's replaced on the very next push. First live run (merge commit, PR #90) **failed**,
+misdiagnosed and "fixed" in PR #91, then **failed again** on the next real push with the identical
+symptom — the actual root cause was neither notes nor backticks: `$files = (Get-ChildItem
+out).FullName` collapses to a plain *string* (not an array) whenever `out` has exactly one file,
+and this preview's `out` always has exactly one (unsigned, no `.sig` — unlike `release-desktop.yml`,
+whose `out` always has two, which is why it never hit this). Splatting `@files` on that scalar
+string enumerates it **character by character** — `gh.exe` received the installer's drive letter
+`D` as its own argument and reported "no matches found for `D`". Fixed by wrapping the whole
+property-access expression in `@(...)`: `$files = @((Get-ChildItem out).FullName)`, which forces
+an array regardless of item count. Verified by mocking `gh` in `pwsh` and inspecting the exact
+recorded argv (one clean file-path argument, not 70 single-character ones) before pushing again.
+The `--notes-file` change from PR #91 is kept (still correct practice, just wasn't the actual bug).
+`release-desktop.yml`'s own `(Get-ChildItem out).FullName` is the same latent pattern, currently
+safe only because signing always yields 2 files there — worth the same `@(...)` fix defensively,
+not done here to keep this PR's diff scoped to the preview workflow it actually broke.
 
 ## Custom overlay widget fitting (2026-11-22)
 
