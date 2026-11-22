@@ -19,6 +19,44 @@ end, history, failed write shown without change. Not run: hosted admin-token flo
 (covered by the server test only), OBS recap in a browser, representative-corpus latency (smoke:
 p95 < 4 ms on 8 games), standalone/desktop and Windows acceptance.
 
+## Auto-draft desktop preview on every push to main (2026-11-22)
+
+New `.github/workflows/auto-draft-desktop.yml`: on every push to `main`, builds an **unsigned**
+Windows installer (no `TAURI_SIGNING_PRIVATE_KEY`/`_PASSWORD`, `bundle.createUpdaterArtifacts`
+forced off for that run) and publishes it to a fixed draft tag `desktop-main-auto`, replacing it
+each time after verifying via structured `gh api --paginate .../releases` data (case-sensitive
+tag match, not CLI error-text parsing) that it's actually a draft before deleting it. Never a
+`desktop-v*` tag, always `--draft`, never `--latest` — invisible to installed apps and the
+download page, and `gh api` itself throws loudly on any ambiguous lookup failure rather than
+guessing. The previewed version is auto-computed (committed `tauri.conf.json` version, or latest
+published `desktop-v*` + 1 patch, malformed/overflow tags skipped not crashed) and applied only to
+that run's checkout — `desktop/Cargo.toml`'s `[package]` version alone, via a section-bounded
+instance regex that can't cross into a dependency table even if indented — never committed back to
+`main`, so this cannot create a push loop or affect what a real release later tags.
+`desktop/Cargo.lock` isn't touched by a manual command: the unlocked `cargo tauri build` syncs its
+own path-dependency entry. Cutting a real release is unchanged: still a human pushing a
+`desktop-vX.Y.Z` tag. Went through 4 rounds of independent review (Codex, `gpt-6.2-sol`) before
+merge, each round finding and fixing a real mutation-safety or correctness gap in the previous
+round's fix (signing exposure, first-run delete-nothing, regex scope, malformed tags, split
+delete/cleanup-tag, fail-closed existence check, case-sensitive tag match) — see PR #90 for the
+full history. One residual risk accepted by design: the publish step isn't atomic (a cancelled
+mid-publish run could leave the draft briefly missing or stale) — acceptable for a non-critical
+preview that's replaced on the very next push. First live run (merge commit, PR #90) **failed**
+with gh reporting "no matches found for `D`"; PR #91 misdiagnosed it as `--notes $body` corrupting
+its argv on a literal backtick and switched to `--notes-file` (still correct practice, kept, but
+not the actual bug) — the **next** real push failed identically. Real root cause: `$files =
+(Get-ChildItem out).FullName` collapses to a plain *string* (not an array) whenever `out` has
+exactly one file, true for this unsigned preview (no `.sig`/`.json`, unlike `release-desktop.yml`'s
+`out` which always has 2+). Splatting `@files` on that scalar string enumerates it **character by
+character** — `gh.exe`'s first positional argument after the tag became the single character `D`
+(the installer path's drive letter). Fixed in PR #92 by wrapping the whole property-access
+expression: `$files = @((Get-ChildItem out).FullName)`, forcing an array regardless of item count —
+verified both the bug and the fix with a mocked `gh` function recording its exact argv in `pwsh`
+(70 single-character arguments before, one clean path argument after). `release-desktop.yml` has
+the identical `(Get-ChildItem out).FullName` pattern but is safe today only because its `out`
+always has 2+ files; worth the same `@(...)` fix defensively at some point, not done here to keep
+this fix scoped to the workflow it actually broke. Verify the next push produces a working draft.
+
 ## Custom overlay widget fitting (2026-11-22)
 
 Each non-queue placement now measures its own unscaled content and refits on content or grid
