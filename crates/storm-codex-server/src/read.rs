@@ -60,10 +60,10 @@ pub async fn list_matches(
     Query(f): Query<MatchFilter>,
     Query(raw): Query<Vec<(String, String)>>,
 ) -> Result<axum::response::Response, (StatusCode, Json<J>)> {
-    let search = archive_search(&s, &f, &raw).await?;
+    let toons = operator_toons(&s).await;
+    let search = archive_search(&s, &f, &raw, &toons).await?;
     let limit = f.limit.unwrap_or(50).clamp(1, 200);
     let offset = f.offset.unwrap_or(0).max(0);
-    let toons = operator_toons(&s).await;
     // One statement gives the count and page the same snapshot, including for an empty page.
     // Materialize only the matching IDs and sort keys; expand players only after LIMIT/OFFSET.
     let mut list = QueryBuilder::<Postgres>::new(
@@ -116,10 +116,13 @@ pub async fn list_matches(
 const TOTAL_COUNT: &str = "x-total-count";
 
 /// Parses the replay search filters and checks they have a perspective to apply to.
+/// `toons` is the caller's already-fetched `operator_toons(s)` result, reused here instead of a
+/// second query: every caller needs it again right after for the archive WHERE/join anyway.
 async fn archive_search(
     s: &AppState,
     f: &MatchFilter,
     raw: &[(String, String)],
+    toons: &[String],
 ) -> Result<filter::Search, (StatusCode, Json<J>)> {
     let search = filter::parse(raw).map_err(|filter::BadFilter(param)| {
         (
@@ -129,7 +132,7 @@ async fn archive_search(
     })?;
     if search.needs_perspective()
         && f.account.as_deref().is_none_or(str::is_empty)
-        && operator_toons(s).await.is_empty()
+        && toons.is_empty()
     {
         let names: bool = sqlx::query_scalar(
             "SELECT EXISTS (SELECT 1 FROM app_settings
@@ -501,7 +504,8 @@ pub async fn matches_csv(
         Option<i32>,
         Option<i32>,
     );
-    let search = archive_search(&s, &f, &raw).await?;
+    let toons = operator_toons(&s).await;
+    let search = archive_search(&s, &f, &raw, &toons).await?;
     let mut qb = QueryBuilder::<Postgres>::new(
         "WITH ops AS (
             SELECT lower(jsonb_array_elements_text(value)) AS name
@@ -509,7 +513,7 @@ pub async fn matches_csv(
          )
          SELECT m.id, m.map, m.mode, m.played_at, m.length, m.winner, m.build",
     );
-    push_archive_from(&mut qb, &f, &search, &operator_toons(&s).await);
+    push_archive_from(&mut qb, &f, &search, &toons);
     qb.push(" ORDER BY m.played_at DESC NULLS LAST, m.id DESC LIMIT ")
         .push_bind(f.limit.unwrap_or(5000).clamp(1, 50000))
         .push(" OFFSET ")
