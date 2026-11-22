@@ -23,13 +23,13 @@ delete/cleanup-tag, fail-closed existence check, case-sensitive tag match) — s
 full history. One residual risk accepted by design: the publish step isn't atomic (a cancelled
 mid-publish run could leave the draft briefly missing or stale) — acceptable for a non-critical
 preview that's replaced on the very next push. First live run (merge commit, PR #90) **failed**:
-`gh release create ... --notes $body` corrupted its argv on Windows when `$body` contained literal
-backticks (`` `` ``-escaped markdown code formatting) — PowerShell's native-command argument
-encoding mangled it, surfacing as gh's own `no matches found for \`D\`` (part of the Windows asset
-path, not the notes text, got misparsed). Fixed in PR #91 the same way `release-desktop.yml`
-already avoids this: `--notes-file <path>` with the body written to a temp file first, never an
-inline string containing backticks. Verify the next push produces a working draft before
-considering this fully done.
+`gh release create ... --notes $body` corrupted its argv on Windows because `$body` contained
+literal backtick characters (from double-backtick-escaped markdown code spans) — PowerShell's
+native-command argument encoding mangled it, surfacing as gh's own "no matches found for `D`"
+(part of the Windows asset path, not the notes text, got misparsed). Fixed in PR #91 the same way
+`release-desktop.yml` already avoids this: write the body to a temp file first and pass
+`--notes-file <path>`, never an inline string containing backticks. Verify the next push produces
+a working draft before considering this fully done.
 
 ## Custom overlay widget fitting (2026-11-22)
 
