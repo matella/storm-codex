@@ -21,7 +21,9 @@ Two release-build front-end bugs from the web review, both reproduced first agai
   the abort, so the reported full freeze was not reproduced; the panic and the killed upload loop were.
 
 App bundle 1,104,867 bytes Brotli (origin/main 1,104,258), overlay 218,047 / sources 254,939 bytes gzip.
-PR #86.
+PR #86. The shared CI audit failure was addressed by updating `url` to 2.5.9
+(RUSTSEC-2026-0592) and its required `form_urlencoded` dependency to 1.2.3 in
+all four affected lockfiles. Root `cargo audit` and locked resolution pass.
 
 ## Removed the Jarvis/Redis event emitter (2026-11-22)
 
