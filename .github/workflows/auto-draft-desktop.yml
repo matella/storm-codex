@@ -209,8 +209,15 @@ jobs:
           gh api -X DELETE "repos/$($env:GH_REPO)/git/refs/tags/$($env:AUTO_TAG)" *> $null
           $PSNativeCommandUseErrorActionPreference = $true
           $files = (Get-ChildItem out).FullName
-          $body = "Automatic preview build from the latest push to main ($($env:GITHUB_SHA.Substring(0,7))).`n`n" +
-            "**Not a real release**: unsigned, never served to installed apps, never on the download page, " +
-            "and this tag is overwritten by every push to main. For a real release, push a ``desktop-vX.Y.Z`` tag."
+          # --notes-file, not inline --notes: a literal backtick character in an argument value gets
+          # mangled by PowerShell's native-command argument encoding on Windows (confirmed live — the
+          # first real run failed with "no matches found for `D`" from a corrupted argv). The real
+          # release-desktop.yml avoids this the same way.
+          $notesPath = Join-Path $env:RUNNER_TEMP 'auto-draft-notes.md'
+          $body = "Automatic preview build from the latest push to main ($($env:GITHUB_SHA.Substring(0,7)))." +
+            "`n`n**Not a real release**: unsigned, never served to installed apps, never on the download " +
+            "page, and this tag is overwritten by every push to main. For a real release, push a " +
+            "``desktop-vX.Y.Z`` tag."
+          $body | Set-Content -LiteralPath $notesPath -Encoding utf8NoBOM
           gh release create $env:AUTO_TAG @files --draft --target $env:GITHUB_SHA `
-            --title "Storm Codex $($env:PREVIEW_VERSION) (auto preview build, not published)" --notes $body
+            --title "Storm Codex $($env:PREVIEW_VERSION) (auto preview build, not published)" --notes-file $notesPath
