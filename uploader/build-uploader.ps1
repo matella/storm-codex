@@ -34,6 +34,12 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
 
 Write-Host "→ build release (URL + token figés dans le binaire)..." -ForegroundColor Cyan
 Push-Location $ClientDir
+# Sauvegarde/restauration explicite : $env: modifie l'environnement du PROCESSUS PowerShell appelant
+# (ce n'est pas scopé au script, même invoqué sans dot-sourcing) — sans ça, SERVER_URL/AUTH_TOKEN
+# fuiraient dans la session de l'utilisateur après la fin du script, et resteraient actifs pendant
+# l'appel à iscc plus bas alors qu'ils n'ont aucune raison de l'être.
+$prevServerUrl = $env:SERVER_URL
+$prevAuthToken = $env:AUTH_TOKEN
 try {
     # Passés aussi comme variables d'env (pas seulement via .env) : build.rs déclare
     # `cargo:rerun-if-env-changed=SERVER_URL/AUTH_TOKEN` sans condition, donc Cargo invalide
@@ -46,6 +52,13 @@ try {
     $env:AUTH_TOKEN = $Token
     cargo build --release
     if ($LASTEXITCODE -ne 0) { throw "cargo build --release a échoué (code $LASTEXITCODE)." }
+}
+finally {
+    # Restaure l'état exact d'avant (valeur précédente, ou totalement absente).
+    if ($null -eq $prevServerUrl) { Remove-Item Env:\SERVER_URL -ErrorAction SilentlyContinue } else { $env:SERVER_URL = $prevServerUrl }
+    if ($null -eq $prevAuthToken) { Remove-Item Env:\AUTH_TOKEN -ErrorAction SilentlyContinue } else { $env:AUTH_TOKEN = $prevAuthToken }
+}
+try {
     $exe = Join-Path $ClientDir "target\release\hots-replay-client.exe"
     if (-not (Test-Path $exe)) { throw "Build terminé mais exe introuvable : $exe" }
     Write-Host "`n✔ Uploader prêt : $exe" -ForegroundColor Green
