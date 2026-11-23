@@ -37,7 +37,7 @@ working, and already-applied SQL migrations are never edited, even for comments.
 A complete renovation of Stats of the Storm (HotS stats tracker): open-source Rust crates
 (`storm-replay` decoding, `storm-stats` analysis), a single `storm-codex-server` server (axum +
 Postgres + WS) on the box, a Rust (Leptos, wasm) SPA with the Nexus Codex design system, an OBS stream
-widget, and the existing `client-rs` uploader (`uploader/`, this repo). Fully local: no external event
+widget, and the existing uploader (`uploader/`, this repo). Fully local: no external event
 emitter (the former Jarvis/Redis integration was removed, 2026-11-21 — see docs/STATUS.md).
 
 ## Hard rules
@@ -60,7 +60,7 @@ emitter (the former Jarvis/Redis integration was removed, 2026-11-21 — see doc
 ## Environment
 - The maintainer runs a private self-hosted deployment. Use isolated local fixtures for public development; do not assume access to that deployment.
 - Windows gaming PC: replays in `Documents/Heroes of the Storm/Accounts/*/*/Replays/Multiplayer`
-  (~3,000 files, 2–3 GB); uploader = `client-rs` (`uploader/`, this repo).
+  (~3,000 files, 2–3 GB); uploader = `uploader/` (this repo).
 - Test corpus: NAS/box + `fetch-corpus` script; mini-corpus committed for public CI.
 
 ## External repos — what to clone, where, and when

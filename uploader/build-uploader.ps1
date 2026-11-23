@@ -5,7 +5,8 @@
 #   # option installeur (si Inno Setup `iscc` est dans le PATH) :
 #   .\uploader\build-uploader.ps1 -Server "http://<server-ip>:5102" -Token "<ton-token>" -Installer
 #
-# Ce qu'il fait : écrit le .env racine (SERVER_URL + AUTH_TOKEN, gitignoré → reste local),
+# Ce qu'il fait : écrit un .env local à uploader/ (SERVER_URL + AUTH_TOKEN, gitignoré → reste local
+# — PAS le .env racine du repo, qui est la config du serveur storm-codex lui-même),
 # `cargo build --release` (l'URL et le token sont figés dans l'exe), et te donne le chemin.
 # Au 1er lancement (box connecté) l'uploader backfill TOUTE ton archive, puis surveille les
 # nouvelles parties. Token créable via : POST /api/admin/tokens (champ name) avec l'ADMIN_TOKEN du box.
@@ -21,11 +22,11 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $ClientDir = Join-Path $RepoRoot "uploader"
 
-Write-Host "→ écriture du .env racine (SERVER_URL + AUTH_TOKEN, local/gitignoré)..." -ForegroundColor Cyan
+Write-Host "→ écriture du .env de uploader/ (SERVER_URL + AUTH_TOKEN, local/gitignoré)..." -ForegroundColor Cyan
 @(
     "SERVER_URL=$Server"
     "AUTH_TOKEN=$Token"
-) | Set-Content -Path (Join-Path $RepoRoot ".env") -Encoding ASCII
+) | Set-Content -Path (Join-Path $ClientDir ".env") -Encoding ASCII
 
 if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
     throw "cargo introuvable. Installe Rust : https://rustup.rs"

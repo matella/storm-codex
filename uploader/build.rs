@@ -1,8 +1,10 @@
 use std::path::Path;
 
 fn main() {
-    // Load ../.env if it exists (project root .env)
-    let env_path = Path::new("../.env");
+    // Load uploader/.env if it exists. NOT the repo root .env: in storm-codex that file is the
+    // server's own config (DATABASE_URL, ADMIN_TOKEN, ...) — a build script here must never read
+    // or (via build-uploader.ps1) overwrite it.
+    let env_path = Path::new(".env");
     if env_path.exists() {
         if let Ok(contents) = std::fs::read_to_string(env_path) {
             for line in contents.lines() {
@@ -20,7 +22,7 @@ fn main() {
                 }
             }
         }
-        println!("cargo:rerun-if-changed=../.env");
+        println!("cargo:rerun-if-changed=.env");
     }
 
     // Defaults baked into the binary. NEUTRAL by default (empty) — le serveur et le token se

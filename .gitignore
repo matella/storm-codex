@@ -1,5 +1,6 @@
 corpus/
 target/
+uploader/installer-output/
 spike/protocols/
 spike/bench-results/
 spike/bench-dotnet/bin/
