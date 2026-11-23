@@ -1272,6 +1272,131 @@ async fn reprocessing_preserves_explicit_session_overrides() {
     crate::refdata::tests::drop_db(db, &db_name).await;
 }
 
+#[tokio::test]
+async fn window_clear_rejects_match_replaced_during_reprocessing() {
+    let Some((db, db_name)) = crate::refdata::tests::isolated_db().await else {
+        return;
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let state = crate::test_app_state(test_config(tmp.path()), db.clone());
+    let fingerprint = "clear-override-race";
+    let output = storm_stats::Output {
+        status: 1,
+        match_: Some(
+            serde_json::from_value(serde_json::json!({"date": "2026-05-27T22:37:45Z"})).unwrap(),
+        ),
+        players: Some(
+            serde_json::from_value(serde_json::json!({"1-Hero-1-1": {"name": "Me"}})).unwrap(),
+        ),
+        hotkey_profiles: Default::default(),
+        actions: Default::default(),
+    };
+    let old_id =
+        crate::project::project_match(&db, fingerprint, crate::PARSER_VERSION - 1, &output)
+            .await
+            .unwrap();
+    sqlx::query("INSERT INTO confirmed_identity (toon) VALUES ('1-Hero-1-1')")
+        .execute(&db)
+        .await
+        .unwrap();
+    let session_id: i64 = sqlx::query_scalar(
+        "WITH session AS (INSERT INTO manual_sessions (started_at) VALUES (now()) RETURNING id)
+         INSERT INTO match_session_overrides (match_id, manual_session_id)
+         SELECT $1, id FROM session RETURNING manual_session_id",
+    )
+    .bind(old_id)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+
+    // Stop real projection after it has locked the match and deleted the override, but
+    // before it commits the replacement. The advisory lock is only a test barrier.
+    sqlx::raw_sql(
+        "CREATE FUNCTION pause_match_delete() RETURNS trigger LANGUAGE plpgsql AS $$
+         BEGIN PERFORM pg_advisory_xact_lock(31415); RETURN OLD; END; $$;
+         CREATE TRIGGER pause_match_delete BEFORE DELETE ON matches
+         FOR EACH ROW EXECUTE FUNCTION pause_match_delete();",
+    )
+    .execute(&db)
+    .await
+    .unwrap();
+    let mut gate = db.begin().await.unwrap();
+    let gate_pid: i32 =
+        sqlx::query_scalar("SELECT pg_backend_pid() FROM pg_advisory_xact_lock(31415)")
+            .fetch_one(&mut *gate)
+            .await
+            .unwrap();
+    let wait_for_blocked = |blocker| {
+        let db = &db;
+        async move {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    let pid: Option<i32> = sqlx::query_scalar(
+                        "SELECT pid FROM pg_stat_activity
+                     WHERE datname = current_database() AND $1 = ANY(pg_blocking_pids(pid))",
+                    )
+                    .bind(blocker)
+                    .fetch_optional(db)
+                    .await
+                    .unwrap();
+                    if let Some(pid) = pid {
+                        return pid;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .expect("expected a backend to wait on the given blocker")
+        }
+    };
+    let projection_db = db.clone();
+    let reprocess = tokio::spawn(async move {
+        crate::project::project_match(&projection_db, fingerprint, crate::PARSER_VERSION, &output)
+            .await
+            .unwrap()
+    });
+    let projection_pid = wait_for_blocked(gate_pid).await;
+    let clear = |id| {
+        let router = app(&state);
+        async move {
+            send(
+                &router,
+                Request::put(format!("/api/sessions/assignments/{id}"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"kind":"window"}"#))
+                    .unwrap(),
+            )
+            .await
+        }
+    };
+    let clearing = tokio::spawn(clear(old_id));
+    wait_for_blocked(projection_pid).await;
+    gate.commit().await.unwrap();
+
+    let replacement_id = reprocess.await.unwrap();
+    assert_ne!(old_id, replacement_id);
+    let replacement_override = || {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT manual_session_id FROM match_session_overrides WHERE match_id = $1",
+        )
+        .bind(replacement_id)
+        .fetch_optional(&db)
+    };
+    assert_eq!(replacement_override().await.unwrap(), Some(session_id));
+    assert_eq!(
+        clearing.await.unwrap(),
+        (
+            StatusCode::NOT_FOUND,
+            serde_json::json!({"error": "eligible_match_not_found"})
+        ),
+        "the stale clear must not acknowledge an override still on the replacement"
+    );
+    assert_eq!(clear(replacement_id).await.0, StatusCode::OK);
+    assert_eq!(replacement_override().await.unwrap(), None);
+    assert_eq!(clear(replacement_id).await.0, StatusCode::OK);
+    crate::refdata::tests::drop_db(db, &db_name).await;
+}
+
 async fn setting(state: &AppState, key: &str) -> Option<serde_json::Value> {
     sqlx::query_scalar("SELECT value FROM app_settings WHERE key = $1")
         .bind(key)

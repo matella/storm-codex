@@ -741,12 +741,20 @@ pub async fn assign_session(
         _ => "INSERT INTO match_session_overrides (match_id, manual_session_id)
               SELECT id, $3 FROM eligible ON CONFLICT (match_id) DO UPDATE SET manual_session_id = excluded.manual_session_id RETURNING match_id",
     };
+    // Match project_once's lock order: lock the match before deleting its override.
+    // If projection replaced the row while we waited, FOR UPDATE yields no eligible
+    // match. A zero-row DELETE is otherwise fine (an idempotent clear).
+    let lock = if matches!(body, Assignment::Window) {
+        "FOR UPDATE OF m"
+    } else {
+        ""
+    };
     let sql = format!(
         "WITH {OPS}, eligible AS (
         SELECT m.id FROM matches m WHERE m.id = $1 AND m.played_at IS NOT NULL AND EXISTS (
             SELECT 1 FROM match_players p WHERE p.match_id = m.id
               AND (p.toon_handle = ANY($2) OR lower(p.name) IN (SELECT name FROM ops))
-        )
+        ) {lock}
     ), applied AS ({action}) SELECT EXISTS (SELECT 1 FROM eligible)"
     );
     let query = sqlx::query_scalar::<_, bool>(sqlx::AssertSqlSafe(sql))

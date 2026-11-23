@@ -105,6 +105,11 @@ manual sessions with no games for the selected account (detail then returns 404)
 | `PATCH /api/sessions/{id}` 🔒 | `{name: string|null}` → `200 {id}`; trim Unicode whitespace; blank or null restores the default label; >80 characters or NUL → `400 session_name` |
 | `PUT /api/sessions/assignments/{match_id}` 🔒 | `{kind:"manual",session_id:<negative id>}`, `{kind:"automatic"}`, or `{kind:"window"}` (clear override); → `200 {match_id}`; `404 eligible_match_not_found` for non-operator, undated or absent matches; `404 manual_session_not_found` for an absent target |
 
+A `window` clear takes the same match-row lock as replay projection before touching the override.
+An eligible match that already has no override can still return `200`. If reprocessing replaces
+the requested match first, the old ID returns `404 eligible_match_not_found`; refresh the match ID
+and retry the clear.
+
 Mutations use the existing admin Bearer guard in hosted mode. Manual-only paths reject an `account`
 query with `400 account_read_only`; writes requiring a window ID reject nonnegative IDs and the
 unrepresentable `i64` minimum with `400 manual_session_id`. End and rename return `404 not_found` for

@@ -33,6 +33,14 @@ passed in isolation. Chromium with intercepted API/WS traffic reproduced the old
 the guard (0 passed, 1 failed) and passed with it (1 passed, 0 failed). The optional full refdata
 release and supervisor-local PostgreSQL binaries were not supplied; no real OBS run.
 
+**PR #94 review round 2:** clearing a session override now locks the match before touching the
+override, in the same order as replay projection. If projection replaces the match first, the clear
+returns `404 eligible_match_not_found` instead of reporting success against the old ID. The concurrent
+regression reproduced the false `200` before the fix (0 passed, 1 failed) and passed afterward
+(1 passed, 0 failed). Offline `storm-dev:latest` with disposable PostgreSQL 17.10: locked workspace
+tests reported 601 passed, 0 failed, 11 ignored; strict workspace clippy and formatting passed.
+The optional full refdata release and supervisor-local PostgreSQL binaries were not supplied.
+
 ## Server: no lock across DB I/O, round 2 — insights cache, lobby link, draft persistence (2026-11-22)
 
 Three Medium concurrency findings fixed with the pattern PR #84 set for cast (branch
