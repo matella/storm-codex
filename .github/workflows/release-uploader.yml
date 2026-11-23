@@ -52,26 +52,28 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # `gh release list` (not `gh release view <tag>`) so a confirmed-empty/no-match result
-          # (exit 0) is distinguishable from a real lookup failure (exit nonzero: network, auth,
-          # rate limit) — the latter must stop the job, not be silently treated as "not found".
-          $listJson = gh release list --repo matella/storm-codex --json tagName,isDraft --limit 200 2>$null
+          # Raw `gh api` (not `gh release list`/`gh release view`/`gh release delete`, which only
+          # operate BY TAG): this repo's own history proves a tag name is not a unique key for a
+          # release object here — desktop-v0.1.2 has three separate draft release objects AND one
+          # published release object all sharing that exact tag_name. Deleting "by tag" is
+          # genuinely ambiguous about which object gets hit. `--paginate` so this check is
+          # exhaustive, not bounded by an arbitrary page-size guess.
+          $allJson = gh api repos/matella/storm-codex/releases --paginate 2>$null
           if ($LASTEXITCODE -ne 0) {
-            Write-Error "gh release list failed — cannot safely check for an existing uploader-main-auto draft."
+            Write-Error "gh api releases listing failed — cannot safely check for an existing uploader-main-auto draft."
             exit 1
           }
-          $existing = ($listJson | ConvertFrom-Json) | Where-Object { $_.tagName -eq "uploader-main-auto" } | Select-Object -First 1
-          if ($existing) {
-            if (-not $existing.isDraft) {
-              Write-Error "uploader-main-auto exists and is NOT a draft — refusing to touch it."
-              exit 1
-            }
-            # No --cleanup-tag: a draft can exist without a pushed git ref for its tag name, and
-            # gh would then fail deleting a ref that isn't there, aborting before recreation. The
-            # tag name is just reused (and its ref updated) by the next `gh release create` below.
-            gh release delete uploader-main-auto --repo matella/storm-codex --yes
+          $matches = ($allJson | ConvertFrom-Json) | Where-Object { $_.tag_name -ceq "uploader-main-auto" }
+          $published = $matches | Where-Object { -not $_.draft }
+          if ($published) {
+            Write-Error "uploader-main-auto has a published (non-draft) release — refusing to touch it."
+            exit 1
+          }
+          foreach ($m in $matches) {
+            # Delete by the exact numeric release id, never by tag — see the comment above.
+            gh api -X DELETE "repos/matella/storm-codex/releases/$($m.id)"
             if ($LASTEXITCODE -ne 0) {
-              Write-Error "Failed to delete the existing uploader-main-auto draft."
+              Write-Error "Failed to delete existing uploader-main-auto draft release id $($m.id)."
               exit 1
             }
           }

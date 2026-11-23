@@ -33,15 +33,19 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
 }
 
 Write-Host "→ build release (URL + token figés dans le binaire)..." -ForegroundColor Cyan
-Push-Location $ClientDir
+# Capturé AVANT d'entrer dans le try/finally protecteur : Push-Location peut lui-même lever une
+# exception (ex. $ClientDir disparu) après avoir déjà modifié la pile de localisation, ce qui la
+# désynchroniserait du finally censé la restaurer. Set-Location directement, protégé dès le début.
+$originalLocation = Get-Location
 try {
+    Set-Location -LiteralPath $ClientDir
     # Sauvegarde/restauration explicite : $env: modifie l'environnement du PROCESSUS PowerShell
     # appelant (ce n'est pas scopé au script, même invoqué sans dot-sourcing) — sans ça,
     # SERVER_URL/AUTH_TOKEN fuiraient dans la session de l'utilisateur après la fin du script, et
     # resteraient actifs pendant l'appel à iscc plus bas alors qu'ils n'ont aucune raison de l'être.
-    # Imbriqué DANS le try/finally de Push-Location/Pop-Location (pas en séquence) : si `cargo
-    # build` échoue et lève une exception, le finally interne restaure l'env PUIS l'exception
-    # continue de se propager vers le finally externe, qui garantit Pop-Location dans tous les cas.
+    # Imbriqué DANS le try/finally de localisation (pas en séquence) : si `cargo build` échoue et
+    # lève une exception, le finally interne restaure l'env PUIS l'exception continue de se
+    # propager vers le finally externe, qui restaure la localisation dans tous les cas.
     $prevServerUrl = $env:SERVER_URL
     $prevAuthToken = $env:AUTH_TOKEN
     try {
@@ -81,5 +85,5 @@ try {
     }
 }
 finally {
-    Pop-Location
+    Set-Location -LiteralPath $originalLocation
 }
