@@ -21,7 +21,7 @@ fn standalone() -> impl IntoView {
     let visible = watch_patch_banner();
     view! {
         <OverlayFrame anchor=Anchor::TopLeft pad=28.0>
-            {patch_banner_content(visible)}
+            {patch_banner_content(move || visible.get().map(|p| p.patch_name))}
         </OverlayFrame>
     }
 }
@@ -64,22 +64,24 @@ fn watch_patch_banner() -> Memo<Option<PatchItem>> {
     visible
 }
 
-pub fn patch_banner_content(visible: Memo<Option<PatchItem>>) -> impl IntoView {
+pub fn patch_banner_content(
+    visible: impl Fn() -> Option<String> + Send + 'static,
+) -> impl IntoView {
     view! {
-        {move || match visible.get() {
+        {move || match visible() {
             None => view! { <div></div> }.into_any(),
             Some(p) => banner(p).into_any(),
         }}
     }
 }
 
-fn banner(p: PatchItem) -> impl IntoView {
+fn banner(name: String) -> impl IntoView {
     view! {
         <div style="display:inline-flex;align-items:center;gap:10px;background:rgba(14,16,22,.92);border:1px solid var(--u-nexus);border-radius:12px;padding:10px 18px;box-shadow:0 8px 30px rgba(0,0,0,.5)">
             <span style="font-size:18px">"🆕"</span>
             <div>
                 <div style="font-size:13px;font-weight:700;color:var(--u-nexus)">"New patch"</div>
-                <div style="font-size:12.5px;color:var(--text-2)">{p.patch_name}</div>
+                <div style="font-size:12.5px;color:var(--text-2)">{name}</div>
             </div>
         </div>
     }

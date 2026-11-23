@@ -5,6 +5,7 @@ use storm_web_app::overlay_builder_model::{snap_delta, Rect};
 use storm_web_core::{
     net,
     overlay_layout::{
+        simulation::{Kind, Simulations, MESSAGE},
         WidgetInstance, WidgetSettings, WidgetType, GRID_COLS, GRID_ROWS, MAX_WIDGETS,
     },
     route::app_href,
@@ -56,7 +57,10 @@ struct Preview<'a> {
 }
 
 #[component]
-fn PreviewFrame(widgets: Memo<Vec<WidgetInstance>>) -> impl IntoView {
+fn PreviewFrame(
+    widgets: Memo<Vec<WidgetInstance>>,
+    simulate: ReadSignal<Simulations>,
+) -> impl IntoView {
     let frame = NodeRef::<html::Iframe>::new();
     let origin = StoredValue::new(net::origin());
     let ready = RwSignal::new(0_u32);
@@ -110,12 +114,34 @@ fn PreviewFrame(widgets: Memo<Vec<WidgetInstance>>) -> impl IntoView {
         });
         error.set(sent.is_none());
     });
-    let settled = move || ready.get() > 0 && !error.get();
+    // Re-send the editor's current toggles on a fresh ready handshake, independently of geometry.
+    let simulate_error = RwSignal::new(false);
+    Effect::new(move |_| {
+        if ready.get() == 0 {
+            return;
+        }
+        let Some(window) = frame
+            .get_untracked()
+            .and_then(|frame| frame.content_window())
+        else {
+            return;
+        };
+        let state = simulate.get();
+        let sent = Kind::ALL.into_iter().all(|kind| {
+            let message = serde_json::json!({"type": MESSAGE, "kind": kind.wire(), "active": state.active(kind)});
+            js_sys::JSON::parse(&message.to_string()).is_ok_and(|msg| {
+                origin.with_value(|target| window.post_message(&msg, target)).is_ok()
+            })
+        });
+        simulate_error.set(!sent);
+    });
+    let failed = move || error.get() || simulate_error.get();
+    let settled = move || ready.get() > 0 && !failed();
     view! {
         <iframe node_ref=frame src=format!("{}?preview=1", app_href(CUSTOM))
             title="Live overlay preview" aria-hidden="true" tabindex="-1" />
         <span class="ob-preview-status" role="status" hidden=settled>
-            {move || if error.get() { "Could not update live preview." } else { "Waiting for live preview…" }}
+            {move || if failed() { "Could not update live preview." } else { "Waiting for live preview…" }}
         </span>
     }
 }
@@ -180,7 +206,7 @@ pub(super) fn Canvas(editor: Editor) -> impl IntoView {
                     let y = snap_delta(f64::from(event.client_y()) - bounds.y(), bounds.height(), GRID_ROWS);
                     add(*kind, x, y);
                 }>
-                <PreviewFrame widgets=widgets />
+                <PreviewFrame widgets=widgets simulate=editor.simulate.read_only() />
                 <For each=move || widgets.with(|items| items.iter().map(|item| item.id.clone()).collect::<Vec<_>>())
                     key=String::clone children=move |id| view! { <Handles editor=editor canvas=canvas id=id /> } />
             </div>

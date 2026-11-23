@@ -1,5 +1,45 @@
 # STATUS — read first, update last
 
+## Implementation notes — Overlay Builder: simulate widgets (2026-11-23)
+
+Implemented `docs/specs/2026-11-23-overlay-builder-simulate-widgets.md` without deviations.
+The inspector's three independent, in-memory toggles share an editor signal with the canvas.
+The canvas forwards the flags using `storm-overlay-simulate` after the existing guarded ready
+handshake and on changes. The preview uses hardcoded samples at render time; live feeds,
+including Record Flash expiration, keep running unchanged. No changes to backend endpoints,
+saved layout data, browser storage, fixed-source behavior, or saved OBS output. Removing a
+simulated widget (via the inspector's "Remove widget" button or `fix/widget-ux-polish`'s
+Backspace/Delete, merged after this branch started) clears that kind's simulate flag through
+the same shared `Editor::remove_selected()`, so a later re-added widget of the same kind starts
+with Simulate off regardless of which removal path was used.
+
+Verified in `storm-dev:latest` with `storm-cargo-registry` mounted at `/usr/local/cargo/registry`:
+root and web formatting and strict Clippy passed (native and wasm32 for web). Workspace tests
+with disposable PostgreSQL: **601 passed, 0 failed, 11 ignored**. Web native: **224 passed,
+0 failed, 0 ignored** (212 core, including 2 new protocol tests; 5 app and 7 sources library
+cases). The wasm32 test build compiled all 7 test executables; the Rust wasm harnesses were not
+run. Three release builds and all size gates passed. Same-image comparison against `a242236`:
+app Brotli **1,116,562 → 1,118,011 B** (cap 1,250,000); sources gzip **261,074 → 262,565 B**
+(cap 300,000); overlay gzip **217,757 → 217,757 B** (cap 300,000).
+
+Chromium 159, release app and sources with isolated API/WS fixtures: **3 simulation cases
+passed, 0 failed** (root and `/v2` builder, and saved output ignoring simulation messages).
+Confirmed toggle/reselect/removal/reload, live patch updates behind simulation, independent real
+Record Flash during Nemesis simulation, and the sample surviving the real timer. Existing
+builder regression: **2 passed**; fixed-source baseline parity: **33 route cases passed**
+(plus DOM normalization). Two supplemental checks exposed pre-existing issues on both builds:
+`custom-overlay.cjs` expects the former session-list request; and Chromium's preview iframe
+can lose its layout box after accepting a discard prompt when opening a saved layout from a
+dirty draft. Neither was changed here. No real OBS or deployment run.
+
+Round 2 (review-found flakiness, not a logic bug): the saved-layout-reload assertions in the new
+`web-rs/app/tests/simulate-widgets.cjs` timed out waiting for full visibility, traced to a
+**pre-existing** iframe zero-size race on `main` unrelated to this feature (reproduced without
+any of this branch's changes; filed separately as issue #99). Fixed by checking DOM-attachment
+instead of full visibility for the reload legs only — the live Simulate toggle-on/toggle-off
+checks (the actual feature) still require full visibility, unchanged. Verified stable 10/10 runs
+on both `/` and `/v2`. Full verification suite reconfirmed green after the test fix.
+
 ## Overlay builder widget-UX polish (2026-11-23, branch `fix/widget-ux-polish`)
 
 Three small fixes/clarifications from operator feedback on the overlay builder:
@@ -31,6 +71,7 @@ failed), all three Trunk release builds under budget (`overlay` 217,757 B gzip, 
 gzip [+418 B from the recap fix], `app` 1,116,835 B Brotli — all well inside their caps). Playwright:
 `web-rs/app/tests/overlay-builder.cjs` passed on both `/` and `/v2` (including the new keyboard-delete
 regression) and `web-rs/sources/tests/recap-refresh.cjs` passed (1/1).
+
 
 ## Desktop version bump to 0.1.6, RUSTSEC-2026-0594 lockfile fix (2026-11-23)
 

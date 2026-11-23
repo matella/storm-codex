@@ -1,5 +1,6 @@
 //! Shared wire contract for the layout editor and OBS renderer.
 
+pub mod simulation;
 mod wire;
 pub use wire::*;
 

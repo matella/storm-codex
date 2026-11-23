@@ -6,7 +6,9 @@ use serde::de::DeserializeOwned;
 use storm_web_app::overlay_builder_model::Draft;
 use storm_web_core::{
     net,
-    overlay_layout::{valid_text, OverlayLayout, OverlayLayoutSummary, SaveOverlayLayout},
+    overlay_layout::{
+        simulation::Simulations, valid_text, OverlayLayout, OverlayLayoutSummary, SaveOverlayLayout,
+    },
     route::app_href,
 };
 use wasm_bindgen_futures::spawn_local;
@@ -47,6 +49,7 @@ async fn read<T: DeserializeOwned>(
 struct Editor {
     draft: RwSignal<Draft>,
     selected: RwSignal<Option<String>>,
+    simulate: RwSignal<Simulations>,
     serial: RwSignal<u64>,
     saved: RwSignal<SaveOverlayLayout>,
     layouts: RwSignal<Vec<OverlayLayoutSummary>>,
@@ -63,6 +66,7 @@ impl Editor {
             saved: RwSignal::new(draft.payload()),
             draft: RwSignal::new(draft),
             selected: RwSignal::new(None),
+            simulate: RwSignal::new(Simulations::default()),
             serial: RwSignal::new(0),
             layouts: RwSignal::new(Vec::new()),
             available: RwSignal::new(false),
@@ -88,18 +92,30 @@ impl Editor {
 
     fn set_draft(self, draft: Draft) {
         self.selected.set(None);
+        self.simulate.set(Simulations::default());
         self.saved.set(draft.payload());
         self.draft.set(draft);
     }
 
     /// Removes the selected widget, if any (used by both the inspector's "Remove widget" button
-    /// and the canvas handle's Backspace/Delete key).
+    /// and the canvas handle's Backspace/Delete key). Clears that widget kind's simulate flag so
+    /// a later re-added widget of the same kind starts with Simulate off, regardless of which
+    /// removal path was used.
     fn remove_selected(self) {
         let Some(id) = self.selected.get_untracked() else {
             return;
         };
         self.selected.set(None);
         self.draft.update(|draft| {
+            if let Some(kind) = draft
+                .widgets
+                .iter()
+                .find(|w| w.id == id)
+                .map(|w| canvas::kind(&w.placement.settings))
+                .and_then(storm_web_core::overlay_layout::simulation::Kind::from_widget)
+            {
+                self.simulate.update(|state| state.set(kind, false));
+            }
             draft.widgets.retain(|widget| widget.id != id);
             draft.normalize_layers();
         });

@@ -66,7 +66,7 @@ fn standalone() -> impl IntoView {
     let grudges = watch_lobby();
     view! {
         <OverlayFrame anchor=Anchor::TopLeft top=28.0>
-            {nemesis_content(grudges)}
+            {nemesis_content(move || grudges.get())}
         </OverlayFrame>
     }
 }
@@ -120,10 +120,10 @@ fn watch_lobby() -> ReadSignal<Vec<Grudge>> {
     grudges.read_only()
 }
 
-pub fn nemesis_content(grudges: ReadSignal<Vec<Grudge>>) -> impl IntoView {
+pub fn nemesis_content(grudges: impl Fn() -> Vec<Grudge> + Send + 'static) -> impl IntoView {
     view! {
         <div style="display:flex;flex-direction:column;gap:8px">
-            {move || grudges.get().into_iter().map(|g| view! {
+            {move || grudges().into_iter().map(|g| view! {
                 <div style="display:inline-flex;align-items:center;gap:9px;background:rgba(40,10,10,.92);border:1px solid var(--loss);border-radius:999px;padding:6px 14px;box-shadow:0 6px 20px rgba(0,0,0,.5);font-size:14px">
                     <span style="font-weight:700;color:var(--loss);letter-spacing:.03em">"⚠ NEMESIS"</span>
                     <span style="font-weight:600">{g.name.clone()}</span>

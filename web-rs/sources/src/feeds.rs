@@ -13,7 +13,7 @@ use storm_web_core::{
     insights::{new_personal_record, Records},
     nemesis::{enemy_toons, is_grudge, lobby_signature, Lobby},
     net,
-    overlay_layout::{WidgetInstance, WidgetSettings},
+    overlay_layout::{simulation::Simulations, WidgetInstance, WidgetSettings},
     review::Review,
     session::MatchSummary,
 };
@@ -30,6 +30,7 @@ pub struct Feeds {
     pub patch: ReadSignal<Option<PatchItem>>,
     pub flash: ReadSignal<Option<(String, f64)>>,
     pub grudges: ReadSignal<Vec<Grudge>>,
+    pub simulate: RwSignal<Simulations>,
 }
 
 const DIM: u16 = 1;
@@ -173,6 +174,7 @@ impl Feeds {
             patch: patch.read_only(),
             flash: watch_record(demand, newest.read_only()),
             grudges: watch_lobby(demand, lobby.read_only()),
+            simulate: RwSignal::new(Simulations::default()),
         }
     }
 }

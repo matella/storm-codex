@@ -5,7 +5,7 @@ use super::{
 use leptos::{prelude::*, web_sys};
 use storm_web_app::overlay_builder_model::Rect;
 use storm_web_core::overlay_layout::{
-    PlayerName, WidgetPlacement, WidgetSettings, GRID_COLS, GRID_ROWS,
+    simulation::Kind, PlayerName, WidgetPlacement, WidgetSettings, GRID_COLS, GRID_ROWS,
 };
 
 #[component]
@@ -62,6 +62,7 @@ fn Options(editor: Editor, id: String) -> impl IntoView {
         })
     };
     let widget = placement.with_untracked(|p| p.as_ref().map(|p| kind(&p.settings)));
+    let simulation = widget.and_then(Kind::from_widget);
     let edit_name = move |event| {
         let input = event_target::<web_sys::HtmlInputElement>(&event);
         let text = input.value();
@@ -109,6 +110,16 @@ fn Options(editor: Editor, id: String) -> impl IntoView {
             })}
         </div>
         <div class="ob-toolbar">
+            {simulation.map(|kind| {
+                let active = move || editor.simulate.with(|state| state.active(kind));
+                view! {
+                    <button type="button" class="btn" class:primary=active
+                        aria-pressed=move || active().to_string()
+                        on:click=move |_| editor.simulate.update(|state| state.set(kind, !state.active(kind)))>
+                        "Simulate"
+                    </button>
+                }
+            })}
             <button type="button" class="btn" disabled=move || placement.with(|p| p.as_ref().is_none_or(|p| p.z_order == 0))
                 on:click=move |_| editor.draft.update(|draft| id.with_value(|id| draft.layer(id, -1)))>"Move layer back"</button>
             <button type="button" class="btn" disabled=move || placement.with(|p| p.as_ref().is_none_or(|p| editor.draft.with(|draft| p.z_order as usize + 1 >= draft.widgets.len())))
