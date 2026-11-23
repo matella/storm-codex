@@ -11,8 +11,11 @@ const api = '/api/admin/overlay-layouts';
 const stamp = '2026-11-20T12:00:00Z';
 const preview = `<!doctype html><script>
 window.messages = [];
+window.simulations = [];
 addEventListener('message', event => {
-  if (event.origin === location.origin && event.source === parent) messages.push(event.data);
+  if (event.origin === location.origin && event.source === parent) {
+    (event.data.type === 'storm-overlay-simulate' ? simulations : messages).push(event.data);
+  }
 });
 window.ready = () => parent.postMessage({type:'storm-overlay-preview-ready',version:1}, location.origin);
 </script>`;
@@ -100,8 +103,13 @@ async function run(browser, base) {
     await frame.evaluate(() => parent.postMessage({type:'storm-overlay-preview-ready',version:2}, location.origin));
     await frame.evaluate(() => new Promise(resolve => setTimeout(resolve, 80)));
     assert.deepEqual(await frame.evaluate(() => messages), []);
+    assert.deepEqual(await frame.evaluate(() => simulations), []);
     await frame.evaluate(() => ready());
     await frame.waitForFunction(() => messages.at(-1)?.widgets.length === 0);
+    await frame.waitForFunction(() => simulations.length === 3);
+    assert.deepEqual(await frame.evaluate(() => simulations), ['patch-banner', 'nemesis', 'record-flash'].map(kind => ({
+      type: 'storm-overlay-simulate', kind, active: false,
+    })));
     await button('Add Scorecard').press('Enter');
     await label('Player name (me)').fill('A+B Player');
     await button('Add Queue').click();

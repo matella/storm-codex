@@ -15,6 +15,7 @@ use storm_web_core::{
     aggregates::patch_banner_visible,
     net,
     overlay_layout::{
+        simulation::{self, Kind, Simulations},
         valid_text, OverlayLayout, WidgetInstance, WidgetSettings, GRID_CELL_PX, GRID_COLS,
         GRID_ROWS, MAX_WIDGETS,
     },
@@ -30,10 +31,11 @@ const READY: &str = "storm-overlay-preview-ready";
 pub fn render() -> impl IntoView {
     let search = net::search();
     let widgets = RwSignal::new(Vec::new());
+    let feeds = Feeds::new(widgets.read_only());
     let message = RwSignal::new(None);
     let label = RwSignal::new(None::<String>);
     let layout_id = if query_value(&search, "preview").as_deref() == Some("1") {
-        if !listen_for_preview(widgets) {
+        if !listen_for_preview(widgets, feeds.simulate) {
             message.set(Some("Preview is only available inside the builder"));
         }
         None
@@ -73,7 +75,6 @@ pub fn render() -> impl IntoView {
         }
         id
     };
-    let feeds = Feeds::new(widgets.read_only());
     let ordered = Memo::new(move |_| {
         widgets.with(|items| {
             let mut items: Vec<_> = items.iter().collect();
@@ -117,7 +118,10 @@ fn valid_widgets(widgets: &[WidgetInstance]) -> bool {
         })
 }
 
-fn listen_for_preview(widgets: RwSignal<Vec<WidgetInstance>>) -> bool {
+fn listen_for_preview(
+    widgets: RwSignal<Vec<WidgetInstance>>,
+    simulate: RwSignal<Simulations>,
+) -> bool {
     let window = window();
     let Some(parent) = window
         .parent()
@@ -138,7 +142,10 @@ fn listen_for_preview(widgets: RwSignal<Vec<WidgetInstance>>) -> bool {
         {
             return;
         }
-        if let Some(next) = parse_snapshot(event.data()) {
+        let data = event.data();
+        if let Some((kind, active)) = parse_simulate(&data) {
+            simulate.update(|state| state.set(kind, active));
+        } else if let Some(next) = parse_snapshot(data) {
             widgets.set(next);
         }
     });
@@ -157,6 +164,17 @@ fn property(value: &JsValue, key: &str) -> Option<JsValue> {
 fn object(value: &JsValue, max_keys: u32) -> Option<&Object> {
     let obj = value.dyn_ref::<Object>()?;
     (!Array::is_array(value) && Object::keys(obj).length() <= max_keys).then_some(obj)
+}
+
+fn parse_simulate(data: &JsValue) -> Option<(Kind, bool)> {
+    object(data, 3)?;
+    if property(data, "type")? != simulation::MESSAGE {
+        return None;
+    }
+    simulation::parse(
+        &property(data, "kind")?.as_string()?,
+        property(data, "active")?.as_bool()?,
+    )
 }
 
 fn parse_snapshot(data: JsValue) -> Option<Vec<WidgetInstance>> {
@@ -227,6 +245,17 @@ fn placement(
             })
         })
     };
+    let simulated = Memo::new(move |_| {
+        settings.with(|s| {
+            let kind = match s {
+                Some(WidgetSettings::PatchBanner {}) => Kind::PatchBanner,
+                Some(WidgetSettings::Nemesis {}) => Kind::Nemesis,
+                Some(WidgetSettings::RecordFlash {}) => Kind::RecordFlash,
+                _ => return false,
+            };
+            feeds.simulate.with(|state| state.active(kind))
+        })
+    });
     view! {
         <div class="custom-placement" style=style data-widget-type=move || settings.with(|s| s.as_ref().map(kind))>
             {move || settings.get().map(|s| {
@@ -243,9 +272,27 @@ fn placement(
                     WidgetSettings::Widget(o) => sessions::widget_content(WidgetOptions { me: o.me.map(Into::into) }, feeds.names, feeds.newest).into_any(),
                     WidgetSettings::Recap {} => recap::recap_content(feeds.recap).into_any(),
                     WidgetSettings::StreamPool {} => stream_pool::stream_pool_content(feeds.review).into_any(),
-                    WidgetSettings::PatchBanner {} => patch_banner::patch_banner_content(visible_patch(feeds, patch_key.clone())).into_any(),
-                    WidgetSettings::RecordFlash {} => recordflash::record_flash_content(feeds.flash).into_any(),
-                    WidgetSettings::Nemesis {} => nemesis::nemesis_content(feeds.grudges).into_any(),
+                    WidgetSettings::PatchBanner {} => {
+                        let visible = visible_patch(feeds, patch_key.clone());
+                        patch_banner::patch_banner_content(move || {
+                            if simulated.get() {
+                                Some("Sample Patch 2.58".into())
+                            } else {
+                                visible.get().map(|p| p.patch_name)
+                            }
+                        }).into_any()
+                    }
+                    WidgetSettings::RecordFlash {} => recordflash::record_flash_content(move || {
+                        // The real flash can still expire while the sample is visible.
+                        if simulated.get() { Some(("Kills".into(), 14.0)) } else { feeds.flash.get() }
+                    }).into_any(),
+                    WidgetSettings::Nemesis {} => nemesis::nemesis_content(move || {
+                        if simulated.get() {
+                            vec![nemesis::Grudge { name: "SampleRival".into(), wins: 2, losses: 5 }]
+                        } else {
+                            feeds.grudges.get()
+                        }
+                    }).into_any(),
                     WidgetSettings::Goal {} => goal::goal_content(feeds.progress).into_any(),
                 };
                 fitted_content(content, move || row.with(|p| p.as_ref().map(|p| (

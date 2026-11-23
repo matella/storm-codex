@@ -177,6 +177,17 @@ the last good snapshot intact. IDs must be stable, unique, nonempty strings; the
 grid bounds, and per-kind settings match the saved wire contract. Changes to geometry or order keep
 widget owners; changes to settings remount that widget's content.
 
+For a selected Patch Banner, Nemesis or Record Flash placement, the inspector's **Simulate**
+toggle shows “Sample Patch 2.58”, “SampleRival” (2W–5L), or “Kills · 14”, respectively. Each kind
+has a separate in-memory flag, shared by its placements; deselecting preserves it. Removing a
+placement clears that kind's flag, and replacing the draft or leaving the editor clears all flags.
+The editor shares the flags with the canvas, which posts
+`{type: "storm-overlay-simulate", kind: "patch-banner" | "nemesis" | "record-flash", active: bool}`
+on changes and on the guarded ready handshake. The preview ignores unknown kinds and non-boolean
+values. Only the preview iframe listens; flags are not saved or sent to the server. The sample
+replaces rendered content, not live data, and stays visible until cleared. The real Record Flash
+timer continues to run behind its sample, so turning simulation off shows the current real state.
+
 Each composition owns its shared WebSocket, polling, and feeds. Music uses one poll (2 s if any
 widget uses Reveal, otherwise 5 s); other active live data have a 10 s safety poll. Patch banner
 acknowledgement in OBS is isolated by layout and widget UUID (`custom_overlay_patch:<layout>:<widget>`);

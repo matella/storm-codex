@@ -23,7 +23,7 @@ fn standalone() -> impl IntoView {
     let flash = watch_records();
     view! {
         <OverlayFrame anchor=Anchor::TopRight top=250.0>
-            {record_flash_content(flash)}
+            {record_flash_content(move || flash.get())}
         </OverlayFrame>
     }
 }
@@ -56,9 +56,11 @@ fn watch_records() -> ReadSignal<Option<(String, f64)>> {
     flash.read_only()
 }
 
-pub fn record_flash_content(flash: ReadSignal<Option<(String, f64)>>) -> impl IntoView {
+pub fn record_flash_content(
+    flash: impl Fn() -> Option<(String, f64)> + Send + 'static,
+) -> impl IntoView {
     view! {
-        {move || flash.get().map(|(label, value)| view! {
+        {move || flash().map(|(label, value)| view! {
             <div class="rf-pop" style="display:inline-flex;align-items:center;gap:10px;background:linear-gradient(90deg,#241a04,#16120a);border:1px solid #f5c542;border-radius:12px;padding:10px 18px;box-shadow:0 0 24px rgba(245,197,66,.45),0 8px 30px rgba(0,0,0,.5);font-size:16px;font-weight:600">
                 <span style="font-size:18px">"🏆"</span>
                 <span style="color:#f5c542;letter-spacing:.03em">"NEW RECORD"</span>
