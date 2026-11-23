@@ -22,13 +22,15 @@ fn main() {
                 }
             }
         }
-        println!("cargo:rerun-if-changed=.env");
     }
+    // Unconditional (not just inside the `if exists` branch above): cargo must also notice when
+    // this file is CREATED for the first time after a cached build with none present.
+    println!("cargo:rerun-if-changed=.env");
 
     // Defaults baked into the binary. NEUTRAL by default (empty) — le serveur et le token se
     // configurent à l'exécution (env pour Docker, GUI 1er lancement pour l'.exe). On ne grave plus
     // d'URL/token : un binaire distribué ne doit contenir aucun secret ni pointer un serveur précis.
-    // (Un build interne peut toujours fournir SERVER_URL/AUTH_TOKEN via ../.env s'il le souhaite.)
+    // (Un build interne peut toujours fournir SERVER_URL/AUTH_TOKEN via uploader/.env s'il le souhaite.)
     let server_url = std::env::var("SERVER_URL").unwrap_or_default();
     let auth_token = std::env::var("AUTH_TOKEN").unwrap_or_default();
 

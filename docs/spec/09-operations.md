@@ -36,8 +36,9 @@ rebuild the bundles with `trunk build --release` if `web-rs/` changed.
 
 ## Uploader (gaming PC)
 
-`uploader/` (this repo, own `Cargo.lock`, outside the workspace — same pattern as `desktop/`): root
-`.env` with `SERVER_URL=http://192.168.129.85:5102` + `AUTH_TOKEN=<personal token>`. At launch:
+`uploader/` (this repo, own `Cargo.lock`, outside the workspace — same pattern as `desktop/`): its
+own `uploader/.env` (NOT the repo-root `.env`, which is the server's own config) with
+`SERVER_URL=http://192.168.129.85:5102` + `AUTH_TOKEN=<personal token>`. At launch:
 **complete** backfill of what has not been uploaded (oldest-first, idempotent — persisted set +
 server 409), then watches the replays folder. Also feeds storm-codex's `/live` view while a game is
 in progress (see `uploader/src/live.rs`). Migrated from the standalone `matella/Hots-Overlay` repo

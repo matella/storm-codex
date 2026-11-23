@@ -1,0 +1,5 @@
+# Docker build context = uploader/ (publish-uploader.yml, Dockerfile). A personal .env left over
+# from running build-uploader.ps1 locally must never end up inside a Docker image.
+.env
+target/
+installer-output/

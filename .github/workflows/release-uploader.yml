@@ -52,13 +52,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $existing = gh release view uploader-main-auto --repo matella/storm-codex --json isDraft 2>$null | ConvertFrom-Json
-          if ($existing -and -not $existing.isDraft) {
-            Write-Error "uploader-main-auto exists and is NOT a draft — refusing to touch it."
-            exit 1
-          }
-          if ($existing) {
-            gh release delete uploader-main-auto --repo matella/storm-codex --yes --cleanup-tag
+          $json = gh release view uploader-main-auto --repo matella/storm-codex --json isDraft 2>$null
+          $found = ($LASTEXITCODE -eq 0)
+          $global:LASTEXITCODE = 0 # "not found" is a normal outcome here, not a step failure
+          if ($found) {
+            $existing = $json | ConvertFrom-Json
+            if (-not $existing.isDraft) {
+              Write-Error "uploader-main-auto exists and is NOT a draft — refusing to touch it."
+              exit 1
+            }
+            # No --cleanup-tag: a draft can exist without a pushed git ref for its tag name, and
+            # gh would then fail deleting a ref that isn't there, aborting before recreation. The
+            # tag name is just reused (and its ref updated) by the next `gh release create` below.
+            gh release delete uploader-main-auto --repo matella/storm-codex --yes
+            $global:LASTEXITCODE = 0
           }
       - name: build (release, no SERVER_URL/AUTH_TOKEN — public, unconfigured binary)
         run: cargo build --release --manifest-path uploader/Cargo.toml
