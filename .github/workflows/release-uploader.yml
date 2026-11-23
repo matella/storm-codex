@@ -34,16 +34,16 @@ jobs:
       - name: resolve version and tag
         run: |
           $cargoVersion = (Select-String -Path uploader/Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
-          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+          if ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch") {
             "RELEASE_TAG=uploader-main-auto" >> $env:GITHUB_ENV
             "IS_DRY_RUN=true" >> $env:GITHUB_ENV
           } else {
-            $tag = "${{ github.ref_name }}" -replace '^uploader-v', ''
+            $tag = $env:GITHUB_REF_NAME -replace '^uploader-v', ''
             if ($tag -ne $cargoVersion) {
-              Write-Error "Tag ${{ github.ref_name }} does not match uploader/Cargo.toml version $cargoVersion"
+              Write-Error "Tag $env:GITHUB_REF_NAME does not match uploader/Cargo.toml version $cargoVersion"
               exit 1
             }
-            "RELEASE_TAG=${{ github.ref_name }}" >> $env:GITHUB_ENV
+            "RELEASE_TAG=$env:GITHUB_REF_NAME" >> $env:GITHUB_ENV
             "IS_DRY_RUN=false" >> $env:GITHUB_ENV
           }
           "CARGO_VERSION=$cargoVersion" >> $env:GITHUB_ENV

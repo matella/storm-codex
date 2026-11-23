@@ -35,7 +35,17 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
 Write-Host "→ build release (URL + token figés dans le binaire)..." -ForegroundColor Cyan
 Push-Location $ClientDir
 try {
+    # Passés aussi comme variables d'env (pas seulement via .env) : build.rs déclare
+    # `cargo:rerun-if-env-changed=SERVER_URL/AUTH_TOKEN` sans condition, donc Cargo invalide
+    # toujours correctement le cache sur un changement de valeur — contrairement au fichier .env,
+    # dont le suivi (`rerun-if-changed`) n'est enregistré que s'il existait déjà lors d'un build
+    # précédent. Sans ça, un premier `uploader/.env` créé après un build release déjà en cache
+    # (ex. un simple `cargo build --release` de test, sans config) resterait invisible à Cargo et
+    # produirait un exe non configuré sans aucune erreur.
+    $env:SERVER_URL = $Server
+    $env:AUTH_TOKEN = $Token
     cargo build --release
+    if ($LASTEXITCODE -ne 0) { throw "cargo build --release a échoué (code $LASTEXITCODE)." }
     $exe = Join-Path $ClientDir "target\release\hots-replay-client.exe"
     if (-not (Test-Path $exe)) { throw "Build terminé mais exe introuvable : $exe" }
     Write-Host "`n✔ Uploader prêt : $exe" -ForegroundColor Green
@@ -46,6 +56,7 @@ try {
         if (Get-Command iscc -ErrorAction SilentlyContinue) {
             Write-Host "`n→ build de l'installeur (Inno Setup)..." -ForegroundColor Cyan
             iscc (Join-Path $ClientDir "installer.iss")
+            if ($LASTEXITCODE -ne 0) { throw "iscc a échoué (code $LASTEXITCODE)." }
             Write-Host "✔ Installeur dans uploader\installer-output\" -ForegroundColor Green
         } else {
             Write-Warning "Inno Setup (iscc) introuvable — installe-le (https://jrsoftware.org/isinfo.php) ou lance l'exe directement."
