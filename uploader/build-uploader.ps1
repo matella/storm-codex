@@ -34,31 +34,35 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
 
 Write-Host "→ build release (URL + token figés dans le binaire)..." -ForegroundColor Cyan
 Push-Location $ClientDir
-# Sauvegarde/restauration explicite : $env: modifie l'environnement du PROCESSUS PowerShell appelant
-# (ce n'est pas scopé au script, même invoqué sans dot-sourcing) — sans ça, SERVER_URL/AUTH_TOKEN
-# fuiraient dans la session de l'utilisateur après la fin du script, et resteraient actifs pendant
-# l'appel à iscc plus bas alors qu'ils n'ont aucune raison de l'être.
-$prevServerUrl = $env:SERVER_URL
-$prevAuthToken = $env:AUTH_TOKEN
 try {
-    # Passés aussi comme variables d'env (pas seulement via .env) : build.rs déclare
-    # `cargo:rerun-if-env-changed=SERVER_URL/AUTH_TOKEN` sans condition, donc Cargo invalide
-    # toujours correctement le cache sur un changement de valeur — contrairement au fichier .env,
-    # dont le suivi (`rerun-if-changed`) n'est enregistré que s'il existait déjà lors d'un build
-    # précédent. Sans ça, un premier `uploader/.env` créé après un build release déjà en cache
-    # (ex. un simple `cargo build --release` de test, sans config) resterait invisible à Cargo et
-    # produirait un exe non configuré sans aucune erreur.
-    $env:SERVER_URL = $Server
-    $env:AUTH_TOKEN = $Token
-    cargo build --release
-    if ($LASTEXITCODE -ne 0) { throw "cargo build --release a échoué (code $LASTEXITCODE)." }
-}
-finally {
-    # Restaure l'état exact d'avant (valeur précédente, ou totalement absente).
-    if ($null -eq $prevServerUrl) { Remove-Item Env:\SERVER_URL -ErrorAction SilentlyContinue } else { $env:SERVER_URL = $prevServerUrl }
-    if ($null -eq $prevAuthToken) { Remove-Item Env:\AUTH_TOKEN -ErrorAction SilentlyContinue } else { $env:AUTH_TOKEN = $prevAuthToken }
-}
-try {
+    # Sauvegarde/restauration explicite : $env: modifie l'environnement du PROCESSUS PowerShell
+    # appelant (ce n'est pas scopé au script, même invoqué sans dot-sourcing) — sans ça,
+    # SERVER_URL/AUTH_TOKEN fuiraient dans la session de l'utilisateur après la fin du script, et
+    # resteraient actifs pendant l'appel à iscc plus bas alors qu'ils n'ont aucune raison de l'être.
+    # Imbriqué DANS le try/finally de Push-Location/Pop-Location (pas en séquence) : si `cargo
+    # build` échoue et lève une exception, le finally interne restaure l'env PUIS l'exception
+    # continue de se propager vers le finally externe, qui garantit Pop-Location dans tous les cas.
+    $prevServerUrl = $env:SERVER_URL
+    $prevAuthToken = $env:AUTH_TOKEN
+    try {
+        # Passés aussi comme variables d'env (pas seulement via .env) : build.rs déclare
+        # `cargo:rerun-if-env-changed=SERVER_URL/AUTH_TOKEN` sans condition, donc Cargo invalide
+        # toujours correctement le cache sur un changement de valeur — contrairement au fichier
+        # .env, dont le suivi (`rerun-if-changed`) n'est enregistré que s'il existait déjà lors
+        # d'un build précédent. Sans ça, un premier `uploader/.env` créé après un build release
+        # déjà en cache (ex. un simple `cargo build --release` de test, sans config) resterait
+        # invisible à Cargo et produirait un exe non configuré sans aucune erreur.
+        $env:SERVER_URL = $Server
+        $env:AUTH_TOKEN = $Token
+        cargo build --release
+        if ($LASTEXITCODE -ne 0) { throw "cargo build --release a échoué (code $LASTEXITCODE)." }
+    }
+    finally {
+        # Restaure l'état exact d'avant (valeur précédente, ou totalement absente).
+        if ($null -eq $prevServerUrl) { Remove-Item Env:\SERVER_URL -ErrorAction SilentlyContinue } else { $env:SERVER_URL = $prevServerUrl }
+        if ($null -eq $prevAuthToken) { Remove-Item Env:\AUTH_TOKEN -ErrorAction SilentlyContinue } else { $env:AUTH_TOKEN = $prevAuthToken }
+    }
+
     $exe = Join-Path $ClientDir "target\release\hots-replay-client.exe"
     if (-not (Test-Path $exe)) { throw "Build terminé mais exe introuvable : $exe" }
     Write-Host "`n✔ Uploader prêt : $exe" -ForegroundColor Green
