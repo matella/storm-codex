@@ -26,7 +26,7 @@ Write-Host "→ écriture du .env de uploader/ (SERVER_URL + AUTH_TOKEN, local/g
 @(
     "SERVER_URL=$Server"
     "AUTH_TOKEN=$Token"
-) | Set-Content -Path (Join-Path $ClientDir ".env") -Encoding ASCII
+) | Set-Content -LiteralPath (Join-Path $ClientDir ".env") -Encoding ASCII
 
 if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
     throw "cargo introuvable. Installe Rust : https://rustup.rs"
@@ -68,7 +68,7 @@ try {
     }
 
     $exe = Join-Path $ClientDir "target\release\hots-replay-client.exe"
-    if (-not (Test-Path $exe)) { throw "Build terminé mais exe introuvable : $exe" }
+    if (-not (Test-Path -LiteralPath $exe)) { throw "Build terminé mais exe introuvable : $exe" }
     Write-Host "`n✔ Uploader prêt : $exe" -ForegroundColor Green
     Write-Host "  Lance-le (double-clic ou .\target\release\hots-replay-client.exe) : il détecte" -ForegroundColor Green
     Write-Host "  ton dossier de replays et backfill toute l'archive vers $Server." -ForegroundColor Green

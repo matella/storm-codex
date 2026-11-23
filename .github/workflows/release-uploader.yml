@@ -20,6 +20,11 @@ on:
   workflow_dispatch: {}
 permissions:
   contents: write # create the release and upload its asset (GITHUB_TOKEN)
+concurrency:
+  group: release-uploader
+  cancel-in-progress: false # a real tag release must never be cancelled mid-flight; this also
+  # serializes workflow_dispatch dry runs, closing the TOCTOU window where two concurrent
+  # dispatches could both pass the "does uploader-main-auto already exist" guard and both create it
 jobs:
   release:
     runs-on: windows-latest
