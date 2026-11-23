@@ -1,5 +1,16 @@
 # STATUS — read first, update last
 
+## Desktop version bump to 0.1.7 (2026-11-23)
+
+Version bump for the next release (`chore(desktop): bump version to 0.1.7`): `desktop/tauri.conf.json`,
+`desktop/Cargo.toml`, `desktop/Cargo.lock` (synced via `cargo update --offline -p storm-codex-desktop
+--precise 0.1.7`) — same pattern as prior bumps. Bundles PR #98 (overlay widget UX polish: Backspace/Delete
+removal, session-recap award-label fix) and PR #100 (overlay builder Simulate toggles for Patch Banner/
+Nemesis/Record Flash, plus filed issue #99 for a pre-existing unrelated iframe-reload timing bug).
+`cargo audit` clean (exit 0) on root and desktop lockfiles — no new advisories since this morning's
+RUSTSEC-2026-0594 (`cookie`) fix; only pre-existing allowed `unmaintained`/`unsound` warnings
+(`chrono`, `proc-macro-error`, `zbus_names`, `zvariant`, `zvariant_derive`, `glib`).
+
 ## Implementation notes — Overlay Builder: simulate widgets (2026-11-23)
 
 Implemented `docs/specs/2026-11-23-overlay-builder-simulate-widgets.md` without deviations.
