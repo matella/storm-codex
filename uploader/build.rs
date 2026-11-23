@@ -22,10 +22,15 @@ fn main() {
                 }
             }
         }
+        // Only when the file exists: Cargo's change-tracking treats a rerun-if-changed path that
+        // doesn't exist as permanently dirty, forcing a rebuild on every single invocation (even
+        // back-to-back, zero-change ones) for everyone who never created a uploader/.env — i.e.
+        // almost every contributor and every CI run. The cost of this is just not noticing a
+        // same-session env file created after an already-cached build (run `cargo clean -p
+        // hots-replay-client` if that specific case ever matters), far cheaper than rebuilding the
+        // crate on every build for everyone else.
+        println!("cargo:rerun-if-changed=.env");
     }
-    // Unconditional (not just inside the `if exists` branch above): cargo must also notice when
-    // this file is CREATED for the first time after a cached build with none present.
-    println!("cargo:rerun-if-changed=.env");
 
     // Defaults baked into the binary. NEUTRAL by default (empty) — le serveur et le token se
     // configurent à l'exécution (env pour Docker, GUI 1er lancement pour l'.exe). On ne grave plus
