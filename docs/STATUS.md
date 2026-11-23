@@ -41,6 +41,25 @@ regression reproduced the false `200` before the fix (0 passed, 1 failed) and pa
 tests reported 601 passed, 0 failed, 11 ignored; strict workspace clippy and formatting passed.
 The optional full refdata release and supervisor-local PostgreSQL binaries were not supplied.
 
+## Desktop backup crash recovery (issue #89 P2)
+
+PR #96 review round 3: promoted-import recovery checks that the live archive contains files
+and that the replacement is no longer in `import-work/archive` before deleting anything.
+An unconfirmed swap blocks startup and preserves the recovery files. Full Windows power-loss
+ordering remains a follow-up. The isolated Linux harness with PostgreSQL 17.10 passed 55 tests
+(0 failed, 0 ignored), including the new regression for the lost second rename. Harness strict
+Clippy and desktop formatting passed. Full Tauri and Windows tests were not run.
+
+PR #96 review round 2: import refuses a pre-existing `archive.old` and records `swap-ready`
+before moving either archive. An interrupted, unpromoted import rolls back whether zero, one,
+or both renames ran. Unix directory syncs order the journal and archive moves before database
+promotion. Windows does not have the same power-loss guarantee. Ambiguous older journals still
+preserve both archives for assisted recovery. P3 items are untouched.
+
+In the isolated Linux backup/supervision/lifecycle harness with PostgreSQL 17.10: 54 passed,
+0 failed, 0 ignored, including the real Postgres roundtrip and three commit-path interruption
+tests. The second-rename regression reproduced the startup failure on the previous PR head.
+Harness strict Clippy and desktop formatting passed. Full Tauri and Windows tests were not run.
 ## Server: no lock across DB I/O, round 2 — insights cache, lobby link, draft persistence (2026-11-22)
 
 Three Medium concurrency findings fixed with the pattern PR #84 set for cast (branch
