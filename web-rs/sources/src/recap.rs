@@ -7,6 +7,7 @@ use leptos::prelude::*;
 use storm_web_core::{
     review::{streak_label, Review, ReviewGame, Row},
     route::Anchor,
+    session::award_label,
 };
 
 pub fn mount_recap() {
@@ -70,7 +71,14 @@ fn recap_card(r: Review) -> impl IntoView {
                     <div class="mono" style="font-size:12.5px">
                         <span style=format!("color:{gtone}")>{if g.win { "W" } else { "L" }}</span>
                         " · "{format!("{k}/{a}/{d}")}
-                        {g.award.map(|aw| view! { <span style="color:var(--text-2)">{format!(" · {aw}")}</span> })}
+                        {award_label(g.award.as_deref()).map(|aw| {
+                            let text = if aw.mvp {
+                                "👑 MVP".to_string()
+                            } else {
+                                format!("{} {}", aw.icon, aw.label)
+                            };
+                            view! { <span style="color:var(--text-2)" title=aw.label>{format!(" · {text}")}</span> }
+                        })}
                     </div>
                 </div>
             </div>

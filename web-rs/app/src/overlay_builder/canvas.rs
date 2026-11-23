@@ -289,6 +289,12 @@ fn Handle(
             }
             on:lostpointercapture=move |_| gesture.set(None)
             on:keydown=move |event: web_sys::KeyboardEvent| {
+                if matches!(event.key().as_str(), "Backspace" | "Delete") {
+                    event.prevent_default();
+                    select();
+                    editor.remove_selected();
+                    return;
+                }
                 let (dx, dy) = match event.key().as_str() {
                     "ArrowLeft" => (-1, 0), "ArrowRight" => (1, 0), "ArrowUp" => (0, -1), "ArrowDown" => (0, 1), _ => return,
                 };

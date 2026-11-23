@@ -113,13 +113,7 @@ fn Options(editor: Editor, id: String) -> impl IntoView {
                 on:click=move |_| editor.draft.update(|draft| id.with_value(|id| draft.layer(id, -1)))>"Move layer back"</button>
             <button type="button" class="btn" disabled=move || placement.with(|p| p.as_ref().is_none_or(|p| editor.draft.with(|draft| p.z_order as usize + 1 >= draft.widgets.len())))
                 on:click=move |_| editor.draft.update(|draft| id.with_value(|id| draft.layer(id, 1)))>"Move layer forward"</button>
-            <button type="button" class="btn" on:click=move |_| {
-                editor.selected.set(None);
-                editor.draft.update(|draft| {
-                    id.with_value(|id| draft.widgets.retain(|widget| &widget.id != id));
-                    draft.normalize_layers();
-                });
-            }>"Remove widget"</button>
+            <button type="button" class="btn" on:click=move |_| editor.remove_selected()>"Remove widget"</button>
         </div>
     }
 }

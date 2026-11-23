@@ -1,5 +1,26 @@
 # STATUS — read first, update last
 
+## Overlay builder widget-UX polish (2026-11-23, branch `fix/widget-ux-polish`)
+
+Three small fixes/clarifications from operator feedback on the overlay builder:
+
+1. **Delete a focused widget with Backspace/Delete.** The canvas move-handle already had a
+   `keydown` handler for arrow-key nudging; added `Backspace`/`Delete` on the same handler to
+   remove the selected widget, factored into a new `Editor::remove_selected()` shared with the
+   inspector's existing "Remove widget" button (`web-rs/app/src/overlay_builder/{canvas,mod,
+   inspector}.rs`). No new UI element, no contract change.
+2. **Session recap's standout-game award showed the raw string** (e.g.
+   `EndOfMatchAwardMostHealingBoolean`) instead of a formatted label — `recap.rs` never called
+   `award_label` the way every other award view does. Fixed; see
+   `docs/specs/2026-11-20-streamer-widgets.md`'s new "Bug fix" section for detail.
+3. **Patch banner, nemesis and record-flash widgets showing nothing in the builder preview is
+   expected, not a bug** — all three only render on real, currently-true trigger conditions
+   (recent unseen patch, an active grudge-match opponent in the lobby, a just-set personal
+   record), and the builder's live preview has no sample/fixture override. Documented in the same
+   spec section; a preview-sample-content follow-up is tracked separately, not built here.
+
+Checks run on this branch: TODO — fill in after `full-check.sh` + reviewer pass.
+
 ## Desktop version bump to 0.1.6, RUSTSEC-2026-0594 lockfile fix (2026-11-23)
 
 Version bump for the next release (`chore(desktop): bump version to 0.1.6`): `desktop/tauri.conf.json`,
