@@ -1,0 +1,57 @@
+# Uploader installer release (docs/spec/09-operations.md, "Releasing the uploader").
+# Tag `uploader-v<X.Y.Z>` (must equal `version` in uploader/Cargo.toml): builds the Windows installer
+# (plain cargo build, NO SERVER_URL/AUTH_TOKEN set so nothing personal is baked into the published
+# binary — unlike the local `uploader/build-uploader.ps1 -Installer` convenience script, which bakes
+# in whatever is in the caller's own `.env` for a personal build) and publishes it as a GitHub
+# Release. Unlike the desktop app, this uploader has no signed auto-update manifest: `updater.rs`
+# only shows a clickable "update available" link (see the release list, filtered to `uploader-v*`
+# tags so it doesn't pick up desktop-v* releases).
+# Manual run (workflow_dispatch): same build, published as a draft (never visible/linked to from the
+# updater) — the dry run. Delete the draft afterwards.
+name: release-uploader
+on:
+  push:
+    tags: ["uploader-v*"]
+  workflow_dispatch: {}
+permissions:
+  contents: write # create the release and upload its asset (GITHUB_TOKEN)
+jobs:
+  release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable branch, 2026-11-15
+        with:
+          toolchain: stable
+      - name: version matches the tag
+        run: |
+          $tag = "${{ github.ref_name }}" -replace '^uploader-v', ''
+          $cargoVersion = (Select-String -Path uploader/Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          if ($tag -ne $cargoVersion) {
+            Write-Error "Tag uploader-v$tag does not match uploader/Cargo.toml version $cargoVersion"
+            exit 1
+          }
+      - name: build (release, no SERVER_URL/AUTH_TOKEN — public, unconfigured binary)
+        run: cargo build --release --manifest-path uploader/Cargo.toml
+        env:
+          SERVER_URL: ""
+          AUTH_TOKEN: ""
+      - name: install Inno Setup
+        run: choco install innosetup --no-progress -y
+      - name: build installer
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\iscc.exe" uploader/installer.iss
+      - name: publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $draft = if ("${{ github.event_name }}" -eq "workflow_dispatch") { "--draft" } else { "" }
+          $installer = Get-ChildItem uploader/installer-output/*.exe | Select-Object -First 1
+          gh release create "${{ github.ref_name }}" $installer.FullName `
+            --repo matella/storm-codex `
+            --title "Uploader ${{ github.ref_name }}" `
+            --notes "Heroes of the Storm replay uploader. Unconfigured build — set your server URL and upload token in Settings on first run." `
+            $draft

@@ -18,12 +18,14 @@ The match page includes a 2D replay, takedowns, objectives, camp captures, and d
 
 Use [storm-codex-suite](https://github.com/matella/storm-codex-suite) for the Docker Compose setup. See the [operations guide](docs/spec/09-operations.md) for server configuration, OBS sources, and desktop release instructions. The desktop replay watcher imports **completed** games; it does not provide an in-progress game feed.
 
+For a self-hosted server ("box") setup, gaming PCs run a separate small uploader — see [`uploader/`](uploader) — that pushes completed replays and an optional live in-progress feed to your server.
+
 ## Source and documentation
 
 - [`storm-replay`](crates/storm-replay) decodes `.StormReplay` files using tables generated from [Blizzard's heroprotocol](https://github.com/Blizzard/heroprotocol).
 - [`storm-stats`](crates/storm-stats) turns decoded events into match stats.
 - [`storm-codex-server`](crates/storm-codex-server) provides replay ingestion and the API using Axum and PostgreSQL.
-- [`web-rs`](web-rs) contains the Leptos web app and OBS sources. [`desktop`](desktop) contains the Tauri Windows shell and installer configuration.
+- [`web-rs`](web-rs) contains the Leptos web app and OBS sources. [`desktop`](desktop) contains the Tauri Windows shell and installer configuration. [`uploader`](uploader) is the gaming-PC replay/live-game uploader for self-hosted ("box") setups.
 
 Start with the [technical documentation](docs/spec/README.md), [development workflow](docs/spec/10-developpement.md), or [Windows acceptance checklist](docs/standalone-acceptance.md). See [project status](docs/STATUS.md) for work in progress.
 

@@ -9,7 +9,7 @@ routes marked 🔒 require `Authorization: Bearer` (personal upload token for up
 | Route | Role |
 |---|---|
 | `POST /api/upload` 🔒 | body = raw bytes of the `.StormReplay`, header `X-Filename` (percent-encoded accepted). Response within ≤ 2 s: `parsed` / `409 duplicate` / `parse_failed`; `202 accepted` if the pool is saturated (result over WS) |
-| `POST /api/upload-raw` 🔒 | **strict alias** of the previous one — client-rs compatibility (Hots-Overlay) |
+| `POST /api/upload-raw` 🔒 | **strict alias** of the previous one — `uploader/` (gaming-PC client) compatibility |
 
 ## Reads (`read.rs`)
 

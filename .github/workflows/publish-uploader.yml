@@ -1,0 +1,30 @@
+# Build + publie l'image uploader headless sur ghcr.io à chaque push main touchant uploader/ (et sur tag).
+# Migré depuis matella/Hots-Overlay (publish.yml) lors de la fusion dans storm-codex — même nom d'image,
+# donc storm-codex-suite's docker-compose "uploader" profile ne nécessite aucun changement.
+name: publish-uploader
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - "uploader/**"
+      - ".github/workflows/publish-uploader.yml"
+  workflow_dispatch: {}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # push vers ghcr.io (GITHUB_TOKEN suffit)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: uploader
+          push: true
+          tags: ghcr.io/matella/hots-uploader:latest

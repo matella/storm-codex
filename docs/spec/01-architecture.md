@@ -3,7 +3,7 @@
 ## Overview
 
 ```
-Gaming PC ──client-rs (Hots-Overlay)──► storm-codex-server (box :5102)
+Gaming PC ──uploader/ (this repo)──► storm-codex-server (box :5102)
                 POST /api/upload-raw          │ axum + Postgres + WS
                                               │
         ┌───────────────┬─────────────────────┼──────────────────┐

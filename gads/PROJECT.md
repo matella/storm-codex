@@ -37,7 +37,7 @@ working, and already-applied SQL migrations are never edited, even for comments.
 A complete renovation of Stats of the Storm (HotS stats tracker): open-source Rust crates
 (`storm-replay` decoding, `storm-stats` analysis), a single `storm-codex-server` server (axum +
 Postgres + WS) on the box, a Rust (Leptos, wasm) SPA with the Nexus Codex design system, an OBS stream
-widget, and the existing `client-rs` uploader (Hots-Overlay repo). Fully local: no external event
+widget, and the existing `client-rs` uploader (`uploader/`, this repo). Fully local: no external event
 emitter (the former Jarvis/Redis integration was removed, 2026-11-21 — see docs/STATUS.md).
 
 ## Hard rules
@@ -60,7 +60,7 @@ emitter (the former Jarvis/Redis integration was removed, 2026-11-21 — see doc
 ## Environment
 - The maintainer runs a private self-hosted deployment. Use isolated local fixtures for public development; do not assume access to that deployment.
 - Windows gaming PC: replays in `Documents/Heroes of the Storm/Accounts/*/*/Replays/Multiplayer`
-  (~3,000 files, 2–3 GB); uploader = `client-rs` (Hots-Overlay repo).
+  (~3,000 files, 2–3 GB); uploader = `client-rs` (`uploader/`, this repo).
 - Test corpus: NAS/box + `fetch-corpus` script; mini-corpus committed for public CI.
 
 ## External repos — what to clone, where, and when
@@ -73,7 +73,6 @@ local dependency on the other projects. Milestone 0 is ideally done **on the Win
 | ebshimizu/hots-parser | public GitHub (npm) | milestone 2 — parity diff harness (clone anywhere) |
 | ebshimizu/stats-of-the-storm | public GitHub | functional reference (already summarised in docs/research) |
 | Blizzard/heroprotocol | public GitHub | generation of the protocol tables (milestones 0–1) |
-| matella Hots-Overlay | GitHub (private) | milestone 3 — adapt `client-rs` (backfill mode, re-pointing) |
 | matella HeroesOfTheStormPatchNotes | GitHub (public) | reference data consumed as **dataset releases** (schema v1, `refdata` adapter); the clone is only useful to read the producer's code |
 
 The committed replay corpus and public CI do not require maintainer infrastructure.

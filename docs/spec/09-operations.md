@@ -36,14 +36,19 @@ rebuild the bundles with `trunk build --release` if `web-rs/` changed.
 
 ## Uploader (gaming PC)
 
-`client-rs` (**Hots-Overlay** repo): root `.env` with `SERVER_URL=http://192.168.129.85:5102`
-+ `AUTH_TOKEN=<personal token>`. At launch: **complete** backfill of what has not been uploaded
-(oldest-first, idempotent — persisted set + server 409), then watches the replays folder.
+`uploader/` (this repo, own `Cargo.lock`, outside the workspace — same pattern as `desktop/`): root
+`.env` with `SERVER_URL=http://192.168.129.85:5102` + `AUTH_TOKEN=<personal token>`. At launch:
+**complete** backfill of what has not been uploaded (oldest-first, idempotent — persisted set +
+server 409), then watches the replays folder. Also feeds storm-codex's `/live` view while a game is
+in progress (see `uploader/src/live.rs`). Migrated from the standalone `matella/Hots-Overlay` repo
+(2026-11-23) — its `client-rs` directory is gone, replaced by this one.
 
-## CI — `ci.yml` (checks, tests, audit, then image publication) and `release-desktop.yml`
+## CI — `ci.yml` (checks, tests, audit, then image publication), `release-desktop.yml` and `release-uploader.yml`
 
 `release-desktop.yml` builds and publishes the desktop installer on a `desktop-v*` tag: see "Releasing the desktop
-app" below. `pages.yml` deploys the download page: see "Download page (GitHub Pages)" below. Everything else is `ci.yml`.
+app" below. `release-uploader.yml` builds and publishes the gaming-PC uploader installer on an `uploader-v*` tag:
+see "Releasing the uploader" below. `pages.yml` deploys the download page: see "Download page (GitHub Pages)"
+below. Everything else is `ci.yml`.
 
 **Jobs** (push to `main`, `v*` tags, PRs, manual run):
 - `checks`: `cargo fmt --all -- --check`; the unit tests of the download page generator
@@ -816,6 +821,18 @@ Method and the other figures (parse, API p95): [`docs/standalone-acceptance.md`]
 
 **Not verified for 0.1.2:** the Windows release workflow, NSIS payload and installed behavior
 (including hooks, keep/delete prompt, and upgrade from 0.1.1).
+
+### Releasing the uploader (`release-uploader.yml`)
+
+Tag `uploader-v<X.Y.Z>` matching `uploader/Cargo.toml`'s `version` triggers the build: a plain
+`cargo build --release --manifest-path uploader/Cargo.toml` with `SERVER_URL`/`AUTH_TOKEN` left
+empty (never bake a personal server/token into a publicly distributed binary — that's what the
+local `uploader/build-uploader.ps1 -Installer` convenience script is for instead), then an Inno
+Setup installer, published as a GitHub Release. No signing, no auto-update manifest: `updater.rs`
+only shows a clickable "update available" link, found by listing releases and taking the latest one
+tagged `uploader-v*` (not `/releases/latest`, which could resolve to a `desktop-v*` release
+instead). `workflow_dispatch` publishes the same build as a **draft** (never linked to from the
+updater) — the dry run; delete it afterward.
 
 ## External dependencies (all best-effort)
 

@@ -114,6 +114,32 @@ jobs:
         run: cargo test -p storm-codex-supervisor -- --include-ignored
         env:
           PG_BIN_DIR: ${{ runner.temp }}\postgres\bin
+  # Gaming-PC uploader (uploader/, own Cargo.lock, outside the workspace, cross-platform eframe/tray
+  # GUI). Built/tested on Linux here (needs GTK3/X11/D-Bus dev libs); the Windows .exe/installer are
+  # still produced manually via uploader/build-uploader.ps1, not by this job. Migrated from
+  # matella/Hots-Overlay — previously had no PR-level build/test coverage at all (only CodeQL).
+  uploader:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable branch, 2026-11-15
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: uploader -> target
+      - name: apt dependencies (GTK3, X11, D-Bus dev headers for eframe/tray-icon)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-3-dev libxdo-dev libssl-dev pkg-config libayatana-appindicator3-dev
+      - name: format (uploader)
+        run: cargo fmt --manifest-path uploader/Cargo.toml --check
+      - name: clippy (uploader, strict)
+        run: cargo clippy --manifest-path uploader/Cargo.toml --all-targets -- -D warnings
+      - name: tests (uploader)
+        run: cargo test --manifest-path uploader/Cargo.toml
   audit:
     runs-on: ubuntu-latest
     steps:

@@ -1,0 +1,30 @@
+[package]
+name = "hots-replay-client"
+version = "1.1.2"
+edition = "2021"
+description = "Heroes of the Storm replay uploader"
+license = "MIT"
+
+[dependencies]
+eframe = { version = "0.31", features = ["persistence"] }
+egui = "0.31"
+tray-icon = "0.19"
+notify = "8"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rfd = "0.15"
+dirs = "6"
+chrono = { version = "0.4", features = ["serde"] }
+image = "0.25"
+ureq = "3"
+sha2 = "0.10"
+
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
