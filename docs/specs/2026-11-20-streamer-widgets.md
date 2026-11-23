@@ -196,3 +196,26 @@ new routes, `GET /api/goal/progress` confirmed deliberately public/read-only, al
 (`$1`/`$2`/`$3` binds, no `format!`/interpolation of user input), `kind`/`target` validated both
 Rust-side (`GoalKind::parse`, `target > 0`) and by the DB `CHECK` constraints (defence in depth), no
 `unwrap()`/`expect()` outside `#[cfg(test)]`. Full details in `docs/STATUS.md`.
+
+## Bug fix (2026-11-23, branch `fix/widget-ux-polish`)
+
+**Item 2 (session recap), standout-game award label**: `web-rs/sources/src/recap.rs`'s `recap_card`
+rendered `ReviewGame::award` (the raw enum-like string stored on the match row, e.g.
+`EndOfMatchAwardMostHealingBoolean`) directly instead of running it through
+`storm_web_core::session::award_label` the way every other award-displaying view (`matchui.rs`'s
+`AwardTag`, `card.rs`, `sessions.rs`'s `Ticker`/queue rows, `matches.rs`, `player.rs`) already does —
+an oversight from when `/recap` was first built, not a regression. Fixed to call `award_label` and
+render `"{icon} {label}"` (or `"👑 MVP"`), matching the existing convention. No contract change: `award`
+was always `Option<String>` on the wire, this only touches how the client formats it.
+
+**Items 3, 5, 6 (personal-record flash, nemesis badge, patch-day banner) showing nothing in the
+overlay builder's live preview is expected, not a bug.** All three are condition-triggered by design
+(spec text above): `/record-flash` only renders for ~8 s right after the newest game set a personal
+best; `/nemesis` only renders while the live lobby contains an opponent the operator currently has a
+≤35%-over-≥3-games record against; `/patch-banner` only renders for up to 7 real-world days after a
+new patch and only until first shown once (`localStorage` "last seen"). The builder's preview iframe
+(`?preview=1`) renders the real widget against the real local server, with no fixture/sample-state
+override — so outside those exact trigger windows the canvas legitimately shows the same blank
+`<div></div>` the OBS source itself would show at that moment. This does make these three widgets hard
+to visually place/style blind in the builder; a follow-up (preview-only sample content, operator
+decision needed) is tracked separately, out of scope for this bug-fix pass.

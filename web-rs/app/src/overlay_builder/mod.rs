@@ -92,6 +92,19 @@ impl Editor {
         self.draft.set(draft);
     }
 
+    /// Removes the selected widget, if any (used by both the inspector's "Remove widget" button
+    /// and the canvas handle's Backspace/Delete key).
+    fn remove_selected(self) {
+        let Some(id) = self.selected.get_untracked() else {
+            return;
+        };
+        self.selected.set(None);
+        self.draft.update(|draft| {
+            draft.widgets.retain(|widget| widget.id != id);
+            draft.normalize_layers();
+        });
+    }
+
     fn begin(self) -> bool {
         if self.busy.get_untracked() {
             return false;
