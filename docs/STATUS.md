@@ -1,5 +1,24 @@
 # STATUS — read first, update last
 
+## Desktop version bump to 0.1.6, RUSTSEC-2026-0594 lockfile fix (2026-11-23)
+
+Version bump for the next release (`chore(desktop): bump version to 0.1.6`): `desktop/tauri.conf.json`,
+`desktop/Cargo.toml`, `desktop/Cargo.lock` (synced via `cargo update --offline -p storm-codex-desktop
+--precise 0.1.6`) — same pattern as `desktop-v0.1.5`/`0.1.4`/`0.1.3`. Bundles PRs #90–96: auto-draft-desktop
+preview CI, overlay widget fit, server concurrency fixes round 2, the issue #89 P2 archive-swap data-loss
+fix, and manual play sessions.
+
+Also fixed a brand-new advisory published today that blocked this PR's own CI: **RUSTSEC-2026-0594**
+(`cookie` 0.18.2, private-cookie-nonce reuse in forked processes, medium 6.5) — bumped `cookie` to the
+patched 2026-11-23 release `0.18.3` in all three affected lockfiles (`Cargo.lock`, `desktop/Cargo.lock`,
+`spike/frontend-rust/Cargo.lock`; `web-rs/Cargo.lock` and `spike/storm-decode/Cargo.lock` don't depend on
+it). `cargo update -p cookie --precise 0.18.3` also shifted an unrelated resolver edge in
+`desktop/Cargo.lock` (`cssparser-macros` from `syn 3.0.10` back to `syn 2.0.119`, both already present in
+the lockfile for other dependents) — reverted that edge manually to keep the diff scoped to `cookie` only,
+then verified with `cargo metadata --locked` in all three manifests that the lockfile is still internally
+consistent. `cargo audit` clean (exit 0) on the root and desktop lockfiles; `spike/frontend-rust` retains
+its own pre-existing unrelated `RUSTSEC-2026-0533` (`ammonia`) advisory, untouched.
+
 ## Manual play sessions (`feat/manual-play-sessions`, local, not pushed)
 
 Spec `docs/specs/2026-03-14-manual-play-sessions.md`. Migration 0024 (`manual_sessions`,
