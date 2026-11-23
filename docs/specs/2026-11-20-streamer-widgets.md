@@ -219,4 +219,3 @@ override — so outside those exact trigger windows the canvas legitimately show
 `<div></div>` the OBS source itself would show at that moment. This does make these three widgets hard
 to visually place/style blind in the builder; a follow-up (preview-only sample content, operator
 decision needed) is tracked separately, out of scope for this bug-fix pass.
-

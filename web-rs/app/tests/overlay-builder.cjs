@@ -168,6 +168,17 @@ async function run(browser, base) {
     assert.equal(await label('Layout name').inputValue(), 'Renamed layout');
     await button('Move Scorecard').press('Enter');
     assert.equal(await label('Player name (me)').inputValue(), 'A+B Player');
+    // Backspace/Delete acts on the selected widget (Scorecard), not whichever handle merely
+    // has keyboard focus (Queue, Tab-ed to without clicking) — Tab-ing must stay non-destructive.
+    await button('Move Queue').focus();
+    await page.keyboard.press('Delete');
+    await frame.waitForFunction(() => messages.at(-1)?.widgets.length === 3);
+    const afterDelete = await frame.evaluate(() => messages.at(-1).widgets);
+    assert.ok(afterDelete.some(w => w.widget_type === 'queue'));
+    assert.ok(!afterDelete.some(w => w.widget_type === 'widget'));
+    await button('Add Scorecard').press('Enter');
+    await label('Player name (me)').fill('A+B Player');
+    await frame.waitForFunction(() => messages.at(-1)?.widgets.length === 4);
     await button('Remove widget').click();
     await frame.waitForFunction(() => messages.at(-1)?.widgets.length === 3);
     await button('Delete layout').click();

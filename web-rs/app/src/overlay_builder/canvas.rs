@@ -291,7 +291,9 @@ fn Handle(
             on:keydown=move |event: web_sys::KeyboardEvent| {
                 if matches!(event.key().as_str(), "Backspace" | "Delete") {
                     event.prevent_default();
-                    select();
+                    // Acts on the current selection only (click or the inspector's "Selected
+                    // widget" dropdown), never on whichever handle merely has keyboard focus —
+                    // Tab-ing through handles must stay non-destructive.
                     editor.remove_selected();
                     return;
                 }

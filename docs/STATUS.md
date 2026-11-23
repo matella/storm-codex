@@ -19,7 +19,18 @@ Three small fixes/clarifications from operator feedback on the overlay builder:
    record), and the builder's live preview has no sample/fixture override. Documented in the same
    spec section; a preview-sample-content follow-up is tracked separately, not built here.
 
-Checks run on this branch: TODO — fill in after `full-check.sh` + reviewer pass.
+Checks run on this branch: independent review (round 1) found a real bug in the Backspace/Delete
+handler — it called `select()` before deleting, so Tab-ing to a different widget's handle (without
+clicking it) and pressing Delete removed that handle's widget instead of the one actually selected.
+Fixed by dropping the implicit re-select so the delete only ever acts on `editor.selected` (click or
+the inspector's dropdown), never on mere keyboard focus; added a two-widget regression to
+`web-rs/app/tests/overlay-builder.cjs` reproducing the exact Tab-then-Delete scenario. Round 2:
+`cargo fmt --all -- --check`, `clippy --workspace --all-targets -D warnings` (native + wasm32),
+`cargo test --workspace` (601 passed/0 failed/11 ignored), `web-rs` native tests (210 passed/0
+failed), all three Trunk release builds under budget (`overlay` 217,757 B gzip, `sources` 261,492 B
+gzip [+418 B from the recap fix], `app` 1,116,835 B Brotli — all well inside their caps). Playwright:
+`web-rs/app/tests/overlay-builder.cjs` passed on both `/` and `/v2` (including the new keyboard-delete
+regression) and `web-rs/sources/tests/recap-refresh.cjs` passed (1/1).
 
 ## Desktop version bump to 0.1.6, RUSTSEC-2026-0594 lockfile fix (2026-11-23)
 
