@@ -18,12 +18,30 @@ pub const STATS: [(&str, &str); 7] = [
 
 #[derive(Clone, Debug, Default, PartialEq, Deserialize)]
 #[serde(default)]
+pub struct SessionMeta {
+    pub manual: bool,
+    pub open: bool,
+    pub name: Option<String>,
+    pub opened_at: Option<String>,
+    pub closed_at: Option<String>,
+}
+
+impl SessionMeta {
+    pub fn label(&self) -> &str {
+        self.name.as_deref().unwrap_or("Manual session")
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[serde(default)]
 pub struct SessionItem {
     pub id: i64,
     pub start: String,
     pub end: String,
     pub games: u32,
     pub wins: u32,
+    #[serde(flatten)]
+    pub meta: SessionMeta,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Deserialize)]
@@ -107,6 +125,8 @@ pub struct Review {
     pub baseline: Baseline,
     pub prev: Option<i64>,
     pub next: Option<i64>,
+    #[serde(flatten)]
+    pub meta: SessionMeta,
 }
 
 /// `?s=<id>` of the Session page.
@@ -304,6 +324,8 @@ mod tests {
     #[test]
     fn reads_the_selected_session() {
         assert_eq!(selected("?s=42"), Some(42));
+        assert_eq!(selected("?s=-42"), Some(-42));
+        assert_eq!(selected("?account=me&s=-42"), Some(-42));
         assert_eq!(selected("?s=x"), None);
         assert_eq!(selected(""), None);
     }

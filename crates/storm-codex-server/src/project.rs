@@ -274,11 +274,28 @@ async fn project_once(
     let first_keep = i(m, "firstKeep").map(|v| v as i32);
 
     let mut tx = db.begin().await?;
-    // idempotence: an existing match (same replay) is replaced (cascade match_players)
-    sqlx::query("DELETE FROM matches WHERE fingerprint = $1")
-        .bind(fingerprint)
-        .execute(&mut *tx)
+    // Lock the old match against new override rows, then take its override before the
+    // cascade. Deleting the override returns its latest value, including a NULL target.
+    let old_id: Option<i64> =
+        sqlx::query_scalar("SELECT id FROM matches WHERE fingerprint = $1 FOR UPDATE")
+            .bind(fingerprint)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let assignment: Option<Option<i64>> = if let Some(old_id) = old_id {
+        let assignment = sqlx::query_scalar(
+            "DELETE FROM match_session_overrides WHERE match_id = $1 RETURNING manual_session_id",
+        )
+        .bind(old_id)
+        .fetch_optional(&mut *tx)
         .await?;
+        sqlx::query("DELETE FROM matches WHERE id = $1")
+            .bind(old_id)
+            .execute(&mut *tx)
+            .await?;
+        assignment
+    } else {
+        None
+    };
 
     // Hero correction (see talent_hero): we resolve the played hero via dim_talents for all the
     // talents of the match in one query, BEFORE writing `matches.data` (which carries `takedowns`).
@@ -311,6 +328,16 @@ async fn project_once(
     .bind(&match_json)
     .fetch_one(&mut *tx)
     .await?;
+
+    if let Some(target) = assignment {
+        sqlx::query(
+            "INSERT INTO match_session_overrides (match_id, manual_session_id) VALUES ($1, $2)",
+        )
+        .bind(match_id)
+        .bind(target)
+        .execute(&mut *tx)
+        .await?;
+    }
 
     for (toon, p) in &players {
         sqlx::query(

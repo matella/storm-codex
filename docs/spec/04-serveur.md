@@ -191,6 +191,18 @@ come from this PC, otherwise **403**:
 Server mode (the box, `STANDALONE` unset) is unchanged: no Host or Origin filter (it sits behind
 its reverse proxy).
 
+### Manual play sessions
+
+The dashboard and OBS recap resolve membership from dated operator games in the insights corpus plus
+PostgreSQL windows and overrides (migration 0024). Ownership follows verified toons and operator names;
+assignment writes check current dates and identity in PostgreSQL, without trusting the cached corpus.
+Session metadata is read from the database on each request. Start/end transitions serialize in PostgreSQL
+and use its clock; an open window survives process restarts. Admin writes use the existing Bearer guard
+on `/api/sessions`; standalone retains the application-wide loopback Host/Origin checks. No new service,
+configuration, or WebSocket event: the dashboard refreshes immediately after its writes and OBS recap
+also refreshes on its 10-second poll. Reprojection of the same replay fingerprint preserves any
+explicit assignment when the match row is replaced, including forced automatic grouping.
+
 **Operator identity on a player's PC.** From each effective folder ending in
 `Heroes of the Storm/Accounts/<account>/<toon>/Replays/Multiplayer`, use the exact projected
 ToonHandle (`<region>-Hero-<realm>-<id>`). No ownership inference for flat folders or unrecognized

@@ -1,5 +1,46 @@
 # STATUS — read first, update last
 
+## Manual play sessions (`feat/manual-play-sessions`, local, not pushed)
+
+Spec `docs/specs/2026-03-14-manual-play-sessions.md`. Migration 0024 (`manual_sessions`,
+`match_session_overrides`); start / end / rename / per-match assignment under `/api/sessions`
+(admin-guarded in hosted mode); negative manual IDs; `prefer_open` and `automatic_only` flags;
+Session dashboard controls, empty-session cover, grouping form per game card; server-backed OBS
+recap follows the preferred session (stream pool stays automatic-only). Contracts updated in
+`docs/spec/04, 05, 06, 08`.
+
+Verified in `storm-dev:latest` with a disposable PostgreSQL 17 (fresh DB): `cargo test --workspace`
+all passed (588 passed, 0 failed across the workspace; DB tests running); `cargo clippy --workspace --all-targets -- -D warnings`
+clean; `web-rs`: fmt, native and wasm32 clippy `-D warnings` clean, `cargo test` passed;
+`trunk build --release` of overlay/sources/app OK; sizes 1,116,562 B app Brotli (cap 1,250,000),
+218,086 / 256,177 B gzip overlay / sources (cap 300,000). Browser pass (Chromium, release server,
+8-game seeded DB): start, reload, rename (keyboard, 80-char error), move a match with Tab+Enter,
+end, history, failed write shown without change. Not run: hosted admin-token flow in the browser
+(covered by the server test only), OBS recap in a browser, representative-corpus latency (smoke:
+p95 < 4 ms on 8 games), standalone/desktop and Windows acceptance.
+
+
+**PR #94 independent review follow-up:** merged current `origin/main`, preserving both status intros
+above the common body. Reprojection moves explicit manual and forced-automatic assignments to the
+replacement match ID in the projection transaction. Both session types use the first game's start as
+the exclusive baseline cutoff. Standalone OBS review refreshes discard superseded responses.
+
+Offline `storm-dev:latest` with disposable PostgreSQL 17.10: workspace tests reported 600 passed,
+0 failed, 11 ignored; web native tests reported 210 passed, 0 failed. Workspace, web native and
+wasm32 strict clippy passed. All three release bundles built within budget: app 1,116,562 B Brotli,
+sources 261,074 B gzip, overlay 217,757 B gzip. The reprocessing and two baseline regressions each
+passed in isolation. Chromium with intercepted API/WS traffic reproduced the old recap repaint before
+the guard (0 passed, 1 failed) and passed with it (1 passed, 0 failed). The optional full refdata
+release and supervisor-local PostgreSQL binaries were not supplied; no real OBS run.
+
+**PR #94 review round 2:** clearing a session override now locks the match before touching the
+override, in the same order as replay projection. If projection replaces the match first, the clear
+returns `404 eligible_match_not_found` instead of reporting success against the old ID. The concurrent
+regression reproduced the false `200` before the fix (0 passed, 1 failed) and passed afterward
+(1 passed, 0 failed). Offline `storm-dev:latest` with disposable PostgreSQL 17.10: locked workspace
+tests reported 601 passed, 0 failed, 11 ignored; strict workspace clippy and formatting passed.
+The optional full refdata release and supervisor-local PostgreSQL binaries were not supplied.
+
 ## Desktop backup crash recovery (issue #89 P2)
 
 PR #96 review round 3: promoted-import recovery checks that the live archive contains files

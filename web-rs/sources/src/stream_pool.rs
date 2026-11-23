@@ -18,7 +18,7 @@ const MAX_ROWS: usize = 12;
 
 fn standalone() -> impl IntoView {
     provide_dim();
-    let review = latest_review().read_only();
+    let review = latest_review(true).read_only();
     view! {
         <OverlayFrame anchor=Anchor::BottomRight pad=28.0>
             {stream_pool_content(review)}

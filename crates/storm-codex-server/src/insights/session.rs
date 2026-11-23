@@ -5,7 +5,110 @@
 use super::cache::{Corpus, Game, PlayerRow};
 use chrono::{DateTime, Duration, Utc};
 use serde::Serialize;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
+
+#[derive(Clone, Debug, Serialize, PartialEq, Default)]
+pub struct SessionMeta {
+    pub manual: bool,
+    pub open: bool,
+    pub name: Option<String>,
+    pub opened_at: Option<DateTime<Utc>>,
+    pub closed_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug)]
+pub struct Window {
+    pub id: i64, // negative wire ID
+    pub start: DateTime<Utc>,
+    pub end: Option<DateTime<Utc>>,
+    pub name: Option<String>,
+}
+
+impl Window {
+    pub fn meta(&self) -> SessionMeta {
+        SessionMeta {
+            manual: true,
+            open: self.end.is_none(),
+            name: self.name.clone(),
+            opened_at: Some(self.start),
+            closed_at: self.end,
+        }
+    }
+}
+
+pub struct Group<'a> {
+    id: i64,
+    start: DateTime<Utc>,
+    window: Option<&'a Window>,
+    games: Vec<&'a MyGame>,
+}
+
+impl Group<'_> {
+    fn meta(&self) -> SessionMeta {
+        self.window.map(Window::meta).unwrap_or_default()
+    }
+
+    fn end(&self) -> DateTime<Utc> {
+        end_of(&self.games).unwrap_or_else(|| self.window.and_then(|w| w.end).unwrap_or(self.start))
+    }
+}
+
+/// Windows are sorted by start (then creation ID); `Some(None)` forces automatic grouping.
+/// The original dated game list is retained separately for the review baseline.
+pub fn groups<'a>(
+    games: &'a [MyGame],
+    windows: &'a [Window],
+    overrides: &HashMap<i64, Option<i64>>,
+    filtered: bool,
+) -> Vec<Group<'a>> {
+    let mut manual: Vec<_> = windows
+        .iter()
+        .map(|w| Group {
+            id: w.id,
+            start: w.start,
+            window: Some(w),
+            games: Vec::new(),
+        })
+        .collect();
+    let by_id: HashMap<_, _> = windows.iter().enumerate().map(|(i, w)| (w.id, i)).collect();
+    let mut automatic: Vec<Group<'_>> = Vec::new();
+    for g in games {
+        let target = match overrides.get(&g.id) {
+            Some(id) => id.and_then(|id| by_id.get(&id).copied()),
+            None => windows
+                .partition_point(|w| w.start <= g.played_at)
+                .checked_sub(1)
+                .filter(|&i| windows[i].end.is_none_or(|end| g.played_at < end)),
+        };
+        if let Some(i) = target {
+            manual[i].games.push(g);
+        } else {
+            let group = automatic.last_mut().filter(|group| {
+                group
+                    .games
+                    .last()
+                    .is_some_and(|last| g.played_at - last.played_at <= Duration::seconds(GAP_S))
+            });
+            if let Some(group) = group {
+                group.games.push(g);
+            } else {
+                automatic.push(Group {
+                    id: g.id,
+                    start: g.played_at,
+                    window: None,
+                    games: vec![g],
+                });
+            }
+        }
+    }
+    automatic.extend(
+        manual
+            .into_iter()
+            .filter(|g| !filtered || !g.games.is_empty()),
+    );
+    automatic.sort_unstable_by_key(|g| (g.start, g.id));
+    automatic
+}
 
 /// A new session starts when two consecutive game starts are more than this apart.
 pub const GAP_S: i64 = 3 * 3600;
@@ -131,25 +234,8 @@ pub fn my_games(corpus: &Corpus, who: &Perspective) -> Vec<MyGame> {
     out
 }
 
-/// Sessions of `games` (oldest first) as index ranges, oldest first: a gap of more than `GAP_S` seconds between
-/// two consecutive starts opens a new one.
-pub fn split(games: &[MyGame]) -> Vec<std::ops::Range<usize>> {
-    let mut out = Vec::new();
-    let mut start = 0;
-    for i in 1..games.len() {
-        if games[i].played_at - games[i - 1].played_at > Duration::seconds(GAP_S) {
-            out.push(start..i);
-            start = i;
-        }
-    }
-    if !games.is_empty() {
-        out.push(start..games.len());
-    }
-    out
-}
-
 /// End of a session: the last start plus the last game's length.
-fn end_of(games: &[MyGame]) -> Option<DateTime<Utc>> {
+fn end_of(games: &[&MyGame]) -> Option<DateTime<Utc>> {
     let last = games.last()?;
     Some(last.played_at + ms(last.length.unwrap_or(0.0)))
 }
@@ -165,23 +251,34 @@ pub struct SessionItem {
     pub end: DateTime<Utc>,
     pub games: usize,
     pub wins: usize,
+    #[serde(flatten)]
+    pub meta: SessionMeta,
 }
 
 /// The `limit` most recent sessions, newest first.
-pub fn list(games: &[MyGame], limit: usize) -> Vec<SessionItem> {
-    split(games)
-        .into_iter()
-        .rev()
+pub fn list(sessions: &[Group<'_>], limit: usize, prefer_open: bool) -> Vec<SessionItem> {
+    let open = prefer_open
+        .then(|| {
+            sessions
+                .iter()
+                .find(|g| g.window.is_some_and(|w| w.end.is_none()))
+        })
+        .flatten();
+    open.into_iter()
+        .chain(
+            sessions
+                .iter()
+                .rev()
+                .filter(|g| open.is_none_or(|w| w.id != g.id)),
+        )
         .take(limit)
-        .filter_map(|r| {
-            let s = &games[r];
-            Some(SessionItem {
-                id: s.first()?.id,
-                start: s.first()?.played_at,
-                end: end_of(s)?,
-                games: s.len(),
-                wins: s.iter().filter(|g| g.win).count(),
-            })
+        .map(|g| SessionItem {
+            id: g.id,
+            start: g.games.first().map_or(g.start, |m| m.played_at),
+            end: g.end(),
+            games: g.games.len(),
+            wins: g.games.iter().filter(|m| m.win).count(),
+            meta: g.meta(),
         })
         .collect()
 }
@@ -212,7 +309,7 @@ fn score(d: &BTreeMap<&'static str, f64>) -> Option<u32> {
 }
 
 /// Best and worst game (indices into `games`); at least two games must have a score.
-fn best_worst(games: &[MyGame], scores: &[Option<u32>]) -> Option<(usize, usize)> {
+fn best_worst(games: &[&MyGame], scores: &[Option<u32>]) -> Option<(usize, usize)> {
     let ranked = scores
         .iter()
         .enumerate()
@@ -318,6 +415,8 @@ pub struct Review {
     pub prev: Option<i64>,
     /// next (newer) session id
     pub next: Option<i64>,
+    #[serde(flatten)]
+    pub meta: SessionMeta,
 }
 
 fn round1(v: f64) -> f64 {
@@ -334,7 +433,7 @@ fn by_stat(v: &[Option<f64>; 7]) -> BTreeMap<&'static str, f64> {
 
 /// Session rows per hero or map (`key`) with that key's baseline record; most played first, then by name.
 fn rows(
-    session: &[MyGame],
+    session: &[&MyGame],
     base: &[&MyGame],
     key: impl Fn(&MyGame) -> Option<&String>,
 ) -> Vec<Row> {
@@ -366,15 +465,15 @@ fn rows(
     out
 }
 
-/// The review of the session starting with game `id`, or `None` if no session starts with it.
-pub fn review(games: &[MyGame], id: i64) -> Option<Review> {
-    let sessions = split(games);
-    let k = sessions.iter().position(|r| games[r.start].id == id)?;
-    let session = &games[sessions[k].clone()];
-    let first = session.first()?;
-    let start = first.played_at;
-    let end = end_of(session)?;
+/// Review of an automatic anchor or a stable manual ID.
+pub fn review(games: &[MyGame], sessions: &[Group<'_>], id: i64) -> Option<Review> {
+    let k = sessions.iter().position(|g| g.id == id)?;
+    let group = &sessions[k];
+    let session = &group.games;
+    let start = session.first().map_or(group.start, |g| g.played_at);
+    let end = group.end();
     let from = start - Duration::days(BASELINE_DAYS);
+    let members: HashSet<_> = session.iter().map(|g| g.id).collect();
     let modes: Vec<Option<i32>> = {
         let set: HashSet<Option<i32>> = session.iter().map(|g| g.mode).collect();
         let mut v: Vec<_> = set.into_iter().collect();
@@ -383,7 +482,12 @@ pub fn review(games: &[MyGame], id: i64) -> Option<Review> {
     };
     let base: Vec<&MyGame> = games
         .iter()
-        .filter(|g| g.played_at >= from && g.played_at < start && modes.contains(&g.mode))
+        .filter(|g| {
+            g.played_at >= from
+                && g.played_at < start
+                && modes.contains(&g.mode)
+                && !members.contains(&g.id)
+        })
         .collect();
     let overall = averages(base.iter().copied());
     let mut out_games = Vec::with_capacity(session.len());
@@ -427,7 +531,11 @@ pub fn review(games: &[MyGame], id: i64) -> Option<Review> {
         id,
         start,
         end,
-        span_s: (end - start).num_milliseconds() as f64 / 1000.0,
+        span_s: if session.is_empty() {
+            0.0
+        } else {
+            (end - start).num_milliseconds() as f64 / 1000.0
+        },
         played_s: session.iter().filter_map(|g| g.length).sum(),
         games: out_games,
         record: Record {
@@ -448,11 +556,9 @@ pub fn review(games: &[MyGame], id: i64) -> Option<Review> {
             averages: by_stat(&overall),
             small_sample: base_games < SMALL_BASELINE,
         },
-        prev: k
-            .checked_sub(1)
-            .and_then(|p| sessions.get(p))
-            .map(|r| games[r.start].id),
-        next: sessions.get(k + 1).map(|r| games[r.start].id),
+        prev: k.checked_sub(1).map(|p| sessions[p].id),
+        next: sessions.get(k + 1).map(|g| g.id),
+        meta: group.meta(),
     })
 }
 
@@ -491,6 +597,10 @@ mod tests {
 
     const DAY: i64 = 86_400;
 
+    fn review(games: &[MyGame], id: i64) -> Option<Review> {
+        super::review(games, &groups(games, &[], &HashMap::new(), false), id)
+    }
+
     #[test]
     fn splits_on_gaps_over_three_hours_only() {
         let games = [
@@ -498,9 +608,11 @@ mod tests {
             g(2, GAP_S, "A", true, 1.0, 1.0), // exactly 3 h: same session
             g(3, 2 * GAP_S + 1, "A", true, 1.0, 1.0), // 3 h + 1 s: new one
         ];
-        assert_eq!(split(&games), vec![0..2, 2..3]);
-        assert!(split(&[]).is_empty());
-        let l = list(&games, 20);
+        assert!(groups(&[], &[], &HashMap::new(), false).is_empty());
+        let groups = groups(&games, &[], &HashMap::new(), false);
+        let l = list(&groups, 20, false);
+        assert_eq!(l[0].games, 1);
+        assert_eq!(list(&groups, 1, false).len(), 1);
         assert_eq!(
             l.iter().map(|s| s.id).collect::<Vec<_>>(),
             vec![3, 1],
@@ -508,7 +620,6 @@ mod tests {
         );
         assert_eq!(l[1].games, 2);
         assert_eq!(l[1].end, at(GAP_S + 1200));
-        assert_eq!(list(&games, 1).len(), 1);
     }
 
     #[test]
@@ -666,15 +777,18 @@ mod tests {
         // game 3: only deaths better → 1; game 2: 0
         let scores: Vec<_> = games.iter().map(score_game).collect();
         assert_eq!(scores, vec![Some(7), Some(0), Some(1)]);
-        assert_eq!(best_worst(&games, &scores), Some((0, 1)));
+        assert_eq!(best_worst(&games.each_ref(), &scores), Some((0, 1)));
         // same score: the KDA ratio decides (a loss can be the best game)
         let tie = [g(1, 0, "A", true, 2.0, 2.0), g(2, 1, "A", false, 8.0, 2.0)];
-        assert_eq!(best_worst(&tie, &[Some(3), Some(3)]), Some((1, 0)));
+        assert_eq!(
+            best_worst(&tie.each_ref(), &[Some(3), Some(3)]),
+            Some((1, 0))
+        );
         // all equal: still two different games
         let same = [even.clone(), even];
-        let (b, w) = best_worst(&same, &[Some(0), Some(0)]).unwrap();
+        let (b, w) = best_worst(&same.each_ref(), &[Some(0), Some(0)]).unwrap();
         assert_ne!(b, w);
-        assert_eq!(best_worst(&games[..1], &scores[..1]), None);
+        assert_eq!(best_worst(&games.each_ref()[..1], &[Some(0)]), None);
     }
 
     #[test]
@@ -760,5 +874,141 @@ mod tests {
         assert_eq!(r.played_s, 1800.0);
         assert_eq!(r.end, at(3600));
         assert_eq!(r.streaks.current, -1);
+    }
+
+    fn window(id: i64, start: i64, end: Option<i64>) -> Window {
+        Window {
+            id,
+            start: at(start),
+            end: end.map(at),
+            name: None,
+        }
+    }
+
+    fn ids(group: &Group<'_>) -> Vec<i64> {
+        group.games.iter().map(|g| g.id).collect()
+    }
+
+    #[test]
+    fn window_is_start_inclusive_end_exclusive_and_each_game_has_one_home() {
+        let games = [
+            g(1, 99, "A", true, 1.0, 1.0),
+            g(2, 100, "A", true, 1.0, 1.0),
+            g(3, 200, "A", true, 1.0, 1.0),
+        ];
+        let windows = [window(-1, 100, Some(200))];
+        let groups = groups(&games, &windows, &HashMap::new(), false);
+        let manual = groups.iter().find(|g| g.id == -1).unwrap();
+        assert_eq!(ids(manual), [2]);
+        let total: usize = groups.iter().map(|g| g.games.len()).sum();
+        assert_eq!(total, games.len(), "no game is lost or duplicated");
+    }
+
+    #[test]
+    fn an_open_window_is_unbounded_and_a_late_replay_joins_it() {
+        let games = [
+            g(1, 100, "A", true, 1.0, 1.0),
+            g(2, 10 * DAY, "A", true, 1.0, 1.0),
+        ];
+        let windows = [window(-1, 100, None)];
+        let groups = groups(&games, &windows, &HashMap::new(), false);
+        assert_eq!(ids(groups.iter().find(|g| g.id == -1).unwrap()), [1, 2]);
+    }
+
+    #[test]
+    fn overrides_win_and_none_forces_automatic_grouping() {
+        let games = [
+            g(1, 50, "A", true, 1.0, 1.0),
+            g(2, 150, "A", true, 1.0, 1.0),
+            g(3, 250, "A", true, 1.0, 1.0),
+        ];
+        let windows = [window(-1, 100, Some(200)), window(-2, 300, Some(400))];
+        let overrides = HashMap::from([(1, Some(-2)), (2, None), (3, Some(-1))]);
+        let groups = groups(&games, &windows, &overrides, false);
+        let find = |id| ids(groups.iter().find(|g| g.id == id).unwrap());
+        assert_eq!(find(-1), [3]);
+        assert_eq!(find(-2), [1]);
+        assert_eq!(find(2), [2], "forced automatic: its own automatic session");
+    }
+
+    #[test]
+    fn unassigned_games_keep_the_three_hour_rule_around_manual_games() {
+        let games = [
+            g(1, 0, "A", true, 1.0, 1.0),
+            g(2, GAP_S / 2, "A", true, 1.0, 1.0), // taken by the manual window
+            g(3, GAP_S + 1, "A", true, 1.0, 1.0), // > 3 h after game 1, but game 2 is not automatic
+        ];
+        let windows = [window(-1, GAP_S / 2, Some(GAP_S / 2 + 1))];
+        let groups = groups(&games, &windows, &HashMap::new(), false);
+        let automatic: Vec<_> = groups.iter().filter(|g| g.window.is_none()).collect();
+        assert_eq!(automatic.len(), 2);
+    }
+
+    #[test]
+    fn empty_manual_session_has_no_games_numbers_or_picks_and_filters_hide_it() {
+        let games = [g(1, 0, "A", true, 1.0, 1.0)];
+        let windows = [window(-1, 5 * DAY, None)];
+        let all = groups(&games, &windows, &HashMap::new(), false);
+        let item = &list(&all, 20, true)[0];
+        assert_eq!((item.id, item.games, item.wins), (-1, 0, 0));
+        assert_eq!((item.start, item.end), (at(5 * DAY), at(5 * DAY)));
+        assert!(item.meta.open && item.meta.manual);
+        let r = super::review(&games, &all, -1).unwrap();
+        assert!(r.games.is_empty());
+        assert_eq!((r.best, r.worst), (None, None));
+        let filtered = groups(&games, &windows, &HashMap::new(), true);
+        assert!(super::review(&games, &filtered, -1).is_none());
+    }
+
+    #[test]
+    fn prefer_open_puts_the_open_window_first_without_changing_navigation() {
+        let games = [
+            g(1, 0, "A", true, 1.0, 1.0),
+            g(2, 10 * DAY, "A", true, 1.0, 1.0),
+        ];
+        let windows = [window(-1, 5 * DAY, None)];
+        let overrides = HashMap::from([(2, None)]);
+        let groups = groups(&games, &windows, &overrides, false);
+        assert_eq!(list(&groups, 1, false)[0].id, 2);
+        assert_eq!(list(&groups, 1, true)[0].id, -1);
+        let r = super::review(&games, &groups, -1).unwrap();
+        assert_eq!((r.prev, r.next), (Some(1), Some(2)));
+    }
+
+    #[test]
+    fn identical_manual_and_automatic_membership_has_the_same_baseline() {
+        let games = [g(1, 0, "A", true, 2.0, 1.0), g(2, DAY, "A", true, 6.0, 1.0)];
+        let automatic = groups(&games, &[], &HashMap::new(), false);
+        let windows = [window(-1, -DAY, Some(2 * DAY))];
+        let overrides = HashMap::from([(1, None)]);
+        let manual = groups(&games, &windows, &overrides, false);
+        let a = super::review(&games, &automatic, 2).unwrap();
+        let m = super::review(&games, &manual, -1).unwrap();
+        let a = serde_json::to_value(a).unwrap();
+        let m = serde_json::to_value(m).unwrap();
+        assert_eq!(a["baseline"]["games"], 1);
+        assert_eq!(a["baseline"]["to"], serde_json::json!(at(DAY)));
+        assert_eq!(m["baseline"], a["baseline"]);
+        assert_eq!(m["games"], a["games"]);
+    }
+
+    #[test]
+    fn a_game_moved_in_from_before_the_window_is_not_in_its_own_baseline() {
+        let games = [
+            g(2, -DAY, "A", true, 2.0, 1.0),
+            g(1, 0, "A", true, 10.0, 1.0),
+            g(4, DAY, "A", true, 50.0, 1.0),
+            g(3, 3 * DAY, "A", true, 6.0, 1.0),
+        ];
+        let windows = [window(-1, 3 * DAY, Some(4 * DAY))];
+        let overrides = HashMap::from([(1, Some(-1))]);
+        let groups = groups(&games, &windows, &overrides, false);
+        let r = super::review(&games, &groups, -1).unwrap();
+        assert_eq!(
+            r.games.iter().map(|g| g.match_id).collect::<Vec<_>>(),
+            [1, 3]
+        );
+        assert_eq!(r.baseline.games, 1);
+        assert_eq!(r.baseline.averages["kills"], 2.0);
     }
 }
